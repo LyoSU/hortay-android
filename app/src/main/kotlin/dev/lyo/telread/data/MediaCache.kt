@@ -37,7 +37,10 @@ class MediaCache(
     init {
         td.updates
             .filterIsInstance<TdApi.UpdateFile>()
-            .onEach { update -> states[update.file.id]?.value = update.file.toMediaState() }
+            // Always seed/update the slot — even if no observer existed yet — so when a
+            // Composable later mounts and calls ensureDownloaded, GetFile and ongoing
+            // UpdateFile both converge on the same slot.
+            .onEach { update -> slot(update.file.id).value = update.file.toMediaState() }
             .launchIn(scope)
     }
 
@@ -76,8 +79,11 @@ sealed interface MediaState {
 }
 
 private fun TdApi.File.toMediaState(): MediaState {
-    val localPath = local.path
-    if (local.isDownloadingCompleted && !localPath.isNullOrEmpty()) {
+    val localPath = local.path.orEmpty()
+    // TDLib occasionally reports completion in two consecutive UpdateFile bursts: first
+    // with isDownloadingCompleted=true but path still empty, then with the path filled in.
+    // Treat the second one as the canonical Ready; the first one stays Downloading at 100%.
+    if (local.isDownloadingCompleted && localPath.isNotEmpty()) {
         return MediaState.Ready(localPath)
     }
     val totalBytes = if (size > 0) size.toFloat() else expectedSize.toFloat().coerceAtLeast(1f)

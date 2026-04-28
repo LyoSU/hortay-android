@@ -189,20 +189,25 @@ internal fun TdApi.Photo.toMedia(): TdMedia {
 }
 
 internal fun TdApi.Video.toThumbMedia(): TdMedia = TdMedia(
-    fileId = thumbnail?.file?.id ?: video.id,
+    // Only use the (image-decodable) thumbnail file. Falling back to video.id pointed Coil at
+    // the MP4 itself, which never decodes — leaving the GIF/video box blank until playback.
+    fileId = thumbnail?.file?.id,
     width = width,
     height = height,
     minithumbBytes = minithumbnail?.data,
 )
 
 internal fun TdApi.Animation.toThumbMedia(): TdMedia = TdMedia(
-    fileId = thumbnail?.file?.id ?: animation.id,
+    fileId = thumbnail?.file?.id,
     width = width,
     height = height,
     minithumbBytes = minithumbnail?.data,
 )
 
 internal fun TdApi.Sticker.toMedia(): TdMedia = TdMedia(
+    // For static (WEBP) stickers the sticker file IS the image, so the fallback is fine.
+    // Animated formats (TGS/WebM) need their own renderer; for now the thumbnail is the
+    // best preview available.
     fileId = thumbnail?.file?.id ?: sticker.id,
     width = width,
     height = height,

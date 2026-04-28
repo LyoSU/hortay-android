@@ -23,6 +23,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import dev.lyo.telread.data.MediaState
 import dev.lyo.telread.data.TdMedia
+import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
 
 /**
@@ -33,7 +34,8 @@ import java.io.File
  *   3. Once the cache reports [MediaState.Ready], swaps in the full-resolution image
  *      via Coil with crossfade.
  *
- * For media without minithumbnail, falls back to a tonal placeholder + spinner.
+ * If [TdMedia.fileId] is null (e.g. a forwarded GIF without a server-side thumbnail), only
+ * the minithumb is shown — we never try to decode the playback file as an image.
  */
 @Composable
 fun TdMediaImage(
@@ -43,11 +45,14 @@ fun TdMediaImage(
     contentScale: ContentScale = ContentScale.Crop,
 ) {
     val cache = LocalMediaCache.current
-    val state by cache.observe(media.fileId).collectAsStateWithLifecycle()
+    val fileId = media.fileId
+    val state by remember(fileId) {
+        if (fileId != null) cache.observe(fileId) else MutableStateFlow(MediaState.Idle)
+    }.collectAsStateWithLifecycle()
 
-    LaunchedEffect(media.fileId) { cache.ensureDownloaded(media.fileId) }
+    LaunchedEffect(fileId) { fileId?.let { cache.ensureDownloaded(it) } }
 
-    val placeholder = remember(media.fileId, media.minithumbBytes) {
+    val placeholder = remember(fileId, media.minithumbBytes) {
         media.minithumbBytes?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() }
     }
 
@@ -61,16 +66,18 @@ fun TdMediaImage(
             )
         }
         when (val s = state) {
-            is MediaState.Ready -> AsyncImage(
-                model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                    .data(File(s.path))
-                    .crossfade(true)
-                    .build(),
-                contentDescription = contentDescription,
-                contentScale = contentScale,
-                modifier = Modifier.fillMaxSize(),
-            )
-            is MediaState.Downloading -> if (placeholder == null) {
+            is MediaState.Ready -> if (s.path.isNotEmpty()) {
+                AsyncImage(
+                    model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                        .data(File(s.path))
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = contentDescription,
+                    contentScale = contentScale,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            is MediaState.Downloading -> if (placeholder == null && fileId != null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
                         progress = { s.progress },

@@ -34,6 +34,7 @@ fun PostCard(
     post: TimelinePost,
     interactions: PostInteractions = PostInteractions.Noop,
     clickable: Boolean = true,
+    expanded: Boolean = false,
 ) {
     // We keep `enabled = true` regardless so Card does not apply the disabled-state
     // tonal dimming (which makes text look washed out on top of an already-light surface).
@@ -68,6 +69,7 @@ fun PostCard(
             PostBody(
                 content = post.content,
                 onMediaClick = { _, idx -> interactions.onMediaClick(post, idx) },
+                expanded = expanded,
             )
 
             Spacer(Modifier.height(14.dp))

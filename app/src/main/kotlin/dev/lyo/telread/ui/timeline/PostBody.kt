@@ -35,14 +35,18 @@ fun PostBody(
     content: PostContent,
     modifier: Modifier = Modifier,
     onMediaClick: (List<AlbumItem>, Int) -> Unit = { _, _ -> },
+    /** When true, text is rendered without `maxLines` clamps — used in detail screens. */
+    expanded: Boolean = false,
 ) {
+    val textLimit = if (expanded) Int.MAX_VALUE else 18
+    val captionLimit = if (expanded) Int.MAX_VALUE else 12
     Column(modifier = modifier) {
         when (content) {
-            is PostContent.Text -> TextBlock(content)
-            is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick)
-            is PostContent.Video -> VideoBlock(content, onMediaClick)
-            is PostContent.Animation -> AnimationBlock(content, onMediaClick)
-            is PostContent.Document -> DocumentBlock(content)
+            is PostContent.Text -> TextBlock(content, textLimit)
+            is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick, captionLimit)
+            is PostContent.Video -> VideoBlock(content, onMediaClick, captionLimit)
+            is PostContent.Animation -> AnimationBlock(content, onMediaClick, captionLimit)
+            is PostContent.Document -> DocumentBlock(content, captionLimit)
             is PostContent.Audio -> AudioBlock(content)
             is PostContent.VoiceNote -> VoiceNoteBlock(content)
             is PostContent.VideoNote -> VideoNoteBlock(content)
@@ -57,13 +61,13 @@ fun PostBody(
 }
 
 @Composable
-private fun TextBlock(content: PostContent.Text) {
+private fun TextBlock(content: PostContent.Text, maxLines: Int) {
     val annotated = rememberAnnotatedString(content.formatted)
     if (annotated.isNotEmpty()) {
         Text(
             text = annotated,
             style = MaterialTheme.typography.bodyLarge,
-            maxLines = 18,
+            maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
         )
     }
@@ -74,7 +78,7 @@ private fun TextBlock(content: PostContent.Text) {
 }
 
 @Composable
-private fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<AlbumItem>, Int) -> Unit) {
+private fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int) {
     val items = content.items
     if (items.isEmpty()) return
 
@@ -89,7 +93,7 @@ private fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<Albu
         Text(
             text = rememberAnnotatedString(content.caption),
             style = MaterialTheme.typography.bodyLarge,
-            maxLines = 12,
+            maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
         )
     }
@@ -172,7 +176,7 @@ private fun AlbumIndicator(current: Int, total: Int, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun VideoBlock(content: PostContent.Video, onMediaClick: (List<AlbumItem>, Int) -> Unit) {
+private fun VideoBlock(content: PostContent.Video, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int) {
     val items = listOf(AlbumItem.Video(content.media, content.durationSec, content.playbackFileId))
     SingleMedia(items.first(), onClick = { onMediaClick(items, 0) })
 
@@ -181,14 +185,14 @@ private fun VideoBlock(content: PostContent.Video, onMediaClick: (List<AlbumItem
         Text(
             text = rememberAnnotatedString(content.caption),
             style = MaterialTheme.typography.bodyLarge,
-            maxLines = 8,
+            maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
 @Composable
-private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<AlbumItem>, Int) -> Unit) {
+private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int) {
     // Inline auto-loop playback: Telegram animations are silent MP4s, so we drive them via
     // ExoPlayer (Coil cannot decode MP4). Tap escalates to full-screen.
     val ratio = mediaAspectRatio(content.media.width, content.media.height)
@@ -216,14 +220,14 @@ private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<A
         Text(
             text = rememberAnnotatedString(content.caption),
             style = MaterialTheme.typography.bodyLarge,
-            maxLines = 8,
+            maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
 @Composable
-private fun DocumentBlock(content: PostContent.Document) {
+private fun DocumentBlock(content: PostContent.Document, maxLines: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -254,7 +258,7 @@ private fun DocumentBlock(content: PostContent.Document) {
         Text(
             text = rememberAnnotatedString(content.caption),
             style = MaterialTheme.typography.bodyLarge,
-            maxLines = 8,
+            maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
         )
     }

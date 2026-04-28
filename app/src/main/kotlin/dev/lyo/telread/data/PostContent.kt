@@ -130,17 +130,19 @@ sealed interface AlbumItem {
 /**
  * Reference to a single Telegram file rendered in the UI.
  *
- *   • [fileId]: the asset shown as the thumbnail / preview frame in the feed.
+ *   • [fileId]: id of the image asset to download (JPEG/WEBP/PNG). `null` when the message
+ *     has no decodable still — typically a GIF/MP4 forwarded without a server-side thumb.
+ *     In that case [minithumbBytes] (if present) is the only preview shown.
  *   • [minithumbBytes]: instant inline blur (~150B base64 JPEG) before download completes.
  */
 data class TdMedia(
-    val fileId: Int,
+    val fileId: Int?,
     val width: Int,
     val height: Int,
     val minithumbBytes: ByteArray? = null,
 ) {
     override fun equals(other: Any?): Boolean = other is TdMedia && other.fileId == fileId
-    override fun hashCode(): Int = fileId
+    override fun hashCode(): Int = fileId ?: 0
 }
 
 data class WebPreview(

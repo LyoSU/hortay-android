@@ -97,7 +97,7 @@ fun CommentsScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "post") {
-                PostCard(post = post, interactions = PostInteractions.Noop, clickable = false)
+                PostCard(post = post, interactions = PostInteractions.Noop, clickable = false, expanded = true)
             }
 
             item(key = "label") {
