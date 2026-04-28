@@ -42,6 +42,8 @@ class TdClient private constructor(
 
     fun start() {
         if (this::client.isInitialized) return
+        // Silence TDLib's default verbose stdout chatter; we still log warnings via Log.w.
+        Client.execute(TdApi.SetLogVerbosityLevel(LOG_VERBOSITY))
         client = Client.create({ obj ->
             if (obj is TdApi.Update) {
                 handleUpdate(obj)
@@ -72,7 +74,7 @@ class TdClient private constructor(
                     systemLanguageCode = "uk"
                     deviceModel = android.os.Build.MODEL
                     systemVersion = "Android ${android.os.Build.VERSION.RELEASE}"
-                    applicationVersion = "0.1.0"
+                    applicationVersion = BuildConfig.VERSION_NAME
                 }
                 send(params)
             }
@@ -121,6 +123,9 @@ class TdClient private constructor(
     class TdException(val code: Int, message: String) : RuntimeException("[$code] $message")
 
     companion object {
+        // 0 = fatal, 1 = error, 2 = warning, 5 = verbose.
+        private const val LOG_VERBOSITY = 1
+
         fun create(context: Context): TdClient {
             check(BuildConfig.TELEGRAM_API_ID != 0 && BuildConfig.TELEGRAM_API_HASH.isNotEmpty()) {
                 "Telegram api credentials missing. Add telegram.apiId / telegram.apiHash to local.properties."

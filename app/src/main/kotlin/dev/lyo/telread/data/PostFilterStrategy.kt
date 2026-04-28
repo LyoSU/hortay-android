@@ -36,8 +36,8 @@ object PostFilterStrategy {
         val items = sorted.flatMap { post ->
             when (val c = post.content) {
                 is PostContent.PhotoAlbum -> c.items
-                is PostContent.Video -> listOf(AlbumItem.Video(c.media, c.durationSec))
-                is PostContent.Animation -> listOf(AlbumItem.Photo(c.media))
+                is PostContent.Video -> listOf(AlbumItem.Video(c.media, c.durationSec, c.playbackFileId))
+                is PostContent.Animation -> listOf(AlbumItem.Animation(c.media, c.playbackFileId))
                 else -> emptyList()
             }
         }

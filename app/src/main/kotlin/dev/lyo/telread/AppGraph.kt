@@ -1,8 +1,10 @@
 package dev.lyo.telread
 
 import android.content.Context
+import dev.lyo.telread.data.BookmarkStore
 import dev.lyo.telread.data.MediaCache
 import dev.lyo.telread.data.PostsRepository
+import dev.lyo.telread.data.SettingsStore
 import dev.lyo.telread.data.TdClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,4 +26,9 @@ class AppGraph(context: Context) {
     val mediaCache: MediaCache = MediaCache(tdClient, appScope)
 
     val postsRepository: PostsRepository = PostsRepository(tdClient, appScope)
+
+    val bookmarkStore: BookmarkStore = BookmarkStore(context)
+
+    val settingsStore: SettingsStore = SettingsStore(context)
 }
+

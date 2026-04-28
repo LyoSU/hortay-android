@@ -5,9 +5,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.drinkless.tdlib.TdApi
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Twitter-style chronological feed merged from every channel chat the user follows.
@@ -23,17 +29,44 @@ import org.drinkless.tdlib.TdApi
  */
 class PostsRepository(
     private val td: TdClient,
-    @Suppress("unused") scope: CoroutineScope,
+    private val scope: CoroutineScope,
 ) {
 
     private val refreshMutex = Mutex()
+    private val chatCache = ConcurrentHashMap<Long, TdApi.Chat>()
 
     private val _posts = MutableStateFlow<List<TimelinePost>>(emptyList())
     val posts: StateFlow<List<TimelinePost>> = _posts.asStateFlow()
 
+    init {
+        // Live feed: any new channel post arrives via UpdateNewMessage and is folded in.
+        td.updates
+            .filterIsInstance<TdApi.UpdateNewMessage>()
+            .onEach { update -> handleNewMessage(update.message) }
+            .launchIn(scope)
+    }
+
     suspend fun refresh(limitPerChannel: Int = 20): Result<Unit> = refreshMutex.withLock {
         runCatching { refreshLocked(limitPerChannel) }.onFailure {
             Log.w(TAG, "refresh failed", it)
+        }
+    }
+
+    private fun handleNewMessage(message: TdApi.Message) {
+        scope.launch {
+            val chat = chatCache[message.chatId] ?: runCatching { td.send(TdApi.GetChat(message.chatId)) }
+                .getOrNull()
+                ?.also { chatCache[it.id] = it }
+                ?: return@launch
+            if (!chat.isChannel()) return@launch
+
+            val post = MessageMapper.toTimelinePost(message, chat)
+            if (post.content is PostContent.Unsupported) return@launch
+
+            _posts.update { current ->
+                val merged = current + post
+                PostFilterStrategy.apply(merged).take(MAX_FEED_SIZE)
+            }
         }
     }
 
@@ -45,6 +78,7 @@ class PostsRepository(
         val raw = mutableListOf<TimelinePost>()
         for (chatId in chatIds) {
             val chat = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull() ?: continue
+            chatCache[chatId] = chat
             if (!chat.isChannel()) continue
 
             val history = runCatching {
@@ -63,6 +97,7 @@ class PostsRepository(
         const val TAG = "PostsRepository"
         const val CHAT_LIST_HINT = 200
         const val CHAT_LIST_LIMIT = 500
+        const val MAX_FEED_SIZE = 1_000
     }
 }
 

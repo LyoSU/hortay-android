@@ -1,6 +1,7 @@
 package dev.lyo.telread.ui.timeline
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,39 +17,67 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewmodel.initializer
+import dev.lyo.telread.data.AlbumItem
+import dev.lyo.telread.data.BookmarkStore
 import dev.lyo.telread.data.PostContent
 import dev.lyo.telread.data.PostsRepository
 import dev.lyo.telread.data.TimelinePost
+import dev.lyo.telread.data.bookmarkKey
+import dev.lyo.telread.ui.actions.PostActions
+import dev.lyo.telread.ui.media.FullScreenMediaViewer
 
 private enum class FeedFilter(val label: String) {
     All("Усе"),
     Text("Текст"),
     Media("Медіа"),
     Today("Сьогодні"),
+    Saved("Збережене"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TimelineScreen(repo: PostsRepository) {
+fun TimelineScreen(repo: PostsRepository, bookmarks: BookmarkStore) {
     val vm: TimelineViewModel = viewModel(
-        factory = remember(repo) {
-            viewModelFactory { initializer { TimelineViewModel(repo) } }
+        factory = remember(repo, bookmarks) {
+            viewModelFactory { initializer { TimelineViewModel(repo, bookmarks) } }
         },
     )
+    val context = LocalContext.current
 
     val posts by vm.posts.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
+    val bookmarkedKeys by vm.bookmarkedKeys.collectAsStateWithLifecycle()
+    val channelFilter by vm.channelFilter.collectAsStateWithLifecycle()
+
     val listState = rememberLazyListState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     var filter by rememberSaveable { mutableStateOf(FeedFilter.All) }
-    val filtered = remember(posts, filter) { applyFilter(posts, filter) }
+    var viewerState by remember { mutableStateOf<ViewerState?>(null) }
+
+    val filtered = remember(posts, filter, bookmarkedKeys) { applyFilter(posts, filter, bookmarkedKeys) }
+
+    val interactions = remember(bookmarkedKeys) {
+        PostInteractions(
+            onMediaClick = { post, idx ->
+                resolveAlbumItems(post)?.let { items ->
+                    viewerState = ViewerState(items, idx)
+                }
+            },
+            onChannelClick = { post -> vm.setChannelFilter(post.chatId) },
+            onBookmarkClick = { post -> vm.toggleBookmark(post) },
+            onShareClick = { post -> PostActions.share(context, post) },
+            onOpenClick = { post -> PostActions.openInTelegram(context, post) },
+            isBookmarked = { post -> post.bookmarkKey() in bookmarkedKeys },
+        )
+    }
 
     Scaffold(
         modifier = Modifier
@@ -57,10 +86,23 @@ fun TimelineScreen(repo: PostsRepository) {
         topBar = {
             LargeTopAppBar(
                 title = {
-                    Text(
-                        text = "Стрічка",
-                        style = MaterialTheme.typography.displaySmall,
-                    )
+                    Column {
+                        Text(
+                            text = "Стрічка",
+                            style = MaterialTheme.typography.displaySmall,
+                        )
+                        if (channelFilter != null) {
+                            val title = posts.firstOrNull { it.chatId == channelFilter }?.channelTitle ?: ""
+                            Text(
+                                text = "Канал: $title  ✕",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .padding(top = 4.dp)
+                                    .clickable { vm.setChannelFilter(null) },
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.largeTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
@@ -83,7 +125,7 @@ fun TimelineScreen(repo: PostsRepository) {
                 FilterChipsRow(selected = filter, onSelected = { filter = it })
 
                 if (filtered.isEmpty() && !refreshing) {
-                    EmptyState()
+                    EmptyState(filter)
                 } else {
                     LazyColumn(
                         state = listState,
@@ -92,13 +134,30 @@ fun TimelineScreen(repo: PostsRepository) {
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         items(items = filtered, key = { "${it.chatId}_${it.id}" }) { post ->
-                            PostCard(post = post)
+                            PostCard(post = post, interactions = interactions)
                         }
                     }
                 }
             }
         }
     }
+
+    viewerState?.let { state ->
+        FullScreenMediaViewer(
+            items = state.items,
+            initialIndex = state.index,
+            onDismiss = { viewerState = null },
+        )
+    }
+}
+
+private data class ViewerState(val items: List<AlbumItem>, val index: Int)
+
+private fun resolveAlbumItems(post: TimelinePost): List<AlbumItem>? = when (val c = post.content) {
+    is PostContent.PhotoAlbum -> c.items.takeIf { it.isNotEmpty() }
+    is PostContent.Video -> listOf(AlbumItem.Video(c.media, c.durationSec, c.playbackFileId))
+    is PostContent.Animation -> listOf(AlbumItem.Animation(c.media, c.playbackFileId))
+    else -> null
 }
 
 @Composable
@@ -164,7 +223,7 @@ private fun TelreadNavigationBar() {
 }
 
 @Composable
-private fun EmptyState() {
+private fun EmptyState(filter: FeedFilter) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -179,7 +238,7 @@ private fun EmptyState() {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Outlined.Forum,
+                imageVector = if (filter == FeedFilter.Saved) Icons.Outlined.BookmarkBorder else Icons.Outlined.Forum,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(48.dp),
@@ -187,13 +246,16 @@ private fun EmptyState() {
         }
         Spacer(Modifier.height(20.dp))
         Text(
-            text = "Поки тут порожньо",
+            text = if (filter == FeedFilter.Saved) "Нема збережених постів" else "Поки тут порожньо",
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Підпишіться на канали в Telegram — і вони з'являться у стрічці.",
+            text = if (filter == FeedFilter.Saved)
+                "Натискайте на закладку поруч із постом, щоб зберегти на потім."
+            else
+                "Підпишіться на канали в Telegram — і вони з'являться у стрічці.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -201,7 +263,11 @@ private fun EmptyState() {
     }
 }
 
-private fun applyFilter(posts: List<TimelinePost>, filter: FeedFilter): List<TimelinePost> = when (filter) {
+private fun applyFilter(
+    posts: List<TimelinePost>,
+    filter: FeedFilter,
+    bookmarks: Set<String>,
+): List<TimelinePost> = when (filter) {
     FeedFilter.All -> posts
     FeedFilter.Text -> posts.filter { it.content is PostContent.Text }
     FeedFilter.Media -> posts.filter {
@@ -213,4 +279,5 @@ private fun applyFilter(posts: List<TimelinePost>, filter: FeedFilter): List<Tim
         val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
         posts.filter { it.date >= cutoff }
     }
+    FeedFilter.Saved -> posts.filter { it.bookmarkKey() in bookmarks }
 }

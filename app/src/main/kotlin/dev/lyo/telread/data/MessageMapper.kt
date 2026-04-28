@@ -43,12 +43,14 @@ internal object MessageMapper {
                 caption = mapFormattedText(content.caption),
             )
             is TdApi.MessageVideo -> PostContent.Video(
-                media = content.video.toMedia(),
+                media = content.video.toThumbMedia(),
+                playbackFileId = content.video.video.id,
                 caption = mapFormattedText(content.caption),
                 durationSec = content.video.duration,
             )
             is TdApi.MessageAnimation -> PostContent.Animation(
-                media = content.animation.toMedia(),
+                media = content.animation.toThumbMedia(),
+                playbackFileId = content.animation.animation.id,
                 caption = mapFormattedText(content.caption),
             )
             is TdApi.MessageDocument -> PostContent.Document(
@@ -221,14 +223,14 @@ private fun TdApi.Photo.toMedia(): TdMedia {
     )
 }
 
-private fun TdApi.Video.toMedia(): TdMedia = TdMedia(
+private fun TdApi.Video.toThumbMedia(): TdMedia = TdMedia(
     fileId = thumbnail?.file?.id ?: video.id,
     width = width,
     height = height,
     minithumbBytes = minithumbnail?.data,
 )
 
-private fun TdApi.Animation.toMedia(): TdMedia = TdMedia(
+private fun TdApi.Animation.toThumbMedia(): TdMedia = TdMedia(
     fileId = thumbnail?.file?.id ?: animation.id,
     width = width,
     height = height,

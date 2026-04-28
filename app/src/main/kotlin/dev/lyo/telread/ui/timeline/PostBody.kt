@@ -19,19 +19,28 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.telread.data.AlbumItem
 import dev.lyo.telread.data.PostContent
+import androidx.compose.foundation.clickable
 import dev.lyo.telread.data.WebPreview
 import dev.lyo.telread.ui.media.TdMediaImage
+import dev.lyo.telread.ui.media.TdVideoPlayer
 import dev.lyo.telread.ui.text.rememberAnnotatedString
 
-/** Dispatch a [PostContent] to the right specialised composable. */
+/**
+ * Render the body of a post. [onMediaClick] fires with the resolved media list and the
+ * index the user tapped, so callers can open a full-screen viewer with the correct page.
+ */
 @Composable
-fun PostBody(content: PostContent, modifier: Modifier = Modifier) {
+fun PostBody(
+    content: PostContent,
+    modifier: Modifier = Modifier,
+    onMediaClick: (List<AlbumItem>, Int) -> Unit = { _, _ -> },
+) {
     Column(modifier = modifier) {
         when (content) {
             is PostContent.Text -> TextBlock(content)
-            is PostContent.PhotoAlbum -> AlbumBlock(content)
-            is PostContent.Video -> VideoBlock(content)
-            is PostContent.Animation -> AnimationBlock(content)
+            is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick)
+            is PostContent.Video -> VideoBlock(content, onMediaClick)
+            is PostContent.Animation -> AnimationBlock(content, onMediaClick)
             is PostContent.Document -> DocumentBlock(content)
             is PostContent.Audio -> AudioBlock(content)
             is PostContent.VoiceNote -> VoiceNoteBlock(content)
@@ -64,14 +73,14 @@ private fun TextBlock(content: PostContent.Text) {
 }
 
 @Composable
-private fun AlbumBlock(content: PostContent.PhotoAlbum) {
+private fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<AlbumItem>, Int) -> Unit) {
     val items = content.items
     if (items.isEmpty()) return
 
     if (items.size == 1) {
-        SingleMedia(items.first())
+        SingleMedia(items.first(), onClick = { onMediaClick(items, 0) })
     } else {
-        AlbumPager(items)
+        AlbumPager(items, onItemClick = { idx -> onMediaClick(items, idx) })
     }
 
     if (content.caption.text.isNotBlank()) {
@@ -86,21 +95,26 @@ private fun AlbumBlock(content: PostContent.PhotoAlbum) {
 }
 
 @Composable
-private fun SingleMedia(item: AlbumItem) {
+private fun SingleMedia(item: AlbumItem, onClick: () -> Unit) {
     val ratio = mediaAspectRatio(item.media.width, item.media.height)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(ratio)
-            .clip(RoundedCornerShape(20.dp)),
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick),
     ) {
         TdMediaImage(media = item.media, contentDescription = null, modifier = Modifier.fillMaxSize())
-        if (item is AlbumItem.Video) PlayBadge(item.durationSec)
+        when (item) {
+            is AlbumItem.Video -> PlayBadge(item.durationSec)
+            is AlbumItem.Animation -> DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
+            is AlbumItem.Photo -> Unit
+        }
     }
 }
 
 @Composable
-private fun AlbumPager(items: List<AlbumItem>) {
+private fun AlbumPager(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
     val state = rememberPagerState(pageCount = { items.size })
     val ratio = items.firstOrNull()?.let { mediaAspectRatio(it.media.width, it.media.height) } ?: (16f / 10f)
 
@@ -112,9 +126,17 @@ private fun AlbumPager(items: List<AlbumItem>) {
     ) {
         HorizontalPager(state = state, modifier = Modifier.fillMaxSize()) { page ->
             val item = items[page]
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable { onItemClick(page) },
+            ) {
                 TdMediaImage(media = item.media, contentDescription = null, modifier = Modifier.fillMaxSize())
-                if (item is AlbumItem.Video) PlayBadge(item.durationSec)
+                when (item) {
+                    is AlbumItem.Video -> PlayBadge(item.durationSec)
+                    is AlbumItem.Animation -> DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
+                    is AlbumItem.Photo -> Unit
+                }
             }
         }
         AlbumIndicator(
@@ -149,17 +171,10 @@ private fun AlbumIndicator(current: Int, total: Int, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun VideoBlock(content: PostContent.Video) {
-    val ratio = mediaAspectRatio(content.media.width, content.media.height)
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(ratio)
-            .clip(RoundedCornerShape(20.dp)),
-    ) {
-        TdMediaImage(media = content.media, contentDescription = null, modifier = Modifier.fillMaxSize())
-        PlayBadge(content.durationSec)
-    }
+private fun VideoBlock(content: PostContent.Video, onMediaClick: (List<AlbumItem>, Int) -> Unit) {
+    val items = listOf(AlbumItem.Video(content.media, content.durationSec, content.playbackFileId))
+    SingleMedia(items.first(), onClick = { onMediaClick(items, 0) })
+
     if (content.caption.text.isNotBlank()) {
         Spacer(Modifier.height(12.dp))
         Text(
@@ -172,15 +187,27 @@ private fun VideoBlock(content: PostContent.Video) {
 }
 
 @Composable
-private fun AnimationBlock(content: PostContent.Animation) {
+private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<AlbumItem>, Int) -> Unit) {
+    // Inline auto-loop playback: Telegram animations are silent MP4s, so we drive them via
+    // ExoPlayer (Coil cannot decode MP4). Tap escalates to full-screen.
     val ratio = mediaAspectRatio(content.media.width, content.media.height)
+    val items = listOf(AlbumItem.Animation(content.media, content.playbackFileId))
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(ratio)
-            .clip(RoundedCornerShape(20.dp)),
+            .clip(RoundedCornerShape(20.dp))
+            .clickable { onMediaClick(items, 0) },
     ) {
         TdMediaImage(media = content.media, contentDescription = null, modifier = Modifier.fillMaxSize())
+        TdVideoPlayer(
+            fileId = content.playbackFileId,
+            autoPlay = true,
+            autoLoop = true,
+            showControls = false,
+            muted = true,
+            modifier = Modifier.fillMaxSize(),
+        )
         DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
     }
     if (content.caption.text.isNotBlank()) {

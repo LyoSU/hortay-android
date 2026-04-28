@@ -25,6 +25,7 @@ sealed interface PostContent {
 
     data class Video(
         val media: TdMedia,
+        val playbackFileId: Int,
         val caption: FormattedText,
         val durationSec: Int,
     ) : PostContent {
@@ -33,6 +34,7 @@ sealed interface PostContent {
 
     data class Animation(
         val media: TdMedia,
+        val playbackFileId: Int,
         val caption: FormattedText,
     ) : PostContent {
         override val captionPlain: String get() = caption.text
@@ -107,18 +109,34 @@ sealed interface PostContent {
     ) : PostContent
 }
 
-/** A single item inside a media album — either a photo or a video. */
+/** A single item inside a media album — either a photo, video or animation. */
 sealed interface AlbumItem {
     val media: TdMedia
+
     data class Photo(override val media: TdMedia) : AlbumItem
-    data class Video(override val media: TdMedia, val durationSec: Int) : AlbumItem
+
+    data class Video(
+        override val media: TdMedia,
+        val durationSec: Int,
+        val playbackFileId: Int,
+    ) : AlbumItem
+
+    data class Animation(
+        override val media: TdMedia,
+        val playbackFileId: Int,
+    ) : AlbumItem
 }
 
+/**
+ * Reference to a single Telegram file rendered in the UI.
+ *
+ *   • [fileId]: the asset shown as the thumbnail / preview frame in the feed.
+ *   • [minithumbBytes]: instant inline blur (~150B base64 JPEG) before download completes.
+ */
 data class TdMedia(
     val fileId: Int,
     val width: Int,
     val height: Int,
-    /** Inline base64 JPEG preview (~150 bytes) shown instantly while the full file downloads. */
     val minithumbBytes: ByteArray? = null,
 ) {
     override fun equals(other: Any?): Boolean = other is TdMedia && other.fileId == fileId

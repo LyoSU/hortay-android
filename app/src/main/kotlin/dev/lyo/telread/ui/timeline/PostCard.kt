@@ -1,13 +1,19 @@
 package dev.lyo.telread.ui.timeline
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,7 +28,10 @@ import java.text.DateFormat
 import java.util.Date
 
 @Composable
-fun PostCard(post: TimelinePost) {
+fun PostCard(
+    post: TimelinePost,
+    interactions: PostInteractions = PostInteractions.Noop,
+) {
     Card(
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
@@ -33,7 +42,7 @@ fun PostCard(post: TimelinePost) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            HeaderRow(post)
+            HeaderRow(post, onChannelClick = { interactions.onChannelClick(post) })
 
             post.forwardOrigin?.let {
                 Spacer(Modifier.height(10.dp))
@@ -46,17 +55,25 @@ fun PostCard(post: TimelinePost) {
             }
 
             Spacer(Modifier.height(12.dp))
-            PostBody(content = post.content)
+            PostBody(
+                content = post.content,
+                onMediaClick = { _, idx -> interactions.onMediaClick(post, idx) },
+            )
 
             Spacer(Modifier.height(14.dp))
-            ActionRow(post)
+            ActionRow(post, interactions)
         }
     }
 }
 
 @Composable
-private fun HeaderRow(post: TimelinePost) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun HeaderRow(post: TimelinePost, onChannelClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onChannelClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Avatar(post)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -197,7 +214,10 @@ private fun ReplyBlock(reply: ReplyPreview) {
 }
 
 @Composable
-private fun ActionRow(post: TimelinePost) {
+private fun ActionRow(post: TimelinePost, interactions: PostInteractions) {
+    val isBookmarked = interactions.isBookmarked(post)
+    var menuOpen by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -212,19 +232,39 @@ private fun ActionRow(post: TimelinePost) {
             StatPill(Icons.Outlined.ChatBubbleOutline, formatViews(post.commentCount))
         }
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = {}) {
+
+        IconButton(onClick = { interactions.onBookmarkClick(post) }) {
             Icon(
-                Icons.Outlined.BookmarkBorder,
-                contentDescription = "save",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                contentDescription = if (isBookmarked) "unsave" else "save",
+                tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        IconButton(onClick = {}) {
+        IconButton(onClick = { interactions.onShareClick(post) }) {
             Icon(
                 Icons.Outlined.IosShare,
                 contentDescription = "share",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        Box {
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(
+                    Icons.Outlined.MoreHoriz,
+                    contentDescription = "more",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Відкрити в Telegram") },
+                    onClick = {
+                        menuOpen = false
+                        interactions.onOpenClick(post)
+                    },
+                    leadingIcon = { Icon(Icons.Outlined.OpenInNew, contentDescription = null) },
+                )
+            }
         }
     }
 }

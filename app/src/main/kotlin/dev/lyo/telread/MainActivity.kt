@@ -32,7 +32,10 @@ class MainActivity : ComponentActivity() {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val auth by graph.tdClient.authStage.collectAsStateWithLifecycle()
                         when (auth) {
-                            AuthStage.Ready -> TimelineScreen(repo = graph.postsRepository)
+                            AuthStage.Ready -> TimelineScreen(
+                                repo = graph.postsRepository,
+                                bookmarks = graph.bookmarkStore,
+                            )
                             else -> AuthScreen(client = graph.tdClient, stage = auth)
                         }
                     }
