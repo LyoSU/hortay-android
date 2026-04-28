@@ -229,7 +229,11 @@ private fun ActionRow(post: TimelinePost, interactions: PostInteractions) {
         }
         if (post.commentCount > 0) {
             Spacer(Modifier.width(12.dp))
-            StatPill(Icons.Outlined.ChatBubbleOutline, formatViews(post.commentCount))
+            StatPill(
+                icon = Icons.Outlined.ChatBubbleOutline,
+                text = formatViews(post.commentCount),
+                onClick = { interactions.onCommentsClick(post) },
+            )
         }
         Spacer(Modifier.weight(1f))
 
@@ -274,8 +278,17 @@ private fun StatPill(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     text: String,
     tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    onClick: (() -> Unit)? = null,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = if (onClick != null) {
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 4.dp, vertical = 2.dp)
+        } else Modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Icon(
             imageVector = icon,
             contentDescription = null,

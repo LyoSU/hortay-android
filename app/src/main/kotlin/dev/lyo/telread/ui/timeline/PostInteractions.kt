@@ -14,6 +14,7 @@ class PostInteractions(
     val onBookmarkClick: (post: TimelinePost) -> Unit = {},
     val onShareClick: (post: TimelinePost) -> Unit = {},
     val onOpenClick: (post: TimelinePost) -> Unit = {},
+    val onCommentsClick: (post: TimelinePost) -> Unit = {},
     val isBookmarked: (post: TimelinePost) -> Boolean = { false },
 ) {
     companion object {

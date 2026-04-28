@@ -4,10 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,7 +44,13 @@ private enum class FeedFilter(val label: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TimelineScreen(repo: PostsRepository, bookmarks: BookmarkStore) {
+fun TimelineScreen(
+    repo: PostsRepository,
+    bookmarks: BookmarkStore,
+    contentPadding: PaddingValues,
+    showOnlyBookmarked: Boolean,
+    onOpenComments: (TimelinePost) -> Unit = {},
+) {
     val vm: TimelineViewModel = viewModel(
         factory = remember(repo, bookmarks) {
             viewModelFactory { initializer { TimelineViewModel(repo, bookmarks) } }
@@ -63,19 +69,21 @@ fun TimelineScreen(repo: PostsRepository, bookmarks: BookmarkStore) {
     var filter by rememberSaveable { mutableStateOf(FeedFilter.All) }
     var viewerState by remember { mutableStateOf<ViewerState?>(null) }
 
-    val filtered = remember(posts, filter) { applyFilter(posts, filter) }
+    val visiblePosts = remember(posts, filter, bookmarkedKeys, showOnlyBookmarked) {
+        val base = if (showOnlyBookmarked) posts.filter { it.bookmarkKey() in bookmarkedKeys } else posts
+        applyFilter(base, filter)
+    }
 
     val interactions = remember(bookmarkedKeys) {
         PostInteractions(
             onMediaClick = { post, idx ->
-                resolveAlbumItems(post)?.let { items ->
-                    viewerState = ViewerState(items, idx)
-                }
+                resolveAlbumItems(post)?.let { items -> viewerState = ViewerState(items, idx) }
             },
             onChannelClick = { post -> vm.setChannelFilter(post.chatId) },
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
             onShareClick = { post -> PostActions.share(context, post) },
             onOpenClick = { post -> PostActions.openInTelegram(context, post) },
+            onCommentsClick = onOpenComments,
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedKeys },
         )
     }
@@ -89,11 +97,11 @@ fun TimelineScreen(repo: PostsRepository, bookmarks: BookmarkStore) {
                 title = {
                     Column {
                         Text(
-                            text = "Стрічка",
+                            text = if (showOnlyBookmarked) "Збережене" else "Стрічка",
                             style = MaterialTheme.typography.displaySmall,
                         )
                         if (channelFilter != null) {
-                            val title = posts.firstOrNull { it.chatId == channelFilter }?.channelTitle ?: ""
+                            val title = posts.firstOrNull { it.chatId == channelFilter }?.channelTitle.orEmpty()
                             Text(
                                 text = "Канал: $title  ✕",
                                 style = MaterialTheme.typography.labelLarge,
@@ -112,7 +120,6 @@ fun TimelineScreen(repo: PostsRepository, bookmarks: BookmarkStore) {
                 scrollBehavior = scrollBehavior,
             )
         },
-        bottomBar = { TelreadNavigationBar() },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         PullToRefreshBox(
@@ -120,21 +127,28 @@ fun TimelineScreen(repo: PostsRepository, bookmarks: BookmarkStore) {
             onRefresh = vm::refresh,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(top = padding.calculateTopPadding()),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                FilterChipsRow(selected = filter, onSelected = { filter = it })
+                if (!showOnlyBookmarked) {
+                    FilterChipsRow(selected = filter, onSelected = { filter = it })
+                }
 
-                if (filtered.isEmpty() && !refreshing) {
-                    EmptyState()
+                if (visiblePosts.isEmpty() && !refreshing) {
+                    EmptyState(showOnlyBookmarked)
                 } else {
                     LazyColumn(
                         state = listState,
                         verticalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 12.dp,
+                            bottom = contentPadding.calculateBottomPadding() + 12.dp,
+                        ),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        items(items = filtered, key = { "${it.chatId}_${it.id}" }) { post ->
+                        items(items = visiblePosts, key = { "${it.chatId}_${it.id}" }) { post ->
                             PostCard(post = post, interactions = interactions)
                         }
                     }
@@ -188,44 +202,7 @@ private fun FilterChipsRow(selected: FeedFilter, onSelected: (FeedFilter) -> Uni
 }
 
 @Composable
-private fun TelreadNavigationBar() {
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 0.dp,
-    ) {
-        NavigationBarItem(
-            selected = true,
-            onClick = {},
-            icon = { Icon(Icons.Outlined.Home, contentDescription = null) },
-            label = { Text("Стрічка") },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-            ),
-        )
-        NavigationBarItem(
-            selected = false,
-            onClick = {},
-            icon = { Icon(Icons.Outlined.Forum, contentDescription = null) },
-            label = { Text("Канали") },
-        )
-        NavigationBarItem(
-            selected = false,
-            onClick = {},
-            icon = { Icon(Icons.Outlined.Bookmark, contentDescription = null) },
-            label = { Text("Збережене") },
-        )
-        NavigationBarItem(
-            selected = false,
-            onClick = {},
-            icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
-            label = { Text("Профіль") },
-        )
-    }
-}
-
-@Composable
-private fun EmptyState() {
+private fun EmptyState(showingSaved: Boolean) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -240,7 +217,7 @@ private fun EmptyState() {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Outlined.Forum,
+                imageVector = if (showingSaved) Icons.Outlined.BookmarkBorder else Icons.Outlined.Forum,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(48.dp),
@@ -248,13 +225,16 @@ private fun EmptyState() {
         }
         Spacer(Modifier.height(20.dp))
         Text(
-            text = "Поки тут порожньо",
+            text = if (showingSaved) "Нема збережених постів" else "Поки тут порожньо",
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Підпишіться на канали в Telegram — і вони з'являться у стрічці.",
+            text = if (showingSaved)
+                "Натискайте на закладку поруч із постом, щоб зберегти на потім."
+            else
+                "Підпишіться на канали в Telegram — і вони з'являться у стрічці.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

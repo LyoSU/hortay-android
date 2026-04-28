@@ -2,6 +2,7 @@ package dev.lyo.telread
 
 import android.content.Context
 import dev.lyo.telread.data.BookmarkStore
+import dev.lyo.telread.data.CommentsRepository
 import dev.lyo.telread.data.MediaCache
 import dev.lyo.telread.data.PostsRepository
 import dev.lyo.telread.data.SettingsStore
@@ -26,6 +27,8 @@ class AppGraph(context: Context) {
     val mediaCache: MediaCache = MediaCache(tdClient, appScope)
 
     val postsRepository: PostsRepository = PostsRepository(tdClient, appScope)
+
+    val commentsRepository: CommentsRepository = CommentsRepository(tdClient)
 
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 

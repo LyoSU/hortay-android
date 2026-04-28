@@ -40,9 +40,23 @@ class PostsRepository(
 
     init {
         // Live feed: any new channel post arrives via UpdateNewMessage and is folded in.
-        td.updates
-            .filterIsInstance<TdApi.UpdateNewMessage>()
+        td.updates.filterIsInstance<TdApi.UpdateNewMessage>()
             .onEach { update -> handleNewMessage(update.message) }
+            .launchIn(scope)
+
+        // Server-side counter sync: views, reactions, comment counts.
+        td.updates.filterIsInstance<TdApi.UpdateMessageInteractionInfo>()
+            .onEach { update -> handleInteractionInfo(update) }
+            .launchIn(scope)
+
+        // Edits surface as a new editDate; we just stamp it onto the post.
+        td.updates.filterIsInstance<TdApi.UpdateMessageEdited>()
+            .onEach { update -> handleEdited(update) }
+            .launchIn(scope)
+
+        // Mods can delete posts; drop them from the timeline immediately.
+        td.updates.filterIsInstance<TdApi.UpdateDeleteMessages>()
+            .onEach { update -> handleDeleted(update) }
             .launchIn(scope)
     }
 
@@ -68,6 +82,46 @@ class PostsRepository(
                 PostFilterStrategy.apply(merged).take(MAX_FEED_SIZE)
             }
         }
+    }
+
+    private fun handleInteractionInfo(update: TdApi.UpdateMessageInteractionInfo) {
+        val info = update.interactionInfo
+        _posts.update { current ->
+            current.map { post ->
+                if (post.chatId != update.chatId || post.id != update.messageId) return@map post
+                post.copy(
+                    views = info?.viewCount ?: post.views,
+                    reactions = info?.reactions?.let(::reactionsFromUpdate) ?: post.reactions,
+                    commentCount = info?.replyInfo?.replyCount ?: post.commentCount,
+                )
+            }
+        }
+    }
+
+    private fun handleEdited(update: TdApi.UpdateMessageEdited) {
+        _posts.update { current ->
+            current.map { post ->
+                if (post.chatId == update.chatId && post.id == update.messageId) {
+                    post.copy(editDate = update.editDate.toLong() * 1000L)
+                } else post
+            }
+        }
+    }
+
+    private fun handleDeleted(update: TdApi.UpdateDeleteMessages) {
+        if (!update.isPermanent) return
+        val ids = update.messageIds.toHashSet()
+        _posts.update { current ->
+            current.filterNot { it.chatId == update.chatId && it.id in ids }
+        }
+    }
+
+    private fun reactionsFromUpdate(reactions: TdApi.MessageReactions): Reactions {
+        val list = reactions.reactions.orEmpty()
+        if (list.isEmpty()) return Reactions(0, emptyList())
+        val total = list.sumOf { it.totalCount }
+        val emojis = list.take(3).mapNotNull { (it.type as? TdApi.ReactionTypeEmoji)?.emoji }
+        return Reactions(total, emojis)
     }
 
     private suspend fun refreshLocked(limitPerChannel: Int) {

@@ -13,9 +13,9 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.telread.data.AuthStage
 import dev.lyo.telread.ui.auth.AuthScreen
+import dev.lyo.telread.ui.main.MainScaffold
 import dev.lyo.telread.ui.media.LocalMediaCache
 import dev.lyo.telread.ui.theme.TelreadTheme
-import dev.lyo.telread.ui.timeline.TimelineScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -32,10 +32,7 @@ class MainActivity : ComponentActivity() {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val auth by graph.tdClient.authStage.collectAsStateWithLifecycle()
                         when (auth) {
-                            AuthStage.Ready -> TimelineScreen(
-                                repo = graph.postsRepository,
-                                bookmarks = graph.bookmarkStore,
-                            )
+                            AuthStage.Ready -> MainScaffold(graph = graph)
                             else -> AuthScreen(client = graph.tdClient, stage = auth)
                         }
                     }

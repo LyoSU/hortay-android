@@ -107,6 +107,10 @@ class TdClient private constructor(
             .onFailure { _authStage.value = AuthStage.Error(it.message ?: "password rejected") }
     }
 
+    suspend fun logOut() {
+        runCatching { send(TdApi.LogOut()) }
+    }
+
     /** Suspend-style wrapper around [Client.send]. */
     suspend fun <T : TdApi.Object> send(query: TdApi.Function<T>): T =
         suspendCancellableCoroutine { cont ->
