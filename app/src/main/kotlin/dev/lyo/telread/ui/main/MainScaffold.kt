@@ -20,19 +20,20 @@ import dev.lyo.telread.ui.timeline.TimelineScreen
 import kotlinx.coroutines.launch
 
 /**
- * Top-level container that owns the floating bottom navigation and dispatches between the
- * four primary surfaces: feed, channels, saved, profile. State lives here so individual
- * screens stay focused on their own concerns.
+ * Top-level container that owns nav-tab state, the global channel filter and the comments
+ * overlay, then dispatches the four primary surfaces.
  */
 @Composable
 fun MainScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
+    var channelFilter by rememberSaveable { mutableStateOf<Long?>(null) }
     var commentsForPost by remember { mutableStateOf<TimelinePost?>(null) }
     val scope = rememberCoroutineScope()
 
-    // System back: dismiss overlay → return to Feed tab → finally let the system close the app.
+    // Back priority: dismiss overlay → clear channel filter → return to Feed → system close.
     BackHandler(enabled = commentsForPost != null) { commentsForPost = null }
-    BackHandler(enabled = commentsForPost == null && selectedTab != NavTab.Feed) {
+    BackHandler(enabled = commentsForPost == null && channelFilter != null) { channelFilter = null }
+    BackHandler(enabled = commentsForPost == null && channelFilter == null && selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
     }
 
@@ -41,7 +42,10 @@ fun MainScaffold(graph: AppGraph) {
         bottomBar = {
             FloatingNavBar(
                 selected = selectedTab,
-                onSelect = { selectedTab = it },
+                onSelect = { tab ->
+                    if (tab == selectedTab && tab == NavTab.Feed) channelFilter = null
+                    selectedTab = tab
+                },
             )
         },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -58,18 +62,32 @@ fun MainScaffold(graph: AppGraph) {
                     bookmarks = graph.bookmarkStore,
                     contentPadding = padding,
                     showOnlyBookmarked = false,
+                    channelFilter = channelFilter,
+                    onChannelFilterChange = { channelFilter = it },
                     onOpenComments = { commentsForPost = it },
                 )
                 NavTab.Channels -> ChannelsScreen(
                     repo = graph.postsRepository,
                     contentPadding = padding,
-                    onChannelClick = { selectedTab = NavTab.Feed },
+                    onChannelClick = { chatId ->
+                        channelFilter = chatId
+                        selectedTab = NavTab.Feed
+                    },
                 )
                 NavTab.Saved -> TimelineScreen(
                     repo = graph.postsRepository,
                     bookmarks = graph.bookmarkStore,
                     contentPadding = padding,
                     showOnlyBookmarked = true,
+                    channelFilter = null,
+                    onChannelFilterChange = {
+                        // Tapping a channel from Saved jumps the user back to the live feed
+                        // pre-filtered to that channel — same UX as ChannelsScreen.
+                        if (it != null) {
+                            channelFilter = it
+                            selectedTab = NavTab.Feed
+                        }
+                    },
                     onOpenComments = { commentsForPost = it },
                 )
                 NavTab.Profile -> SettingsScreen(

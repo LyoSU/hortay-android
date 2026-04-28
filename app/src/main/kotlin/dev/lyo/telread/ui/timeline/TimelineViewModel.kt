@@ -14,15 +14,8 @@ class TimelineViewModel(
     private val bookmarks: BookmarkStore,
 ) : ViewModel() {
 
-    private val _channelFilter = MutableStateFlow<Long?>(null)
-    val channelFilter: StateFlow<Long?> = _channelFilter.asStateFlow()
-
-    val posts: StateFlow<List<TimelinePost>> = combine(
-        repo.posts,
-        _channelFilter,
-    ) { all, channelId ->
-        if (channelId == null) all else all.filter { it.chatId == channelId }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+    val posts: StateFlow<List<TimelinePost>> = repo.posts
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     val bookmarkedKeys: StateFlow<Set<String>> = bookmarks.bookmarks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())
@@ -43,16 +36,9 @@ class TimelineViewModel(
         }
     }
 
-    fun setChannelFilter(chatId: Long?) {
-        _channelFilter.value = chatId
-    }
-
     fun toggleBookmark(post: TimelinePost) {
         viewModelScope.launch { bookmarks.toggle(post) }
     }
-
-    fun isBookmarked(snapshot: Set<String>, post: TimelinePost): Boolean =
-        post.bookmarkKey() in snapshot
 
     private companion object {
         const val STOP_TIMEOUT_MS = 5_000L

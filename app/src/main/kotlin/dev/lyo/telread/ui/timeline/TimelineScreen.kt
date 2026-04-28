@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -33,7 +35,9 @@ import dev.lyo.telread.data.PostsRepository
 import dev.lyo.telread.data.TimelinePost
 import dev.lyo.telread.data.bookmarkKey
 import dev.lyo.telread.ui.actions.PostActions
+import dev.lyo.telread.ui.main.BrandRow
 import dev.lyo.telread.ui.media.FullScreenMediaViewer
+import kotlinx.coroutines.launch
 
 private enum class FeedFilter(val label: String) {
     All("Усе"),
@@ -49,6 +53,8 @@ fun TimelineScreen(
     bookmarks: BookmarkStore,
     contentPadding: PaddingValues,
     showOnlyBookmarked: Boolean,
+    channelFilter: Long?,
+    onChannelFilterChange: (Long?) -> Unit,
     onOpenComments: (TimelinePost) -> Unit = {},
 ) {
     val vm: TimelineViewModel = viewModel(
@@ -57,11 +63,11 @@ fun TimelineScreen(
         },
     )
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val posts by vm.posts.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val bookmarkedKeys by vm.bookmarkedKeys.collectAsStateWithLifecycle()
-    val channelFilter by vm.channelFilter.collectAsStateWithLifecycle()
 
     val listState = rememberLazyListState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -69,17 +75,27 @@ fun TimelineScreen(
     var filter by rememberSaveable { mutableStateOf(FeedFilter.All) }
     var viewerState by remember { mutableStateOf<ViewerState?>(null) }
 
-    val visiblePosts = remember(posts, filter, bookmarkedKeys, showOnlyBookmarked) {
-        val base = if (showOnlyBookmarked) posts.filter { it.bookmarkKey() in bookmarkedKeys } else posts
+    val visiblePosts = remember(posts, filter, bookmarkedKeys, channelFilter, showOnlyBookmarked) {
+        val base = buildList {
+            posts.forEach { p ->
+                if (showOnlyBookmarked && p.bookmarkKey() !in bookmarkedKeys) return@forEach
+                if (channelFilter != null && p.chatId != channelFilter) return@forEach
+                add(p)
+            }
+        }
         applyFilter(base, filter)
     }
 
-    val interactions = remember(bookmarkedKeys) {
+    val activeChannelTitle = remember(channelFilter, posts) {
+        channelFilter?.let { id -> posts.firstOrNull { it.chatId == id }?.channelTitle }
+    }
+
+    val interactions = remember(bookmarkedKeys, onChannelFilterChange, onOpenComments) {
         PostInteractions(
             onMediaClick = { post, idx ->
                 resolveAlbumItems(post)?.let { items -> viewerState = ViewerState(items, idx) }
             },
-            onChannelClick = { post -> vm.setChannelFilter(post.chatId) },
+            onChannelClick = { post -> onChannelFilterChange(post.chatId) },
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
             onShareClick = { post -> PostActions.share(context, post) },
             onOpenClick = { post -> PostActions.openInTelegram(context, post) },
@@ -93,30 +109,15 @@ fun TimelineScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = if (showOnlyBookmarked) "Збережене" else "Стрічка",
-                            style = MaterialTheme.typography.displaySmall,
-                        )
-                        if (channelFilter != null) {
-                            val title = posts.firstOrNull { it.chatId == channelFilter }?.channelTitle.orEmpty()
-                            Text(
-                                text = "Канал: $title  ✕",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .padding(top = 4.dp)
-                                    .clickable { vm.setChannelFilter(null) },
-                            )
-                        }
-                    }
+            TimelineTopBar(
+                showOnlyBookmarked = showOnlyBookmarked,
+                channelTitle = activeChannelTitle,
+                hasFilter = channelFilter != null,
+                onClearFilter = { onChannelFilterChange(null) },
+                onBrandTap = {
+                    vm.refresh()
+                    scope.launch { listState.animateScrollToItem(0) }
                 },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -130,7 +131,7 @@ fun TimelineScreen(
                 .padding(top = padding.calculateTopPadding()),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                if (!showOnlyBookmarked) {
+                if (!showOnlyBookmarked && channelFilter == null) {
                     FilterChipsRow(selected = filter, onSelected = { filter = it })
                 }
 
@@ -162,6 +163,60 @@ fun TimelineScreen(
             items = state.items,
             initialIndex = state.index,
             onDismiss = { viewerState = null },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TimelineTopBar(
+    showOnlyBookmarked: Boolean,
+    channelTitle: String?,
+    hasFilter: Boolean,
+    onClearFilter: () -> Unit,
+    onBrandTap: () -> Unit,
+    scrollBehavior: TopAppBarScrollBehavior,
+) {
+    val colors = TopAppBarDefaults.topAppBarColors(
+        containerColor = MaterialTheme.colorScheme.background,
+        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+    )
+    when {
+        hasFilter -> TopAppBar(
+            title = {
+                Text(
+                    text = channelTitle.orEmpty(),
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            navigationIcon = {
+                IconButton(onClick = onClearFilter) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "back")
+                }
+            },
+            colors = colors,
+            scrollBehavior = scrollBehavior,
+        )
+        showOnlyBookmarked -> TopAppBar(
+            title = {
+                Text(
+                    text = "Збережене",
+                    style = MaterialTheme.typography.headlineLarge,
+                )
+            },
+            colors = colors,
+            scrollBehavior = scrollBehavior,
+        )
+        else -> TopAppBar(
+            title = {
+                Box(modifier = Modifier.clickable(onClick = onBrandTap)) {
+                    BrandRow()
+                }
+            },
+            colors = colors,
+            scrollBehavior = scrollBehavior,
         )
     }
 }
