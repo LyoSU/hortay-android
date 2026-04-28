@@ -2,7 +2,9 @@ package dev.lyo.telread.ui.timeline
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -38,7 +40,6 @@ private enum class FeedFilter(val label: String) {
     Text("Текст"),
     Media("Медіа"),
     Today("Сьогодні"),
-    Saved("Збережене"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,7 +63,7 @@ fun TimelineScreen(repo: PostsRepository, bookmarks: BookmarkStore) {
     var filter by rememberSaveable { mutableStateOf(FeedFilter.All) }
     var viewerState by remember { mutableStateOf<ViewerState?>(null) }
 
-    val filtered = remember(posts, filter, bookmarkedKeys) { applyFilter(posts, filter, bookmarkedKeys) }
+    val filtered = remember(posts, filter) { applyFilter(posts, filter) }
 
     val interactions = remember(bookmarkedKeys) {
         PostInteractions(
@@ -125,7 +126,7 @@ fun TimelineScreen(repo: PostsRepository, bookmarks: BookmarkStore) {
                 FilterChipsRow(selected = filter, onSelected = { filter = it })
 
                 if (filtered.isEmpty() && !refreshing) {
-                    EmptyState(filter)
+                    EmptyState()
                 } else {
                     LazyColumn(
                         state = listState,
@@ -165,6 +166,7 @@ private fun FilterChipsRow(selected: FeedFilter, onSelected: (FeedFilter) -> Uni
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -223,7 +225,7 @@ private fun TelreadNavigationBar() {
 }
 
 @Composable
-private fun EmptyState(filter: FeedFilter) {
+private fun EmptyState() {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -238,7 +240,7 @@ private fun EmptyState(filter: FeedFilter) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = if (filter == FeedFilter.Saved) Icons.Outlined.BookmarkBorder else Icons.Outlined.Forum,
+                imageVector = Icons.Outlined.Forum,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(48.dp),
@@ -246,16 +248,13 @@ private fun EmptyState(filter: FeedFilter) {
         }
         Spacer(Modifier.height(20.dp))
         Text(
-            text = if (filter == FeedFilter.Saved) "Нема збережених постів" else "Поки тут порожньо",
+            text = "Поки тут порожньо",
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = if (filter == FeedFilter.Saved)
-                "Натискайте на закладку поруч із постом, щоб зберегти на потім."
-            else
-                "Підпишіться на канали в Telegram — і вони з'являться у стрічці.",
+            text = "Підпишіться на канали в Telegram — і вони з'являться у стрічці.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -266,7 +265,6 @@ private fun EmptyState(filter: FeedFilter) {
 private fun applyFilter(
     posts: List<TimelinePost>,
     filter: FeedFilter,
-    bookmarks: Set<String>,
 ): List<TimelinePost> = when (filter) {
     FeedFilter.All -> posts
     FeedFilter.Text -> posts.filter { it.content is PostContent.Text }
@@ -279,5 +277,4 @@ private fun applyFilter(
         val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
         posts.filter { it.date >= cutoff }
     }
-    FeedFilter.Saved -> posts.filter { it.bookmarkKey() in bookmarks }
 }
