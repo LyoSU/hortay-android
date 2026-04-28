@@ -90,10 +90,13 @@ fun TimelineScreen(
         listState.scrollToItem(0)
     }
 
-    // Tell TDLib the filtered channel is in focus while the user is here.
+    // Tell TDLib the filtered channel is in focus while the user is here, and eagerly pull
+    // a deeper slice of history so the filtered list is not just the few entries the global
+    // refresh fetched per channel.
     LaunchedEffect(channelFilter) {
         val id = channelFilter ?: return@LaunchedEffect
         repo.openChat(id)
+        repo.loadChannelHistory(id)
         try {
             kotlinx.coroutines.awaitCancellation()
         } finally {

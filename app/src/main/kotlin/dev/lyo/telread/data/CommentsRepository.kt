@@ -161,9 +161,9 @@ class CommentsRepository(private val td: TdClient) {
             chatId = msg.chatId,
             authorName = author.name,
             avatarFileId = author.avatarFileId,
-            text = textOf(msg.content),
+            content = MessageContentMapper.map(msg.content),
             date = msg.date.toLong() * 1000L,
-            reactions = reactionsFrom(msg.interactionInfo?.reactions),
+            reactions = MessageContentMapper.mapReactions(msg.interactionInfo?.reactions),
         )
     }
 
@@ -191,28 +191,6 @@ class CommentsRepository(private val td: TdClient) {
         val chat = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
             ?: return AuthorInfo("Канал", null)
         return AuthorInfo(name = chat.title.orEmpty().ifBlank { "Канал" }, avatarFileId = chat.photo?.small?.id)
-    }
-
-    private fun textOf(content: TdApi.MessageContent): FormattedText {
-        val text = when (content) {
-            is TdApi.MessageText -> content.text
-            is TdApi.MessagePhoto -> content.caption
-            is TdApi.MessageVideo -> content.caption
-            is TdApi.MessageAnimation -> content.caption
-            is TdApi.MessageDocument -> content.caption
-            is TdApi.MessageSticker -> null
-            else -> null
-        }
-        val plain = text?.text.orEmpty()
-        return if (plain.isBlank()) FormattedText.Empty else FormattedText.plain(plain)
-    }
-
-    private fun reactionsFrom(reactions: TdApi.MessageReactions?): Reactions {
-        val list = reactions?.reactions.orEmpty()
-        if (list.isEmpty()) return Reactions(0, emptyList())
-        val total = list.sumOf { it.totalCount }
-        val emojis = list.take(3).mapNotNull { (it.type as? TdApi.ReactionTypeEmoji)?.emoji }
-        return Reactions(total, emojis)
     }
 
     private data class AuthorInfo(val name: String, val avatarFileId: Int?)

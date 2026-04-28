@@ -59,6 +59,21 @@ class PostsRepository(
         td.updates.filterIsInstance<TdApi.UpdateDeleteMessages>()
             .onEach { update -> handleDeleted(update) }
             .launchIn(scope)
+
+        // Channel admins edit the body of a post — swap the rendered content in place.
+        td.updates.filterIsInstance<TdApi.UpdateMessageContent>()
+            .onEach { update -> handleContentChanged(update) }
+            .launchIn(scope)
+
+        // Channel renamed → all visible posts of that chat update their channelTitle.
+        td.updates.filterIsInstance<TdApi.UpdateChatTitle>()
+            .onEach { update -> handleChatTitle(update) }
+            .launchIn(scope)
+
+        // Channel avatar changed → all visible posts of that chat refresh avatarFileId.
+        td.updates.filterIsInstance<TdApi.UpdateChatPhoto>()
+            .onEach { update -> handleChatPhoto(update) }
+            .launchIn(scope)
     }
 
     suspend fun refresh(limitPerChannel: Int = 20): Result<Unit> = refreshMutex.withLock {
@@ -76,6 +91,25 @@ class PostsRepository(
         runCatching { td.send(TdApi.OpenChat(chatId)) }
             .onFailure { Log.w(TAG, "openChat($chatId) failed", it) }
     }
+
+    /**
+     * Loads up to [limit] additional history entries for [chatId] and folds them into the
+     * shared feed. Used when the user filters to a single channel — a global refresh only
+     * fetches a few latest posts per channel, so deep browsing one channel needs more.
+     */
+    suspend fun loadChannelHistory(chatId: Long, limit: Int = 80): Result<Unit> = runCatching {
+        val chat = chatCache[chatId] ?: td.send(TdApi.GetChat(chatId)).also { chatCache[chatId] = it }
+        if (!chat.isChannel()) return@runCatching
+
+        val history = td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limit, false))
+        val mapped = history.messages.orEmpty().map { mapper.toTimelinePost(it, chat) }
+
+        _posts.update { current ->
+            val seen = current.mapTo(mutableSetOf()) { it.chatId to it.id }
+            val merged = current + mapped.filter { (it.chatId to it.id) !in seen }
+            PostFilterStrategy.apply(merged).take(MAX_FEED_SIZE)
+        }
+    }.onFailure { Log.w(TAG, "loadChannelHistory($chatId) failed", it) }
 
     suspend fun closeChat(chatId: Long) {
         runCatching { td.send(TdApi.CloseChat(chatId)) }
@@ -149,6 +183,38 @@ class PostsRepository(
         val ids = update.messageIds.toHashSet()
         _posts.update { current ->
             current.filterNot { it.chatId == update.chatId && it.id in ids }
+        }
+    }
+
+    private fun handleContentChanged(update: TdApi.UpdateMessageContent) {
+        val newContent = MessageContentMapper.map(update.newContent)
+        _posts.update { current ->
+            current.map { post ->
+                if (post.chatId == update.chatId && post.id == update.messageId) {
+                    post.copy(content = newContent)
+                } else post
+            }
+        }
+    }
+
+    private fun handleChatTitle(update: TdApi.UpdateChatTitle) {
+        chatCache[update.chatId]?.let { it.title = update.title }
+        _posts.update { current ->
+            current.map { post ->
+                if (post.chatId == update.chatId) post.copy(channelTitle = update.title.orEmpty())
+                else post
+            }
+        }
+    }
+
+    private fun handleChatPhoto(update: TdApi.UpdateChatPhoto) {
+        chatCache[update.chatId]?.let { it.photo = update.photo }
+        val newAvatar = update.photo?.small?.id
+        _posts.update { current ->
+            current.map { post ->
+                if (post.chatId == update.chatId) post.copy(avatarFileId = newAvatar)
+                else post
+            }
         }
     }
 

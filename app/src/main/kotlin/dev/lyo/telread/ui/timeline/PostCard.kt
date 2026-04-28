@@ -1,5 +1,6 @@
 package dev.lyo.telread.ui.timeline
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -34,15 +35,20 @@ fun PostCard(
     interactions: PostInteractions = PostInteractions.Noop,
     clickable: Boolean = true,
 ) {
+    // We keep `enabled = true` regardless so Card does not apply the disabled-state
+    // tonal dimming (which makes text look washed out on top of an already-light surface).
     Card(
         onClick = { if (clickable) interactions.onPostClick(post) },
-        enabled = clickable,
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+        ),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {

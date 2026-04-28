@@ -10,7 +10,8 @@ data class Comment(
     val chatId: Long,
     val authorName: String,
     val avatarFileId: Int?,
-    val text: FormattedText,
+    /** Full content payload — same shape used for channel posts so any media type renders. */
+    val content: PostContent,
     val date: Long,
     val reactions: Reactions,
 )

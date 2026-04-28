@@ -25,7 +25,7 @@ import dev.lyo.telread.data.CommentsRepository
 import dev.lyo.telread.data.TdMedia
 import dev.lyo.telread.data.TimelinePost
 import dev.lyo.telread.ui.media.TdMediaImage
-import dev.lyo.telread.ui.text.rememberAnnotatedString
+import dev.lyo.telread.ui.timeline.PostBody
 import dev.lyo.telread.ui.timeline.PostCard
 import dev.lyo.telread.ui.timeline.PostInteractions
 import kotlinx.coroutines.NonCancellable
@@ -182,15 +182,9 @@ private fun CommentBubble(row: CommentRow, modifier: Modifier = Modifier) {
             }
         }
 
-        if (comment.text.text.isNotBlank()) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = rememberAnnotatedString(comment.text),
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 12,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Spacer(Modifier.height(8.dp))
+        // Same content renderer as posts — text + entities, media, polls, stickers, etc.
+        PostBody(content = comment.content)
 
         if (comment.reactions.totalCount > 0) {
             Spacer(Modifier.height(8.dp))
