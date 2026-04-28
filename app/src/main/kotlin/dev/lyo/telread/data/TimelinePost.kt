@@ -8,6 +8,9 @@ data class TimelinePost(
     val mediaAlbumId: Long,
     val channelTitle: String,
     val channelHandle: String?,
+    /** Inline JPEG (~40×40) from ChatPhotoInfo.minithumbnail.data — instant placeholder, no download. */
+    val avatarThumb: ByteArray?,
+    /** ChatPhotoInfo.small.id (160×160). Downloaded at [DownloadPriority.Avatar] — never blocks media. */
     val avatarFileId: Int?,
     val content: PostContent,
     val views: Int,

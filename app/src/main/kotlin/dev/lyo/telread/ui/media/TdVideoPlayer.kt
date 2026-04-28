@@ -40,7 +40,8 @@ fun TdVideoPlayer(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(fileId) { cache.ensureDownloaded(fileId) }
+    // Foreground priority — playing video should jump the queue ahead of any thumbs.
+    LaunchedEffect(fileId) { cache.ensure(fileId, dev.lyo.telread.data.DownloadPriority.Foreground) }
     val mediaState by cache.observe(fileId).collectAsStateWithLifecycle()
 
     val exoPlayer = remember(fileId) {

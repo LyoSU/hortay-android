@@ -17,9 +17,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.telread.data.PostsRepository
-import dev.lyo.telread.data.TdMedia
 import dev.lyo.telread.data.TimelinePost
-import dev.lyo.telread.ui.media.TdMediaImage
+import dev.lyo.telread.ui.media.TdAvatar
 
 /**
  * List of channels the user is subscribed to. Data is derived from the same feed as the
@@ -76,6 +75,7 @@ fun ChannelsScreen(
 private data class ChannelSummary(
     val chatId: Long,
     val title: String,
+    val avatarThumb: ByteArray?,
     val avatarFileId: Int?,
     val lastPostExcerpt: String,
     val lastPostDate: Long,
@@ -89,6 +89,7 @@ private fun aggregate(posts: List<TimelinePost>): List<ChannelSummary> = posts
         ChannelSummary(
             chatId = chatId,
             title = anchor.channelTitle,
+            avatarThumb = anchor.avatarThumb,
             avatarFileId = anchor.avatarFileId,
             lastPostExcerpt = anchor.content.captionPlain.take(120),
             lastPostDate = anchor.date,
@@ -108,28 +109,12 @@ private fun ChannelRow(channel: ChannelSummary, onClick: () -> Unit) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (channel.avatarFileId != null) {
-                TdMediaImage(
-                    media = TdMedia(channel.avatarFileId, 0, 0, null),
-                    contentDescription = channel.title,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Text(
-                    text = channel.title.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
+        TdAvatar(
+            name = channel.title,
+            thumb = channel.avatarThumb,
+            fileId = channel.avatarFileId,
+            size = 48.dp,
+        )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(

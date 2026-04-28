@@ -1,9 +1,13 @@
 package dev.lyo.telread.ui.timeline
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -15,20 +19,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.telread.data.ForwardOrigin
+import dev.lyo.telread.data.ReactionItem
 import dev.lyo.telread.data.ReplyPreview
 import dev.lyo.telread.data.TimelinePost
-import dev.lyo.telread.ui.media.TdMediaImage
+import dev.lyo.telread.ui.media.TdAvatar
+import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PostCard(
     post: TimelinePost,
@@ -36,10 +45,9 @@ fun PostCard(
     clickable: Boolean = true,
     expanded: Boolean = false,
 ) {
-    // We keep `enabled = true` regardless so Card does not apply the disabled-state
-    // tonal dimming (which makes text look washed out on top of an already-light surface).
+    var sheetOpen by remember { mutableStateOf(false) }
+
     Card(
-        onClick = { if (clickable) interactions.onPostClick(post) },
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -50,7 +58,13 @@ fun PostCard(
             width = 1.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
         ),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                enabled = clickable,
+                onClick = { interactions.onPostClick(post) },
+                onLongClick = { sheetOpen = true },
+            ),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             HeaderRow(post, onChannelClick = { interactions.onChannelClick(post) })
@@ -72,9 +86,19 @@ fun PostCard(
                 expanded = expanded,
             )
 
-            Spacer(Modifier.height(14.dp))
-            ActionRow(post, interactions)
+            if (post.views > 0 || post.commentCount != null || post.reactions.items.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                ActionRow(post, onCommentsClick = { interactions.onPostClick(post) })
+            }
         }
+    }
+
+    if (sheetOpen) {
+        PostActionSheet(
+            post = post,
+            interactions = interactions,
+            onDismiss = { sheetOpen = false },
+        )
     }
 }
 
@@ -130,28 +154,13 @@ private fun HeaderRow(post: TimelinePost, onChannelClick: () -> Unit) {
 
 @Composable
 private fun Avatar(post: TimelinePost) {
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(avatarBg(post)),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (post.avatarFileId != null) {
-            TdMediaImage(
-                media = dev.lyo.telread.data.TdMedia(post.avatarFileId, 0, 0, null),
-                contentDescription = post.channelTitle,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Text(
-                text = post.channelTitle.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-    }
+    TdAvatar(
+        name = post.channelTitle,
+        thumb = post.avatarThumb,
+        fileId = post.avatarFileId,
+        size = 44.dp,
+        background = avatarBg(post),
+    )
 }
 
 @Composable
@@ -225,69 +234,76 @@ private fun ReplyBlock(reply: ReplyPreview) {
     }
 }
 
+/**
+ * Stats + per-emoji reaction chips on a single horizontal-scrollable line. Twitter/Reddit-style:
+ * tap is reserved for the post itself, secondary actions live in the long-press sheet so this row
+ * stays read-only and uncluttered.
+ */
 @Composable
-private fun ActionRow(post: TimelinePost, interactions: PostInteractions) {
-    val isBookmarked = interactions.isBookmarked(post)
-    var menuOpen by remember { mutableStateOf(false) }
-
+private fun ActionRow(post: TimelinePost, onCommentsClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (post.views > 0) StatPill(Icons.Rounded.Visibility, formatViews(post.views))
-        if (post.reactions.totalCount > 0) {
-            Spacer(Modifier.width(12.dp))
-            StatPill(Icons.Rounded.Favorite, formatViews(post.reactions.totalCount), tint = MaterialTheme.colorScheme.tertiary)
+        if (post.views > 0) {
+            StatPill(Icons.Rounded.Visibility, formatViews(post.views))
         }
         post.commentCount?.let { count ->
-            Spacer(Modifier.width(12.dp))
+            if (post.views > 0) Spacer(Modifier.width(14.dp))
             StatPill(
                 icon = Icons.Rounded.ChatBubbleOutline,
                 text = if (count > 0) formatViews(count) else "0",
-                onClick = { interactions.onPostClick(post) },
+                onClick = onCommentsClick,
             )
         }
-        Spacer(Modifier.weight(1f))
-
-        IconButton(onClick = { interactions.onBookmarkClick(post) }) {
-            Icon(
-                imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Rounded.BookmarkBorder,
-                contentDescription = if (isBookmarked) "unsave" else "save",
-                tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        IconButton(onClick = { interactions.onShareClick(post) }) {
-            Icon(
-                Icons.Rounded.IosShare,
-                contentDescription = "share",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Box {
-            IconButton(onClick = { menuOpen = true }) {
-                Icon(
-                    Icons.Rounded.MoreHoriz,
-                    contentDescription = "more",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        if (post.reactions.items.isNotEmpty()) {
+            if (post.views > 0 || post.commentCount != null) {
+                Spacer(Modifier.width(14.dp))
+                VerticalSeparator()
+                Spacer(Modifier.width(14.dp))
             }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = { Text("Відкрити в Telegram") },
-                    onClick = {
-                        menuOpen = false
-                        interactions.onOpenClick(post)
-                    },
-                    leadingIcon = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null) },
-                )
+            post.reactions.items.forEachIndexed { idx, item ->
+                if (idx > 0) Spacer(Modifier.width(6.dp))
+                ReactionChip(item)
             }
         }
     }
 }
 
 @Composable
+private fun VerticalSeparator() {
+    Box(
+        modifier = Modifier
+            .height(16.dp)
+            .width(1.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+    )
+}
+
+@Composable
+private fun ReactionChip(item: ReactionItem) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = item.emoji, style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = formatViews(item.count),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
 private fun StatPill(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     text: String,
     tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
     onClick: (() -> Unit)? = null,
@@ -313,6 +329,70 @@ private fun StatPill(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PostActionSheet(
+    post: TimelinePost,
+    interactions: PostInteractions,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    val isBookmarked = interactions.isBookmarked(post)
+
+    // Run the user action immediately, then animate the sheet out and tell the parent to forget us.
+    fun runAndDismiss(action: () -> Unit) {
+        action()
+        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(modifier = Modifier.padding(bottom = 24.dp)) {
+            SheetItem(
+                icon = if (isBookmarked) Icons.Filled.Bookmark else Icons.Rounded.BookmarkBorder,
+                label = if (isBookmarked) "Прибрати зі збережених" else "Зберегти пост",
+                onClick = { runAndDismiss { interactions.onBookmarkClick(post) } },
+            )
+            SheetItem(
+                icon = Icons.Rounded.IosShare,
+                label = "Поділитися",
+                onClick = { runAndDismiss { interactions.onShareClick(post) } },
+            )
+            SheetItem(
+                icon = Icons.AutoMirrored.Rounded.OpenInNew,
+                label = "Відкрити в Telegram",
+                onClick = { runAndDismiss { interactions.onOpenClick(post) } },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SheetItem(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(20.dp))
+        Text(text = label, style = MaterialTheme.typography.bodyLarge)
     }
 }
 

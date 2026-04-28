@@ -176,5 +176,8 @@ data class ReplyPreview(
     val isQuote: Boolean,
 )
 
-/** Aggregated reaction summary. */
-data class Reactions(val totalCount: Int, val topEmojis: List<String>)
+/** Single reaction bucket: an emoji and how many times it was used. */
+data class ReactionItem(val emoji: String, val count: Int)
+
+/** Aggregated reaction summary — full per-emoji breakdown plus total. */
+data class Reactions(val totalCount: Int, val items: List<ReactionItem>)

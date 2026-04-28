@@ -37,6 +37,7 @@ import dev.lyo.telread.data.bookmarkKey
 import dev.lyo.telread.ui.actions.PostActions
 import dev.lyo.telread.ui.main.BrandRow
 import dev.lyo.telread.ui.media.FullScreenMediaViewer
+import dev.lyo.telread.ui.media.toAlbumItems
 
 private enum class FeedFilter(val label: String) {
     All("Усе"),
@@ -137,7 +138,7 @@ fun TimelineScreen(
     val interactions = remember(bookmarkedKeys, onChannelFilterChange, onOpenComments) {
         PostInteractions(
             onMediaClick = { post, idx ->
-                resolveAlbumItems(post)?.let { items -> viewerState = ViewerState(items, idx) }
+                post.content.toAlbumItems()?.let { items -> viewerState = ViewerState(items, idx) }
             },
             onChannelClick = { post -> onChannelFilterChange(post.chatId) },
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
@@ -264,12 +265,6 @@ private fun TimelineTopBar(
 
 private data class ViewerState(val items: List<AlbumItem>, val index: Int)
 
-private fun resolveAlbumItems(post: TimelinePost): List<AlbumItem>? = when (val c = post.content) {
-    is PostContent.PhotoAlbum -> c.items.takeIf { it.isNotEmpty() }
-    is PostContent.Video -> listOf(AlbumItem.Video(c.media, c.durationSec, c.playbackFileId))
-    is PostContent.Animation -> listOf(AlbumItem.Animation(c.media, c.playbackFileId))
-    else -> null
-}
 
 @Composable
 private fun FilterChipsRow(selected: FeedFilter, onSelected: (FeedFilter) -> Unit) {

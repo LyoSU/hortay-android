@@ -19,12 +19,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.lyo.telread.data.AlbumItem
 import dev.lyo.telread.data.Comment
 import dev.lyo.telread.data.CommentRow
 import dev.lyo.telread.data.CommentsRepository
-import dev.lyo.telread.data.TdMedia
 import dev.lyo.telread.data.TimelinePost
-import dev.lyo.telread.ui.media.TdMediaImage
+import dev.lyo.telread.ui.media.FullScreenMediaViewer
+import dev.lyo.telread.ui.media.TdAvatar
+import dev.lyo.telread.ui.media.toAlbumItems
 import dev.lyo.telread.ui.timeline.PostBody
 import dev.lyo.telread.ui.timeline.PostCard
 import dev.lyo.telread.ui.timeline.PostInteractions
@@ -48,6 +50,16 @@ fun CommentsScreen(
     val state by remember(post.chatId, post.id) {
         repo.observeThread(post.chatId, post.id)
     }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
+
+    var viewerState by remember { mutableStateOf<ViewerState?>(null) }
+    val openViewer: (List<AlbumItem>, Int) -> Unit = { items, idx ->
+        viewerState = ViewerState(items, idx)
+    }
+    val pinnedPostInteractions = remember(openViewer) {
+        PostInteractions(
+            onMediaClick = { p, idx -> p.content.toAlbumItems()?.let { openViewer(it, idx) } },
+        )
+    }
 
     // Tell TDLib the linked discussion chat is "open" while this screen is alive; close it
     // when the screen leaves composition. awaitCancellation + NonCancellable guarantees the
@@ -97,7 +109,7 @@ fun CommentsScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "post") {
-                PostCard(post = post, interactions = PostInteractions.Noop, clickable = false, expanded = true)
+                PostCard(post = post, interactions = pinnedPostInteractions, clickable = false, expanded = true)
             }
 
             item(key = "label") {
@@ -122,16 +134,26 @@ fun CommentsScreen(
                     }
                 }
                 is CommentsRepository.ThreadState.Ready -> items(items = s.rows, key = { it.comment.id }) { row ->
-                    CommentNode(row)
+                    CommentNode(row, onMediaClick = openViewer)
                 }
                 is CommentsRepository.ThreadState.Error -> Unit
             }
         }
     }
+
+    viewerState?.let { vs ->
+        FullScreenMediaViewer(
+            items = vs.items,
+            initialIndex = vs.index,
+            onDismiss = { viewerState = null },
+        )
+    }
 }
 
+private data class ViewerState(val items: List<AlbumItem>, val index: Int)
+
 @Composable
-private fun CommentNode(row: CommentRow) {
+private fun CommentNode(row: CommentRow, onMediaClick: (List<AlbumItem>, Int) -> Unit) {
     val indent = (row.depth * INDENT_DP).dp
     Row(modifier = Modifier.fillMaxWidth()) {
         if (indent > 0.dp) {
@@ -149,12 +171,16 @@ private fun CommentNode(row: CommentRow) {
                 )
             }
         }
-        CommentBubble(row, modifier = Modifier.weight(1f))
+        CommentBubble(row, onMediaClick = onMediaClick, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun CommentBubble(row: CommentRow, modifier: Modifier = Modifier) {
+private fun CommentBubble(
+    row: CommentRow,
+    onMediaClick: (List<AlbumItem>, Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val comment = row.comment
     Column(
         modifier = modifier
@@ -184,7 +210,14 @@ private fun CommentBubble(row: CommentRow, modifier: Modifier = Modifier) {
 
         Spacer(Modifier.height(8.dp))
         // Same content renderer as posts — text + entities, media, polls, stickers, etc.
-        PostBody(content = comment.content)
+        // onMediaClick lets photos/videos/animations open in the same full-screen viewer
+        // we use on the timeline.
+        PostBody(
+            content = comment.content,
+            onMediaClick = { _, idx ->
+                comment.content.toAlbumItems()?.let { items -> onMediaClick(items, idx) }
+            },
+        )
 
         if (comment.reactions.totalCount > 0) {
             Spacer(Modifier.height(8.dp))
@@ -208,28 +241,13 @@ private fun CommentBubble(row: CommentRow, modifier: Modifier = Modifier) {
 
 @Composable
 private fun CommentAvatar(comment: Comment) {
-    Box(
-        modifier = Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (comment.avatarFileId != null) {
-            TdMediaImage(
-                media = TdMedia(comment.avatarFileId, 0, 0, null),
-                contentDescription = comment.authorName,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Text(
-                text = comment.authorName.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-    }
+    TdAvatar(
+        name = comment.authorName,
+        thumb = comment.avatarThumb,
+        fileId = comment.avatarFileId,
+        size = 36.dp,
+        textStyle = MaterialTheme.typography.titleSmall,
+    )
 }
 
 private fun formatRelative(epochMs: Long): String {

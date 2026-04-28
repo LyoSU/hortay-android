@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -21,8 +22,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import androidx.compose.runtime.DisposableEffect
+import dev.lyo.telread.data.DownloadPriority
 import dev.lyo.telread.data.MediaState
 import dev.lyo.telread.data.TdMedia
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
 
@@ -36,6 +42,11 @@ import java.io.File
  *
  * If [TdMedia.fileId] is null (e.g. a forwarded GIF without a server-side thumbnail), only
  * the minithumb is shown — we never try to decode the playback file as an image.
+ *
+ * For avatar-style usage (small images that have a parent fallback like an initial letter),
+ * pass `placeholderColor = null` and `showProgress = false` so this composable stays fully
+ * transparent until the full-resolution image is ready, letting the parent's fallback show
+ * through during loading or on failure.
  */
 @Composable
 fun TdMediaImage(
@@ -43,6 +54,9 @@ fun TdMediaImage(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
+    placeholderColor: Color? = MaterialTheme.colorScheme.surfaceContainerHigh,
+    showProgress: Boolean = true,
+    priority: DownloadPriority = DownloadPriority.VisibleMedia,
 ) {
     val cache = LocalMediaCache.current
     val fileId = media.fileId
@@ -50,13 +64,30 @@ fun TdMediaImage(
         if (fileId != null) cache.observe(fileId) else MutableStateFlow(MediaState.Idle)
     }.collectAsStateWithLifecycle()
 
-    LaunchedEffect(fileId) { fileId?.let { cache.ensureDownloaded(it) } }
+    LaunchedEffect(fileId, priority) { fileId?.let { cache.ensure(it, priority) } }
+
+    // When the composable leaves composition (scrolled out of viewport, screen popped),
+    // cancel the queued download — only if it hasn't started yet. Partial bytes survive,
+    // and a re-mount picks up where TDLib left off.
+    DisposableEffect(fileId) {
+        onDispose {
+            fileId?.let { id ->
+                CoroutineScope(Dispatchers.IO).launch { cache.cancelIfPending(id) }
+            }
+        }
+    }
 
     val placeholder = remember(fileId, media.minithumbBytes) {
         media.minithumbBytes?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() }
     }
 
-    Box(modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+    val baseModifier = if (placeholderColor != null) {
+        modifier.background(placeholderColor)
+    } else {
+        modifier
+    }
+
+    Box(modifier = baseModifier) {
         if (placeholder != null) {
             androidx.compose.foundation.Image(
                 bitmap = placeholder.asImageBitmap(),
@@ -77,7 +108,7 @@ fun TdMediaImage(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            is MediaState.Downloading -> if (placeholder == null && fileId != null) {
+            is MediaState.Downloading -> if (showProgress && placeholder == null && fileId != null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
                         progress = { s.progress },

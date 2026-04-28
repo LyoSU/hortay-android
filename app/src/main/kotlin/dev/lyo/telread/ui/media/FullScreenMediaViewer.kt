@@ -1,7 +1,13 @@
 package dev.lyo.telread.ui.media
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -17,14 +23,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.lyo.telread.data.AlbumItem
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 /**
  * Full-screen, gesture-driven media viewer. Photos pinch-zoom + pan; videos and animations
- * stream through ExoPlayer. Horizontal swipe between items; status bar dimmed.
+ * stream through ExoPlayer. Horizontal swipe between items; vertical swipe (on the page
+ * background) dismisses with translation + dim — Twitter/Instagram style. Pinch-zoomed photos
+ * keep their pan because [Modifier.draggable] surrenders to the photo's transform handler
+ * once two fingers are down.
  */
 @Composable
 fun FullScreenMediaViewer(
@@ -39,8 +51,40 @@ fun FullScreenMediaViewer(
     ) {
         val pagerState = rememberPagerState(initialPage = initialIndex.coerceIn(0, items.lastIndex)) { items.size }
 
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+        val density = LocalDensity.current
+        val dismissThresholdPx = remember(density) { with(density) { 140.dp.toPx() } }
+        val maxFadePx = remember(density) { with(density) { 320.dp.toPx() } }
+        val offsetY = remember { Animatable(0f) }
+        val scope = rememberCoroutineScope()
+        val draggable = rememberDraggableState { delta ->
+            scope.launch { offsetY.snapTo(offsetY.value + delta) }
+        }
+
+        // Background dims as the user drags away — gives a sense of "you're pulling the sheet off".
+        val backgroundAlpha = (1f - (abs(offsetY.value) / maxFadePx)).coerceIn(0.4f, 1f)
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = backgroundAlpha))
+                .draggable(
+                    state = draggable,
+                    orientation = Orientation.Vertical,
+                    onDragStopped = {
+                        if (abs(offsetY.value) > dismissThresholdPx) {
+                            onDismiss()
+                        } else {
+                            offsetY.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                        }
+                    },
+                ),
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { translationY = offsetY.value },
+            ) { page ->
                 MediaPage(item = items[page], isActive = page == pagerState.currentPage)
             }
 

@@ -9,6 +9,9 @@ data class Comment(
     val parentId: Long?,
     val chatId: Long,
     val authorName: String,
+    /** Inline JPEG (~40×40) — instant placeholder, no download. */
+    val avatarThumb: ByteArray?,
+    /** ProfilePhoto.small.id (160×160). Downloaded at low priority — never blocks media. */
     val avatarFileId: Int?,
     /** Full content payload — same shape used for channel posts so any media type renders. */
     val content: PostContent,

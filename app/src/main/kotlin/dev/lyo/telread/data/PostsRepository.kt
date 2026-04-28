@@ -70,9 +70,32 @@ class PostsRepository(
             .onEach { update -> handleChatTitle(update) }
             .launchIn(scope)
 
-        // Channel avatar changed → all visible posts of that chat refresh avatarFileId.
+        // Channel avatar changed → all visible posts of that chat refresh avatar.
         td.updates.filterIsInstance<TdApi.UpdateChatPhoto>()
             .onEach { update -> handleChatPhoto(update) }
+            .launchIn(scope)
+
+        // User profile changed (rename, avatar). Drop our resolver cache so future renders
+        // re-fetch — most posts already have their author baked in, so this is rare hot-path.
+        td.updates.filterIsInstance<TdApi.UpdateUser>()
+            .onEach { mapper.invalidateUser(it.user.id) }
+            .launchIn(scope)
+
+        // Supergroup metadata changed (handle/username) — invalidate so resolveChannelHandle
+        // refetches next call.
+        td.updates.filterIsInstance<TdApi.UpdateSupergroup>()
+            .onEach { mapper.invalidateSupergroup(it.supergroup.id) }
+            .launchIn(scope)
+
+        // Brand-new chat appeared (user just joined a channel). Cache it; the next pull-to-
+        // refresh — or the first UpdateNewMessage — will fold its history in.
+        td.updates.filterIsInstance<TdApi.UpdateNewChat>()
+            .onEach { update ->
+                chatCache[update.chat.id] = update.chat
+                if (update.chat.isChannel()) {
+                    scope.launch { loadChannelHistory(update.chat.id, limit = 20) }
+                }
+            }
             .launchIn(scope)
     }
 
@@ -209,22 +232,19 @@ class PostsRepository(
 
     private fun handleChatPhoto(update: TdApi.UpdateChatPhoto) {
         chatCache[update.chatId]?.let { it.photo = update.photo }
-        val newAvatar = update.photo?.small?.id
+        val newThumb = update.photo?.minithumbnail?.data
+        val newFileId = update.photo?.small?.id
         _posts.update { current ->
             current.map { post ->
-                if (post.chatId == update.chatId) post.copy(avatarFileId = newAvatar)
-                else post
+                if (post.chatId == update.chatId) {
+                    post.copy(avatarThumb = newThumb, avatarFileId = newFileId)
+                } else post
             }
         }
     }
 
-    private fun reactionsFromUpdate(reactions: TdApi.MessageReactions): Reactions {
-        val list = reactions.reactions.orEmpty()
-        if (list.isEmpty()) return Reactions(0, emptyList())
-        val total = list.sumOf { it.totalCount }
-        val emojis = list.take(3).mapNotNull { (it.type as? TdApi.ReactionTypeEmoji)?.emoji }
-        return Reactions(total, emojis)
-    }
+    private fun reactionsFromUpdate(reactions: TdApi.MessageReactions): Reactions =
+        MessageContentMapper.mapReactions(reactions)
 
     private suspend fun refreshLocked(limitPerChannel: Int) {
         runCatching { td.send(TdApi.LoadChats(TdApi.ChatListMain(), CHAT_LIST_HINT)) }

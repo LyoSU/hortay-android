@@ -19,6 +19,7 @@ internal class MessageMapper(private val td: TdClient) {
         mediaAlbumId = message.mediaAlbumId,
         channelTitle = chat.title.orEmpty(),
         channelHandle = resolveChannelHandle(chat),
+        avatarThumb = chat.photo?.minithumbnail?.data,
         avatarFileId = chat.photo?.small?.id,
         content = MessageContentMapper.map(message.content),
         views = message.interactionInfo?.viewCount ?: 0,
@@ -34,8 +35,13 @@ internal class MessageMapper(private val td: TdClient) {
     suspend fun resolveSender(senderId: TdApi.MessageSender): ResolvedSender = when (senderId) {
         is TdApi.MessageSenderUser -> userCache.getOrPut(senderId.userId) { fetchUser(senderId.userId) }
         is TdApi.MessageSenderChat -> chatCache.getOrPut(senderId.chatId) { fetchChat(senderId.chatId) }
-        else -> ResolvedSender("—", null)
+        else -> ResolvedSender("—", null, null)
     }
+
+    /** Drop a stale entry — call when TDLib emits UpdateUser / UpdateSupergroup. */
+    fun invalidateUser(userId: Long) { userCache.remove(userId) }
+    fun invalidateChat(chatId: Long) { chatCache.remove(chatId) }
+    fun invalidateSupergroup(supergroupId: Long) { supergroupCache.remove(supergroupId) }
 
     private suspend fun resolveChannelHandle(chat: TdApi.Chat): String? {
         val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
@@ -48,20 +54,28 @@ internal class MessageMapper(private val td: TdClient) {
 
     private suspend fun fetchUser(userId: Long): ResolvedSender {
         val u = runCatching { td.send(TdApi.GetUser(userId)) }.getOrNull()
-            ?: return ResolvedSender("Користувач", null)
+            ?: return ResolvedSender("Користувач", null, null)
         val name = listOfNotNull(
             u.firstName?.takeUnless { it.isBlank() },
             u.lastName?.takeUnless { it.isBlank() },
         ).joinToString(" ").ifBlank {
             u.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" } ?: "Користувач"
         }
-        return ResolvedSender(name, u.profilePhoto?.small?.id)
+        return ResolvedSender(
+            name = name,
+            avatarThumb = u.profilePhoto?.minithumbnail?.data,
+            avatarFileId = u.profilePhoto?.small?.id,
+        )
     }
 
     private suspend fun fetchChat(chatId: Long): ResolvedSender {
         val c = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
-            ?: return ResolvedSender("Канал", null)
-        return ResolvedSender(c.title.orEmpty().ifBlank { "Канал" }, c.photo?.small?.id)
+            ?: return ResolvedSender("Канал", null, null)
+        return ResolvedSender(
+            name = c.title.orEmpty().ifBlank { "Канал" },
+            avatarThumb = c.photo?.minithumbnail?.data,
+            avatarFileId = c.photo?.small?.id,
+        )
     }
 
     private suspend fun mapForwardOrigin(origin: TdApi.MessageOrigin): ForwardOrigin = when (origin) {
@@ -93,5 +107,9 @@ internal class MessageMapper(private val td: TdClient) {
         return ReplyPreview(authorName = author, excerpt = excerpt, isQuote = reply.quote != null)
     }
 
-    data class ResolvedSender(val name: String, val avatarFileId: Int?)
+    data class ResolvedSender(
+        val name: String,
+        val avatarThumb: ByteArray?,
+        val avatarFileId: Int?,
+    )
 }

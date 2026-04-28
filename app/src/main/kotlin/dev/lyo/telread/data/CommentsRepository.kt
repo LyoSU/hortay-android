@@ -160,6 +160,7 @@ class CommentsRepository(private val td: TdClient) {
             parentId = parentId,
             chatId = msg.chatId,
             authorName = author.name,
+            avatarThumb = author.avatarThumb,
             avatarFileId = author.avatarFileId,
             content = MessageContentMapper.map(msg.content),
             date = msg.date.toLong() * 1000L,
@@ -171,29 +172,41 @@ class CommentsRepository(private val td: TdClient) {
         return when (val sender = msg.senderId) {
             is TdApi.MessageSenderUser -> cache.getOrPut(sender.userId) { resolveUser(sender.userId) }
             is TdApi.MessageSenderChat -> cache.getOrPut(sender.chatId) { resolveChat(sender.chatId) }
-            else -> AuthorInfo("—", null)
+            else -> AuthorInfo("—", null, null)
         }
     }
 
     private suspend fun resolveUser(userId: Long): AuthorInfo {
         val user = runCatching { td.send(TdApi.GetUser(userId)) }.getOrNull()
-            ?: return AuthorInfo("Користувач", null)
+            ?: return AuthorInfo("Користувач", null, null)
         val name = listOfNotNull(
             user.firstName?.takeUnless { it.isBlank() },
             user.lastName?.takeUnless { it.isBlank() },
         ).joinToString(" ").ifBlank {
             user.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" } ?: "Користувач"
         }
-        return AuthorInfo(name = name, avatarFileId = user.profilePhoto?.small?.id)
+        return AuthorInfo(
+            name = name,
+            avatarThumb = user.profilePhoto?.minithumbnail?.data,
+            avatarFileId = user.profilePhoto?.small?.id,
+        )
     }
 
     private suspend fun resolveChat(chatId: Long): AuthorInfo {
         val chat = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
-            ?: return AuthorInfo("Канал", null)
-        return AuthorInfo(name = chat.title.orEmpty().ifBlank { "Канал" }, avatarFileId = chat.photo?.small?.id)
+            ?: return AuthorInfo("Канал", null, null)
+        return AuthorInfo(
+            name = chat.title.orEmpty().ifBlank { "Канал" },
+            avatarThumb = chat.photo?.minithumbnail?.data,
+            avatarFileId = chat.photo?.small?.id,
+        )
     }
 
-    private data class AuthorInfo(val name: String, val avatarFileId: Int?)
+    private data class AuthorInfo(
+        val name: String,
+        val avatarThumb: ByteArray?,
+        val avatarFileId: Int?,
+    )
 
     private companion object {
         const val TAG = "CommentsRepository"
