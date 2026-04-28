@@ -1,0 +1,44 @@
+# Normalise line endings on checkin; checkout LF on Unix, CRLF on Windows.
+* text=auto eol=lf
+
+# Sources — explicitly text.
+*.kt        text diff=kotlin
+*.kts       text diff=kotlin
+*.java      text diff=java
+*.xml       text
+*.gradle    text
+*.properties text
+*.md        text
+*.toml      text
+*.json      text
+*.yml       text
+*.yaml      text
+
+# Gradle wrapper script must keep LF on all platforms.
+gradlew     text eol=lf
+
+# Windows-only files keep CRLF.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Binaries — never normalise, never diff.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.webp      binary
+*.gif       binary
+*.ico       binary
+*.ttf       binary
+*.otf       binary
+*.woff      binary
+*.woff2     binary
+*.jar       binary
+*.aar       binary
+*.apk       binary
+*.aab       binary
+*.so        binary
+
+# linguist hints for GitHub: hide gradle/wrapper noise from language stats.
+gradle/wrapper/* linguist-vendored
+gradlew         linguist-vendored
+gradlew.bat     linguist-vendored

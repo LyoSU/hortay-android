@@ -1,0 +1,48 @@
+# --- Build / Gradle ---
+.gradle/
+build/
+out/
+.cxx/
+.kotlin/
+local.properties
+captures/
+
+# --- Android ---
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+release/
+
+# --- IDE: Android Studio / IntelliJ ---
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# --- IDE: VS Code / Fleet / Cursor ---
+.vscode/
+.fleet/
+
+# --- macOS / Windows / Linux ---
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- Logs / temp ---
+*.log
+*.tmp
+*.swp
+*~
+
+# --- Keystores (never commit signing keys) ---
+*.jks
+*.keystore
+keystore.properties
+
+# --- Compose previews / generated reports ---
+reports/

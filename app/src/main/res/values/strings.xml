@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Telread</string>
+    <string name="auth_phone_label">Номер телефону</string>
+    <string name="auth_code_label">Код підтвердження</string>
+    <string name="auth_password_label">Cloud-пароль (2FA)</string>
+    <string name="auth_send_code">Надіслати код</string>
+    <string name="auth_continue">Продовжити</string>
+    <string name="auth_signing_in">Заходимо…</string>
+    <string name="timeline_title">Стрічка</string>
+    <string name="timeline_empty">Поки тут порожньо. Підпишіться на канали в Telegram — і вони з\'являться у стрічці.</string>
+    <string name="error_generic">Щось пішло не так</string>
+</resources>

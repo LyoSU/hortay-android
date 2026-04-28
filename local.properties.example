@@ -1,0 +1,5 @@
+# Copy to local.properties and fill in your own values.
+# Get yours at https://my.telegram.org → API development tools.
+
+telegram.apiId=YOUR_API_ID_HERE
+telegram.apiHash=YOUR_API_HASH_HERE
