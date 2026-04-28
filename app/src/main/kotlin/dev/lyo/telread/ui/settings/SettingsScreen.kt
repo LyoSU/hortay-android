@@ -5,7 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -67,7 +68,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             SectionLabel("Акаунт")
             SettingsRow(
-                icon = Icons.Outlined.Logout,
+                icon = Icons.AutoMirrored.Rounded.Logout,
                 title = "Вийти з акаунту",
                 subtitle = "Скине сесію Telegram. Кеш збережеться.",
                 tint = MaterialTheme.colorScheme.error,
@@ -77,7 +78,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             SectionLabel("Про застосунок")
             SettingsRow(
-                icon = Icons.Outlined.Info,
+                icon = Icons.Rounded.Info,
                 title = "Версія",
                 subtitle = "${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
             )

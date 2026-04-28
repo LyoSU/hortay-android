@@ -7,7 +7,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.rounded.CallReceived
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -231,7 +232,7 @@ private fun DocumentBlock(content: PostContent.Document) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBadge(Icons.Outlined.Description)
+        IconBadge(Icons.Rounded.Description)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -269,7 +270,7 @@ private fun AudioBlock(content: PostContent.Audio) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBadge(Icons.Outlined.AudioFile)
+        IconBadge(Icons.Rounded.AudioFile)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -301,7 +302,7 @@ private fun VoiceNoteBlock(content: PostContent.VoiceNote) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBadge(Icons.Outlined.Mic)
+        IconBadge(Icons.Rounded.Mic)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -348,7 +349,7 @@ private fun VideoNoteBlock(content: PostContent.VideoNote) {
         }
         Spacer(Modifier.width(12.dp))
         Icon(
-            Icons.Outlined.VideoCameraFront,
+            Icons.Rounded.VideoCameraFront,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -383,7 +384,7 @@ private fun PollBlock(content: PostContent.Poll) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                Icons.Outlined.Poll,
+                Icons.Rounded.Poll,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp),
@@ -444,7 +445,7 @@ private fun LocationBlock(content: PostContent.Location) {
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(Icons.Outlined.Place)
+            IconBadge(Icons.Rounded.Place)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 content.title?.let {
@@ -470,7 +471,7 @@ private fun ContactBlock(content: PostContent.Contact) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBadge(Icons.Outlined.CallReceived)
+        IconBadge(Icons.AutoMirrored.Rounded.CallReceived)
         Spacer(Modifier.width(12.dp))
         Column {
             Text(content.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
@@ -562,7 +563,7 @@ private fun BoxScope.PlayBadge(durationSec: Int) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Outlined.PlayCircleFilled,
+            imageVector = Icons.Rounded.PlayCircleFilled,
             contentDescription = null,
             tint = Color.White,
             modifier = Modifier.size(36.dp),

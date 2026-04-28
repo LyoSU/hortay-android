@@ -7,8 +7,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Favorite
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,7 +18,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import dev.lyo.telread.data.Comment
+import dev.lyo.telread.data.CommentRow
 import dev.lyo.telread.data.CommentsRepository
 import dev.lyo.telread.data.TimelinePost
 import dev.lyo.telread.ui.text.rememberAnnotatedString
@@ -27,10 +27,18 @@ import dev.lyo.telread.ui.timeline.PostInteractions
 import java.text.DateFormat
 import java.util.Date
 
+private sealed interface ThreadState {
+    data object Loading : ThreadState
+    data class Ready(val rows: List<CommentRow>) : ThreadState
+    data class Empty(val reason: String) : ThreadState
+}
+
 /**
- * Twitter-style discussion thread for a channel post. The original post sits at the top
- * (read-only), comments stream below — sorted oldest-first, each annotated with the author
- * it's replying to so chains stay legible without nested indentation.
+ * Reddit/Twitter-style discussion overlay.
+ *   • Original post pinned at the top (read-only).
+ *   • Replies rendered as a flattened tree — each row carries `depth`, drawn with a left
+ *     indent + a thin vertical connector line so chains read like Reddit.
+ *   • Empty / unsupported channels surface a friendly explainer instead of an error.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,21 +47,17 @@ fun CommentsScreen(
     repo: CommentsRepository,
     onDismiss: () -> Unit,
 ) {
-    var comments by remember(post.id) { mutableStateOf<List<Comment>>(emptyList()) }
-    var loading by remember(post.id) { mutableStateOf(true) }
-    var error by remember(post.id) { mutableStateOf<String?>(null) }
+    var state by remember(post.id) { mutableStateOf<ThreadState>(ThreadState.Loading) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     LaunchedEffect(post.id) {
-        loading = true
         repo.fetchThread(post.chatId, post.id)
-            .onSuccess {
-                comments = it
-                loading = false
+            .onSuccess { rows ->
+                state = if (rows.isEmpty()) ThreadState.Empty("Поки немає коментарів.")
+                else ThreadState.Ready(rows)
             }
             .onFailure {
-                error = it.message
-                loading = false
+                state = ThreadState.Empty("У цьому каналі обговорення не доступне.")
             }
     }
 
@@ -66,7 +70,7 @@ fun CommentsScreen(
                 title = { Text("Обговорення", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Outlined.Close, contentDescription = "close")
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -88,47 +92,67 @@ fun CommentsScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            item(key = "post") { PostCard(post = post, interactions = PostInteractions.Noop) }
+            item(key = "post") {
+                PostCard(post = post, interactions = PostInteractions.Noop, clickable = false)
+            }
 
-            item(key = "divider") {
-                Spacer(Modifier.height(4.dp))
+            item(key = "label") {
                 Text(
-                    text = if (comments.isEmpty() && !loading) "Поки немає коментарів"
-                    else "${comments.size} відповідей",
+                    text = when (val s = state) {
+                        ThreadState.Loading -> "Завантаження…"
+                        is ThreadState.Ready -> "${s.rows.size} відповідей"
+                        is ThreadState.Empty -> s.reason
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
                 )
             }
 
-            if (loading) {
-                item(key = "loading") {
+            when (val s = state) {
+                ThreadState.Loading -> item(key = "loading") {
                     Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 }
-            } else error?.let { msg ->
-                item(key = "error") {
-                    Text(
-                        text = msg,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(16.dp),
-                    )
+                is ThreadState.Empty -> Unit
+                is ThreadState.Ready -> items(items = s.rows, key = { it.comment.id }) { row ->
+                    CommentNode(row)
                 }
-            }
-
-            items(items = comments, key = { it.id }) { comment ->
-                CommentRow(comment)
             }
         }
     }
 }
 
 @Composable
-private fun CommentRow(comment: Comment) {
+private fun CommentNode(row: CommentRow) {
+    val indent = (row.depth * INDENT_DP).dp
+    Row(modifier = Modifier.fillMaxWidth()) {
+        if (indent > 0.dp) {
+            Box(
+                modifier = Modifier
+                    .padding(start = 24.dp)
+                    .width(indent)
+                    .fillMaxHeight(),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .width(2.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(1.dp)),
+                )
+            }
+        }
+        CommentBubble(row, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun CommentBubble(row: CommentRow, modifier: Modifier = Modifier) {
+    val comment = row.comment
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
@@ -166,42 +190,6 @@ private fun CommentRow(comment: Comment) {
             }
         }
 
-        comment.replyingToAuthor?.let { author ->
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .height(28.dp)
-                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(1.dp)),
-                )
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text(
-                        text = "Відповідь $author",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    comment.replyingToExcerpt?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-
         if (comment.text.text.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -216,7 +204,7 @@ private fun CommentRow(comment: Comment) {
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Outlined.Favorite,
+                    imageVector = Icons.Rounded.Favorite,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.size(14.dp),
@@ -242,3 +230,5 @@ private fun formatRelative(epochMs: Long): String {
         else -> DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(epochMs))
     }
 }
+
+private const val INDENT_DP = 16

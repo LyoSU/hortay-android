@@ -28,7 +28,7 @@ internal object MessageMapper {
             authorSignature = message.authorSignature.takeUnless { it.isNullOrBlank() },
             reply = mapReply(message.replyTo),
             reactions = mapReactions(message.interactionInfo?.reactions),
-            commentCount = message.interactionInfo?.replyInfo?.replyCount ?: 0,
+            commentCount = message.interactionInfo?.replyInfo?.replyCount,
         )
     }
 

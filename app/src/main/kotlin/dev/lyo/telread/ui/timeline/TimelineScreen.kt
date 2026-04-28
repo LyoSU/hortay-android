@@ -11,7 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -83,7 +83,7 @@ fun TimelineScreen(
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
             onShareClick = { post -> PostActions.share(context, post) },
             onOpenClick = { post -> PostActions.openInTelegram(context, post) },
-            onCommentsClick = onOpenComments,
+            onPostClick = onOpenComments,
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedKeys },
         )
     }
@@ -217,7 +217,7 @@ private fun EmptyState(showingSaved: Boolean) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = if (showingSaved) Icons.Outlined.BookmarkBorder else Icons.Outlined.Forum,
+                imageVector = if (showingSaved) Icons.Rounded.BookmarkBorder else Icons.Rounded.Forum,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(48.dp),

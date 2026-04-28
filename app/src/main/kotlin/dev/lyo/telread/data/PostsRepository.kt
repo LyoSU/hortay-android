@@ -93,6 +93,8 @@ class PostsRepository(
                     views = info?.viewCount ?: post.views,
                     reactions = info?.reactions?.let(::reactionsFromUpdate) ?: post.reactions,
                     commentCount = info?.replyInfo?.replyCount ?: post.commentCount,
+                    // ^ keep current value when interaction info arrives without replyInfo;
+                    //   fresh `null` only happens at first map() in MessageMapper.
                 )
             }
         }

@@ -18,5 +18,6 @@ data class TimelinePost(
     val authorSignature: String?,
     val reply: ReplyPreview?,
     val reactions: Reactions,
-    val commentCount: Int,
+    /** Null when the channel has no linked discussion group; 0 when discussion is enabled but empty. */
+    val commentCount: Int?,
 )

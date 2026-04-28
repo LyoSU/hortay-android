@@ -9,12 +9,12 @@ import dev.lyo.telread.data.TimelinePost
  */
 @Immutable
 class PostInteractions(
+    val onPostClick: (post: TimelinePost) -> Unit = {},
     val onMediaClick: (post: TimelinePost, index: Int) -> Unit = { _, _ -> },
     val onChannelClick: (post: TimelinePost) -> Unit = {},
     val onBookmarkClick: (post: TimelinePost) -> Unit = {},
     val onShareClick: (post: TimelinePost) -> Unit = {},
     val onOpenClick: (post: TimelinePost) -> Unit = {},
-    val onCommentsClick: (post: TimelinePost) -> Unit = {},
     val isBookmarked: (post: TimelinePost) -> Boolean = { false },
 ) {
     companion object {

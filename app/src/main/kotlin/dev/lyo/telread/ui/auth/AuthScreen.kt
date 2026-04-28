@@ -8,7 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -81,9 +81,9 @@ private fun HeroBlock(stage: AuthStage) {
         ) {
             Icon(
                 imageVector = when (stage) {
-                    is AuthStage.WaitCode -> Icons.Outlined.Pin
-                    is AuthStage.WaitPassword -> Icons.Outlined.Lock
-                    else -> Icons.Outlined.Smartphone
+                    is AuthStage.WaitCode -> Icons.Rounded.Pin
+                    is AuthStage.WaitPassword -> Icons.Rounded.Lock
+                    else -> Icons.Rounded.Smartphone
                 },
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,

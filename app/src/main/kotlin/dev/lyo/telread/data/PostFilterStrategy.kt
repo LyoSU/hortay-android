@@ -50,7 +50,7 @@ object PostFilterStrategy {
         return anchor.copy(
             content = PostContent.PhotoAlbum(items = items, caption = caption),
             views = members.maxOf { it.views },
-            commentCount = members.maxOf { it.commentCount },
+            commentCount = members.mapNotNull { it.commentCount }.maxOrNull(),
             reactions = members.map { it.reactions }.maxByOrNull { it.totalCount } ?: Reactions(0, emptyList()),
         )
     }

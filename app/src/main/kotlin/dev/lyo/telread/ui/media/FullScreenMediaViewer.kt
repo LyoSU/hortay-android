@@ -7,7 +7,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -52,7 +52,7 @@ fun FullScreenMediaViewer(
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.4f)),
             ) {
-                Icon(Icons.Outlined.Close, contentDescription = "close", tint = Color.White)
+                Icon(Icons.Rounded.Close, contentDescription = "close", tint = Color.White)
             }
 
             if (items.size > 1) {

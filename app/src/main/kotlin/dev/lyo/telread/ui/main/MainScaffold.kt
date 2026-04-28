@@ -1,5 +1,6 @@
 package dev.lyo.telread.ui.main
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -28,6 +29,12 @@ fun MainScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
     var commentsForPost by remember { mutableStateOf<TimelinePost?>(null) }
     val scope = rememberCoroutineScope()
+
+    // System back: dismiss overlay → return to Feed tab → finally let the system close the app.
+    BackHandler(enabled = commentsForPost != null) { commentsForPost = null }
+    BackHandler(enabled = commentsForPost == null && selectedTab != NavTab.Feed) {
+        selectedTab = NavTab.Feed
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),

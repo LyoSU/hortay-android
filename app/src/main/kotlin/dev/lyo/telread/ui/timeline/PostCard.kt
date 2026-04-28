@@ -6,7 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -31,8 +32,11 @@ import java.util.Date
 fun PostCard(
     post: TimelinePost,
     interactions: PostInteractions = PostInteractions.Noop,
+    clickable: Boolean = true,
 ) {
     Card(
+        onClick = { if (clickable) interactions.onPostClick(post) },
+        enabled = clickable,
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -89,7 +93,7 @@ private fun HeaderRow(post: TimelinePost, onChannelClick: () -> Unit) {
                 if (post.editDate > 0L) {
                     Spacer(Modifier.width(6.dp))
                     Icon(
-                        imageVector = Icons.Outlined.Edit,
+                        imageVector = Icons.Rounded.Edit,
                         contentDescription = "edited",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(12.dp),
@@ -156,7 +160,7 @@ private fun avatarBg(post: TimelinePost) = run {
 private fun ForwardChip(origin: ForwardOrigin) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
-            imageVector = Icons.Outlined.Repeat,
+            imageVector = Icons.Rounded.Repeat,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.tertiary,
             modifier = Modifier.size(14.dp),
@@ -222,31 +226,31 @@ private fun ActionRow(post: TimelinePost, interactions: PostInteractions) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (post.views > 0) StatPill(Icons.Outlined.Visibility, formatViews(post.views))
+        if (post.views > 0) StatPill(Icons.Rounded.Visibility, formatViews(post.views))
         if (post.reactions.totalCount > 0) {
             Spacer(Modifier.width(12.dp))
-            StatPill(Icons.Outlined.Favorite, formatViews(post.reactions.totalCount), tint = MaterialTheme.colorScheme.tertiary)
+            StatPill(Icons.Rounded.Favorite, formatViews(post.reactions.totalCount), tint = MaterialTheme.colorScheme.tertiary)
         }
-        if (post.commentCount > 0) {
+        post.commentCount?.let { count ->
             Spacer(Modifier.width(12.dp))
             StatPill(
-                icon = Icons.Outlined.ChatBubbleOutline,
-                text = formatViews(post.commentCount),
-                onClick = { interactions.onCommentsClick(post) },
+                icon = Icons.Rounded.ChatBubbleOutline,
+                text = if (count > 0) formatViews(count) else "0",
+                onClick = { interactions.onPostClick(post) },
             )
         }
         Spacer(Modifier.weight(1f))
 
         IconButton(onClick = { interactions.onBookmarkClick(post) }) {
             Icon(
-                imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Rounded.BookmarkBorder,
                 contentDescription = if (isBookmarked) "unsave" else "save",
                 tint = if (isBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         IconButton(onClick = { interactions.onShareClick(post) }) {
             Icon(
-                Icons.Outlined.IosShare,
+                Icons.Rounded.IosShare,
                 contentDescription = "share",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -254,7 +258,7 @@ private fun ActionRow(post: TimelinePost, interactions: PostInteractions) {
         Box {
             IconButton(onClick = { menuOpen = true }) {
                 Icon(
-                    Icons.Outlined.MoreHoriz,
+                    Icons.Rounded.MoreHoriz,
                     contentDescription = "more",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -266,7 +270,7 @@ private fun ActionRow(post: TimelinePost, interactions: PostInteractions) {
                         menuOpen = false
                         interactions.onOpenClick(post)
                     },
-                    leadingIcon = { Icon(Icons.Outlined.OpenInNew, contentDescription = null) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null) },
                 )
             }
         }
