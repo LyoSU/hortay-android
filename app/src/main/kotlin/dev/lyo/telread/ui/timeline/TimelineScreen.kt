@@ -37,7 +37,6 @@ import dev.lyo.telread.data.bookmarkKey
 import dev.lyo.telread.ui.actions.PostActions
 import dev.lyo.telread.ui.main.BrandRow
 import dev.lyo.telread.ui.media.FullScreenMediaViewer
-import kotlinx.coroutines.launch
 
 private enum class FeedFilter(val label: String) {
     All("Усе"),
@@ -56,6 +55,8 @@ fun TimelineScreen(
     channelFilter: Long?,
     onChannelFilterChange: (Long?) -> Unit,
     onOpenComments: (TimelinePost) -> Unit = {},
+    homeTapTrigger: Long = 0L,
+    onBrandTap: () -> Unit = {},
 ) {
     val vm: TimelineViewModel = viewModel(
         factory = remember(repo, bookmarks) {
@@ -63,7 +64,6 @@ fun TimelineScreen(
         },
     )
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     val posts by vm.posts.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
@@ -74,6 +74,21 @@ fun TimelineScreen(
 
     var filter by rememberSaveable { mutableStateOf(FeedFilter.All) }
     var viewerState by remember { mutableStateOf<ViewerState?>(null) }
+
+    // Twitter-style "tap home twice": first tap scrolls to top, second one (already at top)
+    // refreshes. The trigger is a monotonic timestamp from the parent, so a single bump
+    // produces a single reaction.
+    LaunchedEffect(homeTapTrigger) {
+        if (homeTapTrigger == 0L) return@LaunchedEffect
+        val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+        if (atTop) vm.refresh() else listState.animateScrollToItem(0)
+    }
+
+    // Switching the active channel context changes which posts are visible — without this,
+    // the previous scroll offset bleeds through and lands the user mid-list.
+    LaunchedEffect(channelFilter, filter) {
+        listState.scrollToItem(0)
+    }
 
     val visiblePosts = remember(posts, filter, bookmarkedKeys, channelFilter, showOnlyBookmarked) {
         val base = buildList {
@@ -114,10 +129,7 @@ fun TimelineScreen(
                 channelTitle = activeChannelTitle,
                 hasFilter = channelFilter != null,
                 onClearFilter = { onChannelFilterChange(null) },
-                onBrandTap = {
-                    vm.refresh()
-                    scope.launch { listState.animateScrollToItem(0) }
-                },
+                onBrandTap = onBrandTap,
                 scrollBehavior = scrollBehavior,
             )
         },

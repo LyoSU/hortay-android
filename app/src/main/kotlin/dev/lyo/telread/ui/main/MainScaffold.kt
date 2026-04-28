@@ -28,6 +28,9 @@ fun MainScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
     var channelFilter by rememberSaveable { mutableStateOf<Long?>(null) }
     var commentsForPost by remember { mutableStateOf<TimelinePost?>(null) }
+    // Monotonic counter: each re-tap on Home (or brand) bumps it once. The Feed observes the
+    // value and decides scroll-to-top vs refresh based on its own scroll position.
+    var homeTapTrigger by remember { mutableLongStateOf(0L) }
     val scope = rememberCoroutineScope()
 
     // Back priority: dismiss overlay → clear channel filter → return to Feed → system close.
@@ -43,7 +46,11 @@ fun MainScaffold(graph: AppGraph) {
             FloatingNavBar(
                 selected = selectedTab,
                 onSelect = { tab ->
-                    if (tab == selectedTab && tab == NavTab.Feed) channelFilter = null
+                    val reselectingFeed = tab == selectedTab && tab == NavTab.Feed
+                    if (reselectingFeed) {
+                        channelFilter = null
+                        homeTapTrigger = System.nanoTime()
+                    }
                     selectedTab = tab
                 },
             )
@@ -65,6 +72,8 @@ fun MainScaffold(graph: AppGraph) {
                     channelFilter = channelFilter,
                     onChannelFilterChange = { channelFilter = it },
                     onOpenComments = { commentsForPost = it },
+                    homeTapTrigger = homeTapTrigger,
+                    onBrandTap = { homeTapTrigger = System.nanoTime() },
                 )
                 NavTab.Channels -> ChannelsScreen(
                     repo = graph.postsRepository,
@@ -89,6 +98,8 @@ fun MainScaffold(graph: AppGraph) {
                         }
                     },
                     onOpenComments = { commentsForPost = it },
+                    homeTapTrigger = 0L,
+                    onBrandTap = {},
                 )
                 NavTab.Profile -> SettingsScreen(
                     settings = graph.settingsStore,

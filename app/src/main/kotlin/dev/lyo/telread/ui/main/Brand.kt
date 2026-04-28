@@ -9,33 +9,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * App brand mark used in the top bar. A rounded square with a gradient backplate and the
- * "T" glyph — recognisable, lightweight, no asset dependency.
+ * App brand mark used in the top bar. A solid primary square with the "t" glyph —
+ * recognisable, single-colour (no muddy gradient mid-tones), works in both schemes.
  */
 @Composable
 fun BrandMark(modifier: Modifier = Modifier, size: Int = 36) {
-    val gradient = Brush.linearGradient(
-        listOf(
-            MaterialTheme.colorScheme.primary,
-            MaterialTheme.colorScheme.tertiary,
-        ),
-    )
     Box(
         modifier = modifier
             .size(size.dp)
             .clip(RoundedCornerShape(percent = 28))
-            .background(gradient),
+            .background(MaterialTheme.colorScheme.primary),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = "t",
-            fontSize = (size * 0.6).sp,
+            fontSize = (size * 0.62).sp,
             fontWeight = FontWeight.ExtraBold,
             color = MaterialTheme.colorScheme.onPrimary,
             style = MaterialTheme.typography.headlineSmall,
