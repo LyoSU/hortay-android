@@ -28,7 +28,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewmodel.initializer
-import dev.lyo.telread.data.AlbumItem
 import dev.lyo.telread.data.BookmarkStore
 import dev.lyo.telread.data.PostContent
 import dev.lyo.telread.data.PostsRepository
@@ -36,8 +35,7 @@ import dev.lyo.telread.data.TimelinePost
 import dev.lyo.telread.data.bookmarkKey
 import dev.lyo.telread.ui.actions.PostActions
 import dev.lyo.telread.ui.main.BrandRow
-import dev.lyo.telread.ui.media.FullScreenMediaViewer
-import dev.lyo.telread.ui.media.toAlbumItems
+import dev.lyo.telread.ui.media.LocalMediaViewer
 
 private enum class FeedFilter(val label: String) {
     All("Усе"),
@@ -74,7 +72,7 @@ fun TimelineScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     var filter by rememberSaveable { mutableStateOf(FeedFilter.All) }
-    var viewerState by remember { mutableStateOf<ViewerState?>(null) }
+    val viewer = LocalMediaViewer.current
 
     // Twitter-style "tap home twice": first tap scrolls to top, second one (already at top)
     // refreshes. The trigger is a monotonic timestamp from the parent, so a single bump
@@ -138,7 +136,7 @@ fun TimelineScreen(
     val interactions = remember(bookmarkedKeys, onChannelFilterChange, onOpenComments) {
         PostInteractions(
             onMediaClick = { post, idx ->
-                post.content.toAlbumItems()?.let { items -> viewerState = ViewerState(items, idx) }
+                viewer.openFor(post.content, idx)
             },
             onChannelClick = { post -> onChannelFilterChange(post.chatId) },
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
@@ -200,13 +198,6 @@ fun TimelineScreen(
         }
     }
 
-    viewerState?.let { state ->
-        FullScreenMediaViewer(
-            items = state.items,
-            initialIndex = state.index,
-            onDismiss = { viewerState = null },
-        )
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -263,7 +254,6 @@ private fun TimelineTopBar(
     }
 }
 
-private data class ViewerState(val items: List<AlbumItem>, val index: Int)
 
 
 @Composable

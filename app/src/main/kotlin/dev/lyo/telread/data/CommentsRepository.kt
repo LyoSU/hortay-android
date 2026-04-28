@@ -107,12 +107,12 @@ class CommentsRepository(private val td: TdClient) {
 
     suspend fun openThread(threadChatId: Long) {
         runCatching { td.send(TdApi.OpenChat(threadChatId)) }
-            .onFailure { Log.w(TAG, "openThread($threadChatId) failed", it) }
+            .warnUnlessCancelled(TAG, "openThread($threadChatId)")
     }
 
     suspend fun closeThread(threadChatId: Long) {
         runCatching { td.send(TdApi.CloseChat(threadChatId)) }
-            .onFailure { Log.w(TAG, "closeThread($threadChatId) failed", it) }
+            .warnUnlessCancelled(TAG, "closeThread($threadChatId)")
     }
 
     suspend fun viewMessages(threadChatId: Long, messageIds: List<Long>) {
@@ -121,7 +121,7 @@ class CommentsRepository(private val td: TdClient) {
             td.send(
                 TdApi.ViewMessages(threadChatId, messageIds.toLongArray(), null, /* forceRead */ true),
             )
-        }.onFailure { Log.w(TAG, "viewMessages($threadChatId) failed", it) }
+        }.warnUnlessCancelled(TAG, "viewMessages($threadChatId)")
     }
 
     private suspend fun buildTree(messages: List<TdApi.Message>, rootMessageId: Long): List<CommentRow> {

@@ -24,7 +24,7 @@ import dev.lyo.telread.data.Comment
 import dev.lyo.telread.data.CommentRow
 import dev.lyo.telread.data.CommentsRepository
 import dev.lyo.telread.data.TimelinePost
-import dev.lyo.telread.ui.media.FullScreenMediaViewer
+import dev.lyo.telread.ui.media.LocalMediaViewer
 import dev.lyo.telread.ui.media.TdAvatar
 import dev.lyo.telread.ui.media.toAlbumItems
 import dev.lyo.telread.ui.timeline.PostBody
@@ -51,13 +51,10 @@ fun CommentsScreen(
         repo.observeThread(post.chatId, post.id)
     }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
 
-    var viewerState by remember { mutableStateOf<ViewerState?>(null) }
-    val openViewer: (List<AlbumItem>, Int) -> Unit = { items, idx ->
-        viewerState = ViewerState(items, idx)
-    }
-    val pinnedPostInteractions = remember(openViewer) {
+    val viewer = LocalMediaViewer.current
+    val pinnedPostInteractions = remember(viewer) {
         PostInteractions(
-            onMediaClick = { p, idx -> p.content.toAlbumItems()?.let { openViewer(it, idx) } },
+            onMediaClick = { p, idx -> viewer.openFor(p.content, idx) },
         )
     }
 
@@ -134,23 +131,13 @@ fun CommentsScreen(
                     }
                 }
                 is CommentsRepository.ThreadState.Ready -> items(items = s.rows, key = { it.comment.id }) { row ->
-                    CommentNode(row, onMediaClick = openViewer)
+                    CommentNode(row, onMediaClick = { items, idx -> viewer.open(items, idx) })
                 }
                 is CommentsRepository.ThreadState.Error -> Unit
             }
         }
     }
-
-    viewerState?.let { vs ->
-        FullScreenMediaViewer(
-            items = vs.items,
-            initialIndex = vs.index,
-            onDismiss = { viewerState = null },
-        )
-    }
 }
-
-private data class ViewerState(val items: List<AlbumItem>, val index: Int)
 
 @Composable
 private fun CommentNode(row: CommentRow, onMediaClick: (List<AlbumItem>, Int) -> Unit) {

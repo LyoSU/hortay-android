@@ -14,6 +14,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.telread.data.AuthStage
 import dev.lyo.telread.ui.auth.AuthScreen
 import dev.lyo.telread.ui.main.MainScaffold
+import dev.lyo.telread.ui.media.MediaViewerHost
 import dev.lyo.telread.ui.media.LocalMediaCache
 import dev.lyo.telread.ui.theme.TelreadTheme
 
@@ -32,7 +33,7 @@ class MainActivity : ComponentActivity() {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val auth by graph.tdClient.authStage.collectAsStateWithLifecycle()
                         when (auth) {
-                            AuthStage.Ready -> MainScaffold(graph = graph)
+                            AuthStage.Ready -> MediaViewerHost { MainScaffold(graph = graph) }
                             else -> AuthScreen(client = graph.tdClient, stage = auth)
                         }
                     }

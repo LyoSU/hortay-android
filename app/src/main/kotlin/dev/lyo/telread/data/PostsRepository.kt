@@ -1,6 +1,7 @@
 package dev.lyo.telread.data
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -87,22 +88,20 @@ class PostsRepository(
             .onEach { mapper.invalidateSupergroup(it.supergroup.id) }
             .launchIn(scope)
 
-        // Brand-new chat appeared (user just joined a channel). Cache it; the next pull-to-
-        // refresh — or the first UpdateNewMessage — will fold its history in.
+        // Brand-new chat appeared. We deliberately DO NOT issue GetChatHistory here:
+        //   - On startup TDLib re-emits the entire chat list as UpdateNewChat; auto-loading
+        //     each one 429-rate-limits the server.
+        //   - Many of those chats are private / archived / DM — every one is a guaranteed
+        //     [400] Can't access the chat warning.
+        // Posts from a freshly-joined channel reach us anyway via UpdateNewMessage; the user
+        // can pull-to-refresh for back-history. Just cache the metadata.
         td.updates.filterIsInstance<TdApi.UpdateNewChat>()
-            .onEach { update ->
-                chatCache[update.chat.id] = update.chat
-                if (update.chat.isChannel()) {
-                    scope.launch { loadChannelHistory(update.chat.id, limit = 20) }
-                }
-            }
+            .onEach { update -> chatCache[update.chat.id] = update.chat }
             .launchIn(scope)
     }
 
     suspend fun refresh(limitPerChannel: Int = 20): Result<Unit> = refreshMutex.withLock {
-        runCatching { refreshLocked(limitPerChannel) }.onFailure {
-            Log.w(TAG, "refresh failed", it)
-        }
+        runCatching { refreshLocked(limitPerChannel) }.warnUnlessCancelled("refresh")
     }
 
     /**
@@ -111,8 +110,7 @@ class PostsRepository(
      * authoritative. Always pair with [closeChat] when focus moves away.
      */
     suspend fun openChat(chatId: Long) {
-        runCatching { td.send(TdApi.OpenChat(chatId)) }
-            .onFailure { Log.w(TAG, "openChat($chatId) failed", it) }
+        runCatching { td.send(TdApi.OpenChat(chatId)) }.warnUnlessCancelled(TAG, "openChat($chatId)")
     }
 
     /**
@@ -132,11 +130,10 @@ class PostsRepository(
             val merged = current + mapped.filter { (it.chatId to it.id) !in seen }
             PostFilterStrategy.apply(merged).take(MAX_FEED_SIZE)
         }
-    }.onFailure { Log.w(TAG, "loadChannelHistory($chatId) failed", it) }
+    }.warnUnlessCancelled(TAG, "loadChannelHistory($chatId)")
 
     suspend fun closeChat(chatId: Long) {
-        runCatching { td.send(TdApi.CloseChat(chatId)) }
-            .onFailure { Log.w(TAG, "closeChat($chatId) failed", it) }
+        runCatching { td.send(TdApi.CloseChat(chatId)) }.warnUnlessCancelled(TAG, "closeChat($chatId)")
     }
 
     /**
@@ -154,7 +151,7 @@ class PostsRepository(
                     /* forceRead */ true,
                 ),
             )
-        }.onFailure { Log.w(TAG, "viewMessages($chatId) failed", it) }
+        }.warnUnlessCancelled(TAG, "viewMessages($chatId)")
     }
 
     private fun handleNewMessage(message: TdApi.Message) {

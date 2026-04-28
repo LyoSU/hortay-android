@@ -5,7 +5,10 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
@@ -21,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -145,16 +149,31 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // Custom transform: only consume the gesture when there's an active pinch (≥2
+            // fingers) or the photo is already zoomed in (pan within image). One-finger drag
+            // at scale==1 is left unconsumed so the outer `Modifier.draggable` (the swipe-to-
+            // dismiss handler) can pick it up. Without this branch, every swipe was eaten by
+            // the transform handler and only video pages dismissed.
             .pointerInput(item.media.fileId) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
-                    if (scale > 1f) {
-                        offsetX += pan.x
-                        offsetY += pan.y
-                    } else {
-                        offsetX = 0f
-                        offsetY = 0f
-                    }
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val activePointers = event.changes.count { it.pressed }
+                        val isPinchOrPan = activePointers >= 2 || scale > 1f
+                        if (!isPinchOrPan) continue
+                        val zoom = event.calculateZoom()
+                        val pan = event.calculatePan()
+                        scale = (scale * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
+                        if (scale > 1f) {
+                            offsetX += pan.x
+                            offsetY += pan.y
+                        } else {
+                            offsetX = 0f
+                            offsetY = 0f
+                        }
+                        event.changes.forEach { it.consume() }
+                    } while (event.changes.any { it.pressed })
                 }
             },
         contentAlignment = Alignment.Center,
