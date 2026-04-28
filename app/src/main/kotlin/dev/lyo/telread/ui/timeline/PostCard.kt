@@ -1,30 +1,12 @@
 package dev.lyo.telread.ui.timeline
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.IosShare
-import androidx.compose.material.icons.outlined.Photo
-import androidx.compose.material.icons.outlined.Repeat
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,7 +14,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.lyo.telread.data.ForwardOrigin
+import dev.lyo.telread.data.ReplyPreview
 import dev.lyo.telread.data.TimelinePost
+import dev.lyo.telread.ui.media.TdMediaImage
 import java.text.DateFormat
 import java.util.Date
 
@@ -50,20 +35,18 @@ fun PostCard(post: TimelinePost) {
         Column(modifier = Modifier.padding(20.dp)) {
             HeaderRow(post)
 
-            if (post.text.isNotBlank()) {
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = post.text,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 12,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            post.forwardOrigin?.let {
+                Spacer(Modifier.height(10.dp))
+                ForwardChip(it)
             }
 
-            if (post.mediaCount > 0) {
-                Spacer(Modifier.height(14.dp))
-                MediaPreview(post)
+            post.reply?.let {
+                Spacer(Modifier.height(10.dp))
+                ReplyBlock(it)
             }
+
+            Spacer(Modifier.height(12.dp))
+            PostBody(content = post.content)
 
             Spacer(Modifier.height(14.dp))
             ActionRow(post)
@@ -74,9 +57,9 @@ fun PostCard(post: TimelinePost) {
 @Composable
 private fun HeaderRow(post: TimelinePost) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Avatar(post.channelTitle)
+        Avatar(post)
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = post.channelTitle,
@@ -86,73 +69,128 @@ private fun HeaderRow(post: TimelinePost) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (post.isForwarded) {
+                if (post.editDate > 0L) {
                     Spacer(Modifier.width(6.dp))
                     Icon(
-                        imageVector = Icons.Outlined.Repeat,
-                        contentDescription = "forwarded",
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.size(14.dp),
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = "edited",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(12.dp),
                     )
                 }
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = formatRelative(post.date),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                post.authorSignature?.let {
+                    Text(
+                        text = " · $it",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Avatar(post: TimelinePost) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(avatarBg(post)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (post.avatarFileId != null) {
+            TdMediaImage(
+                media = dev.lyo.telread.data.TdMedia(post.avatarFileId, 0, 0, null),
+                contentDescription = post.channelTitle,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
             Text(
-                text = formatRelative(post.date),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = post.channelTitle.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontWeight = FontWeight.SemiBold,
             )
         }
     }
 }
 
 @Composable
-private fun Avatar(title: String) {
-    val initial = title.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+private fun avatarBg(post: TimelinePost) = run {
     val palette = listOf(
-        MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer,
-        MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer,
-        MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer,
+        MaterialTheme.colorScheme.primaryContainer,
+        MaterialTheme.colorScheme.secondaryContainer,
+        MaterialTheme.colorScheme.tertiaryContainer,
     )
-    val (bg, fg) = palette[(title.hashCode().rem(palette.size) + palette.size) % palette.size]
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(bg),
-        contentAlignment = Alignment.Center,
-    ) {
+    palette[(post.channelTitle.hashCode().rem(palette.size) + palette.size) % palette.size]
+}
+
+@Composable
+private fun ForwardChip(origin: ForwardOrigin) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = Icons.Outlined.Repeat,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.size(14.dp),
+        )
+        Spacer(Modifier.width(6.dp))
         Text(
-            text = initial,
-            style = MaterialTheme.typography.titleMedium,
-            color = fg,
-            fontWeight = FontWeight.SemiBold,
+            text = "Переслано від ${forwardLabel(origin)}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
+private fun forwardLabel(origin: ForwardOrigin): String = when (origin) {
+    is ForwardOrigin.User -> origin.userName
+    is ForwardOrigin.Channel -> origin.channelName + (origin.authorSignature?.let { " · $it" } ?: "")
+    is ForwardOrigin.HiddenUser -> origin.senderName
+    is ForwardOrigin.Chat -> origin.chatName
+}
+
 @Composable
-private fun MediaPreview(post: TimelinePost) {
-    // 🎯 LEARNING CHECKPOINT #2 — see full guidance in earlier version of this file in git.
-    Box(
+private fun ReplyBlock(reply: ReplyPreview) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(16f / 10f)
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-        contentAlignment = Alignment.Center,
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Outlined.Photo,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(36.dp)
+                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp)),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column {
             Text(
-                text = if (post.mediaCount > 1) "Альбом · ${post.mediaCount}" else "Медіа",
-                style = MaterialTheme.typography.labelLarge,
+                text = reply.authorName,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = reply.excerpt,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -164,19 +202,14 @@ private fun ActionRow(post: TimelinePost) {
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (post.views > 0) {
-            Icon(
-                imageVector = Icons.Outlined.Visibility,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp),
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = formatViews(post.views),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (post.views > 0) StatPill(Icons.Outlined.Visibility, formatViews(post.views))
+        if (post.reactions.totalCount > 0) {
+            Spacer(Modifier.width(12.dp))
+            StatPill(Icons.Outlined.Favorite, formatViews(post.reactions.totalCount), tint = MaterialTheme.colorScheme.tertiary)
+        }
+        if (post.commentCount > 0) {
+            Spacer(Modifier.width(12.dp))
+            StatPill(Icons.Outlined.ChatBubbleOutline, formatViews(post.commentCount))
         }
         Spacer(Modifier.weight(1f))
         IconButton(onClick = {}) {
@@ -196,6 +229,28 @@ private fun ActionRow(post: TimelinePost) {
     }
 }
 
+@Composable
+private fun StatPill(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 private fun formatRelative(epochMs: Long): String {
     val diffMin = (System.currentTimeMillis() - epochMs) / 60_000
     return when {
@@ -207,8 +262,8 @@ private fun formatRelative(epochMs: Long): String {
     }
 }
 
-private fun formatViews(views: Int): String = when {
-    views < 1_000 -> views.toString()
-    views < 1_000_000 -> "%.1fK".format(views / 1_000.0).trimEnd('0').trimEnd('.')
-    else -> "%.1fM".format(views / 1_000_000.0).trimEnd('0').trimEnd('.')
+private fun formatViews(count: Int): String = when {
+    count < 1_000 -> count.toString()
+    count < 1_000_000 -> "%.1fK".format(count / 1_000.0).trimEnd('0').trimEnd('.')
+    else -> "%.1fM".format(count / 1_000_000.0).trimEnd('0').trimEnd('.')
 }

@@ -1,41 +1,66 @@
 package dev.lyo.telread.data
 
 /**
- * 🎯 LEARNING CHECKPOINT #1 — feed shaping rules
+ * Feed-shaping rules applied right after raw → [TimelinePost] mapping.
  *
- * Telegram-канали постять різнорідно:
- *   • Звичайні текстові пости.
- *   • Альбоми (media groups) — N окремих TdApi.Message з однаковим mediaAlbumId. У стрічку
- *     треба як одну картку, інакше бачимо 10 однакових записів підряд.
- *   • Реклама / спонсорські вставки (помічаємо за emoji «#ad», довжиною, posters of well-known
- *     ad-bots, або просто пропускаємо forwarded-пости?).
- *   • Дуже короткі реакції («🔥», «👏») — для twitter-feed читалки це шум.
- *
- * 🛠️ Ваше завдання — реалізувати [apply]:
- *   1. Згрупуйте пости одного альбому в один [TimelinePost] (склейте текст із непустих, додайте
- *      mediaCount = розмір групи, візьміть наймолодший id як ключ).
- *   2. Викиньте «шумові» пости: текст коротший за N символів І без медіа.
- *   3. Відсортуйте за date desc.
- *
- * Підказки:
- *   • mediaAlbumId зараз НЕ виноситься у [TimelinePost] — або додайте його туди, або
- *     передавайте сирі TdApi.Message сюди (тоді змініть і PostsRepository.toPost щоб мапити
- *     ПІСЛЯ фільтра). Який варіант чистіший — ваш вибір.
- *   • Поріг «короткого» поста — 12-15 символів типово працює добре. Налаштуйте під смак.
- *   • Не перевикористовуйте id первинного поста для групи — беріть min(id) всередині групи,
- *     щоб ключ LazyColumn був стабільним.
- *
- * Trade-offs to think about:
- *   • Агресивний фільтр = чистіша стрічка, але ризик викинути цікавий короткий допис.
- *   • М'який фільтр = більше шуму, але користувач бачить усе.
- *   • Логіку угруповання можна винести у TdClient (на event-рівні) або тут (на batch-рівні).
- *     Batch (тут) простіший для прототипу; event-level масштабується краще.
+ *   1. **Drop unsupported** — service messages, sponsored, restricted; they don't belong
+ *      in a Twitter-style read feed.
+ *   2. **Merge media albums** — Telegram represents an album as N separate messages with
+ *      the same `mediaAlbumId`. Show one card per album. `mediaAlbumId == 0` means a
+ *      standalone post; never group those.
+ *   3. **Sort** by date, newest first.
  */
 object PostFilterStrategy {
 
-    fun apply(raw: List<TimelinePost>): List<TimelinePost> {
-        // TODO(you): implement grouping + filtering + sorting per docs above.
-        // For now, return raw sorted by date desc — replace with your logic.
-        return raw.sortedByDescending { it.date }
+    fun apply(raw: List<TimelinePost>): List<TimelinePost> = raw
+        .filterNot { it.content is PostContent.Unsupported }
+        .let(::mergeAlbums)
+        .sortedByDescending { it.date }
+
+    private fun mergeAlbums(posts: List<TimelinePost>): List<TimelinePost> {
+        val standalones = posts.filter { it.mediaAlbumId == 0L }
+        val grouped = posts
+            .filter { it.mediaAlbumId != 0L }
+            .groupBy { it.chatId to it.mediaAlbumId }
+            .map { (_, members) -> mergeAlbumMembers(members) }
+        return standalones + grouped
+    }
+
+    private fun mergeAlbumMembers(members: List<TimelinePost>): TimelinePost {
+        if (members.size == 1) return members.first()
+
+        // Stable, oldest-first sort so the resulting album reads in posting order.
+        val sorted = members.sortedBy { it.date }
+        val anchor = sorted.first()
+
+        val items = sorted.flatMap { post ->
+            when (val c = post.content) {
+                is PostContent.PhotoAlbum -> c.items
+                is PostContent.Video -> listOf(AlbumItem.Video(c.media, c.durationSec))
+                is PostContent.Animation -> listOf(AlbumItem.Photo(c.media))
+                else -> emptyList()
+            }
+        }
+        val caption = sorted
+            .firstOrNull { it.content.captionPlain.isNotBlank() }
+            ?.content
+            ?.toFormattedCaption()
+            ?: FormattedText.Empty
+
+        return anchor.copy(
+            content = PostContent.PhotoAlbum(items = items, caption = caption),
+            views = members.maxOf { it.views },
+            commentCount = members.maxOf { it.commentCount },
+            reactions = members.map { it.reactions }.maxByOrNull { it.totalCount } ?: Reactions(0, emptyList()),
+        )
+    }
+
+    private fun PostContent.toFormattedCaption(): FormattedText = when (this) {
+        is PostContent.Text -> formatted
+        is PostContent.PhotoAlbum -> caption
+        is PostContent.Video -> caption
+        is PostContent.Animation -> caption
+        is PostContent.Document -> caption
+        else -> FormattedText.plain(captionPlain)
     }
 }

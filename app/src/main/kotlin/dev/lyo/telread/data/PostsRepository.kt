@@ -1,94 +1,72 @@
 package dev.lyo.telread.data
 
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.drinkless.tdlib.TdApi
 
 /**
- * Pulls a Twitter-style chronological feed merged from all *channel* chats the user follows.
+ * Twitter-style chronological feed merged from every channel chat the user follows.
  *
- * TDLib pattern:
- *   1. [TdApi.LoadChats] tells the daemon to fetch chat list pages from network.
- *   2. [TdApi.GetChats] returns the now-cached chat IDs.
- *   3. For each chat we call [TdApi.GetChatHistory] with `fromMessageId = 0` to get latest N msgs.
- *   4. Merge → sort by date desc → run through [PostFilterStrategy] → emit.
+ * Pull model:
+ *   1. [TdApi.LoadChats] hints the daemon to fetch chat list pages.
+ *   2. [TdApi.GetChats] returns cached chat IDs (local-only, fast).
+ *   3. For each *channel* chat, [TdApi.GetChatHistory] fetches the latest N messages.
+ *   4. Raw messages → [MessageMapper] → [PostFilterStrategy] → [posts].
+ *
+ * Concurrency: a single [Mutex] guards refreshes so that pull-to-refresh + incremental
+ * updates from TDLib never interleave and produce phantom duplicates.
  */
-class PostsRepository(private val td: TdClient) {
+class PostsRepository(
+    private val td: TdClient,
+    @Suppress("unused") scope: CoroutineScope,
+) {
+
+    private val refreshMutex = Mutex()
 
     private val _posts = MutableStateFlow<List<TimelinePost>>(emptyList())
     val posts: StateFlow<List<TimelinePost>> = _posts.asStateFlow()
 
-    suspend fun refresh(limitPerChannel: Int = 20) {
-        runCatching { td.send(TdApi.LoadChats(TdApi.ChatListMain(), 200)) }
-        val chats = td.send(TdApi.GetChats(TdApi.ChatListMain(), 500)).chatIds
+    suspend fun refresh(limitPerChannel: Int = 20): Result<Unit> = refreshMutex.withLock {
+        runCatching { refreshLocked(limitPerChannel) }.onFailure {
+            Log.w(TAG, "refresh failed", it)
+        }
+    }
+
+    private suspend fun refreshLocked(limitPerChannel: Int) {
+        runCatching { td.send(TdApi.LoadChats(TdApi.ChatListMain(), CHAT_LIST_HINT)) }
+
+        val chatIds = td.send(TdApi.GetChats(TdApi.ChatListMain(), CHAT_LIST_LIMIT)).chatIds
 
         val raw = mutableListOf<TimelinePost>()
-        for (chatId in chats) {
+        for (chatId in chatIds) {
             val chat = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull() ?: continue
             if (!chat.isChannel()) continue
 
             val history = runCatching {
-                td.send(TdApi.GetChatHistory(chatId, 0, 0, limitPerChannel, false))
+                td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limitPerChannel, false))
             }.getOrNull() ?: continue
 
-            history.messages?.forEach { msg ->
-                raw += msg.toPost(chat)
+            history.messages?.forEach { message ->
+                raw += MessageMapper.toTimelinePost(message, chat)
             }
         }
 
         _posts.value = PostFilterStrategy.apply(raw)
+    }
+
+    private companion object {
+        const val TAG = "PostsRepository"
+        const val CHAT_LIST_HINT = 200
+        const val CHAT_LIST_LIMIT = 500
     }
 }
 
 private fun TdApi.Chat.isChannel(): Boolean {
     val type = this.type
     return type is TdApi.ChatTypeSupergroup && type.isChannel
-}
-
-private fun TdApi.Message.toPost(chat: TdApi.Chat): TimelinePost {
-    val text: String
-    val thumb: Int?
-    val mediaCount: Int
-    when (val c = content) {
-        is TdApi.MessageText -> {
-            text = c.text.text
-            thumb = null
-            mediaCount = 0
-        }
-        is TdApi.MessagePhoto -> {
-            text = c.caption?.text.orEmpty()
-            thumb = c.photo.sizes.minByOrNull { it.width * it.height }?.photo?.id
-            mediaCount = 1
-        }
-        is TdApi.MessageVideo -> {
-            text = c.caption?.text.orEmpty()
-            thumb = c.video.thumbnail?.file?.id
-            mediaCount = 1
-        }
-        is TdApi.MessageAnimation -> {
-            text = c.caption?.text.orEmpty()
-            thumb = c.animation.thumbnail?.file?.id
-            mediaCount = 1
-        }
-        else -> {
-            text = "[unsupported content]"
-            thumb = null
-            mediaCount = 0
-        }
-    }
-
-    return TimelinePost(
-        id = id,
-        chatId = chatId,
-        channelTitle = chat.title.orEmpty(),
-        channelHandle = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId?.let { "id$it" },
-        avatarFileId = chat.photo?.small?.id,
-        text = text,
-        mediaThumbFileId = thumb,
-        mediaCount = mediaCount,
-        views = interactionInfo?.viewCount ?: 0,
-        date = date.toLong() * 1000L,
-        isForwarded = forwardInfo != null,
-    )
 }

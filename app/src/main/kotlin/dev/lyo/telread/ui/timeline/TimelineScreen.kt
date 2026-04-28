@@ -1,48 +1,18 @@
 package dev.lyo.telread.ui.timeline
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Bookmark
-import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LargeTopAppBar
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberTopAppBarState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -52,7 +22,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewmodel.initializer
-import dev.lyo.telread.data.TdClient
+import dev.lyo.telread.data.PostContent
+import dev.lyo.telread.data.PostsRepository
 import dev.lyo.telread.data.TimelinePost
 
 private enum class FeedFilter(val label: String) {
@@ -64,10 +35,10 @@ private enum class FeedFilter(val label: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TimelineScreen(client: TdClient) {
+fun TimelineScreen(repo: PostsRepository) {
     val vm: TimelineViewModel = viewModel(
-        factory = remember(client) {
-            viewModelFactory { initializer { TimelineViewModel(client) } }
+        factory = remember(repo) {
+            viewModelFactory { initializer { TimelineViewModel(repo) } }
         },
     )
 
@@ -109,10 +80,7 @@ fun TimelineScreen(client: TdClient) {
                 .padding(padding),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                FilterChipsRow(
-                    selected = filter,
-                    onSelected = { filter = it },
-                )
+                FilterChipsRow(selected = filter, onSelected = { filter = it })
 
                 if (filtered.isEmpty() && !refreshing) {
                     EmptyState()
@@ -204,7 +172,7 @@ private fun EmptyState() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        androidx.compose.foundation.layout.Box(
+        Box(
             modifier = Modifier
                 .size(96.dp)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(28.dp)),
@@ -217,13 +185,13 @@ private fun EmptyState() {
                 modifier = Modifier.size(48.dp),
             )
         }
-        androidx.compose.foundation.layout.Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(20.dp))
         Text(
             text = "Поки тут порожньо",
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center,
         )
-        androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             text = "Підпишіться на канали в Telegram — і вони з'являться у стрічці.",
             style = MaterialTheme.typography.bodyLarge,
@@ -235,16 +203,14 @@ private fun EmptyState() {
 
 private fun applyFilter(posts: List<TimelinePost>, filter: FeedFilter): List<TimelinePost> = when (filter) {
     FeedFilter.All -> posts
-    FeedFilter.Text -> posts.filter { it.mediaCount == 0 && it.text.isNotBlank() }
-    FeedFilter.Media -> posts.filter { it.mediaCount > 0 }
+    FeedFilter.Text -> posts.filter { it.content is PostContent.Text }
+    FeedFilter.Media -> posts.filter {
+        it.content is PostContent.PhotoAlbum ||
+            it.content is PostContent.Video ||
+            it.content is PostContent.Animation
+    }
     FeedFilter.Today -> {
         val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
         posts.filter { it.date >= cutoff }
     }
-}
-
-@Composable
-@Suppress("unused")
-private fun AnimatedReveal(visible: Boolean, content: @Composable () -> Unit) {
-    AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) { content() }
 }

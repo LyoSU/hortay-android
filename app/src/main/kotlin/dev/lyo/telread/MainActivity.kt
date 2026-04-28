@@ -6,12 +6,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.telread.data.AuthStage
 import dev.lyo.telread.ui.auth.AuthScreen
+import dev.lyo.telread.ui.media.LocalMediaCache
 import dev.lyo.telread.ui.theme.TelreadTheme
 import dev.lyo.telread.ui.timeline.TimelineScreen
 
@@ -22,16 +24,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val app = application as TelreadApp
-        val client = app.tdClient
+        val graph = (application as TelreadApp).graph
 
         setContent {
             TelreadTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    val auth by client.authStage.collectAsStateWithLifecycle()
-                    when (auth) {
-                        AuthStage.Ready -> TimelineScreen(client = client)
-                        else -> AuthScreen(client = client, stage = auth)
+                CompositionLocalProvider(LocalMediaCache provides graph.mediaCache) {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        val auth by graph.tdClient.authStage.collectAsStateWithLifecycle()
+                        when (auth) {
+                            AuthStage.Ready -> TimelineScreen(repo = graph.postsRepository)
+                            else -> AuthScreen(client = graph.tdClient, stage = auth)
+                        }
                     }
                 }
             }

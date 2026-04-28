@@ -4,13 +4,19 @@ package dev.lyo.telread.data
 data class TimelinePost(
     val id: Long,
     val chatId: Long,
+    /** Telegram media album id; 0 means standalone post (do not merge). */
+    val mediaAlbumId: Long,
     val channelTitle: String,
     val channelHandle: String?,
     val avatarFileId: Int?,
-    val text: String,
-    val mediaThumbFileId: Int?,
-    val mediaCount: Int,
+    val content: PostContent,
     val views: Int,
     val date: Long,
-    val isForwarded: Boolean,
+    /** Server-side edit timestamp; 0 if never edited. */
+    val editDate: Long,
+    val forwardOrigin: ForwardOrigin?,
+    val authorSignature: String?,
+    val reply: ReplyPreview?,
+    val reactions: Reactions,
+    val commentCount: Int,
 )
