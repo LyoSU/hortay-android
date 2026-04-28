@@ -124,6 +124,7 @@ class TdClient private constructor(
             }
         }
 
+
     class TdException(val code: Int, message: String) : RuntimeException("[$code] $message")
 
     companion object {

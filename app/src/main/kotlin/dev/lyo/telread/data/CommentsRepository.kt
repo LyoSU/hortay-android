@@ -41,12 +41,17 @@ class CommentsRepository(private val td: TdClient) {
         val threadChatId = info.chatId
         val rootId = info.messageThreadId
 
+        // NOTE: do NOT issue OpenChat here. OpenChat is a "user is actively viewing this
+        // chat right now" signal — it's the UI's job to pair it with CloseChat when the
+        // screen leaves composition (see CommentsScreen). Read APIs like
+        // GetMessageThreadHistory don't require it.
+
         val raw = mutableListOf<TdApi.Message>()
         var fromId = 0L
         while (raw.size < limit) {
             val batch = runCatching {
                 td.send(TdApi.GetMessageThreadHistory(threadChatId, rootId, fromId, 0, BATCH_SIZE))
-            }.getOrNull() ?: break
+            }.warnUnlessCancelled(TAG, "threadHistory($threadChatId)").getOrNull() ?: break
             val msgs = batch.messages.orEmpty()
             if (msgs.isEmpty()) break
             raw += msgs
@@ -102,7 +107,7 @@ class CommentsRepository(private val td: TdClient) {
             }
             .launchIn(this)
 
-        awaitClose { /* cancellation propagates to launchIn coroutines */ }
+        awaitClose { /* OpenChat/CloseChat is paired in the UI layer (CommentsScreen). */ }
     }
 
     suspend fun openThread(threadChatId: Long) {
