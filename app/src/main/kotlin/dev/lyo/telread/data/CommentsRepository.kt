@@ -1,41 +1,127 @@
 package dev.lyo.telread.data
 
+import android.util.Log
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import org.drinkless.tdlib.TdApi
 
 /**
- * Fetches a channel post's discussion thread (the linked group) and returns a flat,
- * pre-ordered list of [CommentRow]s ready for a LazyColumn:
- *
- *   ─ Top-level reply A
- *     ─ Reply to A
- *       ─ Reply to that reply
- *     ─ Another reply to A
- *   ─ Top-level reply B
- *
- * Depth is clamped so very deep chains stay legible on phones.
+ * Live discussion-thread feed for a channel post. Emits a [ThreadState] that updates as new
+ * comments arrive, reactions/views change, or messages get deleted upstream — without ever
+ * requiring the consumer to refetch.
  */
 class CommentsRepository(private val td: TdClient) {
 
-    suspend fun fetchThread(chatId: Long, messageId: Long, limit: Int = 200): Result<List<CommentRow>> = runCatching {
-        val info = td.send(TdApi.GetMessageThread(chatId, messageId))
+    sealed interface ThreadState {
+        data object Loading : ThreadState
+        data class Ready(val rows: List<CommentRow>, val threadChatId: Long) : ThreadState
+        data class Error(val message: String) : ThreadState
+    }
+
+    /**
+     * Cold flow: starts loading when collected, stops everything when collection ends.
+     * Subscribes to [TdApi.UpdateNewMessage], [TdApi.UpdateMessageInteractionInfo],
+     * [TdApi.UpdateDeleteMessages] and [TdApi.UpdateMessageContent] limited to the linked
+     * discussion chat so the displayed thread stays in sync without a manual refresh.
+     */
+    fun observeThread(chatId: Long, messageId: Long, limit: Int = 200): Flow<ThreadState> = callbackFlow {
+        trySend(ThreadState.Loading)
+
+        val info = runCatching { td.send(TdApi.GetMessageThread(chatId, messageId)) }
+            .getOrElse {
+                trySend(ThreadState.Error("Обговорення недоступне."))
+                close()
+                return@callbackFlow
+            }
+
         val threadChatId = info.chatId
         val rootId = info.messageThreadId
 
         val raw = mutableListOf<TdApi.Message>()
         var fromId = 0L
         while (raw.size < limit) {
-            val batch = td.send(TdApi.GetMessageThreadHistory(threadChatId, rootId, fromId, 0, BATCH_SIZE))
+            val batch = runCatching {
+                td.send(TdApi.GetMessageThreadHistory(threadChatId, rootId, fromId, 0, BATCH_SIZE))
+            }.getOrNull() ?: break
             val msgs = batch.messages.orEmpty()
             if (msgs.isEmpty()) break
             raw += msgs
             fromId = msgs.last().id
         }
 
-        // Drop the root mirror of the channel post itself (it is already pinned at the top of
-        // the screen by [CommentsScreen]); only conversation messages remain.
-        val replies = raw.filter { it.id != rootId }
+        // Drop the channel-post mirror; only conversation messages remain.
+        val live = raw.filter { it.id != rootId }.toMutableList()
+        suspend fun pushSnapshot() {
+            trySend(ThreadState.Ready(buildTree(live, rootId), threadChatId))
+        }
+        pushSnapshot()
 
-        buildTree(replies, rootMessageId = rootId)
+        // Real-time fan-in. We share the same updates flow as the rest of the app; filter
+        // strictly to threadChatId so we never touch unrelated chats.
+        td.updates.filterIsInstance<TdApi.UpdateNewMessage>()
+            .onEach { upd ->
+                if (upd.message.chatId != threadChatId) return@onEach
+                if (upd.message.id == rootId) return@onEach
+                if (live.any { it.id == upd.message.id }) return@onEach
+                live += upd.message
+                pushSnapshot()
+            }
+            .launchIn(this)
+
+        td.updates.filterIsInstance<TdApi.UpdateMessageInteractionInfo>()
+            .onEach { upd ->
+                if (upd.chatId != threadChatId) return@onEach
+                val idx = live.indexOfFirst { it.id == upd.messageId }
+                if (idx == -1) return@onEach
+                live[idx].interactionInfo = upd.interactionInfo
+                pushSnapshot()
+            }
+            .launchIn(this)
+
+        td.updates.filterIsInstance<TdApi.UpdateMessageContent>()
+            .onEach { upd ->
+                if (upd.chatId != threadChatId) return@onEach
+                val idx = live.indexOfFirst { it.id == upd.messageId }
+                if (idx == -1) return@onEach
+                live[idx].content = upd.newContent
+                pushSnapshot()
+            }
+            .launchIn(this)
+
+        td.updates.filterIsInstance<TdApi.UpdateDeleteMessages>()
+            .onEach { upd ->
+                if (upd.chatId != threadChatId || !upd.isPermanent) return@onEach
+                val ids = upd.messageIds.toHashSet()
+                val before = live.size
+                live.removeAll { it.id in ids }
+                if (live.size != before) pushSnapshot()
+            }
+            .launchIn(this)
+
+        awaitClose { /* cancellation propagates to launchIn coroutines */ }
+    }
+
+    suspend fun openThread(threadChatId: Long) {
+        runCatching { td.send(TdApi.OpenChat(threadChatId)) }
+            .onFailure { Log.w(TAG, "openThread($threadChatId) failed", it) }
+    }
+
+    suspend fun closeThread(threadChatId: Long) {
+        runCatching { td.send(TdApi.CloseChat(threadChatId)) }
+            .onFailure { Log.w(TAG, "closeThread($threadChatId) failed", it) }
+    }
+
+    suspend fun viewMessages(threadChatId: Long, messageIds: List<Long>) {
+        if (messageIds.isEmpty()) return
+        runCatching {
+            td.send(
+                TdApi.ViewMessages(threadChatId, messageIds.toLongArray(), null, /* forceRead */ true),
+            )
+        }.onFailure { Log.w(TAG, "viewMessages($threadChatId) failed", it) }
     }
 
     private suspend fun buildTree(messages: List<TdApi.Message>, rootMessageId: Long): List<CommentRow> {
@@ -44,20 +130,17 @@ class CommentsRepository(private val td: TdClient) {
         val byId: Map<Long, TdApi.Message> = messages.associateBy { it.id }
         val children: Map<Long, List<TdApi.Message>> = messages.groupBy { msg ->
             val replyId = (msg.replyTo as? TdApi.MessageReplyToMessage)?.messageId
-            // Anything that replies to the root mirror — or to a message we did not load — is a
-            // top-level comment, sorted under the synthetic key 0L.
             if (replyId != null && replyId != rootMessageId && replyId in byId) replyId else 0L
         }
 
-        val authorCache = mutableMapOf<Long, String>()
+        val authorCache = mutableMapOf<Long, AuthorInfo>()
         val rows = mutableListOf<CommentRow>()
 
         suspend fun walk(parentId: Long, depth: Int) {
             val siblings = children[parentId].orEmpty().sortedBy { it.date }
             siblings.forEachIndexed { idx, msg ->
-                val comment = toComment(msg, authorCache)
                 rows += CommentRow(
-                    comment = comment,
+                    comment = toComment(msg, authorCache),
                     depth = depth.coerceAtMost(MAX_DEPTH),
                     isLastSibling = idx == siblings.lastIndex,
                 )
@@ -69,38 +152,45 @@ class CommentsRepository(private val td: TdClient) {
         return rows
     }
 
-    private suspend fun toComment(msg: TdApi.Message, authorCache: MutableMap<Long, String>): Comment {
-        val text = textOf(msg.content)
+    private suspend fun toComment(msg: TdApi.Message, cache: MutableMap<Long, AuthorInfo>): Comment {
+        val author = authorInfoFor(msg, cache)
         val parentId = (msg.replyTo as? TdApi.MessageReplyToMessage)?.messageId
         return Comment(
             id = msg.id,
             parentId = parentId,
             chatId = msg.chatId,
-            authorName = authorNameFor(msg, authorCache),
-            avatarFileId = null,
-            text = text,
+            authorName = author.name,
+            avatarFileId = author.avatarFileId,
+            text = textOf(msg.content),
             date = msg.date.toLong() * 1000L,
             reactions = reactionsFrom(msg.interactionInfo?.reactions),
         )
     }
 
-    private suspend fun authorNameFor(msg: TdApi.Message, cache: MutableMap<Long, String>): String {
+    private suspend fun authorInfoFor(msg: TdApi.Message, cache: MutableMap<Long, AuthorInfo>): AuthorInfo {
         return when (val sender = msg.senderId) {
-            is TdApi.MessageSenderUser -> cache.getOrPut(sender.userId) {
-                runCatching { td.send(TdApi.GetUser(sender.userId)) }.getOrNull()?.let { user ->
-                    listOfNotNull(
-                        user.firstName?.takeUnless { it.isBlank() },
-                        user.lastName?.takeUnless { it.isBlank() },
-                    ).joinToString(" ").ifBlank {
-                        user.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" } ?: "Користувач"
-                    }
-                } ?: "Користувач"
-            }
-            is TdApi.MessageSenderChat -> cache.getOrPut(sender.chatId) {
-                runCatching { td.send(TdApi.GetChat(sender.chatId)) }.getOrNull()?.title ?: "Канал"
-            }
-            else -> "—"
+            is TdApi.MessageSenderUser -> cache.getOrPut(sender.userId) { resolveUser(sender.userId) }
+            is TdApi.MessageSenderChat -> cache.getOrPut(sender.chatId) { resolveChat(sender.chatId) }
+            else -> AuthorInfo("—", null)
         }
+    }
+
+    private suspend fun resolveUser(userId: Long): AuthorInfo {
+        val user = runCatching { td.send(TdApi.GetUser(userId)) }.getOrNull()
+            ?: return AuthorInfo("Користувач", null)
+        val name = listOfNotNull(
+            user.firstName?.takeUnless { it.isBlank() },
+            user.lastName?.takeUnless { it.isBlank() },
+        ).joinToString(" ").ifBlank {
+            user.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" } ?: "Користувач"
+        }
+        return AuthorInfo(name = name, avatarFileId = user.profilePhoto?.small?.id)
+    }
+
+    private suspend fun resolveChat(chatId: Long): AuthorInfo {
+        val chat = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
+            ?: return AuthorInfo("Канал", null)
+        return AuthorInfo(name = chat.title.orEmpty().ifBlank { "Канал" }, avatarFileId = chat.photo?.small?.id)
     }
 
     private fun textOf(content: TdApi.MessageContent): FormattedText {
@@ -125,7 +215,10 @@ class CommentsRepository(private val td: TdClient) {
         return Reactions(total, emojis)
     }
 
+    private data class AuthorInfo(val name: String, val avatarFileId: Int?)
+
     private companion object {
+        const val TAG = "CommentsRepository"
         const val MAX_DEPTH = 3
         const val BATCH_SIZE = 50
     }

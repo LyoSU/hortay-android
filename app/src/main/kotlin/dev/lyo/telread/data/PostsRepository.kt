@@ -34,6 +34,7 @@ class PostsRepository(
 
     private val refreshMutex = Mutex()
     private val chatCache = ConcurrentHashMap<Long, TdApi.Chat>()
+    private val mapper = MessageMapper(td)
 
     private val _posts = MutableStateFlow<List<TimelinePost>>(emptyList())
     val posts: StateFlow<List<TimelinePost>> = _posts.asStateFlow()
@@ -66,6 +67,39 @@ class PostsRepository(
         }
     }
 
+    /**
+     * Tells TDLib the user is actively focused on [chatId]. The daemon prioritises updates
+     * for this chat, prefetches history and treats subsequent [viewMessages] calls as
+     * authoritative. Always pair with [closeChat] when focus moves away.
+     */
+    suspend fun openChat(chatId: Long) {
+        runCatching { td.send(TdApi.OpenChat(chatId)) }
+            .onFailure { Log.w(TAG, "openChat($chatId) failed", it) }
+    }
+
+    suspend fun closeChat(chatId: Long) {
+        runCatching { td.send(TdApi.CloseChat(chatId)) }
+            .onFailure { Log.w(TAG, "closeChat($chatId) failed", it) }
+    }
+
+    /**
+     * Registers that the user has seen the given messages in [chatId]. This is what bumps
+     * channel view counters server-side; without it, the user's "view" never lands.
+     */
+    suspend fun viewMessages(chatId: Long, messageIds: List<Long>) {
+        if (messageIds.isEmpty()) return
+        runCatching {
+            td.send(
+                TdApi.ViewMessages(
+                    chatId,
+                    messageIds.toLongArray(),
+                    /* source */ null,
+                    /* forceRead */ true,
+                ),
+            )
+        }.onFailure { Log.w(TAG, "viewMessages($chatId) failed", it) }
+    }
+
     private fun handleNewMessage(message: TdApi.Message) {
         scope.launch {
             val chat = chatCache[message.chatId] ?: runCatching { td.send(TdApi.GetChat(message.chatId)) }
@@ -74,7 +108,7 @@ class PostsRepository(
                 ?: return@launch
             if (!chat.isChannel()) return@launch
 
-            val post = MessageMapper.toTimelinePost(message, chat)
+            val post = mapper.toTimelinePost(message, chat)
             if (post.content is PostContent.Unsupported) return@launch
 
             _posts.update { current ->
@@ -142,7 +176,7 @@ class PostsRepository(
             }.getOrNull() ?: continue
 
             history.messages?.forEach { message ->
-                raw += MessageMapper.toTimelinePost(message, chat)
+                raw += mapper.toTimelinePost(message, chat)
             }
         }
 

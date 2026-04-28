@@ -90,6 +90,17 @@ fun TimelineScreen(
         listState.scrollToItem(0)
     }
 
+    // Tell TDLib the filtered channel is in focus while the user is here.
+    LaunchedEffect(channelFilter) {
+        val id = channelFilter ?: return@LaunchedEffect
+        repo.openChat(id)
+        try {
+            kotlinx.coroutines.awaitCancellation()
+        } finally {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { repo.closeChat(id) }
+        }
+    }
+
     val visiblePosts = remember(posts, filter, bookmarkedKeys, channelFilter, showOnlyBookmarked) {
         val base = buildList {
             posts.forEach { p ->
@@ -103,6 +114,21 @@ fun TimelineScreen(
 
     val activeChannelTitle = remember(channelFilter, posts) {
         channelFilter?.let { id -> posts.firstOrNull { it.chatId == id }?.channelTitle }
+    }
+
+    // Mark visible posts as viewed (server-side view counter increments). Batched per
+    // chatId; snapshotFlow re-emits only when the visible-window changes, so we don't
+    // hammer TDLib while the list is idle.
+    LaunchedEffect(visiblePosts) {
+        if (visiblePosts.isEmpty()) return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+            .collect { indices ->
+                val grouped = indices.mapNotNull { idx -> visiblePosts.getOrNull(idx) }
+                    .groupBy { it.chatId }
+                for ((chatId, group) in grouped) {
+                    repo.viewMessages(chatId, group.map { it.id })
+                }
+            }
     }
 
     val interactions = remember(bookmarkedKeys, onChannelFilterChange, onOpenComments) {

@@ -18,12 +18,16 @@ object PostActions {
      * Telegram client (official, Telegram X, MonoGram) handles natively.
      */
     fun telegramUri(post: TimelinePost): Uri {
-        val handle = post.channelHandle?.removePrefix("id")
-        val publicHandle = post.channelHandle?.takeIf { !it.startsWith("id") }
+        // Channel handles are stored as "@username" once resolved; private channels expose
+        // none. TDLib message ids are encoded — server-side post id is the upper bits.
+        val username = post.channelHandle?.removePrefix("@")
+        val serverPostId = post.id ushr 20
         return when {
-            publicHandle != null -> "tg://resolve?domain=$publicHandle&post=${post.id ushr 20}".toUri()
-            handle != null -> "tg://privatepost?channel=$handle&post=${post.id ushr 20}".toUri()
-            else -> "tg://".toUri()
+            !username.isNullOrBlank() -> "tg://resolve?domain=$username&post=$serverPostId".toUri()
+            else -> {
+                val rawChannelId = post.chatId.toString().removePrefix("-100")
+                "tg://privatepost?channel=$rawChannelId&post=$serverPostId".toUri()
+            }
         }
     }
 

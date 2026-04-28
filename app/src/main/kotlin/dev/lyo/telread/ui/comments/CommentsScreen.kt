@@ -18,27 +18,25 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.lyo.telread.data.Comment
 import dev.lyo.telread.data.CommentRow
 import dev.lyo.telread.data.CommentsRepository
+import dev.lyo.telread.data.TdMedia
 import dev.lyo.telread.data.TimelinePost
+import dev.lyo.telread.ui.media.TdMediaImage
 import dev.lyo.telread.ui.text.rememberAnnotatedString
 import dev.lyo.telread.ui.timeline.PostCard
 import dev.lyo.telread.ui.timeline.PostInteractions
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
-private sealed interface ThreadState {
-    data object Loading : ThreadState
-    data class Ready(val rows: List<CommentRow>) : ThreadState
-    data class Empty(val reason: String) : ThreadState
-}
-
 /**
- * Reddit/Twitter-style discussion overlay.
- *   • Original post pinned at the top (read-only).
- *   • Replies rendered as a flattened tree — each row carries `depth`, drawn with a left
- *     indent + a thin vertical connector line so chains read like Reddit.
- *   • Empty / unsupported channels surface a friendly explainer instead of an error.
+ * Reddit/Twitter-style discussion overlay with live updates. While this screen is on top
+ * we tell TDLib that the linked discussion chat is "open" so view counts register and new
+ * messages stream in via the shared updates flow.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,19 +45,25 @@ fun CommentsScreen(
     repo: CommentsRepository,
     onDismiss: () -> Unit,
 ) {
-    var state by remember(post.id) { mutableStateOf<ThreadState>(ThreadState.Loading) }
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    val state by remember(post.chatId, post.id) {
+        repo.observeThread(post.chatId, post.id)
+    }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
 
-    LaunchedEffect(post.id) {
-        repo.fetchThread(post.chatId, post.id)
-            .onSuccess { rows ->
-                state = if (rows.isEmpty()) ThreadState.Empty("Поки немає коментарів.")
-                else ThreadState.Ready(rows)
-            }
-            .onFailure {
-                state = ThreadState.Empty("У цьому каналі обговорення не доступне.")
-            }
+    // Tell TDLib the linked discussion chat is "open" while this screen is alive; close it
+    // when the screen leaves composition. awaitCancellation + NonCancellable guarantees the
+    // close call survives even on rapid back-press.
+    val activeThreadChatId = (state as? CommentsRepository.ThreadState.Ready)?.threadChatId
+    LaunchedEffect(activeThreadChatId) {
+        val tid = activeThreadChatId ?: return@LaunchedEffect
+        repo.openThread(tid)
+        try {
+            kotlinx.coroutines.awaitCancellation()
+        } finally {
+            withContext(NonCancellable) { repo.closeThread(tid) }
+        }
     }
+
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     Scaffold(
         modifier = Modifier
@@ -97,12 +101,14 @@ fun CommentsScreen(
             }
 
             item(key = "label") {
+                val label = when (val s = state) {
+                    CommentsRepository.ThreadState.Loading -> "Завантаження…"
+                    is CommentsRepository.ThreadState.Ready -> if (s.rows.isEmpty()) "Поки немає коментарів."
+                    else "${s.rows.size} відповідей"
+                    is CommentsRepository.ThreadState.Error -> s.message
+                }
                 Text(
-                    text = when (val s = state) {
-                        ThreadState.Loading -> "Завантаження…"
-                        is ThreadState.Ready -> "${s.rows.size} відповідей"
-                        is ThreadState.Empty -> s.reason
-                    },
+                    text = label,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
@@ -110,15 +116,15 @@ fun CommentsScreen(
             }
 
             when (val s = state) {
-                ThreadState.Loading -> item(key = "loading") {
+                CommentsRepository.ThreadState.Loading -> item(key = "loading") {
                     Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 }
-                is ThreadState.Empty -> Unit
-                is ThreadState.Ready -> items(items = s.rows, key = { it.comment.id }) { row ->
+                is CommentsRepository.ThreadState.Ready -> items(items = s.rows, key = { it.comment.id }) { row ->
                     CommentNode(row)
                 }
+                is CommentsRepository.ThreadState.Error -> Unit
             }
         }
     }
@@ -132,8 +138,7 @@ private fun CommentNode(row: CommentRow) {
             Box(
                 modifier = Modifier
                     .padding(start = 24.dp)
-                    .width(indent)
-                    .fillMaxHeight(),
+                    .width(indent),
             ) {
                 Box(
                     modifier = Modifier
@@ -159,20 +164,7 @@ private fun CommentBubble(row: CommentRow, modifier: Modifier = Modifier) {
             .padding(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = comment.authorName.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
+            CommentAvatar(comment)
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -216,6 +208,32 @@ private fun CommentBubble(row: CommentRow, modifier: Modifier = Modifier) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun CommentAvatar(comment: Comment) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (comment.avatarFileId != null) {
+            TdMediaImage(
+                media = TdMedia(comment.avatarFileId, 0, 0, null),
+                contentDescription = comment.authorName,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Text(
+                text = comment.authorName.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }
