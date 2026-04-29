@@ -79,12 +79,32 @@ fun TimelineScreen(
     val pendingChannels by vm.pendingChannels.collectAsStateWithLifecycle()
     val pendingNew by vm.pendingNew.collectAsStateWithLifecycle()
 
+    // Pill is suppressed during a refresh: repo.refresh() replaces _posts, briefly making
+    // the post-refresh delta look like "everything is new" until acceptPending() lands.
+    // Without this guard the pill flashes a misleading huge count for ~1 frame.
+
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     var filter by rememberSaveable { mutableStateOf(FeedFilter.All) }
     val viewer = LocalMediaViewer.current
+
+    // True when the LazyColumn is at the very top — used to auto-collapse pending posts
+    // (no pill needed if the user is already looking at the top of the feed).
+    val atTop by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 8
+        }
+    }
+
+    // While the user is at the top, fold pending live updates straight into the visible
+    // feed. Keyed on BOTH atTop AND pendingChannels so trickling UpdateNewMessage events
+    // keep the seen-set current — without the pendingChannels key the effect would only
+    // fire once on becoming-at-top and pending would silently accumulate.
+    LaunchedEffect(atTop, pendingChannels) {
+        if (atTop && pendingChannels.isNotEmpty()) vm.acceptPending()
+    }
 
     // Twitter-style "tap home twice": first tap scrolls to top, second one (already at top)
     // refreshes. The trigger is a monotonic timestamp from the parent, so a single bump
@@ -245,16 +265,23 @@ fun TimelineScreen(
                 }
             }
 
-            // Floating "X нових постів" pill. Hidden in the Saved tab and inside a single-
-            // channel filter — both are intentionally frozen views, not live feeds.
-            val pillVisible = !showOnlyBookmarked && channelFilter == null && pendingChannels.isNotEmpty()
+            // Floating "X нових постів" pill. Hidden in the Saved tab, inside a single-
+            // channel filter (frozen views), while a refresh is in flight (transient
+            // delta), and while the user is already at the top of the feed (we auto-
+            // accept pending in that case).
+            val pillVisible = !showOnlyBookmarked && channelFilter == null &&
+                !refreshing && !atTop && pendingChannels.isNotEmpty()
+            // Filter chips occupy the top ~56dp inside the same Box; offset the pill so
+            // it lands just below them instead of overlapping.
+            val chipsVisible = !showOnlyBookmarked && channelFilter == null
+            val pillTopPadding = if (chipsVisible) 64.dp else 8.dp
             AnimatedVisibility(
                 visible = pillVisible,
                 enter = slideInVertically { -it } + fadeIn(),
                 exit = slideOutVertically { -it } + fadeOut(),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 8.dp),
+                    .padding(top = pillTopPadding),
             ) {
                 NewPostsPill(
                     channels = pendingChannels,

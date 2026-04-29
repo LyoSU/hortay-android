@@ -89,9 +89,11 @@ private fun AvatarStack(channels: List<ChannelBadge>) {
 
 /**
  * Ukrainian plural form for "new post(s)". Handles the 11–14 exception where the rule
- * differs from the last-digit-only shortcut: "11 нових", not "11 новий".
+ * differs from the last-digit-only shortcut: "11 нових", not "11 новий". Counts above 99
+ * are clamped to "99+" so a transient state-flicker can't surface alarming numbers.
  */
 private fun newPostsLabel(n: Int): String {
+    if (n > 99) return "99+ нових постів"
     val mod100 = n % 100
     val mod10 = n % 10
     val form = when {
