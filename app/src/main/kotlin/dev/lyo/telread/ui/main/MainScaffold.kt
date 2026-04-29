@@ -105,6 +105,7 @@ fun MainScaffold(graph: AppGraph) {
                 )
                 NavTab.Profile -> SettingsScreen(
                     settings = graph.settingsStore,
+                    stats = graph.statsRepository,
                     contentPadding = padding,
                     onLogout = { scope.launch { graph.tdClient.logOut() } },
                 )

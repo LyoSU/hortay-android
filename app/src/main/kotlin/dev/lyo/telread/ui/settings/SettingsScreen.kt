@@ -17,14 +17,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.telread.BuildConfig
+import dev.lyo.telread.data.NetworkUsage
 import dev.lyo.telread.data.SettingsStore
+import dev.lyo.telread.data.StatsRepository
+import dev.lyo.telread.data.StorageUsage
 import dev.lyo.telread.data.ThemeMode
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     settings: SettingsStore,
+    stats: StatsRepository,
     contentPadding: PaddingValues,
     onLogout: () -> Unit,
 ) {
@@ -32,6 +37,15 @@ fun SettingsScreen(
     val themeMode by settings.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.System)
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var confirmLogout by remember { mutableStateOf(false) }
+    var network by remember { mutableStateOf<NetworkUsage?>(null) }
+    var storage by remember { mutableStateOf<StorageUsage?>(null) }
+    var clearing by remember { mutableStateOf(false) }
+
+    suspend fun refreshStats() {
+        network = stats.networkUsage()
+        storage = stats.storageUsage()
+    }
+    LaunchedEffect(Unit) { refreshStats() }
 
     Scaffold(
         modifier = Modifier
@@ -64,6 +78,22 @@ fun SettingsScreen(
             ThemeSelector(current = themeMode, onSelect = { mode ->
                 scope.launch { settings.setThemeMode(mode) }
             })
+
+            Spacer(Modifier.height(8.dp))
+            SectionLabel("Сховище і трафік")
+            StorageTrafficCard(
+                network = network,
+                storage = storage,
+                clearing = clearing,
+                onClearCache = {
+                    scope.launch {
+                        clearing = true
+                        stats.clearCache()
+                        refreshStats()
+                        clearing = false
+                    }
+                },
+            )
 
             Spacer(Modifier.height(8.dp))
             SectionLabel("Акаунт")
@@ -152,6 +182,83 @@ private fun themeLabel(mode: ThemeMode) = when (mode) {
     ThemeMode.System -> "Авто"
     ThemeMode.Light -> "Світла"
     ThemeMode.Dark -> "Темна"
+}
+
+@Composable
+private fun StorageTrafficCard(
+    network: NetworkUsage?,
+    storage: StorageUsage?,
+    clearing: Boolean,
+    onClearCache: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        StatRow("Завантажено", network?.rxBytes?.let(::formatBytes) ?: "—")
+        StatRow("Відправлено", network?.txBytes?.let(::formatBytes) ?: "—")
+        StatRow("Файли в кеші", storage?.totalFilesBytes?.let(::formatBytes) ?: "—")
+        StatRow("База даних", storage?.databaseSizeBytes?.let(::formatBytes) ?: "—")
+        Spacer(Modifier.height(4.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .clickable(enabled = !clearing, onClick = onClearCache)
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (clearing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+            Text(
+                text = if (clearing) "Очищення…" else "Очистити кеш",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+private fun formatBytes(b: Long): String {
+    if (b < 1024) return "$b Б"
+    val kb = b / 1024.0
+    if (kb < 1024) return String.format(Locale.getDefault(), "%.1f КБ", kb)
+    val mb = kb / 1024.0
+    if (mb < 1024) return String.format(Locale.getDefault(), "%.1f МБ", mb)
+    val gb = mb / 1024.0
+    return String.format(Locale.getDefault(), "%.2f ГБ", gb)
 }
 
 @Composable
