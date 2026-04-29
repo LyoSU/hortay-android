@@ -88,7 +88,30 @@ class TdClient private constructor(
                 _authStage.value = AuthStage.WaitCode(lastAttemptedPhone)
             }
             is TdApi.AuthorizationStateWaitPassword -> _authStage.value = AuthStage.WaitPassword
-            is TdApi.AuthorizationStateReady -> _authStage.value = AuthStage.Ready
+            is TdApi.AuthorizationStateReady -> {
+                _authStage.value = AuthStage.Ready
+                // TDLib stores everything it downloads under `tdlib-files/` and never bounds
+                // it on its own — a year of timeline scrolling can balloon to gigabytes.
+                // Run a non-blocking cleanup pass at startup with sane defaults: cap at
+                // 500 MB and drop anything not accessed in the last 30 days. This is the
+                // canonical TDLib hook for storage hygiene; the daemon does the work in
+                // the background and emits StorageStatistics back, which we ignore.
+                runCatching {
+                    send(
+                        TdApi.OptimizeStorage(
+                            /* size */ 500L * 1024 * 1024,
+                            /* ttl  */ 30 * 24 * 60 * 60,
+                            /* count */ 0,
+                            /* immunityDelay */ 60,
+                            /* fileTypes */ null,
+                            /* chatIds */ null,
+                            /* excludeChatIds */ null,
+                            /* returnDeletedFileStatistics */ false,
+                            /* chatLimit */ 0,
+                        ),
+                    )
+                }
+            }
             is TdApi.AuthorizationStateClosed,
             is TdApi.AuthorizationStateClosing,
             is TdApi.AuthorizationStateLoggingOut -> _authStage.value = AuthStage.Loading
