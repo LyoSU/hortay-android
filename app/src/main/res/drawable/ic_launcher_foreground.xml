@@ -1,10 +1,9 @@
 <!--
   Adaptive-icon foreground. The 108×108 viewport must keep its content within the inner
   72×72 safe zone — the launcher crops the rest for round / squircle / teardrop shapes.
-  We draw a chunky lowercase-style "H" letter (initial of "Hortay") as a single closed
-  path, traced corner-by-corner along the outline so the cross-bar reads as a cut-out
-  rather than three separate fills. White on the brand-primary background gives strong
-  contrast in both light and dark launchers.
+  We draw the brand letter "H" as a single closed path traced corner-by-corner (so the
+  cross-bar reads as a cut-out, not three separate fills). White on the gradient
+  periwinkle background — same metaphor design system specifies.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"

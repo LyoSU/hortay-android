@@ -2,63 +2,93 @@ package dev.lyo.hortay.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Brand seed: Telegram-blue, modulated for M3 Expressive tonal palette.
-val Seed = Color(0xFF2A8DEC)
+/**
+ * Brand seed — periwinkle / lavender. The full Material 3 tonal palette below is generated
+ * from this seed via Google's algorithm and locked into the spec; we don't drift from these
+ * values without bumping the design-system version.
+ *
+ * Cool whites with a lavender undertone everywhere — never warm beige, never neutral grey.
+ */
+val Seed = Color(0xFF5A5BA8)
 
-// Light scheme (full M3 role coverage).
-val LightPrimary = Color(0xFF0061A4)
+// Light scheme
+val LightPrimary = Color(0xFF5A5BA8)
 val LightOnPrimary = Color(0xFFFFFFFF)
-val LightPrimaryContainer = Color(0xFFD1E4FF)
-val LightOnPrimaryContainer = Color(0xFF001D36)
-val LightSecondary = Color(0xFF535F70)
+val LightPrimaryContainer = Color(0xFFE3E1FF)
+val LightOnPrimaryContainer = Color(0xFF15155F)
+
+val LightSecondary = Color(0xFF5C5D72)
 val LightOnSecondary = Color(0xFFFFFFFF)
-val LightSecondaryContainer = Color(0xFFD7E3F7)
-val LightOnSecondaryContainer = Color(0xFF101C2B)
-val LightTertiary = Color(0xFF6B5778)
+val LightSecondaryContainer = Color(0xFFE1E0F4)
+val LightOnSecondaryContainer = Color(0xFF181A2D)
+
+val LightTertiary = Color(0xFF4F6486)
 val LightOnTertiary = Color(0xFFFFFFFF)
-val LightTertiaryContainer = Color(0xFFF2DAFF)
-val LightOnTertiaryContainer = Color(0xFF251431)
+val LightTertiaryContainer = Color(0xFFD7E2FF)
+val LightOnTertiaryContainer = Color(0xFF001D35)
+
 val LightError = Color(0xFFBA1A1A)
 val LightOnError = Color(0xFFFFFFFF)
-val LightBackground = Color(0xFFFAFCFF)
-val LightOnBackground = Color(0xFF1A1C1E)
-val LightSurface = Color(0xFFFAFCFF)
-val LightOnSurface = Color(0xFF1A1C1E)
-val LightSurfaceVariant = Color(0xFFDFE2EB)
-val LightOnSurfaceVariant = Color(0xFF43474E)
-val LightOutline = Color(0xFF73777F)
-val LightOutlineVariant = Color(0xFFC3C7CF)
-val LightSurfaceContainerLowest = Color(0xFFFFFFFF)
-val LightSurfaceContainerLow = Color(0xFFF4F6FA)
-val LightSurfaceContainer = Color(0xFFEEF1F5)
-val LightSurfaceContainerHigh = Color(0xFFE8EBEF)
-val LightSurfaceContainerHighest = Color(0xFFE2E5E9)
+val LightErrorContainer = Color(0xFFFFDAD6)
+val LightOnErrorContainer = Color(0xFF410002)
 
-// Dark scheme.
-val DarkPrimary = Color(0xFF9DCAFF)
-val DarkOnPrimary = Color(0xFF003259)
-val DarkPrimaryContainer = Color(0xFF00497F)
-val DarkOnPrimaryContainer = Color(0xFFD1E4FF)
-val DarkSecondary = Color(0xFFBBC7DB)
-val DarkOnSecondary = Color(0xFF253140)
-val DarkSecondaryContainer = Color(0xFF3B4858)
-val DarkOnSecondaryContainer = Color(0xFFD7E3F7)
-val DarkTertiary = Color(0xFFD7BEE4)
-val DarkOnTertiary = Color(0xFF3B2948)
-val DarkTertiaryContainer = Color(0xFF523F5F)
-val DarkOnTertiaryContainer = Color(0xFFF2DAFF)
+val LightBackground = Color(0xFFFCFAFF)
+val LightOnBackground = Color(0xFF1B1B23)
+val LightSurface = Color(0xFFFCFAFF)
+val LightOnSurface = Color(0xFF1B1B23)
+val LightSurfaceVariant = Color(0xFFE5E1F1)
+val LightOnSurfaceVariant = Color(0xFF47465A)
+
+val LightSurfaceContainerLowest = Color(0xFFFFFFFF)
+val LightSurfaceContainerLow = Color(0xFFF6F3FE)
+val LightSurfaceContainer = Color(0xFFF0EDF8)
+val LightSurfaceContainerHigh = Color(0xFFEAE7F2)
+val LightSurfaceContainerHighest = Color(0xFFE5E2ED)
+
+val LightOutline = Color(0xFF78768B)
+val LightOutlineVariant = Color(0xFFC9C5D7)
+
+val LightInverseSurface = Color(0xFF303038)
+val LightInverseOnSurface = Color(0xFFF2EFF7)
+val LightInversePrimary = Color(0xFFC2C0FF)
+
+// Dark scheme
+val DarkPrimary = Color(0xFFC2C0FF)
+val DarkOnPrimary = Color(0xFF2A2A5C)
+val DarkPrimaryContainer = Color(0xFF41429A)
+val DarkOnPrimaryContainer = Color(0xFFE3E1FF)
+
+val DarkSecondary = Color(0xFFC5C4DC)
+val DarkOnSecondary = Color(0xFF2D2E42)
+val DarkSecondaryContainer = Color(0xFF444559)
+val DarkOnSecondaryContainer = Color(0xFFE1E0F4)
+
+val DarkTertiary = Color(0xFFB6C7EC)
+val DarkOnTertiary = Color(0xFF1F324E)
+val DarkTertiaryContainer = Color(0xFF354A6D)
+val DarkOnTertiaryContainer = Color(0xFFD7E2FF)
+
 val DarkError = Color(0xFFFFB4AB)
 val DarkOnError = Color(0xFF690005)
-val DarkBackground = Color(0xFF0E1116)
-val DarkOnBackground = Color(0xFFE3E2E6)
-val DarkSurface = Color(0xFF0E1116)
-val DarkOnSurface = Color(0xFFE3E2E6)
-val DarkSurfaceVariant = Color(0xFF43474E)
-val DarkOnSurfaceVariant = Color(0xFFC3C7CF)
-val DarkOutline = Color(0xFF8D9199)
-val DarkOutlineVariant = Color(0xFF43474E)
-val DarkSurfaceContainerLowest = Color(0xFF090B0F)
-val DarkSurfaceContainerLow = Color(0xFF161A1F)
-val DarkSurfaceContainer = Color(0xFF1A1F25)
-val DarkSurfaceContainerHigh = Color(0xFF252A31)
-val DarkSurfaceContainerHighest = Color(0xFF30363D)
+val DarkErrorContainer = Color(0xFF93000A)
+val DarkOnErrorContainer = Color(0xFFFFDAD6)
+
+val DarkBackground = Color(0xFF131318)
+val DarkOnBackground = Color(0xFFE5E1F0)
+val DarkSurface = Color(0xFF131318)
+val DarkOnSurface = Color(0xFFE5E1F0)
+val DarkSurfaceVariant = Color(0xFF47465A)
+val DarkOnSurfaceVariant = Color(0xFFC9C5D7)
+
+val DarkSurfaceContainerLowest = Color(0xFF0D0D14)
+val DarkSurfaceContainerLow = Color(0xFF1B1B22)
+val DarkSurfaceContainer = Color(0xFF1F1F27)
+val DarkSurfaceContainerHigh = Color(0xFF2A2A32)
+val DarkSurfaceContainerHighest = Color(0xFF34343C)
+
+val DarkOutline = Color(0xFF918FA4)
+val DarkOutlineVariant = Color(0xFF47465A)
+
+val DarkInverseSurface = Color(0xFFE5E1F0)
+val DarkInverseOnSurface = Color(0xFF303038)
+val DarkInversePrimary = Color(0xFF5A5BA8)

@@ -1,0 +1,14 @@
+<!--
+  Material You themed-icon layer (Android 13+). Same H glyph silhouette in solid black —
+  the launcher tints this with the user's wallpaper-derived monochrome palette at
+  runtime, so we ship a flat black outline and let the system colour it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#000000"
+        android:pathData="M34,28 L46,28 L46,49 L62,49 L62,28 L74,28 L74,80 L62,80 L62,61 L46,61 L46,80 L34,80 Z" />
+</vector>

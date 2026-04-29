@@ -38,10 +38,12 @@ fun BrandMark(modifier: Modifier = Modifier, size: Int = 36) {
 
 @Composable
 fun BrandRow(modifier: Modifier = Modifier) {
+    // Per design system §1.3 — brand wordmark in the TopAppBar uses the `primary` colour
+    // role and the canonical headlineLarge type token unmodified.
     Text(
         text = "Hortay",
-        style = MaterialTheme.typography.headlineLarge.copy(letterSpacing = (-0.8).sp),
-        color = MaterialTheme.colorScheme.onBackground,
+        style = MaterialTheme.typography.headlineLarge,
+        color = MaterialTheme.colorScheme.primary,
         modifier = modifier,
     )
 }
