@@ -296,8 +296,9 @@ private fun VerticalSeparator() {
     )
 }
 
+/** Public so the comments screen can reuse the same chip styling for thread replies. */
 @Composable
-private fun ReactionChip(item: ReactionItem) {
+internal fun ReactionChip(item: ReactionItem) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))

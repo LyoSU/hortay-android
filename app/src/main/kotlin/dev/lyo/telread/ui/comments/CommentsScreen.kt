@@ -1,9 +1,11 @@
 package dev.lyo.telread.ui.comments
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,6 +31,7 @@ import dev.lyo.telread.ui.media.toAlbumItems
 import dev.lyo.telread.ui.timeline.PostBody
 import dev.lyo.telread.ui.timeline.PostCard
 import dev.lyo.telread.ui.timeline.PostInteractions
+import dev.lyo.telread.ui.timeline.ReactionChip
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
@@ -254,21 +257,18 @@ private fun CommentBubble(
                 },
             )
 
-            if (comment.reactions.totalCount > 0) {
+            if (comment.reactions.items.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.Favorite,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = comment.reactions.totalCount.toString(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    comment.reactions.items.forEachIndexed { idx, item ->
+                        if (idx > 0) Spacer(Modifier.width(6.dp))
+                        ReactionChip(item)
+                    }
                 }
             }
         }
