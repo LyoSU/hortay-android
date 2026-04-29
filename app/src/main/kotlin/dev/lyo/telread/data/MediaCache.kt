@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
@@ -49,7 +50,7 @@ enum class DownloadPriority(val tdValue: Int) {
  */
 class MediaCache(
     private val td: TdClient,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
@@ -104,45 +105,56 @@ class MediaCache(
      *  - Failed → retry once.
      *  - Idle → fetch metadata + start download.
      */
-    suspend fun ensure(fileId: Int, priority: DownloadPriority = DownloadPriority.VisibleMedia) =
-        withContext(ioDispatcher) {
-            val current = slot(fileId).value
-            if (current is MediaState.Ready) return@withContext
+    suspend fun ensure(fileId: Int, priority: DownloadPriority = DownloadPriority.VisibleMedia) {
+        // Hot-path guards run *before* the dispatcher hop. A LazyColumn full of items
+        // re-fires LaunchedEffect(fileId, priority) on every recompose, so this method
+        // is hit dozens of times per second during a scroll — almost always for files
+        // that are already Ready or already enqueued at ≥ this priority. Skipping the
+        // withContext switch in that case is a real win.
+        val current = slot(fileId).value
+        if (current is MediaState.Ready) return
+        val currentPriority = activePriority[fileId] ?: 0
+        if (current is MediaState.Downloading && currentPriority >= priority.tdValue) return
 
-            val currentPriority = activePriority[fileId] ?: 0
-            if (current is MediaState.Downloading && currentPriority >= priority.tdValue) {
-                return@withContext
-            }
-
-            try {
-                if (current !is MediaState.Downloading) {
-                    val file = td.send(TdApi.GetFile(fileId))
-                    slot(fileId).value = file.toMediaState()
-                    if (file.local.isDownloadingCompleted && file.local.path.isNotEmpty()) {
-                        return@withContext
-                    }
-                }
-                td.send(TdApi.DownloadFile(fileId, priority.tdValue, 0, 0, /* synchronous */ false))
-                activePriority[fileId] = priority.tdValue
-            } catch (t: Throwable) {
-                Log.w(TAG, "ensure($fileId, ${priority.name}) failed", t)
-                slot(fileId).value = MediaState.Failed(t.message ?: "download failed")
-                activePriority.remove(fileId)
-            }
-        }
-
-    /**
-     * Cancel a queued (not-yet-started) download. We pass `onlyIfPending = true` so partial
-     * progress is preserved — when the user scrolls back, [ensure] resumes from where TDLib
-     * left off. Safe to call even if no download exists.
-     */
-    suspend fun cancelIfPending(fileId: Int) = withContext(ioDispatcher) {
-        runCatching { td.send(TdApi.CancelDownloadFile(fileId, /* onlyIfPending */ true)) }
-        activePriority.remove(fileId)
+        withContext(ioDispatcher) { ensureSlow(fileId, priority) }
     }
 
-    @Deprecated("Use ensure(fileId, priority)", ReplaceWith("ensure(fileId, priority)"))
-    suspend fun ensureDownloaded(fileId: Int) = ensure(fileId, DownloadPriority.VisibleMedia)
+    private suspend fun ensureSlow(fileId: Int, priority: DownloadPriority) {
+        // Re-read state inside the io context — another caller may have raced ahead.
+        val current = slot(fileId).value
+        if (current is MediaState.Ready) return
+        val currentPriority = activePriority[fileId] ?: 0
+        if (current is MediaState.Downloading && currentPriority >= priority.tdValue) return
+
+        try {
+            if (current !is MediaState.Downloading) {
+                val file = td.send(TdApi.GetFile(fileId))
+                // Route through the same reducer the UpdateFile collector uses — keeps
+                // the Ready-stick / Failed-on-not-downloadable invariants in one place.
+                applyFileEvent(file)
+                if (slot(fileId).value is MediaState.Ready) return
+            }
+            td.send(TdApi.DownloadFile(fileId, priority.tdValue, 0, 0, /* synchronous */ false))
+            activePriority[fileId] = priority.tdValue
+        } catch (t: Throwable) {
+            Log.w(TAG, "ensure($fileId, ${priority.name}) failed", t)
+            slot(fileId).value = MediaState.Failed(t.message ?: "download failed")
+            activePriority.remove(fileId)
+        }
+    }
+
+    /**
+     * Fire-and-forget cancellation. Runs on the cache's own scope so callers don't have
+     * to spin up a fresh CoroutineScope just to dispatch a one-shot. Always passes
+     * `onlyIfPending = true` so partial progress is preserved — when the user scrolls
+     * back, [ensure] resumes from where TDLib left off.
+     */
+    fun cancelIfPendingAsync(fileId: Int) {
+        scope.launch(ioDispatcher) {
+            runCatching { td.send(TdApi.CancelDownloadFile(fileId, /* onlyIfPending */ true)) }
+            activePriority.remove(fileId)
+        }
+    }
 
     private fun slot(fileId: Int): MutableStateFlow<MediaState> =
         states.computeIfAbsent(fileId) { MutableStateFlow(MediaState.Idle) }

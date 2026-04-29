@@ -1,6 +1,5 @@
 package dev.lyo.telread.ui.timeline
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -9,7 +8,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
@@ -214,7 +212,7 @@ fun TimelineScreen(
                     LazyColumn(
                         state = listState,
                         contentPadding = PaddingValues(
-                            top = 4.dp,
+                            top = 8.dp,
                             bottom = contentPadding.calculateBottomPadding(),
                         ),
                         modifier = Modifier.fillMaxSize(),
@@ -321,23 +319,16 @@ private fun EmptyState(showingSaved: Boolean) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(28.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = if (showingSaved) Icons.Rounded.BookmarkBorder else Icons.Rounded.Forum,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(48.dp),
-            )
-        }
-        Spacer(Modifier.height(20.dp))
+        Icon(
+            imageVector = if (showingSaved) Icons.Rounded.BookmarkBorder else Icons.Rounded.Forum,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(56.dp),
+        )
+        Spacer(Modifier.height(16.dp))
         Text(
             text = if (showingSaved) "Нема збережених постів" else "Поки тут порожньо",
-            style = MaterialTheme.typography.headlineSmall,
+            style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))

@@ -83,7 +83,7 @@ fun PostCard(
                 )
 
                 if (post.views > 0 || post.commentCount != null || post.reactions.items.isNotEmpty()) {
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                     ActionRow(post, onCommentsClick = { interactions.onPostClick(post) })
                 }
             }
@@ -335,7 +335,7 @@ private fun StatPill(
             imageVector = icon,
             contentDescription = null,
             tint = tint,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(6.dp))
         Text(

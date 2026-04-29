@@ -26,9 +26,6 @@ import androidx.compose.runtime.DisposableEffect
 import dev.lyo.telread.data.DownloadPriority
 import dev.lyo.telread.data.MediaState
 import dev.lyo.telread.data.TdMedia
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
 
@@ -68,13 +65,10 @@ fun TdMediaImage(
 
     // When the composable leaves composition (scrolled out of viewport, screen popped),
     // cancel the queued download — only if it hasn't started yet. Partial bytes survive,
-    // and a re-mount picks up where TDLib left off.
+    // and a re-mount picks up where TDLib left off. Routed through the cache's own scope
+    // so we don't spawn a throwaway CoroutineScope on every dispose during a scroll.
     DisposableEffect(fileId) {
-        onDispose {
-            fileId?.let { id ->
-                CoroutineScope(Dispatchers.IO).launch { cache.cancelIfPending(id) }
-            }
-        }
+        onDispose { fileId?.let(cache::cancelIfPendingAsync) }
     }
 
     val placeholder = remember(fileId, media.minithumbBytes) {

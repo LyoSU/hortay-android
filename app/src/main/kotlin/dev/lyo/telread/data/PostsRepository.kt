@@ -4,8 +4,13 @@ import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
@@ -217,27 +222,20 @@ class PostsRepository(
 
     private fun handleInteractionInfo(update: TdApi.UpdateMessageInteractionInfo) {
         val info = update.interactionInfo
-        _posts.update { current ->
-            current.map { post ->
-                if (post.chatId != update.chatId || post.id != update.messageId) return@map post
-                post.copy(
-                    views = info?.viewCount ?: post.views,
-                    reactions = info?.reactions?.let(::reactionsFromUpdate) ?: post.reactions,
-                    commentCount = info?.replyInfo?.replyCount ?: post.commentCount,
-                    // ^ keep current value when interaction info arrives without replyInfo;
-                    //   fresh `null` only happens at first map() in MessageMapper.
-                )
-            }
+        updateOnePost(update.chatId, update.messageId) { post ->
+            post.copy(
+                views = info?.viewCount ?: post.views,
+                reactions = info?.reactions?.let(::reactionsFromUpdate) ?: post.reactions,
+                // ^ keep current value when interaction info arrives without replyInfo;
+                //   fresh `null` only happens at first map() in MessageMapper.
+                commentCount = info?.replyInfo?.replyCount ?: post.commentCount,
+            )
         }
     }
 
     private fun handleEdited(update: TdApi.UpdateMessageEdited) {
-        _posts.update { current ->
-            current.map { post ->
-                if (post.chatId == update.chatId && post.id == update.messageId) {
-                    post.copy(editDate = update.editDate.toLong() * 1000L)
-                } else post
-            }
+        updateOnePost(update.chatId, update.messageId) {
+            it.copy(editDate = update.editDate.toLong() * 1000L)
         }
     }
 
@@ -251,12 +249,26 @@ class PostsRepository(
 
     private fun handleContentChanged(update: TdApi.UpdateMessageContent) {
         val newContent = MessageContentMapper.map(update.newContent)
+        updateOnePost(update.chatId, update.messageId) { it.copy(content = newContent) }
+    }
+
+    /**
+     * Single-post update helper. UpdateMessageInteractionInfo can fire dozens of times
+     * per second on a busy channel; the previous implementation copied the entire feed
+     * via `current.map { ... }` for every event — O(N) closure invocations and O(N)
+     * allocations per update. indexOfFirst short-circuits on the first match, then we
+     * mutate one slot in a fresh list. The list copy is still O(N) but skips per-item
+     * lambda dispatch and allocation.
+     */
+    private inline fun updateOnePost(
+        chatId: Long,
+        messageId: Long,
+        crossinline transform: (TimelinePost) -> TimelinePost,
+    ) {
         _posts.update { current ->
-            current.map { post ->
-                if (post.chatId == update.chatId && post.id == update.messageId) {
-                    post.copy(content = newContent)
-                } else post
-            }
+            val idx = current.indexOfFirst { it.chatId == chatId && it.id == messageId }
+            if (idx == -1) current
+            else current.toMutableList().also { it[idx] = transform(current[idx]) }
         }
     }
 
@@ -291,19 +303,28 @@ class PostsRepository(
 
         val chatIds = td.send(TdApi.GetChats(TdApi.ChatListMain(), CHAT_LIST_LIMIT)).chatIds
 
-        val raw = mutableListOf<TimelinePost>()
-        for (chatId in chatIds) {
-            val chat = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull() ?: continue
-            chatCache[chatId] = chat
-            if (!chat.isChannel()) continue
+        // Per-channel fetch was serial — for a user with 200 channels, ~50ms per round-trip
+        // adds up to ~10s pull-to-refresh. Bound concurrency at 4 (TDLib's typical
+        // simultaneous-download cap) so we don't push the daemon into FLOOD_WAIT while
+        // still saturating the network.
+        val semaphore = Semaphore(REFRESH_CONCURRENCY)
+        val raw = coroutineScope {
+            chatIds.map { chatId ->
+                async {
+                    semaphore.withPermit {
+                        val chat = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
+                            ?: return@withPermit emptyList()
+                        chatCache[chatId] = chat
+                        if (!chat.isChannel()) return@withPermit emptyList()
 
-            val history = runCatching {
-                td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limitPerChannel, false))
-            }.getOrNull() ?: continue
+                        val history = runCatching {
+                            td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limitPerChannel, false))
+                        }.getOrNull() ?: return@withPermit emptyList()
 
-            history.messages?.forEach { message ->
-                raw += mapper.toTimelinePost(message, chat)
-            }
+                        history.messages.orEmpty().map { mapper.toTimelinePost(it, chat) }
+                    }
+                }
+            }.awaitAll().flatten()
         }
 
         _posts.value = PostFilterStrategy.apply(raw)
@@ -317,6 +338,9 @@ class PostsRepository(
         // ~600ms is what the official Telegram client uses to coalesce album bursts.
         // Shorter loses tail members on slow networks; longer makes albums feel laggy.
         const val ALBUM_DEBOUNCE_MS = 600L
+        // Aligns with TDLib's default ~4 simultaneous downloads — same shape, same back-
+        // pressure profile.
+        const val REFRESH_CONCURRENCY = 4
     }
 }
 
