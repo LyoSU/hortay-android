@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -612,11 +613,15 @@ private fun UnsupportedBlock(content: PostContent.Unsupported) {
 
 @Composable
 private fun WebPreviewCard(preview: WebPreview) {
+    val uriHandler = LocalUriHandler.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(enabled = preview.url.isNotBlank()) {
+                runCatching { uriHandler.openUri(preview.url) }
+            }
             .padding(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
