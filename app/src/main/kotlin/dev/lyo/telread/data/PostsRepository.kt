@@ -147,6 +147,26 @@ class PostsRepository(
         td.updates.filterIsInstance<TdApi.UpdateNewChat>()
             .onEach { update -> chatCache[update.chat.id] = update.chat }
             .launchIn(scope)
+
+        // Keep [archivedChatIds] live: TDLib fires UpdateChatAddedToList /
+        // UpdateChatRemovedFromList whenever the user archives/unarchives a channel in
+        // ANY client. Without these the "Усі" tab leaks a freshly-archived channel until
+        // the next pull-to-refresh.
+        td.updates.filterIsInstance<TdApi.UpdateChatAddedToList>()
+            .onEach { update ->
+                if (update.chatList is TdApi.ChatListArchive) {
+                    _archivedChatIds.update { it + update.chatId }
+                }
+            }
+            .launchIn(scope)
+
+        td.updates.filterIsInstance<TdApi.UpdateChatRemovedFromList>()
+            .onEach { update ->
+                if (update.chatList is TdApi.ChatListArchive) {
+                    _archivedChatIds.update { it - update.chatId }
+                }
+            }
+            .launchIn(scope)
     }
 
     // 30 (not 20) so an album sitting on the limit boundary doesn't get split: most
