@@ -20,7 +20,6 @@ import dev.lyo.hortay.data.NetworkUsage
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StatsRepository
 import dev.lyo.hortay.data.StorageUsage
-import dev.lyo.hortay.data.ThemeMode
 import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -35,7 +34,6 @@ fun SettingsScreen(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val themeMode by settings.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.System)
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var confirmLogout by remember { mutableStateOf(false) }
     var network by remember { mutableStateOf<NetworkUsage?>(null) }
@@ -75,12 +73,6 @@ fun SettingsScreen(
                 ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SectionLabel("Вигляд")
-            ThemeSelector(current = themeMode, onSelect = { mode ->
-                scope.launch { settings.setThemeMode(mode) }
-            })
-
-            Spacer(Modifier.height(8.dp))
             SectionLabel("Трафік")
             TrafficCard(
                 network = network,
@@ -157,47 +149,6 @@ private fun SectionLabel(text: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
     )
-}
-
-@Composable
-private fun ThemeSelector(current: ThemeMode, onSelect: (ThemeMode) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        ThemeMode.entries.forEach { mode ->
-            val active = mode == current
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        if (active) MaterialTheme.colorScheme.secondaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerLow,
-                    )
-                    .clickable { onSelect(mode) }
-                    .padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                Text(
-                    text = themeLabel(mode),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (active) MaterialTheme.colorScheme.onSecondaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-private fun themeLabel(mode: ThemeMode) = when (mode) {
-    ThemeMode.System -> "Авто"
-    ThemeMode.Light -> "Світла"
-    ThemeMode.Dark -> "Темна"
 }
 
 @Composable
