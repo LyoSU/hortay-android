@@ -1,17 +1,25 @@
 package dev.lyo.telread.data
 
 import org.drinkless.tdlib.TdApi
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Async layer over [MessageContentMapper]: resolves real channel handles, forward author
  * names, reply preview authors. Holds session-scoped caches so each user / supergroup is
  * fetched at most once per [PostsRepository] instance.
+ *
+ * Caches are [ConcurrentHashMap] because they're touched from multiple coroutines:
+ *   • PostsRepository.refreshLocked (under refreshMutex)
+ *   • PostsRepository.handleNewMessage / handle* update collectors (no mutex)
+ *   • UpdateUser / UpdateSupergroup invalidations (yet another collector)
+ * A plain HashMap would race on concurrent put + remove, which can corrupt buckets and
+ * surface as ConcurrentModificationException or "lost" cached avatars.
  */
 internal class MessageMapper(private val td: TdClient) {
 
-    private val userCache = mutableMapOf<Long, ResolvedSender>()
-    private val chatCache = mutableMapOf<Long, ResolvedSender>()
-    private val supergroupCache = mutableMapOf<Long, String?>() // username
+    private val userCache = ConcurrentHashMap<Long, ResolvedSender>()
+    private val chatCache = ConcurrentHashMap<Long, ResolvedSender>()
+    private val supergroupUsernameCache = ConcurrentHashMap<Long, String>() // username (sentinel "" = no username)
 
     suspend fun toTimelinePost(message: TdApi.Message, chat: TdApi.Chat): TimelinePost = TimelinePost(
         id = message.id,
@@ -33,23 +41,41 @@ internal class MessageMapper(private val td: TdClient) {
     )
 
     suspend fun resolveSender(senderId: TdApi.MessageSender): ResolvedSender = when (senderId) {
-        is TdApi.MessageSenderUser -> userCache.getOrPut(senderId.userId) { fetchUser(senderId.userId) }
-        is TdApi.MessageSenderChat -> chatCache.getOrPut(senderId.chatId) { fetchChat(senderId.chatId) }
+        is TdApi.MessageSenderUser -> resolveCachedUser(senderId.userId)
+        is TdApi.MessageSenderChat -> resolveCachedChat(senderId.chatId)
         else -> ResolvedSender("—", null, null)
     }
 
     /** Drop a stale entry — call when TDLib emits UpdateUser / UpdateSupergroup. */
     fun invalidateUser(userId: Long) { userCache.remove(userId) }
     fun invalidateChat(chatId: Long) { chatCache.remove(chatId) }
-    fun invalidateSupergroup(supergroupId: Long) { supergroupCache.remove(supergroupId) }
+    fun invalidateSupergroup(supergroupId: Long) { supergroupUsernameCache.remove(supergroupId) }
+
+    // ConcurrentHashMap.getOrPut from Kotlin stdlib is NOT atomic. computeIfAbsent IS, but
+    // its lambda can't be suspend. Pattern: optimistic read → fetch outside the map →
+    // putIfAbsent and return whichever value won the race. Slightly redundant fetch on
+    // first-touch contention, but no race + suspend-friendly.
+    private suspend fun resolveCachedUser(userId: Long): ResolvedSender {
+        userCache[userId]?.let { return it }
+        val resolved = fetchUser(userId)
+        return userCache.putIfAbsent(userId, resolved) ?: resolved
+    }
+
+    private suspend fun resolveCachedChat(chatId: Long): ResolvedSender {
+        chatCache[chatId]?.let { return it }
+        val resolved = fetchChat(chatId)
+        return chatCache.putIfAbsent(chatId, resolved) ?: resolved
+    }
 
     private suspend fun resolveChannelHandle(chat: TdApi.Chat): String? {
         val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
-        return supergroupCache.getOrPut(supergroupId) {
-            runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }.getOrNull()
-                ?.usernames?.activeUsernames?.firstOrNull()
-                ?.let { "@$it" }
-        }
+        supergroupUsernameCache[supergroupId]?.let { return it.takeUnless { s -> s.isEmpty() } }
+        val handle = runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }.getOrNull()
+            ?.usernames?.activeUsernames?.firstOrNull()
+            ?.let { "@$it" }
+        // ConcurrentHashMap forbids null values, so use "" as the "no username" sentinel.
+        supergroupUsernameCache.putIfAbsent(supergroupId, handle.orEmpty())
+        return handle
     }
 
     private suspend fun fetchUser(userId: Long): ResolvedSender {
@@ -80,15 +106,15 @@ internal class MessageMapper(private val td: TdClient) {
 
     private suspend fun mapForwardOrigin(origin: TdApi.MessageOrigin): ForwardOrigin = when (origin) {
         is TdApi.MessageOriginUser -> ForwardOrigin.User(
-            userName = userCache.getOrPut(origin.senderUserId) { fetchUser(origin.senderUserId) }.name,
+            userName = resolveCachedUser(origin.senderUserId).name,
         )
         is TdApi.MessageOriginChat -> ForwardOrigin.Chat(
-            chatName = chatCache.getOrPut(origin.senderChatId) { fetchChat(origin.senderChatId) }.name,
+            chatName = resolveCachedChat(origin.senderChatId).name,
             authorSignature = origin.authorSignature?.takeUnless { it.isNullOrBlank() },
         )
         is TdApi.MessageOriginHiddenUser -> ForwardOrigin.HiddenUser(origin.senderName.orEmpty())
         is TdApi.MessageOriginChannel -> ForwardOrigin.Channel(
-            channelName = chatCache.getOrPut(origin.chatId) { fetchChat(origin.chatId) }.name,
+            channelName = resolveCachedChat(origin.chatId).name,
             authorSignature = origin.authorSignature?.takeUnless { it.isNullOrBlank() },
         )
         else -> ForwardOrigin.HiddenUser("")
@@ -100,10 +126,13 @@ internal class MessageMapper(private val td: TdClient) {
             (reply.content as? TdApi.MessageText)?.text?.text.orEmpty()
         }
         if (excerpt.isBlank()) return null
+        // Cross-chat reply (Quote / reply-to-channel-post): fall back to the SOURCE chat's
+        // name, not the post's own chat — otherwise a quoted post from channel A appearing
+        // in channel B gets misattributed to channel B.
         val author = runCatching {
             val refMsg = td.send(TdApi.GetMessage(reply.chatId, reply.messageId))
             resolveSender(refMsg.senderId).name
-        }.getOrNull() ?: chatCache.getOrPut(chatId) { fetchChat(chatId) }.name
+        }.getOrNull() ?: resolveCachedChat(reply.chatId).name
         return ReplyPreview(authorName = author, excerpt = excerpt, isQuote = reply.quote != null)
     }
 

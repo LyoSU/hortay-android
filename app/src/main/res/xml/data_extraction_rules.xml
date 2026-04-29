@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Belt-and-suspenders: allowBackup=false in the manifest already blocks adb-backup and
+  Auto-Backup to Google Drive. This file additionally blocks Android-12+ device-to-device
+  transfer, which would otherwise carry the TDLib database (chat history, session keys)
+  to a paired device — undesirable even with physical access guarantees.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+    </device-transfer>
+</data-extraction-rules>

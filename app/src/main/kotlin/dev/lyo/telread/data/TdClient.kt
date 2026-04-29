@@ -35,6 +35,11 @@ class TdClient private constructor(
     private val _authStage = MutableStateFlow<AuthStage>(AuthStage.Loading)
     val authStage: StateFlow<AuthStage> = _authStage.asStateFlow()
 
+    // Last phone number the user tried — kept so AuthorizationStateWaitCode can display
+    // the right number even when we no longer optimistically pre-set WaitCode.
+    @Volatile
+    private var lastAttemptedPhone: String = ""
+
     private val _updates = MutableSharedFlow<TdApi.Update>(extraBufferCapacity = 64)
     val updates: SharedFlow<TdApi.Update> = _updates.asSharedFlow()
 
@@ -80,21 +85,36 @@ class TdClient private constructor(
             }
             is TdApi.AuthorizationStateWaitPhoneNumber -> _authStage.value = AuthStage.WaitPhone
             is TdApi.AuthorizationStateWaitCode -> {
-                val phone = (_authStage.value as? AuthStage.WaitCode)?.phoneNumber ?: ""
-                _authStage.value = AuthStage.WaitCode(phone)
+                _authStage.value = AuthStage.WaitCode(lastAttemptedPhone)
             }
             is TdApi.AuthorizationStateWaitPassword -> _authStage.value = AuthStage.WaitPassword
             is TdApi.AuthorizationStateReady -> _authStage.value = AuthStage.Ready
             is TdApi.AuthorizationStateClosed,
             is TdApi.AuthorizationStateClosing,
             is TdApi.AuthorizationStateLoggingOut -> _authStage.value = AuthStage.Loading
+            // States we don't have dedicated UI for yet — surface a clear message instead
+            // of silently leaving the user on a Loading spinner forever. Telegram now
+            // commonly requires email-2FA on first sign-in, so WaitEmail* hits real users.
+            is TdApi.AuthorizationStateWaitEmailAddress,
+            is TdApi.AuthorizationStateWaitEmailCode -> _authStage.value =
+                AuthStage.Error("Підтвердьте email у офіційному Telegram, потім поверніться сюди.")
+            is TdApi.AuthorizationStateWaitRegistration -> _authStage.value =
+                AuthStage.Error("Цей номер ще не зареєстрований у Telegram. Створіть акаунт у офіційному застосунку.")
+            is TdApi.AuthorizationStateWaitOtherDeviceConfirmation -> _authStage.value =
+                AuthStage.Error("Підтвердіть вхід у Telegram на іншому пристрої.")
             else -> Unit
         }
     }
 
     suspend fun submitPhone(phone: String) {
-        _authStage.value = AuthStage.WaitCode(phone)
-        send(TdApi.SetAuthenticationPhoneNumber(phone, null))
+        // Don't pre-set WaitCode optimistically — on rejection (PHONE_NUMBER_INVALID,
+        // FLOOD_WAIT, BANNED…) the user used to land on an empty code screen forever
+        // because the exception was silently swallowed by the caller's scope.launch and
+        // we never bounced back. TDLib will emit AuthorizationStateWaitCode itself on
+        // success, which onAuthState turns into AuthStage.WaitCode(lastAttemptedPhone).
+        lastAttemptedPhone = phone
+        runCatching { send(TdApi.SetAuthenticationPhoneNumber(phone, null)) }
+            .onFailure { _authStage.value = AuthStage.Error(it.message ?: "phone rejected") }
     }
 
     suspend fun submitCode(code: String) {

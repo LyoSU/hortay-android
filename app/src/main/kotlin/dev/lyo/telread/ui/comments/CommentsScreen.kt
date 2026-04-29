@@ -109,19 +109,24 @@ fun CommentsScreen(
                 PostCard(post = post, interactions = pinnedPostInteractions, clickable = false, expanded = true)
             }
 
+            // Loading / counter / error label live above the list. For Error we still
+            // render a friendlier hero block below — the small primary-coloured label was
+            // easy to miss on channels without a linked discussion group.
             item(key = "label") {
                 val label = when (val s = state) {
                     CommentsRepository.ThreadState.Loading -> "Завантаження…"
                     is CommentsRepository.ThreadState.Ready -> if (s.rows.isEmpty()) "Поки немає коментарів."
                     else "${s.rows.size} відповідей"
-                    is CommentsRepository.ThreadState.Error -> s.message
+                    is CommentsRepository.ThreadState.Error -> null
                 }
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
-                )
+                if (label != null) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
+                    )
+                }
             }
 
             when (val s = state) {
@@ -133,9 +138,50 @@ fun CommentsScreen(
                 is CommentsRepository.ThreadState.Ready -> items(items = s.rows, key = { it.comment.id }) { row ->
                     CommentNode(row, onMediaClick = { items, idx -> viewer.open(items, idx) })
                 }
-                is CommentsRepository.ThreadState.Error -> Unit
+                is CommentsRepository.ThreadState.Error -> item(key = "error") {
+                    NoDiscussionState(message = s.message)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun NoDiscussionState(message: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 32.dp, bottom = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.ChatBubbleOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(32.dp),
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "Без обговорення",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
     }
 }
 

@@ -130,14 +130,16 @@ internal object MessageContentMapper {
     fun mapReactions(reactions: TdApi.MessageReactions?): Reactions {
         val list = reactions?.reactions.orEmpty()
         if (list.isEmpty()) return Reactions(0, emptyList())
-        val total = list.sumOf { it.totalCount }
         // Keep order TDLib gave us — it ranks by frequency. Custom-emoji buckets are skipped
         // for now (we'd need GetCustomEmojiStickers + sticker rendering to show them).
+        // total is computed from `items` only — including custom-emoji counts in the total
+        // while hiding them from the chip row produced a visible mismatch (sum 47, but only
+        // 35 visible in chips).
         val items = list.mapNotNull { r ->
             val emoji = (r.type as? TdApi.ReactionTypeEmoji)?.emoji ?: return@mapNotNull null
             ReactionItem(emoji, r.totalCount)
         }
-        return Reactions(total, items)
+        return Reactions(items.sumOf { it.count }, items)
     }
 
     private fun mapEntityStyle(type: TdApi.TextEntityType?): FormattedText.Style? = when (type) {

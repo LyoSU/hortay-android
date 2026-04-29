@@ -36,6 +36,9 @@ import dev.lyo.telread.data.bookmarkKey
 import dev.lyo.telread.ui.actions.PostActions
 import dev.lyo.telread.ui.main.BrandRow
 import dev.lyo.telread.ui.media.LocalMediaViewer
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 private enum class FeedFilter(val label: String) {
     All("Усе"),
@@ -44,7 +47,7 @@ private enum class FeedFilter(val label: String) {
     Today("Сьогодні"),
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun TimelineScreen(
     repo: PostsRepository,
@@ -118,14 +121,21 @@ fun TimelineScreen(
         channelFilter?.let { id -> posts.firstOrNull { it.chatId == id }?.channelTitle }
     }
 
-    // Mark visible posts as viewed (server-side view counter increments). Batched per
-    // chatId; snapshotFlow re-emits only when the visible-window changes, so we don't
-    // hammer TDLib while the list is idle.
-    LaunchedEffect(visiblePosts) {
-        if (visiblePosts.isEmpty()) return@LaunchedEffect
+    // Mark visible posts as viewed (server-side view counter increments). Two safeguards:
+    //   • keyed on listState (not visiblePosts) — visiblePosts gets a fresh List on every
+    //     update from TDLib (reactions, views, edits), which would otherwise restart this
+    //     LaunchedEffect 50×/sec on a busy feed and re-fire viewMessages for every visible
+    //     row → the FLOOD_WAIT we saw earlier.
+    //   • distinctUntilChanged + debounce(500): a single drag scroll emits dozens of indices
+    //     transitions; we only want to ack what stayed visible after the user paused.
+    LaunchedEffect(listState, repo) {
         androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+            .distinctUntilChanged()
+            .debounce(500)
             .collect { indices ->
-                val grouped = indices.mapNotNull { idx -> visiblePosts.getOrNull(idx) }
+                val snapshot = visiblePosts
+                if (snapshot.isEmpty() || indices.isEmpty()) return@collect
+                val grouped = indices.mapNotNull { idx -> snapshot.getOrNull(idx) }
                     .groupBy { it.chatId }
                 for ((chatId, group) in grouped) {
                     repo.viewMessages(chatId, group.map { it.id })

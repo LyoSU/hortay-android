@@ -148,7 +148,12 @@ class PostsRepository(
                     chatId,
                     messageIds.toLongArray(),
                     /* source */ null,
-                    /* forceRead */ true,
+                    // forceRead=false: bumps the server-side view counter (we still want
+                    // that), but does NOT advance lastReadInboxMessageId, so the channel's
+                    // unread badge in the official Telegram client stays put. Telread is a
+                    // read-only browser — silently clearing badges in another app would
+                    // surprise the user.
+                    /* forceRead */ false,
                 ),
             )
         }.warnUnlessCancelled(TAG, "viewMessages($chatId)")

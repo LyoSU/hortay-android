@@ -9,6 +9,7 @@
     <application
         android:name=".TelreadApp"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         tools:replace="android:allowBackup"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
