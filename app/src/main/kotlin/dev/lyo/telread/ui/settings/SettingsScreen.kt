@@ -40,7 +40,7 @@ fun SettingsScreen(
         topBar = {
             LargeTopAppBar(
                 title = { Text("Профіль", style = MaterialTheme.typography.displaySmall) },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),

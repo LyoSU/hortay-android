@@ -1,5 +1,7 @@
 package dev.lyo.telread.data
 
+import androidx.compose.runtime.Immutable
+
 /**
  * UI-friendly text with span metadata, decoupled from `TdApi.FormattedText`.
  *
@@ -7,6 +9,7 @@ package dev.lyo.telread.data
  * collapse niche ones (cashtag, bank-card, phone-number) into [Span.Plain] — they still
  * appear as text but without click affordance for now.
  */
+@Immutable
 data class FormattedText(val text: String, val spans: List<Span>) {
 
     companion object {
@@ -14,8 +17,10 @@ data class FormattedText(val text: String, val spans: List<Span>) {
         fun plain(text: String) = FormattedText(text, emptyList())
     }
 
+    @Immutable
     data class Span(val start: Int, val end: Int, val style: Style)
 
+    @Immutable
     sealed interface Style {
         data object Bold : Style
         data object Italic : Style

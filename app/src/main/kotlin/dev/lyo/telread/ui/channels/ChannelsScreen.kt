@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
@@ -31,7 +32,7 @@ fun ChannelsScreen(
     contentPadding: PaddingValues,
     onChannelClick: (chatId: Long) -> Unit,
 ) {
-    val posts by repo.posts.collectAsState()
+    val posts by repo.posts.collectAsStateWithLifecycle()
     val channels = remember(posts) { aggregate(posts) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
@@ -42,7 +43,7 @@ fun ChannelsScreen(
         topBar = {
             LargeTopAppBar(
                 title = { Text("Канали", style = MaterialTheme.typography.displaySmall) },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
