@@ -47,18 +47,16 @@ object PostFilterStrategy {
                 else -> emptyList()
             }
         }
-        val caption = sorted
-            .firstOrNull { it.content.captionPlain.isNotBlank() }
-            ?.content
-            ?.toFormattedCaption()
-            ?: FormattedText.Empty
+        val captionCarrier = sorted.firstOrNull { it.content.captionPlain.isNotBlank() }
+        val caption = captionCarrier?.content?.toFormattedCaption() ?: FormattedText.Empty
+        val captionAbove = captionCarrier?.content?.captionAbove() ?: false
 
         // Keep the oldest member's id as the card's stable list key (so LazyColumn doesn't
         // remount when interaction-info updates land). The discussion thread, however,
         // may live on any member — we pass all ids to CommentsRepository, which probes
         // GetMessageProperties to find the canonical carrier.
         return anchor.copy(
-            content = PostContent.PhotoAlbum(items = items, caption = caption),
+            content = PostContent.PhotoAlbum(items = items, caption = caption, captionAbove = captionAbove),
             views = members.maxOf { it.views },
             commentCount = members.mapNotNull { it.commentCount }.maxOrNull(),
             reactions = members.map { it.reactions }.maxByOrNull { it.totalCount } ?: Reactions(0, emptyList()),
@@ -73,5 +71,12 @@ object PostFilterStrategy {
         is PostContent.Animation -> caption
         is PostContent.Document -> caption
         else -> FormattedText.plain(captionPlain)
+    }
+
+    private fun PostContent.captionAbove(): Boolean = when (this) {
+        is PostContent.PhotoAlbum -> captionAbove
+        is PostContent.Video -> captionAbove
+        is PostContent.Animation -> captionAbove
+        else -> false
     }
 }

@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.telread.data.AlbumItem
 import dev.lyo.telread.data.ExpiredKind
+import dev.lyo.telread.data.FormattedText
 import dev.lyo.telread.data.PostContent
 import dev.lyo.telread.data.ServiceEvent
 import androidx.compose.foundation.clickable
@@ -209,21 +210,13 @@ private fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<Albu
     val items = content.items
     if (items.isEmpty()) return
 
+    MediaCaption(content.caption, maxLines, above = true, show = content.captionAbove)
     if (items.size == 1) {
         SingleMedia(items.first(), onClick = { onMediaClick(items, 0) })
     } else {
         AlbumPager(items, onItemClick = { idx -> onMediaClick(items, idx) })
     }
-
-    if (content.caption.text.isNotBlank()) {
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = rememberAnnotatedString(content.caption),
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+    MediaCaption(content.caption, maxLines, above = false, show = !content.captionAbove)
 }
 
 @Composable
@@ -237,11 +230,19 @@ private fun SingleMedia(item: AlbumItem, onClick: () -> Unit) {
             .clickable(onClick = onClick),
     ) {
         TdMediaImage(media = item.media, contentDescription = null, modifier = Modifier.fillMaxSize())
-        when (item) {
-            is AlbumItem.Video -> PlayBadge(item.durationSec)
-            is AlbumItem.Animation -> DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
-            is AlbumItem.Photo -> Unit
-        }
+        MediaOverlay(item)
+    }
+}
+
+@Composable
+private fun BoxScope.MediaOverlay(item: AlbumItem) {
+    when (item) {
+        is AlbumItem.Video -> PlayBadge(item.durationSec)
+        is AlbumItem.Animation -> DurationChip(
+            text = "GIF",
+            modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+        )
+        is AlbumItem.Photo -> Unit
     }
 }
 
@@ -264,11 +265,7 @@ private fun AlbumPager(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
                     .clickable { onItemClick(page) },
             ) {
                 TdMediaImage(media = item.media, contentDescription = null, modifier = Modifier.fillMaxSize())
-                when (item) {
-                    is AlbumItem.Video -> PlayBadge(item.durationSec)
-                    is AlbumItem.Animation -> DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
-                    is AlbumItem.Photo -> Unit
-                }
+                MediaOverlay(item)
             }
         }
         AlbumIndicator(
@@ -304,18 +301,11 @@ private fun AlbumIndicator(current: Int, total: Int, modifier: Modifier = Modifi
 
 @Composable
 private fun VideoBlock(content: PostContent.Video, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int) {
-    val items = listOf(AlbumItem.Video(content.media, content.durationSec, content.playbackFileId))
-    SingleMedia(items.first(), onClick = { onMediaClick(items, 0) })
-
-    if (content.caption.text.isNotBlank()) {
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = rememberAnnotatedString(content.caption),
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+    val item = AlbumItem.Video(content.media, content.durationSec, content.playbackFileId)
+    val items = listOf(item)
+    MediaCaption(content.caption, maxLines, above = true, show = content.captionAbove)
+    SingleMedia(item, onClick = { onMediaClick(items, 0) })
+    MediaCaption(content.caption, maxLines, above = false, show = !content.captionAbove)
 }
 
 @Composable
@@ -324,6 +314,7 @@ private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<A
     // ExoPlayer (Coil cannot decode MP4). Tap escalates to full-screen.
     val ratio = mediaAspectRatio(content.media.width, content.media.height)
     val items = listOf(AlbumItem.Animation(content.media, content.playbackFileId))
+    MediaCaption(content.caption, maxLines, above = true, show = content.captionAbove)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -342,15 +333,7 @@ private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<A
         )
         DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
     }
-    if (content.caption.text.isNotBlank()) {
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = rememberAnnotatedString(content.caption),
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+    MediaCaption(content.caption, maxLines, above = false, show = !content.captionAbove)
 }
 
 @Composable
@@ -380,15 +363,9 @@ private fun DocumentBlock(content: PostContent.Document, maxLines: Int) {
             )
         }
     }
-    if (content.caption.text.isNotBlank()) {
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = rememberAnnotatedString(content.caption),
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+    // Documents never carry the caption-above flag (Telegram only exposes that toggle for
+    // photo/video/animation/paid-media), so we always render below.
+    MediaCaption(content.caption, maxLines, above = false, show = true)
 }
 
 @Composable
@@ -739,6 +716,26 @@ private fun IconBadge(icon: androidx.compose.ui.graphics.vector.ImageVector) {
     }
 }
 
+/**
+ * Caption row that wraps photo/video/animation/document blocks. Telegram supports
+ * caption-above-media (set when the poster ticks "Show caption above") so each block
+ * calls this twice — once with [above]=true, once below — and the [show] flag picks
+ * which one renders. Spacer goes on the side adjacent to the media so the gap between
+ * caption and media is consistent regardless of which side the caption lives on.
+ */
+@Composable
+private fun MediaCaption(caption: FormattedText, maxLines: Int, above: Boolean, show: Boolean) {
+    if (!show || caption.text.isBlank()) return
+    if (!above) Spacer(Modifier.height(12.dp))
+    Text(
+        text = rememberAnnotatedString(caption),
+        style = MaterialTheme.typography.bodyLarge,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+    )
+    if (above) Spacer(Modifier.height(12.dp))
+}
+
 private fun mediaAspectRatio(width: Int, height: Int): Float {
     if (width <= 0 || height <= 0) return 16f / 10f
     val raw = width.toFloat() / height.toFloat()
@@ -763,5 +760,6 @@ private fun formatFileSize(bytes: Long): String {
         size /= 1024
         idx++
     }
-    return "%.1f %s".format(size, units[idx]).replace(".0 ", " ")
+    val whole = size >= 100 || idx == 0 || size == size.toLong().toDouble()
+    return if (whole) "${size.toLong()} ${units[idx]}" else "%.1f %s".format(size, units[idx])
 }

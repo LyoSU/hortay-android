@@ -19,17 +19,20 @@ internal object MessageContentMapper {
         is TdApi.MessagePhoto -> PostContent.PhotoAlbum(
             items = listOf(AlbumItem.Photo(content.photo.toMedia())),
             caption = mapFormattedText(content.caption),
+            captionAbove = content.showCaptionAboveMedia,
         )
         is TdApi.MessageVideo -> PostContent.Video(
             media = content.video.toThumbMedia(),
             playbackFileId = content.video.video.id,
             caption = mapFormattedText(content.caption),
             durationSec = content.video.duration,
+            captionAbove = content.showCaptionAboveMedia,
         )
         is TdApi.MessageAnimation -> PostContent.Animation(
             media = content.animation.toThumbMedia(),
             playbackFileId = content.animation.animation.id,
             caption = mapFormattedText(content.caption),
+            captionAbove = content.showCaptionAboveMedia,
         )
         is TdApi.MessageDocument -> PostContent.Document(
             fileId = content.document.document?.id,
@@ -189,7 +192,11 @@ internal object MessageContentMapper {
             }
         }
         return if (items.isEmpty()) PostContent.Unsupported("⭐ Платний контент")
-        else PostContent.PhotoAlbum(items = items, caption = mapFormattedText(content.caption))
+        else PostContent.PhotoAlbum(
+            items = items,
+            caption = mapFormattedText(content.caption),
+            captionAbove = content.showCaptionAboveMedia,
+        )
     }
 
     fun mapFormattedText(t: TdApi.FormattedText?): FormattedText {

@@ -31,6 +31,8 @@ sealed interface PostContent {
     data class PhotoAlbum(
         val items: List<AlbumItem>,
         val caption: FormattedText,
+        /** Telegram lets posters render the caption above the media instead of below. */
+        val captionAbove: Boolean = false,
     ) : PostContent {
         override val captionPlain: String get() = caption.text
     }
@@ -41,6 +43,7 @@ sealed interface PostContent {
         val playbackFileId: Int,
         val caption: FormattedText,
         val durationSec: Int,
+        val captionAbove: Boolean = false,
     ) : PostContent {
         override val captionPlain: String get() = caption.text
     }
@@ -50,6 +53,7 @@ sealed interface PostContent {
         val media: TdMedia,
         val playbackFileId: Int,
         val caption: FormattedText,
+        val captionAbove: Boolean = false,
     ) : PostContent {
         override val captionPlain: String get() = caption.text
     }
