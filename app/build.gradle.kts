@@ -100,4 +100,12 @@ dependencies {
     implementation(libs.kotlinx.collections.immutable)
 
     implementation(project(":libtdlib"))
+
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
+    testImplementation(libs.kotlinx.coroutines.test)
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }
