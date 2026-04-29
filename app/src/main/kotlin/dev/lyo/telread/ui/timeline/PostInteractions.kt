@@ -14,6 +14,7 @@ class PostInteractions(
     val onChannelClick: (post: TimelinePost) -> Unit = {},
     val onBookmarkClick: (post: TimelinePost) -> Unit = {},
     val onShareClick: (post: TimelinePost) -> Unit = {},
+    val onCopyClick: (post: TimelinePost) -> Unit = {},
     val onOpenClick: (post: TimelinePost) -> Unit = {},
     val isBookmarked: (post: TimelinePost) -> Boolean = { false },
 ) {

@@ -1,8 +1,12 @@
 package dev.lyo.telread.ui.actions
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.widget.Toast
 import androidx.core.net.toUri
 import dev.lyo.telread.data.PostContent
 import dev.lyo.telread.data.TimelinePost
@@ -36,6 +40,20 @@ object PostActions {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         runCatching { context.startActivity(intent) }
+    }
+
+    /**
+     * Copy the post body to the system clipboard. Android 12L+ shows its own toast for
+     * clipboard writes, so we suppress ours there to avoid the double-toast smell.
+     */
+    fun copyText(context: Context, post: TimelinePost) {
+        val text = post.content.captionPlain
+        if (text.isBlank()) return
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+        cm.setPrimaryClip(ClipData.newPlainText(post.senderName, text))
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            Toast.makeText(context, "Скопійовано", Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun share(context: Context, post: TimelinePost) {

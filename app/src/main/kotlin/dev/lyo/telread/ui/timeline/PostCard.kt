@@ -408,6 +408,13 @@ private fun PostActionSheet(
                 label = if (isBookmarked) "Прибрати зі збережених" else "Зберегти пост",
                 onClick = { runAndDismiss { interactions.onBookmarkClick(post) } },
             )
+            if (post.content.captionPlain.isNotBlank()) {
+                SheetItem(
+                    icon = Icons.Rounded.ContentCopy,
+                    label = "Скопіювати текст",
+                    onClick = { runAndDismiss { interactions.onCopyClick(post) } },
+                )
+            }
             SheetItem(
                 icon = Icons.Rounded.IosShare,
                 label = "Поділитися",

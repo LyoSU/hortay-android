@@ -209,6 +209,7 @@ fun TimelineScreen(
             onChannelClick = { post -> onChannelFilterChange(post.chatId) },
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
             onShareClick = { post -> PostActions.share(context, post) },
+            onCopyClick = { post -> PostActions.copyText(context, post) },
             onOpenClick = { post -> PostActions.openInTelegram(context, post) },
             onPostClick = onOpenComments,
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedKeys },
