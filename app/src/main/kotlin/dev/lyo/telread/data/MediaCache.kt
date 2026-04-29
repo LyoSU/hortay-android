@@ -60,16 +60,25 @@ class MediaCache(
     init {
         td.updates
             .filterIsInstance<TdApi.UpdateFile>()
-            // Always seed/update the slot — even if no observer existed yet — so when a
-            // Composable later mounts and calls ensure, GetFile and ongoing UpdateFile both
-            // converge on the same slot.
+            // Updates for files we never observed are dropped at the reducer (see
+            // applyFileEvent) — TDLib emits UpdateFile for everything in its database,
+            // not just things this app rendered.
             .onEach { update -> applyFileEvent(update.file) }
             .launchIn(scope)
     }
 
     /**
-     * Reducer for a single TDLib [TdApi.File] event. Two real-world quirks force the
-     * extra logic over a naive `slot.value = newState`:
+     * Reducer for an EXISTING slot's TDLib [TdApi.File] event. We deliberately do NOT
+     * create slots from inbound updates — TDLib emits [TdApi.UpdateFile] for every file
+     * in its database, including ones the UI never observes (avatars from chats we
+     * scrolled past, thumbs of media we never tapped). Creating a [MutableStateFlow] per
+     * such id leaks proportional to TDLib's file table over a long session. Slots are
+     * created only by [observe] / [ensure] when a Composable actually mounts; the race
+     * where an [TdApi.UpdateFile] arrives before the first observe is closed by
+     * [ensureSlow] which calls [TdApi.GetFile] and routes the result through this same
+     * reducer (after [slot] has already materialised the entry).
+     *
+     * Two real-world quirks force the extra logic over a naive `slot.value = newState`:
      *
      *   1. **Out-of-order events.** When a download finishes, TDLib sometimes emits the
      *      completion `UpdateFile` first and a stale "still downloading" one a moment
@@ -83,8 +92,11 @@ class MediaCache(
      *      forever for expired stickers / restricted media.
      */
     private fun applyFileEvent(file: TdApi.File) {
+        // No slot → no observer → drop. Callers that need to seed state for a brand-new
+        // fileId (e.g. ensureSlow after GetFile) must call slot() first; the inbound
+        // UpdateFile collector deliberately does not.
+        val s = states[file.id] ?: return
         val incoming = file.toMediaState()
-        val s = slot(file.id)
         val merged = when {
             s.value is MediaState.Ready && incoming !is MediaState.Ready -> s.value
             else -> incoming
@@ -137,6 +149,10 @@ class MediaCache(
             td.send(TdApi.DownloadFile(fileId, priority.tdValue, 0, 0, /* synchronous */ false))
             activePriority[fileId] = priority.tdValue
         } catch (t: Throwable) {
+            // A Composable leaving composition cancels its LaunchedEffect — that surfaces
+            // here as LeftCompositionCancellationException (a CancellationException). Don't
+            // log it as a failure or mark the slot Failed; the user just scrolled past.
+            if (t is kotlinx.coroutines.CancellationException) throw t
             Log.w(TAG, "ensure($fileId, ${priority.name}) failed", t)
             slot(fileId).value = MediaState.Failed(t.message ?: "download failed")
             activePriority.remove(fileId)
