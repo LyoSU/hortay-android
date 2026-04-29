@@ -1,6 +1,5 @@
 package dev.lyo.telread.data
 
-import android.util.Log
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -27,11 +26,34 @@ class CommentsRepository(private val td: TdClient) {
      * Subscribes to [TdApi.UpdateNewMessage], [TdApi.UpdateMessageInteractionInfo],
      * [TdApi.UpdateDeleteMessages] and [TdApi.UpdateMessageContent] limited to the linked
      * discussion chat so the displayed thread stays in sync without a manual refresh.
+     *
+     * [candidateMessageIds] — every id worth probing. For a standalone post that's a
+     * single-element list; for an album it's all sibling ids. Telegram pins the
+     * discussion thread to a single album member (typically the one with the caption),
+     * and [TdApi.GetMessageThread] on any other returns "Message has no thread". We
+     * resolve the carrier through [TdApi.GetMessageProperties] (a local capability
+     * lookup, no server round-trip) before issuing GetMessageThread.
      */
-    fun observeThread(chatId: Long, messageId: Long, limit: Int = 200): Flow<ThreadState> = callbackFlow {
+    fun observeThread(
+        chatId: Long,
+        candidateMessageIds: List<Long>,
+        limit: Int = 200,
+    ): Flow<ThreadState> = callbackFlow {
         trySend(ThreadState.Loading)
 
-        val info = runCatching { td.send(TdApi.GetMessageThread(chatId, messageId)) }
+        val anchorId = candidateMessageIds.firstOrNull { id ->
+            runCatching { td.send(TdApi.GetMessageProperties(chatId, id)) }
+                .warnUnlessCancelled(TAG, "messageProperties($chatId,$id)")
+                .getOrNull()
+                ?.canGetMessageThread == true
+        }
+        if (anchorId == null) {
+            trySend(ThreadState.Error("Обговорення недоступне."))
+            close()
+            return@callbackFlow
+        }
+
+        val info = runCatching { td.send(TdApi.GetMessageThread(chatId, anchorId)) }
             .getOrElse {
                 trySend(ThreadState.Error("Обговорення недоступне."))
                 close()

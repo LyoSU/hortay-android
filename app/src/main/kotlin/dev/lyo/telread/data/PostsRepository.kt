@@ -3,6 +3,8 @@ package dev.lyo.telread.data
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,6 +38,14 @@ class PostsRepository(
     private val refreshMutex = Mutex()
     private val chatCache = ConcurrentHashMap<Long, TdApi.Chat>()
     private val mapper = MessageMapper(td)
+
+    // Album coalescing: TDLib emits one UpdateNewMessage per album member with no
+    // "album complete" signal (issue tdlib/td#2523). We buffer members per (chatId,
+    // mediaAlbumId) and flush once the burst quietens — same approach as the official
+    // Telegram client. Without this, an album posts as "1 photo" → "2 photos" → … and
+    // can leave a stale single-member card in the feed if later members lag.
+    private val albumBuffers = ConcurrentHashMap<Pair<Long, Long>, MutableList<TdApi.Message>>()
+    private val albumDebounce = ConcurrentHashMap<Pair<Long, Long>, Job>()
 
     private val _posts = MutableStateFlow<List<TimelinePost>>(emptyList())
     val posts: StateFlow<List<TimelinePost>> = _posts.asStateFlow()
@@ -100,7 +110,11 @@ class PostsRepository(
             .launchIn(scope)
     }
 
-    suspend fun refresh(limitPerChannel: Int = 20): Result<Unit> = refreshMutex.withLock {
+    // 30 (not 20) so an album sitting on the limit boundary doesn't get split: most
+    // albums are 2–6 members, so 30 is enough headroom for the latest few channel
+    // posts to arrive whole. GetChatHistory itself returns members one-per-message, so
+    // a 5-photo album consumes 5 of the 30 slots.
+    suspend fun refresh(limitPerChannel: Int = 30): Result<Unit> = refreshMutex.withLock {
         runCatching { refreshLocked(limitPerChannel) }.warnUnlessCancelled("refresh")
     }
 
@@ -160,20 +174,44 @@ class PostsRepository(
     }
 
     private fun handleNewMessage(message: TdApi.Message) {
-        scope.launch {
-            val chat = chatCache[message.chatId] ?: runCatching { td.send(TdApi.GetChat(message.chatId)) }
-                .getOrNull()
-                ?.also { chatCache[it.id] = it }
-                ?: return@launch
-            if (!chat.isChannel()) return@launch
+        if (message.mediaAlbumId == 0L) {
+            scope.launch { ingest(message.chatId, listOf(message)) }
+            return
+        }
+        // Album member: stash in the per-album buffer and (re)arm a short debounce.
+        // Each subsequent sibling resets the timer; once the burst quietens we flush
+        // every accumulated member in a single `_posts.update` so PostFilterStrategy
+        // sees them as one group.
+        val key = message.chatId to message.mediaAlbumId
+        albumBuffers.compute(key) { _, existing ->
+            (existing ?: mutableListOf()).also { it += message }
+        }
+        albumDebounce[key]?.cancel()
+        albumDebounce[key] = scope.launch {
+            delay(ALBUM_DEBOUNCE_MS)
+            albumDebounce.remove(key)
+            val batch = albumBuffers.remove(key) ?: return@launch
+            ingest(key.first, batch)
+        }
+    }
 
-            val post = mapper.toTimelinePost(message, chat)
-            if (post.content is PostContent.Unsupported) return@launch
+    private suspend fun ingest(chatId: Long, messages: List<TdApi.Message>) {
+        val chat = chatCache[chatId] ?: runCatching { td.send(TdApi.GetChat(chatId)) }
+            .getOrNull()
+            ?.also { chatCache[it.id] = it }
+            ?: return
+        if (!chat.isChannel()) return
 
-            _posts.update { current ->
-                val merged = current + post
-                PostFilterStrategy.apply(merged).take(MAX_FEED_SIZE)
-            }
+        val newPosts = messages
+            .map { mapper.toTimelinePost(it, chat) }
+            .filter { it.content !is PostContent.Unsupported }
+        if (newPosts.isEmpty()) return
+
+        _posts.update { current ->
+            val existingKeys = current.mapTo(mutableSetOf()) { it.chatId to it.id }
+            val addition = newPosts.filterNot { (it.chatId to it.id) in existingKeys }
+            if (addition.isEmpty()) current
+            else PostFilterStrategy.apply(current + addition).take(MAX_FEED_SIZE)
         }
     }
 
@@ -276,6 +314,9 @@ class PostsRepository(
         const val CHAT_LIST_HINT = 200
         const val CHAT_LIST_LIMIT = 500
         const val MAX_FEED_SIZE = 1_000
+        // ~600ms is what the official Telegram client uses to coalesce album bursts.
+        // Shorter loses tail members on slow networks; longer makes albums feel laggy.
+        const val ALBUM_DEBOUNCE_MS = 600L
     }
 }
 

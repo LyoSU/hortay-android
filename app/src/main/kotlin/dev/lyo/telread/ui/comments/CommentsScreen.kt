@@ -47,8 +47,13 @@ fun CommentsScreen(
     repo: CommentsRepository,
     onDismiss: () -> Unit,
 ) {
-    val state by remember(post.chatId, post.id) {
-        repo.observeThread(post.chatId, post.id)
+    // For an album, all sibling ids are candidates — the thread carrier may be any of
+    // them. For a standalone post the only candidate is post.id.
+    val candidateIds = remember(post.id, post.albumMessageIds) {
+        post.albumMessageIds.ifEmpty { listOf(post.id) }
+    }
+    val state by remember(post.chatId, candidateIds) {
+        repo.observeThread(post.chatId, candidateIds)
     }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
 
     val viewer = LocalMediaViewer.current

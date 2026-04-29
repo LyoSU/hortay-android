@@ -38,6 +38,9 @@ internal class MessageMapper(private val td: TdClient) {
         reply = mapReply(message.replyTo, message.chatId),
         reactions = MessageContentMapper.mapReactions(message.interactionInfo?.reactions),
         commentCount = message.interactionInfo?.replyInfo?.replyCount,
+        // Filled in by PostFilterStrategy.mergeAlbumMembers — per-message mapping has
+        // no idea which siblings exist yet.
+        albumMessageIds = emptyList(),
     )
 
     suspend fun resolveSender(senderId: TdApi.MessageSender): ResolvedSender = when (senderId) {

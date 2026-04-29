@@ -47,11 +47,16 @@ object PostFilterStrategy {
             ?.toFormattedCaption()
             ?: FormattedText.Empty
 
+        // Keep the oldest member's id as the card's stable list key (so LazyColumn doesn't
+        // remount when interaction-info updates land). The discussion thread, however,
+        // may live on any member — we pass all ids to CommentsRepository, which probes
+        // GetMessageProperties to find the canonical carrier.
         return anchor.copy(
             content = PostContent.PhotoAlbum(items = items, caption = caption),
             views = members.maxOf { it.views },
             commentCount = members.mapNotNull { it.commentCount }.maxOrNull(),
             reactions = members.map { it.reactions }.maxByOrNull { it.totalCount } ?: Reactions(0, emptyList()),
+            albumMessageIds = sorted.map { it.id },
         )
     }
 

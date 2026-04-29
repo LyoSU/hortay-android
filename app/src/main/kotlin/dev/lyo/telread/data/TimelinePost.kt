@@ -23,4 +23,12 @@ data class TimelinePost(
     val reactions: Reactions,
     /** Null when the channel has no linked discussion group; 0 when discussion is enabled but empty. */
     val commentCount: Int?,
+    /**
+     * All message ids belonging to this album, in posting order. Empty for standalone
+     * posts. Telegram attaches the discussion thread to a SINGLE album member (usually
+     * the one with the caption); other members report `Message has no thread` from
+     * [getMessageThread]. The comments screen probes [getMessageProperties] across this
+     * list to find the carrier without guessing.
+     */
+    val albumMessageIds: List<Long>,
 )
