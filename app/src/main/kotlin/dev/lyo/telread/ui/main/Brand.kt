@@ -38,16 +38,10 @@ fun BrandMark(modifier: Modifier = Modifier, size: Int = 36) {
 
 @Composable
 fun BrandRow(modifier: Modifier = Modifier) {
-    Row(
+    Text(
+        text = "Hortay",
+        style = MaterialTheme.typography.headlineLarge.copy(letterSpacing = (-0.8).sp),
+        color = MaterialTheme.colorScheme.onBackground,
         modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        BrandMark(size = 36)
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = "Telread",
-            style = MaterialTheme.typography.headlineLarge.copy(letterSpacing = (-0.8).sp),
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-    }
+    )
 }
