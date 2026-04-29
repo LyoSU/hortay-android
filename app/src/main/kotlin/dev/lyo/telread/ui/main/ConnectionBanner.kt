@@ -10,21 +10,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material.icons.rounded.WifiOff
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import dev.lyo.telread.data.ConnectionStatus
+import dev.lyo.telread.ui.icons.Symbol
 
 /**
  * Slim banner that surfaces TDLib's connection state. Hidden when [status] is
@@ -46,21 +40,21 @@ fun ConnectionBanner(status: ConnectionStatus, modifier: Modifier = Modifier) {
         exit = slideOutVertically { -it } + fadeOut(),
         modifier = modifier,
     ) {
-        val (icon, label, container, content) = when (status) {
+        val (symbol, label, container, content) = when (status) {
             ConnectionStatus.WaitingForNetwork -> Quad(
-                Icons.Rounded.WifiOff,
+                "wifi_off",
                 "Очікує мережі",
                 MaterialTheme.colorScheme.errorContainer,
                 MaterialTheme.colorScheme.onErrorContainer,
             )
             ConnectionStatus.Connecting -> Quad(
-                Icons.Rounded.CloudOff,
+                "cloud_off",
                 "З'єднання…",
                 MaterialTheme.colorScheme.secondaryContainer,
                 MaterialTheme.colorScheme.onSecondaryContainer,
             )
             ConnectionStatus.Updating -> Quad(
-                Icons.Rounded.Sync,
+                "sync",
                 "Оновлення…",
                 MaterialTheme.colorScheme.secondaryContainer,
                 MaterialTheme.colorScheme.onSecondaryContainer,
@@ -74,11 +68,10 @@ fun ConnectionBanner(status: ConnectionStatus, modifier: Modifier = Modifier) {
                 .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
+            Symbol(
+                name = symbol,
                 tint = content,
-                modifier = Modifier.size(16.dp),
+                size = 18.dp,
             )
             Spacer(Modifier.width(10.dp))
             Text(
@@ -91,7 +84,7 @@ fun ConnectionBanner(status: ConnectionStatus, modifier: Modifier = Modifier) {
 }
 
 private data class Quad(
-    val icon: ImageVector,
+    val symbol: String,
     val label: String,
     val container: androidx.compose.ui.graphics.Color,
     val content: androidx.compose.ui.graphics.Color,

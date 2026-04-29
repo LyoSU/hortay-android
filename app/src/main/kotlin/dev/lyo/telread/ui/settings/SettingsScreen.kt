@@ -4,11 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Logout
-import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,6 +21,7 @@ import dev.lyo.telread.data.SettingsStore
 import dev.lyo.telread.data.StatsRepository
 import dev.lyo.telread.data.StorageUsage
 import dev.lyo.telread.data.ThemeMode
+import dev.lyo.telread.ui.icons.Symbol
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -117,7 +114,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             SectionLabel("Акаунт")
             SettingsRow(
-                icon = Icons.AutoMirrored.Rounded.Logout,
+                symbol = "logout",
                 title = "Вийти з акаунту",
                 subtitle = "Скине сесію Telegram. Кеш збережеться.",
                 tint = MaterialTheme.colorScheme.error,
@@ -127,7 +124,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             SectionLabel("Про застосунок")
             SettingsRow(
-                icon = Icons.Rounded.Info,
+                symbol = "info",
                 title = "Версія",
                 subtitle = "${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
             )
@@ -209,12 +206,12 @@ private fun TrafficCard(network: NetworkUsage?, onReset: () -> Unit) {
         StatHero(
             primary = TwoColumn(
                 left = StatHeroValue(
-                    icon = Icons.Rounded.ArrowDownward,
+                    symbol = "arrow_downward",
                     label = "Скачано",
                     value = network?.rxBytes?.let(::formatBytes) ?: "—",
                 ),
                 right = StatHeroValue(
-                    icon = Icons.Rounded.ArrowUpward,
+                    symbol = "arrow_upward",
                     label = "Відправлено",
                     value = network?.txBytes?.let(::formatBytes) ?: "—",
                 ),
@@ -232,7 +229,7 @@ private fun TrafficCard(network: NetworkUsage?, onReset: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
         ) {
-            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Symbol(name = "refresh", size = 20.dp)
             Spacer(Modifier.width(8.dp))
             Text("Скинути лічильник", fontWeight = FontWeight.SemiBold)
         }
@@ -264,11 +261,10 @@ private fun StorageCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Icon(
-                Icons.Rounded.Storage,
-                contentDescription = null,
+            Symbol(
+                name = "storage",
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp),
+                size = 28.dp,
             )
         }
 
@@ -303,7 +299,7 @@ private fun StorageCard(
                 Spacer(Modifier.width(10.dp))
                 Text("Очищення…", fontWeight = FontWeight.SemiBold)
             } else {
-                Icon(Icons.Rounded.DeleteSweep, contentDescription = null, modifier = Modifier.size(18.dp))
+                Symbol(name = "delete_sweep", size = 20.dp, tint = MaterialTheme.colorScheme.onPrimary)
                 Spacer(Modifier.width(8.dp))
                 Text("Очистити кеш медіа", fontWeight = FontWeight.SemiBold)
             }
@@ -329,7 +325,7 @@ private fun StatsCard(content: @Composable ColumnScope.() -> Unit) {
     )
 }
 
-private data class StatHeroValue(val icon: ImageVector, val label: String, val value: String)
+private data class StatHeroValue(val symbol: String, val label: String, val value: String)
 private data class TwoColumn(val left: StatHeroValue, val right: StatHeroValue)
 
 @Composable
@@ -353,11 +349,10 @@ private fun StatColumn(value: StatHeroValue, modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                value.icon,
-                contentDescription = null,
+            Symbol(
+                name = value.symbol,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(16.dp),
+                size = 18.dp,
             )
             Spacer(Modifier.width(4.dp))
             Text(
@@ -455,7 +450,7 @@ private fun formatBytes(b: Long): String {
 
 @Composable
 private fun SettingsRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    symbol: String,
     title: String,
     subtitle: String? = null,
     tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
@@ -470,7 +465,7 @@ private fun SettingsRow(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = tint)
+        Symbol(name = symbol, tint = tint, size = 22.dp)
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(

@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +17,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.lyo.telread.R
 import dev.lyo.telread.data.AuthStage
+import dev.lyo.telread.ui.icons.Symbol
 import dev.lyo.telread.data.TdClient
 import kotlinx.coroutines.launch
 
@@ -79,15 +78,14 @@ private fun HeroBlock(stage: AuthStage) {
                 .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = when (stage) {
-                    is AuthStage.WaitCode -> Icons.Rounded.Pin
-                    is AuthStage.WaitPassword -> Icons.Rounded.Lock
-                    else -> Icons.Rounded.Smartphone
+            Symbol(
+                name = when (stage) {
+                    is AuthStage.WaitCode -> "pin"
+                    is AuthStage.WaitPassword -> "lock"
+                    else -> "smartphone"
                 },
-                contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(36.dp),
+                size = 36.dp,
             )
         }
         Spacer(Modifier.height(24.dp))

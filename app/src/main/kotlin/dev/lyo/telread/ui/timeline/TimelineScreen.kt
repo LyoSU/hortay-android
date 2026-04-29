@@ -15,9 +15,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -45,6 +42,7 @@ import dev.lyo.telread.data.TimelinePost
 import dev.lyo.telread.data.bookmarkKey
 import dev.lyo.telread.ui.actions.PostActions
 import dev.lyo.telread.ui.channels.ChannelInfoSheet
+import dev.lyo.telread.ui.icons.Symbol
 import dev.lyo.telread.ui.main.BrandRow
 import dev.lyo.telread.ui.media.LocalMediaViewer
 import kotlinx.coroutines.FlowPreview
@@ -562,13 +560,13 @@ private fun TimelineTopBar(
             },
             navigationIcon = {
                 IconButton(onClick = onClearFilter) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "back")
+                    Symbol(name = "arrow_back", contentDescription = "back")
                 }
             },
             actions = {
                 if (searchQuery.isNotEmpty()) {
                     IconButton(onClick = { onSearchQueryChange("") }) {
-                        Icon(Icons.Rounded.Close, contentDescription = "clear")
+                        Symbol(name = "close", contentDescription = "clear")
                     }
                 }
             },
@@ -596,12 +594,12 @@ private fun TimelineTopBar(
             },
             navigationIcon = {
                 IconButton(onClick = onClearFilter) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "back")
+                    Symbol(name = "arrow_back", contentDescription = "back")
                 }
             },
             actions = {
                 IconButton(onClick = onSearchToggle) {
-                    Icon(Icons.Rounded.Search, contentDescription = "search")
+                    Symbol(name = "search", contentDescription = "search")
                 }
             },
             colors = colors,
@@ -640,11 +638,10 @@ private fun SearchEmpty() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.SearchOff,
-            contentDescription = null,
+        Symbol(
+            name = "search_off",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(48.dp),
+            size = 48.dp,
         )
         Spacer(Modifier.height(12.dp))
         Text(
@@ -664,11 +661,10 @@ private fun EmptyState(showingSaved: Boolean) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(
-            imageVector = if (showingSaved) Icons.Rounded.BookmarkBorder else Icons.Rounded.Forum,
-            contentDescription = null,
+        Symbol(
+            name = if (showingSaved) "bookmark" else "forum",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(56.dp),
+            size = 56.dp,
         )
         Spacer(Modifier.height(16.dp))
         Text(

@@ -9,10 +9,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,7 +19,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +30,7 @@ import dev.lyo.telread.data.ReactionItem
 import dev.lyo.telread.data.ReplyPreview
 import dev.lyo.telread.data.SenderVerification
 import dev.lyo.telread.data.TimelinePost
+import dev.lyo.telread.ui.icons.Symbol
 import dev.lyo.telread.ui.media.TdAvatar
 import kotlinx.coroutines.launch
 import java.text.DateFormat
@@ -221,20 +217,20 @@ private fun HeaderRow(
         }
         Spacer(Modifier.width(8.dp))
         if (pinned) {
-            Icon(
-                imageVector = Icons.Rounded.PushPin,
+            Symbol(
+                name = "push_pin",
                 contentDescription = "pinned",
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(12.dp),
+                size = 14.dp,
             )
             Spacer(Modifier.width(4.dp))
         }
         if (editDate > 0L) {
-            Icon(
-                imageVector = Icons.Rounded.Edit,
+            Symbol(
+                name = "edit",
                 contentDescription = "edited",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(12.dp),
+                size = 14.dp,
             )
             Spacer(Modifier.width(4.dp))
         }
@@ -260,11 +256,10 @@ private fun TranslationChip(onDismiss: () -> Unit) {
             .clickable(onClick = onDismiss),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.Translate,
-            contentDescription = null,
+        Symbol(
+            name = "translate",
             tint = MaterialTheme.colorScheme.tertiary,
-            modifier = Modifier.size(14.dp),
+            size = 16.dp,
         )
         Spacer(Modifier.width(6.dp))
         Text(
@@ -283,11 +278,11 @@ private fun TranslationChip(onDismiss: () -> Unit) {
 @Composable
 private fun VerificationBadge(verification: SenderVerification) {
     when (verification) {
-        SenderVerification.Verified -> Icon(
-            imageVector = Icons.Rounded.Verified,
+        SenderVerification.Verified -> Symbol(
+            name = "verified",
             contentDescription = "Verified",
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(14.dp),
+            size = 16.dp,
         )
         SenderVerification.Scam -> WarningPill(
             label = "SCAM",
@@ -324,11 +319,10 @@ private fun ForwardChip(origin: ForwardOrigin, onClick: (() -> Unit)?) {
         } else Modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.Repeat,
-            contentDescription = null,
+        Symbol(
+            name = "repeat",
             tint = MaterialTheme.colorScheme.tertiary,
-            modifier = Modifier.size(14.dp),
+            size = 16.dp,
         )
         Spacer(Modifier.width(6.dp))
         Text(
@@ -408,12 +402,12 @@ private fun ActionRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (views > 0) {
-            StatPill(Icons.Rounded.Visibility, formatViews(views))
+            StatPill("visibility", formatViews(views))
         }
         commentCount?.let { count ->
             if (views > 0) Spacer(Modifier.width(14.dp))
             StatPill(
-                icon = Icons.Rounded.ChatBubbleOutline,
+                symbol = "chat_bubble",
                 text = if (count > 0) formatViews(count) else "0",
                 onClick = onCommentsClick,
             )
@@ -474,7 +468,7 @@ internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
 
 @Composable
 private fun StatPill(
-    icon: ImageVector,
+    symbol: String,
     text: String,
     tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
     onClick: (() -> Unit)? = null,
@@ -488,11 +482,10 @@ private fun StatPill(
         } else Modifier.padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
+        Symbol(
+            name = symbol,
             tint = tint,
-            modifier = Modifier.size(22.dp),
+            size = 22.dp,
         )
         Spacer(Modifier.width(8.dp))
         Text(
@@ -526,19 +519,19 @@ private fun PostActionSheet(
     ) {
         Column(modifier = Modifier.padding(bottom = 24.dp)) {
             SheetItem(
-                icon = if (isBookmarked) Icons.Filled.Bookmark else Icons.Rounded.BookmarkBorder,
+                symbol = "bookmark",
                 label = if (isBookmarked) "Прибрати зі збережених" else "Зберегти пост",
                 onClick = { runAndDismiss { interactions.onBookmarkClick(post) } },
             )
             if (post.content.captionPlain.isNotBlank()) {
                 SheetItem(
-                    icon = Icons.Rounded.ContentCopy,
+                    symbol = "content_copy",
                     label = "Скопіювати текст",
                     onClick = { runAndDismiss { interactions.onCopyClick(post) } },
                 )
                 val translated = interactions.isTranslated(post)
                 SheetItem(
-                    icon = Icons.Rounded.Translate,
+                    symbol = "translate",
                     label = if (translated) "Показати оригінал" else "Перекласти",
                     onClick = {
                         runAndDismiss {
@@ -549,12 +542,12 @@ private fun PostActionSheet(
                 )
             }
             SheetItem(
-                icon = Icons.Rounded.IosShare,
+                symbol = "ios_share",
                 label = "Поділитися",
                 onClick = { runAndDismiss { interactions.onShareClick(post) } },
             )
             SheetItem(
-                icon = Icons.AutoMirrored.Rounded.OpenInNew,
+                symbol = "open_in_new",
                 label = "Відкрити в Telegram",
                 onClick = { runAndDismiss { interactions.onOpenClick(post) } },
             )
@@ -564,7 +557,7 @@ private fun PostActionSheet(
 
 @Composable
 private fun SheetItem(
-    icon: ImageVector,
+    symbol: String,
     label: String,
     onClick: () -> Unit,
 ) {
@@ -575,10 +568,10 @@ private fun SheetItem(
             .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
+        Symbol(
+            name = symbol,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            size = 22.dp,
         )
         Spacer(Modifier.width(20.dp))
         Text(text = label, style = MaterialTheme.typography.bodyLarge)

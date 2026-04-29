@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,6 +31,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.lyo.telread.data.AlbumItem
 import dev.lyo.telread.data.DownloadPriority
+import dev.lyo.telread.ui.icons.Symbol
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -118,7 +117,7 @@ fun FullScreenMediaViewer(
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.4f)),
             ) {
-                Icon(Icons.Rounded.Close, contentDescription = "close", tint = Color.White)
+                Symbol(name = "close", contentDescription = "close", tint = Color.White)
             }
 
             if (items.size > 1) {

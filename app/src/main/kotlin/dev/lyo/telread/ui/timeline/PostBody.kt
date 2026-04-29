@@ -6,9 +6,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.CallReceived
-import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,6 +29,7 @@ import dev.lyo.telread.data.PostContent
 import dev.lyo.telread.data.ServiceEvent
 import androidx.compose.foundation.clickable
 import dev.lyo.telread.data.WebPreview
+import dev.lyo.telread.ui.icons.Symbol
 import dev.lyo.telread.ui.media.TdMediaImage
 import dev.lyo.telread.ui.media.TdVideoPlayer
 import dev.lyo.telread.ui.text.RichText
@@ -122,12 +120,11 @@ private fun ChecklistBlock(content: PostContent.Checklist, maxLines: Int) {
                 modifier = Modifier.padding(vertical = 4.dp),
                 verticalAlignment = Alignment.Top,
             ) {
-                Icon(
-                    imageVector = if (task.isDone) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
-                    contentDescription = null,
+                Symbol(
+                    name = if (task.isDone) "check_box" else "check_box_outline_blank",
                     tint = if (task.isDone) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
+                    size = 20.dp,
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(
@@ -143,11 +140,11 @@ private fun ChecklistBlock(content: PostContent.Checklist, maxLines: Int) {
 
 @Composable
 private fun ExpiredMediaBlock(content: PostContent.ExpiredMedia) {
-    val (icon, label) = when (content.kind) {
-        ExpiredKind.Photo -> Icons.Rounded.HideImage to "Тимчасове фото зникло"
-        ExpiredKind.Video -> Icons.Rounded.VideocamOff to "Тимчасове відео зникло"
-        ExpiredKind.VideoNote -> Icons.Rounded.VideocamOff to "Кружок зник"
-        ExpiredKind.VoiceNote -> Icons.Rounded.MicOff to "Голосове зникло"
+    val (symbol, label) = when (content.kind) {
+        ExpiredKind.Photo -> "hide_image" to "Тимчасове фото зникло"
+        ExpiredKind.Video -> "videocam_off" to "Тимчасове відео зникло"
+        ExpiredKind.VideoNote -> "videocam_off" to "Кружок зник"
+        ExpiredKind.VoiceNote -> "mic_off" to "Голосове зникло"
     }
     Row(
         modifier = Modifier
@@ -157,7 +154,7 @@ private fun ExpiredMediaBlock(content: PostContent.ExpiredMedia) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Symbol(name = symbol, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.width(12.dp))
         Text(
             text = label,
@@ -169,17 +166,17 @@ private fun ExpiredMediaBlock(content: PostContent.ExpiredMedia) {
 
 @Composable
 private fun ServiceBlock(content: PostContent.Service) {
-    val (icon, label) = when (val e = content.event) {
-        is ServiceEvent.PinnedMessage -> Icons.Rounded.PushPin to "Закріпили повідомлення"
-        is ServiceEvent.ChannelBoosted -> Icons.Rounded.RocketLaunch to
+    val (symbol, label) = when (val e = content.event) {
+        is ServiceEvent.PinnedMessage -> "push_pin" to "Закріпили повідомлення"
+        is ServiceEvent.ChannelBoosted -> "rocket_launch" to
             if (e.boostCount > 1) "Канал отримав ${e.boostCount} бустів" else "Канал отримав буст"
-        ServiceEvent.GiveawayStarted -> Icons.Rounded.CardGiftcard to "Розпочато розіграш"
-        ServiceEvent.ScreenshotTaken -> Icons.Rounded.PhotoCamera to "Скріншот"
-        is ServiceEvent.VideoChatStarted -> Icons.Rounded.VideoCall to "Розпочато груповий дзвінок"
-        ServiceEvent.VideoChatEnded -> Icons.Rounded.CallEnd to "Груповий дзвінок завершено"
-        is ServiceEvent.GroupCall -> Icons.Rounded.Call to
+        ServiceEvent.GiveawayStarted -> "card_giftcard" to "Розпочато розіграш"
+        ServiceEvent.ScreenshotTaken -> "photo_camera" to "Скріншот"
+        is ServiceEvent.VideoChatStarted -> "video_call" to "Розпочато груповий дзвінок"
+        ServiceEvent.VideoChatEnded -> "call_end" to "Груповий дзвінок завершено"
+        is ServiceEvent.GroupCall -> "call" to
             if (e.isVideo) "Відеодзвінок" else "Голосовий дзвінок"
-        ServiceEvent.Other -> Icons.Rounded.Info to "Системне повідомлення"
+        ServiceEvent.Other -> "info" to "Системне повідомлення"
     }
     Row(
         modifier = Modifier
@@ -187,11 +184,10 @@ private fun ServiceBlock(content: PostContent.Service) {
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            icon,
-            contentDescription = null,
+        Symbol(
+            name = symbol,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp),
+            size = 18.dp,
         )
         Spacer(Modifier.width(8.dp))
         Text(
@@ -363,7 +359,7 @@ private fun DocumentBlock(content: PostContent.Document, maxLines: Int, translat
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBadge(Icons.Rounded.Description)
+        IconBadge("description")
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -395,7 +391,7 @@ private fun AudioBlock(content: PostContent.Audio) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBadge(Icons.Rounded.AudioFile)
+        IconBadge("audio_file")
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -427,7 +423,7 @@ private fun VoiceNoteBlock(content: PostContent.VoiceNote) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBadge(Icons.Rounded.Mic)
+        IconBadge("mic")
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -473,9 +469,8 @@ private fun VideoNoteBlock(content: PostContent.VideoNote) {
             }
         }
         Spacer(Modifier.width(12.dp))
-        Icon(
-            Icons.Rounded.VideoCameraFront,
-            contentDescription = null,
+        Symbol(
+            name = "video_camera_front",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -508,11 +503,10 @@ private fun PollBlock(content: PostContent.Poll) {
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Rounded.Poll,
-                contentDescription = null,
+            Symbol(
+                name = "poll",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp),
+                size = 18.dp,
             )
             Spacer(Modifier.width(6.dp))
             Text(
@@ -570,7 +564,7 @@ private fun LocationBlock(content: PostContent.Location) {
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(Icons.Rounded.Place)
+            IconBadge("place")
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 content.title?.let {
@@ -596,7 +590,7 @@ private fun ContactBlock(content: PostContent.Contact) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBadge(Icons.AutoMirrored.Rounded.CallReceived)
+        IconBadge("call_received")
         Spacer(Modifier.width(12.dp))
         Column {
             Text(content.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
@@ -691,11 +685,10 @@ private fun BoxScope.PlayBadge(durationSec: Int) {
             .background(Color.Black.copy(alpha = 0.55f)),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.PlayCircleFilled,
-            contentDescription = null,
+        Symbol(
+            name = "play_circle",
             tint = Color.White,
-            modifier = Modifier.size(36.dp),
+            size = 36.dp,
         )
     }
     DurationChip(
@@ -721,7 +714,7 @@ private fun DurationChip(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun IconBadge(icon: androidx.compose.ui.graphics.vector.ImageVector) {
+private fun IconBadge(symbol: String) {
     Box(
         modifier = Modifier
             .size(40.dp)
@@ -729,10 +722,10 @@ private fun IconBadge(icon: androidx.compose.ui.graphics.vector.ImageVector) {
             .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
+        Symbol(
+            name = symbol,
             tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            size = 22.dp,
         )
     }
 }

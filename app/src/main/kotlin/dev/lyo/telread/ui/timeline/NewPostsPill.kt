@@ -3,9 +3,6 @@ package dev.lyo.telread.ui.timeline
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -16,6 +13,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import dev.lyo.telread.ui.icons.Symbol
 import dev.lyo.telread.ui.media.TdAvatar
 
 /**
@@ -46,11 +44,7 @@ fun NewPostsPill(
                 AvatarStack(channels = channels)
                 Spacer(Modifier.width(10.dp))
             }
-            Icon(
-                imageVector = Icons.Rounded.ArrowUpward,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-            )
+            Symbol(name = "arrow_upward", size = 18.dp)
             Spacer(Modifier.width(6.dp))
             Text(
                 text = newPostsLabel(pendingCount),

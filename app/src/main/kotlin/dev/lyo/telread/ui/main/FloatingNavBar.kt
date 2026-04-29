@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import dev.lyo.telread.ui.icons.Symbol
 
 /**
  * MD3 Expressive floating navigation bar.
@@ -88,11 +89,11 @@ private fun NavTabButton(
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = tab.icon,
+        Symbol(
+            name = tab.symbol,
             contentDescription = tab.label,
             tint = content,
-            modifier = Modifier.size(24.dp),
+            size = 24.dp,
         )
     }
 }

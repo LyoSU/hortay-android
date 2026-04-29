@@ -14,12 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ExitToApp
-import androidx.compose.material.icons.rounded.NotificationsActive
-import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -35,12 +30,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.telread.data.ChannelActionsRepository
 import dev.lyo.telread.data.ChannelInfo
+import dev.lyo.telread.ui.icons.Symbol
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
@@ -123,7 +118,7 @@ fun ChannelInfoSheet(
             }
             Spacer(Modifier.height(20.dp))
             ActionRow(
-                icon = if (current.isMuted) Icons.Rounded.NotificationsActive else Icons.Rounded.NotificationsOff,
+                symbol = if (current.isMuted) "notifications_active" else "notifications_off",
                 label = if (current.isMuted) "Увімкнути сповіщення" else "Вимкнути сповіщення",
                 onClick = {
                     val target = !current.isMuted
@@ -133,7 +128,7 @@ fun ChannelInfoSheet(
             )
             if (current.isMember) {
                 ActionRow(
-                    icon = Icons.AutoMirrored.Rounded.ExitToApp,
+                    symbol = "logout",
                     label = "Покинути канал",
                     tint = MaterialTheme.colorScheme.error,
                     onClick = {
@@ -143,7 +138,7 @@ fun ChannelInfoSheet(
                 )
             } else {
                 ActionRow(
-                    icon = Icons.AutoMirrored.Rounded.ExitToApp,
+                    symbol = "add",
                     label = "Підписатися",
                     tint = MaterialTheme.colorScheme.primary,
                     onClick = {
@@ -158,7 +153,7 @@ fun ChannelInfoSheet(
 
 @Composable
 private fun ActionRow(
-    icon: ImageVector,
+    symbol: String,
     label: String,
     tint: Color = MaterialTheme.colorScheme.onSurface,
     onClick: () -> Unit,
@@ -179,11 +174,10 @@ private fun ActionRow(
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
+            Symbol(
+                name = symbol,
                 tint = tint,
-                modifier = Modifier.size(18.dp),
+                size = 20.dp,
             )
         }
         Spacer(Modifier.width(16.dp))

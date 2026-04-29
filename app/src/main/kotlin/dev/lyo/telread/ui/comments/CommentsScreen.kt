@@ -7,9 +7,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +20,7 @@ import dev.lyo.telread.data.AlbumItem
 import dev.lyo.telread.data.CommentsRepository
 import dev.lyo.telread.data.ThreadRow
 import dev.lyo.telread.data.TimelinePost
+import dev.lyo.telread.ui.icons.Symbol
 import dev.lyo.telread.ui.media.LocalMediaViewer
 import dev.lyo.telread.ui.media.TdAvatar
 import dev.lyo.telread.ui.media.toAlbumItems
@@ -90,7 +88,7 @@ fun CommentsScreen(
                 title = { Text("Обговорення", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "back")
+                        Symbol(name = "arrow_back", contentDescription = "back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -158,11 +156,10 @@ private fun NoDiscussionState(message: String) {
             .padding(top = 32.dp, bottom = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(
-            imageVector = Icons.Rounded.ChatBubbleOutline,
-            contentDescription = null,
+        Symbol(
+            name = "chat_bubble",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(48.dp),
+            size = 48.dp,
         )
         Spacer(Modifier.height(14.dp))
         Text(
@@ -247,11 +244,11 @@ private fun CommentBubble(
                 )
                 Spacer(Modifier.width(8.dp))
                 if (message.editDate > 0L) {
-                    Icon(
-                        imageVector = Icons.Rounded.Edit,
+                    Symbol(
+                        name = "edit",
                         contentDescription = "edited",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(11.dp),
+                        size = 13.dp,
                     )
                     Spacer(Modifier.width(4.dp))
                 }
