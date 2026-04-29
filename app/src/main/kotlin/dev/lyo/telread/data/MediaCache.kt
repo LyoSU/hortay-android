@@ -56,6 +56,11 @@ class MediaCache(
 
     private val states = ConcurrentHashMap<Int, MutableStateFlow<MediaState>>()
     private val activePriority = ConcurrentHashMap<Int, Int>()
+    // TDLib emits Downloading→Downloading progress at 30+ Hz per active file. Each one
+    // currently writes to a MutableStateFlow → recompose. With several concurrent
+    // downloads (album fullscreen) that's real CPU + GC tax for sub-pixel progress
+    // changes the user can't perceive anyway.
+    private val lastProgressEmitMs = ConcurrentHashMap<Int, Long>()
 
     init {
         td.updates
@@ -97,13 +102,23 @@ class MediaCache(
         // UpdateFile collector deliberately does not.
         val s = states[file.id] ?: return
         val incoming = file.toMediaState()
+        val previous = s.value
         val merged = when {
-            s.value is MediaState.Ready && incoming !is MediaState.Ready -> s.value
+            previous is MediaState.Ready && incoming !is MediaState.Ready -> previous
             else -> incoming
+        }
+        // Throttle Downloading→Downloading bursts to PROGRESS_MIN_INTERVAL_MS. Terminal
+        // transitions (any state involving Idle/Ready/Failed) always pass through.
+        if (previous is MediaState.Downloading && merged is MediaState.Downloading) {
+            val now = System.currentTimeMillis()
+            val last = lastProgressEmitMs[file.id] ?: 0L
+            if (now - last < PROGRESS_MIN_INTERVAL_MS) return
+            lastProgressEmitMs[file.id] = now
         }
         s.value = merged
         if (merged is MediaState.Ready || merged is MediaState.Failed) {
             activePriority.remove(file.id)
+            lastProgressEmitMs.remove(file.id)
         }
     }
 
@@ -177,6 +192,9 @@ class MediaCache(
 
     private companion object {
         const val TAG = "MediaCache"
+        // Throttle Downloading→Downloading progress emits per fileId. TDLib reports
+        // sub-percent progress at 30+ Hz; the UI doesn't need that granularity.
+        const val PROGRESS_MIN_INTERVAL_MS = 100L
     }
 }
 
