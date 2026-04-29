@@ -47,7 +47,8 @@ class StatsRepository(private val td: TdClient) {
      * Aggressive cache wipe: size=0 + ttl=0 + immunityDelay=0 forces TDLib to evict
      * every file not held by an active in-flight transfer or open file handle. The
      * currently-rendered media survives because TDLib's internal ref-count protects it
-     * regardless of these limits.
+     * regardless of these limits. The chat/database is NOT touched — that would log the
+     * user out and is surfaced as a separate destructive action.
      */
     suspend fun clearCache(): Result<Unit> = runCatching {
         td.send(
@@ -65,6 +66,12 @@ class StatsRepository(private val td: TdClient) {
         )
         Unit
     }.warnUnlessCancelled(TAG, "clearCache")
+
+    /** Zero out the lifetime traffic counters. Storage is unaffected. */
+    suspend fun resetTrafficStats(): Result<Unit> = runCatching {
+        td.send(TdApi.ResetNetworkStatistics())
+        Unit
+    }.warnUnlessCancelled(TAG, "resetTrafficStats")
 
     private companion object {
         const val TAG = "StatsRepository"

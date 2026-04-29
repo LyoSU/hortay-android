@@ -8,9 +8,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import coil3.SingletonImageLoader
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +37,7 @@ fun SettingsScreen(
     onLogout: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val themeMode by settings.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.System)
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var confirmLogout by remember { mutableStateOf(false) }
@@ -80,15 +84,30 @@ fun SettingsScreen(
             })
 
             Spacer(Modifier.height(8.dp))
-            SectionLabel("Сховище і трафік")
-            StorageTrafficCard(
+            SectionLabel("Трафік")
+            TrafficCard(
                 network = network,
+                onReset = {
+                    scope.launch {
+                        stats.resetTrafficStats()
+                        refreshStats()
+                    }
+                },
+            )
+
+            Spacer(Modifier.height(8.dp))
+            SectionLabel("Сховище")
+            StorageCard(
                 storage = storage,
                 clearing = clearing,
                 onClearCache = {
                     scope.launch {
                         clearing = true
                         stats.clearCache()
+                        // Coil's disk cache (decoded JPEGs from minithumbs and Telegram
+                        // file IDs) is separate from TDLib's tdlib-files/. Clear both so
+                        // the user sees the actual freed space, not a leftover.
+                        SingletonImageLoader.get(context).diskCache?.clear()
                         refreshStats()
                         clearing = false
                     }
@@ -185,69 +204,242 @@ private fun themeLabel(mode: ThemeMode) = when (mode) {
 }
 
 @Composable
-private fun StorageTrafficCard(
-    network: NetworkUsage?,
+private fun TrafficCard(network: NetworkUsage?, onReset: () -> Unit) {
+    StatsCard {
+        StatHero(
+            primary = TwoColumn(
+                left = StatHeroValue(
+                    icon = Icons.Rounded.ArrowDownward,
+                    label = "Скачано",
+                    value = network?.rxBytes?.let(::formatBytes) ?: "—",
+                ),
+                right = StatHeroValue(
+                    icon = Icons.Rounded.ArrowUpward,
+                    label = "Відправлено",
+                    value = network?.txBytes?.let(::formatBytes) ?: "—",
+                ),
+            ),
+        )
+        Text(
+            text = "Накопичено за весь час роботи. Не зменшується від очистки кешу — це окремий лічильник.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        TextButton(
+            onClick = onReset,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Скинути лічильник", fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun StorageCard(
     storage: StorageUsage?,
     clearing: Boolean,
     onClearCache: () -> Unit,
 ) {
+    val totalBytes = (storage?.totalFilesBytes ?: 0L) + (storage?.databaseSizeBytes ?: 0L)
+    val filesBytes = storage?.totalFilesBytes ?: 0L
+    val dbBytes = storage?.databaseSizeBytes ?: 0L
+    val fillFraction = if (totalBytes <= 0L) 0f else (filesBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+
+    StatsCard {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (storage == null) "—" else formatBytes(totalBytes),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "займає Telread на цьому пристрої",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.Rounded.Storage,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp),
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+        // Files vs database visual split. Files are the chunky bit; database is small but
+        // can't be cleared without a logout, so we show it for honesty.
+        StorageBar(filesFraction = fillFraction)
+
+        Spacer(Modifier.height(10.dp))
+        StorageLegend(
+            filesBytes = filesBytes,
+            dbBytes = dbBytes,
+        )
+
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = onClearCache,
+            enabled = !clearing && filesBytes > 0L,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+        ) {
+            if (clearing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+                Spacer(Modifier.width(10.dp))
+                Text("Очищення…", fontWeight = FontWeight.SemiBold)
+            } else {
+                Icon(Icons.Rounded.DeleteSweep, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Очистити кеш медіа", fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Text(
+            text = "Видалить кеш фото, відео й файлів (включно з зображеннями Coil). База повідомлень і сесія лишаються — їх скидає лише вихід з акаунту.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+    }
+}
+
+@Composable
+private fun StatsCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        StatRow("Завантажено", network?.rxBytes?.let(::formatBytes) ?: "—")
-        StatRow("Відправлено", network?.txBytes?.let(::formatBytes) ?: "—")
-        StatRow("Файли в кеші", storage?.totalFilesBytes?.let(::formatBytes) ?: "—")
-        StatRow("База даних", storage?.databaseSizeBytes?.let(::formatBytes) ?: "—")
-        Spacer(Modifier.height(4.dp))
-        Row(
+        content = content,
+    )
+}
+
+private data class StatHeroValue(val icon: ImageVector, val label: String, val value: String)
+private data class TwoColumn(val left: StatHeroValue, val right: StatHeroValue)
+
+@Composable
+private fun StatHero(primary: TwoColumn) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        StatColumn(primary.left, modifier = Modifier.weight(1f))
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .clickable(enabled = !clearing, onClick = onClearCache)
-                .padding(vertical = 10.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (clearing) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.width(10.dp))
-            }
-            Text(
-                text = if (clearing) "Очищення…" else "Очистити кеш",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
+                .width(1.dp)
+                .height(48.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant),
+        )
+        StatColumn(primary.right, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun StatRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
+private fun StatColumn(value: StatHeroValue, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(horizontal = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                value.icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                value.label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
         Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleSmall,
+            value.value,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
         )
+    }
+}
+
+@Composable
+private fun StorageBar(filesFraction: Float) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(8.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .weight(filesFraction.coerceAtLeast(0.001f))
+                .background(MaterialTheme.colorScheme.primary),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .weight((1f - filesFraction).coerceAtLeast(0.001f))
+                .background(MaterialTheme.colorScheme.tertiary),
+        )
+    }
+}
+
+@Composable
+private fun StorageLegend(filesBytes: Long, dbBytes: Long) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        LegendDot(
+            color = MaterialTheme.colorScheme.primary,
+            label = "Медіа",
+            value = formatBytes(filesBytes),
+        )
+        LegendDot(
+            color = MaterialTheme.colorScheme.tertiary,
+            label = "База даних",
+            value = formatBytes(dbBytes),
+        )
+    }
+}
+
+@Composable
+private fun LegendDot(color: androidx.compose.ui.graphics.Color, label: String, value: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(color),
+        )
+        Spacer(Modifier.width(6.dp))
+        Column {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 
