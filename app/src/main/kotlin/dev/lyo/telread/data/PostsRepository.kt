@@ -227,6 +227,22 @@ class PostsRepository(
     }
 
     /**
+     * Subscriber count for a channel chat. Returns null when the chat is not a supergroup
+     * (private 1:1, basic group) or TDLib reports an unknown count. Cheap — TDLib serves
+     * this from its local supergroup cache; no network round-trip in steady state.
+     */
+    suspend fun channelSubscribers(chatId: Long): Int? {
+        val chat = runCatching { td.send(TdApi.GetChat(chatId)) }
+            .warnUnlessCancelled(TAG, "channelSubscribers/getChat")
+            .getOrNull() ?: return null
+        val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
+        val sg = runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }
+            .warnUnlessCancelled(TAG, "channelSubscribers/getSupergroup")
+            .getOrNull() ?: return null
+        return sg.memberCount.takeIf { it > 0 }
+    }
+
+    /**
      * Registers that the user has seen the given messages in [chatId]. This is what bumps
      * channel view counters server-side; without it, the user's "view" never lands.
      */

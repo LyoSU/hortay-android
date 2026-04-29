@@ -25,6 +25,9 @@ class MessageMapper(private val td: TdSender) {
     private val userCache = boundedLru<Long, ResolvedSender>(MAX_RESOLVER_CACHE)
     private val chatCache = boundedLru<Long, ResolvedSender>(MAX_RESOLVER_CACHE)
     private val supergroupUsernameCache = boundedLru<Long, String>(MAX_RESOLVER_CACHE) // username, "" = none
+    // Verification mark per supergroup. We cache the *string* of the enum (or "") so the
+    // map can serve "definitely no badge" without materialising a Kotlin null.
+    private val supergroupVerificationCache = boundedLru<Long, String>(MAX_RESOLVER_CACHE)
 
     // Reply previews sometimes hit the same source post repeatedly — same channel
     // referenced by multiple posts, or the same conversation thread visible across a
@@ -57,6 +60,7 @@ class MessageMapper(private val td: TdSender) {
         albumMessageIds = emptyList(),
         parentId = null,
         isPinned = message.isPinned,
+        verification = resolveChannelVerification(chat),
     )
 
     /**
@@ -102,7 +106,10 @@ class MessageMapper(private val td: TdSender) {
     /** Drop a stale entry — call when TDLib emits UpdateUser / UpdateSupergroup. */
     fun invalidateUser(userId: Long) { userCache.remove(userId) }
     fun invalidateChat(chatId: Long) { chatCache.remove(chatId) }
-    fun invalidateSupergroup(supergroupId: Long) { supergroupUsernameCache.remove(supergroupId) }
+    fun invalidateSupergroup(supergroupId: Long) {
+        supergroupUsernameCache.remove(supergroupId)
+        supergroupVerificationCache.remove(supergroupId)
+    }
 
     // computeIfAbsent on a synchronizedMap is atomic but blocks the bucket, and our
     // fetch lambdas are suspend. Pattern: optimistic read → fetch outside the map →
@@ -123,13 +130,26 @@ class MessageMapper(private val td: TdSender) {
     private suspend fun resolveChannelHandle(chat: TdApi.Chat): String? {
         val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
         supergroupUsernameCache[supergroupId]?.let { return it.takeUnless { s -> s.isEmpty() } }
-        val handle = runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }.getOrNull()
-            ?.usernames?.activeUsernames?.firstOrNull()
-            ?.let { "@$it" }
+        // Single GetSupergroup call seeds BOTH the username and verification caches —
+        // avoids a second round-trip when the post is then asked for its badge.
+        val sg = runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }.getOrNull()
+        val handle = sg?.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" }
         // "" = "no username" sentinel so the cache hit path can distinguish unfetched
         // from definitely-no-username without nullability gymnastics.
         supergroupUsernameCache.putIfAbsent(supergroupId, handle.orEmpty())
+        supergroupVerificationCache.putIfAbsent(supergroupId, sg?.verificationStatus?.toMark()?.name.orEmpty())
         return handle
+    }
+
+    private suspend fun resolveChannelVerification(chat: TdApi.Chat): SenderVerification? {
+        val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
+        // Hit the username path first — it primes the verification cache as a side effect.
+        // Most posts already trigger handle resolution before we land here, so this is
+        // usually a free read.
+        if (supergroupId !in supergroupVerificationCache) resolveChannelHandle(chat)
+        return supergroupVerificationCache[supergroupId]
+            ?.takeUnless { it.isEmpty() }
+            ?.let { runCatching { SenderVerification.valueOf(it) }.getOrNull() }
     }
 
     private suspend fun fetchUser(userId: Long): ResolvedSender {
@@ -165,15 +185,25 @@ class MessageMapper(private val td: TdSender) {
         is TdApi.MessageOriginUser -> ForwardOrigin.User(
             userName = resolveCachedUser(origin.senderUserId).name,
         )
-        is TdApi.MessageOriginChat -> ForwardOrigin.Chat(
-            chatName = resolveCachedChat(origin.senderChatId).name,
-            authorSignature = origin.authorSignature?.takeUnless { it.isNullOrBlank() },
-        )
+        is TdApi.MessageOriginChat -> {
+            val resolved = resolveCachedChat(origin.senderChatId)
+            ForwardOrigin.Chat(
+                chatName = resolved.name,
+                authorSignature = origin.authorSignature?.takeUnless { it.isNullOrBlank() },
+                sourceChatId = origin.senderChatId,
+                sourceHandle = resolved.handle,
+            )
+        }
         is TdApi.MessageOriginHiddenUser -> ForwardOrigin.HiddenUser(origin.senderName.orEmpty())
-        is TdApi.MessageOriginChannel -> ForwardOrigin.Channel(
-            channelName = resolveCachedChat(origin.chatId).name,
-            authorSignature = origin.authorSignature?.takeUnless { it.isNullOrBlank() },
-        )
+        is TdApi.MessageOriginChannel -> {
+            val resolved = resolveCachedChat(origin.chatId)
+            ForwardOrigin.Channel(
+                channelName = resolved.name,
+                authorSignature = origin.authorSignature?.takeUnless { it.isNullOrBlank() },
+                sourceChatId = origin.chatId,
+                sourceHandle = resolved.handle,
+            )
+        }
         else -> ForwardOrigin.HiddenUser("")
     }
 
@@ -211,6 +241,13 @@ class MessageMapper(private val td: TdSender) {
     private companion object {
         const val MAX_RESOLVER_CACHE = 512
     }
+}
+
+private fun TdApi.VerificationStatus.toMark(): SenderVerification? = when {
+    isVerified -> SenderVerification.Verified
+    isScam -> SenderVerification.Scam
+    isFake -> SenderVerification.Fake
+    else -> null
 }
 
 private fun <K, V> boundedLru(maxSize: Int): MutableMap<K, V> =

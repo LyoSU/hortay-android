@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -157,6 +158,10 @@ fun TimelineScreen(
     val activeChannelTitle = remember(channelFilter, posts) {
         channelFilter?.let { id -> posts.firstOrNull { it.chatId == id }?.senderName }
     }
+    var activeChannelSubscribers by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(channelFilter) {
+        activeChannelSubscribers = channelFilter?.let { repo.channelSubscribers(it) }
+    }
 
     // Warm the discussion-thread cache for posts that linger in the viewport. A cold
     // GetMessageThread is a server round-trip (~1.5–2s on first hit per channel); after
@@ -207,6 +212,36 @@ fun TimelineScreen(
                 viewer.openFor(post.content, idx)
             },
             onChannelClick = { post -> onChannelFilterChange(post.chatId) },
+            onForwardSourceClick = { post ->
+                val origin = post.forwardOrigin
+                val sourceId = when (origin) {
+                    is dev.lyo.telread.data.ForwardOrigin.Channel -> origin.sourceChatId
+                    is dev.lyo.telread.data.ForwardOrigin.Chat -> origin.sourceChatId
+                    else -> null
+                }
+                val sourceHandle = when (origin) {
+                    is dev.lyo.telread.data.ForwardOrigin.Channel -> origin.sourceHandle
+                    is dev.lyo.telread.data.ForwardOrigin.Chat -> origin.sourceHandle
+                    else -> null
+                }
+                // Already in our subscribed feed → switch the filter so the user lands on
+                // that channel's posts. Otherwise hand off to the Telegram client.
+                val subscribed = posts.any { it.chatId == sourceId }
+                when {
+                    sourceId != null && subscribed -> onChannelFilterChange(sourceId)
+                    !sourceHandle.isNullOrBlank() -> {
+                        val handle = sourceHandle.removePrefix("@")
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    "tg://resolve?domain=$handle".toUri(),
+                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    }
+                }
+            },
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
             onShareClick = { post -> PostActions.share(context, post) },
             onCopyClick = { post -> PostActions.copyText(context, post) },
@@ -224,6 +259,7 @@ fun TimelineScreen(
             TimelineTopBar(
                 showOnlyBookmarked = showOnlyBookmarked,
                 channelTitle = activeChannelTitle,
+                channelSubscribers = activeChannelSubscribers,
                 hasFilter = channelFilter != null,
                 onClearFilter = { onChannelFilterChange(null) },
                 onBrandTap = onBrandTap,
@@ -303,6 +339,7 @@ fun TimelineScreen(
 private fun TimelineTopBar(
     showOnlyBookmarked: Boolean,
     channelTitle: String?,
+    channelSubscribers: Int?,
     hasFilter: Boolean,
     onClearFilter: () -> Unit,
     onBrandTap: () -> Unit,
@@ -315,12 +352,22 @@ private fun TimelineTopBar(
     when {
         hasFilter -> TopAppBar(
             title = {
-                Text(
-                    text = channelTitle.orEmpty(),
-                    style = MaterialTheme.typography.titleLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Column {
+                    Text(
+                        text = channelTitle.orEmpty(),
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    channelSubscribers?.let {
+                        Text(
+                            text = "${formatSubscribers(it)} підписників",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                }
             },
             navigationIcon = {
                 IconButton(onClick = onClearFilter) {
@@ -411,6 +458,23 @@ private fun EmptyState(showingSaved: Boolean) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
+    }
+}
+
+/**
+ * Compact subscriber count formatter — Telegram convention. 12 345 → "12.3K", 1 050 000
+ * → "1.1M". Round numbers drop the decimal so the label reads as "12K" rather than "12.0K".
+ */
+private fun formatSubscribers(count: Int): String {
+    fun compact(value: Double, suffix: String): String {
+        val rounded = ((value * 10).toLong()) / 10.0
+        return if (rounded == rounded.toLong().toDouble()) "${rounded.toLong()}$suffix"
+        else "%.1f%s".format(rounded, suffix)
+    }
+    return when {
+        count < 1_000 -> count.toString()
+        count < 1_000_000 -> compact(count / 1_000.0, "K")
+        else -> compact(count / 1_000_000.0, "M")
     }
 }
 

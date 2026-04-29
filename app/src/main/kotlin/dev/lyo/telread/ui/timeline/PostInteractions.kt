@@ -12,6 +12,8 @@ class PostInteractions(
     val onPostClick: (post: TimelinePost) -> Unit = {},
     val onMediaClick: (post: TimelinePost, index: Int) -> Unit = { _, _ -> },
     val onChannelClick: (post: TimelinePost) -> Unit = {},
+    /** User tapped the "Переслано від …" chip — open the source channel if resolvable. */
+    val onForwardSourceClick: (post: TimelinePost) -> Unit = {},
     val onBookmarkClick: (post: TimelinePost) -> Unit = {},
     val onShareClick: (post: TimelinePost) -> Unit = {},
     val onCopyClick: (post: TimelinePost) -> Unit = {},

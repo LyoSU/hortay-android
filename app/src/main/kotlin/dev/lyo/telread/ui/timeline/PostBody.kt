@@ -34,6 +34,7 @@ import androidx.compose.foundation.clickable
 import dev.lyo.telread.data.WebPreview
 import dev.lyo.telread.ui.media.TdMediaImage
 import dev.lyo.telread.ui.media.TdVideoPlayer
+import dev.lyo.telread.ui.text.RichText
 import dev.lyo.telread.ui.text.rememberAnnotatedString
 
 /**
@@ -197,9 +198,13 @@ private fun ServiceBlock(content: PostContent.Service) {
 
 @Composable
 private fun TextBlock(content: PostContent.Text, maxLines: Int) {
-    val annotated = rememberAnnotatedString(content.formatted)
-    if (annotated.isNotEmpty()) {
-        ExpandableText(annotated, MaterialTheme.typography.bodyLarge, maxLines)
+    if (content.formatted.text.isNotEmpty()) {
+        RichText(
+            formatted = content.formatted,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = maxLines,
+            renderer = { annotated, style, lines -> ExpandableText(annotated, style, lines) },
+        )
     }
     content.webPreview?.let {
         Spacer(Modifier.height(12.dp))
@@ -733,7 +738,12 @@ private fun IconBadge(icon: androidx.compose.ui.graphics.vector.ImageVector) {
 private fun MediaCaption(caption: FormattedText, maxLines: Int, above: Boolean, show: Boolean) {
     if (!show || caption.text.isBlank()) return
     if (!above) Spacer(Modifier.height(12.dp))
-    ExpandableText(rememberAnnotatedString(caption), MaterialTheme.typography.bodyLarge, maxLines)
+    RichText(
+        formatted = caption,
+        style = MaterialTheme.typography.bodyLarge,
+        maxLines = maxLines,
+        renderer = { annotated, style, lines -> ExpandableText(annotated, style, lines) },
+    )
     if (above) Spacer(Modifier.height(12.dp))
 }
 

@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.telread.AppGraph
 import dev.lyo.telread.data.TimelinePost
 import dev.lyo.telread.ui.channels.ChannelsScreen
@@ -32,6 +34,7 @@ fun MainScaffold(graph: AppGraph) {
     // value and decides scroll-to-top vs refresh based on its own scroll position.
     var homeTapTrigger by remember { mutableLongStateOf(0L) }
     val scope = rememberCoroutineScope()
+    val connection by graph.tdClient.connection.collectAsStateWithLifecycle()
 
     // Back priority: dismiss overlay → clear channel filter → return to Feed → system close.
     BackHandler(enabled = commentsForPost != null) { commentsForPost = null }
@@ -57,6 +60,7 @@ fun MainScaffold(graph: AppGraph) {
         },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
+        Box(modifier = Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = selectedTab,
             transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
@@ -110,6 +114,14 @@ fun MainScaffold(graph: AppGraph) {
                     onLogout = { scope.launch { graph.tdClient.logOut() } },
                 )
             }
+        }
+
+        ConnectionBanner(
+            status = connection,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = padding.calculateTopPadding()),
+        )
         }
     }
 

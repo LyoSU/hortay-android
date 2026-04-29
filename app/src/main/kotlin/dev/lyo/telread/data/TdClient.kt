@@ -35,6 +35,15 @@ class TdClient private constructor(
     private val _authStage = MutableStateFlow<AuthStage>(AuthStage.Loading)
     val authStage: StateFlow<AuthStage> = _authStage.asStateFlow()
 
+    private val _connection = MutableStateFlow(ConnectionStatus.Connecting)
+    /**
+     * Mirrors TDLib's [TdApi.UpdateConnectionState]. The UI uses this to render a top
+     * banner ("З'єднання…", "Оновлення…", "Очікує мережі"), so transient hiccups during
+     * a long roam or a Wi-Fi handoff have a visible explanation instead of an apparently
+     * frozen feed.
+     */
+    val connection: StateFlow<ConnectionStatus> = _connection.asStateFlow()
+
     // Last phone number the user tried — kept so AuthorizationStateWaitCode can display
     // the right number even when we no longer optimistically pre-set WaitCode.
     @Volatile
@@ -58,9 +67,20 @@ class TdClient private constructor(
     }
 
     private fun handleUpdate(update: TdApi.Update) {
-        if (update is TdApi.UpdateAuthorizationState) {
-            scope.launch { onAuthState(update.authorizationState) }
+        when (update) {
+            is TdApi.UpdateAuthorizationState -> scope.launch { onAuthState(update.authorizationState) }
+            is TdApi.UpdateConnectionState -> _connection.value = update.state.toStatus()
+            else -> Unit
         }
+    }
+
+    private fun TdApi.ConnectionState.toStatus(): ConnectionStatus = when (this) {
+        is TdApi.ConnectionStateReady -> ConnectionStatus.Ready
+        is TdApi.ConnectionStateConnecting -> ConnectionStatus.Connecting
+        is TdApi.ConnectionStateConnectingToProxy -> ConnectionStatus.Connecting
+        is TdApi.ConnectionStateUpdating -> ConnectionStatus.Updating
+        is TdApi.ConnectionStateWaitingForNetwork -> ConnectionStatus.WaitingForNetwork
+        else -> ConnectionStatus.Connecting
     }
 
     private suspend fun onAuthState(state: TdApi.AuthorizationState) {

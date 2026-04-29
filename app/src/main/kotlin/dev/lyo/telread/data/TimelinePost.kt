@@ -61,4 +61,6 @@ data class TimelinePost(
     val parentId: Long? = null,
     /** Mirrors `TdApi.Message.isPinned` — surfaces a small pin badge on the card. */
     val isPinned: Boolean = false,
+    /** Telegram verification mark (blue check / scam / fake). Null when none. */
+    val verification: SenderVerification? = null,
 )

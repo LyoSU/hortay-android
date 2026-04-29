@@ -263,11 +263,21 @@ sealed interface ForwardOrigin {
     @Immutable
     data class User(val userName: String) : ForwardOrigin
     @Immutable
-    data class Channel(val channelName: String, val authorSignature: String?) : ForwardOrigin
+    data class Channel(
+        val channelName: String,
+        val authorSignature: String?,
+        val sourceChatId: Long,
+        val sourceHandle: String?,
+    ) : ForwardOrigin
     @Immutable
     data class HiddenUser(val senderName: String) : ForwardOrigin
     @Immutable
-    data class Chat(val chatName: String, val authorSignature: String?) : ForwardOrigin
+    data class Chat(
+        val chatName: String,
+        val authorSignature: String?,
+        val sourceChatId: Long,
+        val sourceHandle: String?,
+    ) : ForwardOrigin
 }
 
 /** Reply / quote preview shown above the post body. */
@@ -277,6 +287,12 @@ data class ReplyPreview(
     val excerpt: String,
     val isQuote: Boolean,
 )
+
+/**
+ * Telegram verification mark on a sender (channel or user). Mutually exclusive set: a chat
+ * is at most one of [Verified] (blue check), [Scam] (red badge) or [Fake] (yellow badge).
+ */
+enum class SenderVerification { Verified, Scam, Fake }
 
 /** Single reaction bucket: an emoji and how many times it was used. */
 @Immutable

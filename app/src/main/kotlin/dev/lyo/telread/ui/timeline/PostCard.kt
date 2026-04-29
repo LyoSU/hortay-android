@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import dev.lyo.telread.data.ForwardOrigin
 import dev.lyo.telread.data.ReactionItem
 import dev.lyo.telread.data.ReplyPreview
+import dev.lyo.telread.data.SenderVerification
 import dev.lyo.telread.data.TimelinePost
 import dev.lyo.telread.ui.media.TdAvatar
 import kotlinx.coroutines.launch
@@ -81,12 +82,18 @@ fun PostCard(
                     editDate = post.editDate,
                     date = post.date,
                     pinned = post.isPinned,
+                    verification = post.verification,
                     onChannelClick = { interactions.onChannelClick(post) },
                 )
 
                 post.forwardOrigin?.let {
                     Spacer(Modifier.height(6.dp))
-                    ForwardChip(it)
+                    ForwardChip(
+                        origin = it,
+                        onClick = if (it is ForwardOrigin.Channel || it is ForwardOrigin.Chat) {
+                            { interactions.onForwardSourceClick(post) }
+                        } else null,
+                    )
                 }
 
                 post.reply?.let {
@@ -166,6 +173,7 @@ private fun HeaderRow(
     editDate: Long,
     date: Long,
     pinned: Boolean,
+    verification: SenderVerification?,
     onChannelClick: () -> Unit,
 ) {
     val titleColor = MaterialTheme.colorScheme.onSurface
@@ -188,13 +196,22 @@ private fun HeaderRow(
             .clickable(onClick = onChannelClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = annotated,
-            style = MaterialTheme.typography.titleSmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Row(
             modifier = Modifier.weight(1f),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = annotated,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            verification?.let {
+                Spacer(Modifier.width(4.dp))
+                VerificationBadge(it)
+            }
+        }
         Spacer(Modifier.width(8.dp))
         if (pinned) {
             Icon(
@@ -222,9 +239,55 @@ private fun HeaderRow(
     }
 }
 
+/**
+ * 12dp verification mark next to the channel name. Verified is a Material 3 primary check;
+ * scam / fake mirror Telegram's red-pill / yellow-pill chips at miniature size so the eye
+ * recognises them at a glance even without colour cues (the icon shape carries the meaning).
+ */
 @Composable
-private fun ForwardChip(origin: ForwardOrigin) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun VerificationBadge(verification: SenderVerification) {
+    when (verification) {
+        SenderVerification.Verified -> Icon(
+            imageVector = Icons.Rounded.Verified,
+            contentDescription = "Verified",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(14.dp),
+        )
+        SenderVerification.Scam -> WarningPill(
+            label = "SCAM",
+            color = MaterialTheme.colorScheme.error,
+        )
+        SenderVerification.Fake -> WarningPill(
+            label = "FAKE",
+            color = MaterialTheme.colorScheme.tertiary,
+        )
+    }
+}
+
+@Composable
+private fun WarningPill(label: String, color: androidx.compose.ui.graphics.Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(color.copy(alpha = 0.15f))
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+            color = color,
+        )
+    }
+}
+
+@Composable
+private fun ForwardChip(origin: ForwardOrigin, onClick: (() -> Unit)?) {
+    Row(
+        modifier = if (onClick != null) {
+            Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick)
+        } else Modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Icon(
             imageVector = Icons.Rounded.Repeat,
             contentDescription = null,
@@ -235,7 +298,8 @@ private fun ForwardChip(origin: ForwardOrigin) {
         Text(
             text = "Переслано від ${forwardLabel(origin)}",
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (onClick != null) MaterialTheme.colorScheme.tertiary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
