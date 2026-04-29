@@ -1,4 +1,4 @@
-# Telread — Android
+# Hortay — Android
 
 Стрічка Telegram-каналів у форматі Twitter. Прототип на TDLib + Kotlin + Jetpack Compose + Material 3.
 
@@ -20,7 +20,7 @@
 ## Перед першим запуском
 
 1. **Отримайте `api_id` / `api_hash`** на https://my.telegram.org → API development tools.
-2. Відкрийте `app/src/main/kotlin/dev/lyo/telread/data/TdClient.kt` → `TdClient.Companion.create(...)` і вставте свої значення. (Production-варіант — читати з `BuildConfig`, який заповнюється з `local.properties`.)
+2. Відкрийте `app/src/main/kotlin/dev/lyo/hortay/data/TdClient.kt` → `TdClient.Companion.create(...)` і вставте свої значення. (Production-варіант — читати з `BuildConfig`, який заповнюється з `local.properties`.)
 3. **Збудуйте TDLib** (потрібен будь-який Docker — Docker Desktop, OrbStack, Colima тощо):
    ```bash
    ./scripts/update-tdlib.sh                  # default: master (TDLib не оновлює теги)
@@ -29,7 +29,7 @@
    Скрипт компілює нативну TDLib з upstream і кладе результат у `libtdlib/src/main/{java,jniLibs}`, фіксує версію у `scripts/tdlib-version.txt`. Перший запуск — ~30 хв (SDK + OpenSSL), наступні bump-и — ~10–15 хв (кешовані шари). Деталі та параметри — у `scripts/tdlib-builder/Dockerfile` і шапці скрипта.
 4. Згенеруйте gradle wrapper, якщо його ще нема локально:
    ```bash
-   cd telread-android
+   cd hortay-android
    gradle wrapper --gradle-version 8.14
    ```
 5. Відкрийте папку в Android Studio Iguana 2025+ або зберіть з CLI:

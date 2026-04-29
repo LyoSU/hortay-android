@@ -21,6 +21,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Telread"
+rootProject.name = "Hortay"
 include(":app")
 include(":libtdlib")

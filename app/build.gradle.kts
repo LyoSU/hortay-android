@@ -14,11 +14,11 @@ val telegramApiId: String = telegramProps.getProperty("telegram.apiId") ?: "0"
 val telegramApiHash: String = telegramProps.getProperty("telegram.apiHash") ?: ""
 
 android {
-    namespace = "dev.lyo.telread"
+    namespace = "dev.lyo.hortay"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.lyo.telread"
+        applicationId = "dev.lyo.hortay"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
