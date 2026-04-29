@@ -1,5 +1,7 @@
 package dev.lyo.telread.data
 
+import androidx.compose.runtime.Immutable
+
 /**
  * UI-facing message model — used for both channel feed posts AND discussion-thread comments.
  * The two are technically the same Telegram message kind with a small set of channel-only
@@ -8,7 +10,15 @@ package dev.lyo.telread.data
  *
  * Sender naming is deliberately generic ([senderName]/[senderHandle]) so the same field
  * carries either a channel title/`@username` or a discussion-comment author's name/handle.
+ *
+ * [@Immutable] is a Compose contract: although [avatarThumb] is a [ByteArray] (which Compose
+ * normally infers as unstable, defeating skippable composition), the post is logically
+ * immutable — every mutation flows through `copy()` and produces a fresh instance. The
+ * annotation lets PostCard and downstream composables skip recomposition when their post
+ * argument hasn't changed by reference, which matters in feeds that re-emit the list on
+ * every UpdateMessageInteractionInfo.
  */
+@Immutable
 data class TimelinePost(
     val id: Long,
     val chatId: Long,

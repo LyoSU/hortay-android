@@ -1,8 +1,11 @@
 package dev.lyo.telread.data
 
-import android.util.Log
-import kotlinx.coroutines.CancellationException
+import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toPersistentList
+import kotlinx.collections.immutable.mutate
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -22,6 +25,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Twitter-style chronological feed merged from every channel chat the user follows.
@@ -34,6 +38,12 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Concurrency: a single [Mutex] guards refreshes so that pull-to-refresh + incremental
  * updates from TDLib never interleave and produce phantom duplicates.
+ *
+ * Storage: the live feed is held in a [PersistentList]. The hot path
+ * (UpdateMessageInteractionInfo) fires dozens of times per second on busy news days, and
+ * a plain `List` makes us copy the whole 1000-entry feed on every event. PersistentList's
+ * structural sharing turns the per-event mutation into O(log N) — a few KB of allocation
+ * instead of ~50KB.
  */
 class PostsRepository(
     private val td: TdClient,
@@ -52,8 +62,27 @@ class PostsRepository(
     private val albumBuffers = ConcurrentHashMap<Pair<Long, Long>, MutableList<TdApi.Message>>()
     private val albumDebounce = ConcurrentHashMap<Pair<Long, Long>, Job>()
 
-    private val _posts = MutableStateFlow<List<TimelinePost>>(emptyList())
-    val posts: StateFlow<List<TimelinePost>> = _posts.asStateFlow()
+    // Single-flight + cooldown for deep channel-history loads. Re-entering the same
+    // channel filter within DEEP_LOAD_COOLDOWN_MS reuses the previous load (no second
+    // GetChatHistory(80) round-trip). Failed loads do NOT mark cooldown, so transient
+    // network blips don't lock a channel out for a full minute.
+    private val deepLoadJobs = ConcurrentHashMap<Long, Deferred<Result<Unit>>>()
+    private val deepLoadCooldownUntilMs = ConcurrentHashMap<Long, Long>()
+
+    // Coalescing buffer for UpdateMessageInteractionInfo. On busy days these arrive in
+    // dozens-per-second bursts for *every* channel in the user's list (not just visible
+    // ones). Each event used to fan out one O(N) `_posts.update` — at 1000 posts and 50
+    // events/sec that's ~50MB/sec of garbage. Buffer per-message updates and flush all
+    // pending mutations in a single `mutate {}` block every INTERACTION_INFO_COALESCE_MS.
+    // Non-nullable values: ConcurrentHashMap forbids null. TDLib does occasionally emit
+    // UpdateMessageInteractionInfo with null `interactionInfo` (which the original
+    // per-field-fallback handler treated as a no-op), so we drop those at the entry.
+    private val pendingInteractionInfo =
+        ConcurrentHashMap<Pair<Long, Long>, TdApi.MessageInteractionInfo>()
+    private val interactionFlushScheduled = AtomicBoolean(false)
+
+    private val _posts = MutableStateFlow<PersistentList<TimelinePost>>(persistentListOf())
+    val posts: StateFlow<PersistentList<TimelinePost>> = _posts.asStateFlow()
 
     init {
         // Live feed: any new channel post arrives via UpdateNewMessage and is folded in.
@@ -136,10 +165,32 @@ class PostsRepository(
      * Loads up to [limit] additional history entries for [chatId] and folds them into the
      * shared feed. Used when the user filters to a single channel — a global refresh only
      * fetches a few latest posts per channel, so deep browsing one channel needs more.
+     *
+     * Single-flight: if a deep load is already in flight for [chatId], all callers await
+     * the same [Deferred]. Cooldown: a successful load suppresses re-fetches for
+     * [DEEP_LOAD_COOLDOWN_MS] — entering and leaving the channel filter back-to-back no
+     * longer triggers a fresh GetChatHistory each time. Failed loads skip the cooldown
+     * mark so the next entry retries.
      */
-    suspend fun loadChannelHistory(chatId: Long, limit: Int = 80): Result<Unit> = runCatching {
+    suspend fun loadChannelHistory(chatId: Long, limit: Int = 80): Result<Unit> {
+        val now = System.currentTimeMillis()
+        deepLoadCooldownUntilMs[chatId]?.let { until ->
+            if (now < until) return Result.success(Unit)
+        }
+        val deferred = deepLoadJobs.computeIfAbsent(chatId) {
+            scope.async { runCatching { loadChannelHistoryLocked(chatId, limit) } }
+        }
+        val result = deferred.await()
+        deepLoadJobs.remove(chatId, deferred)
+        if (result.isSuccess) {
+            deepLoadCooldownUntilMs[chatId] = System.currentTimeMillis() + DEEP_LOAD_COOLDOWN_MS
+        }
+        return result.warnUnlessCancelled(TAG, "loadChannelHistory($chatId)")
+    }
+
+    private suspend fun loadChannelHistoryLocked(chatId: Long, limit: Int) {
         val chat = chatCache[chatId] ?: td.send(TdApi.GetChat(chatId)).also { chatCache[chatId] = it }
-        if (!chat.isChannel()) return@runCatching
+        if (!chat.isChannel()) return
 
         val history = td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limit, false))
         val raw = coalesceAlbumFragments(chatId, history.messages.orEmpty().toList())
@@ -147,10 +198,10 @@ class PostsRepository(
 
         _posts.update { current ->
             val seen = current.mapTo(mutableSetOf()) { it.chatId to it.id }
-            val merged = current + mapped.filter { (it.chatId to it.id) !in seen }
-            PostFilterStrategy.apply(merged).take(MAX_FEED_SIZE)
+            val merged = current.addAll(mapped.filter { (it.chatId to it.id) !in seen })
+            PostFilterStrategy.apply(merged).take(MAX_FEED_SIZE).toPersistentList()
         }
-    }.warnUnlessCancelled(TAG, "loadChannelHistory($chatId)")
+    }
 
     suspend fun closeChat(chatId: Long) {
         runCatching { td.send(TdApi.CloseChat(chatId)) }.warnUnlessCancelled(TAG, "closeChat($chatId)")
@@ -222,7 +273,7 @@ class PostsRepository(
             val existingKeys = current.mapTo(mutableSetOf()) { it.chatId to it.id }
             val addition = newPosts.filterNot { (it.chatId to it.id) in existingKeys }
             if (addition.isEmpty()) current
-            else PostFilterStrategy.apply(current + addition).take(MAX_FEED_SIZE)
+            else PostFilterStrategy.apply(current.addAll(addition)).take(MAX_FEED_SIZE).toPersistentList()
         }
     }
 
@@ -279,16 +330,56 @@ class PostsRepository(
         return merged
     }
 
+    /**
+     * Buffer the update; if a flush isn't already scheduled, schedule one. A single
+     * coroutine drains the buffer after [INTERACTION_INFO_COALESCE_MS] and writes all
+     * pending mutations in one `_posts.update { mutate { ... } }` call — the persistent
+     * list builds the new snapshot once, regardless of how many keys we touch.
+     */
     private fun handleInteractionInfo(update: TdApi.UpdateMessageInteractionInfo) {
-        val info = update.interactionInfo
-        updateOnePost(update.chatId, update.messageId) { post ->
-            post.copy(
-                views = info?.viewCount ?: post.views,
-                reactions = info?.reactions?.let(::reactionsFromUpdate) ?: post.reactions,
-                // ^ keep current value when interaction info arrives without replyInfo;
-                //   fresh `null` only happens at first map() in MessageMapper.
-                commentCount = info?.replyInfo?.replyCount ?: post.commentCount,
-            )
+        // null interactionInfo: original handler resolved every field to its current value
+        // (effectively no-op). Drop here so the buffer stays non-null for ConcurrentHashMap.
+        val info = update.interactionInfo ?: return
+        pendingInteractionInfo[update.chatId to update.messageId] = info
+        if (interactionFlushScheduled.compareAndSet(false, true)) {
+            scope.launch {
+                delay(INTERACTION_INFO_COALESCE_MS)
+                interactionFlushScheduled.set(false)
+                flushPendingInteractionInfo()
+            }
+        }
+    }
+
+    private fun flushPendingInteractionInfo() {
+        if (pendingInteractionInfo.isEmpty()) return
+        // Single-pass drain: snapshot what's there now, atomically remove only those
+        // entries. Updates that arrive *after* the snapshot stay in the map and trip the
+        // next compareAndSet, so we don't lose any.
+        val drained = HashMap<Pair<Long, Long>, TdApi.MessageInteractionInfo>()
+        val it = pendingInteractionInfo.entries.iterator()
+        while (it.hasNext()) {
+            val e = it.next()
+            drained[e.key] = e.value
+            it.remove()
+        }
+        if (drained.isEmpty()) return
+
+        _posts.update { current ->
+            current.mutate { list ->
+                for ((key, info) in drained) {
+                    val (chatId, messageId) = key
+                    val idx = list.indexOfFirst { it.chatId == chatId && it.id == messageId }
+                    if (idx == -1) continue
+                    val cur = list[idx]
+                    list[idx] = cur.copy(
+                        views = info.viewCount,
+                        // Preserve current reactions/comments when the inner field is null —
+                        // TDLib often omits sub-fields it hasn't recomputed.
+                        reactions = info.reactions?.let(::reactionsFromUpdate) ?: cur.reactions,
+                        commentCount = info.replyInfo?.replyCount ?: cur.commentCount,
+                    )
+                }
+            }
         }
     }
 
@@ -302,7 +393,7 @@ class PostsRepository(
         if (!update.isPermanent) return
         val ids = update.messageIds.toHashSet()
         _posts.update { current ->
-            current.filterNot { it.chatId == update.chatId && it.id in ids }
+            current.mutate { list -> list.removeAll { it.chatId == update.chatId && it.id in ids } }
         }
     }
 
@@ -312,12 +403,10 @@ class PostsRepository(
     }
 
     /**
-     * Single-post update helper. UpdateMessageInteractionInfo can fire dozens of times
-     * per second on a busy channel; the previous implementation copied the entire feed
-     * via `current.map { ... }` for every event — O(N) closure invocations and O(N)
-     * allocations per update. indexOfFirst short-circuits on the first match, then we
-     * mutate one slot in a fresh list. The list copy is still O(N) but skips per-item
-     * lambda dispatch and allocation.
+     * Single-post update helper. PersistentList's `set(idx, value)` returns a new
+     * snapshot in O(log N) via structural sharing — none of the unchanged entries are
+     * copied. Compare with the old `current.toMutableList().also { it[idx] = ... }`
+     * which copied the whole array on every event.
      */
     private inline fun updateOnePost(
         chatId: Long,
@@ -327,16 +416,20 @@ class PostsRepository(
         _posts.update { current ->
             val idx = current.indexOfFirst { it.chatId == chatId && it.id == messageId }
             if (idx == -1) current
-            else current.toMutableList().also { it[idx] = transform(current[idx]) }
+            else current.set(idx, transform(current[idx]))
         }
     }
 
     private fun handleChatTitle(update: TdApi.UpdateChatTitle) {
         chatCache[update.chatId]?.let { it.title = update.title }
         _posts.update { current ->
-            current.map { post ->
-                if (post.chatId == update.chatId) post.copy(senderName = update.title.orEmpty())
-                else post
+            current.mutate { list ->
+                for (i in list.indices) {
+                    val post = list[i]
+                    if (post.chatId == update.chatId) {
+                        list[i] = post.copy(senderName = update.title.orEmpty())
+                    }
+                }
             }
         }
     }
@@ -346,10 +439,13 @@ class PostsRepository(
         val newThumb = update.photo?.minithumbnail?.data
         val newFileId = update.photo?.small?.id
         _posts.update { current ->
-            current.map { post ->
-                if (post.chatId == update.chatId) {
-                    post.copy(avatarThumb = newThumb, avatarFileId = newFileId)
-                } else post
+            current.mutate { list ->
+                for (i in list.indices) {
+                    val post = list[i]
+                    if (post.chatId == update.chatId) {
+                        list[i] = post.copy(avatarThumb = newThumb, avatarFileId = newFileId)
+                    }
+                }
             }
         }
     }
@@ -389,7 +485,7 @@ class PostsRepository(
             }.awaitAll().flatten()
         }
 
-        _posts.value = PostFilterStrategy.apply(raw)
+        _posts.value = PostFilterStrategy.apply(raw).toPersistentList()
     }
 
     private companion object {
@@ -403,6 +499,14 @@ class PostsRepository(
         // Aligns with TDLib's default ~4 simultaneous downloads — same shape, same back-
         // pressure profile.
         const val REFRESH_CONCURRENCY = 4
+        // 60s is long enough that quick back-and-forth between channels reuses the cached
+        // history, short enough that a deliberate "refresh by re-entering" still works
+        // within a normal browsing session.
+        const val DEEP_LOAD_COOLDOWN_MS = 60_000L
+        // 200ms balances perceived latency (counters update fast enough to feel live)
+        // against burst suppression. Telegram's official Android client coalesces in a
+        // similar window.
+        const val INTERACTION_INFO_COALESCE_MS = 200L
     }
 }
 
