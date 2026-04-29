@@ -142,7 +142,8 @@ class PostsRepository(
         if (!chat.isChannel()) return@runCatching
 
         val history = td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limit, false))
-        val mapped = history.messages.orEmpty().map { mapper.toTimelinePost(it, chat) }
+        val raw = coalesceAlbumFragments(chatId, history.messages.orEmpty().toList())
+        val mapped = raw.map { mapper.toTimelinePost(it, chat) }
 
         _posts.update { current ->
             val seen = current.mapTo(mutableSetOf()) { it.chatId to it.id }
@@ -207,7 +208,12 @@ class PostsRepository(
             ?: return
         if (!chat.isChannel()) return
 
-        val newPosts = messages
+        // If a real-time burst still left an album fragmented (e.g. members spread across
+        // >600 ms by upstream), probe the chat for the missing siblings before mapping.
+        // Cheap if there are no fragments — early-returns immediately.
+        val full = coalesceAlbumFragments(chatId, messages)
+
+        val newPosts = full
             .map { mapper.toTimelinePost(it, chat) }
             .filter { it.content !is PostContent.Unsupported }
         if (newPosts.isEmpty()) return
@@ -218,6 +224,59 @@ class PostsRepository(
             if (addition.isEmpty()) current
             else PostFilterStrategy.apply(current + addition).take(MAX_FEED_SIZE)
         }
+    }
+
+    /**
+     * GetChatHistory returns N latest messages — when an album crosses the window edge,
+     * only some of its members are inside. This pass detects single-member groups with a
+     * non-zero mediaAlbumId (Telegram never emits a real album of size 1) and queries a
+     * small window around the fragment to pick up the missing siblings.
+     *
+     * Concurrency: each fragment fires a parallel GetChatHistory; results are merged
+     * synchronously after [awaitAll] so the seen-set has no race. Bounded by the number of
+     * distinct album ids in the input — typically 0..2 per refresh batch, so cost is low.
+     */
+    private suspend fun coalesceAlbumFragments(
+        chatId: Long,
+        messages: List<TdApi.Message>,
+    ): List<TdApi.Message> {
+        val fragments = messages
+            .filter { it.mediaAlbumId != 0L }
+            .groupBy { it.mediaAlbumId }
+            .values
+            .filter { it.size == 1 }
+            .map { it.single() }
+        if (fragments.isEmpty()) return messages
+
+        val seen = messages.mapTo(hashSetOf()) { it.id }
+        val extras = coroutineScope {
+            fragments.map { fragment ->
+                async {
+                    val resp = runCatching {
+                        // fromMessageId in the middle of a 10-msg window: offset=-5 means
+                        // "give me 5 newer + the anchor + 4 older". Albums are at most 10
+                        // members so this almost always covers the whole group.
+                        td.send(
+                            TdApi.GetChatHistory(
+                                chatId,
+                                /* fromMessageId */ fragment.id,
+                                /* offset */ -5,
+                                /* limit */ 10,
+                                /* onlyLocal */ false,
+                            ),
+                        )
+                    }.warnUnlessCancelled(TAG, "coalesceAlbum($chatId,${fragment.id})").getOrNull()
+                    resp?.messages.orEmpty().filter { it.mediaAlbumId == fragment.mediaAlbumId }
+                }
+            }.awaitAll()
+        }
+
+        if (extras.all { it.isEmpty() }) return messages
+        val merged = messages.toMutableList()
+        for (group in extras) {
+            for (m in group) if (seen.add(m.id)) merged += m
+        }
+        return merged
     }
 
     private fun handleInteractionInfo(update: TdApi.UpdateMessageInteractionInfo) {
@@ -321,7 +380,10 @@ class PostsRepository(
                             td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limitPerChannel, false))
                         }.getOrNull() ?: return@withPermit emptyList()
 
-                        history.messages.orEmpty().map { mapper.toTimelinePost(it, chat) }
+                        val raw = history.messages.orEmpty().toList()
+                        // Plug album fragments left by the window boundary (e.g. a 6-photo
+                        // album whose first 5 members fell outside the latest-N slice).
+                        coalesceAlbumFragments(chatId, raw).map { mapper.toTimelinePost(it, chat) }
                     }
                 }
             }.awaitAll().flatten()
