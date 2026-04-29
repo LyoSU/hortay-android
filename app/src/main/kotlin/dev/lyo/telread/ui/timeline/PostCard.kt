@@ -436,13 +436,18 @@ private fun ActionRow(
 private fun VerticalSeparator() {
     Box(
         modifier = Modifier
-            .height(14.dp)
+            .height(18.dp)
             .width(1.dp)
             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
     )
 }
 
-/** Public so the comments screen can reuse the same chip styling for thread replies. */
+/**
+ * Public so the comments screen can reuse the same chip styling for thread replies. Sized
+ * to clear Material 3's 40dp minimum touch target without looking visually heavy: ~36dp
+ * tall (12dp emoji + 18dp container padding × 2 ≈ 40dp once you add Material's automatic
+ * 8dp tap-spacing).
+ */
 @Composable
 internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
     val container = if (item.isChosen) MaterialTheme.colorScheme.primaryContainer
@@ -451,17 +456,17 @@ internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
     else MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(container)
             .let { if (onClick != null) it.clickable(onClick = onClick) else it }
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = item.emoji, style = MaterialTheme.typography.labelMedium)
-        Spacer(Modifier.width(4.dp))
+        Text(text = item.emoji, style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.width(6.dp))
         Text(
             text = formatViews(item.count),
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium,
             color = countColor,
         )
     }
@@ -477,22 +482,22 @@ private fun StatPill(
     Row(
         modifier = if (onClick != null) {
             Modifier
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(10.dp))
                 .clickable(onClick = onClick)
-                .padding(horizontal = 4.dp, vertical = 2.dp)
-        } else Modifier,
+                .padding(horizontal = 8.dp, vertical = 6.dp)
+        } else Modifier.padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = tint,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(22.dp),
         )
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(8.dp))
         Text(
             text = text,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

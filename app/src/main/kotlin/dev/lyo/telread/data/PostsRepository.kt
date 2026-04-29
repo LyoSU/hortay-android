@@ -310,6 +310,40 @@ class PostsRepository(
     }
 
     /**
+     * Full-text search inside a single channel. Returns mapped posts ordered newest-first,
+     * which is how `SearchChatMessages` itself returns them — TDLib already paginates with
+     * the offset/limit we pass, so this method is a single round-trip.
+     *
+     * Coalesces fragments from the same media album just like the regular timeline pipeline,
+     * so a hit on a caption-bearing photo doesn't appear without its sibling photos.
+     */
+    suspend fun searchInChannel(chatId: Long, query: String, limit: Int = 50): List<TimelinePost> {
+        if (query.isBlank()) return emptyList()
+        val chat = chatCache[chatId] ?: runCatching { td.send(TdApi.GetChat(chatId)) }
+            .warnUnlessCancelled(TAG, "searchInChannel/getChat")
+            .getOrNull()?.also { chatCache[chatId] = it } ?: return emptyList()
+        val result = runCatching {
+            td.send(
+                TdApi.SearchChatMessages(
+                    chatId,
+                    /* topicId */ null,
+                    query,
+                    /* senderId */ null,
+                    /* fromMessageId */ 0,
+                    /* offset */ 0,
+                    limit,
+                    /* filter */ null,
+                ),
+            )
+        }.warnUnlessCancelled(TAG, "searchInChannel").getOrNull() ?: return emptyList()
+
+        val raw = result.messages.orEmpty().toList()
+        val coalesced = coalesceAlbumFragments(chatId, raw)
+        val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
+        return PostFilterStrategy.apply(mapped)
+    }
+
+    /**
      * Subscriber count for a channel chat. Returns null when the chat is not a supergroup
      * (private 1:1, basic group) or TDLib reports an unknown count. Cheap — TDLib serves
      * this from its local supergroup cache; no network round-trip in steady state.

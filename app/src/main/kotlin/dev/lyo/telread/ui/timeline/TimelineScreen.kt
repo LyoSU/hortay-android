@@ -7,6 +7,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -83,6 +85,23 @@ fun TimelineScreen(
     val archivedChatIds by repo.archivedChatIds.collectAsStateWithLifecycle()
     val translationsMap by translations.translations.collectAsStateWithLifecycle()
     var infoSheetChatId by remember { mutableStateOf<Long?>(null) }
+
+    // Search state: only meaningful inside a channel filter. searchActive flips the top
+    // bar into a TextField; query drives a debounced SearchChatMessages call; results
+    // replace the normal feed in the list while the bar is in search mode.
+    var searchActive by rememberSaveable(channelFilter) { mutableStateOf(false) }
+    var searchQuery by rememberSaveable(channelFilter) { mutableStateOf("") }
+    var searchResults by remember(channelFilter) { mutableStateOf<List<TimelinePost>>(emptyList()) }
+    if (channelFilter != null) {
+        LaunchedEffect(searchActive, searchQuery, channelFilter) {
+            if (!searchActive || searchQuery.isBlank()) {
+                searchResults = emptyList()
+                return@LaunchedEffect
+            }
+            kotlinx.coroutines.delay(SEARCH_DEBOUNCE_MS)
+            searchResults = repo.searchInChannel(channelFilter, searchQuery.trim())
+        }
+    }
 
     // Pill is suppressed during a refresh: repo.refresh() replaces _posts, briefly making
     // the post-refresh delta look like "everything is new" until acceptPending() lands.
@@ -372,7 +391,21 @@ fun TimelineScreen(
                 channelTitle = activeChannelTitle,
                 channelSubscribers = activeChannelSubscribers,
                 hasFilter = channelFilter != null,
-                onClearFilter = { onChannelFilterChange(null) },
+                searchActive = searchActive,
+                searchQuery = searchQuery,
+                onSearchToggle = {
+                    searchActive = !searchActive
+                    if (!searchActive) searchQuery = ""
+                },
+                onSearchQueryChange = { searchQuery = it },
+                onClearFilter = {
+                    if (searchActive) {
+                        searchActive = false
+                        searchQuery = ""
+                    } else {
+                        onChannelFilterChange(null)
+                    }
+                },
                 onBrandTap = onBrandTap,
                 onTitleTap = { channelFilter?.let { infoSheetChatId = it } },
                 scrollBehavior = scrollBehavior,
@@ -418,8 +451,9 @@ fun TimelineScreen(
                         )
                     }
 
-                    if (visiblePosts.isEmpty() && !refreshing) {
-                        EmptyState(showOnlyBookmarked)
+                    val displayed = if (searchActive && channelFilter != null) searchResults else visiblePosts
+                    if (displayed.isEmpty() && !refreshing && !(searchActive && searchQuery.isBlank())) {
+                        if (searchActive) SearchEmpty() else EmptyState(showOnlyBookmarked)
                     } else {
                         LazyColumn(
                             state = listState,
@@ -429,7 +463,7 @@ fun TimelineScreen(
                             ),
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                            items(items = visiblePosts, key = { "${it.chatId}_${it.id}" }) { post ->
+                            items(items = displayed, key = { "${it.chatId}_${it.id}" }) { post ->
                                 PostCard(post = post, interactions = interactions)
                             }
                         }
@@ -483,6 +517,10 @@ private fun TimelineTopBar(
     channelTitle: String?,
     channelSubscribers: Int?,
     hasFilter: Boolean,
+    searchActive: Boolean,
+    searchQuery: String,
+    onSearchToggle: () -> Unit,
+    onSearchQueryChange: (String) -> Unit,
     onClearFilter: () -> Unit,
     onBrandTap: () -> Unit,
     onTitleTap: () -> Unit,
@@ -493,6 +531,50 @@ private fun TimelineTopBar(
         scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
     )
     when {
+        hasFilter && searchActive -> TopAppBar(
+            title = {
+                val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+                LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+                BasicTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    singleLine = true,
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                    textStyle = MaterialTheme.typography.titleMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    decorationBox = { inner ->
+                        Box {
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    "Пошук у каналі",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            inner()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
+                )
+            },
+            navigationIcon = {
+                IconButton(onClick = onClearFilter) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "back")
+                }
+            },
+            actions = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { onSearchQueryChange("") }) {
+                        Icon(Icons.Rounded.Close, contentDescription = "clear")
+                    }
+                }
+            },
+            colors = colors,
+            scrollBehavior = scrollBehavior,
+        )
         hasFilter -> TopAppBar(
             title = {
                 Column(modifier = Modifier.clickable(onClick = onTitleTap)) {
@@ -515,6 +597,11 @@ private fun TimelineTopBar(
             navigationIcon = {
                 IconButton(onClick = onClearFilter) {
                     Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "back")
+                }
+            },
+            actions = {
+                IconButton(onClick = onSearchToggle) {
+                    Icon(Icons.Rounded.Search, contentDescription = "search")
                 }
             },
             colors = colors,
@@ -543,6 +630,30 @@ private fun TimelineTopBar(
 }
 
 
+
+@Composable
+private fun SearchEmpty() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.SearchOff,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(48.dp),
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "Нічого не знайдено",
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
 
 @Composable
 private fun EmptyState(showingSaved: Boolean) {
@@ -584,6 +695,9 @@ private fun EmptyState(showingSaved: Boolean) {
  */
 /** How many items from the end of the list trigger an older-history prefetch. */
 private const val PAGINATION_PREFETCH_THRESHOLD = 6
+
+/** How long after the last keystroke we issue the search round-trip. */
+private const val SEARCH_DEBOUNCE_MS = 300L
 
 private fun formatSubscribers(count: Int): String {
     fun compact(value: Double, suffix: String): String {
