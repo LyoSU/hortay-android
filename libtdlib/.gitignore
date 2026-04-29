@@ -1,0 +1,7 @@
+# Native libraries and generated Java sources are produced by ./scripts/update-tdlib.sh
+# Run that script after a fresh clone to populate this module.
+src/main/jniLibs/**/*.so
+src/main/java/org/drinkless/tdlib/TdApi.java
+src/main/java/org/drinkless/tdlib/Client.java
+
+build/

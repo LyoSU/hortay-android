@@ -98,5 +98,5 @@ dependencies {
 
     implementation(libs.kotlinx.collections.immutable)
 
-    implementation(libs.tdlib.ktx)
+    implementation(project(":libtdlib"))
 }

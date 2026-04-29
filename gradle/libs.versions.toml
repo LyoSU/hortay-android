@@ -11,7 +11,6 @@ coroutines = "1.10.1"
 serialization = "1.7.3"
 datastore = "1.2.0"
 coil = "3.3.0"
-tdlibKtx = "1.8.56"
 splashscreen = "1.2.0"
 media3 = "1.10.0"
 immutable = "0.4.0"
@@ -49,9 +48,8 @@ media3-common = { group = "androidx.media3", name = "media3-common", version.ref
 
 kotlinx-collections-immutable = { group = "org.jetbrains.kotlinx", name = "kotlinx-collections-immutable", version.ref = "immutable" }
 
-tdlib-ktx = { group = "com.github.tdlibx", name = "td-ktx", version.ref = "tdlibKtx" }
-
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

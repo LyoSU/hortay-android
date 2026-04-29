@@ -23,3 +23,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Telread"
 include(":app")
+include(":libtdlib")

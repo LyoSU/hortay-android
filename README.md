@@ -12,7 +12,7 @@
 | UI | Compose BOM | 2026.04.01 |
 | UI | Material 3 | 1.4 (через BOM) |
 | Compat | minSdk / targetSdk / compileSdk | 26 / 36 / 36 |
-| Telegram | TDLib (через td-ktx) | 1.8.56 |
+| Telegram | TDLib (self-built, `:libtdlib`) | див. `scripts/tdlib-version.txt` |
 | Async | Coroutines | 1.10.1 |
 | Images | Coil 3 | 3.3.0 |
 | Storage | DataStore | 1.2.0 |
@@ -21,12 +21,18 @@
 
 1. **Отримайте `api_id` / `api_hash`** на https://my.telegram.org → API development tools.
 2. Відкрийте `app/src/main/kotlin/dev/lyo/telread/data/TdClient.kt` → `TdClient.Companion.create(...)` і вставте свої значення. (Production-варіант — читати з `BuildConfig`, який заповнюється з `local.properties`.)
-3. Згенеруйте gradle wrapper, якщо його ще нема локально:
+3. **Збудуйте TDLib** (потрібен будь-який Docker — Docker Desktop, OrbStack, Colima тощо):
+   ```bash
+   ./scripts/update-tdlib.sh                  # default: master (TDLib не оновлює теги)
+   ./scripts/update-tdlib.sh 8fc2344f         # конкретний commit SHA
+   ```
+   Скрипт компілює нативну TDLib з upstream і кладе результат у `libtdlib/src/main/{java,jniLibs}`, фіксує версію у `scripts/tdlib-version.txt`. Перший запуск — ~30 хв (SDK + OpenSSL), наступні bump-и — ~10–15 хв (кешовані шари). Деталі та параметри — у `scripts/tdlib-builder/Dockerfile` і шапці скрипта.
+4. Згенеруйте gradle wrapper, якщо його ще нема локально:
    ```bash
    cd telread-android
    gradle wrapper --gradle-version 8.14
    ```
-4. Відкрийте папку в Android Studio Iguana 2025+ або зберіть з CLI:
+5. Відкрийте папку в Android Studio Iguana 2025+ або зберіть з CLI:
    ```bash
    ./gradlew :app:installDebug
    ```
