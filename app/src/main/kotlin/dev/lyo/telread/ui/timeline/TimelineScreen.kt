@@ -1,5 +1,10 @@
 package dev.lyo.telread.ui.timeline
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -38,6 +43,7 @@ import dev.lyo.telread.ui.media.LocalMediaViewer
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 private enum class FeedFilter(val label: String) {
     All("Усе"),
@@ -70,7 +76,10 @@ fun TimelineScreen(
     val posts by vm.posts.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val bookmarkedKeys by vm.bookmarkedKeys.collectAsStateWithLifecycle()
+    val pendingChannels by vm.pendingChannels.collectAsStateWithLifecycle()
+    val pendingNew by vm.pendingNew.collectAsStateWithLifecycle()
 
+    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
@@ -202,34 +211,59 @@ fun TimelineScreen(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = vm::refresh,
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(top = padding.calculateTopPadding()),
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                if (!showOnlyBookmarked && channelFilter == null) {
-                    FilterChipsRow(selected = filter, onSelected = { filter = it })
-                }
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = vm::refresh,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    if (!showOnlyBookmarked && channelFilter == null) {
+                        FilterChipsRow(selected = filter, onSelected = { filter = it })
+                    }
 
-                if (visiblePosts.isEmpty() && !refreshing) {
-                    EmptyState(showOnlyBookmarked)
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(
-                            top = 8.dp,
-                            bottom = contentPadding.calculateBottomPadding(),
-                        ),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        items(items = visiblePosts, key = { "${it.chatId}_${it.id}" }) { post ->
-                            PostCard(post = post, interactions = interactions)
+                    if (visiblePosts.isEmpty() && !refreshing) {
+                        EmptyState(showOnlyBookmarked)
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            contentPadding = PaddingValues(
+                                top = 8.dp,
+                                bottom = contentPadding.calculateBottomPadding(),
+                            ),
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            items(items = visiblePosts, key = { "${it.chatId}_${it.id}" }) { post ->
+                                PostCard(post = post, interactions = interactions)
+                            }
                         }
                     }
                 }
+            }
+
+            // Floating "X нових постів" pill. Hidden in the Saved tab and inside a single-
+            // channel filter — both are intentionally frozen views, not live feeds.
+            val pillVisible = !showOnlyBookmarked && channelFilter == null && pendingChannels.isNotEmpty()
+            AnimatedVisibility(
+                visible = pillVisible,
+                enter = slideInVertically { -it } + fadeIn(),
+                exit = slideOutVertically { -it } + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 8.dp),
+            ) {
+                NewPostsPill(
+                    channels = pendingChannels,
+                    pendingCount = pendingNew.size,
+                    onClick = {
+                        vm.acceptPending()
+                        scope.launch { listState.animateScrollToItem(0) }
+                    },
+                )
             }
         }
     }

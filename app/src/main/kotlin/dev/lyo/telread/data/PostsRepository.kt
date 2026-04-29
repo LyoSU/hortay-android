@@ -54,6 +54,11 @@ class PostsRepository(
     private val refreshMutex = Mutex()
     private val chatCache = ConcurrentHashMap<Long, TdApi.Chat>()
 
+    // Stamped on successful refreshLocked completion. refreshIfStale uses it to skip
+    // re-opening the app from hammering 200+ TDLib calls when the feed is still warm.
+    @Volatile
+    private var lastRefreshAtMs: Long = 0L
+
     // Album coalescing: TDLib emits one UpdateNewMessage per album member with no
     // "album complete" signal (issue tdlib/td#2523). We buffer members per (chatId,
     // mediaAlbumId) and flush once the burst quietens — same approach as the official
@@ -149,7 +154,21 @@ class PostsRepository(
     // posts to arrive whole. GetChatHistory itself returns members one-per-message, so
     // a 5-photo album consumes 5 of the 30 slots.
     suspend fun refresh(limitPerChannel: Int = 30): Result<Unit> = refreshMutex.withLock {
-        runCatching { refreshLocked(limitPerChannel) }.warnUnlessCancelled("refresh")
+        runCatching { refreshLocked(limitPerChannel) }
+            .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
+            .warnUnlessCancelled("refresh")
+    }
+
+    /**
+     * Refresh only if the last successful refresh is older than [maxAgeMs]. Reuses the same
+     * mutex as [refresh] so a concurrent pull-to-refresh isn't stomped. A skip returns
+     * [Result.success] — callers shouldn't treat "still fresh" as a failure.
+     */
+    suspend fun refreshIfStale(maxAgeMs: Long = 60_000L): Result<Unit> = refreshMutex.withLock {
+        if (System.currentTimeMillis() - lastRefreshAtMs <= maxAgeMs) return@withLock Result.success(Unit)
+        runCatching { refreshLocked(REFRESH_DEFAULT_LIMIT) }
+            .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
+            .warnUnlessCancelled("refreshIfStale")
     }
 
     /**
@@ -493,6 +512,7 @@ class PostsRepository(
         const val CHAT_LIST_HINT = 200
         const val CHAT_LIST_LIMIT = 500
         const val MAX_FEED_SIZE = 1_000
+        const val REFRESH_DEFAULT_LIMIT = 30
         // ~600ms is what the official Telegram client uses to coalesce album bursts.
         // Shorter loses tail members on slow networks; longer makes albums feel laggy.
         const val ALBUM_DEBOUNCE_MS = 600L
