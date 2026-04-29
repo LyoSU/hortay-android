@@ -22,8 +22,11 @@ class TelreadApp : Application(), SingletonImageLoader.Factory {
     override fun newImageLoader(context: PlatformContext): ImageLoader = ImageLoader.Builder(context)
         .crossfade(true)
         .memoryCache {
+            // 10% of Java heap leaves headroom for our MutableStateFlow snapshots, the
+            // PersistentList feed, TDLib's working set and Compose buffers. 20% defaults
+            // were too generous on low-end devices (256 MB heap → 50 MB cache alone).
             MemoryCache.Builder()
-                .maxSizePercent(context, percent = 0.20)
+                .maxSizePercent(context, percent = 0.10)
                 .build()
         }
         .diskCache {
