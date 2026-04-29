@@ -66,6 +66,7 @@ fun MainScaffold(graph: AppGraph) {
             when (tab) {
                 NavTab.Feed -> TimelineScreen(
                     repo = graph.postsRepository,
+                    commentsRepo = graph.commentsRepository,
                     bookmarks = graph.bookmarkStore,
                     contentPadding = padding,
                     showOnlyBookmarked = false,
@@ -85,6 +86,7 @@ fun MainScaffold(graph: AppGraph) {
                 )
                 NavTab.Saved -> TimelineScreen(
                     repo = graph.postsRepository,
+                    commentsRepo = graph.commentsRepository,
                     bookmarks = graph.bookmarkStore,
                     contentPadding = padding,
                     showOnlyBookmarked = true,

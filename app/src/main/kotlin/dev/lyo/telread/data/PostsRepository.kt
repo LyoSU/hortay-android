@@ -180,7 +180,7 @@ class PostsRepository(
         }
         // Album member: stash in the per-album buffer and (re)arm a short debounce.
         // Each subsequent sibling resets the timer; once the burst quietens we flush
-        // every accumulated member in a single `_posts.update` so PostFilterStrategy
+        // every accumulated member in a single _posts.update so PostFilterStrategy
         // sees them as one group.
         val key = message.chatId to message.mediaAlbumId
         albumBuffers.compute(key) { _, existing ->

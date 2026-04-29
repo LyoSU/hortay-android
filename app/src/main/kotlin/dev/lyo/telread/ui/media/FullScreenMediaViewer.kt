@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.lyo.telread.data.AlbumItem
+import dev.lyo.telread.data.DownloadPriority
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -83,6 +84,23 @@ fun FullScreenMediaViewer(
                     },
                 ),
         ) {
+            // Promote the active item to Foreground priority while it's on screen, and
+            // pre-warm immediate neighbours at Prefetch so a sideways swipe doesn't hit
+            // a cold cache. MediaCache.ensure short-circuits when the file is already
+            // Ready and only re-issues DownloadFile when the new priority is higher.
+            val cache = LocalMediaCache.current
+            LaunchedEffect(pagerState.currentPage, items) {
+                val current = pagerState.currentPage
+                items.getOrNull(current)?.fileIdForPriority()?.let {
+                    cache.ensure(it, DownloadPriority.Foreground)
+                }
+                listOf(current - 1, current + 1).forEach { idx ->
+                    items.getOrNull(idx)?.fileIdForPriority()?.let {
+                        cache.ensure(it, DownloadPriority.Prefetch)
+                    }
+                }
+            }
+
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
@@ -192,6 +210,16 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
                 ),
         )
     }
+}
+
+// For photos, the priority-upgrade target is the actual photo file. For videos and
+// animations the *playback* file is what the user is waiting on (TdVideoPlayer also
+// upgrades it from inside, but doing it here too means prefetched neighbours start
+// downloading even before the page becomes active).
+private fun AlbumItem.fileIdForPriority(): Int? = when (this) {
+    is AlbumItem.Photo -> media.fileId
+    is AlbumItem.Video -> playbackFileId
+    is AlbumItem.Animation -> playbackFileId
 }
 
 private const val MIN_SCALE = 1f

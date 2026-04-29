@@ -21,6 +21,30 @@ class CommentsRepository(private val td: TdClient) {
         data class Error(val message: String) : ThreadState
     }
 
+    // Posts whose discussion thread we've already fetched once. TDLib caches the result
+    // server-side per session, so a repeat GetMessageThread is fast (~200ms vs ~2s cold).
+    // We prefetch in the background for posts that linger in the viewport so a tap is
+    // instant. The set is bounded — entries are never removed; thread metadata is small,
+    // and within a single session the user is unlikely to view more than a few hundred
+    // unique posts.
+    private val prefetchedThreads = java.util.concurrent.ConcurrentHashMap.newKeySet<Pair<Long, Long>>()
+
+    /**
+     * Background warm-up: probe canGetMessageThread + GetMessageThread once per anchor.
+     * Idempotent — repeat calls for the same (chatId, anchorId) are no-ops. Failures are
+     * silently absorbed (cold thread that returns 400 still gets cached as "tried").
+     */
+    suspend fun prefetchThread(chatId: Long, candidateMessageIds: List<Long>) {
+        val key = chatId to (candidateMessageIds.firstOrNull() ?: return)
+        if (!prefetchedThreads.add(key)) return
+        val anchorId = candidateMessageIds.firstOrNull { id ->
+            runCatching { td.send(TdApi.GetMessageProperties(chatId, id)) }
+                .getOrNull()
+                ?.canGetMessageThread == true
+        } ?: return
+        runCatching { td.send(TdApi.GetMessageThread(chatId, anchorId)) }
+    }
+
     /**
      * Cold flow: starts loading when collected, stops everything when collection ends.
      * Subscribes to [TdApi.UpdateNewMessage], [TdApi.UpdateMessageInteractionInfo],
@@ -41,6 +65,10 @@ class CommentsRepository(private val td: TdClient) {
     ): Flow<ThreadState> = callbackFlow {
         trySend(ThreadState.Loading)
 
+        // Telegram pins the discussion thread to a single member of an album (typically
+        // the one with the caption); GetMessageThread on any other member returns 400.
+        // GetMessageProperties is a local capability lookup with no server round-trip,
+        // so we probe candidates in order and pick the carrier.
         val anchorId = candidateMessageIds.firstOrNull { id ->
             runCatching { td.send(TdApi.GetMessageProperties(chatId, id)) }
                 .warnUnlessCancelled(TAG, "messageProperties($chatId,$id)")

@@ -29,6 +29,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewmodel.initializer
 import dev.lyo.telread.data.BookmarkStore
+import dev.lyo.telread.data.CommentsRepository
 import dev.lyo.telread.data.PostContent
 import dev.lyo.telread.data.PostsRepository
 import dev.lyo.telread.data.TimelinePost
@@ -51,6 +52,7 @@ private enum class FeedFilter(val label: String) {
 @Composable
 fun TimelineScreen(
     repo: PostsRepository,
+    commentsRepo: CommentsRepository,
     bookmarks: BookmarkStore,
     contentPadding: PaddingValues,
     showOnlyBookmarked: Boolean,
@@ -119,6 +121,27 @@ fun TimelineScreen(
 
     val activeChannelTitle = remember(channelFilter, posts) {
         channelFilter?.let { id -> posts.firstOrNull { it.chatId == id }?.channelTitle }
+    }
+
+    // Warm the discussion-thread cache for posts that linger in the viewport. A cold
+    // GetMessageThread is a server round-trip (~1.5–2s on first hit per channel); after
+    // a single fetch TDLib answers from local cache (~200ms). Triggering this in the
+    // background while the user is reading means the comments tap is effectively
+    // instant for visible posts, and avoids burning bandwidth on posts the user just
+    // scrolls past. CommentsRepository de-duplicates per anchor so this is safe to spam.
+    LaunchedEffect(listState, commentsRepo) {
+        androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+            .distinctUntilChanged()
+            .debounce(700)
+            .collect { indices ->
+                val snapshot = visiblePosts
+                indices.mapNotNull { snapshot.getOrNull(it) }
+                    .filter { it.commentCount != null }
+                    .forEach { post ->
+                        val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
+                        commentsRepo.prefetchThread(post.chatId, ids)
+                    }
+            }
     }
 
     // Mark visible posts as viewed (server-side view counter increments). Two safeguards:
