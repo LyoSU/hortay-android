@@ -61,6 +61,7 @@ object PostFilterStrategy {
             commentCount = members.mapNotNull { it.commentCount }.maxOrNull(),
             reactions = members.map { it.reactions }.maxByOrNull { it.totalCount } ?: Reactions(0, emptyList()),
             albumMessageIds = sorted.map { it.id },
+            isPinned = members.any { it.isPinned },
         )
     }
 

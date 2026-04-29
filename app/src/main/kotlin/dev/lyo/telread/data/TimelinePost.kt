@@ -59,4 +59,6 @@ data class TimelinePost(
      * threaded tree.
      */
     val parentId: Long? = null,
+    /** Mirrors `TdApi.Message.isPinned` — surfaces a small pin badge on the card. */
+    val isPinned: Boolean = false,
 )

@@ -11,11 +11,17 @@ import androidx.compose.material.icons.automirrored.rounded.CallReceived
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -193,12 +199,7 @@ private fun ServiceBlock(content: PostContent.Service) {
 private fun TextBlock(content: PostContent.Text, maxLines: Int) {
     val annotated = rememberAnnotatedString(content.formatted)
     if (annotated.isNotEmpty()) {
-        Text(
-            text = annotated,
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis,
-        )
+        ExpandableText(annotated, MaterialTheme.typography.bodyLarge, maxLines)
     }
     content.webPreview?.let {
         Spacer(Modifier.height(12.dp))
@@ -732,13 +733,48 @@ private fun IconBadge(icon: androidx.compose.ui.graphics.vector.ImageVector) {
 private fun MediaCaption(caption: FormattedText, maxLines: Int, above: Boolean, show: Boolean) {
     if (!show || caption.text.isBlank()) return
     if (!above) Spacer(Modifier.height(12.dp))
-    Text(
-        text = rememberAnnotatedString(caption),
-        style = MaterialTheme.typography.bodyLarge,
-        maxLines = maxLines,
-        overflow = TextOverflow.Ellipsis,
-    )
+    ExpandableText(rememberAnnotatedString(caption), MaterialTheme.typography.bodyLarge, maxLines)
     if (above) Spacer(Modifier.height(12.dp))
+}
+
+/**
+ * Self-contained Text + "Показати більше" toggle. The collapsed render binds the layout
+ * callback to flip [canExpand] when Compose reports overflow at [maxLines]; we deliberately
+ * keep the toggle hidden until that signal lands so short posts never see it. Tapping the
+ * toggle flips [expanded] and the same Text re-renders without a clamp.
+ *
+ * State is keyed on the [text] reference so editing a post or scrolling away and back
+ * resets to collapsed — same as the official Telegram client.
+ */
+@Composable
+private fun ExpandableText(text: AnnotatedString, style: TextStyle, maxLines: Int) {
+    if (maxLines == Int.MAX_VALUE) {
+        // Detail screen path — never collapse, never offer a toggle.
+        Text(text = text, style = style)
+        return
+    }
+    var expanded by remember(text) { mutableStateOf(false) }
+    var canExpand by remember(text) { mutableStateOf(false) }
+
+    Text(
+        text = text,
+        style = style,
+        maxLines = if (expanded) Int.MAX_VALUE else maxLines,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = { layout ->
+            if (!expanded && layout.hasVisualOverflow) canExpand = true
+        },
+    )
+    if (canExpand && !expanded) {
+        Text(
+            text = "Показати більше",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .clickable { expanded = true },
+        )
+    }
 }
 
 private fun mediaAspectRatio(width: Int, height: Int): Float {

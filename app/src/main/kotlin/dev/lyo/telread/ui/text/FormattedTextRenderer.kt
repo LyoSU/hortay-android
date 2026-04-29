@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
@@ -35,6 +37,7 @@ fun rememberAnnotatedString(formatted: FormattedText): AnnotatedString {
     val codeBg = MaterialTheme.colorScheme.surfaceContainerHigh
     val mute = MaterialTheme.colorScheme.onSurfaceVariant
     val onSurface = MaterialTheme.colorScheme.onSurface
+    val uriHandler = LocalUriHandler.current
 
     // Reveal state lives in a State so flipping it from the link listener triggers a
     // recomposition of any Text consuming the AnnotatedString.
@@ -47,6 +50,7 @@ fun rememberAnnotatedString(formatted: FormattedText): AnnotatedString {
             codeBg = codeBg,
             mute = mute,
             onSurface = onSurface,
+            uriHandler = uriHandler,
             revealedSpoilers = revealed,
             onSpoilerTap = { idx -> revealed = revealed + idx },
         )
@@ -59,23 +63,43 @@ private fun buildFromFormatted(
     codeBg: Color,
     mute: Color,
     onSurface: Color,
+    uriHandler: UriHandler,
     revealedSpoilers: Set<Int>,
     onSpoilerTap: (Int) -> Unit,
 ): AnnotatedString = buildAnnotatedString {
     append(formatted.text)
     val length = formatted.text.length
     val linkStyle = TextLinkStyles(SpanStyle(color = accent, textDecoration = TextDecoration.Underline))
+    val mentionStyle = TextLinkStyles(SpanStyle(color = accent))
+    // tg://… URIs throw ActivityNotFoundException when no Telegram client is installed.
+    // openUri propagates that synchronously from inside the gesture handler — we'd crash.
+    // Wrap in runCatching so the tap is a no-op instead.
+    val safeOpen = LinkInteractionListener { link ->
+        if (link is LinkAnnotation.Url) runCatching { uriHandler.openUri(link.url) }
+    }
 
     formatted.spans.forEachIndexed { idx, span ->
         val start = span.start.coerceIn(0, length)
         val end = span.end.coerceIn(start, length)
         if (end == start) return@forEachIndexed
         when (val s = span.style) {
-            is FormattedText.Style.TextUrl -> addLink(LinkAnnotation.Url(s.url, linkStyle), start, end)
+            is FormattedText.Style.TextUrl -> addLink(LinkAnnotation.Url(s.url, linkStyle, safeOpen), start, end)
             FormattedText.Style.Url -> {
                 // Inline URL — the URL itself is the substring being styled.
                 val url = formatted.text.substring(start, end)
-                addLink(LinkAnnotation.Url(normalizeUrl(url), linkStyle), start, end)
+                addLink(LinkAnnotation.Url(normalizeUrl(url), linkStyle, safeOpen), start, end)
+            }
+            FormattedText.Style.Mention -> {
+                // @username — resolve via tg:// so the official client opens the profile.
+                val handle = formatted.text.substring(start, end).trimStart('@')
+                if (handle.isNotEmpty()) {
+                    addLink(LinkAnnotation.Url("tg://resolve?domain=$handle", mentionStyle, safeOpen), start, end)
+                }
+            }
+            FormattedText.Style.Hashtag -> {
+                // tg://search opens Telegram's global search with the tag preselected.
+                val tag = formatted.text.substring(start, end)
+                addLink(LinkAnnotation.Url("tg://search?query=$tag", mentionStyle, safeOpen), start, end)
             }
             FormattedText.Style.Spoiler -> {
                 if (idx in revealedSpoilers) {
@@ -119,14 +143,16 @@ private fun FormattedText.Style.toSpanStyle(
         fontFamily = FontFamily.Monospace,
         background = codeBg,
     )
-    FormattedText.Style.Mention,
     is FormattedText.Style.MentionName -> SpanStyle(color = accent)
-    FormattedText.Style.Hashtag,
     FormattedText.Style.BotCommand -> SpanStyle(color = accent)
     is FormattedText.Style.CustomEmoji -> null
     FormattedText.Style.BlockQuote -> SpanStyle(color = mute)
-    // Url / TextUrl / Spoiler handled via addLink in the caller.
-    FormattedText.Style.Url, is FormattedText.Style.TextUrl, FormattedText.Style.Spoiler -> null
+    // Url / TextUrl / Mention / Hashtag / Spoiler handled via addLink in the caller.
+    FormattedText.Style.Url,
+    is FormattedText.Style.TextUrl,
+    FormattedText.Style.Mention,
+    FormattedText.Style.Hashtag,
+    FormattedText.Style.Spoiler -> null
 }
 
 /**

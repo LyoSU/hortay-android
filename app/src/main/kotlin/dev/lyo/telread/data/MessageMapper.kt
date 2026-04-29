@@ -56,6 +56,7 @@ class MessageMapper(private val td: TdSender) {
         // no idea which siblings exist yet.
         albumMessageIds = emptyList(),
         parentId = null,
+        isPinned = message.isPinned,
     )
 
     /**

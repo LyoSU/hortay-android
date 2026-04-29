@@ -80,6 +80,7 @@ fun PostCard(
                     authorSignature = post.authorSignature,
                     editDate = post.editDate,
                     date = post.date,
+                    pinned = post.isPinned,
                     onChannelClick = { interactions.onChannelClick(post) },
                 )
 
@@ -164,6 +165,7 @@ private fun HeaderRow(
     authorSignature: String?,
     editDate: Long,
     date: Long,
+    pinned: Boolean,
     onChannelClick: () -> Unit,
 ) {
     val titleColor = MaterialTheme.colorScheme.onSurface
@@ -194,6 +196,15 @@ private fun HeaderRow(
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(8.dp))
+        if (pinned) {
+            Icon(
+                imageVector = Icons.Rounded.PushPin,
+                contentDescription = "pinned",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(12.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+        }
         if (editDate > 0L) {
             Icon(
                 imageVector = Icons.Rounded.Edit,
