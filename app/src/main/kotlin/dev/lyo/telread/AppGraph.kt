@@ -34,7 +34,7 @@ class AppGraph(context: Context) {
 
     val postsRepository: PostsRepository = PostsRepository(tdClient, messageMapper, appScope)
 
-    val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper)
+    val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope)
 
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 

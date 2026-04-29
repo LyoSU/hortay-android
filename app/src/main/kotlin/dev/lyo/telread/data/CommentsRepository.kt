@@ -1,12 +1,15 @@
 package dev.lyo.telread.data
 
-import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.shareIn
 import org.drinkless.tdlib.TdApi
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Live discussion-thread feed for a channel post. Emits a [ThreadState] that updates as new
@@ -19,10 +22,26 @@ import org.drinkless.tdlib.TdApi
  * comments are technically the same Telegram message kind with a small set of contextual
  * extras, and one mapper / one model means we don't duplicate content rendering, sender
  * resolution or update plumbing for what is essentially the same thing.
+ *
+ * Caching strategy (mirrors what TDesktop / Telegram-X do for chat re-entry):
+ *   - Anchor resolution `(chatId, anchorId) → (threadChatId, rootId)` is permanent for
+ *     the lifetime of the repo. The mapping doesn't change for a given post during a
+ *     session, and a re-probe via [TdApi.GetMessageProperties] + [TdApi.GetMessageThread]
+ *     is wasted work even when answered from the local TDLib cache.
+ *   - The thread itself is shared between subscribers via [shareIn] with a 30-second
+ *     `WhileSubscribed` linger. Within that window, a back-out + re-entry to the comments
+ *     overlay reuses the live flow — no second history fetch, no second update fan-in,
+ *     and the user sees their comment list instantly.
+ *   - The cache map is bounded by an LRU of [MAX_CACHED_THREADS] entries. Without an
+ *     upper bound a long session accumulates dead [SharedFlow] instances, each holding
+ *     their last replayed [ThreadState] (a few KB for a busy thread). 64 covers any
+ *     realistic reading session; entries past the cap drop their replay buffer the next
+ *     time the map is mutated.
  */
 class CommentsRepository(
     private val td: TdClient,
     private val mapper: MessageMapper,
+    private val scope: CoroutineScope,
 ) {
 
     sealed interface ThreadState {
@@ -31,49 +50,126 @@ class CommentsRepository(
         data class Error(val message: String) : ThreadState
     }
 
-    // Posts whose discussion thread we've already fetched once. TDLib caches the result
-    // server-side per session, so a repeat GetMessageThread is fast (~200ms vs ~2s cold).
-    // We prefetch in the background for posts that linger in the viewport so a tap is
-    // instant. The set is bounded — entries are never removed; thread metadata is small,
-    // and within a single session the user is unlikely to view more than a few hundred
-    // unique posts.
-    private val prefetchedThreads = java.util.concurrent.ConcurrentHashMap.newKeySet<Pair<Long, Long>>()
+    private data class ResolvedAnchor(val threadChatId: Long, val rootId: Long)
+
+    // Permanent for the lifetime of the repo. ~16 bytes per entry; even with thousands
+    // of unique posts viewed in a session this is negligible. Keeping it forever means
+    // a thread that aged out of the SharedFlow LRU still skips GetMessageProperties +
+    // GetMessageThread on the next observe — only the history fetch runs.
+    private val resolvedAnchors = ConcurrentHashMap<Pair<Long, Long>, ResolvedAnchor>()
+
+    // Bounded LRU. accessOrder=true bumps an entry to most-recently-used on every
+    // get/put; removeEldestEntry caps the size and lets the JVM GC the dropped
+    // SharedFlow once its WhileSubscribed upstream cancels. Synchronized at the map
+    // level because LinkedHashMap is not thread-safe — the hot path inside the
+    // synchronized block is a single SharedFlow construction (no IO, no suspend), so
+    // contention is irrelevant in practice.
+    private val streams: MutableMap<Pair<Long, Long>, SharedFlow<ThreadState>> =
+        Collections.synchronizedMap(
+            object : LinkedHashMap<Pair<Long, Long>, SharedFlow<ThreadState>>(
+                /* initialCapacity */ 16,
+                /* loadFactor */ 0.75f,
+                /* accessOrder */ true,
+            ) {
+                override fun removeEldestEntry(
+                    eldest: MutableMap.MutableEntry<Pair<Long, Long>, SharedFlow<ThreadState>>,
+                ): Boolean = size > MAX_CACHED_THREADS
+            },
+        )
 
     /**
-     * Background warm-up: probe canGetMessageThread + GetMessageThread once per anchor.
-     * Idempotent — repeat calls for the same (chatId, anchorId) are no-ops. Failures are
-     * silently absorbed (cold thread that returns 400 still gets cached as "tried").
+     * Background warm-up for posts lingering in the viewport. Probes
+     * [TdApi.GetMessageProperties] + [TdApi.GetMessageThread] once per anchor and stashes
+     * the result in [resolvedAnchors] so the eventual tap skips the resolve round-trip.
+     *
+     * Does NOT fetch history — that would burn bandwidth on posts the user might never
+     * tap. The win is purely the latency saving on tap (anchor resolution skipped). The
+     * SharedFlow cache below does NOT replace this because [shareIn] only fires when a
+     * subscriber attaches; prefetch must run out-of-band.
      */
     suspend fun prefetchThread(chatId: Long, candidateMessageIds: List<Long>) {
-        val key = chatId to (candidateMessageIds.firstOrNull() ?: return)
-        if (!prefetchedThreads.add(key)) return
-        val anchorId = candidateMessageIds.firstOrNull { id ->
-            runCatching { td.send(TdApi.GetMessageProperties(chatId, id)) }
-                .getOrNull()
-                ?.canGetMessageThread == true
-        } ?: return
-        runCatching { td.send(TdApi.GetMessageThread(chatId, anchorId)) }
+        ensureAnchor(chatId, candidateMessageIds)
     }
 
     /**
-     * Cold flow: starts loading when collected, stops everything when collection ends.
-     * Subscribes to [TdApi.UpdateNewMessage], [TdApi.UpdateMessageInteractionInfo],
-     * [TdApi.UpdateDeleteMessages] and [TdApi.UpdateMessageContent] limited to the linked
-     * discussion chat so the displayed thread stays in sync without a manual refresh.
+     * Subscribe to the live thread for the given anchor.
+     *
+     * First call per (chatId, anchor) runs the bootstrap (anchor resolve + history load)
+     * on attach and then keeps the data fresh via the shared [TdClient.updates] stream
+     * filtered to the thread's chat id. Concurrent subscribers share the same upstream
+     * coroutine. Once the last subscriber detaches and the [STOP_TIMEOUT_MS] linger
+     * expires, the upstream cancels and live updates stop being processed for this
+     * thread — but the entry stays in the LRU with its last [ThreadState.Ready] in the
+     * replay buffer, so a re-entry within the LRU window starts from the cached state.
      *
      * [candidateMessageIds] — every id worth probing. For a standalone post that's a
      * single-element list; for an album it's all sibling ids. Telegram pins the
      * discussion thread to a single album member (typically the one with the caption),
-     * and [TdApi.GetMessageThread] on any other returns "Message has no thread". We
-     * resolve the carrier through [TdApi.GetMessageProperties] (a local capability
-     * lookup, no server round-trip) before issuing GetMessageThread.
+     * and [TdApi.GetMessageThread] on any other returns "Message has no thread". The key
+     * uses [List.minOrNull] so the same album maps to the same SharedFlow regardless of
+     * input ordering.
      */
     fun observeThread(
         chatId: Long,
         candidateMessageIds: List<Long>,
-        limit: Int = 200,
-    ): Flow<ThreadState> = callbackFlow {
-        trySend(ThreadState.Loading)
+        limit: Int = DEFAULT_LIMIT,
+    ): Flow<ThreadState> {
+        val anchorKey = candidateMessageIds.minOrNull()
+            ?: return flowOf(ThreadState.Error("Обговорення недоступне."))
+        val key = chatId to anchorKey
+        return synchronized(streams) {
+            streams.getOrPut(key) {
+                threadFlow(chatId, candidateMessageIds, limit)
+                    .shareIn(scope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), replay = 1)
+            }
+        }
+    }
+
+    private fun threadFlow(
+        chatId: Long,
+        candidateMessageIds: List<Long>,
+        limit: Int,
+    ): Flow<ThreadState> = flow {
+        val anchor = ensureAnchor(chatId, candidateMessageIds) ?: run {
+            emit(ThreadState.Error("Обговорення недоступне."))
+            return@flow
+        }
+
+        // NOTE: do NOT issue OpenChat here. OpenChat is a "user is actively viewing this
+        // chat right now" signal — it's the UI's job to pair it with CloseChat when the
+        // screen leaves composition (see CommentsScreen). Read APIs like
+        // GetMessageThreadHistory don't require it.
+
+        val live = mutableListOf<TdApi.Message>()
+        var fromId = 0L
+        while (live.size < limit) {
+            val batch = runCatching {
+                td.send(TdApi.GetMessageThreadHistory(anchor.threadChatId, anchor.rootId, fromId, 0, BATCH_SIZE))
+            }.warnUnlessCancelled(TAG, "threadHistory(${anchor.threadChatId})").getOrNull() ?: break
+            val msgs = batch.messages.orEmpty()
+            if (msgs.isEmpty()) break
+            // Drop the channel-post mirror; only conversation messages stay.
+            for (m in msgs) if (m.id != anchor.rootId) live += m
+            fromId = msgs.last().id
+        }
+        emit(buildReady(live, anchor))
+
+        // Single-collector update fan-in. The previous implementation had four
+        // launchIn'd collectors all racing on the shared `live` mutable list — a plain
+        // bug that just happened not to trip in practice. With one collect we mutate
+        // from one coroutine: no Mutex, no surprises.
+        td.updates.collect { upd ->
+            if (applyUpdate(upd, anchor, live)) emit(buildReady(live, anchor))
+        }
+    }
+
+    private suspend fun ensureAnchor(
+        chatId: Long,
+        candidateMessageIds: List<Long>,
+    ): ResolvedAnchor? {
+        val anchorKey = candidateMessageIds.minOrNull() ?: return null
+        val key = chatId to anchorKey
+        resolvedAnchors[key]?.let { return it }
 
         // Telegram pins the discussion thread to a single member of an album (typically
         // the one with the caption); GetMessageThread on any other member returns 400.
@@ -84,91 +180,64 @@ class CommentsRepository(
                 .warnUnlessCancelled(TAG, "messageProperties($chatId,$id)")
                 .getOrNull()
                 ?.canGetMessageThread == true
-        }
-        if (anchorId == null) {
-            trySend(ThreadState.Error("Обговорення недоступне."))
-            close()
-            return@callbackFlow
-        }
+        } ?: return null
 
         val info = runCatching { td.send(TdApi.GetMessageThread(chatId, anchorId)) }
-            .getOrElse {
-                trySend(ThreadState.Error("Обговорення недоступне."))
-                close()
-                return@callbackFlow
-            }
+            .warnUnlessCancelled(TAG, "messageThread($chatId,$anchorId)")
+            .getOrNull() ?: return null
 
-        val threadChatId = info.chatId
-        val rootId = info.messageThreadId
+        val resolved = ResolvedAnchor(info.chatId, info.messageThreadId)
+        return resolvedAnchors.putIfAbsent(key, resolved) ?: resolved
+    }
 
-        // NOTE: do NOT issue OpenChat here. OpenChat is a "user is actively viewing this
-        // chat right now" signal — it's the UI's job to pair it with CloseChat when the
-        // screen leaves composition (see CommentsScreen). Read APIs like
-        // GetMessageThreadHistory don't require it.
-
-        val raw = mutableListOf<TdApi.Message>()
-        var fromId = 0L
-        while (raw.size < limit) {
-            val batch = runCatching {
-                td.send(TdApi.GetMessageThreadHistory(threadChatId, rootId, fromId, 0, BATCH_SIZE))
-            }.warnUnlessCancelled(TAG, "threadHistory($threadChatId)").getOrNull() ?: break
-            val msgs = batch.messages.orEmpty()
-            if (msgs.isEmpty()) break
-            raw += msgs
-            fromId = msgs.last().id
+    /**
+     * Apply one [TdApi.Update] to the live message list. Returns true iff the list was
+     * meaningfully mutated and a fresh snapshot should be emitted.
+     */
+    private fun applyUpdate(
+        upd: TdApi.Update,
+        anchor: ResolvedAnchor,
+        live: MutableList<TdApi.Message>,
+    ): Boolean = when (upd) {
+        is TdApi.UpdateNewMessage -> {
+            val m = upd.message
+            if (m.chatId != anchor.threadChatId || m.id == anchor.rootId) false
+            else if (live.any { it.id == m.id }) false
+            else { live += m; true }
         }
-
-        // Drop the channel-post mirror; only conversation messages remain.
-        val live = raw.filter { it.id != rootId }.toMutableList()
-        suspend fun pushSnapshot() {
-            trySend(ThreadState.Ready(buildTree(live, rootId), threadChatId))
+        is TdApi.UpdateMessageInteractionInfo -> {
+            if (upd.chatId != anchor.threadChatId) false
+            else {
+                val idx = live.indexOfFirst { it.id == upd.messageId }
+                if (idx == -1) false
+                else { live[idx].interactionInfo = upd.interactionInfo; true }
+            }
         }
-        pushSnapshot()
-
-        // Real-time fan-in. We share the same updates flow as the rest of the app; filter
-        // strictly to threadChatId so we never touch unrelated chats.
-        td.updates.filterIsInstance<TdApi.UpdateNewMessage>()
-            .onEach { upd ->
-                if (upd.message.chatId != threadChatId) return@onEach
-                if (upd.message.id == rootId) return@onEach
-                if (live.any { it.id == upd.message.id }) return@onEach
-                live += upd.message
-                pushSnapshot()
-            }
-            .launchIn(this)
-
-        td.updates.filterIsInstance<TdApi.UpdateMessageInteractionInfo>()
-            .onEach { upd ->
-                if (upd.chatId != threadChatId) return@onEach
+        is TdApi.UpdateMessageContent -> {
+            if (upd.chatId != anchor.threadChatId) false
+            else {
                 val idx = live.indexOfFirst { it.id == upd.messageId }
-                if (idx == -1) return@onEach
-                live[idx].interactionInfo = upd.interactionInfo
-                pushSnapshot()
+                if (idx == -1) false
+                else { live[idx].content = upd.newContent; true }
             }
-            .launchIn(this)
-
-        td.updates.filterIsInstance<TdApi.UpdateMessageContent>()
-            .onEach { upd ->
-                if (upd.chatId != threadChatId) return@onEach
-                val idx = live.indexOfFirst { it.id == upd.messageId }
-                if (idx == -1) return@onEach
-                live[idx].content = upd.newContent
-                pushSnapshot()
-            }
-            .launchIn(this)
-
-        td.updates.filterIsInstance<TdApi.UpdateDeleteMessages>()
-            .onEach { upd ->
-                if (upd.chatId != threadChatId || !upd.isPermanent) return@onEach
+        }
+        is TdApi.UpdateDeleteMessages -> {
+            if (upd.chatId != anchor.threadChatId || !upd.isPermanent) false
+            else {
                 val ids = upd.messageIds.toHashSet()
                 val before = live.size
                 live.removeAll { it.id in ids }
-                if (live.size != before) pushSnapshot()
+                live.size != before
             }
-            .launchIn(this)
-
-        awaitClose { /* OpenChat/CloseChat is paired in the UI layer (CommentsScreen). */ }
+        }
+        else -> false
     }
+
+    private suspend fun buildReady(
+        live: List<TdApi.Message>,
+        anchor: ResolvedAnchor,
+    ): ThreadState.Ready =
+        ThreadState.Ready(buildTree(live, anchor.rootId), anchor.threadChatId)
 
     suspend fun openThread(threadChatId: Long) {
         runCatching { td.send(TdApi.OpenChat(threadChatId)) }
@@ -225,5 +294,10 @@ class CommentsRepository(
         const val TAG = "CommentsRepository"
         const val MAX_DEPTH = 3
         const val BATCH_SIZE = 50
+        const val DEFAULT_LIMIT = 200
+        const val STOP_TIMEOUT_MS = 30_000L
+        // Hand-picked: typical reading session opens 10–20 unique threads. 64 leaves
+        // slack so the LRU only kicks in for power-users; smaller and the cache thrashes.
+        const val MAX_CACHED_THREADS = 64
     }
 }
