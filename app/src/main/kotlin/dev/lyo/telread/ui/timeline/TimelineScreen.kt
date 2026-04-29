@@ -33,6 +33,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewmodel.initializer
 import dev.lyo.telread.data.BookmarkStore
+import dev.lyo.telread.data.ChatFoldersRepository
 import dev.lyo.telread.data.CommentsRepository
 import dev.lyo.telread.data.PostContent
 import dev.lyo.telread.data.PostsRepository
@@ -46,18 +47,12 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
-private enum class FeedFilter(val label: String) {
-    All("Усе"),
-    Text("Текст"),
-    Media("Медіа"),
-    Today("Сьогодні"),
-}
-
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun TimelineScreen(
     repo: PostsRepository,
     commentsRepo: CommentsRepository,
+    folders: ChatFoldersRepository,
     bookmarks: BookmarkStore,
     contentPadding: PaddingValues,
     showOnlyBookmarked: Boolean,
@@ -79,6 +74,8 @@ fun TimelineScreen(
     val bookmarkedKeys by vm.bookmarkedKeys.collectAsStateWithLifecycle()
     val pendingChannels by vm.pendingChannels.collectAsStateWithLifecycle()
     val pendingNew by vm.pendingNew.collectAsStateWithLifecycle()
+    val foldersList by folders.folders.collectAsStateWithLifecycle()
+    val archivedChatIds by repo.archivedChatIds.collectAsStateWithLifecycle()
 
     // Pill is suppressed during a refresh: repo.refresh() replaces _posts, briefly making
     // the post-refresh delta look like "everything is new" until acceptPending() lands.
@@ -88,7 +85,45 @@ fun TimelineScreen(
     val listState = rememberLazyListState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
-    var filter by rememberSaveable { mutableStateOf(FeedFilter.All) }
+    // Selected folder/archive scope. Default: "All". Stored as a saveable so the user's
+    // tab survives process death; folder tabs get rebuilt against the freshest folders
+    // list each composition, so a folder removed in another client falls back gracefully.
+    var selectedFolderId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var archiveSelected by rememberSaveable { mutableStateOf(false) }
+    val scope_filter: FilterScope = remember(selectedFolderId, archiveSelected, foldersList) {
+        when {
+            archiveSelected -> FilterScope.Archive
+            selectedFolderId != null -> {
+                val match = foldersList.firstOrNull { it.id == selectedFolderId }
+                if (match == null) FilterScope.All
+                else FilterScope.Folder(match.id, match.name?.text?.text.orEmpty())
+            }
+            else -> FilterScope.All
+        }
+    }
+    // Pinned + included member ids for the active folder (null when not a Folder scope).
+    var folderMemberIds by remember(scope_filter) { mutableStateOf<Set<Long>?>(null) }
+    var folderIncludesAllChannels by remember(scope_filter) { mutableStateOf(false) }
+    var folderExcludedIds by remember(scope_filter) { mutableStateOf<Set<Long>>(emptySet()) }
+    LaunchedEffect(scope_filter) {
+        val folderScope = scope_filter as? FilterScope.Folder
+        if (folderScope == null) {
+            folderMemberIds = null
+            folderIncludesAllChannels = false
+            folderExcludedIds = emptySet()
+            return@LaunchedEffect
+        }
+        val full = folders.fullFolder(folderScope.id)
+        if (full == null) {
+            folderMemberIds = emptySet()
+            folderIncludesAllChannels = false
+            folderExcludedIds = emptySet()
+        } else {
+            folderMemberIds = (full.pinnedChatIds?.toSet().orEmpty() + full.includedChatIds?.toSet().orEmpty())
+            folderIncludesAllChannels = full.includeChannels
+            folderExcludedIds = full.excludedChatIds?.toSet().orEmpty()
+        }
+    }
     val viewer = LocalMediaViewer.current
 
     // True when the LazyColumn is at the very top — used to auto-collapse pending posts
@@ -118,7 +153,7 @@ fun TimelineScreen(
 
     // Switching the active channel context changes which posts are visible — without this,
     // the previous scroll offset bleeds through and lands the user mid-list.
-    LaunchedEffect(channelFilter, filter) {
+    LaunchedEffect(channelFilter, scope_filter) {
         listState.scrollToItem(0)
     }
 
@@ -136,11 +171,15 @@ fun TimelineScreen(
         }
     }
 
-    val visiblePosts = remember(posts, filter, bookmarkedKeys, channelFilter, showOnlyBookmarked) {
-        val base = buildList {
+    val visiblePosts = remember(
+        posts, scope_filter, bookmarkedKeys, channelFilter, showOnlyBookmarked,
+        archivedChatIds, folderMemberIds, folderIncludesAllChannels, folderExcludedIds,
+    ) {
+        buildList {
             posts.forEach { p ->
                 if (showOnlyBookmarked && p.bookmarkKey() !in bookmarkedKeys) return@forEach
                 if (channelFilter != null && p.chatId != channelFilter) return@forEach
+
                 // Mixed global feed: hide service / expired-media noise (pin / boost /
                 // giveaway-created / ttl-expired). They're meaningful only in the context
                 // of a single channel, where the per-channel filter view shows them as
@@ -149,10 +188,23 @@ fun TimelineScreen(
                     if (p.content is PostContent.Service) return@forEach
                     if (p.content is PostContent.ExpiredMedia) return@forEach
                 }
+
+                // Scope: All hides archived chats; Archive hides everything BUT archived;
+                // Folder respects the precomputed include/exclude set.
+                val isArchived = p.chatId in archivedChatIds
+                val passesScope = when (scope_filter) {
+                    FilterScope.All -> !isArchived
+                    FilterScope.Archive -> isArchived
+                    is FilterScope.Folder -> {
+                        val included = folderMemberIds?.contains(p.chatId) == true ||
+                            folderIncludesAllChannels
+                        included && p.chatId !in folderExcludedIds
+                    }
+                }
+                if (!passesScope) return@forEach
                 add(p)
             }
         }
-        applyFilter(base, filter)
     }
 
     val activeChannelTitle = remember(channelFilter, posts) {
@@ -280,7 +332,30 @@ fun TimelineScreen(
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     if (!showOnlyBookmarked && channelFilter == null) {
-                        FilterChipsRow(selected = filter, onSelected = { filter = it })
+                        val tabs = remember(foldersList) {
+                            foldersList.map { FolderTab(it.id, it.name?.text?.text.orEmpty()) }
+                        }
+                        FoldersBar(
+                            selected = scope_filter,
+                            folders = tabs,
+                            showArchive = archivedChatIds.isNotEmpty(),
+                            onSelected = { sel ->
+                                when (sel) {
+                                    FilterScope.All -> {
+                                        selectedFolderId = null
+                                        archiveSelected = false
+                                    }
+                                    FilterScope.Archive -> {
+                                        selectedFolderId = null
+                                        archiveSelected = true
+                                    }
+                                    is FilterScope.Folder -> {
+                                        selectedFolderId = sel.id
+                                        archiveSelected = false
+                                    }
+                                }
+                            },
+                        )
                     }
 
                     if (visiblePosts.isEmpty() && !refreshing) {
@@ -402,32 +477,6 @@ private fun TimelineTopBar(
 
 
 @Composable
-private fun FilterChipsRow(selected: FeedFilter, onSelected: (FeedFilter) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        FeedFilter.entries.forEach { f ->
-            FilterChip(
-                selected = selected == f,
-                onClick = { onSelected(f) },
-                label = { Text(f.label, style = MaterialTheme.typography.labelLarge) },
-                shape = CircleShape,
-                colors = FilterChipDefaults.filterChipColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                ),
-                border = null,
-            )
-        }
-    }
-}
-
-@Composable
 private fun EmptyState(showingSaved: Boolean) {
     Column(
         modifier = Modifier
@@ -478,19 +527,3 @@ private fun formatSubscribers(count: Int): String {
     }
 }
 
-private fun applyFilter(
-    posts: List<TimelinePost>,
-    filter: FeedFilter,
-): List<TimelinePost> = when (filter) {
-    FeedFilter.All -> posts
-    FeedFilter.Text -> posts.filter { it.content is PostContent.Text }
-    FeedFilter.Media -> posts.filter {
-        it.content is PostContent.PhotoAlbum ||
-            it.content is PostContent.Video ||
-            it.content is PostContent.Animation
-    }
-    FeedFilter.Today -> {
-        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
-        posts.filter { it.date >= cutoff }
-    }
-}

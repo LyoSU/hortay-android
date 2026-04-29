@@ -488,10 +488,32 @@ class PostsRepository(
     private fun reactionsFromUpdate(reactions: TdApi.MessageReactions): Reactions =
         MessageContentMapper.mapReactions(reactions)
 
-    private suspend fun refreshLocked(limitPerChannel: Int) {
-        runCatching { td.send(TdApi.LoadChats(TdApi.ChatListMain(), CHAT_LIST_HINT)) }
+    /**
+     * Set of chatIds the user has archived in Telegram. Populated alongside the main
+     * refresh so the feed UI can surface a dedicated "Архів" tab without a separate query.
+     * Stays a [StateFlow] so the tab can show / hide based on whether the user actually
+     * has anything archived.
+     */
+    private val _archivedChatIds = MutableStateFlow<Set<Long>>(emptySet())
+    val archivedChatIds: StateFlow<Set<Long>> = _archivedChatIds.asStateFlow()
 
-        val chatIds = td.send(TdApi.GetChats(TdApi.ChatListMain(), CHAT_LIST_LIMIT)).chatIds
+    private suspend fun refreshLocked(limitPerChannel: Int) {
+        // Prime BOTH the main list and the archive — TDLib serves "have we seen these
+        // chatIds yet" per ChatList, and a chat archived in Telegram is invisible to
+        // GetChats(ChatListMain). Loading archive separately is what surfaces it for the
+        // "Архів" tab.
+        runCatching { td.send(TdApi.LoadChats(TdApi.ChatListMain(), CHAT_LIST_HINT)) }
+        runCatching { td.send(TdApi.LoadChats(TdApi.ChatListArchive(), CHAT_LIST_HINT)) }
+
+        val mainIds = td.send(TdApi.GetChats(TdApi.ChatListMain(), CHAT_LIST_LIMIT)).chatIds
+        val archiveIds = runCatching {
+            td.send(TdApi.GetChats(TdApi.ChatListArchive(), CHAT_LIST_LIMIT)).chatIds.toList()
+        }.getOrElse { emptyList() }
+        _archivedChatIds.value = archiveIds.toSet()
+
+        // Single channel set — duplicates collapse via toSet, then we go back to a List so
+        // we can preserve ordering for the per-chat fetch.
+        val chatIds = (mainIds.toList() + archiveIds).distinct().toLongArray()
 
         // Per-channel fetch was serial — for a user with 200 channels, ~50ms per round-trip
         // adds up to ~10s pull-to-refresh. Bound concurrency at 4 (TDLib's typical
@@ -499,7 +521,7 @@ class PostsRepository(
         // still saturating the network.
         val semaphore = Semaphore(REFRESH_CONCURRENCY)
         val raw = coroutineScope {
-            chatIds.map { chatId ->
+            chatIds.toList().map { chatId ->
                 async {
                     semaphore.withPermit {
                         val chat = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()

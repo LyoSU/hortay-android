@@ -2,6 +2,7 @@ package dev.lyo.telread
 
 import android.content.Context
 import dev.lyo.telread.data.BookmarkStore
+import dev.lyo.telread.data.ChatFoldersRepository
 import dev.lyo.telread.data.CommentsRepository
 import dev.lyo.telread.data.MediaCache
 import dev.lyo.telread.data.MessageMapper
@@ -43,6 +44,8 @@ class AppGraph(context: Context) {
     val settingsStore: SettingsStore = SettingsStore(context)
 
     val statsRepository: StatsRepository = StatsRepository(tdClient)
+
+    val chatFoldersRepository: ChatFoldersRepository = ChatFoldersRepository(tdClient, appScope)
 
     // Bridge ProcessLifecycleOwner + ConnectivityManager into TDLib so the daemon knows
     // when we're foreground/online and what network it should plan downloads for. Held
