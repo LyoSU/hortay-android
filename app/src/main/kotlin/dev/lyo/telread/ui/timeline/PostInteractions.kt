@@ -1,6 +1,7 @@
 package dev.lyo.telread.ui.timeline
 
 import androidx.compose.runtime.Immutable
+import dev.lyo.telread.data.FormattedText
 import dev.lyo.telread.data.TimelinePost
 
 /**
@@ -19,6 +20,11 @@ class PostInteractions(
     val onCopyClick: (post: TimelinePost) -> Unit = {},
     val onOpenClick: (post: TimelinePost) -> Unit = {},
     val isBookmarked: (post: TimelinePost) -> Boolean = { false },
+    val onTranslateClick: (post: TimelinePost) -> Unit = {},
+    val onClearTranslationClick: (post: TimelinePost) -> Unit = {},
+    val isTranslated: (post: TimelinePost) -> Boolean = { false },
+    /** Translated text for this post (or any of its album members), null when not translated. */
+    val translationFor: (post: TimelinePost) -> FormattedText? = { null },
 ) {
     companion object {
         val Noop = PostInteractions()

@@ -35,6 +35,7 @@ import androidx.lifecycle.viewmodel.initializer
 import dev.lyo.telread.data.BookmarkStore
 import dev.lyo.telread.data.ChatFoldersRepository
 import dev.lyo.telread.data.CommentsRepository
+import dev.lyo.telread.data.TranslationsStore
 import dev.lyo.telread.data.PostContent
 import dev.lyo.telread.data.PostsRepository
 import dev.lyo.telread.data.TimelinePost
@@ -53,6 +54,7 @@ fun TimelineScreen(
     repo: PostsRepository,
     commentsRepo: CommentsRepository,
     folders: ChatFoldersRepository,
+    translations: TranslationsStore,
     bookmarks: BookmarkStore,
     contentPadding: PaddingValues,
     showOnlyBookmarked: Boolean,
@@ -76,6 +78,7 @@ fun TimelineScreen(
     val pendingNew by vm.pendingNew.collectAsStateWithLifecycle()
     val foldersList by folders.folders.collectAsStateWithLifecycle()
     val archivedChatIds by repo.archivedChatIds.collectAsStateWithLifecycle()
+    val translationsMap by translations.translations.collectAsStateWithLifecycle()
 
     // Pill is suppressed during a refresh: repo.refresh() replaces _posts, briefly making
     // the post-refresh delta look like "everything is new" until acceptPending() lands.
@@ -258,7 +261,17 @@ fun TimelineScreen(
             }
     }
 
-    val interactions = remember(bookmarkedKeys, onChannelFilterChange, onOpenComments) {
+    val interactions = remember(bookmarkedKeys, onChannelFilterChange, onOpenComments, translationsMap, posts) {
+        // Album members share the same translation — TDLib stores translations against the
+        // caption-carrying message id, but for the UI any post in the album should look
+        // translated. Fall back to scanning album members when the lookup misses.
+        fun lookup(post: TimelinePost): dev.lyo.telread.data.FormattedText? {
+            translationsMap[dev.lyo.telread.data.TranslationsStore.Key(post.chatId, post.id)]?.let { return it }
+            post.albumMessageIds.forEach { id ->
+                translationsMap[dev.lyo.telread.data.TranslationsStore.Key(post.chatId, id)]?.let { return it }
+            }
+            return null
+        }
         PostInteractions(
             onMediaClick = { post, idx ->
                 viewer.openFor(post.content, idx)
@@ -298,6 +311,18 @@ fun TimelineScreen(
             onShareClick = { post -> PostActions.share(context, post) },
             onCopyClick = { post -> PostActions.copyText(context, post) },
             onOpenClick = { post -> PostActions.openInTelegram(context, post) },
+            onTranslateClick = { post ->
+                scope.launch {
+                    val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
+                    translations.translate(post.chatId, ids.first())
+                }
+            },
+            onClearTranslationClick = { post ->
+                val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
+                ids.forEach { translations.clear(post.chatId, it) }
+            },
+            isTranslated = { post -> lookup(post) != null },
+            translationFor = ::lookup,
             onPostClick = onOpenComments,
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedKeys },
         )

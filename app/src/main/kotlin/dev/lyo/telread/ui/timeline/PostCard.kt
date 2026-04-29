@@ -102,10 +102,16 @@ fun PostCard(
                 }
 
                 Spacer(Modifier.height(8.dp))
+                val translation = interactions.translationFor(post)
+                if (translation != null) {
+                    TranslationChip(onDismiss = { interactions.onClearTranslationClick(post) })
+                    Spacer(Modifier.height(8.dp))
+                }
                 PostBody(
                     content = post.content,
                     onMediaClick = { _, idx -> interactions.onMediaClick(post, idx) },
                     expanded = expanded,
+                    translation = translation,
                 )
 
                 if (post.views > 0 || post.commentCount != null || post.reactions.items.isNotEmpty()) {
@@ -235,6 +241,35 @@ private fun HeaderRow(
             text = formatRelative(date),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * Compact "Перекладено · Показати оригінал" chip rendered above the body when an active
+ * translation overrides the post text. Telegram-X uses a single line in the same accent
+ * colour as forward attribution; we mirror that so the affordance reads as related,
+ * not as an alert.
+ */
+@Composable
+private fun TranslationChip(onDismiss: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onDismiss),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Translate,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.size(14.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = "Перекладено · Показати оригінал",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.tertiary,
         )
     }
 }
@@ -488,6 +523,17 @@ private fun PostActionSheet(
                     icon = Icons.Rounded.ContentCopy,
                     label = "Скопіювати текст",
                     onClick = { runAndDismiss { interactions.onCopyClick(post) } },
+                )
+                val translated = interactions.isTranslated(post)
+                SheetItem(
+                    icon = Icons.Rounded.Translate,
+                    label = if (translated) "Показати оригінал" else "Перекласти",
+                    onClick = {
+                        runAndDismiss {
+                            if (translated) interactions.onClearTranslationClick(post)
+                            else interactions.onTranslateClick(post)
+                        }
+                    },
                 )
             }
             SheetItem(

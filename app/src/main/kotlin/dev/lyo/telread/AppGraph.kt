@@ -11,6 +11,7 @@ import dev.lyo.telread.data.SettingsStore
 import dev.lyo.telread.data.StatsRepository
 import dev.lyo.telread.data.TdClient
 import dev.lyo.telread.data.TdLifecycleBridge
+import dev.lyo.telread.data.TranslationsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -46,6 +47,8 @@ class AppGraph(context: Context) {
     val statsRepository: StatsRepository = StatsRepository(tdClient)
 
     val chatFoldersRepository: ChatFoldersRepository = ChatFoldersRepository(tdClient, appScope)
+
+    val translations: TranslationsStore = TranslationsStore(tdClient)
 
     // Bridge ProcessLifecycleOwner + ConnectivityManager into TDLib so the daemon knows
     // when we're foreground/online and what network it should plan downloads for. Held

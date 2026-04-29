@@ -48,16 +48,22 @@ fun PostBody(
     onMediaClick: (List<AlbumItem>, Int) -> Unit = { _, _ -> },
     /** When true, text is rendered without `maxLines` clamps — used in detail screens. */
     expanded: Boolean = false,
+    /**
+     * Translated body. When non-null, text/caption blocks render this instead of the
+     * original `content.formatted` / `content.caption`. Other variants (sticker, poll,
+     * location…) ignore the translation — they have nothing to translate.
+     */
+    translation: FormattedText? = null,
 ) {
     val textLimit = if (expanded) Int.MAX_VALUE else 18
     val captionLimit = if (expanded) Int.MAX_VALUE else 12
     Column(modifier = modifier) {
         when (content) {
-            is PostContent.Text -> TextBlock(content, textLimit)
-            is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick, captionLimit)
-            is PostContent.Video -> VideoBlock(content, onMediaClick, captionLimit)
-            is PostContent.Animation -> AnimationBlock(content, onMediaClick, captionLimit)
-            is PostContent.Document -> DocumentBlock(content, captionLimit)
+            is PostContent.Text -> TextBlock(content, textLimit, translation)
+            is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick, captionLimit, translation)
+            is PostContent.Video -> VideoBlock(content, onMediaClick, captionLimit, translation)
+            is PostContent.Animation -> AnimationBlock(content, onMediaClick, captionLimit, translation)
+            is PostContent.Document -> DocumentBlock(content, captionLimit, translation)
             is PostContent.Audio -> AudioBlock(content)
             is PostContent.VoiceNote -> VoiceNoteBlock(content)
             is PostContent.VideoNote -> VideoNoteBlock(content)
@@ -197,10 +203,11 @@ private fun ServiceBlock(content: PostContent.Service) {
 }
 
 @Composable
-private fun TextBlock(content: PostContent.Text, maxLines: Int) {
-    if (content.formatted.text.isNotEmpty()) {
+private fun TextBlock(content: PostContent.Text, maxLines: Int, translation: FormattedText?) {
+    val rendered = translation ?: content.formatted
+    if (rendered.text.isNotEmpty()) {
         RichText(
-            formatted = content.formatted,
+            formatted = rendered,
             style = MaterialTheme.typography.bodyLarge,
             maxLines = maxLines,
             renderer = { annotated, style, lines -> ExpandableText(annotated, style, lines) },
@@ -213,17 +220,18 @@ private fun TextBlock(content: PostContent.Text, maxLines: Int) {
 }
 
 @Composable
-private fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int) {
+private fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int, translation: FormattedText?) {
     val items = content.items
     if (items.isEmpty()) return
+    val caption = translation ?: content.caption
 
-    MediaCaption(content.caption, maxLines, above = true, show = content.captionAbove)
+    MediaCaption(caption, maxLines, above = true, show = content.captionAbove)
     if (items.size == 1) {
         SingleMedia(items.first(), onClick = { onMediaClick(items, 0) })
     } else {
         AlbumPager(items, onItemClick = { idx -> onMediaClick(items, idx) })
     }
-    MediaCaption(content.caption, maxLines, above = false, show = !content.captionAbove)
+    MediaCaption(caption, maxLines, above = false, show = !content.captionAbove)
 }
 
 @Composable
@@ -307,21 +315,23 @@ private fun AlbumIndicator(current: Int, total: Int, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun VideoBlock(content: PostContent.Video, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int) {
+private fun VideoBlock(content: PostContent.Video, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int, translation: FormattedText?) {
     val item = AlbumItem.Video(content.media, content.durationSec, content.playbackFileId)
     val items = listOf(item)
-    MediaCaption(content.caption, maxLines, above = true, show = content.captionAbove)
+    val caption = translation ?: content.caption
+    MediaCaption(caption, maxLines, above = true, show = content.captionAbove)
     SingleMedia(item, onClick = { onMediaClick(items, 0) })
-    MediaCaption(content.caption, maxLines, above = false, show = !content.captionAbove)
+    MediaCaption(caption, maxLines, above = false, show = !content.captionAbove)
 }
 
 @Composable
-private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int) {
+private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int, translation: FormattedText?) {
     // Inline auto-loop playback: Telegram animations are silent MP4s, so we drive them via
     // ExoPlayer (Coil cannot decode MP4). Tap escalates to full-screen.
     val ratio = mediaAspectRatio(content.media.width, content.media.height)
     val items = listOf(AlbumItem.Animation(content.media, content.playbackFileId))
-    MediaCaption(content.caption, maxLines, above = true, show = content.captionAbove)
+    val caption = translation ?: content.caption
+    MediaCaption(caption, maxLines, above = true, show = content.captionAbove)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -340,11 +350,11 @@ private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<A
         )
         DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
     }
-    MediaCaption(content.caption, maxLines, above = false, show = !content.captionAbove)
+    MediaCaption(caption, maxLines, above = false, show = !content.captionAbove)
 }
 
 @Composable
-private fun DocumentBlock(content: PostContent.Document, maxLines: Int) {
+private fun DocumentBlock(content: PostContent.Document, maxLines: Int, translation: FormattedText?) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -372,7 +382,7 @@ private fun DocumentBlock(content: PostContent.Document, maxLines: Int) {
     }
     // Documents never carry the caption-above flag (Telegram only exposes that toggle for
     // photo/video/animation/paid-media), so we always render below.
-    MediaCaption(content.caption, maxLines, above = false, show = true)
+    MediaCaption(translation ?: content.caption, maxLines, above = false, show = true)
 }
 
 @Composable
