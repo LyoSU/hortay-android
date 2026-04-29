@@ -12,12 +12,22 @@ import org.drinkless.tdlib.TdApi
  * Live discussion-thread feed for a channel post. Emits a [ThreadState] that updates as new
  * comments arrive, reactions/views change, or messages get deleted upstream — without ever
  * requiring the consumer to refetch.
+ *
+ * Mapping is delegated to a shared [MessageMapper] so author / forward / reply preview
+ * resolution + caches are common with [PostsRepository]. Each comment is mapped to a
+ * [TimelinePost] (the same model channel posts use) — channel posts and discussion
+ * comments are technically the same Telegram message kind with a small set of contextual
+ * extras, and one mapper / one model means we don't duplicate content rendering, sender
+ * resolution or update plumbing for what is essentially the same thing.
  */
-class CommentsRepository(private val td: TdClient) {
+class CommentsRepository(
+    private val td: TdClient,
+    private val mapper: MessageMapper,
+) {
 
     sealed interface ThreadState {
         data object Loading : ThreadState
-        data class Ready(val rows: List<CommentRow>, val threadChatId: Long) : ThreadState
+        data class Ready(val rows: List<ThreadRow>, val threadChatId: Long) : ThreadState
         data class Error(val message: String) : ThreadState
     }
 
@@ -179,23 +189,27 @@ class CommentsRepository(private val td: TdClient) {
         }.warnUnlessCancelled(TAG, "viewMessages($threadChatId)")
     }
 
-    private suspend fun buildTree(messages: List<TdApi.Message>, rootMessageId: Long): List<CommentRow> {
+    private suspend fun buildTree(messages: List<TdApi.Message>, rootMessageId: Long): List<ThreadRow> {
         if (messages.isEmpty()) return emptyList()
 
-        val byId: Map<Long, TdApi.Message> = messages.associateBy { it.id }
-        val children: Map<Long, List<TdApi.Message>> = messages.groupBy { msg ->
+        // Map every message via the shared mapper FIRST — same caching layer as channel
+        // posts, so users that already appeared in the feed don't trigger a fresh GetUser.
+        val mapped: Map<Long, TimelinePost> = messages.associate { it.id to mapper.toThreadComment(it) }
+
+        // Group by parent. The conversation root (the channel-post mirror) becomes the
+        // virtual depth-0 parent; ids that no longer exist in the thread (deleted /
+        // out-of-window) collapse under it too.
+        val children: Map<Long, List<TimelinePost>> = messages.groupBy { msg ->
             val replyId = (msg.replyTo as? TdApi.MessageReplyToMessage)?.messageId
-            if (replyId != null && replyId != rootMessageId && replyId in byId) replyId else 0L
-        }
+            if (replyId != null && replyId != rootMessageId && replyId in mapped) replyId else 0L
+        }.mapValues { entry -> entry.value.mapNotNull { mapped[it.id] } }
 
-        val authorCache = mutableMapOf<Long, AuthorInfo>()
-        val rows = mutableListOf<CommentRow>()
-
-        suspend fun walk(parentId: Long, depth: Int) {
+        val rows = mutableListOf<ThreadRow>()
+        fun walk(parentId: Long, depth: Int) {
             val siblings = children[parentId].orEmpty().sortedBy { it.date }
             siblings.forEachIndexed { idx, msg ->
-                rows += CommentRow(
-                    comment = toComment(msg, authorCache),
+                rows += ThreadRow(
+                    message = msg,
                     depth = depth.coerceAtMost(MAX_DEPTH),
                     isLastSibling = idx == siblings.lastIndex,
                 )
@@ -206,62 +220,6 @@ class CommentsRepository(private val td: TdClient) {
 
         return rows
     }
-
-    private suspend fun toComment(msg: TdApi.Message, cache: MutableMap<Long, AuthorInfo>): Comment {
-        val author = authorInfoFor(msg, cache)
-        val parentId = (msg.replyTo as? TdApi.MessageReplyToMessage)?.messageId
-        return Comment(
-            id = msg.id,
-            parentId = parentId,
-            chatId = msg.chatId,
-            authorName = author.name,
-            avatarThumb = author.avatarThumb,
-            avatarFileId = author.avatarFileId,
-            content = MessageContentMapper.map(msg.content),
-            date = msg.date.toLong() * 1000L,
-            reactions = MessageContentMapper.mapReactions(msg.interactionInfo?.reactions),
-        )
-    }
-
-    private suspend fun authorInfoFor(msg: TdApi.Message, cache: MutableMap<Long, AuthorInfo>): AuthorInfo {
-        return when (val sender = msg.senderId) {
-            is TdApi.MessageSenderUser -> cache.getOrPut(sender.userId) { resolveUser(sender.userId) }
-            is TdApi.MessageSenderChat -> cache.getOrPut(sender.chatId) { resolveChat(sender.chatId) }
-            else -> AuthorInfo("—", null, null)
-        }
-    }
-
-    private suspend fun resolveUser(userId: Long): AuthorInfo {
-        val user = runCatching { td.send(TdApi.GetUser(userId)) }.getOrNull()
-            ?: return AuthorInfo("Користувач", null, null)
-        val name = listOfNotNull(
-            user.firstName?.takeUnless { it.isBlank() },
-            user.lastName?.takeUnless { it.isBlank() },
-        ).joinToString(" ").ifBlank {
-            user.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" } ?: "Користувач"
-        }
-        return AuthorInfo(
-            name = name,
-            avatarThumb = user.profilePhoto?.minithumbnail?.data,
-            avatarFileId = user.profilePhoto?.small?.id,
-        )
-    }
-
-    private suspend fun resolveChat(chatId: Long): AuthorInfo {
-        val chat = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
-            ?: return AuthorInfo("Канал", null, null)
-        return AuthorInfo(
-            name = chat.title.orEmpty().ifBlank { "Канал" },
-            avatarThumb = chat.photo?.minithumbnail?.data,
-            avatarFileId = chat.photo?.small?.id,
-        )
-    }
-
-    private data class AuthorInfo(
-        val name: String,
-        val avatarThumb: ByteArray?,
-        val avatarFileId: Int?,
-    )
 
     private companion object {
         const val TAG = "CommentsRepository"

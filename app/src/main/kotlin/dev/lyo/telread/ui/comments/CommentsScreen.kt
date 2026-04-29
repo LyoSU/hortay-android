@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -21,9 +20,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.telread.data.AlbumItem
-import dev.lyo.telread.data.Comment
-import dev.lyo.telread.data.CommentRow
 import dev.lyo.telread.data.CommentsRepository
+import dev.lyo.telread.data.ThreadRow
 import dev.lyo.telread.data.TimelinePost
 import dev.lyo.telread.ui.media.LocalMediaViewer
 import dev.lyo.telread.ui.media.TdAvatar
@@ -141,7 +139,7 @@ fun CommentsScreen(
                         CircularProgressIndicator()
                     }
                 }
-                is CommentsRepository.ThreadState.Ready -> items(items = s.rows, key = { it.comment.id }) { row ->
+                is CommentsRepository.ThreadState.Ready -> items(items = s.rows, key = { it.message.id }) { row ->
                     CommentNode(row, onMediaClick = { items, idx -> viewer.open(items, idx) })
                 }
                 is CommentsRepository.ThreadState.Error -> item(key = "error") {
@@ -184,7 +182,7 @@ private fun NoDiscussionState(message: String) {
 }
 
 @Composable
-private fun CommentNode(row: CommentRow, onMediaClick: (List<AlbumItem>, Int) -> Unit) {
+private fun CommentNode(row: ThreadRow, onMediaClick: (List<AlbumItem>, Int) -> Unit) {
     val indent = (row.depth * INDENT_DP).dp
     Row(
         modifier = Modifier
@@ -212,26 +210,35 @@ private fun CommentNode(row: CommentRow, onMediaClick: (List<AlbumItem>, Int) ->
 
 /**
  * Threads-style flat comment: avatar in left rail, header (name + time) and body in right
- * column. No surface fill or rounded corners — just whitespace separates entries.
+ * column. No surface fill or rounded corners — just whitespace separates entries. The body
+ * and reactions are rendered through the same [PostBody] / [ReactionChip] used by the feed
+ * so any media type the timeline shows works here too — including new content types the
+ * old comment renderer missed (animated emoji, checklists, expired-media placeholders).
  */
 @Composable
 private fun CommentBubble(
-    row: CommentRow,
+    row: ThreadRow,
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val comment = row.comment
+    val message = row.message
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 10.dp),
     ) {
-        CommentAvatar(comment)
+        TdAvatar(
+            name = message.senderName,
+            thumb = message.avatarThumb,
+            fileId = message.avatarFileId,
+            size = 36.dp,
+            textStyle = MaterialTheme.typography.titleSmall,
+        )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = comment.authorName,
+                    text = message.senderName,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -239,25 +246,40 @@ private fun CommentBubble(
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 Spacer(Modifier.width(8.dp))
+                if (message.editDate > 0L) {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = "edited",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(11.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
                 Text(
-                    text = formatRelative(comment.date),
+                    text = formatRelative(message.date),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
+            // Quoted reply now flows from the unified MessageMapper — same renderer as
+            // feed-post replies, so a comment that quotes another thread reply gets a
+            // proper author + excerpt block instead of just an indented bubble.
+            message.reply?.let {
+                Spacer(Modifier.height(6.dp))
+                ReplyBlock(it.authorName, it.excerpt)
+            }
+
             Spacer(Modifier.height(6.dp))
-            // Same content renderer as posts — text + entities, media, polls, stickers, etc.
-            // onMediaClick lets photos/videos/animations open in the same full-screen viewer
-            // we use on the timeline.
             PostBody(
-                content = comment.content,
+                content = message.content,
                 onMediaClick = { _, idx ->
-                    comment.content.toAlbumItems()?.let { items -> onMediaClick(items, idx) }
+                    message.content.toAlbumItems()?.let { items -> onMediaClick(items, idx) }
                 },
+                expanded = true,
             )
 
-            if (comment.reactions.items.isNotEmpty()) {
+            if (message.reactions.items.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier
@@ -265,7 +287,7 @@ private fun CommentBubble(
                         .horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    comment.reactions.items.forEachIndexed { idx, item ->
+                    message.reactions.items.forEachIndexed { idx, item ->
                         if (idx > 0) Spacer(Modifier.width(6.dp))
                         ReactionChip(item)
                     }
@@ -276,14 +298,38 @@ private fun CommentBubble(
 }
 
 @Composable
-private fun CommentAvatar(comment: Comment) {
-    TdAvatar(
-        name = comment.authorName,
-        thumb = comment.avatarThumb,
-        fileId = comment.avatarFileId,
-        size = 36.dp,
-        textStyle = MaterialTheme.typography.titleSmall,
-    )
+private fun ReplyBlock(authorName: String, excerpt: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .fillMaxHeight()
+                .background(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    shape = RoundedCornerShape(1.dp),
+                ),
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = authorName,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = excerpt,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 private fun formatRelative(epochMs: Long): String {

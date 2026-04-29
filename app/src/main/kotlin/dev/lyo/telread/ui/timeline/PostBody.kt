@@ -19,7 +19,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.telread.data.AlbumItem
+import dev.lyo.telread.data.ExpiredKind
 import dev.lyo.telread.data.PostContent
+import dev.lyo.telread.data.ServiceEvent
 import androidx.compose.foundation.clickable
 import dev.lyo.telread.data.WebPreview
 import dev.lyo.telread.ui.media.TdMediaImage
@@ -55,8 +57,133 @@ fun PostBody(
             is PostContent.Location -> LocationBlock(content)
             is PostContent.Contact -> ContactBlock(content)
             is PostContent.Dice -> DiceBlock(content)
+            is PostContent.AnimatedEmoji -> AnimatedEmojiBlock(content)
+            is PostContent.Checklist -> ChecklistBlock(content, captionLimit)
+            is PostContent.ExpiredMedia -> ExpiredMediaBlock(content)
+            is PostContent.Service -> ServiceBlock(content)
             is PostContent.Unsupported -> UnsupportedBlock(content)
         }
+    }
+}
+
+@Composable
+private fun AnimatedEmojiBlock(content: PostContent.AnimatedEmoji) {
+    // Telegram renders these centered and oversized when the message contains a single
+    // emoji. We mirror that — the sticker variant (custom-emoji set / lottie) needs full
+    // sticker rendering we don't have yet, so for now the unicode emoji at display-large
+    // size is the consistent fallback.
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = content.emoji,
+            style = MaterialTheme.typography.displayLarge,
+        )
+    }
+}
+
+@Composable
+private fun ChecklistBlock(content: PostContent.Checklist, maxLines: Int) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(16.dp),
+    ) {
+        if (content.title.text.isNotBlank()) {
+            Text(
+                text = dev.lyo.telread.ui.text.rememberAnnotatedString(content.title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = maxLines,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(10.dp))
+        }
+        content.tasks.forEach { task ->
+            Row(
+                modifier = Modifier.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Icon(
+                    imageVector = if (task.isDone) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
+                    contentDescription = null,
+                    tint = if (task.isDone) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = dev.lyo.telread.ui.text.rememberAnnotatedString(task.text),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (task.isDone) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExpiredMediaBlock(content: PostContent.ExpiredMedia) {
+    val (icon, label) = when (content.kind) {
+        ExpiredKind.Photo -> Icons.Rounded.HideImage to "Тимчасове фото зникло"
+        ExpiredKind.Video -> Icons.Rounded.VideocamOff to "Тимчасове відео зникло"
+        ExpiredKind.VideoNote -> Icons.Rounded.VideocamOff to "Кружок зник"
+        ExpiredKind.VoiceNote -> Icons.Rounded.MicOff to "Голосове зникло"
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ServiceBlock(content: PostContent.Service) {
+    val (icon, label) = when (val e = content.event) {
+        is ServiceEvent.PinnedMessage -> Icons.Rounded.PushPin to "Закріпили повідомлення"
+        is ServiceEvent.ChannelBoosted -> Icons.Rounded.RocketLaunch to
+            if (e.boostCount > 1) "Канал отримав ${e.boostCount} бустів" else "Канал отримав буст"
+        ServiceEvent.GiveawayStarted -> Icons.Rounded.CardGiftcard to "Розпочато розіграш"
+        ServiceEvent.ScreenshotTaken -> Icons.Rounded.PhotoCamera to "Скріншот"
+        is ServiceEvent.VideoChatStarted -> Icons.Rounded.VideoCall to "Розпочато груповий дзвінок"
+        ServiceEvent.VideoChatEnded -> Icons.Rounded.CallEnd to "Груповий дзвінок завершено"
+        is ServiceEvent.GroupCall -> Icons.Rounded.Call to
+            if (e.isVideo) "Відеодзвінок" else "Голосовий дзвінок"
+        ServiceEvent.Other -> Icons.Rounded.Info to "Системне повідомлення"
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

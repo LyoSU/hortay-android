@@ -111,7 +111,7 @@ private fun Avatar(post: TimelinePost, onClick: () -> Unit) {
             .clickable(onClick = onClick),
     ) {
         TdAvatar(
-            name = post.channelTitle,
+            name = post.senderName,
             thumb = post.avatarThumb,
             fileId = post.avatarFileId,
             size = 40.dp,
@@ -127,7 +127,7 @@ private fun avatarBg(post: TimelinePost) = run {
         MaterialTheme.colorScheme.secondaryContainer,
         MaterialTheme.colorScheme.tertiaryContainer,
     )
-    palette[(post.channelTitle.hashCode().rem(palette.size) + palette.size) % palette.size]
+    palette[(post.senderName.hashCode().rem(palette.size) + palette.size) % palette.size]
 }
 
 /**
@@ -139,10 +139,10 @@ private fun avatarBg(post: TimelinePost) = run {
 private fun HeaderRow(post: TimelinePost, onChannelClick: () -> Unit) {
     val titleColor = MaterialTheme.colorScheme.onSurface
     val subColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val annotated = remember(post.channelTitle, post.authorSignature, titleColor, subColor) {
+    val annotated = remember(post.senderName, post.authorSignature, titleColor, subColor) {
         buildAnnotatedString {
             withStyle(SpanStyle(color = titleColor, fontWeight = FontWeight.SemiBold)) {
-                append(post.channelTitle)
+                append(post.senderName)
             }
             post.authorSignature?.let {
                 withStyle(SpanStyle(color = subColor, fontWeight = FontWeight.Normal)) {

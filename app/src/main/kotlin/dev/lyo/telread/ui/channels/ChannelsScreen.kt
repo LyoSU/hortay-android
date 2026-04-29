@@ -88,7 +88,7 @@ private fun aggregate(posts: List<TimelinePost>): List<ChannelSummary> = posts
         val anchor = list.maxByOrNull { it.date }!!
         ChannelSummary(
             chatId = chatId,
-            title = anchor.channelTitle,
+            title = anchor.senderName,
             avatarThumb = anchor.avatarThumb,
             avatarFileId = anchor.avatarFileId,
             lastPostExcerpt = anchor.content.captionPlain.take(120),

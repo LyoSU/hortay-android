@@ -13,6 +13,12 @@ package dev.lyo.telread.data
 object PostFilterStrategy {
 
     fun apply(raw: List<TimelinePost>): List<TimelinePost> = raw
+        // Drop only the "we can't render this at all" bucket here. Service / expired-media
+        // content stays in the data layer because callers want it conditionally — the
+        // global timeline hides them as noise, but a single-channel filter view shows
+        // them ("📌 pinned a message", "🚀 boosted") because in that context they're the
+        // record of what actually happened in the channel. UI applies the contextual
+        // filter (see TimelineScreen.visiblePosts).
         .filterNot { it.content is PostContent.Unsupported }
         .let(::mergeAlbums)
         .sortedByDescending { it.date }

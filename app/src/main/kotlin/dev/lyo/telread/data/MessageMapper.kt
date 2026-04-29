@@ -4,9 +4,14 @@ import org.drinkless.tdlib.TdApi
 import java.util.Collections
 
 /**
- * Async layer over [MessageContentMapper]: resolves real channel handles, forward author
- * names, reply preview authors. Holds session-scoped caches so each user / supergroup is
- * fetched at most once per [PostsRepository] instance.
+ * Async layer over [MessageContentMapper] that resolves real channel handles, forward
+ * author names, reply preview authors, and discussion-comment sender info. Holds
+ * session-scoped caches so each user / supergroup is fetched at most once per repository
+ * instance.
+ *
+ * Single mapper per session: PostsRepository (channel feed) and CommentsRepository
+ * (discussion threads) share an instance — that means the same author resolved once for
+ * a feed post is reused when their reply shows up in comments, and vice versa.
  *
  * Bounded LRU caches: a long session can otherwise accumulate thousands of resolved
  * users/chats and never evict — particularly when the user browses many channels with
@@ -15,7 +20,7 @@ import java.util.Collections
  * are touched from several coroutines (refreshLocked, handle* update collectors,
  * Update* invalidations).
  */
-internal class MessageMapper(private val td: TdClient) {
+class MessageMapper(private val td: TdClient) {
 
     private val userCache = boundedLru<Long, ResolvedSender>(MAX_RESOLVER_CACHE)
     private val chatCache = boundedLru<Long, ResolvedSender>(MAX_RESOLVER_CACHE)
@@ -26,12 +31,16 @@ internal class MessageMapper(private val td: TdClient) {
     // refresh. Caching the resolved author name skips a td.send(GetMessage) per probe.
     private val replyAuthorCache = boundedLru<Pair<Long, Long>, String>(MAX_RESOLVER_CACHE)
 
-    suspend fun toTimelinePost(message: TdApi.Message, chat: TdApi.Chat): TimelinePost = TimelinePost(
+    /**
+     * Map a channel feed post: sender info comes from the channel chat itself (its title
+     * and supergroup `@handle`). Used by [PostsRepository] for the top-level feed.
+     */
+    suspend fun toChannelPost(message: TdApi.Message, chat: TdApi.Chat): TimelinePost = TimelinePost(
         id = message.id,
         chatId = message.chatId,
         mediaAlbumId = message.mediaAlbumId,
-        channelTitle = chat.title.orEmpty(),
-        channelHandle = resolveChannelHandle(chat),
+        senderName = chat.title.orEmpty(),
+        senderHandle = resolveChannelHandle(chat),
         avatarThumb = chat.photo?.minithumbnail?.data,
         avatarFileId = chat.photo?.small?.id,
         content = MessageContentMapper.map(message.content),
@@ -46,12 +55,47 @@ internal class MessageMapper(private val td: TdClient) {
         // Filled in by PostFilterStrategy.mergeAlbumMembers — per-message mapping has
         // no idea which siblings exist yet.
         albumMessageIds = emptyList(),
+        parentId = null,
     )
+
+    /**
+     * Map a discussion-thread comment: sender info comes from [TdApi.Message.senderId]
+     * (a user, or a chat posting on behalf of a channel). Channel-specific fields
+     * (views, commentCount, authorSignature) are zero/null because they don't apply to
+     * conversation messages.
+     *
+     * Reply previews still flow through [mapReply] — comment replies that quote another
+     * comment in the same thread render with author + excerpt, identical to feed posts.
+     */
+    suspend fun toThreadComment(message: TdApi.Message): TimelinePost {
+        val sender = resolveSender(message.senderId)
+        val parent = (message.replyTo as? TdApi.MessageReplyToMessage)?.messageId
+        return TimelinePost(
+            id = message.id,
+            chatId = message.chatId,
+            mediaAlbumId = message.mediaAlbumId,
+            senderName = sender.name,
+            senderHandle = sender.handle,
+            avatarThumb = sender.avatarThumb,
+            avatarFileId = sender.avatarFileId,
+            content = MessageContentMapper.map(message.content),
+            views = 0,
+            date = message.date.toLong() * 1000L,
+            editDate = message.editDate.toLong() * 1000L,
+            forwardOrigin = message.forwardInfo?.origin?.let { mapForwardOrigin(it) },
+            authorSignature = null,
+            reply = mapReply(message.replyTo, message.chatId),
+            reactions = MessageContentMapper.mapReactions(message.interactionInfo?.reactions),
+            commentCount = null,
+            albumMessageIds = emptyList(),
+            parentId = parent,
+        )
+    }
 
     suspend fun resolveSender(senderId: TdApi.MessageSender): ResolvedSender = when (senderId) {
         is TdApi.MessageSenderUser -> resolveCachedUser(senderId.userId)
         is TdApi.MessageSenderChat -> resolveCachedChat(senderId.chatId)
-        else -> ResolvedSender("—", null, null)
+        else -> ResolvedSender("—", null, null, null)
     }
 
     /** Drop a stale entry — call when TDLib emits UpdateUser / UpdateSupergroup. */
@@ -89,15 +133,17 @@ internal class MessageMapper(private val td: TdClient) {
 
     private suspend fun fetchUser(userId: Long): ResolvedSender {
         val u = runCatching { td.send(TdApi.GetUser(userId)) }.getOrNull()
-            ?: return ResolvedSender("Користувач", null, null)
+            ?: return ResolvedSender("Користувач", null, null, null)
+        val username = u.usernames?.activeUsernames?.firstOrNull()
         val name = listOfNotNull(
             u.firstName?.takeUnless { it.isBlank() },
             u.lastName?.takeUnless { it.isBlank() },
         ).joinToString(" ").ifBlank {
-            u.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" } ?: "Користувач"
+            username?.let { "@$it" } ?: "Користувач"
         }
         return ResolvedSender(
             name = name,
+            handle = username?.let { "@$it" },
             avatarThumb = u.profilePhoto?.minithumbnail?.data,
             avatarFileId = u.profilePhoto?.small?.id,
         )
@@ -105,9 +151,10 @@ internal class MessageMapper(private val td: TdClient) {
 
     private suspend fun fetchChat(chatId: Long): ResolvedSender {
         val c = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
-            ?: return ResolvedSender("Канал", null, null)
+            ?: return ResolvedSender("Канал", null, null, null)
         return ResolvedSender(
             name = c.title.orEmpty().ifBlank { "Канал" },
+            handle = resolveChannelHandle(c),
             avatarThumb = c.photo?.minithumbnail?.data,
             avatarFileId = c.photo?.small?.id,
         )
@@ -155,6 +202,7 @@ internal class MessageMapper(private val td: TdClient) {
 
     data class ResolvedSender(
         val name: String,
+        val handle: String?,
         val avatarThumb: ByteArray?,
         val avatarFileId: Int?,
     )

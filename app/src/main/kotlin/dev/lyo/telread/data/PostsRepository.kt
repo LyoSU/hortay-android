@@ -37,12 +37,12 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class PostsRepository(
     private val td: TdClient,
+    private val mapper: MessageMapper,
     private val scope: CoroutineScope,
 ) {
 
     private val refreshMutex = Mutex()
     private val chatCache = ConcurrentHashMap<Long, TdApi.Chat>()
-    private val mapper = MessageMapper(td)
 
     // Album coalescing: TDLib emits one UpdateNewMessage per album member with no
     // "album complete" signal (issue tdlib/td#2523). We buffer members per (chatId,
@@ -81,7 +81,7 @@ class PostsRepository(
             .onEach { update -> handleContentChanged(update) }
             .launchIn(scope)
 
-        // Channel renamed → all visible posts of that chat update their channelTitle.
+        // Channel renamed → all visible posts of that chat update their senderName.
         td.updates.filterIsInstance<TdApi.UpdateChatTitle>()
             .onEach { update -> handleChatTitle(update) }
             .launchIn(scope)
@@ -143,7 +143,7 @@ class PostsRepository(
 
         val history = td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limit, false))
         val raw = coalesceAlbumFragments(chatId, history.messages.orEmpty().toList())
-        val mapped = raw.map { mapper.toTimelinePost(it, chat) }
+        val mapped = raw.map { mapper.toChannelPost(it, chat) }
 
         _posts.update { current ->
             val seen = current.mapTo(mutableSetOf()) { it.chatId to it.id }
@@ -214,7 +214,7 @@ class PostsRepository(
         val full = coalesceAlbumFragments(chatId, messages)
 
         val newPosts = full
-            .map { mapper.toTimelinePost(it, chat) }
+            .map { mapper.toChannelPost(it, chat) }
             .filter { it.content !is PostContent.Unsupported }
         if (newPosts.isEmpty()) return
 
@@ -335,7 +335,7 @@ class PostsRepository(
         chatCache[update.chatId]?.let { it.title = update.title }
         _posts.update { current ->
             current.map { post ->
-                if (post.chatId == update.chatId) post.copy(channelTitle = update.title.orEmpty())
+                if (post.chatId == update.chatId) post.copy(senderName = update.title.orEmpty())
                 else post
             }
         }
@@ -383,7 +383,7 @@ class PostsRepository(
                         val raw = history.messages.orEmpty().toList()
                         // Plug album fragments left by the window boundary (e.g. a 6-photo
                         // album whose first 5 members fell outside the latest-N slice).
-                        coalesceAlbumFragments(chatId, raw).map { mapper.toTimelinePost(it, chat) }
+                        coalesceAlbumFragments(chatId, raw).map { mapper.toChannelPost(it, chat) }
                     }
                 }
             }.awaitAll().flatten()

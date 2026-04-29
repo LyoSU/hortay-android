@@ -20,7 +20,7 @@ object PostActions {
     fun telegramUri(post: TimelinePost): Uri {
         // Channel handles are stored as "@username" once resolved; private channels expose
         // none. TDLib message ids are encoded — server-side post id is the upper bits.
-        val username = post.channelHandle?.removePrefix("@")
+        val username = post.senderHandle?.removePrefix("@")
         val serverPostId = post.id ushr 20
         return when {
             !username.isNullOrBlank() -> "tg://resolve?domain=$username&post=$serverPostId".toUri()
@@ -57,7 +57,7 @@ object PostActions {
                 if (post.content.captionPlain.length > 200) append("…")
                 append("\n\n")
             }
-            append("— ${post.channelTitle}\n$url")
+            append("— ${post.senderName}\n$url")
         }
     }
 }

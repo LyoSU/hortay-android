@@ -95,23 +95,101 @@ internal object MessageContentMapper {
             emoji = content.emoji.orEmpty(),
             value = content.value,
         )
+        is TdApi.MessageAnimatedEmoji -> PostContent.AnimatedEmoji(
+            emoji = content.emoji.orEmpty(),
+            // sticker is null while TDLib still resolves the custom-emoji sprite — the UI
+            // falls back to rendering the plain unicode emoji at large size in that case.
+            sticker = content.animatedEmoji?.sticker?.toMedia(),
+            format = mapStickerFormat(content.animatedEmoji?.sticker?.format),
+        )
+        is TdApi.MessageChecklist -> {
+            val list = content.list
+            PostContent.Checklist(
+                title = mapFormattedText(list?.title),
+                tasks = list?.tasks.orEmpty().map { task ->
+                    ChecklistItem(
+                        text = mapFormattedText(task.text),
+                        isDone = task.completionDate > 0,
+                    )
+                },
+            )
+        }
+        is TdApi.MessageExpiredPhoto -> PostContent.ExpiredMedia(ExpiredKind.Photo)
+        is TdApi.MessageExpiredVideo -> PostContent.ExpiredMedia(ExpiredKind.Video)
+        is TdApi.MessageExpiredVideoNote -> PostContent.ExpiredMedia(ExpiredKind.VideoNote)
+        is TdApi.MessageExpiredVoiceNote -> PostContent.ExpiredMedia(ExpiredKind.VoiceNote)
+
+        // Service / system events — surfaced as a Service payload so callers can choose to
+        // skip them (channel feed) or render them inline (discussion threads).
+        is TdApi.MessagePinMessage -> PostContent.Service(ServiceEvent.PinnedMessage(content.messageId))
+        is TdApi.MessageChatBoost -> PostContent.Service(ServiceEvent.ChannelBoosted(content.boostCount))
+        is TdApi.MessageGiveawayCreated -> PostContent.Service(ServiceEvent.GiveawayStarted)
+        is TdApi.MessageScreenshotTaken -> PostContent.Service(ServiceEvent.ScreenshotTaken)
+        is TdApi.MessageVideoChatStarted -> PostContent.Service(ServiceEvent.VideoChatStarted(content.groupCallId))
+        is TdApi.MessageVideoChatEnded -> PostContent.Service(ServiceEvent.VideoChatEnded)
+        is TdApi.MessageGroupCall -> PostContent.Service(ServiceEvent.GroupCall(content.isVideo))
+
+        // Things that are technically informational but we still render as plain text rather
+        // than try to UI-design every single Telegram event type. Wrapped in Service.Other
+        // so the channel feed filters them out by default.
+        is TdApi.MessageContactRegistered,
+        is TdApi.MessageChatJoinByLink,
+        is TdApi.MessageChatJoinByRequest,
+        is TdApi.MessageChatAddMembers,
+        is TdApi.MessageChatDeleteMember,
+        is TdApi.MessageChatChangeTitle,
+        is TdApi.MessageChatChangePhoto,
+        is TdApi.MessageChatDeletePhoto,
+        is TdApi.MessageVideoChatScheduled,
+        is TdApi.MessageBotWriteAccessAllowed,
+        is TdApi.MessageCustomServiceAction,
+        is TdApi.MessageWebAppDataReceived,
+        is TdApi.MessageWebAppDataSent,
+        is TdApi.MessageInviteVideoChatParticipants,
+        is TdApi.MessageProximityAlertTriggered,
+        is TdApi.MessageForumTopicCreated,
+        is TdApi.MessageForumTopicEdited,
+        is TdApi.MessageForumTopicIsClosedToggled,
+        is TdApi.MessageForumTopicIsHiddenToggled,
+        is TdApi.MessageBasicGroupChatCreate,
+        is TdApi.MessageSupergroupChatCreate,
+        is TdApi.MessageChatUpgradeFrom,
+        is TdApi.MessageChatUpgradeTo,
+        is TdApi.MessageChatSetTheme,
+        is TdApi.MessageChatSetBackground,
+        is TdApi.MessageChatSetMessageAutoDeleteTime -> PostContent.Service(ServiceEvent.Other)
+
         is TdApi.MessageInvoice -> PostContent.Unsupported("Invoice: ${content.productInfo?.title.orEmpty()}")
         is TdApi.MessageGiveaway -> PostContent.Unsupported("🎁 Giveaway")
         is TdApi.MessageGiveawayCompleted -> PostContent.Unsupported("🎁 Giveaway завершено")
         is TdApi.MessageGiveawayWinners -> PostContent.Unsupported("🎁 Giveaway · переможці")
         is TdApi.MessageGame -> PostContent.Unsupported("🎮 Game: ${content.game?.title.orEmpty()}")
         is TdApi.MessageStory -> PostContent.Unsupported("📰 Story")
-        is TdApi.MessagePaidMedia -> {
-            val first = content.media?.firstOrNull()
-            when (first) {
-                is TdApi.PaidMediaPhoto -> PostContent.PhotoAlbum(
-                    items = content.media.orEmpty().mapNotNull { (it as? TdApi.PaidMediaPhoto)?.photo?.toMedia()?.let(AlbumItem::Photo) },
-                    caption = mapFormattedText(content.caption),
+        is TdApi.MessagePaidMedia -> mapPaidMedia(content)
+        else -> PostContent.Unsupported(content::class.java.simpleName)
+    }
+
+    /**
+     * Paid posts can mix photos and videos under the same star-cost lock. We unwrap into the
+     * generic [PostContent.PhotoAlbum] so the existing album renderer handles both — videos
+     * surface with their thumbnail and a play badge, identical to a free album. The "⭐"
+     * intent is captured by the price, but we don't render a star bar yet (would need an
+     * unlock interaction we don't support); the post still reads as media.
+     */
+    private fun mapPaidMedia(content: TdApi.MessagePaidMedia): PostContent {
+        val items = content.media.orEmpty().mapNotNull { piece ->
+            when (piece) {
+                is TdApi.PaidMediaPhoto -> AlbumItem.Photo(piece.photo.toMedia())
+                is TdApi.PaidMediaVideo -> AlbumItem.Video(
+                    media = piece.video.toThumbMedia(),
+                    durationSec = piece.video.duration,
+                    playbackFileId = piece.video.video.id,
                 )
-                else -> PostContent.Unsupported("⭐ Платний контент")
+                else -> null
             }
         }
-        else -> PostContent.Unsupported(content::class.java.simpleName)
+        return if (items.isEmpty()) PostContent.Unsupported("⭐ Платний контент")
+        else PostContent.PhotoAlbum(items = items, caption = mapFormattedText(content.caption))
     }
 
     fun mapFormattedText(t: TdApi.FormattedText?): FormattedText {

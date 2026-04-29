@@ -111,6 +111,14 @@ fun TimelineScreen(
             posts.forEach { p ->
                 if (showOnlyBookmarked && p.bookmarkKey() !in bookmarkedKeys) return@forEach
                 if (channelFilter != null && p.chatId != channelFilter) return@forEach
+                // Mixed global feed: hide service / expired-media noise (pin / boost /
+                // giveaway-created / ttl-expired). They're meaningful only in the context
+                // of a single channel, where the per-channel filter view shows them as
+                // the actual record of channel events.
+                if (channelFilter == null) {
+                    if (p.content is PostContent.Service) return@forEach
+                    if (p.content is PostContent.ExpiredMedia) return@forEach
+                }
                 add(p)
             }
         }
@@ -118,7 +126,7 @@ fun TimelineScreen(
     }
 
     val activeChannelTitle = remember(channelFilter, posts) {
-        channelFilter?.let { id -> posts.firstOrNull { it.chatId == id }?.channelTitle }
+        channelFilter?.let { id -> posts.firstOrNull { it.chatId == id }?.senderName }
     }
 
     // Warm the discussion-thread cache for posts that linger in the viewport. A cold

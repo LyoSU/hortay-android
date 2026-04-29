@@ -4,6 +4,7 @@ import android.content.Context
 import dev.lyo.telread.data.BookmarkStore
 import dev.lyo.telread.data.CommentsRepository
 import dev.lyo.telread.data.MediaCache
+import dev.lyo.telread.data.MessageMapper
 import dev.lyo.telread.data.PostsRepository
 import dev.lyo.telread.data.SettingsStore
 import dev.lyo.telread.data.TdClient
@@ -26,9 +27,14 @@ class AppGraph(context: Context) {
 
     val mediaCache: MediaCache = MediaCache(tdClient, appScope)
 
-    val postsRepository: PostsRepository = PostsRepository(tdClient, appScope)
+    // Shared between PostsRepository (channel feed) and CommentsRepository (discussion
+    // threads) so an author resolved in one context is reused in the other — same user
+    // appearing as a feed post AND as a thread reply hits the cache twice.
+    private val messageMapper: MessageMapper = MessageMapper(tdClient)
 
-    val commentsRepository: CommentsRepository = CommentsRepository(tdClient)
+    val postsRepository: PostsRepository = PostsRepository(tdClient, messageMapper, appScope)
+
+    val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper)
 
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 

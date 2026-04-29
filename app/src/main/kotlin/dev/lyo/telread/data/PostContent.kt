@@ -103,10 +103,64 @@ sealed interface PostContent {
         val value: Int,
     ) : PostContent
 
-    /** Anything we deliberately don't render (service messages, sponsored, restricted). */
+    /**
+     * Single oversized emoji — Telegram renders these specially when a message contains
+     * exactly one emoji (with optional animated/custom sticker variant). Common in comments.
+     * [sticker] is the lottie/webm/webp variant when the user has a Premium animated set;
+     * fallback is just [emoji] rendered at display-large size.
+     */
+    data class AnimatedEmoji(
+        val emoji: String,
+        val sticker: TdMedia?,
+        val format: StickerFormat,
+    ) : PostContent
+
+    /** Telegram's 2025 Tasks/checklist content — title plus a list of done/undone tasks. */
+    data class Checklist(
+        val title: FormattedText,
+        val tasks: List<ChecklistItem>,
+    ) : PostContent {
+        override val captionPlain: String get() = title.text
+    }
+
+    /**
+     * Self-destruct (TTL) media that has already expired on the server. Rendered as a
+     * disabled placeholder with the original media kind labelled — there is no file to
+     * download.
+     */
+    data class ExpiredMedia(val kind: ExpiredKind) : PostContent
+
+    /**
+     * Service / system event we want to surface in some contexts (e.g. discussion threads
+     * rendering "📌 pinned a message" or "🚀 boosted the channel"). Still filtered out of
+     * the channel feed by [PostFilterStrategy] — service noise doesn't belong there.
+     */
+    data class Service(val event: ServiceEvent) : PostContent
+
+    /** Anything we deliberately don't render (sponsored, restricted, payment receipts). */
     data class Unsupported(
         val description: String,
     ) : PostContent
+}
+
+/** Single line in a Telegram checklist. */
+data class ChecklistItem(
+    val text: FormattedText,
+    val isDone: Boolean,
+)
+
+enum class ExpiredKind { Photo, Video, VideoNote, VoiceNote }
+
+/** Service / system event payloads — symbolic so the UI picks both icon and label. */
+sealed interface ServiceEvent {
+    data class PinnedMessage(val pinnedMessageId: Long) : ServiceEvent
+    data class ChannelBoosted(val boostCount: Int) : ServiceEvent
+    data object GiveawayStarted : ServiceEvent
+    data object ScreenshotTaken : ServiceEvent
+    data class VideoChatStarted(val groupCallId: Int) : ServiceEvent
+    data object VideoChatEnded : ServiceEvent
+    data class GroupCall(val isVideo: Boolean) : ServiceEvent
+    data object Other : ServiceEvent
 }
 
 /** A single item inside a media album — either a photo, video or animation. */
