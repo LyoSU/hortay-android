@@ -8,6 +8,7 @@ import dev.lyo.telread.data.MessageMapper
 import dev.lyo.telread.data.PostsRepository
 import dev.lyo.telread.data.SettingsStore
 import dev.lyo.telread.data.TdClient
+import dev.lyo.telread.data.TdLifecycleBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,5 +40,11 @@ class AppGraph(context: Context) {
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 
     val settingsStore: SettingsStore = SettingsStore(context)
+
+    // Bridge ProcessLifecycleOwner + ConnectivityManager into TDLib so the daemon knows
+    // when we're foreground/online and what network it should plan downloads for. Held
+    // by the graph to keep the listener alive for the process lifetime.
+    private val lifecycleBridge: TdLifecycleBridge =
+        TdLifecycleBridge(tdClient, context, appScope).also { it.bind() }
 }
 
