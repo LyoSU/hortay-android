@@ -1,36 +1,43 @@
 package dev.lyo.hortay.ui.theme
 
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.googlefonts.Font
+import androidx.compose.ui.text.googlefonts.GoogleFont
 import dev.lyo.hortay.R
 
 /**
- * Three bundled font families per the design spec:
- *   - **Roboto Flex** (variable) — display, headlines, all UI body, post text. The single
- *     variable font carries Normal / Medium / SemiBold / Bold via the `wght` axis, so we
- *     declare each weight pointing to the same TTF and Compose picks the slice it needs.
- *   - **Roboto Serif** (variable) — reading mode body only (`ReadingTypography`).
- *   - **Roboto Mono** (variable) — code blocks, version strings, technical metadata.
+ * Two display + body families pulled at runtime from Google Fonts via Play Services.
  *
- * Bundled in `res/font/` instead of GoogleFonts provider — first frame renders correctly
- * with no Play Services dance, no first-launch tofu. Adds ~5.5 MB combined; an icon-system
- * scope of cost we accept for guaranteed correctness.
+ * Inter for body / labels — neutral, sturdy at small sizes, the pragmatic UI workhorse.
+ * Plus Jakarta Sans for display / headlines — distinct geometric character so the brand
+ * surfaces (top app bar, large titles) read differently from the dense reading content.
+ *
+ * Bundled fonts were tried (Roboto Flex variable) but rendered too light against the
+ * periwinkle palette — the variable font's default weight axis sits below 400 visually,
+ * which made body copy hard to scan. Reverted to these two well-tested static families.
  */
-val RobotoFlex = FontFamily(
-    Font(R.font.roboto_flex, FontWeight.Normal),
-    Font(R.font.roboto_flex, FontWeight.Medium),
-    Font(R.font.roboto_flex, FontWeight.SemiBold),
-    Font(R.font.roboto_flex, FontWeight.Bold),
+private val Provider = GoogleFont.Provider(
+    providerAuthority = "com.google.android.gms.fonts",
+    providerPackage = "com.google.android.gms",
+    certificates = R.array.com_google_android_gms_fonts_certs,
 )
 
-val RobotoSerif = FontFamily(
-    Font(R.font.roboto_serif, FontWeight.Normal),
-    Font(R.font.roboto_serif, FontWeight.Medium),
-    Font(R.font.roboto_serif, FontWeight.Bold),
+private val Inter = GoogleFont("Inter")
+private val PlusJakartaSans = GoogleFont("Plus Jakarta Sans")
+
+/** Brand display family — geometric, distinctive, used for app name and large headlines. */
+val DisplayFontFamily = FontFamily(
+    Font(googleFont = PlusJakartaSans, fontProvider = Provider, weight = FontWeight.SemiBold, style = FontStyle.Normal),
+    Font(googleFont = PlusJakartaSans, fontProvider = Provider, weight = FontWeight.Bold, style = FontStyle.Normal),
+    Font(googleFont = PlusJakartaSans, fontProvider = Provider, weight = FontWeight.ExtraBold, style = FontStyle.Normal),
 )
 
-val RobotoMono = FontFamily(
-    Font(R.font.roboto_mono, FontWeight.Normal),
-    Font(R.font.roboto_mono, FontWeight.Medium),
+/** Body family — neutral, optimised for long-form reading. */
+val BodyFontFamily = FontFamily(
+    Font(googleFont = Inter, fontProvider = Provider, weight = FontWeight.Normal),
+    Font(googleFont = Inter, fontProvider = Provider, weight = FontWeight.Medium),
+    Font(googleFont = Inter, fontProvider = Provider, weight = FontWeight.SemiBold),
+    Font(googleFont = Inter, fontProvider = Provider, weight = FontWeight.Bold),
 )

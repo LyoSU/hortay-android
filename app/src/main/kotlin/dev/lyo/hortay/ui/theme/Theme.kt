@@ -88,10 +88,11 @@ private val DarkScheme: ColorScheme = darkColorScheme(
 /**
  * Hortay's Material 3 theme entry point.
  *
- * Defaults to the **brand periwinkle palette** — Material You dynamic color is opt-in
- * (per design spec: brand identity is intentional, not derived from the user's
- * wallpaper). The user can flip [dynamicColor] later via Settings if we ship a "Match
- * system colours" toggle.
+ * Default behaviour: Material You dynamic color when the device supports it
+ * (Android 12+). The wallpaper-derived palette adapts to whatever the user's home-screen
+ * looks like, which is the polished default Android users now expect from Material 3
+ * apps; the periwinkle brand palette stays the fallback for pre-12 devices and any
+ * future Settings opt-out.
  *
  * Adjusts the system status-bar appearance (light vs dark icons) to keep contrast right
  * regardless of which theme renders below.
@@ -99,8 +100,7 @@ private val DarkScheme: ColorScheme = darkColorScheme(
 @Composable
 fun HortayTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Brand-first by spec — flip to true when a user explicitly opts into Material You.
-    dynamicColor: Boolean = false,
+    dynamicColor: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
     content: @Composable () -> Unit,
 ) {
     val scheme = when {
