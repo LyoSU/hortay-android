@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Telread</string>
+    <string name="app_name">Hortay</string>
     <string name="auth_phone_label">Номер телефону</string>
     <string name="auth_code_label">Код підтвердження</string>
     <string name="auth_password_label">Cloud-пароль (2FA)</string>
