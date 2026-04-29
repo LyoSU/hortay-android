@@ -213,12 +213,9 @@ fun TimelineScreen(
                 } else {
                     LazyColumn(
                         state = listState,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(
-                            start = 16.dp,
-                            end = 16.dp,
-                            top = 12.dp,
-                            bottom = contentPadding.calculateBottomPadding() + 12.dp,
+                            top = 4.dp,
+                            bottom = contentPadding.calculateBottomPadding(),
                         ),
                         modifier = Modifier.fillMaxSize(),
                     ) {

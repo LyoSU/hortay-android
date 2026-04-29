@@ -62,14 +62,36 @@ class MediaCache(
             // Always seed/update the slot — even if no observer existed yet — so when a
             // Composable later mounts and calls ensure, GetFile and ongoing UpdateFile both
             // converge on the same slot.
-            .onEach { update ->
-                val newState = update.file.toMediaState()
-                slot(update.file.id).value = newState
-                if (newState is MediaState.Ready || newState is MediaState.Failed) {
-                    activePriority.remove(update.file.id)
-                }
-            }
+            .onEach { update -> applyFileEvent(update.file) }
             .launchIn(scope)
+    }
+
+    /**
+     * Reducer for a single TDLib [TdApi.File] event. Two real-world quirks force the
+     * extra logic over a naive `slot.value = newState`:
+     *
+     *   1. **Out-of-order events.** When a download finishes, TDLib sometimes emits the
+     *      completion `UpdateFile` first and a stale "still downloading" one a moment
+     *      later (the window where it renames `temp/<id>` → `photos/<…>.jpg`). A naive
+     *      reducer would flash the photo on screen and yank it back into a spinner.
+     *      Once we see Ready, we refuse to slide back to Downloading/Idle.
+     *
+     *   2. **Permanent failures with no Failed event.** If `canBeDownloaded=false` and
+     *      the file isn't downloading or completed, TDLib won't fire any further update
+     *      — it just stops. Without surfacing Failed here the UI sat on a 0% spinner
+     *      forever for expired stickers / restricted media.
+     */
+    private fun applyFileEvent(file: TdApi.File) {
+        val incoming = file.toMediaState()
+        val s = slot(file.id)
+        val merged = when {
+            s.value is MediaState.Ready && incoming !is MediaState.Ready -> s.value
+            else -> incoming
+        }
+        s.value = merged
+        if (merged is MediaState.Ready || merged is MediaState.Failed) {
+            activePriority.remove(file.id)
+        }
     }
 
     fun observe(fileId: Int): StateFlow<MediaState> = slot(fileId).asStateFlow()
@@ -144,6 +166,12 @@ private fun TdApi.File.toMediaState(): MediaState {
     // Treat the second one as the canonical Ready; the first one stays Downloading at 100%.
     if (local.isDownloadingCompleted && localPath.isNotEmpty()) {
         return MediaState.Ready(localPath)
+    }
+    // canBeDownloaded=false + nothing downloaded yet means the file is gone server-side
+    // (expired sticker, restricted media, etc). Without this branch the UI sat on a 0%
+    // spinner forever — TDLib never sends a "failed" UpdateFile, just stops emitting.
+    if (!local.canBeDownloaded && !local.isDownloadingActive && !local.isDownloadingCompleted) {
+        return MediaState.Failed("file not available")
     }
     val totalBytes = if (size > 0) size.toFloat() else expectedSize.toFloat().coerceAtLeast(1f)
     val progress = (local.downloadedSize.toFloat() / totalBytes).coerceIn(0f, 1f)

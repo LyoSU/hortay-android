@@ -148,8 +148,11 @@ class TdClient private constructor(
     class TdException(val code: Int, message: String) : RuntimeException("[$code] $message")
 
     companion object {
+        // TDLib's "error" level (1) is noisy — its WebPagesManager spams blockquote /
+        // link-preview parses through the same channel, which clutters logcat. Keep
+        // fatal-only (0) for builds; bump up locally during deep debugging.
         // 0 = fatal, 1 = error, 2 = warning, 5 = verbose.
-        private const val LOG_VERBOSITY = 1
+        private const val LOG_VERBOSITY = 0
 
         fun create(context: Context): TdClient {
             check(BuildConfig.TELEGRAM_API_ID != 0 && BuildConfig.TELEGRAM_API_HASH.isNotEmpty()) {

@@ -35,13 +35,16 @@ fun TdVideoPlayer(
     autoLoop: Boolean = false,
     showControls: Boolean = true,
     muted: Boolean = false,
+    priority: dev.lyo.telread.data.DownloadPriority = dev.lyo.telread.data.DownloadPriority.VisibleMedia,
 ) {
     val cache = LocalMediaCache.current
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Foreground priority — playing video should jump the queue ahead of any thumbs.
-    LaunchedEffect(fileId) { cache.ensure(fileId, dev.lyo.telread.data.DownloadPriority.Foreground) }
+    // Caller picks priority. Timeline-embedded GIFs default to VisibleMedia so they
+    // don't starve avatars or compete with the active fullscreen viewer; the viewer
+    // passes Foreground.
+    LaunchedEffect(fileId, priority) { cache.ensure(fileId, priority) }
     val mediaState by cache.observe(fileId).collectAsStateWithLifecycle()
 
     val exoPlayer = remember(fileId) {

@@ -145,6 +145,7 @@ private fun MediaPage(item: AlbumItem, isActive: Boolean) {
             autoPlay = isActive,
             autoLoop = false,
             showControls = true,
+            priority = DownloadPriority.Foreground,
             modifier = Modifier.fillMaxSize(),
         )
         is AlbumItem.Animation -> TdVideoPlayer(
@@ -153,6 +154,7 @@ private fun MediaPage(item: AlbumItem, isActive: Boolean) {
             autoLoop = true,
             showControls = false,
             muted = true,
+            priority = DownloadPriority.Foreground,
             modifier = Modifier.fillMaxSize(),
         )
     }

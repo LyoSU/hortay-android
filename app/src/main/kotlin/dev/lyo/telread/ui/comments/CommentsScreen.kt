@@ -102,12 +102,9 @@ fun CommentsScreen(
     ) { padding ->
         LazyColumn(
             contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = padding.calculateTopPadding() + 8.dp,
+                top = padding.calculateTopPadding(),
                 bottom = padding.calculateBottomPadding() + 24.dp,
             ),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "post") {
@@ -129,7 +126,7 @@ fun CommentsScreen(
                         text = label,
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     )
                 }
             }
@@ -193,11 +190,15 @@ private fun NoDiscussionState(message: String) {
 @Composable
 private fun CommentNode(row: CommentRow, onMediaClick: (List<AlbumItem>, Int) -> Unit) {
     val indent = (row.depth * INDENT_DP).dp
-    Row(modifier = Modifier.fillMaxWidth()) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+    ) {
         if (indent > 0.dp) {
             Box(
                 modifier = Modifier
-                    .padding(start = 24.dp)
+                    .padding(start = 8.dp)
                     .width(indent),
             ) {
                 Box(
@@ -213,6 +214,10 @@ private fun CommentNode(row: CommentRow, onMediaClick: (List<AlbumItem>, Int) ->
     }
 }
 
+/**
+ * Threads-style flat comment: avatar in left rail, header (name + time) and body in right
+ * column. No surface fill or rounded corners — just whitespace separates entries.
+ */
 @Composable
 private fun CommentBubble(
     row: CommentRow,
@@ -220,58 +225,58 @@ private fun CommentBubble(
     modifier: Modifier = Modifier,
 ) {
     val comment = row.comment
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(14.dp),
+            .padding(vertical = 10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            CommentAvatar(comment)
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
+        CommentAvatar(comment)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = comment.authorName,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
+                Spacer(Modifier.width(8.dp))
                 Text(
                     text = formatRelative(comment.date),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
 
-        Spacer(Modifier.height(8.dp))
-        // Same content renderer as posts — text + entities, media, polls, stickers, etc.
-        // onMediaClick lets photos/videos/animations open in the same full-screen viewer
-        // we use on the timeline.
-        PostBody(
-            content = comment.content,
-            onMediaClick = { _, idx ->
-                comment.content.toAlbumItems()?.let { items -> onMediaClick(items, idx) }
-            },
-        )
+            Spacer(Modifier.height(6.dp))
+            // Same content renderer as posts — text + entities, media, polls, stickers, etc.
+            // onMediaClick lets photos/videos/animations open in the same full-screen viewer
+            // we use on the timeline.
+            PostBody(
+                content = comment.content,
+                onMediaClick = { _, idx ->
+                    comment.content.toAlbumItems()?.let { items -> onMediaClick(items, idx) }
+                },
+            )
 
-        if (comment.reactions.totalCount > 0) {
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Rounded.Favorite,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.size(14.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = comment.reactions.totalCount.toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            if (comment.reactions.totalCount > 0) {
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Favorite,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = comment.reactions.totalCount.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

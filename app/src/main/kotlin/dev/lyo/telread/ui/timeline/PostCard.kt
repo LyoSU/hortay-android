@@ -1,6 +1,5 @@
 package dev.lyo.telread.ui.timeline
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,8 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import dev.lyo.telread.data.ForwardOrigin
 import dev.lyo.telread.data.ReactionItem
@@ -47,50 +49,49 @@ fun PostCard(
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
 
-    Card(
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                enabled = clickable,
-                onClick = { interactions.onPostClick(post) },
-                onLongClick = { sheetOpen = true },
-            ),
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            HeaderRow(post, onChannelClick = { interactions.onChannelClick(post) })
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    enabled = clickable,
+                    onClick = { interactions.onPostClick(post) },
+                    onLongClick = { sheetOpen = true },
+                )
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            Avatar(post, onClick = { interactions.onChannelClick(post) })
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                HeaderRow(post, onChannelClick = { interactions.onChannelClick(post) })
 
-            post.forwardOrigin?.let {
-                Spacer(Modifier.height(10.dp))
-                ForwardChip(it)
-            }
+                post.forwardOrigin?.let {
+                    Spacer(Modifier.height(6.dp))
+                    ForwardChip(it)
+                }
 
-            post.reply?.let {
-                Spacer(Modifier.height(10.dp))
-                ReplyBlock(it)
-            }
+                post.reply?.let {
+                    Spacer(Modifier.height(8.dp))
+                    ReplyBlock(it)
+                }
 
-            Spacer(Modifier.height(12.dp))
-            PostBody(
-                content = post.content,
-                onMediaClick = { _, idx -> interactions.onMediaClick(post, idx) },
-                expanded = expanded,
-            )
+                Spacer(Modifier.height(8.dp))
+                PostBody(
+                    content = post.content,
+                    onMediaClick = { _, idx -> interactions.onMediaClick(post, idx) },
+                    expanded = expanded,
+                )
 
-            if (post.views > 0 || post.commentCount != null || post.reactions.items.isNotEmpty()) {
-                Spacer(Modifier.height(14.dp))
-                ActionRow(post, onCommentsClick = { interactions.onPostClick(post) })
+                if (post.views > 0 || post.commentCount != null || post.reactions.items.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    ActionRow(post, onCommentsClick = { interactions.onPostClick(post) })
+                }
             }
         }
+
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+        )
     }
 
     if (sheetOpen) {
@@ -103,64 +104,20 @@ fun PostCard(
 }
 
 @Composable
-private fun HeaderRow(post: TimelinePost, onChannelClick: () -> Unit) {
-    Row(
+private fun Avatar(post: TimelinePost, onClick: () -> Unit) {
+    Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onChannelClick),
-        verticalAlignment = Alignment.CenterVertically,
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
     ) {
-        Avatar(post)
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = post.channelTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (post.editDate > 0L) {
-                    Spacer(Modifier.width(6.dp))
-                    Icon(
-                        imageVector = Icons.Rounded.Edit,
-                        contentDescription = "edited",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(12.dp),
-                    )
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = formatRelative(post.date),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                post.authorSignature?.let {
-                    Text(
-                        text = " · $it",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
+        TdAvatar(
+            name = post.channelTitle,
+            thumb = post.avatarThumb,
+            fileId = post.avatarFileId,
+            size = 40.dp,
+            background = avatarBg(post),
+        )
     }
-}
-
-@Composable
-private fun Avatar(post: TimelinePost) {
-    TdAvatar(
-        name = post.channelTitle,
-        thumb = post.avatarThumb,
-        fileId = post.avatarFileId,
-        size = 44.dp,
-        background = avatarBg(post),
-    )
 }
 
 @Composable
@@ -171,6 +128,58 @@ private fun avatarBg(post: TimelinePost) = run {
         MaterialTheme.colorScheme.tertiaryContainer,
     )
     palette[(post.channelTitle.hashCode().rem(palette.size) + palette.size) % palette.size]
+}
+
+/**
+ * Single-line Threads-style header: title + optional signature merged into one AnnotatedString
+ * so they ellipsis as a unit, then time (and optional edit marker) pinned right. Title weight=1
+ * yields space to the trailing time block.
+ */
+@Composable
+private fun HeaderRow(post: TimelinePost, onChannelClick: () -> Unit) {
+    val titleColor = MaterialTheme.colorScheme.onSurface
+    val subColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val annotated = remember(post.channelTitle, post.authorSignature, titleColor, subColor) {
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = titleColor, fontWeight = FontWeight.SemiBold)) {
+                append(post.channelTitle)
+            }
+            post.authorSignature?.let {
+                withStyle(SpanStyle(color = subColor, fontWeight = FontWeight.Normal)) {
+                    append("  ·  $it")
+                }
+            }
+        }
+    }
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onChannelClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = annotated,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        if (post.editDate > 0L) {
+            Icon(
+                imageVector = Icons.Rounded.Edit,
+                contentDescription = "edited",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(12.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(
+            text = formatRelative(post.date),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable
@@ -200,32 +209,37 @@ private fun forwardLabel(origin: ForwardOrigin): String = when (origin) {
     is ForwardOrigin.Chat -> origin.chatName
 }
 
+/**
+ * Threads-style blockquote: only a thin left bar + indented text, no surface fill.
+ * IntrinsicSize.Min lets the bar's fillMaxHeight match the actual two-line text height.
+ */
 @Composable
 private fun ReplyBlock(reply: ReplyPreview) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .height(IntrinsicSize.Min),
     ) {
         Box(
             modifier = Modifier
-                .width(3.dp)
-                .height(36.dp)
-                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp)),
+                .width(2.dp)
+                .fillMaxHeight()
+                .background(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    shape = RoundedCornerShape(1.dp),
+                ),
         )
         Spacer(Modifier.width(10.dp))
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = reply.authorName,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
                 text = reply.excerpt,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -276,7 +290,7 @@ private fun ActionRow(post: TimelinePost, onCommentsClick: () -> Unit) {
 private fun VerticalSeparator() {
     Box(
         modifier = Modifier
-            .height(16.dp)
+            .height(14.dp)
             .width(1.dp)
             .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
     )
@@ -286,12 +300,12 @@ private fun VerticalSeparator() {
 private fun ReactionChip(item: ReactionItem) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = item.emoji, style = MaterialTheme.typography.bodyMedium)
+        Text(text = item.emoji, style = MaterialTheme.typography.labelMedium)
         Spacer(Modifier.width(4.dp))
         Text(
             text = formatViews(item.count),
