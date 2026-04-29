@@ -117,6 +117,11 @@ fun MainScaffold(graph: AppGraph) {
             post = post,
             repo = graph.commentsRepository,
             onDismiss = { commentsForPost = null },
+            onChannelClick = { p ->
+                channelFilter = p.chatId
+                selectedTab = NavTab.Feed
+                commentsForPost = null
+            },
         )
     }
 }

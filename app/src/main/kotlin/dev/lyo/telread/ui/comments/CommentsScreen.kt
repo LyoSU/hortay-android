@@ -45,6 +45,7 @@ fun CommentsScreen(
     post: TimelinePost,
     repo: CommentsRepository,
     onDismiss: () -> Unit,
+    onChannelClick: (TimelinePost) -> Unit = {},
 ) {
     // For an album, all sibling ids are candidates — the thread carrier may be any of
     // them. For a standalone post the only candidate is post.id.
@@ -56,9 +57,10 @@ fun CommentsScreen(
     }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
 
     val viewer = LocalMediaViewer.current
-    val pinnedPostInteractions = remember(viewer) {
+    val pinnedPostInteractions = remember(viewer, onChannelClick) {
         PostInteractions(
             onMediaClick = { p, idx -> viewer.openFor(p.content, idx) },
+            onChannelClick = onChannelClick,
         )
     }
 
