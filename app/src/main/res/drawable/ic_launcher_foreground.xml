@@ -1,9 +1,17 @@
+<!--
+  Adaptive-icon foreground. The 108×108 viewport must keep its content within the inner
+  72×72 safe zone — the launcher crops the rest for round / squircle / teardrop shapes.
+  We draw a chunky lowercase-style "H" letter (initial of "Hortay") as a single closed
+  path, traced corner-by-corner along the outline so the cross-bar reads as a cut-out
+  rather than three separate fills. White on the brand-primary background gives strong
+  contrast in both light and dark launchers.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="@color/brand_primary"
-        android:pathData="M54,30 L54,72 M30,42 L78,42 M40,72 L68,72" />
+        android:fillColor="@color/brand_foreground"
+        android:pathData="M34,28 L46,28 L46,49 L62,49 L62,28 L74,28 L74,80 L62,80 L62,61 L46,61 L46,80 L34,80 Z" />
 </vector>
