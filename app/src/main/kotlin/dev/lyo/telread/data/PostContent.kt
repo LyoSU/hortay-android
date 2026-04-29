@@ -296,7 +296,7 @@ enum class SenderVerification { Verified, Scam, Fake }
 
 /** Single reaction bucket: an emoji and how many times it was used. */
 @Immutable
-data class ReactionItem(val emoji: String, val count: Int)
+data class ReactionItem(val emoji: String, val count: Int, val isChosen: Boolean = false)
 
 /** Aggregated reaction summary — full per-emoji breakdown plus total. */
 @Immutable

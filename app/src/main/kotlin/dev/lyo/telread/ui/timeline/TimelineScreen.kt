@@ -33,6 +33,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewmodel.initializer
 import dev.lyo.telread.data.BookmarkStore
+import dev.lyo.telread.data.ChannelActionsRepository
 import dev.lyo.telread.data.ChatFoldersRepository
 import dev.lyo.telread.data.CommentsRepository
 import dev.lyo.telread.data.TranslationsStore
@@ -41,6 +42,7 @@ import dev.lyo.telread.data.PostsRepository
 import dev.lyo.telread.data.TimelinePost
 import dev.lyo.telread.data.bookmarkKey
 import dev.lyo.telread.ui.actions.PostActions
+import dev.lyo.telread.ui.channels.ChannelInfoSheet
 import dev.lyo.telread.ui.main.BrandRow
 import dev.lyo.telread.ui.media.LocalMediaViewer
 import kotlinx.coroutines.FlowPreview
@@ -55,6 +57,7 @@ fun TimelineScreen(
     commentsRepo: CommentsRepository,
     folders: ChatFoldersRepository,
     translations: TranslationsStore,
+    channelActions: ChannelActionsRepository,
     bookmarks: BookmarkStore,
     contentPadding: PaddingValues,
     showOnlyBookmarked: Boolean,
@@ -79,6 +82,7 @@ fun TimelineScreen(
     val foldersList by folders.folders.collectAsStateWithLifecycle()
     val archivedChatIds by repo.archivedChatIds.collectAsStateWithLifecycle()
     val translationsMap by translations.translations.collectAsStateWithLifecycle()
+    var infoSheetChatId by remember { mutableStateOf<Long?>(null) }
 
     // Pill is suppressed during a refresh: repo.refresh() replaces _posts, briefly making
     // the post-refresh delta look like "everything is new" until acceptPending() lands.
@@ -171,6 +175,28 @@ fun TimelineScreen(
             kotlinx.coroutines.awaitCancellation()
         } finally {
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { repo.closeChat(id) }
+        }
+    }
+
+    // Pagination: when the user scrolls near the bottom of a single-channel feed, pull
+    // older posts. Only fires inside a channelFilter context — paginating the global
+    // mixed feed by oldest-of-each-channel would touch many channels at once and serves
+    // no real "I want to read this channel further back" intent.
+    if (channelFilter != null) {
+        LaunchedEffect(listState, channelFilter) {
+            androidx.compose.runtime.snapshotFlow {
+                val info = listState.layoutInfo
+                val total = info.totalItemsCount
+                val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+                total to lastVisible
+            }
+                .distinctUntilChanged()
+                .collect { (total, last) ->
+                    if (total == 0 || last < 0) return@collect
+                    if (last >= total - PAGINATION_PREFETCH_THRESHOLD) {
+                        repo.loadOlder(channelFilter)
+                    }
+                }
         }
     }
 
@@ -323,6 +349,14 @@ fun TimelineScreen(
             },
             isTranslated = { post -> lookup(post) != null },
             translationFor = ::lookup,
+            onReactionToggle = { post, emoji ->
+                scope.launch {
+                    val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
+                    val mine = post.reactions.items.firstOrNull { it.emoji == emoji && it.isChosen }
+                    if (mine != null) channelActions.removeReaction(post.chatId, target, emoji)
+                    else channelActions.addReaction(post.chatId, target, emoji)
+                }
+            },
             onPostClick = onOpenComments,
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedKeys },
         )
@@ -340,6 +374,7 @@ fun TimelineScreen(
                 hasFilter = channelFilter != null,
                 onClearFilter = { onChannelFilterChange(null) },
                 onBrandTap = onBrandTap,
+                onTitleTap = { channelFilter?.let { infoSheetChatId = it } },
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -432,6 +467,13 @@ fun TimelineScreen(
         }
     }
 
+    infoSheetChatId?.let { chatId ->
+        ChannelInfoSheet(
+            chatId = chatId,
+            actions = channelActions,
+            onDismiss = { infoSheetChatId = null },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -443,6 +485,7 @@ private fun TimelineTopBar(
     hasFilter: Boolean,
     onClearFilter: () -> Unit,
     onBrandTap: () -> Unit,
+    onTitleTap: () -> Unit,
     scrollBehavior: TopAppBarScrollBehavior,
 ) {
     val colors = TopAppBarDefaults.topAppBarColors(
@@ -452,7 +495,7 @@ private fun TimelineTopBar(
     when {
         hasFilter -> TopAppBar(
             title = {
-                Column {
+                Column(modifier = Modifier.clickable(onClick = onTitleTap)) {
                     Text(
                         text = channelTitle.orEmpty(),
                         style = MaterialTheme.typography.titleMedium,
@@ -539,6 +582,9 @@ private fun EmptyState(showingSaved: Boolean) {
  * Compact subscriber count formatter — Telegram convention. 12 345 → "12.3K", 1 050 000
  * → "1.1M". Round numbers drop the decimal so the label reads as "12K" rather than "12.0K".
  */
+/** How many items from the end of the list trigger an older-history prefetch. */
+private const val PAGINATION_PREFETCH_THRESHOLD = 6
+
 private fun formatSubscribers(count: Int): String {
     fun compact(value: Double, suffix: String): String {
         val rounded = ((value * 10).toLong()) / 10.0

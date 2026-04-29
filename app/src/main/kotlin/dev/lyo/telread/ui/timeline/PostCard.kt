@@ -121,6 +121,7 @@ fun PostCard(
                         commentCount = post.commentCount,
                         reactions = post.reactions,
                         onCommentsClick = { interactions.onPostClick(post) },
+                        onReactionTap = { emoji -> interactions.onReactionToggle(post, emoji) },
                     )
                 }
             }
@@ -398,6 +399,7 @@ private fun ActionRow(
     commentCount: Int?,
     reactions: dev.lyo.telread.data.Reactions,
     onCommentsClick: () -> Unit,
+    onReactionTap: (emoji: String) -> Unit = {},
 ) {
     Row(
         modifier = Modifier
@@ -424,7 +426,7 @@ private fun ActionRow(
             }
             reactions.items.forEachIndexed { idx, item ->
                 if (idx > 0) Spacer(Modifier.width(6.dp))
-                ReactionChip(item)
+                ReactionChip(item, onClick = { onReactionTap(item.emoji) })
             }
         }
     }
@@ -442,11 +444,16 @@ private fun VerticalSeparator() {
 
 /** Public so the comments screen can reuse the same chip styling for thread replies. */
 @Composable
-internal fun ReactionChip(item: ReactionItem) {
+internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
+    val container = if (item.isChosen) MaterialTheme.colorScheme.primaryContainer
+    else MaterialTheme.colorScheme.surfaceContainer
+    val countColor = if (item.isChosen) MaterialTheme.colorScheme.onPrimaryContainer
+    else MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .background(container)
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -455,7 +462,7 @@ internal fun ReactionChip(item: ReactionItem) {
         Text(
             text = formatViews(item.count),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = countColor,
         )
     }
 }

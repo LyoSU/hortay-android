@@ -25,6 +25,8 @@ class PostInteractions(
     val isTranslated: (post: TimelinePost) -> Boolean = { false },
     /** Translated text for this post (or any of its album members), null when not translated. */
     val translationFor: (post: TimelinePost) -> FormattedText? = { null },
+    /** Toggle the user's reaction with [emoji] on the given post. */
+    val onReactionToggle: (post: TimelinePost, emoji: String) -> Unit = { _, _ -> },
 ) {
     companion object {
         val Noop = PostInteractions()

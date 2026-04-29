@@ -246,6 +246,69 @@ class PostsRepository(
         runCatching { td.send(TdApi.CloseChat(chatId)) }.warnUnlessCancelled(TAG, "closeChat($chatId)")
     }
 
+    /** Per-channel "we already paginated to the bottom of TDLib's local store" sentinel. */
+    private val pageEnded = ConcurrentHashMap.newKeySet<Long>()
+    private val pageJobs = ConcurrentHashMap<Long, Deferred<Result<Int>>>()
+
+    /**
+     * Pull older posts for a channel, anchored on the oldest post we currently render.
+     * Used by the timeline when the user scrolls near the bottom of a single-channel
+     * feed and wants to read further back.
+     *
+     * Returns the number of newly added posts. Single-flight + sticky end-of-history flag
+     * so an over-eager scroll listener can't fan out duplicate round-trips and won't keep
+     * pinging TDLib once we've already learnt the channel has nothing older to give.
+     */
+    suspend fun loadOlder(chatId: Long, limit: Int = 30): Int {
+        if (chatId in pageEnded) return 0
+        val deferred = pageJobs.computeIfAbsent(chatId) {
+            scope.async {
+                runCatching { loadOlderLocked(chatId, limit) }
+            }
+        }
+        val result = deferred.await()
+        pageJobs.remove(chatId, deferred)
+        return result.warnUnlessCancelled(TAG, "loadOlder($chatId)").getOrDefault(0)
+    }
+
+    private suspend fun loadOlderLocked(chatId: Long, limit: Int): Int {
+        val oldestId = _posts.value
+            .filter { it.chatId == chatId }
+            .minOfOrNull { it.id }
+            ?: return 0
+        val chat = chatCache[chatId] ?: td.send(TdApi.GetChat(chatId)).also { chatCache[chatId] = it }
+        if (!chat.isChannel()) return 0
+
+        val history = td.send(
+            TdApi.GetChatHistory(
+                chatId,
+                /* fromMessageId */ oldestId,
+                /* offset */ 0,
+                limit,
+                /* onlyLocal */ false,
+            ),
+        )
+        val raw = history.messages.orEmpty().toList()
+        // TDLib returns an empty page once we've walked off the end of its locally-stored
+        // history. Mark the sentinel so the scroll listener stops pinging.
+        if (raw.isEmpty()) {
+            pageEnded += chatId
+            return 0
+        }
+        val coalesced = coalesceAlbumFragments(chatId, raw)
+        val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
+
+        var added = 0
+        _posts.update { current ->
+            val seen = current.mapTo(mutableSetOf()) { it.chatId to it.id }
+            val fresh = mapped.filter { (it.chatId to it.id) !in seen }
+            added = fresh.size
+            val merged = current.addAll(fresh)
+            PostFilterStrategy.apply(merged).take(MAX_FEED_SIZE).toPersistentList()
+        }
+        return added
+    }
+
     /**
      * Subscriber count for a channel chat. Returns null when the chat is not a supergroup
      * (private 1:1, basic group) or TDLib reports an unknown count. Cheap — TDLib serves

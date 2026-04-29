@@ -222,7 +222,7 @@ internal object MessageContentMapper {
         // 35 visible in chips).
         val items = list.mapNotNull { r ->
             val emoji = (r.type as? TdApi.ReactionTypeEmoji)?.emoji ?: return@mapNotNull null
-            ReactionItem(emoji, r.totalCount)
+            ReactionItem(emoji, r.totalCount, r.isChosen)
         }
         return Reactions(items.sumOf { it.count }, items)
     }
