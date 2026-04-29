@@ -157,17 +157,32 @@ class TdClient private constructor(
         // success, which onAuthState turns into AuthStage.WaitCode(lastAttemptedPhone).
         lastAttemptedPhone = phone
         runCatching { send(TdApi.SetAuthenticationPhoneNumber(phone, null)) }
-            .onFailure { _authStage.value = AuthStage.Error(it.message ?: "phone rejected") }
+            .reportAuthFailure("phone rejected")
     }
 
     suspend fun submitCode(code: String) {
         runCatching { send(TdApi.CheckAuthenticationCode(code)) }
-            .onFailure { _authStage.value = AuthStage.Error(it.message ?: "code rejected") }
+            .reportAuthFailure("code rejected")
     }
 
     suspend fun submitPassword(password: String) {
         runCatching { send(TdApi.CheckAuthenticationPassword(password)) }
-            .onFailure { _authStage.value = AuthStage.Error(it.message ?: "password rejected") }
+            .reportAuthFailure("password rejected")
+    }
+
+    /**
+     * Auth submit calls run on the AuthScreen's `rememberCoroutineScope` — when TDLib
+     * succeeds, the screen recomposes (because AuthStage flips), the scope leaves
+     * composition and any in-flight coroutine cancels with a `LeftCompositionCancellation`
+     * subtype of [kotlinx.coroutines.CancellationException]. That's a normal lifecycle
+     * event, not an error to surface; surfacing it produced a misleading red banner with
+     * "rememberCoroutineScope left the composition" right after a successful login.
+     */
+    private fun Result<*>.reportAuthFailure(fallback: String) {
+        onFailure { err ->
+            if (err is kotlinx.coroutines.CancellationException) return@onFailure
+            _authStage.value = AuthStage.Error(err.message ?: fallback)
+        }
     }
 
     suspend fun logOut() {

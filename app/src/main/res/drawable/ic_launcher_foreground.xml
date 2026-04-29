@@ -12,5 +12,5 @@
     android:viewportHeight="108">
     <path
         android:fillColor="@color/brand_foreground"
-        android:pathData="M34,28 L46,28 L46,49 L62,49 L62,28 L74,28 L74,80 L62,80 L62,61 L46,61 L46,80 L34,80 Z" />
+        android:pathData="M39,32 L50,32 L50,50 L58,50 L58,32 L69,32 L69,76 L58,76 L58,58 L50,58 L50,76 L39,76 Z" />
 </vector>
