@@ -46,7 +46,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * instead of ~50KB.
  */
 class PostsRepository(
-    private val td: TdClient,
+    private val td: TdSender,
     private val mapper: MessageMapper,
     private val scope: CoroutineScope,
 ) {

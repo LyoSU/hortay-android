@@ -8,7 +8,7 @@ import org.drinkless.tdlib.TdApi
  * surface that Telegram clients expose so the user knows how much data the app moves and
  * how much disk it has accumulated, with a "clear cache" escape hatch.
  */
-class StatsRepository(private val td: TdClient) {
+class StatsRepository(private val td: TdSender) {
 
     /** Aggregated cellular + Wi-Fi + roaming traffic since TDLib started recording. */
     suspend fun networkUsage(): NetworkUsage {

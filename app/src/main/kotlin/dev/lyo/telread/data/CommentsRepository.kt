@@ -39,7 +39,7 @@ import java.util.concurrent.ConcurrentHashMap
  *     time the map is mutated.
  */
 class CommentsRepository(
-    private val td: TdClient,
+    private val td: TdSender,
     private val mapper: MessageMapper,
     private val scope: CoroutineScope,
 ) {

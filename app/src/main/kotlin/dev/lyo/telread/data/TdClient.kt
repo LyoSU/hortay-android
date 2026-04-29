@@ -28,7 +28,7 @@ class TdClient private constructor(
     private val context: Context,
     private val apiId: Int,
     private val apiHash: String,
-) {
+) : TdSender {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -41,7 +41,7 @@ class TdClient private constructor(
     private var lastAttemptedPhone: String = ""
 
     private val _updates = MutableSharedFlow<TdApi.Update>(extraBufferCapacity = 64)
-    val updates: SharedFlow<TdApi.Update> = _updates.asSharedFlow()
+    override val updates: SharedFlow<TdApi.Update> = _updates.asSharedFlow()
 
     private lateinit var client: Client
 
@@ -155,7 +155,7 @@ class TdClient private constructor(
     }
 
     /** Suspend-style wrapper around [Client.send]. */
-    suspend fun <T : TdApi.Object> send(query: TdApi.Function<T>): T =
+    override suspend fun <T : TdApi.Object> send(query: TdApi.Function<T>): T =
         suspendCancellableCoroutine { cont ->
             client.send(query) { result ->
                 if (result is TdApi.Error) {

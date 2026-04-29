@@ -20,7 +20,7 @@ import java.util.Collections
  * are touched from several coroutines (refreshLocked, handle* update collectors,
  * Update* invalidations).
  */
-class MessageMapper(private val td: TdClient) {
+class MessageMapper(private val td: TdSender) {
 
     private val userCache = boundedLru<Long, ResolvedSender>(MAX_RESOLVER_CACHE)
     private val chatCache = boundedLru<Long, ResolvedSender>(MAX_RESOLVER_CACHE)

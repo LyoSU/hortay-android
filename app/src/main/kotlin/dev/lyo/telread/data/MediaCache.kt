@@ -49,7 +49,7 @@ enum class DownloadPriority(val tdValue: Int) {
  * single update collector running on [ioDispatcher].
  */
 class MediaCache(
-    private val td: TdClient,
+    private val td: TdSender,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
