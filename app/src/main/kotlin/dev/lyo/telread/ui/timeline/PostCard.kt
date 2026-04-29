@@ -49,6 +49,13 @@ fun PostCard(
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
 
+    // Hand each section ONLY the primitive fields it actually paints. When TDLib emits
+    // an UpdateMessageInteractionInfo and the post's `views` change, Compose passes a
+    // new TimelinePost instance into PostCard — but the per-section args (avatar fields,
+    // header fields, body content reference) remain identical, so Compose's skipping
+    // logic prunes their recompositions. Without this split every interaction-info hit
+    // re-runs the whole card.
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -60,10 +67,21 @@ fun PostCard(
                 )
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
-            Avatar(post, onClick = { interactions.onChannelClick(post) })
+            Avatar(
+                name = post.senderName,
+                thumb = post.avatarThumb,
+                fileId = post.avatarFileId,
+                onClick = { interactions.onChannelClick(post) },
+            )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                HeaderRow(post, onChannelClick = { interactions.onChannelClick(post) })
+                HeaderRow(
+                    senderName = post.senderName,
+                    authorSignature = post.authorSignature,
+                    editDate = post.editDate,
+                    date = post.date,
+                    onChannelClick = { interactions.onChannelClick(post) },
+                )
 
                 post.forwardOrigin?.let {
                     Spacer(Modifier.height(6.dp))
@@ -84,7 +102,12 @@ fun PostCard(
 
                 if (post.views > 0 || post.commentCount != null || post.reactions.items.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
-                    ActionRow(post, onCommentsClick = { interactions.onPostClick(post) })
+                    ActionRow(
+                        views = post.views,
+                        commentCount = post.commentCount,
+                        reactions = post.reactions,
+                        onCommentsClick = { interactions.onPostClick(post) },
+                    )
                 }
             }
         }
@@ -104,30 +127,30 @@ fun PostCard(
 }
 
 @Composable
-private fun Avatar(post: TimelinePost, onClick: () -> Unit) {
+private fun Avatar(name: String, thumb: ByteArray?, fileId: Int?, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(CircleShape)
             .clickable(onClick = onClick),
     ) {
         TdAvatar(
-            name = post.senderName,
-            thumb = post.avatarThumb,
-            fileId = post.avatarFileId,
+            name = name,
+            thumb = thumb,
+            fileId = fileId,
             size = 40.dp,
-            background = avatarBg(post),
+            background = avatarBg(name),
         )
     }
 }
 
 @Composable
-private fun avatarBg(post: TimelinePost) = run {
+private fun avatarBg(name: String) = run {
     val palette = listOf(
         MaterialTheme.colorScheme.primaryContainer,
         MaterialTheme.colorScheme.secondaryContainer,
         MaterialTheme.colorScheme.tertiaryContainer,
     )
-    palette[(post.senderName.hashCode().rem(palette.size) + palette.size) % palette.size]
+    palette[(name.hashCode().rem(palette.size) + palette.size) % palette.size]
 }
 
 /**
@@ -136,15 +159,21 @@ private fun avatarBg(post: TimelinePost) = run {
  * yields space to the trailing time block.
  */
 @Composable
-private fun HeaderRow(post: TimelinePost, onChannelClick: () -> Unit) {
+private fun HeaderRow(
+    senderName: String,
+    authorSignature: String?,
+    editDate: Long,
+    date: Long,
+    onChannelClick: () -> Unit,
+) {
     val titleColor = MaterialTheme.colorScheme.onSurface
     val subColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val annotated = remember(post.senderName, post.authorSignature, titleColor, subColor) {
+    val annotated = remember(senderName, authorSignature, titleColor, subColor) {
         buildAnnotatedString {
             withStyle(SpanStyle(color = titleColor, fontWeight = FontWeight.SemiBold)) {
-                append(post.senderName)
+                append(senderName)
             }
-            post.authorSignature?.let {
+            authorSignature?.let {
                 withStyle(SpanStyle(color = subColor, fontWeight = FontWeight.Normal)) {
                     append("  ·  $it")
                 }
@@ -165,7 +194,7 @@ private fun HeaderRow(post: TimelinePost, onChannelClick: () -> Unit) {
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(8.dp))
-        if (post.editDate > 0L) {
+        if (editDate > 0L) {
             Icon(
                 imageVector = Icons.Rounded.Edit,
                 contentDescription = "edited",
@@ -175,7 +204,7 @@ private fun HeaderRow(post: TimelinePost, onChannelClick: () -> Unit) {
             Spacer(Modifier.width(4.dp))
         }
         Text(
-            text = formatRelative(post.date),
+            text = formatRelative(date),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -254,31 +283,36 @@ private fun ReplyBlock(reply: ReplyPreview) {
  * stays read-only and uncluttered.
  */
 @Composable
-private fun ActionRow(post: TimelinePost, onCommentsClick: () -> Unit) {
+private fun ActionRow(
+    views: Int,
+    commentCount: Int?,
+    reactions: dev.lyo.telread.data.Reactions,
+    onCommentsClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (post.views > 0) {
-            StatPill(Icons.Rounded.Visibility, formatViews(post.views))
+        if (views > 0) {
+            StatPill(Icons.Rounded.Visibility, formatViews(views))
         }
-        post.commentCount?.let { count ->
-            if (post.views > 0) Spacer(Modifier.width(14.dp))
+        commentCount?.let { count ->
+            if (views > 0) Spacer(Modifier.width(14.dp))
             StatPill(
                 icon = Icons.Rounded.ChatBubbleOutline,
                 text = if (count > 0) formatViews(count) else "0",
                 onClick = onCommentsClick,
             )
         }
-        if (post.reactions.items.isNotEmpty()) {
-            if (post.views > 0 || post.commentCount != null) {
+        if (reactions.items.isNotEmpty()) {
+            if (views > 0 || commentCount != null) {
                 Spacer(Modifier.width(14.dp))
                 VerticalSeparator()
                 Spacer(Modifier.width(14.dp))
             }
-            post.reactions.items.forEachIndexed { idx, item ->
+            reactions.items.forEachIndexed { idx, item ->
                 if (idx > 0) Spacer(Modifier.width(6.dp))
                 ReactionChip(item)
             }
