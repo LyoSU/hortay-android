@@ -159,6 +159,7 @@ class MediaCache(
                 }
                 val cadence = if (tracks.isEmpty()) IDLE_TICK_MS else WATCHDOG_TICK_MS
                 delay(cadence)
+                evictTerminalSlots()
                 if (tracks.isEmpty()) continue
                 // Updating means "TDLib is catching up on missed updates" — downloads
                 // still progress, so we keep watching. Only WaitingForNetwork is a hard
@@ -166,6 +167,33 @@ class MediaCache(
                 if (connection.value == ConnectionStatus.WaitingForNetwork) continue
                 checkStalled()
             }
+        }
+    }
+
+    /**
+     * Drop state slots that are no longer useful: terminal state ([MediaState.Ready],
+     * [MediaState.Failed], [MediaState.Idle]) AND zero observers AND no in-flight
+     * download/cancel/resync bookkeeping. Each [MutableStateFlow] is small (≈100 bytes)
+     * but a long browsing session walks past tens of thousands of unique fileIds, and
+     * unevicted slots accumulate to multi-MB heap residency that never shrinks.
+     *
+     * This is gated on [SLOT_EVICTION_THRESHOLD] so the common case (a few hundred
+     * resident slots while the user is in a chat) pays nothing. A re-mount of an evicted
+     * slot is cheap: [ensure] re-creates the StateFlow and a single [TdApi.GetFile] re-
+     * seeds it from TDLib's local cache, which is sub-millisecond on a hot file.
+     */
+    private fun evictTerminalSlots() {
+        if (states.size <= SLOT_EVICTION_THRESHOLD) return
+        val iter = states.entries.iterator()
+        while (iter.hasNext()) {
+            val (id, flow) = iter.next()
+            if (flow.subscriptionCount.value > 0) continue
+            if (tracks.containsKey(id) || pendingCancels.containsKey(id) || postCompletionResync.containsKey(id)) continue
+            val s = flow.value
+            val terminal = s is MediaState.Ready || s is MediaState.Failed || s is MediaState.Idle
+            if (!terminal) continue
+            iter.remove()
+            activePriority.remove(id)
         }
     }
 
@@ -590,6 +618,12 @@ class MediaCache(
         // 200ms we'd often race ahead of TDLib's rename and end up with the same
         // empty-path snapshot we're trying to fix.
         const val POST_COMPLETION_RESYNC_MS = 400L
+        // Above this many resident state slots, the watchdog tick sweeps unobserved
+        // terminal slots out of [states]/[activePriority]. 512 comfortably holds a
+        // foreground viewport plus realistic recent scroll history; beyond it we're in
+        // long-session territory where the overhead of an O(N) walk per tick is dwarfed
+        // by the multi-MB heap savings from dropping zombie StateFlows.
+        const val SLOT_EVICTION_THRESHOLD = 512
     }
 }
 

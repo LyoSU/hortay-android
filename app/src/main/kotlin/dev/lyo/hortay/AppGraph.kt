@@ -69,7 +69,7 @@ class AppGraph(context: Context) {
 
     val chatFoldersRepository: ChatFoldersRepository = ChatFoldersRepository(tdClient, appScope)
 
-    val translations: TranslationsStore = TranslationsStore(tdClient)
+    val translations: TranslationsStore = TranslationsStore(tdClient, appScope)
 
     val channelActions: ChannelActionsRepository = ChannelActionsRepository(tdClient)
 

@@ -219,6 +219,15 @@ class TdClient private constructor(
                 AuthStage.Error("Цей номер ще не зареєстрований у Telegram. Створіть акаунт у офіційному застосунку.")
             is TdApi.AuthorizationStateWaitOtherDeviceConfirmation -> _authStage.value =
                 AuthStage.Error("Підтвердіть вхід у Telegram на іншому пристрої.")
+            // TDLib emits this when sign-in requires a Telegram Premium purchase to
+            // continue (a server-side rule for some fresh accounts / regions). The
+            // purchase has to go through the official client's in-app billing — we
+            // can't complete it ourselves. Surface that explicitly so the user isn't
+            // left on a blank Loading.
+            is TdApi.AuthorizationStateWaitPremiumPurchase -> _authStage.value =
+                AuthStage.Error(
+                    "Цей вхід потребує Telegram Premium. Завершіть оформлення в офіційному застосунку Telegram, потім поверніться сюди.",
+                )
             else -> Unit
         }
     }

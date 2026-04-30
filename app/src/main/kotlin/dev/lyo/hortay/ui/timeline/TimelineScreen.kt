@@ -128,12 +128,19 @@ fun TimelineScreen(
     var folderMemberIds by remember(scope_filter) { mutableStateOf<Set<Long>?>(null) }
     var folderIncludesAllChannels by remember(scope_filter) { mutableStateOf(false) }
     var folderExcludedIds by remember(scope_filter) { mutableStateOf<Set<Long>>(emptySet()) }
+    // Real Telegram folder rules can hide archived chats; mirror that here so a folder
+    // with excludeArchived=true doesn't leak archived channels into its tab. The other
+    // exclude_* flags (excludeMuted, excludeRead) only meaningfully apply to user/group
+    // chats — channels rarely have actionable mute or unread state, and Hortay scopes
+    // its feed to channels only.
+    var folderExcludeArchived by remember(scope_filter) { mutableStateOf(false) }
     LaunchedEffect(scope_filter) {
         val folderScope = scope_filter as? FilterScope.Folder
         if (folderScope == null) {
             folderMemberIds = null
             folderIncludesAllChannels = false
             folderExcludedIds = emptySet()
+            folderExcludeArchived = false
             return@LaunchedEffect
         }
         val full = folders.fullFolder(folderScope.id)
@@ -141,10 +148,12 @@ fun TimelineScreen(
             folderMemberIds = emptySet()
             folderIncludesAllChannels = false
             folderExcludedIds = emptySet()
+            folderExcludeArchived = false
         } else {
             folderMemberIds = (full.pinnedChatIds?.toSet().orEmpty() + full.includedChatIds?.toSet().orEmpty())
             folderIncludesAllChannels = full.includeChannels
             folderExcludedIds = full.excludedChatIds?.toSet().orEmpty()
+            folderExcludeArchived = full.excludeArchived
         }
     }
     val viewer = LocalMediaViewer.current
@@ -212,7 +221,8 @@ fun TimelineScreen(
     // pill can't surface pending posts the user can't actually see (e.g. archived chats
     // while the user is in "Усі", or out-of-folder channels while a folder is active).
     val scopePredicate = remember(
-        scope_filter, archivedChatIds, folderMemberIds, folderIncludesAllChannels, folderExcludedIds,
+        scope_filter, archivedChatIds, folderMemberIds, folderIncludesAllChannels,
+        folderExcludedIds, folderExcludeArchived,
     ) {
         { p: TimelinePost ->
             val isArchived = p.chatId in archivedChatIds
@@ -220,9 +230,12 @@ fun TimelineScreen(
                 FilterScope.All -> !isArchived
                 FilterScope.Archive -> isArchived
                 is FilterScope.Folder -> {
-                    val included = folderMemberIds?.contains(p.chatId) == true ||
-                        folderIncludesAllChannels
-                    included && p.chatId !in folderExcludedIds
+                    if (folderExcludeArchived && isArchived) false
+                    else {
+                        val included = folderMemberIds?.contains(p.chatId) == true ||
+                            folderIncludesAllChannels
+                        included && p.chatId !in folderExcludedIds
+                    }
                 }
             }
         }
@@ -352,11 +365,17 @@ fun TimelineScreen(
         // Album members share the same translation — TDLib stores translations against the
         // caption-carrying message id, but for the UI any post in the album should look
         // translated. Fall back to scanning album members when the lookup misses.
+        //
+        // The cache is keyed by language as well: the user's system locale can change
+        // mid-session and we don't want to serve a stale translation in the wrong target
+        // tongue. We resolve the active target on every lookup so a post's render reacts
+        // to a locale change as soon as the next recomposition reads translationsState.
         fun lookup(post: TimelinePost): dev.lyo.hortay.data.FormattedText? {
             val map = translationsState.value
-            map[dev.lyo.hortay.data.TranslationsStore.Key(post.chatId, post.id)]?.let { return it }
+            val lang = translations.currentTargetLanguage()
+            map[dev.lyo.hortay.data.TranslationsStore.Key(post.chatId, post.id, lang)]?.let { return it }
             post.albumMessageIds.forEach { id ->
-                map[dev.lyo.hortay.data.TranslationsStore.Key(post.chatId, id)]?.let { return it }
+                map[dev.lyo.hortay.data.TranslationsStore.Key(post.chatId, id, lang)]?.let { return it }
             }
             return null
         }

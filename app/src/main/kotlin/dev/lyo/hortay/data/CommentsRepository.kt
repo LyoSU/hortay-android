@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.shareIn
@@ -147,7 +148,14 @@ class CommentsRepository(
             // sees real comments while we keep filling up to `limit` in the background.
             // Without this the screen sits on Loading until all 4× BATCH_SIZE round-trips
             // complete — even when the first 50 already cover the visible viewport.
+            //
+            // Dedup: TDLib's GetMessageThreadHistory with offset=0 is INCLUSIVE on
+            // from_message_id — the first message in page N+1 is the same as the last
+            // message in page N. The set tracks ids we've already added (rootId pre-seeded
+            // because the channel-post mirror is filtered out everywhere) so the boundary
+            // and any other coincidental repeats fold into one entry.
             val live = mutableListOf<TdApi.Message>()
+            val seenIds = HashSet<Long>().apply { add(anchor.rootId) }
             var fromId = 0L
             while (live.size < limit) {
                 val batch = runCatching {
@@ -155,10 +163,12 @@ class CommentsRepository(
                 }.warnUnlessCancelled(TAG, "threadHistory(${anchor.threadChatId})").getOrNull() ?: break
                 val msgs = batch.messages.orEmpty()
                 if (msgs.isEmpty()) break
-                // Drop the channel-post mirror; only conversation messages stay.
-                for (m in msgs) if (m.id != anchor.rootId) live += m
+                var appended = 0
+                for (m in msgs) if (seenIds.add(m.id)) { live += m; appended++ }
                 fromId = msgs.last().id
-                emit(buildReady(live, anchor))
+                if (appended > 0) emit(buildReady(live, anchor))
+                // No new messages in this page (only the boundary repeat) → end of thread.
+                if (appended == 0) break
             }
             // Empty-thread case: nothing was emitted in the loop. Surface a Ready so the
             // overlay leaves Loading instead of hanging on it forever.
@@ -168,9 +178,20 @@ class CommentsRepository(
             // launchIn'd collectors all racing on the shared `live` mutable list — a plain
             // bug that just happened not to trip in practice. With one collect we mutate
             // from one coroutine: no Mutex, no surprises.
-            td.updates.collect { upd ->
-                if (applyUpdate(upd, anchor, live)) emit(buildReady(live, anchor))
-            }
+            //
+            // .buffer() decouples this collector from the global TD update bus. buildReady
+            // calls buildTree → mapper.toThreadComment, which is suspending and may issue
+            // GetUser/GetChat for unseen authors. Without buffering, slow mapper calls on
+            // a busy thread would backpressure TdClient's drain coroutine and stall every
+            // other subscriber (PostsRepository, MediaCache, ChatFoldersRepository). The
+            // capacity is generous because realistic comment-update bursts are tiny (a
+            // handful of UpdateMessageInteractionInfo per second) and even an off-by-one
+            // accidental flood is bounded.
+            td.updates
+                .buffer(capacity = UPDATE_BUFFER_CAPACITY)
+                .collect { upd ->
+                    if (applyUpdate(upd, anchor, live, seenIds)) emit(buildReady(live, anchor))
+                }
         }
     }
 
@@ -204,16 +225,22 @@ class CommentsRepository(
     /**
      * Apply one [TdApi.Update] to the live message list. Returns true iff the list was
      * meaningfully mutated and a fresh snapshot should be emitted.
+     *
+     * [seenIds] is the same set the bootstrap loop uses for pagination dedup; we add to
+     * it on UpdateNewMessage and remove on UpdateDeleteMessages so a re-deliver of the
+     * same id (TDLib does occasionally re-emit during reconnects) is a no-op instead of
+     * a duplicate row.
      */
     private fun applyUpdate(
         upd: TdApi.Update,
         anchor: ResolvedAnchor,
         live: MutableList<TdApi.Message>,
+        seenIds: HashSet<Long>,
     ): Boolean = when (upd) {
         is TdApi.UpdateNewMessage -> {
             val m = upd.message
-            if (m.chatId != anchor.threadChatId || m.id == anchor.rootId) false
-            else if (live.any { it.id == m.id }) false
+            if (m.chatId != anchor.threadChatId) false
+            else if (!seenIds.add(m.id)) false
             else { live += m; true }
         }
         is TdApi.UpdateMessageInteractionInfo -> {
@@ -238,7 +265,10 @@ class CommentsRepository(
                 val ids = upd.messageIds.toHashSet()
                 val before = live.size
                 live.removeAll { it.id in ids }
-                live.size != before
+                if (live.size != before) {
+                    seenIds.removeAll(ids)
+                    true
+                } else false
             }
         }
         else -> false
@@ -304,5 +334,12 @@ class CommentsRepository(
         // Hand-picked: typical reading session opens 10–20 unique threads. 64 leaves
         // slack so the LRU only kicks in for power-users; smaller and the cache thrashes.
         const val MAX_CACHED_THREADS = 64
+        // Per-thread buffer between the global TD update bus and our slow collect-block.
+        // 256 absorbs realistic update bursts (interaction-info storms on a viral thread,
+        // brief reconnects re-emitting catch-ups) without ever pinging the upstream.
+        // SUSPEND on overflow is intentional — comment updates are not droppable, and a
+        // legitimate flood that fills 256 slots already means user-visible jank in the
+        // tree render, which the buffer can't mask anyway.
+        const val UPDATE_BUFFER_CAPACITY = 256
     }
 }
