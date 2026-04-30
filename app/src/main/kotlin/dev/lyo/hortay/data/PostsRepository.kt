@@ -304,6 +304,13 @@ class PostsRepository(
             val merged = current.addAll(fresh)
             PostFilterStrategy.apply(merged).take(MAX_FEED_SIZE).toPersistentList()
         }
+        // GetChatHistory(fromMessageId, offset=0, …) is INCLUSIVE on the boundary
+        // message — at end-of-history TDLib still returns the single anchor message
+        // back to us in a non-empty page. Without this guard the scroll listener would
+        // re-fire loadOlder forever once the user reaches the channel's first post,
+        // each time hitting GetChatHistory and getting the same one-message page. Treat
+        // a zero-fresh batch as the sentinel and stop pinging.
+        if (added == 0) pageEnded += chatId
         return added
     }
 
@@ -420,10 +427,24 @@ class PostsRepository(
         if (newPosts.isEmpty()) return
 
         _posts.update { current ->
-            val existingKeys = current.mapTo(mutableSetOf()) { it.chatId to it.id }
+            // When an incoming batch contains album members, [coalesceAlbumFragments] has
+            // already fetched the full sibling set for each affected mediaAlbumId, so the
+            // raw newPosts are authoritative for those albums. Drop any existing entry
+            // (merged anchor or solo) participating in those album groups before re-running
+            // PostFilterStrategy. Without this prune, a late sibling stacks the
+            // already-merged anchor's items on top of the raw siblings and mergeAlbumMembers
+            // duplicates the overlapping media inside one card.
+            val incomingAlbumKeys = newPosts
+                .filter { it.mediaAlbumId != 0L }
+                .mapTo(HashSet()) { it.chatId to it.mediaAlbumId }
+            val pruned = if (incomingAlbumKeys.isEmpty()) current
+                else current.mutate { list ->
+                    list.removeAll { p -> p.mediaAlbumId != 0L && (p.chatId to p.mediaAlbumId) in incomingAlbumKeys }
+                }
+            val existingKeys = pruned.mapTo(mutableSetOf()) { it.chatId to it.id }
             val addition = newPosts.filterNot { (it.chatId to it.id) in existingKeys }
-            if (addition.isEmpty()) current
-            else PostFilterStrategy.apply(current.addAll(addition)).take(MAX_FEED_SIZE).toPersistentList()
+            if (addition.isEmpty() && pruned === current) current
+            else PostFilterStrategy.apply(pruned.addAll(addition)).take(MAX_FEED_SIZE).toPersistentList()
         }
     }
 

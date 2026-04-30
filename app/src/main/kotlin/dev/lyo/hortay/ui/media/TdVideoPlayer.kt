@@ -70,6 +70,15 @@ fun TdVideoPlayer(
         }
     }
 
+    // React to autoPlay changes after acquisition — critical inside a HorizontalPager,
+    // where neighbour pages stay composed past the active one (offscreenPageLimit ≥ 1).
+    // Without this, a video that started playing on its active page keeps running
+    // off-screen after the swipe (audio bleed-through, kept-alive MediaCodec, kept-alive
+    // wakelock for non-muted players); a precomposed neighbour acquired with autoPlay=
+    // false stays paused when it becomes the active page. Passing it through a
+    // LaunchedEffect keyed on `autoPlay` flips playWhenReady on each transition.
+    LaunchedEffect(autoPlay) { exoPlayer.playWhenReady = autoPlay }
+
     // Swap the source when the file becomes Ready, or when the caller picks a
     // different quality (different fileId → new MediaState.Ready with a new path).
     // We preserve playback position across the swap so a quality flip resumes

@@ -417,7 +417,13 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
 
-    var code by remember { mutableStateOf("") }
+    // Reset the typed code whenever TDLib swaps the active code channel — resend can
+    // change codeLength (5-digit Telegram → 6-digit SMS, Fragment → Firebase…) and a
+    // submit with a stale longer/shorter value would 400 with PHONE_CODE_INVALID even
+    // if the user re-typed correctly afterwards. Keying on (codeLength, channelLabel)
+    // means the field clears on a real channel switch but stays put through harmless
+    // recompositions of the same WaitCode payload.
+    var code by remember(stage.codeLength, stage.channelLabel) { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
     var resending by remember { mutableStateOf(false) }
 
