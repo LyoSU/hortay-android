@@ -101,6 +101,19 @@ class MediaCache(
     // these so a re-mounted item is not torn down by an earlier dispose.
     private val pendingCancels = ConcurrentHashMap<Int, Job>()
 
+    // Per-fileId post-completion resync jobs. TDLib *sometimes* emits two UpdateFile
+    // bursts at the tail of a download — first `isDownloadingCompleted=true, path=""`
+    // (just-finished, before its internal rename to `photos/...jpg`), then the same
+    // with the path filled in. The first event maps to Downloading(progress=1.0)
+    // because [toMediaState] gates Ready on a non-empty path. If the second event is
+    // dropped or never sent (rarer, but happens when the file was already in TDLib's
+    // local store and the rename was a no-op), the slot would sit at "100% spinner"
+    // until the user scrolled away and back — exactly the symptom we kept seeing.
+    // We schedule a one-shot GetFile through this map: after a short delay, if the
+    // slot is still Downloading at 1.0, we ask TDLib for the authoritative File and
+    // route it through the reducer.
+    private val postCompletionResync = ConcurrentHashMap<Int, Job>()
+
     // Single-coroutine reducer for all File mutations. Inbound `td.updates` events and
     // `ensureSlow`'s GetFile responses BOTH flow through this channel, so the state
     // machine has one writer instead of two-on-different-dispatchers (which silently
@@ -130,14 +143,15 @@ class MediaCache(
         //     when ProcessLifecycleOwner reports ON_START again). We don't need recovery
         //     while no one is looking at the screen, and TDLib resumes downloads itself
         //     when the app foregrounds.
-        //   • Foreground but no active downloads → tick every IDLE_TICK_MS (30 s). The
-        //     loop still has to wake occasionally so a fresh ensure() that started just
-        //     after the last empty-check is picked up — but the wake-up cost at idle is
-        //     two orders of magnitude lower than at the active cadence.
+        //   • Foreground but no active downloads → tick every IDLE_TICK_MS (5 s). The
+        //     loop still wakes occasionally so a fresh ensure() that started just after
+        //     the last empty-check is picked up promptly — at this cadence the wake-up
+        //     cost is negligible while still feeling responsive on the very first stall.
         //   • Foreground + active downloads → tick every WATCHDOG_TICK_MS (2 s). At the
-        //     STALL_THRESHOLD_MS (30 s) of silence the next tick reissues; worst-case
-        //     recovery is ~32 s — long enough to absorb DC-migration flat intervals and
-        //     TDLib's own 7-44 s reconnect window without thrashing.
+        //     STALL_THRESHOLD_MS (15 s) of silence the next tick reissues; worst-case
+        //     recovery is ~17 s. Reissue is free for TDLib (treated as "kick the queue",
+        //     not "restart"), and real progress resets the timer — so a slow-but-moving
+        //     transfer never trips the watchdog.
         scope.launch(ioDispatcher) {
             while (isActive) {
                 if (!foreground.value) {
@@ -146,7 +160,10 @@ class MediaCache(
                 val cadence = if (tracks.isEmpty()) IDLE_TICK_MS else WATCHDOG_TICK_MS
                 delay(cadence)
                 if (tracks.isEmpty()) continue
-                if (connection.value != ConnectionStatus.Ready) continue
+                // Updating means "TDLib is catching up on missed updates" — downloads
+                // still progress, so we keep watching. Only WaitingForNetwork is a hard
+                // stop: reissuing during it just queues a request that goes nowhere.
+                if (connection.value == ConnectionStatus.WaitingForNetwork) continue
                 checkStalled()
             }
         }
@@ -230,6 +247,18 @@ class MediaCache(
         }
 
         s.value = merged
+
+        // Schedule a post-completion resync the first time we see Downloading(1.0).
+        // If TDLib's follow-up "path filled in" UpdateFile arrives normally (the
+        // happy path), we transition to Ready before this fires and the cancel below
+        // tears it down. Only when the follow-up is silently missed does the resync
+        // actually do GetFile and surface the canonical path. See [postCompletionResync].
+        if (merged is MediaState.Downloading && merged.progress >= 1f) {
+            schedulePostCompletionResync(file.id)
+        } else if (merged is MediaState.Ready || merged is MediaState.Failed) {
+            postCompletionResync.remove(file.id)?.cancel()
+        }
+
         if (merged is MediaState.Ready || merged is MediaState.Failed) {
             activePriority.remove(file.id)
             tracks.remove(file.id)
@@ -329,7 +358,16 @@ class MediaCache(
         if (current is MediaState.Downloading && currentPriority >= priority.tdValue) return
 
         try {
-            if (current !is MediaState.Downloading) {
+            // Trust slot.value's Downloading only when we also still own an
+            // activePriority record. The cancel job clears activePriority/tracks
+            // before TDLib's post-cancel UpdateFile lands (and TDLib may emit no
+            // UpdateFile at all if onlyIfPending=true was a no-op against an active
+            // download). Without a fresh GetFile here, we'd skip metadata sync,
+            // fire DownloadFile against a stale snapshot, and the user would see
+            // the spinner sit at the pre-cancel percentage until the watchdog
+            // reissues — that's the "hangs until I restart" symptom.
+            val needsResync = current !is MediaState.Downloading || currentPriority == 0
+            if (needsResync) {
                 val file = td.send(TdApi.GetFile(fileId))
                 // Hand the file to the reducer through the same channel the inbound
                 // UpdateFile stream uses — the Ready-stick / eviction / throttle logic
@@ -373,6 +411,7 @@ class MediaCache(
         // Aborting any debounced cancel for the same id is a no-op safety net — the
         // explicit path runs immediately and writes the same state below.
         pendingCancels.remove(fileId)?.cancel()
+        postCompletionResync.remove(fileId)?.cancel()
         scope.launch(ioDispatcher) {
             runCatching { td.send(TdApi.CancelDownloadFile(fileId, /* onlyIfPending */ false)) }
             activePriority.remove(fileId)
@@ -391,6 +430,7 @@ class MediaCache(
         states[fileId]?.value = MediaState.Idle
         activePriority.remove(fileId)
         tracks.remove(fileId)
+        postCompletionResync.remove(fileId)?.cancel()
         ensure(fileId, priority)
     }
 
@@ -415,6 +455,7 @@ class MediaCache(
             s.value = MediaState.Idle
             activePriority.remove(fileId)
             tracks.remove(fileId)
+            postCompletionResync.remove(fileId)?.cancel()
             ensure(fileId, priority)
         }
     }
@@ -430,14 +471,72 @@ class MediaCache(
      * aborts this job and the in-flight download keeps running. Any previously queued
      * cancel for the same fileId is replaced and cancelled.
      */
+    /**
+     * Single-shot, atomically-deduped GetFile [POST_COMPLETION_RESYNC_MS] from now.
+     * Called whenever the reducer sees Downloading(1.0) — the canonical "tail of
+     * download, awaiting TDLib rename" snapshot.
+     *
+     * Why single-shot: if TDLib's GetFile reply lands and is *still* Downloading(1.0)
+     * (file's not yet renamed on TDLib's side, e.g. very large file), a re-arm here
+     * would set up a 400ms poll loop until rename happens. We let the reducer's
+     * Ready/Failed transition clear the registration instead — this means subsequent
+     * Downloading(1.0) emits during the same completion sequence are no-ops, and the
+     * watchdog (`STALL_THRESHOLD_MS`) is the next escalation if rename never lands.
+     *
+     * Why lazy start + putIfAbsent: gives us a clean "first writer wins" race without
+     * a separate `containsKey` check that would itself be racy. The losers' jobs are
+     * built but never started, so they cost almost nothing to discard.
+     */
+    private fun schedulePostCompletionResync(fileId: Int) {
+        val newJob = scope.launch(ioDispatcher, start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            delay(POST_COMPLETION_RESYNC_MS)
+            // If the reducer already landed on Ready/Failed, our work is moot — bail
+            // without an extra TDLib roundtrip. The reducer also proactively removes
+            // (and cancels) this job on the terminal transition, so we'd typically
+            // be cancelled before reaching here; this check covers the race where
+            // the transition happens between delay() and now.
+            val current = states[fileId]?.value
+            if (current !is MediaState.Downloading) return@launch
+            runCatching {
+                val freshFile = td.send(TdApi.GetFile(fileId))
+                fileEvents.send(freshFile)
+            }
+        }
+        val existing = postCompletionResync.putIfAbsent(fileId, newJob)
+        if (existing == null) newJob.start() else newJob.cancel()
+    }
+
     fun cancelIfPendingAsync(fileId: Int) {
+        lateinit var jobRef: Job
         val job = scope.launch(ioDispatcher) {
             delay(CANCEL_DEBOUNCE_MS)
-            runCatching { td.send(TdApi.CancelDownloadFile(fileId, /* onlyIfPending */ true)) }
-            activePriority.remove(fileId)
-            tracks.remove(fileId)
-            pendingCancels.remove(fileId)
+            // Past the debounce window, do the cancel + resync as one atomic unit.
+            // [kotlinx.coroutines.NonCancellable] guards against a stray ensure() that
+            // raced past `pendingCancels.remove(fileId)?.cancel()` after we'd already
+            // sent CancelDownloadFile — without this, cancel() would tear down the
+            // in-flight GetFile mid-resync and leave the slot in a stale Downloading
+            // snapshot that no watchdog event would correct.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                runCatching {
+                    td.send(TdApi.CancelDownloadFile(fileId, /* onlyIfPending */ true))
+                    // TDLib does not necessarily emit UpdateFile after CancelDownloadFile
+                    // — for an active (non-pending) download the cancel is a no-op, and
+                    // for a real cancel TDLib may stay silent. Without resyncing here,
+                    // the slot would keep the pre-cancel Downloading snapshot until the
+                    // watchdog (or a user re-mount) noticed. A targeted GetFile makes
+                    // the reducer see authoritative state and corrects the slot
+                    // immediately.
+                    val file = td.send(TdApi.GetFile(fileId))
+                    fileEvents.send(file)
+                }
+                activePriority.remove(fileId)
+                tracks.remove(fileId)
+                // Compare-and-remove: if a fresh cancelIfPendingAsync raced ahead of
+                // us and put a new job in this slot, leave that one alone.
+                pendingCancels.remove(fileId, jobRef)
+            }
         }
+        jobRef = job
         pendingCancels.put(fileId, job)?.cancel()
     }
 
@@ -452,25 +551,33 @@ class MediaCache(
         // How often the watchdog scans active downloads for stalls. Cheap walk, so
         // a 2s cadence still gives us sub-12s recovery on the worst case.
         const val WATCHDOG_TICK_MS = 2_000L
-        // Cadence while no downloads are in flight. The loop still wakes (so a freshly
-        // queued download isn't missed for too long), but at this rate the wake-up cost
-        // is negligible — well under one wake per second of foreground time.
-        const val IDLE_TICK_MS = 30_000L
-        // No bytes for this long → reissue. TDLib reopens its underlying connections
-        // after 7-44s of silence on a flaky link (#2585), and a DC migration mid-
-        // download can produce one flat interval before bytes resume; 30s lets that
-        // recover without us reissuing for nothing, while still feeling responsive
-        // on a real stall.
-        const val STALL_THRESHOLD_MS = 30_000L
-        // After two reissues with no progress we surface Failed. A third reissue is
-        // almost always thrashing against a server-side problem (file gone, DC
-        // unreachable) or a hard offline state we can't fix from the client.
-        const val MAX_STALL_RETRIES = 2
+        // Cadence while no downloads are in flight. We don't need this to be high —
+        // a fresh ensure() that landed just after the empty-check shouldn't have to
+        // wait 30s for the next sweep. 5s keeps wake-ups cheap (12/min when truly
+        // idle) while making first-stall detection feel instant.
+        const val IDLE_TICK_MS = 5_000L
+        // No bytes for this long → reissue. Tuned down from 30s: TDLib treats
+        // DownloadFile reissue as a free "kick the queue" (not a restart), so an
+        // unnecessary nudge during a slow-but-progressing transfer costs us nothing
+        // (real progress resets `changedAt` — only true zero-byte intervals trip the
+        // watchdog), while a genuine stall recovers ~2× faster.
+        const val STALL_THRESHOLD_MS = 15_000L
+        // After three reissues with no progress we surface Failed (~60s total). One
+        // more retry than before, since a single flaky DC-migration window can eat
+        // the first reissue cycle without that being a permanent failure.
+        const val MAX_STALL_RETRIES = 3
         // Window during which a re-mount can rescue a queued cancel. 250ms covers a
         // LazyColumn dispose-and-remount cycle (one frame at 60fps + some slack)
         // without keeping cancelled downloads pinned long enough for a real
         // navigation-away to feel laggy.
         const val CANCEL_DEBOUNCE_MS = 250L
+        // Delay between seeing Downloading(1.0) and forcing a GetFile resync. Long
+        // enough that the happy-path follow-up UpdateFile (which arrives in single-
+        // digit ms) has every chance to land first and cancel the resync; short
+        // enough that the user perceives the eventual recovery as instant. Below
+        // 200ms we'd often race ahead of TDLib's rename and end up with the same
+        // empty-path snapshot we're trying to fix.
+        const val POST_COMPLETION_RESYNC_MS = 400L
     }
 }
 

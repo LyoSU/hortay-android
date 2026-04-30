@@ -10,7 +10,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -51,15 +50,20 @@ fun TdVideoPlayer(
     priority: DownloadPriority = DownloadPriority.VisibleMedia,
 ) {
     val cache = LocalMediaCache.current
-    val context = LocalContext.current
+    val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val coScope = rememberCoroutineScope()
 
     LaunchedEffect(fileId, priority) { cache.ensure(fileId, priority) }
     val mediaState by cache.observe(fileId).collectAsStateWithLifecycle()
 
-    val exoPlayer = remember(context) {
-        ExoPlayer.Builder(context).build().apply {
+    // Acquire from the shared pool. Pooled instances arrive in IDLE state with empty
+    // playlist (see ExoPlayerPool.release); the apply-block here re-applies the
+    // per-call attributes that the pool reset on the previous release. Mute regime
+    // is fixed at acquire time — muted players are built without an audio renderer
+    // entirely (no AudioTrack, no AudioMix wakelock).
+    val exoPlayer = remember {
+        pool.acquire(muted = muted).apply {
             playWhenReady = autoPlay
             repeatMode = if (autoLoop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             volume = if (muted) 0f else 1f
@@ -92,7 +96,9 @@ fun TdVideoPlayer(
         lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
-            exoPlayer.release()
+            // Hand the player back to the pool instead of releasing — saves the
+            // MediaCodec/decoder allocation cost on the next viewport entry.
+            pool.release(exoPlayer, muted = muted)
         }
     }
 

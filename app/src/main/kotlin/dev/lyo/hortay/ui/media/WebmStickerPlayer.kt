@@ -9,7 +9,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -46,7 +45,7 @@ fun WebmStickerPlayer(
     priority: DownloadPriority = DownloadPriority.VisibleMedia,
 ) {
     val cache = LocalMediaCache.current
-    val context = LocalContext.current
+    val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(fileId, priority) { fileId?.let { cache.ensure(it, priority) } }
@@ -55,8 +54,11 @@ fun WebmStickerPlayer(
         else MutableStateFlow(MediaState.Idle)
     }.collectAsStateWithLifecycle()
 
-    val exoPlayer = remember(context) {
-        ExoPlayer.Builder(context).build().apply {
+    // Acquire from the shared pool. WebM stickers are inherently silent, so we
+    // request the muted variant — no audio renderer is built, AudioTrack is never
+    // allocated, and the AudioMix system wakelock is never taken.
+    val exoPlayer = remember {
+        pool.acquire(muted = true).apply {
             playWhenReady = true
             repeatMode = Player.REPEAT_MODE_ONE
             volume = 0f
@@ -86,7 +88,7 @@ fun WebmStickerPlayer(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            exoPlayer.release()
+            pool.release(exoPlayer, muted = true)
         }
     }
 

@@ -15,6 +15,7 @@ import dev.lyo.hortay.data.StatsRepository
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdLifecycleBridge
 import dev.lyo.hortay.data.TranslationsStore
+import dev.lyo.hortay.ui.media.ExoPlayerPool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -79,5 +80,12 @@ class AppGraph(context: Context) {
     // request stream is debounced 50ms so a screen-full of posts coalesces into a
     // single TDLib call.
     val customEmoji: CustomEmojiRepository = CustomEmojiRepository(tdClient, appScope)
+
+    // Shared ExoPlayer pool. Each ExoPlayer instance is heavy (MediaCodec decoders +
+    // surface threads + WakeLockManager + AudioMix wakelock), and the per-Composable
+    // `Builder().build()` pattern in TdVideoPlayer / WebmStickerPlayer churned 38 of
+    // them per minute of fast scroll on profiling — most living 0 ms. Pooling makes
+    // scroll past video cards essentially free at the player layer.
+    val exoPlayerPool: ExoPlayerPool = ExoPlayerPool(context)
 }
 

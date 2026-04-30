@@ -304,14 +304,28 @@ fun TimelineScreen(
             }
     }
 
-    val interactions = remember(bookmarkedKeys, onChannelFilterChange, onOpenComments, translationsMap, posts) {
+    // Frequently-changing state that the interactions lambdas need to read at the time
+    // of invocation (not at construction time). Wrapping in rememberUpdatedState gives
+    // the lambdas a stable [State] handle whose `.value` is always up-to-date — so we
+    // don't have to rebuild [PostInteractions] (and trigger a recomposition cascade
+    // through every PostCard in the viewport) on every TDLib update. Before this, an
+    // UpdateMessageInteractionInfo for a single post (reaction, view counter) churned
+    // `posts`, which churned `interactions`, which invalidated all PostCard skips.
+    val postsState = rememberUpdatedState(posts)
+    val translationsState = rememberUpdatedState(translationsMap)
+    val bookmarkedState = rememberUpdatedState(bookmarkedKeys)
+    val onChannelFilterChangeState = rememberUpdatedState(onChannelFilterChange)
+    val onOpenCommentsState = rememberUpdatedState(onOpenComments)
+
+    val interactions = remember {
         // Album members share the same translation — TDLib stores translations against the
         // caption-carrying message id, but for the UI any post in the album should look
         // translated. Fall back to scanning album members when the lookup misses.
         fun lookup(post: TimelinePost): dev.lyo.hortay.data.FormattedText? {
-            translationsMap[dev.lyo.hortay.data.TranslationsStore.Key(post.chatId, post.id)]?.let { return it }
+            val map = translationsState.value
+            map[dev.lyo.hortay.data.TranslationsStore.Key(post.chatId, post.id)]?.let { return it }
             post.albumMessageIds.forEach { id ->
-                translationsMap[dev.lyo.hortay.data.TranslationsStore.Key(post.chatId, id)]?.let { return it }
+                map[dev.lyo.hortay.data.TranslationsStore.Key(post.chatId, id)]?.let { return it }
             }
             return null
         }
@@ -319,7 +333,7 @@ fun TimelineScreen(
             onMediaClick = { post, idx ->
                 viewer.openFor(post.content, idx)
             },
-            onChannelClick = { post -> onChannelFilterChange(post.chatId) },
+            onChannelClick = { post -> onChannelFilterChangeState.value(post.chatId) },
             onForwardSourceClick = { post ->
                 val origin = post.forwardOrigin
                 val sourceId = when (origin) {
@@ -334,9 +348,9 @@ fun TimelineScreen(
                 }
                 // Already in our subscribed feed → switch the filter so the user lands on
                 // that channel's posts. Otherwise hand off to the Telegram client.
-                val subscribed = posts.any { it.chatId == sourceId }
+                val subscribed = postsState.value.any { it.chatId == sourceId }
                 when {
-                    sourceId != null && subscribed -> onChannelFilterChange(sourceId)
+                    sourceId != null && subscribed -> onChannelFilterChangeState.value(sourceId)
                     !sourceHandle.isNullOrBlank() -> {
                         val handle = sourceHandle.removePrefix("@")
                         runCatching {
@@ -377,8 +391,8 @@ fun TimelineScreen(
                     )
                 }
             },
-            onPostClick = onOpenComments,
-            isBookmarked = { post -> post.bookmarkKey() in bookmarkedKeys },
+            onPostClick = { post -> onOpenCommentsState.value(post) },
+            isBookmarked = { post -> post.bookmarkKey() in bookmarkedState.value },
         )
     }
 

@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.baselineprofile)
 }
 
 val telegramProps = Properties().apply {
@@ -68,6 +69,29 @@ android {
                 abiFilters += listOf("arm64-v8a", "x86_64")
             }
         }
+        // Build type for Macrobenchmark / Baseline Profile generation. Same as release
+        // (minified, R8-optimized) so the profile maps to real production code, but
+        // signed with debug keys and marked profileable so the benchmark tooling can
+        // attach. We don't ship this — it's only consumed by the :baselineprofile module.
+        create("benchmark") {
+            initWith(buildTypes.getByName("release"))
+            matchingFallbacks += listOf("release")
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            isProfileable = true
+            ndk {
+                abiFilters.clear()
+                abiFilters += "arm64-v8a"
+            }
+        }
+    }
+
+    // Bundle the generated baseline profile into release builds. The :baselineprofile
+    // module produces it from a Macrobenchmark cold-start scenario; AGP picks the
+    // result up here and ART's profileinstaller bakes it into the install image so
+    // the hot startup path runs as AOT-compiled code from the very first launch.
+    baselineProfile {
+        mergeIntoMain = true
     }
 
     compileOptions {
@@ -138,6 +162,12 @@ dependencies {
     implementation(libs.lottie.compose)
 
     implementation(project(":libtdlib"))
+
+    // Runtime installer for the AOT baseline profile bundled by AGP's
+    // baselineProfile {} block above. Without it, the profile sits in the APK but
+    // is never applied to ART's compilation database.
+    implementation(libs.androidx.profileinstaller)
+    "baselineProfile"(project(":baselineprofile"))
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)

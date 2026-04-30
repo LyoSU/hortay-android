@@ -15,6 +15,7 @@ import dev.lyo.hortay.data.AuthStage
 import dev.lyo.hortay.ui.auth.AuthScreen
 import dev.lyo.hortay.ui.main.MainScaffold
 import dev.lyo.hortay.ui.media.LocalCustomEmoji
+import dev.lyo.hortay.ui.media.LocalExoPlayerPool
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.MediaViewerHost
 import dev.lyo.hortay.ui.theme.HortayTheme
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(
                     LocalMediaCache provides graph.mediaCache,
                     LocalCustomEmoji provides graph.customEmoji,
+                    LocalExoPlayerPool provides graph.exoPlayerPool,
                 ) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val auth by graph.tdClient.authStage.collectAsStateWithLifecycle()
