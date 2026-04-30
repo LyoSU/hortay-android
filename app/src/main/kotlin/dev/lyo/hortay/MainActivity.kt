@@ -12,7 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.data.AuthStage
-import dev.lyo.hortay.data.LocalTdSender
 import dev.lyo.hortay.ui.auth.AuthScreen
 import dev.lyo.hortay.ui.main.MainScaffold
 import dev.lyo.hortay.ui.media.MediaViewerHost
@@ -30,10 +29,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             HortayTheme {
-                CompositionLocalProvider(
-                    LocalMediaCache provides graph.mediaCache,
-                    LocalTdSender provides graph.tdClient,
-                ) {
+                CompositionLocalProvider(LocalMediaCache provides graph.mediaCache) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val auth by graph.tdClient.authStage.collectAsStateWithLifecycle()
                         when (auth) {

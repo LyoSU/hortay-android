@@ -184,6 +184,7 @@ private fun MediaPage(
                 autoPlay = isActive,
                 autoLoop = false,
                 showControls = true,
+                priority = DownloadPriority.Foreground,
                 modifier = Modifier.fillMaxSize(),
             )
             // Touch the picker callback so an unpicked default still registers — keeps
@@ -198,6 +199,7 @@ private fun MediaPage(
             autoLoop = true,
             showControls = false,
             muted = true,
+            priority = DownloadPriority.Foreground,
             modifier = Modifier.fillMaxSize(),
         )
     }
