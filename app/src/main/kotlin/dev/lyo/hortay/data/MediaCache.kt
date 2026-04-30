@@ -323,12 +323,27 @@ class MediaCache(
      * TDLib treats reissue as "kick the queue", not "start a new download", which matches
      * what the official Telegram clients do.
      *
-     * Threshold is differentiated by priority: `Foreground`/`VisibleMedia` files (what the
-     * user is actually staring at) get the tighter [STALL_THRESHOLD_FOREGROUND_MS] so
-     * sub-15s server-side stalls recover before the user gives up; `Prefetch`/`Avatar`
-     * files (speculative, off-screen, or always second-class) keep the slower
-     * [STALL_THRESHOLD_MS] — there's no UX win from spamming the queue for a thumbnail
-     * the user may never see.
+     * Threshold is graduated by **how visible the stall is to the user** plus **how
+     * confident we are it's a real stall**:
+     *
+     *   • [STALL_THRESHOLD_FIRST_BYTE_MS] — for visible files where TDLib reports
+     *     `is_downloading_active=true` but no byte has landed yet. Almost always a
+     *     stuck MTProto request: the bytes-on-the-wire phase normally takes 200-2000 ms
+     *     end-to-end on a healthy network, so a 4 s gap is genuinely abnormal. Catches
+     *     the "довго грузилось" case the user reports for top-of-feed media.
+     *   • [STALL_THRESHOLD_FOREGROUND_MS] — for visible files mid-stream. We can't be
+     *     as aggressive here (a chunk-to-chunk gap on a slow-but-progressing connection
+     *     is 1-5 s legitimately), so 6 s is the line where it reads as "stuck" rather
+     *     than "slow". Once the file gets going, this is the relevant threshold.
+     *   • [STALL_THRESHOLD_MS] — for `Prefetch`/`Avatar` (speculative, off-screen, or
+     *     always second-class). No UX win from spamming reissue for a thumbnail the
+     *     user may never see; 15 s matches TDLib's own session-reconnect window.
+     *
+     * Skip non-active entries entirely: a file queued in TDLib's per-DC slot pool reads
+     * as `is_downloading_active=false` even though it has [MediaState.Downloading] in
+     * the slot. Reissuing it is a no-op for TDLib (already in queue) and only churns
+     * same-priority LIFO order — see logcat sample with 22 reissues in 5 ms during
+     * heavy scroll before this filter was added.
      *
      * After [MAX_STALL_RETRIES] failed reissues we surface Failed so the UI can render
      * a tap-to-retry affordance instead of a perpetual spinner.
@@ -338,19 +353,16 @@ class MediaCache(
         // Snapshot — we mutate the map inside the loop.
         val snapshot = tracks.entries.toList()
         for ((fileId, track) in snapshot) {
-            // Queued in TDLib's per-DC slot pool — not actually trying to transfer right
-            // now, just waiting its turn. Reissuing it does nothing useful for download
-            // progress (TDLib already has the request) and only re-shuffles same-priority
-            // LIFO order. Skip; the slot will activate on its own when capacity frees,
-            // and the watchdog re-evaluates next tick.
             if (!track.isActive) continue
             val priority = activePriority[fileId] ?: DownloadPriority.VisibleMedia.tdValue
-            val threshold = if (priority >= DownloadPriority.VisibleMedia.tdValue) {
-                STALL_THRESHOLD_FOREGROUND_MS
-            } else {
-                STALL_THRESHOLD_MS
+            val isUserFacing = priority >= DownloadPriority.VisibleMedia.tdValue
+            val threshold = when {
+                isUserFacing && track.bytes == 0L -> STALL_THRESHOLD_FIRST_BYTE_MS
+                isUserFacing -> STALL_THRESHOLD_FOREGROUND_MS
+                else -> STALL_THRESHOLD_MS
             }
-            if (now - track.changedAt < threshold) continue
+            val ageMs = now - track.changedAt
+            if (ageMs < threshold) continue
             val slot = states[fileId] ?: run {
                 tracks.remove(fileId)
                 continue
@@ -365,7 +377,7 @@ class MediaCache(
             val live = tracks[fileId] ?: continue
             if (live.bytes != track.bytes || live.changedAt != track.changedAt) continue
             if (track.retries >= MAX_STALL_RETRIES) {
-                Log.w(TAG, "stall watchdog: giving up on $fileId after ${track.retries} retries")
+                Log.w(TAG, "stall watchdog: giving up on $fileId after ${track.retries} retries (priority=$priority, bytes=${track.bytes}, age=${ageMs}ms)")
                 slot.value = MediaState.Failed("завантаження зависло")
                 tracks.remove(fileId)
                 activePriority.remove(fileId)
@@ -377,7 +389,7 @@ class MediaCache(
                     if (current == null || current.bytes != track.bytes) current
                     else current.copy(changedAt = now, retries = current.retries + 1)
                 }
-                Log.i(TAG, "stall watchdog: reissued $fileId (retry ${track.retries + 1}/$MAX_STALL_RETRIES)")
+                Log.i(TAG, "stall watchdog: reissued $fileId (priority=$priority, bytes=${track.bytes}, age=${ageMs}ms, retry ${track.retries + 1}/$MAX_STALL_RETRIES)")
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
                 Log.w(TAG, "stall watchdog: reissue failed for $fileId", t)
@@ -675,12 +687,20 @@ class MediaCache(
         // watchdog), while a genuine stall recovers ~2× faster.
         const val STALL_THRESHOLD_MS = 15_000L
         // Tighter threshold for files the user is actively staring at
-        // (Foreground/VisibleMedia priorities). Server-side stalls in the 5-15s window
-        // are common per TDLib #2585; without this, a "довго грузилась" feeling persists
-        // up to 15s before the watchdog kicks. 6s is below human "is this stuck?"
-        // attention threshold (≈8-10s for content the user expects) and gives one full
-        // retry cycle before [MAX_STALL_RETRIES] runs out (~24s total recovery window).
+        // (Foreground/VisibleMedia priorities) once bytes have started flowing. Server-side
+        // stalls in the 5-15s window are common per TDLib #2585; without this, a "довго
+        // грузилось" feeling persists up to 15s before the watchdog kicks. 6s is below
+        // human "is this stuck?" attention threshold (≈8-10s for content the user expects).
         const val STALL_THRESHOLD_FOREGROUND_MS = 6_000L
+        // Even tighter window for the "first byte never arrived" case on user-visible
+        // media: TDLib has reported `is_downloading_active=true` but `downloadedSize`
+        // is still 0. Healthy first-byte latency is 200-2000 ms (DC roundtrip + MTProto
+        // request scheduling), so 4 s of zero is almost always a stuck request that a
+        // free reissue will dislodge. Three retries of this path = ~12s total before
+        // we give up — matches the lower edge of TDLib's own 7-44s session-reconnect
+        // window, so we always have a chance to either dislodge the request or hand
+        // off to TDLib's reconnect-driven recovery.
+        const val STALL_THRESHOLD_FIRST_BYTE_MS = 4_000L
         // After three reissues with no progress we surface Failed (~60s total). One
         // more retry than before, since a single flaky DC-migration window can eat
         // the first reissue cycle without that being a permanent failure.
