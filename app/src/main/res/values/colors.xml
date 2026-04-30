@@ -1,14 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!--
-      Brand seed (periwinkle) — single source of truth for the launcher icon and any
-      pre-Compose surface (splash background, themes.xml). Compose-side colour roles
-      live in ui/theme/Color.kt; keep these in sync if either changes.
-    -->
-    <color name="brand_primary">#FF5A5BA8</color>
-    <color name="brand_background">#FF5A5BA8</color>
     <color name="brand_foreground">#FFFFFFFF</color>
-    <!-- Launcher gradient stops, 135° top-left → bottom-right. -->
     <color name="brand_gradient_top">#FFC2C0FF</color>
     <color name="brand_gradient_mid">#FF8A8CDC</color>
     <color name="brand_gradient_bot">#FF5A5BA8</color>

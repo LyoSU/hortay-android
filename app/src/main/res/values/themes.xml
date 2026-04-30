@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Hortay.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@android:color/system_neutral1_50</item>
+        <item name="windowSplashScreenBackground">@color/brand_gradient_bot</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
         <item name="postSplashScreenTheme">@style/Theme.Hortay</item>
     </style>

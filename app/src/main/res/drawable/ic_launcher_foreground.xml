@@ -1,16 +1,24 @@
-<!--
-  Adaptive-icon foreground. The 108×108 viewport must keep its content within the inner
-  72×72 safe zone — the launcher crops the rest for round / squircle / teardrop shapes.
-  We draw the brand letter "H" as a single closed path traced corner-by-corner (so the
-  cross-bar reads as a cut-out, not three separate fills). White on the gradient
-  periwinkle background — same metaphor design system specifies.
--->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <path
+        android:fillColor="#FFE0DDEF"
+        android:pathData="M76,72 L76,82 L66,82 Z" />
+
     <path
         android:fillColor="@color/brand_foreground"
-        android:pathData="M39,32 L50,32 L50,50 L58,50 L58,32 L69,32 L69,76 L58,76 L58,58 L50,58 L50,76 L39,76 Z" />
+        android:pathData="M38,26 L70,26 A6,6 0 0 1 76,32 L76,72 L66,82 L38,82 A6,6 0 0 1 32,76 L32,32 A6,6 0 0 1 38,26 Z" />
+
+    <path
+        android:fillColor="@color/brand_gradient_mid"
+        android:pathData="M40.5,43.5 L63.5,43.5 A2.5,2.5 0 0 1 63.5,48.5 L40.5,48.5 A2.5,2.5 0 0 1 40.5,43.5 Z" />
+    <path
+        android:fillColor="@color/brand_gradient_mid"
+        android:pathData="M40.5,53.5 L67.5,53.5 A2.5,2.5 0 0 1 67.5,58.5 L40.5,58.5 A2.5,2.5 0 0 1 40.5,53.5 Z" />
+    <path
+        android:fillColor="@color/brand_gradient_mid"
+        android:pathData="M40.5,63.5 L55.5,63.5 A2.5,2.5 0 0 1 55.5,68.5 L40.5,68.5 A2.5,2.5 0 0 1 40.5,63.5 Z" />
 </vector>

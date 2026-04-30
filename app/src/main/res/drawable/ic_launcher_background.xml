@@ -1,10 +1,3 @@
-<!--
-  Launcher background — diagonal periwinkle gradient (135°). Per design spec:
-    Stop 0%   #C2C0FF (light periwinkle)
-    Stop 50%  #8A8CDC (mid)
-    Stop 100% #5A5BA8 (brand seed)
-  GradientShader anchored top-left → bottom-right inside the 108×108 viewport.
--->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
