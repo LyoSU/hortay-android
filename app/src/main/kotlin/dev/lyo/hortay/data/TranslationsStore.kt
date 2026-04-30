@@ -14,6 +14,10 @@ import kotlinx.coroutines.sync.withLock
 import org.drinkless.tdlib.TdApi
 import java.util.Locale
 
+// Note: takes UserMessageBus + connection to surface translate failures (most common
+// real-world cause: Telegram Premium gate or per-method FLOOD_WAIT) directly to the
+// user; otherwise the translate button silently does nothing on rejection.
+
 /**
  * In-memory cache of message translations.
  *
@@ -41,6 +45,8 @@ import java.util.Locale
 class TranslationsStore(
     private val td: TdSender,
     scope: CoroutineScope,
+    private val userMessages: UserMessageBus,
+    private val connection: StateFlow<ConnectionStatus>,
 ) {
 
     private val _translations = MutableStateFlow<Map<Key, FormattedText>>(emptyMap())
@@ -78,10 +84,13 @@ class TranslationsStore(
             // Double-check under the per-key lock — another concurrent caller may have
             // populated the map while we waited.
             if (_translations.value.containsKey(key)) return@withLock true
-            val result = runCatching {
+            val attempt = runCatching {
                 td.send(TdApi.TranslateMessageText(chatId, messageId, target, /* tone */ null))
             }.warnUnlessCancelled(TAG, "translate($chatId, $messageId, $target)")
-                .getOrNull() ?: return@withLock false
+            val result = attempt.getOrElse { err ->
+                err.surfaceTo(userMessages, "перекласти повідомлення", connection.value)
+                return@withLock false
+            }
 
             val mapped = MessageContentMapper.mapFormattedText(result)
             _translations.update { it + (key to mapped) }

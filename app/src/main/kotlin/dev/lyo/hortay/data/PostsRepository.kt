@@ -49,6 +49,8 @@ class PostsRepository(
     private val td: TdSender,
     private val mapper: MessageMapper,
     private val scope: CoroutineScope,
+    private val userMessages: UserMessageBus,
+    private val connection: kotlinx.coroutines.flow.StateFlow<ConnectionStatus>,
 ) {
 
     private val refreshMutex = Mutex()
@@ -182,6 +184,7 @@ class PostsRepository(
         runCatching { refreshLocked(limitPerChannel) }
             .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
             .warnUnlessCancelled("refresh")
+            .onFailure { it.surfaceTo(userMessages, "оновити стрічку", connection.value) }
     }
 
     /**
@@ -194,6 +197,7 @@ class PostsRepository(
         runCatching { refreshLocked(REFRESH_DEFAULT_LIMIT) }
             .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
             .warnUnlessCancelled("refreshIfStale")
+            .onFailure { it.surfaceTo(userMessages, "оновити стрічку", connection.value) }
     }
 
     /**
@@ -230,6 +234,7 @@ class PostsRepository(
             deepLoadCooldownUntilMs[chatId] = System.currentTimeMillis() + DEEP_LOAD_COOLDOWN_MS
         }
         return result.warnUnlessCancelled(TAG, "loadChannelHistory($chatId)")
+            .onFailure { it.surfaceTo(userMessages, "завантажити канал", connection.value) }
     }
 
     private suspend fun loadChannelHistoryLocked(chatId: Long, limit: Int) {
@@ -271,7 +276,10 @@ class PostsRepository(
         }
         val result = deferred.await()
         pageJobs.remove(chatId, deferred)
-        return result.warnUnlessCancelled(TAG, "loadOlder($chatId)").getOrDefault(0)
+        return result
+            .warnUnlessCancelled(TAG, "loadOlder($chatId)")
+            .onFailure { it.surfaceTo(userMessages, "завантажити старіші пости", connection.value) }
+            .getOrDefault(0)
     }
 
     private suspend fun loadOlderLocked(chatId: Long, limit: Int): Int {

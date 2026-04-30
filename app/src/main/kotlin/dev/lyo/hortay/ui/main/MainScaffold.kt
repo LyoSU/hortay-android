@@ -8,6 +8,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -36,6 +39,18 @@ fun MainScaffold(graph: AppGraph) {
     val scope = rememberCoroutineScope()
     val connection by graph.tdClient.connection.collectAsStateWithLifecycle()
 
+    // Single SnackbarHost owned by the scaffold so transient errors land on whichever
+    // tab the user is currently looking at. Subscribing to the bus only while composed
+    // means messages buffered during foreground transitions get delivered as soon as
+    // we resume; a flooded bus drops oldest (see [UserMessageBus]) so we never queue
+    // a stale apology that no longer reflects the current state.
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        graph.userMessages.messages.collect { msg ->
+            snackbarHostState.showSnackbar(message = msg.text)
+        }
+    }
+
     // Back priority: dismiss overlay → clear channel filter → return to Feed → system close.
     BackHandler(enabled = commentsForPost != null) { commentsForPost = null }
     BackHandler(enabled = commentsForPost == null && channelFilter != null) { channelFilter = null }
@@ -45,6 +60,11 @@ fun MainScaffold(graph: AppGraph) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(snackbarData = data)
+            }
+        },
         bottomBar = {
             FloatingNavBar(
                 selected = selectedTab,

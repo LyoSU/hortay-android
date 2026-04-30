@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import kotlinx.coroutines.flow.StateFlow
 import org.drinkless.tdlib.TdApi
 
 /**
@@ -10,8 +11,16 @@ import org.drinkless.tdlib.TdApi
  * errors (FLOOD_WAIT, restricted reactions, channel left mid-tap…). Repositories that
  * own the resulting state ([PostsRepository] for reactions, this layer for chat info)
  * pick up the change via TDLib's update stream — no need to round-trip the result here.
+ *
+ * User-initiated actions (react / mute / join / leave) surface failures via
+ * [UserMessageBus]; cosmetic reads (channelInfo) stay silent because the sheet shows
+ * its own loading/empty state.
  */
-class ChannelActionsRepository(private val td: TdSender) {
+class ChannelActionsRepository(
+    private val td: TdSender,
+    private val userMessages: UserMessageBus,
+    private val connection: StateFlow<ConnectionStatus>,
+) {
 
     /**
      * Toggle one of the user's reactions on a message. `isChosen` is the value as the user
@@ -45,7 +54,9 @@ class ChannelActionsRepository(private val td: TdSender) {
                     ),
                 )
             }
-        }.warnUnlessCancelled(TAG, "toggleReaction(${kind.stableKey}, isChosen=$isChosen)")
+        }
+            .warnUnlessCancelled(TAG, "toggleReaction(${kind.stableKey}, isChosen=$isChosen)")
+            .onFailure { it.surfaceTo(userMessages, "змінити реакцію", connection.value) }
     }
 
     private fun ReactionKind.toTd(): TdApi.ReactionType = when (this) {
@@ -83,6 +94,7 @@ class ChannelActionsRepository(private val td: TdSender) {
         }
         runCatching { td.send(TdApi.SetChatNotificationSettings(chatId, updated)) }
             .warnUnlessCancelled(TAG, "setMuted($muted)")
+            .onFailure { it.surfaceTo(userMessages, if (muted) "вимкнути сповіщення" else "увімкнути сповіщення", connection.value) }
     }
 
     suspend fun isMuted(chatId: Long): Boolean {
@@ -95,11 +107,13 @@ class ChannelActionsRepository(private val td: TdSender) {
     suspend fun joinChat(chatId: Long) {
         runCatching { td.send(TdApi.JoinChat(chatId)) }
             .warnUnlessCancelled(TAG, "joinChat")
+            .onFailure { it.surfaceTo(userMessages, "приєднатися до каналу", connection.value) }
     }
 
     suspend fun leaveChat(chatId: Long) {
         runCatching { td.send(TdApi.LeaveChat(chatId)) }
             .warnUnlessCancelled(TAG, "leaveChat")
+            .onFailure { it.surfaceTo(userMessages, "відписатися від каналу", connection.value) }
     }
 
     /**

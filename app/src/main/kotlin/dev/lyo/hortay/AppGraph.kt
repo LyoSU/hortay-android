@@ -15,6 +15,7 @@ import dev.lyo.hortay.data.StatsRepository
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdLifecycleBridge
 import dev.lyo.hortay.data.TranslationsStore
+import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.ui.media.ExoPlayerPool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +31,11 @@ import kotlinx.coroutines.SupervisorJob
 class AppGraph(context: Context) {
 
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // Process-wide user-message bus. Repositories post errors here; MainScaffold
+    // collects and renders Snackbars regardless of which screen is in front. See
+    // [UserMessageBus] for the rationale on a singleton bus vs per-screen state.
+    val userMessages: UserMessageBus = UserMessageBus()
 
     // Declared before [tdClient] because TdClient consumes it for OptimizeStorage
     // throttling (the cleanup needs a persisted "last run at" timestamp to skip on
@@ -59,7 +65,8 @@ class AppGraph(context: Context) {
     // appearing as a feed post AND as a thread reply hits the cache twice.
     private val messageMapper: MessageMapper = MessageMapper(tdClient)
 
-    val postsRepository: PostsRepository = PostsRepository(tdClient, messageMapper, appScope)
+    val postsRepository: PostsRepository =
+        PostsRepository(tdClient, messageMapper, appScope, userMessages, tdClient.connection)
 
     val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope)
 
@@ -69,9 +76,11 @@ class AppGraph(context: Context) {
 
     val chatFoldersRepository: ChatFoldersRepository = ChatFoldersRepository(tdClient, appScope)
 
-    val translations: TranslationsStore = TranslationsStore(tdClient, appScope)
+    val translations: TranslationsStore =
+        TranslationsStore(tdClient, appScope, userMessages, tdClient.connection)
 
-    val channelActions: ChannelActionsRepository = ChannelActionsRepository(tdClient)
+    val channelActions: ChannelActionsRepository =
+        ChannelActionsRepository(tdClient, userMessages, tdClient.connection)
 
     val countries: CountryRepository = CountryRepository(tdClient)
 

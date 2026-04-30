@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 
 /**
@@ -94,6 +96,21 @@ class TdClient private constructor(
     }
 
     private lateinit var client: Client
+
+    /**
+     * Epoch-ms until which all outbound TDLib calls must back off. Set by [send]
+     * whenever the server returns a `420 FLOOD_WAIT_<n>` (or "Too Many Requests:
+     * retry after N") error — Telegram's per-method rate limit. Without honoring
+     * this, the next refresh storm would compound the breach and earn a longer
+     * sanction (Telegram escalates: 10s → 60s → minutes → an api_id lock).
+     *
+     * One global gate (vs per-method tracking) is intentional for a read-only
+     * client: we generate light traffic anyway, and a single suspended sleep is
+     * far simpler than threading per-method state through every callsite. The
+     * gate uses [AtomicLong.updateAndGet] with a `max` so concurrent flood
+     * responses can only push the deadline further, never pull it back.
+     */
+    private val floodWaitUntilMs = AtomicLong(0L)
 
     fun start() {
         if (this::client.isInitialized) return
@@ -306,18 +323,62 @@ class TdClient private constructor(
         runCatching { send(TdApi.LogOut()) }
     }
 
-    /** Suspend-style wrapper around [Client.send]. */
-    override suspend fun <T : TdApi.Object> send(query: TdApi.Function<T>): T =
-        suspendCancellableCoroutine { cont ->
-            client.send(query) { result ->
-                if (result is TdApi.Error) {
-                    cont.resumeWith(Result.failure(TdException(result.code, result.message)))
-                } else {
-                    @Suppress("UNCHECKED_CAST")
-                    cont.resume(result as T)
+    /**
+     * Suspend-style wrapper around [Client.send]. Wraps two cross-cutting concerns
+     * around the bare JNI call:
+     *
+     *   • **FLOOD_WAIT throttle.** Before sending, await any outstanding rate-limit
+     *     deadline set by a prior 420. After the call, if TDLib hands us back a
+     *     420, parse the retry-after seconds out of the message and push the
+     *     deadline forward. We do NOT auto-retry — the failed call still throws
+     *     and the caller decides; all we guarantee is that the *next* send waits.
+     *   • Result/error translation into [TdException], same as before.
+     */
+    override suspend fun <T : TdApi.Object> send(query: TdApi.Function<T>): T {
+        awaitFloodGate()
+        return try {
+            suspendCancellableCoroutine { cont ->
+                client.send(query) { result ->
+                    if (result is TdApi.Error) {
+                        cont.resumeWith(Result.failure(TdException(result.code, result.message)))
+                    } else {
+                        @Suppress("UNCHECKED_CAST")
+                        cont.resume(result as T)
+                    }
                 }
             }
+        } catch (e: TdException) {
+            if (e.code == FLOOD_WAIT_CODE) registerFloodWait(e.message.orEmpty())
+            throw e
         }
+    }
+
+    private suspend fun awaitFloodGate() {
+        val until = floodWaitUntilMs.get()
+        val now = System.currentTimeMillis()
+        if (until > now) {
+            Log.w(TAG, "FLOOD_WAIT throttle: sleeping ${(until - now) / 1000}s before next send")
+            delay(until - now)
+        }
+    }
+
+    private fun registerFloodWait(message: String) {
+        // TDLib formats the error a couple of ways depending on origin: the legacy
+        // MTProto layer hands back "FLOOD_WAIT_42"; the newer translated layer uses
+        // "Too Many Requests: retry after 42". We extract the first run of digits
+        // from the message — works for both, and degrades gracefully if Telegram
+        // ever changes the wording (we just don't throttle that one).
+        val seconds = Regex("(\\d+)").find(message)?.value?.toLongOrNull() ?: return
+        if (seconds <= 0) return
+        // Cap at FLOOD_WAIT_CAP_SECONDS as a safety belt — Telegram occasionally
+        // returns absurd values (hours, days) that would freeze the app entirely.
+        // Capping at 5 minutes preserves the throttle's intent (slow down) while
+        // letting a stuck client recover via app restart in the worst case.
+        val capped = seconds.coerceAtMost(FLOOD_WAIT_CAP_SECONDS)
+        val deadline = System.currentTimeMillis() + capped * 1000L
+        floodWaitUntilMs.updateAndGet { existing -> maxOf(existing, deadline) }
+        Log.w(TAG, "FLOOD_WAIT registered: $message → throttle for ${capped}s")
+    }
 
     /**
      * Run [TdApi.OptimizeStorage] at most once per [OPTIMIZE_INTERVAL_MS]. Reads / writes the
@@ -366,6 +427,14 @@ class TdClient private constructor(
         private const val TAG = "TdClient"
         private const val OPTIMIZE_INTERVAL_MS = 24L * 60 * 60 * 1000 // once per day
         private const val DEFAULT_CODE_LENGTH = 5
+        // Telegram's per-method rate-limit error code — same in raw MTProto and via
+        // the TDLib translation layer.
+        const val FLOOD_WAIT_CODE = 420
+        // Safety cap on flood-wait throttling. Telegram very occasionally returns
+        // multi-hour or multi-day deadlines (typically after egregious abuse). For an
+        // interactive client, sleeping that long is worse than failing visibly, so we
+        // cap and let a failure path surface to the user.
+        private const val FLOOD_WAIT_CAP_SECONDS = 300L
 
         fun create(context: Context, settings: SettingsStore): TdClient {
             check(BuildConfig.TELEGRAM_API_ID != 0 && BuildConfig.TELEGRAM_API_HASH.isNotEmpty()) {
