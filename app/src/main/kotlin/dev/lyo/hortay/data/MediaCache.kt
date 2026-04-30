@@ -613,11 +613,21 @@ class MediaCache(
         lateinit var jobRef: Job
         val job = scope.launch(ioDispatcher) {
             delay(CANCEL_DEBOUNCE_MS)
+            val slot = states[fileId]
+            // No-op for slots that aren't actually downloading — common during scroll-
+            // gated transient mounts that dispose without ever triggering ensure(),
+            // and for slots that finished or failed in the debounce window. Saves the
+            // CancelDownloadFile + GetFile roundtrip pair per such transit (~60 calls
+            // per scroll-to-top through 30 intermediate posts).
+            if (slot == null || slot.value !is MediaState.Downloading) {
+                pendingCancels.remove(fileId, jobRef)
+                return@launch
+            }
             // Same fileId can be observed from several places at once (e.g. one channel
             // avatar painted in multiple visible posts, the same playback file behind a
             // poster + autoplayer). Each consumer's DisposableEffect schedules its own
-            // cancelDeferred on dispose; we only want the cancel to fire when the
-            // LAST observer goes away. Past the debounce window, the StateFlow's
+            // cancelDeferred on dispose; we only want the cancel to fire when the LAST
+            // observer goes away. Past the debounce window, the StateFlow's
             // subscriptionCount is settled — anything > 0 means someone is still using
             // the file and an active cancel here would yank it out from under them.
             //
@@ -630,9 +640,7 @@ class MediaCache(
             // composables expect to be downloading. Skipping the cancel in background is
             // safe — TDLib already throttles network traffic in background, and the next
             // explicit user action (mount, scroll, retry) will reissue DownloadFile.
-            val slot = states[fileId]
-            val hasObservers = slot != null && slot.subscriptionCount.value > 0
-            if (hasObservers || !foreground.value) {
+            if (slot.subscriptionCount.value > 0 || !foreground.value) {
                 pendingCancels.remove(fileId, jobRef)
                 return@launch
             }
