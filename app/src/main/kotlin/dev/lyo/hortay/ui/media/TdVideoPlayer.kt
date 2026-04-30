@@ -54,8 +54,23 @@ fun TdVideoPlayer(
     val lifecycleOwner = LocalLifecycleOwner.current
     val coScope = rememberCoroutineScope()
 
-    LaunchedEffect(fileId, priority) { cache.ensure(fileId, priority) }
+    // Skip starting the download while the host list is mid-scroll — see [LocalScrollGate].
+    val gate = LocalScrollGate.current
+    val gateOpen = gate.value
+    LaunchedEffect(fileId, priority, gateOpen) {
+        if (gateOpen) cache.ensure(fileId, priority)
+    }
+    // Mirror the dispose-cancels-download contract from TdMediaImage. Without this, a
+    // video that scrolled off-screen keeps holding one of TDLib's ~4 per-DC download
+    // slots until it finishes (CancelDownloadFile honours partial bytes either way, so
+    // a re-mount picks up where it left off). Keyed on fileId so a quality switch
+    // releases the slot of the old file; the surrounding ExoPlayer-level DisposableEffect
+    // is keyed on the player and would only run on full unmount.
+    DisposableEffect(fileId) {
+        onDispose { cache.cancelDeferred(fileId) }
+    }
     val mediaState by cache.observe(fileId).collectAsStateWithLifecycle()
+    val showLoadingOverlay = rememberDeferredLoading(state = mediaState, key = fileId)
 
     // Acquire from the shared pool. Pooled instances arrive in IDLE state with empty
     // playlist (see ExoPlayerPool.release); the apply-block here re-applies the
@@ -131,7 +146,7 @@ fun TdVideoPlayer(
             },
         )
         when (val s = mediaState) {
-            is MediaState.Downloading -> Box(
+            is MediaState.Downloading -> if (showLoadingOverlay) Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
@@ -150,7 +165,7 @@ fun TdVideoPlayer(
                     onRetry = { coScope.launch { cache.retry(fileId, priority) } },
                 )
             }
-            MediaState.Idle -> Box(
+            MediaState.Idle -> if (showLoadingOverlay) Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {

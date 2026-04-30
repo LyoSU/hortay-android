@@ -48,7 +48,18 @@ fun WebmStickerPlayer(
     val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(fileId, priority) { fileId?.let { cache.ensure(it, priority) } }
+    val gate = LocalScrollGate.current
+    val gateOpen = gate.value
+    LaunchedEffect(fileId, priority, gateOpen) {
+        if (gateOpen) fileId?.let { cache.ensure(it, priority) }
+    }
+    // Mirror TdMediaImage's dispose-cancels-download contract — otherwise a sticker that
+    // scrolled off-screen keeps holding a TDLib download slot until it finishes,
+    // queueing behind currently-visible media. Bytes survive on disk so a re-mount
+    // resumes from the saved offset.
+    DisposableEffect(fileId) {
+        onDispose { fileId?.let(cache::cancelDeferred) }
+    }
     val mediaState by remember(fileId) {
         if (fileId != null) cache.observe(fileId)
         else MutableStateFlow(MediaState.Idle)

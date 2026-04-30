@@ -61,7 +61,7 @@ enum class DownloadPriority(val tdValue: Int) {
  *     reissue [TdApi.DownloadFile] when no progress has been observed for [STALL_THRESHOLD_MS].
  *
  *   • **Debounced cancel.** A LazyColumn item disposed-and-remounted in the same frame races
- *     [cancelIfPendingAsync] against the next [ensure]. Both run on the IO dispatcher in
+ *     [cancelDeferred] against the next [ensure]. Both run on the IO dispatcher in
  *     undefined order, so a cancel can land *after* the new DownloadFile and leave the slot
  *     stuck in Downloading(0). Cancels are deferred [CANCEL_DEBOUNCE_MS]; a re-mount inside
  *     the window aborts the cancel.
@@ -85,6 +85,13 @@ class MediaCache(
     //   • `bytes`/`changedAt`/`retries` drive the stall watchdog. `bytes` is the last
     //     observed `local.downloadedSize`; `changedAt` flips whenever it actually moves;
     //     `retries` counts how many DownloadFile reissues we've done since the last move.
+    //   • `isActive` mirrors TDLib's `local.isDownloadingActive`. Critical for the
+    //     watchdog: a file that's queued in TDLib's per-DC slot pool reads the same
+    //     `(bytes=0, changedAt=ensure-time)` as a file actively trying to download but
+    //     stalled at zero progress. Without this flag, the watchdog burst-reissues every
+    //     queued file the moment it crosses the threshold — see logcat sample with 22
+    //     reissues in 5ms during heavy scroll. Reissuing a queued file is a no-op for
+    //     TDLib (it's already in the queue) and only churns LIFO order pointlessly.
     //   • `lastEmitMs` throttles Downloading→Downloading recomposition. TDLib reports
     //     progress at 30+ Hz per active file; the UI doesn't need that granularity, and
     //     unconditional emits cause real CPU + GC tax in album fullscreen. Throttle is
@@ -94,6 +101,7 @@ class MediaCache(
         val changedAt: Long,
         val retries: Int,
         val lastEmitMs: Long,
+        val isActive: Boolean,
     )
     private val tracks = ConcurrentHashMap<Int, Track>()
 
@@ -252,13 +260,15 @@ class MediaCache(
         val now = System.currentTimeMillis()
         if (merged is MediaState.Downloading) {
             val bytes = file.local.downloadedSize
+            val isActive = file.local.isDownloadingActive
             val prev = tracks[file.id]
             // Real progress resets the retry counter — a download that survives one
             // watchdog reissue and then stalls again later still gets the full budget.
             val movedBytes = prev == null || prev.bytes != bytes
             val base = when {
-                prev == null -> Track(bytes, now, retries = 0, lastEmitMs = 0L)
-                movedBytes -> prev.copy(bytes = bytes, changedAt = now, retries = 0)
+                prev == null -> Track(bytes, now, retries = 0, lastEmitMs = 0L, isActive = isActive)
+                movedBytes -> prev.copy(bytes = bytes, changedAt = now, retries = 0, isActive = isActive)
+                prev.isActive != isActive -> prev.copy(isActive = isActive)
                 else -> prev
             }
             // Throttle Downloading→Downloading recomposition to PROGRESS_MIN_INTERVAL_MS.
@@ -308,10 +318,17 @@ class MediaCache(
     /**
      * Per-tick walk of active downloads. TDLib's documented behaviour (#2585) is that
      * a flaky network can leave `is_downloading_active=true` indefinitely — the daemon
-     * itself never gives up, so a download stuck without progress for [STALL_THRESHOLD_MS]
-     * gets a [TdApi.DownloadFile] reissue at the priority it was running at. TDLib
-     * treats reissue as "kick the queue", not "start a new download", which matches
+     * itself never gives up, so a download stuck without progress past the priority's
+     * threshold gets a [TdApi.DownloadFile] reissue at the priority it was running at.
+     * TDLib treats reissue as "kick the queue", not "start a new download", which matches
      * what the official Telegram clients do.
+     *
+     * Threshold is differentiated by priority: `Foreground`/`VisibleMedia` files (what the
+     * user is actually staring at) get the tighter [STALL_THRESHOLD_FOREGROUND_MS] so
+     * sub-15s server-side stalls recover before the user gives up; `Prefetch`/`Avatar`
+     * files (speculative, off-screen, or always second-class) keep the slower
+     * [STALL_THRESHOLD_MS] — there's no UX win from spamming the queue for a thumbnail
+     * the user may never see.
      *
      * After [MAX_STALL_RETRIES] failed reissues we surface Failed so the UI can render
      * a tap-to-retry affordance instead of a perpetual spinner.
@@ -321,7 +338,19 @@ class MediaCache(
         // Snapshot — we mutate the map inside the loop.
         val snapshot = tracks.entries.toList()
         for ((fileId, track) in snapshot) {
-            if (now - track.changedAt < STALL_THRESHOLD_MS) continue
+            // Queued in TDLib's per-DC slot pool — not actually trying to transfer right
+            // now, just waiting its turn. Reissuing it does nothing useful for download
+            // progress (TDLib already has the request) and only re-shuffles same-priority
+            // LIFO order. Skip; the slot will activate on its own when capacity frees,
+            // and the watchdog re-evaluates next tick.
+            if (!track.isActive) continue
+            val priority = activePriority[fileId] ?: DownloadPriority.VisibleMedia.tdValue
+            val threshold = if (priority >= DownloadPriority.VisibleMedia.tdValue) {
+                STALL_THRESHOLD_FOREGROUND_MS
+            } else {
+                STALL_THRESHOLD_MS
+            }
+            if (now - track.changedAt < threshold) continue
             val slot = states[fileId] ?: run {
                 tracks.remove(fileId)
                 continue
@@ -342,7 +371,6 @@ class MediaCache(
                 activePriority.remove(fileId)
                 continue
             }
-            val priority = activePriority[fileId] ?: DownloadPriority.VisibleMedia.tdValue
             try {
                 td.send(TdApi.DownloadFile(fileId, priority, 0, 0, /* synchronous */ false))
                 tracks.compute(fileId) { _, current ->
@@ -422,8 +450,13 @@ class MediaCache(
             activePriority[fileId] = priority.tdValue
             // Seed the watchdog tracker so it has something to compare against even if
             // the very first UpdateFile is dropped (SharedFlow boundary, hot restart,
-            // or TDLib silence under bad network — see #2585).
-            tracks.putIfAbsent(fileId, Track(0L, System.currentTimeMillis(), retries = 0, lastEmitMs = 0L))
+            // or TDLib silence under bad network — see #2585). isActive=false initially
+            // because we have no proof TDLib has started actually transferring yet — the
+            // first reducer event will flip this from `file.local.isDownloadingActive`.
+            tracks.putIfAbsent(
+                fileId,
+                Track(0L, System.currentTimeMillis(), retries = 0, lastEmitMs = 0L, isActive = false),
+            )
         } catch (t: Throwable) {
             // A Composable leaving composition cancels its LaunchedEffect — that surfaces
             // here as LeftCompositionCancellationException (a CancellationException). Don't
@@ -444,8 +477,9 @@ class MediaCache(
     /**
      * User-initiated cancel — fires immediately (no debounce window) and forces the
      * slot to [MediaState.Idle] so the UI can show "tap to retry". Unlike
-     * [cancelIfPendingAsync] this passes `onlyIfPending=false` so an already-running
-     * download is also stopped.
+     * [cancelDeferred], it bypasses the observer-count and foreground guards (the
+     * user explicitly tapped the cancel control, so we honour the intent regardless
+     * of who else might be observing).
      */
     fun cancelExplicit(fileId: Int) {
         // Aborting any debounced cancel for the same id is a no-op safety net — the
@@ -501,17 +535,6 @@ class MediaCache(
     }
 
     /**
-     * Debounced cancellation. TDLib's [TdApi.CancelDownloadFile] with `onlyIfPending=true`
-     * is meant to be cheap — partial bytes are preserved and a re-mount picks up where
-     * left off. The catch is timing: dispose-and-remount in the same frame (LazyColumn
-     * scroll) used to issue cancel + ensure on the IO dispatcher with no ordering, so a
-     * cancel could land *after* the new DownloadFile and silently kill the slot.
-     *
-     * Now we wait [CANCEL_DEBOUNCE_MS] before sending. A new [ensure] inside the window
-     * aborts this job and the in-flight download keeps running. Any previously queued
-     * cancel for the same fileId is replaced and cancelled.
-     */
-    /**
      * Single-shot, atomically-deduped GetFile [POST_COMPLETION_RESYNC_MS] from now.
      * Called whenever the reducer sees Downloading(1.0) — the canonical "tail of
      * download, awaiting TDLib rename" snapshot.
@@ -546,10 +569,61 @@ class MediaCache(
         if (existing == null) newJob.start() else newJob.cancel()
     }
 
-    fun cancelIfPendingAsync(fileId: Int) {
+    /**
+     * Debounced "scrolled past" cancellation. Frees TDLib's per-DC download slot for the
+     * given fileId so currently-visible media isn't blocked behind ghost downloads from
+     * posts the user has already scrolled past.
+     *
+     * Why this matters: TDLib serves only ~4 simultaneous downloads per DC out of its
+     * `small_queue_max_active_operations_count`/`large_queue_max_active_operations_count`
+     * pool ([core.telegram.org/api/files]) and serves same-priority files in LIFO order
+     * (tdlib/td#2179 — by design: "much better to have some files fully downloaded than
+     * have all files partly downloaded"). Without an active cancel on dispose, every
+     * media item the user scrolls past keeps consuming a slot until it finishes — a fast
+     * scroll through a feed easily ends up with 10–20 ghosts ahead of the now-visible
+     * post in TDLib's queue, surfacing as "stalls for several seconds at N bytes" on
+     * the visible item.
+     *
+     * Why `onlyIfPending=false`: that flag only cancels not-yet-started requests, which
+     * is exactly the opposite of what we need — the slot-blocking ghosts ARE active.
+     * `false` actually stops the active download. Partial bytes survive on disk either
+     * way (TDLib never deletes the temp file on cancel), so a re-mount past the debounce
+     * window simply resumes from the saved offset on the next `DownloadFile`.
+     *
+     * Why debounce: a LazyColumn dispose-and-remount within the same frame (typical on
+     * fast scroll) would otherwise issue cancel + ensure on the IO dispatcher with no
+     * ordering, and a cancel landing *after* the fresh DownloadFile would silently kill
+     * the slot. [CANCEL_DEBOUNCE_MS] gives the re-mount a window to abort the cancel
+     * before it fires; any previously queued cancel for the same fileId is replaced and
+     * cancelled.
+     */
+    fun cancelDeferred(fileId: Int) {
         lateinit var jobRef: Job
         val job = scope.launch(ioDispatcher) {
             delay(CANCEL_DEBOUNCE_MS)
+            // Same fileId can be observed from several places at once (e.g. one channel
+            // avatar painted in multiple visible posts, the same playback file behind a
+            // poster + autoplayer). Each consumer's DisposableEffect schedules its own
+            // cancelDeferred on dispose; we only want the cancel to fire when the
+            // LAST observer goes away. Past the debounce window, the StateFlow's
+            // subscriptionCount is settled — anything > 0 means someone is still using
+            // the file and an active cancel here would yank it out from under them.
+            //
+            // The foreground guard handles a subtle lifecycle edge case: collectAsState-
+            // WithLifecycle pauses its collection on ProcessLifecycle ON_STOP, which drops
+            // subscriptionCount to 0 even though the consuming composables are still in
+            // composition and will resume observing on foreground return. Without this
+            // guard, a dispose+background race (cancel scheduled in foreground, debounce
+            // window crosses ON_STOP) would silently kill a file that other still-mounted
+            // composables expect to be downloading. Skipping the cancel in background is
+            // safe — TDLib already throttles network traffic in background, and the next
+            // explicit user action (mount, scroll, retry) will reissue DownloadFile.
+            val slot = states[fileId]
+            val hasObservers = slot != null && slot.subscriptionCount.value > 0
+            if (hasObservers || !foreground.value) {
+                pendingCancels.remove(fileId, jobRef)
+                return@launch
+            }
             // Past the debounce window, do the cancel + resync as one atomic unit.
             // [kotlinx.coroutines.NonCancellable] guards against a stray ensure() that
             // raced past `pendingCancels.remove(fileId)?.cancel()` after we'd already
@@ -558,20 +632,18 @@ class MediaCache(
             // snapshot that no watchdog event would correct.
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                 runCatching {
-                    td.send(TdApi.CancelDownloadFile(fileId, /* onlyIfPending */ true))
-                    // TDLib does not necessarily emit UpdateFile after CancelDownloadFile
-                    // — for an active (non-pending) download the cancel is a no-op, and
-                    // for a real cancel TDLib may stay silent. Without resyncing here,
-                    // the slot would keep the pre-cancel Downloading snapshot until the
-                    // watchdog (or a user re-mount) noticed. A targeted GetFile makes
-                    // the reducer see authoritative state and corrects the slot
-                    // immediately.
+                    td.send(TdApi.CancelDownloadFile(fileId, /* onlyIfPending */ false))
+                    // TDLib's UpdateFile after CancelDownloadFile isn't reliably emitted
+                    // (sometimes it lands, sometimes it doesn't). A targeted GetFile makes
+                    // the reducer see authoritative state — `is_downloading_active=false`
+                    // with the partial `downloadedSize` preserved — instead of leaving the
+                    // slot on its pre-cancel Downloading snapshot until the next observe.
                     val file = td.send(TdApi.GetFile(fileId))
                     fileEvents.send(file)
                 }
                 activePriority.remove(fileId)
                 tracks.remove(fileId)
-                // Compare-and-remove: if a fresh cancelIfPendingAsync raced ahead of
+                // Compare-and-remove: if a fresh cancelDeferred raced ahead of
                 // us and put a new job in this slot, leave that one alone.
                 pendingCancels.remove(fileId, jobRef)
             }
@@ -602,6 +674,13 @@ class MediaCache(
         // (real progress resets `changedAt` — only true zero-byte intervals trip the
         // watchdog), while a genuine stall recovers ~2× faster.
         const val STALL_THRESHOLD_MS = 15_000L
+        // Tighter threshold for files the user is actively staring at
+        // (Foreground/VisibleMedia priorities). Server-side stalls in the 5-15s window
+        // are common per TDLib #2585; without this, a "довго грузилась" feeling persists
+        // up to 15s before the watchdog kicks. 6s is below human "is this stuck?"
+        // attention threshold (≈8-10s for content the user expects) and gives one full
+        // retry cycle before [MAX_STALL_RETRIES] runs out (~24s total recovery window).
+        const val STALL_THRESHOLD_FOREGROUND_MS = 6_000L
         // After three reissues with no progress we surface Failed (~60s total). One
         // more retry than before, since a single flaky DC-migration window can eat
         // the first reissue cycle without that being a permanent failure.

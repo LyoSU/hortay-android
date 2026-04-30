@@ -31,10 +31,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewmodel.initializer
+import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
 import dev.lyo.hortay.data.CommentsRepository
+import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.PostsRepository
@@ -44,7 +46,9 @@ import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.ui.channels.ChannelInfoSheet
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
+import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
+import dev.lyo.hortay.ui.media.LocalScrollGate
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -520,16 +524,54 @@ fun TimelineScreen(
                     if (displayed.isEmpty() && !refreshing && !(searchActive && searchQuery.isBlank())) {
                         if (searchActive) SearchEmpty() else EmptyState(showOnlyBookmarked)
                     } else {
-                        LazyColumn(
-                            state = listState,
-                            contentPadding = PaddingValues(
-                                top = 8.dp,
-                                bottom = contentPadding.calculateBottomPadding(),
-                            ),
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            items(items = displayed, key = { "${it.chatId}_${it.id}" }) { post ->
-                                PostCard(post = post, interactions = interactions)
+                        // Scroll gate: while the LazyColumn is mid-scroll (drag, fling,
+                        // animateScrollToItem) media composables defer their ensure() so
+                        // we don't saturate TDLib's 4-slot pool with intermediate posts
+                        // that are about to scroll past anyway. Flips to "open" the moment
+                        // scroll settles, at which point the genuinely-visible posts
+                        // burst-ensure in one frame. Telegram-Android's RecyclerView uses
+                        // SCROLL_STATE_IDLE for the same purpose.
+                        val scrollGate = remember(listState) {
+                            derivedStateOf { !listState.isScrollInProgress }
+                        }
+
+                        // Eager prefetch: while the user reads what's on screen, warm
+                        // the next [PREFETCH_AHEAD] posts' posters at Prefetch priority.
+                        // By the time the user scrolls down, those files are already
+                        // partially or fully on disk and the loading overlay never paints.
+                        // Gated on scroll-settled (prefetchAnchor=null while scrolling)
+                        // so we don't fire ensure() while the gate above is closed.
+                        val cache = LocalMediaCache.current
+                        val prefetchAnchor by remember(listState) {
+                            derivedStateOf {
+                                if (listState.isScrollInProgress) null
+                                else listState.firstVisibleItemIndex
+                            }
+                        }
+                        LaunchedEffect(prefetchAnchor, displayed) {
+                            val firstVisible = prefetchAnchor ?: return@LaunchedEffect
+                            if (firstVisible >= displayed.size) return@LaunchedEffect
+                            val end = (firstVisible + PREFETCH_AHEAD).coerceAtMost(displayed.lastIndex)
+                            for (idx in (firstVisible + 1)..end) {
+                                val post = displayed.getOrNull(idx) ?: continue
+                                for (fileId in post.content.posterFileIds()) {
+                                    cache.ensure(fileId, DownloadPriority.Prefetch)
+                                }
+                            }
+                        }
+
+                        CompositionLocalProvider(LocalScrollGate provides scrollGate) {
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(
+                                    top = 8.dp,
+                                    bottom = contentPadding.calculateBottomPadding(),
+                                ),
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                items(items = displayed, key = { "${it.chatId}_${it.id}" }) { post ->
+                                    PostCard(post = post, interactions = interactions)
+                                }
                             }
                         }
                     }
@@ -766,6 +808,50 @@ private const val SEARCH_DEBOUNCE_MS = 300L
 
 /** Avatars in the "X нових постів" pill — same cap as the original VM-side limit. */
 private const val MAX_PILL_BADGES = 3
+
+/**
+ * How many posts ahead of the first visible item to eagerly prefetch posters for. Tuned so
+ * a single forward-flick (~3 cards in a 1080p phone viewport) lands on already-warm files.
+ * Going much higher costs bandwidth on ramped-back scrolls; lower starts to feel laggy.
+ */
+private const val PREFETCH_AHEAD = 4
+
+/**
+ * The fileIds whose **poster / preview** should be eagerly downloaded when this content is
+ * about to enter viewport. Intentionally excludes playback files (full videos, audio,
+ * documents) — those are too big for speculative download, and the user's tap is the right
+ * trigger for them. The poster is what TdMediaImage paints behind the play badge / progress
+ * overlay, so warming it is what makes "scrolled into view" feel instant.
+ */
+private fun PostContent.posterFileIds(): List<Int> = buildList {
+    when (val content = this@posterFileIds) {
+        is PostContent.PhotoAlbum -> content.items.forEach { item ->
+            when (item) {
+                is AlbumItem.Photo -> item.media.fileId?.let(::add)
+                is AlbumItem.Video -> item.media.fileId?.let(::add)
+                is AlbumItem.Animation -> item.media.fileId?.let(::add)
+            }
+        }
+        is PostContent.Video -> content.media.fileId?.let(::add)
+        is PostContent.Animation -> content.media.fileId?.let(::add)
+        is PostContent.Document -> content.thumb?.fileId?.let(::add)
+        is PostContent.Sticker -> {
+            // Stickers are tiny (<100 KB) — pulling both thumb and the playback file
+            // up-front means the inline animation starts the moment the post settles,
+            // without the placeholder→media swap.
+            content.thumb?.fileId?.let(::add)
+            content.media.fileId?.let(::add)
+        }
+        is PostContent.AnimatedEmoji -> {
+            content.thumb?.fileId?.let(::add)
+            content.sticker?.fileId?.let(::add)
+        }
+        is PostContent.VideoNote -> content.thumb?.fileId?.let(::add)
+        // Text/Audio/VoiceNote/Poll/Location/Contact/Dice/Checklist/Service/Expired/
+        // Unsupported — no still preview to warm.
+        else -> Unit
+    }
+}
 
 private fun formatSubscribers(count: Int): String {
     fun compact(value: Double, suffix: String): String {

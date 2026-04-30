@@ -5,6 +5,7 @@ import android.graphics.PorterDuffColorFilter
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,7 +67,18 @@ fun LottieStickerView(
         else MutableStateFlow(MediaState.Idle)
     }.collectAsStateWithLifecycle()
 
-    LaunchedEffect(fileId, priority) { fileId?.let { cache.ensure(it, priority) } }
+    val gate = LocalScrollGate.current
+    val gateOpen = gate.value
+    LaunchedEffect(fileId, priority, gateOpen) {
+        if (gateOpen) fileId?.let { cache.ensure(it, priority) }
+    }
+    // Mirror TdMediaImage's dispose-cancels-download contract — otherwise a TGS that
+    // scrolled off-screen keeps holding a TDLib download slot until it finishes,
+    // queueing behind currently-visible media. Bytes survive on disk so a re-mount
+    // resumes from the saved offset.
+    DisposableEffect(fileId) {
+        onDispose { fileId?.let(cache::cancelDeferred) }
+    }
 
     var composition by remember(fileId) { mutableStateOf<LottieComposition?>(null) }
     // Key on the Ready path only — Downloading bursts emit dozens of states per second

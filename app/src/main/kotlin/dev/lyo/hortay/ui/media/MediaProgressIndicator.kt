@@ -23,6 +23,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import dev.lyo.hortay.data.MediaState
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -291,6 +294,54 @@ private fun humanizeBytes(bytes: Long): Pair<String, String> {
     return value to units[idx]
 }
 
+/**
+ * Returns `true` only after [graceMs] elapsed continuously in a "loading" state. Resets
+ * to `false` whenever [pending] flips to false (file finished / failed) or [key] changes.
+ *
+ * UX motivation: most TDLib downloads on a healthy network land in 100-400ms — within the
+ * grace window, the user never sees a spinner flicker on top of the minithumb, so loading
+ * for a quick file is *invisible*. Telegram-Android does the same: their RecyclerView item
+ * binds the placeholder thumb instantly and only paints the determinate progress disc after
+ * a short delay so a fast load doesn't strobe a tiny circle on the screen.
+ *
+ * Anything still loading past [graceMs] gets the full overlay — at that point the user is
+ * looking at a slow file and *needs* feedback (and a tap-to-cancel affordance).
+ */
+@Composable
+fun rememberDeferredLoading(
+    pending: Boolean,
+    key: Any?,
+    graceMs: Long = LOADING_OVERLAY_GRACE_MS,
+): Boolean {
+    val visible by produceState(initialValue = false, pending, key) {
+        value = if (pending) {
+            delay(graceMs)
+            true
+        } else {
+            false
+        }
+    }
+    return visible
+}
+
+/** Convenience: treat [MediaState.Idle] and [MediaState.Downloading] alike as "loading". */
+@Composable
+fun rememberDeferredLoading(
+    state: MediaState,
+    key: Any?,
+    graceMs: Long = LOADING_OVERLAY_GRACE_MS,
+): Boolean = rememberDeferredLoading(
+    pending = state is MediaState.Downloading || state is MediaState.Idle,
+    key = key,
+    graceMs = graceMs,
+)
+
+// 600 ms grace window before the loading overlay paints. Tuned so that:
+//   • Anything served from TDLib's local cache (Ready on first emit) → instant, no overlay.
+//   • Most home-DC photo loads (~150-300 KB, ~200-500 ms RTT) → finish before grace expires.
+//   • Slow files (DC migration, throttling, big videos) → user gets feedback at 600 ms,
+//     well below human "is this stuck?" attention threshold (~1 s).
+private const val LOADING_OVERLAY_GRACE_MS = 600L
 private const val PROGRESS_TWEEN_MS = 200
 private const val SPIN_PERIOD_MS = 2_400
 private const val DISK_ALPHA = 0.45f

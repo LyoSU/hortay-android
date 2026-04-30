@@ -67,11 +67,21 @@ fun TdMediaImage(
         if (fileId != null) cache.observe(fileId) else MutableStateFlow(MediaState.Idle)
     }.collectAsStateWithLifecycle()
 
-    LaunchedEffect(fileId, priority) { fileId?.let { cache.ensure(it, priority) } }
+    // Skip starting the download while the host list is mid-scroll — see [LocalScrollGate].
+    // When scroll settles, this LaunchedEffect re-runs with gateOpen=true and ensure fires.
+    val gate = LocalScrollGate.current
+    val gateOpen = gate.value
+    LaunchedEffect(fileId, priority, gateOpen) {
+        if (gateOpen) fileId?.let { cache.ensure(it, priority) }
+    }
 
     DisposableEffect(fileId) {
-        onDispose { fileId?.let(cache::cancelIfPendingAsync) }
+        onDispose { fileId?.let(cache::cancelDeferred) }
     }
+
+    // Loading overlay only paints after a 600 ms grace window — fast loads stay invisible
+    // under the blurred minithumb. See [rememberDeferredLoading].
+    val showLoadingOverlay = rememberDeferredLoading(state = state, key = fileId)
 
     val baseModifier = if (placeholderColor != null) {
         modifier.background(placeholderColor)
@@ -131,7 +141,7 @@ fun TdMediaImage(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            is MediaState.Downloading -> if (showProgress && fileId != null) {
+            is MediaState.Downloading -> if (showLoadingOverlay && showProgress && fileId != null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     MediaLoadingOverlay(
                         progress = s.progress,
