@@ -7,6 +7,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -21,6 +22,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.MediaState
+import kotlinx.coroutines.launch
 
 /**
  * Plays a TDLib-managed video. Asks [dev.lyo.hortay.data.MediaCache] to download the
@@ -51,6 +53,7 @@ fun TdVideoPlayer(
     val cache = LocalMediaCache.current
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val coScope = rememberCoroutineScope()
 
     LaunchedEffect(fileId, priority) { cache.ensure(fileId, priority) }
     val mediaState by cache.observe(fileId).collectAsStateWithLifecycle()
@@ -100,7 +103,10 @@ fun TdVideoPlayer(
                 PlayerView(ctx).apply {
                     player = exoPlayer
                     useController = showControls
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    // We render our own MediaProgressIndicator/MediaLoadingOverlay over
+                    // the player; PlayerView's built-in spinner would stack on top of
+                    // ours and read as "two crutilki" during the file:// download window.
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 }
             },
@@ -109,13 +115,33 @@ fun TdVideoPlayer(
                 view.useController = showControls
             },
         )
-        if (mediaState !is MediaState.Ready) {
-            Box(
+        when (val s = mediaState) {
+            is MediaState.Downloading -> Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                MediaLoadingOverlay(
+                    progress = s.progress,
+                    downloadedBytes = s.downloadedBytes,
+                    totalBytes = s.totalBytes,
+                    onCancel = { cache.cancelExplicit(fileId) },
+                )
+            }
+            is MediaState.Failed -> Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                MediaFailedOverlay(
+                    onRetry = { coScope.launch { cache.retry(fileId, priority) } },
+                )
+            }
+            MediaState.Idle -> Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
                 MediaIndeterminateIndicator()
             }
+            is MediaState.Ready -> Unit
         }
     }
 }

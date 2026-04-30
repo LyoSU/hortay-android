@@ -329,7 +329,15 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
             .fillMaxSize()
             .clickable(enabled = revealed, onClick = onClick),
     ) {
-        TdMediaImage(media = item.media, contentDescription = null, modifier = Modifier.fillMaxSize())
+        // When the autoplayer mounts on top, suppress the poster's own progress spinner —
+        // TdVideoPlayer renders its own MediaLoadingOverlay for the playback file, and a
+        // poster-side spinner would stack visibly on top of it ("два кружки в центрі").
+        TdMediaImage(
+            media = item.media,
+            contentDescription = null,
+            showProgress = !autoplayVideo,
+            modifier = Modifier.fillMaxSize(),
+        )
         if (autoplayVideo) {
             val video = item as AlbumItem.Video
             TdVideoPlayer(
@@ -465,7 +473,15 @@ private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<A
             .clip(RoundedCornerShape(20.dp))
             .clickable(enabled = revealed) { onMediaClick(items, 0) },
     ) {
-        TdMediaImage(media = content.media, contentDescription = null, modifier = Modifier.fillMaxSize())
+        // Same suppression as MediaWithSpoiler: when the GIF autoplayer is mounted, its own
+        // MediaLoadingOverlay covers the loading state — the poster's spinner would just
+        // stack on top.
+        TdMediaImage(
+            media = content.media,
+            contentDescription = null,
+            showProgress = !revealed,
+            modifier = Modifier.fillMaxSize(),
+        )
         // Only mount the video player once the spoiler is revealed — otherwise we'd start
         // an ExoPlayer + TDLib download for content the user explicitly hasn't asked to see
         // yet, which is exactly the leak the spoiler/secret flags are meant to prevent.
