@@ -68,6 +68,18 @@ class TdClient private constructor(
         if (this::client.isInitialized) return
         // Silence TDLib's default verbose stdout chatter; we still log warnings via Log.w.
         Client.execute(TdApi.SetLogVerbosityLevel(LOG_VERBOSITY))
+        spawnClient()
+    }
+
+    /**
+     * Create (or recreate) the underlying native [Client]. After a successful logout TDLib
+     * walks the authorization state machine to [TdApi.AuthorizationStateClosed] and tears
+     * down the native handle — any further `send()` against it would block forever. The
+     * canonical recovery per TDLib docs is to spin up a fresh native client which then
+     * re-emits [TdApi.AuthorizationStateWaitTdlibParameters] from scratch and the auth
+     * loop runs again. We call this once on first [start] and once more on every Closed.
+     */
+    private fun spawnClient() {
         client = Client.create({ obj ->
             if (obj is TdApi.Update) {
                 handleUpdate(obj)
@@ -143,9 +155,17 @@ class TdClient private constructor(
                     )
                 }
             }
-            is TdApi.AuthorizationStateClosed,
-            is TdApi.AuthorizationStateClosing,
-            is TdApi.AuthorizationStateLoggingOut -> _authStage.value = AuthStage.Loading
+            is TdApi.AuthorizationStateLoggingOut,
+            is TdApi.AuthorizationStateClosing -> _authStage.value = AuthStage.Loading
+            is TdApi.AuthorizationStateClosed -> {
+                // Native client is dead at this point; respawn so TDLib re-emits
+                // WaitTdlibParameters and the user lands on a fresh phone form instead
+                // of staring at an indefinite spinner. Stays in Loading until the new
+                // client emits its first auth state.
+                _authStage.value = AuthStage.Loading
+                lastAttemptedPhone = ""
+                spawnClient()
+            }
             // States we don't have dedicated UI for yet — surface a clear message instead
             // of silently leaving the user on a Loading spinner forever. Telegram now
             // commonly requires email-2FA on first sign-in, so WaitEmail* hits real users.
