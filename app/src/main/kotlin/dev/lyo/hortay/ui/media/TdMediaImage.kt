@@ -115,6 +115,16 @@ fun TdMediaImage(
                         // (decoded Bitmap) stays on; the cost saving is on disk.
                         .diskCachePolicy(CachePolicy.DISABLED)
                         .crossfade(CROSSFADE_MS)
+                        .listener(
+                            onError = { _, _ ->
+                                // TDLib's storage optimiser silently evicts cached files
+                                // and never emits an UpdateFile for the deletion (per
+                                // tdlib/td#3178). Coil failing to open the path is our
+                                // signal that the slot is stale: invalidate it and the
+                                // cache will re-issue DownloadFile on its own scope.
+                                fileId?.let { cache.invalidate(it, priority) }
+                            },
+                        )
                         .build(),
                     contentDescription = contentDescription,
                     contentScale = contentScale,

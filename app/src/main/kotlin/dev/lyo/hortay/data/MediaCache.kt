@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -77,30 +79,50 @@ class MediaCache(
 
     private val states = ConcurrentHashMap<Int, MutableStateFlow<MediaState>>()
     private val activePriority = ConcurrentHashMap<Int, Int>()
-    // TDLib emits Downloading→Downloading progress at 30+ Hz per active file. Each one
-    // currently writes to a MutableStateFlow → recompose. With several concurrent
-    // downloads (album fullscreen) that's real CPU + GC tax for sub-pixel progress
-    // changes the user can't perceive anyway.
-    private val lastProgressEmitMs = ConcurrentHashMap<Int, Long>()
 
-    // Per-file stall tracker: last observed downloadedSize, when it last *changed*, and
-    // how many watchdog reissues we've done. Populated as updates arrive and seeded on
-    // ensureSlow so even an UpdateFile dropped at the SharedFlow boundary doesn't leave
-    // the watchdog blind.
-    private data class StallTrack(val bytes: Long, val changedAt: Long, val retries: Int)
-    private val stallTrack = ConcurrentHashMap<Int, StallTrack>()
+    // Per-file bookkeeping for the watchdog AND the StateFlow throttle. Merged into one
+    // record so we don't keep two ConcurrentHashMaps in lockstep:
+    //   • `bytes`/`changedAt`/`retries` drive the stall watchdog. `bytes` is the last
+    //     observed `local.downloadedSize`; `changedAt` flips whenever it actually moves;
+    //     `retries` counts how many DownloadFile reissues we've done since the last move.
+    //   • `lastEmitMs` throttles Downloading→Downloading recomposition. TDLib reports
+    //     progress at 30+ Hz per active file; the UI doesn't need that granularity, and
+    //     unconditional emits cause real CPU + GC tax in album fullscreen. Throttle is
+    //     bypassed for the 100% emit so the bar doesn't look frozen at 99%.
+    private data class Track(
+        val bytes: Long,
+        val changedAt: Long,
+        val retries: Int,
+        val lastEmitMs: Long,
+    )
+    private val tracks = ConcurrentHashMap<Int, Track>()
 
     // In-flight cancel jobs awaiting their debounce window. ensure() pulls and cancels
     // these so a re-mounted item is not torn down by an earlier dispose.
     private val pendingCancels = ConcurrentHashMap<Int, Job>()
 
+    // Single-coroutine reducer for all File mutations. Inbound `td.updates` events and
+    // `ensureSlow`'s GetFile responses BOTH flow through this channel, so the state
+    // machine has one writer instead of two-on-different-dispatchers (which silently
+    // dropped the final Ready emit when a stale Downloading snapshot from one thread
+    // landed after the Ready from the other). Capacity is unlimited — we'd rather pay
+    // a bit of memory than risk dropping a terminal event under burst pressure.
+    private val fileEvents = Channel<TdApi.File>(capacity = Channel.UNLIMITED)
+
     init {
+        // Reducer. Single writer = no data race over `states[id].value`, `tracks[id]`,
+        // or `activePriority`'s read-write pairs.
+        scope.launch(ioDispatcher) {
+            for (file in fileEvents) reduce(file)
+        }
+
         td.updates
             .filterIsInstance<TdApi.UpdateFile>()
             // Updates for files we never observed are dropped at the reducer (see
-            // applyFileEvent) — TDLib emits UpdateFile for everything in its database,
-            // not just things this app rendered.
-            .onEach { update -> applyFileEvent(update.file) }
+            // [reduce]) — TDLib emits UpdateFile for everything in its database, not
+            // just things this app rendered. Slots are created lazily by [observe]
+            // / [ensure].
+            .onEach { update -> fileEvents.send(update.file) }
             .launchIn(scope)
 
         // Battery-aware stall watchdog. Three regimes:
@@ -111,18 +133,19 @@ class MediaCache(
         //   • Foreground but no active downloads → tick every IDLE_TICK_MS (30 s). The
         //     loop still has to wake occasionally so a fresh ensure() that started just
         //     after the last empty-check is picked up — but the wake-up cost at idle is
-        //     two orders of magnitude lower than at the active 2 s cadence.
+        //     two orders of magnitude lower than at the active cadence.
         //   • Foreground + active downloads → tick every WATCHDOG_TICK_MS (2 s). At the
-        //     STALL_THRESHOLD_MS (10 s) of silence the next tick reissues; worst-case
-        //     recovery is ~12 s.
+        //     STALL_THRESHOLD_MS (30 s) of silence the next tick reissues; worst-case
+        //     recovery is ~32 s — long enough to absorb DC-migration flat intervals and
+        //     TDLib's own 7-44 s reconnect window without thrashing.
         scope.launch(ioDispatcher) {
             while (isActive) {
                 if (!foreground.value) {
                     foreground.filter { it }.first()
                 }
-                val cadence = if (stallTrack.isEmpty()) IDLE_TICK_MS else WATCHDOG_TICK_MS
+                val cadence = if (tracks.isEmpty()) IDLE_TICK_MS else WATCHDOG_TICK_MS
                 delay(cadence)
-                if (stallTrack.isEmpty()) continue
+                if (tracks.isEmpty()) continue
                 if (connection.value != ConnectionStatus.Ready) continue
                 checkStalled()
             }
@@ -130,116 +153,130 @@ class MediaCache(
     }
 
     /**
-     * Reducer for an EXISTING slot's TDLib [TdApi.File] event. We deliberately do NOT
-     * create slots from inbound updates — TDLib emits [TdApi.UpdateFile] for every file
-     * in its database, including ones the UI never observes (avatars from chats we
-     * scrolled past, thumbs of media we never tapped). Creating a [MutableStateFlow] per
-     * such id leaks proportional to TDLib's file table over a long session. Slots are
-     * created only by [observe] / [ensure] when a Composable actually mounts; the race
-     * where an [TdApi.UpdateFile] arrives before the first observe is closed by
-     * [ensureSlow] which calls [TdApi.GetFile] and routes the result through this same
-     * reducer (after [slot] has already materialised the entry).
+     * Reducer for an existing slot's TDLib [TdApi.File] event. Always invoked from the
+     * single [fileEvents] consumer coroutine, so writes to `states[].value`, [tracks],
+     * and [activePriority] don't race with each other.
      *
-     * Two real-world quirks force the extra logic over a naive `slot.value = newState`:
+     * Slots are created only by [observe] / [ensure] when a Composable actually mounts
+     * — TDLib emits [TdApi.UpdateFile] for every file in its database, including ones
+     * the UI never rendered, and creating a [MutableStateFlow] per such id leaks in
+     * proportion to TDLib's file table over a long session. The race where an inbound
+     * [TdApi.UpdateFile] arrives before the first observe is closed by [ensureSlow]:
+     * after creating the slot it dispatches the [TdApi.GetFile] result through the same
+     * channel, so the reducer sees the up-to-date file and seeds the slot.
      *
-     *   1. **Out-of-order events.** When a download finishes, TDLib sometimes emits the
-     *      completion `UpdateFile` first and a stale "still downloading" one a moment
-     *      later (the window where it renames `temp/<id>` → `photos/<…>.jpg`). A naive
-     *      reducer would flash the photo on screen and yank it back into a spinner.
-     *      Once we see Ready, we refuse to slide back to Downloading/Idle.
+     * Three real-world quirks force the extra logic over a naive `slot.value = next`:
      *
-     *   2. **Permanent failures with no Failed event.** If `canBeDownloaded=false` and
-     *      the file isn't downloading or completed, TDLib won't fire any further update
-     *      — it just stops. Without surfacing Failed here the UI sat on a 0% spinner
-     *      forever for expired stickers / restricted media.
+     *   1. **Rename race.** When a download finishes, TDLib briefly emits a stale
+     *      `state=Downloading, path='temp/<id>'` event right after the completion event,
+     *      during the internal rename to `photos/...jpg`. A naive reducer would flash
+     *      the photo and yank it back to a spinner. Once we see Ready, we refuse to
+     *      slide back as long as TDLib still reports *some* on-disk presence (path or
+     *      bytes).
+     *
+     *   2. **Cache eviction.** TDLib's storage optimiser deletes previously-completed
+     *      files; the maintainer's official guidance (#3178) is that "the local file
+     *      path can become invalid in many ways. The app is supposed to call DownloadFile
+     *      before using the file." When eviction wipes both `path` and `downloadedSize`,
+     *      we accept the demotion so the watchdog (and any re-mount) can reissue
+     *      DownloadFile and the UI ends up on a real on-disk file.
+     *
+     *   3. **Permanent failures with no Failed event.** If `canBeDownloaded=false` and
+     *      the file isn't downloading or completed, TDLib won't fire any further
+     *      update — it just stops. Without surfacing Failed here the UI sat on a 0%
+     *      spinner forever for expired stickers / restricted media. Handled in
+     *      [toMediaState].
      */
-    private fun applyFileEvent(file: TdApi.File) {
-        // No slot → no observer → drop. Callers that need to seed state for a brand-new
-        // fileId (e.g. ensureSlow after GetFile) must call slot() first; the inbound
-        // UpdateFile collector deliberately does not.
+    private fun reduce(file: TdApi.File) {
         val s = states[file.id] ?: return
         val incoming = file.toMediaState()
         val previous = s.value
         val merged = when {
-            previous is MediaState.Ready && incoming !is MediaState.Ready -> previous
+            // New Ready always wins — TDLib may have rotated the file's on-disk path
+            // (cache layout) and we must surface the new one.
+            incoming is MediaState.Ready -> incoming
+            // Don't slide back from Ready while TDLib still reports the file on disk:
+            // the rename-race event still has `path='temp/<id>'` and non-zero bytes.
+            // A genuine eviction wipes both — and only then do we let the demotion
+            // through so the watchdog can recover the slot.
+            previous is MediaState.Ready
+                && (file.local.path.orEmpty().isNotEmpty() || file.local.downloadedSize > 0L) -> previous
             else -> incoming
         }
-        // Update the stall tracker BEFORE the throttle so a watchdog tick that lands
-        // between two throttled bursts still sees that bytes are flowing. Real progress
-        // resets the retry counter — without this, a download that survives one
-        // watchdog reissue and then stalls again later wouldn't get the full retry
-        // budget the second time around.
+
+        val now = System.currentTimeMillis()
         if (merged is MediaState.Downloading) {
-            val downloaded = file.local.downloadedSize
-            val prev = stallTrack[file.id]
-            if (prev == null || prev.bytes != downloaded) {
-                stallTrack[file.id] = StallTrack(downloaded, System.currentTimeMillis(), retries = 0)
+            val bytes = file.local.downloadedSize
+            val prev = tracks[file.id]
+            // Real progress resets the retry counter — a download that survives one
+            // watchdog reissue and then stalls again later still gets the full budget.
+            val movedBytes = prev == null || prev.bytes != bytes
+            val base = when {
+                prev == null -> Track(bytes, now, retries = 0, lastEmitMs = 0L)
+                movedBytes -> prev.copy(bytes = bytes, changedAt = now, retries = 0)
+                else -> prev
             }
+            // Throttle Downloading→Downloading recomposition to PROGRESS_MIN_INTERVAL_MS.
+            // The 100% emit and any non-Downloading transition are exempt — they're
+            // either terminal or the last chance to show "complete, awaiting rename"
+            // before Ready arrives.
+            val emitting = previous !is MediaState.Downloading
+                || merged.progress >= 1f
+                || now - base.lastEmitMs >= PROGRESS_MIN_INTERVAL_MS
+            tracks[file.id] = if (emitting) base.copy(lastEmitMs = now) else base
+            if (!emitting) return
         } else {
-            stallTrack.remove(file.id)
+            tracks.remove(file.id)
         }
-        // Throttle Downloading→Downloading bursts to PROGRESS_MIN_INTERVAL_MS. Terminal
-        // transitions (any state involving Idle/Ready/Failed) always pass through. The
-        // 100% emit is also exempt — it's our last chance to show "complete, just waiting
-        // on rename" before Ready arrives, and dropping it makes the bar look frozen at 99%.
-        if (previous is MediaState.Downloading && merged is MediaState.Downloading
-            && merged.progress < 1f) {
-            val now = System.currentTimeMillis()
-            val last = lastProgressEmitMs[file.id] ?: 0L
-            if (now - last < PROGRESS_MIN_INTERVAL_MS) return
-            lastProgressEmitMs[file.id] = now
-        }
+
         s.value = merged
         if (merged is MediaState.Ready || merged is MediaState.Failed) {
             activePriority.remove(file.id)
-            lastProgressEmitMs.remove(file.id)
-            stallTrack.remove(file.id)
+            tracks.remove(file.id)
         }
     }
 
     /**
-     * Per-tick walk of active downloads. For each fileId still in [stallTrack], if the
-     * downloadedSize hasn't changed for [STALL_THRESHOLD_MS] we reissue [TdApi.DownloadFile]
-     * at the priority TDLib was already running it at — which TDLib treats as "wake this
-     * up" rather than "start a new download" (priority field is what triggers the kick).
-     * After [MAX_STALL_RETRIES] failed reissues we give up and mark the slot Failed so the
-     * UI can surface "tap to retry" instead of an indefinite spinner.
+     * Per-tick walk of active downloads. TDLib's documented behaviour (#2585) is that
+     * a flaky network can leave `is_downloading_active=true` indefinitely — the daemon
+     * itself never gives up, so a download stuck without progress for [STALL_THRESHOLD_MS]
+     * gets a [TdApi.DownloadFile] reissue at the priority it was running at. TDLib
+     * treats reissue as "kick the queue", not "start a new download", which matches
+     * what the official Telegram clients do.
+     *
+     * After [MAX_STALL_RETRIES] failed reissues we surface Failed so the UI can render
+     * a tap-to-retry affordance instead of a perpetual spinner.
      */
     private suspend fun checkStalled() {
         val now = System.currentTimeMillis()
-        // Snapshot to a list — we mutate stallTrack inside the loop.
-        val snapshot = stallTrack.entries.toList()
+        // Snapshot — we mutate the map inside the loop.
+        val snapshot = tracks.entries.toList()
         for ((fileId, track) in snapshot) {
             if (now - track.changedAt < STALL_THRESHOLD_MS) continue
             val slot = states[fileId] ?: run {
-                stallTrack.remove(fileId)
+                tracks.remove(fileId)
                 continue
             }
             if (slot.value !is MediaState.Downloading) {
-                stallTrack.remove(fileId)
+                tracks.remove(fileId)
                 continue
             }
-            // Re-read the live tracker — between the snapshot above and now, an
-            // applyFileEvent could have delivered real bytes and reset retries. Without
-            // this guard a watchdog tick could overwrite a healthy Downloading state
-            // with Failed in the millisecond window where the snapshot was already
-            // stale. Same idea for the reissue path: only act if the snapshot is still
-            // the canonical state.
-            val live = stallTrack[fileId] ?: continue
+            // Re-read the live tracker. Between the snapshot and now the reducer could
+            // have delivered real bytes and reset retries; acting on the stale snapshot
+            // would overwrite a healthy state with Failed in that window.
+            val live = tracks[fileId] ?: continue
             if (live.bytes != track.bytes || live.changedAt != track.changedAt) continue
             if (track.retries >= MAX_STALL_RETRIES) {
                 Log.w(TAG, "stall watchdog: giving up on $fileId after ${track.retries} retries")
                 slot.value = MediaState.Failed("завантаження зависло")
-                stallTrack.remove(fileId)
+                tracks.remove(fileId)
                 activePriority.remove(fileId)
                 continue
             }
             val priority = activePriority[fileId] ?: DownloadPriority.VisibleMedia.tdValue
             try {
                 td.send(TdApi.DownloadFile(fileId, priority, 0, 0, /* synchronous */ false))
-                // compute() so we don't overwrite a fresh tracker that applyFileEvent
-                // installed concurrently — only bump retries off the snapshot we acted on.
-                stallTrack.compute(fileId) { _, current ->
+                tracks.compute(fileId) { _, current ->
                     if (current == null || current.bytes != track.bytes) current
                     else current.copy(changedAt = now, retries = current.retries + 1)
                 }
@@ -294,26 +331,35 @@ class MediaCache(
         try {
             if (current !is MediaState.Downloading) {
                 val file = td.send(TdApi.GetFile(fileId))
-                // Route through the same reducer the UpdateFile collector uses — keeps
-                // the Ready-stick / Failed-on-not-downloadable invariants in one place.
-                applyFileEvent(file)
-                if (slot(fileId).value is MediaState.Ready) return
+                // Hand the file to the reducer through the same channel the inbound
+                // UpdateFile stream uses — the Ready-stick / eviction / throttle logic
+                // lives in one place and runs on a single thread.
+                fileEvents.send(file)
+                // Don't peek `slot.value` here: the reducer hasn't necessarily run yet.
+                // Inspect the file directly — if TDLib already has it on disk we skip
+                // the redundant DownloadFile.
+                if (file.local.isDownloadingCompleted && file.local.path.orEmpty().isNotEmpty()) return
             }
             td.send(TdApi.DownloadFile(fileId, priority.tdValue, 0, 0, /* synchronous */ false))
             activePriority[fileId] = priority.tdValue
-            // Seed the stall tracker so the watchdog has something to compare against
-            // even if the very first UpdateFile is dropped (SharedFlow buffer overflow,
-            // or it lands before our subscriber is wired up after a hot restart).
-            stallTrack.putIfAbsent(fileId, StallTrack(0L, System.currentTimeMillis(), 0))
+            // Seed the watchdog tracker so it has something to compare against even if
+            // the very first UpdateFile is dropped (SharedFlow boundary, hot restart,
+            // or TDLib silence under bad network — see #2585).
+            tracks.putIfAbsent(fileId, Track(0L, System.currentTimeMillis(), retries = 0, lastEmitMs = 0L))
         } catch (t: Throwable) {
             // A Composable leaving composition cancels its LaunchedEffect — that surfaces
             // here as LeftCompositionCancellationException (a CancellationException). Don't
             // log it as a failure or mark the slot Failed; the user just scrolled past.
             if (t is kotlinx.coroutines.CancellationException) throw t
             Log.w(TAG, "ensure($fileId, ${priority.name}) failed", t)
-            slot(fileId).value = MediaState.Failed(t.message ?: "download failed")
+            // `update {}` is an atomic CAS-loop — a concurrent UpdateFile that just
+            // finalised the slot to Ready won't be clobbered by our Failed write.
+            slot(fileId).update { previous ->
+                if (previous is MediaState.Ready) previous
+                else MediaState.Failed(t.message ?: "download failed")
+            }
             activePriority.remove(fileId)
-            stallTrack.remove(fileId)
+            tracks.remove(fileId)
         }
     }
 
@@ -330,7 +376,7 @@ class MediaCache(
         scope.launch(ioDispatcher) {
             runCatching { td.send(TdApi.CancelDownloadFile(fileId, /* onlyIfPending */ false)) }
             activePriority.remove(fileId)
-            stallTrack.remove(fileId)
+            tracks.remove(fileId)
             states[fileId]?.value = MediaState.Idle
         }
     }
@@ -344,8 +390,33 @@ class MediaCache(
     suspend fun retry(fileId: Int, priority: DownloadPriority = DownloadPriority.VisibleMedia) {
         states[fileId]?.value = MediaState.Idle
         activePriority.remove(fileId)
-        stallTrack.remove(fileId)
+        tracks.remove(fileId)
         ensure(fileId, priority)
+    }
+
+    /**
+     * Invalidate a [MediaState.Ready] slot whose on-disk file has gone missing. TDLib
+     * does not emit [TdApi.UpdateFile] when its storage optimiser deletes a previously
+     * completed file (the maintainer's official advice in #3178: *"the local file path
+     * can become invalid in many ways. The app is supposed to call DownloadFile before
+     * using the file."*). Without this hook the slot would stay Ready forever while
+     * the renderer loaded a phantom path.
+     *
+     * Call site: image / video loaders that detect a load failure on a Ready slot
+     * (e.g. Coil's onError when the [java.io.File] no longer exists). No-op for slots
+     * that aren't currently Ready. Fire-and-forget: runs on the app scope so it isn't
+     * cancelled by the very recomposition the state flip triggers.
+     */
+    fun invalidate(fileId: Int, priority: DownloadPriority = DownloadPriority.VisibleMedia) {
+        val s = states[fileId] ?: return
+        if (s.value !is MediaState.Ready) return
+        Log.i(TAG, "invalidate: $fileId — Ready file missing on disk; re-downloading")
+        scope.launch(ioDispatcher) {
+            s.value = MediaState.Idle
+            activePriority.remove(fileId)
+            tracks.remove(fileId)
+            ensure(fileId, priority)
+        }
     }
 
     /**
@@ -364,7 +435,7 @@ class MediaCache(
             delay(CANCEL_DEBOUNCE_MS)
             runCatching { td.send(TdApi.CancelDownloadFile(fileId, /* onlyIfPending */ true)) }
             activePriority.remove(fileId)
-            stallTrack.remove(fileId)
+            tracks.remove(fileId)
             pendingCancels.remove(fileId)
         }
         pendingCancels.put(fileId, job)?.cancel()
@@ -385,13 +456,15 @@ class MediaCache(
         // queued download isn't missed for too long), but at this rate the wake-up cost
         // is negligible — well under one wake per second of foreground time.
         const val IDLE_TICK_MS = 30_000L
-        // No bytes for this long → reissue. Below ~6s false-positives on slow 3G;
-        // above ~15s the user is already convinced the app is broken. 10s is the
-        // sweet spot used by the official Telegram Android client.
-        const val STALL_THRESHOLD_MS = 10_000L
-        // After two reissues with no progress we surface Failed. A third reissue
-        // is almost always thrashing against a server-side problem (file gone,
-        // DC unreachable) or a hard offline state we can't fix from the client.
+        // No bytes for this long → reissue. TDLib reopens its underlying connections
+        // after 7-44s of silence on a flaky link (#2585), and a DC migration mid-
+        // download can produce one flat interval before bytes resume; 30s lets that
+        // recover without us reissuing for nothing, while still feeling responsive
+        // on a real stall.
+        const val STALL_THRESHOLD_MS = 30_000L
+        // After two reissues with no progress we surface Failed. A third reissue is
+        // almost always thrashing against a server-side problem (file gone, DC
+        // unreachable) or a hard offline state we can't fix from the client.
         const val MAX_STALL_RETRIES = 2
         // Window during which a re-mount can rescue a queued cancel. 250ms covers a
         // LazyColumn dispose-and-remount cycle (one frame at 60fps + some slack)
