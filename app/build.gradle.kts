@@ -13,6 +13,13 @@ val telegramProps = Properties().apply {
 val telegramApiId: String = telegramProps.getProperty("telegram.apiId") ?: "0"
 val telegramApiHash: String = telegramProps.getProperty("telegram.apiHash") ?: ""
 
+// Optional release signing. Drop a keystore.properties (gitignored) at the
+// project root with: storeFile=, storePassword=, keyAlias=, keyPassword=.
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 android {
     namespace = "dev.lyo.hortay"
     compileSdk = 36
@@ -27,8 +34,16 @@ android {
         buildConfigField("int", "TELEGRAM_API_ID", telegramApiId)
         buildConfigField("String", "TELEGRAM_API_HASH", "\"$telegramApiHash\"")
 
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+    }
+
+    signingConfigs {
+        if (keystoreProps.containsKey("storeFile")) {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
         }
     }
 
@@ -37,9 +52,21 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+            // Real Android devices are arm64-v8a only. Skipping x86_64 in release
+            // halves the APK by dropping the redundant ~24 MB libtdjni.so copy.
+            ndk {
+                abiFilters.clear()
+                abiFilters += "arm64-v8a"
+            }
         }
         debug {
             isDebuggable = true
+            // Keep x86_64 for emulator workflows in debug builds.
+            ndk {
+                abiFilters.clear()
+                abiFilters += listOf("arm64-v8a", "x86_64")
+            }
         }
     }
 
@@ -62,6 +89,15 @@ android {
             "/META-INF/{AL2.0,LGPL2.1}",
             "/META-INF/DEPENDENCIES",
         )
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            val versionName = output.versionName.orNull ?: "unversioned"
+            output.outputFileName.set("hortay-$versionName-${variant.name}.apk")
+        }
     }
 }
 
