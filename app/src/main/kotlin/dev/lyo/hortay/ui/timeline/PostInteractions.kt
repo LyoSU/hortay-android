@@ -2,6 +2,7 @@ package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.runtime.Immutable
 import dev.lyo.hortay.data.FormattedText
+import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.TimelinePost
 
 /**
@@ -25,8 +26,8 @@ class PostInteractions(
     val isTranslated: (post: TimelinePost) -> Boolean = { false },
     /** Translated text for this post (or any of its album members), null when not translated. */
     val translationFor: (post: TimelinePost) -> FormattedText? = { null },
-    /** Toggle the user's reaction with [emoji] on the given post. */
-    val onReactionToggle: (post: TimelinePost, emoji: String) -> Unit = { _, _ -> },
+    /** Toggle the user's reaction (emoji or custom-emoji) on the given post. */
+    val onReactionToggle: (post: TimelinePost, item: ReactionItem) -> Unit = { _, _ -> },
 ) {
     companion object {
         val Noop = PostInteractions()

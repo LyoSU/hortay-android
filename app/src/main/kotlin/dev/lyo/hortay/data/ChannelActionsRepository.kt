@@ -14,28 +14,43 @@ import org.drinkless.tdlib.TdApi
 class ChannelActionsRepository(private val td: TdSender) {
 
     /**
-     * Toggle one of the user's reactions on a message. We pass `isBig=false` and
-     * `updateRecentReactions=true` so the user's most-used reactions float to the top
-     * of TDLib's reaction picker — same behaviour the official client ships.
+     * Toggle one of the user's reactions on a message. `isChosen` is the value as the user
+     * sees it BEFORE tapping; we flip the side. Passing `isBig=false` and
+     * `updateRecentReactions=true` floats the user's most-used reactions to the top of
+     * TDLib's reaction picker — same behaviour the official client ships.
+     *
+     * Custom-emoji reactions go through the same path: TDLib gates them server-side (only
+     * Premium users can add custom-emoji reactions to most chats), and on rejection it
+     * just no-ops with an error we log and discard. The UI chip still toggles optimistic
+     * if the caller wants — TDLib will reconcile via UpdateMessageInteractionInfo.
      */
-    suspend fun addReaction(chatId: Long, messageId: Long, emoji: String) {
+    suspend fun toggleReaction(
+        chatId: Long,
+        messageId: Long,
+        kind: ReactionKind,
+        isChosen: Boolean,
+    ) {
+        val type = kind.toTd()
         runCatching {
-            td.send(
-                TdApi.AddMessageReaction(
-                    chatId,
-                    messageId,
-                    TdApi.ReactionTypeEmoji(emoji),
-                    /* isBig */ false,
-                    /* updateRecentReactions */ true,
-                ),
-            )
-        }.warnUnlessCancelled(TAG, "addReaction($emoji)")
+            if (isChosen) {
+                td.send(TdApi.RemoveMessageReaction(chatId, messageId, type))
+            } else {
+                td.send(
+                    TdApi.AddMessageReaction(
+                        chatId,
+                        messageId,
+                        type,
+                        /* isBig */ false,
+                        /* updateRecentReactions */ true,
+                    ),
+                )
+            }
+        }.warnUnlessCancelled(TAG, "toggleReaction(${kind.stableKey}, isChosen=$isChosen)")
     }
 
-    suspend fun removeReaction(chatId: Long, messageId: Long, emoji: String) {
-        runCatching {
-            td.send(TdApi.RemoveMessageReaction(chatId, messageId, TdApi.ReactionTypeEmoji(emoji)))
-        }.warnUnlessCancelled(TAG, "removeReaction($emoji)")
+    private fun ReactionKind.toTd(): TdApi.ReactionType = when (this) {
+        is ReactionKind.Emoji -> TdApi.ReactionTypeEmoji(text)
+        is ReactionKind.CustomEmoji -> TdApi.ReactionTypeCustomEmoji(customEmojiId)
     }
 
     /**

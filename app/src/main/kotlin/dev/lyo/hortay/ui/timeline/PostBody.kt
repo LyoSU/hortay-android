@@ -32,8 +32,10 @@ import dev.lyo.hortay.data.isSecret
 import androidx.compose.foundation.clickable
 import dev.lyo.hortay.data.WebPreview
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.SpoilerKind
 import dev.lyo.hortay.ui.media.SpoilerOverlay
+import dev.lyo.hortay.ui.media.StickerView
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.TdVideoPlayer
 import dev.lyo.hortay.ui.text.RichText
@@ -85,18 +87,30 @@ fun PostBody(
 
 @Composable
 private fun AnimatedEmojiBlock(content: PostContent.AnimatedEmoji) {
-    // Telegram renders these centered and oversized when the message contains a single
-    // emoji. We mirror that — the sticker variant (custom-emoji set / lottie) needs full
-    // sticker rendering we don't have yet, so for now the unicode emoji at display-large
-    // size is the consistent fallback.
+    // Telegram renders single-emoji messages centered and oversized. When TDLib has
+    // resolved an animated sticker variant (premium animated set / lottie / webm), we
+    // play it through StickerView. The unicode emoji stays as a fallback for the brief
+    // window where TDLib is still resolving the sticker — and as the permanent path
+    // when no animated variant exists for that codepoint.
+    val sticker = content.sticker
     Box(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = content.emoji,
-            style = MaterialTheme.typography.displayLarge,
-        )
+        if (sticker != null && sticker.fileId != null) {
+            StickerView(
+                media = sticker,
+                thumb = content.thumb,
+                format = content.format,
+                contentDescription = content.emoji,
+                modifier = Modifier.size(140.dp),
+            )
+        } else {
+            Text(
+                text = content.emoji,
+                style = MaterialTheme.typography.displayLarge,
+            )
+        }
     }
 }
 
@@ -110,8 +124,10 @@ private fun ChecklistBlock(content: PostContent.Checklist, maxLines: Int) {
             .padding(16.dp),
     ) {
         if (content.title.text.isNotBlank()) {
+            val titleRt = dev.lyo.hortay.ui.text.rememberRenderableText(content.title)
             Text(
-                text = dev.lyo.hortay.ui.text.rememberAnnotatedString(content.title),
+                text = titleRt.text,
+                inlineContent = titleRt.inlineContent,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = maxLines,
@@ -131,8 +147,10 @@ private fun ChecklistBlock(content: PostContent.Checklist, maxLines: Int) {
                     size = 20.dp,
                 )
                 Spacer(Modifier.width(10.dp))
+                val taskRt = dev.lyo.hortay.ui.text.rememberRenderableText(task.text)
                 Text(
-                    text = dev.lyo.hortay.ui.text.rememberAnnotatedString(task.text),
+                    text = taskRt.text,
+                    inlineContent = taskRt.inlineContent,
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (task.isDone) MaterialTheme.colorScheme.onSurfaceVariant
                     else MaterialTheme.colorScheme.onSurface,
@@ -210,7 +228,9 @@ private fun TextBlock(content: PostContent.Text, maxLines: Int, translation: For
             formatted = rendered,
             style = MaterialTheme.typography.bodyLarge,
             maxLines = maxLines,
-            renderer = { annotated, style, lines -> ExpandableText(annotated, style, lines) },
+            renderer = { annotated, inline, style, lines ->
+                ExpandableText(annotated, inline, style, lines)
+            },
         )
     }
     content.webPreview?.let {
@@ -535,7 +555,16 @@ private fun VideoNoteBlock(content: PostContent.VideoNote) {
 private fun StickerBlock(content: PostContent.Sticker) {
     val side = 168.dp
     Box(modifier = Modifier.size(side)) {
-        TdMediaImage(media = content.media, contentDescription = content.emoji, modifier = Modifier.fillMaxSize())
+        // [media] is the playback file (.webp/.tgs/.webm) and [thumb] is TDLib's static
+        // WEBP/PNG preview. StickerView shows the thumb instantly, then crossfades into
+        // the rendered animation once the sticker file lands.
+        StickerView(
+            media = content.media,
+            thumb = content.thumb,
+            format = content.format,
+            contentDescription = content.emoji,
+            modifier = Modifier.fillMaxSize(),
+        )
         if (content.emoji.isNotEmpty()) {
             Text(
                 text = content.emoji,
@@ -800,7 +829,9 @@ private fun MediaCaption(caption: FormattedText, maxLines: Int, above: Boolean, 
         formatted = caption,
         style = MaterialTheme.typography.bodyLarge,
         maxLines = maxLines,
-        renderer = { annotated, style, lines -> ExpandableText(annotated, style, lines) },
+        renderer = { annotated, inline, style, lines ->
+            ExpandableText(annotated, inline, style, lines)
+        },
     )
     if (above) Spacer(Modifier.height(12.dp))
 }
@@ -815,10 +846,15 @@ private fun MediaCaption(caption: FormattedText, maxLines: Int, above: Boolean, 
  * resets to collapsed — same as the official Telegram client.
  */
 @Composable
-private fun ExpandableText(text: AnnotatedString, style: TextStyle, maxLines: Int) {
+private fun ExpandableText(
+    text: AnnotatedString,
+    inlineContent: Map<String, androidx.compose.foundation.text.InlineTextContent>,
+    style: TextStyle,
+    maxLines: Int,
+) {
     if (maxLines == Int.MAX_VALUE) {
         // Detail screen path — never collapse, never offer a toggle.
-        Text(text = text, style = style)
+        Text(text = text, inlineContent = inlineContent, style = style)
         return
     }
     var expanded by remember(text) { mutableStateOf(false) }
@@ -826,6 +862,7 @@ private fun ExpandableText(text: AnnotatedString, style: TextStyle, maxLines: In
 
     Text(
         text = text,
+        inlineContent = inlineContent,
         style = style,
         maxLines = if (expanded) Int.MAX_VALUE else maxLines,
         overflow = TextOverflow.Ellipsis,

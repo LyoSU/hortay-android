@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Added
+- Animated stickers (TGS / WebM / WEBP), animated emoji and custom-emoji
+  reactions. Pipeline reuses TDLib's batched `GetCustomEmojiStickers` (up to
+  200 ids per call, 50ms debounce) and serves the WEBP/PNG `Sticker.thumbnail`
+  as an instant placeholder while the animation downloads. TGS playback is
+  Lottie-Compose with a 32-entry LRU cache of parsed compositions and a 5 MB
+  gunzip safety cap; WebM playback is ExoPlayer-backed, looped, muted and
+  lifecycle-aware (pauses on `ON_PAUSE`, fully releases on dispose). Inline
+  custom emojis in formatted text are wired through Compose `InlineTextContent`
+  with `needsRepainting`-aware tint via Lottie's COLOR_FILTER dynamic property.
 - "Сховище і трафік" section in Settings — surfaces TDLib's network usage and
   storage footprint with a one-tap "Clear cache" action.
 - Twitter-style "новi пости" floating pill at the top of the feed: stacked

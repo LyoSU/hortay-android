@@ -27,10 +27,12 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.data.ReactionItem
+import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.TdAvatar
 import kotlinx.coroutines.launch
 import java.text.DateFormat
@@ -117,7 +119,7 @@ fun PostCard(
                         commentCount = post.commentCount,
                         reactions = post.reactions,
                         onCommentsClick = { interactions.onPostClick(post) },
-                        onReactionTap = { emoji -> interactions.onReactionToggle(post, emoji) },
+                        onReactionTap = { item -> interactions.onReactionToggle(post, item) },
                     )
                 }
             }
@@ -393,7 +395,7 @@ private fun ActionRow(
     commentCount: Int?,
     reactions: dev.lyo.hortay.data.Reactions,
     onCommentsClick: () -> Unit,
-    onReactionTap: (emoji: String) -> Unit = {},
+    onReactionTap: (ReactionItem) -> Unit = {},
 ) {
     Row(
         modifier = Modifier
@@ -420,7 +422,7 @@ private fun ActionRow(
             }
             reactions.items.forEachIndexed { idx, item ->
                 if (idx > 0) Spacer(Modifier.width(6.dp))
-                ReactionChip(item, onClick = { onReactionTap(item.emoji) })
+                ReactionChip(item, onClick = { onReactionTap(item) })
             }
         }
     }
@@ -448,6 +450,8 @@ internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
     else MaterialTheme.colorScheme.surfaceContainer
     val countColor = if (item.isChosen) MaterialTheme.colorScheme.onPrimaryContainer
     else MaterialTheme.colorScheme.onSurfaceVariant
+    val tintForCustom = if (item.isChosen) MaterialTheme.colorScheme.onPrimaryContainer
+    else MaterialTheme.colorScheme.onSurface
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))
@@ -456,7 +460,15 @@ internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = item.emoji, style = MaterialTheme.typography.titleMedium)
+        when (val k = item.kind) {
+            is ReactionKind.Emoji -> Text(text = k.text, style = MaterialTheme.typography.titleMedium)
+            is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
+                customEmojiId = k.customEmojiId,
+                modifier = Modifier.size(20.dp),
+                tintColor = tintForCustom,
+                contentDescription = null,
+            )
+        }
         Spacer(Modifier.width(6.dp))
         Text(
             text = formatViews(item.count),

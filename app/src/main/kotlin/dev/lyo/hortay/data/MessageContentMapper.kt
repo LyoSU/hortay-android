@@ -75,11 +75,20 @@ internal object MessageContentMapper {
             thumb = content.videoNote.thumbnail?.toMedia(),
             durationSec = content.videoNote.duration,
         )
-        is TdApi.MessageSticker -> PostContent.Sticker(
-            media = content.sticker.toMedia(),
-            emoji = content.sticker.emoji.orEmpty(),
-            format = mapStickerFormat(content.sticker.format),
-        )
+        is TdApi.MessageSticker -> {
+            val s = content.sticker
+            PostContent.Sticker(
+                media = TdMedia(
+                    fileId = s.sticker?.id,
+                    width = s.width,
+                    height = s.height,
+                    minithumbBytes = null,
+                ),
+                thumb = s.thumbnail?.toMedia(),
+                emoji = s.emoji.orEmpty(),
+                format = mapStickerFormat(s.format),
+            )
+        }
         is TdApi.MessagePoll -> PostContent.Poll(
             question = content.poll.question?.text.orEmpty(),
             options = content.poll.options.orEmpty().map { opt ->
@@ -116,13 +125,24 @@ internal object MessageContentMapper {
             emoji = content.emoji.orEmpty(),
             value = content.value,
         )
-        is TdApi.MessageAnimatedEmoji -> PostContent.AnimatedEmoji(
-            emoji = content.emoji.orEmpty(),
-            // sticker is null while TDLib still resolves the custom-emoji sprite — the UI
-            // falls back to rendering the plain unicode emoji at large size in that case.
-            sticker = content.animatedEmoji?.sticker?.toMedia(),
-            format = mapStickerFormat(content.animatedEmoji?.sticker?.format),
-        )
+        is TdApi.MessageAnimatedEmoji -> {
+            val s = content.animatedEmoji?.sticker
+            PostContent.AnimatedEmoji(
+                emoji = content.emoji.orEmpty(),
+                // sticker is null while TDLib still resolves the custom-emoji sprite — the
+                // UI falls back to rendering the plain unicode emoji at display size.
+                sticker = s?.let {
+                    TdMedia(
+                        fileId = it.sticker?.id,
+                        width = it.width,
+                        height = it.height,
+                        minithumbBytes = null,
+                    )
+                },
+                thumb = s?.thumbnail?.toMedia(),
+                format = mapStickerFormat(s?.format),
+            )
+        }
         is TdApi.MessageChecklist -> {
             val list = content.list
             PostContent.Checklist(
@@ -242,14 +262,24 @@ internal object MessageContentMapper {
     fun mapReactions(reactions: TdApi.MessageReactions?): Reactions {
         val list = reactions?.reactions.orEmpty()
         if (list.isEmpty()) return Reactions(0, emptyList())
-        // Keep order TDLib gave us — it ranks by frequency. Custom-emoji buckets are skipped
-        // for now (we'd need GetCustomEmojiStickers + sticker rendering to show them).
-        // total is computed from `items` only — including custom-emoji counts in the total
-        // while hiding them from the chip row produced a visible mismatch (sum 47, but only
-        // 35 visible in chips).
+        // Keep order TDLib gave us — it ranks by frequency. Both reaction kinds are
+        // mapped: unicode emoji renders as a glyph chip, custom-emoji renders the sticker
+        // resolved through CustomEmojiRepository. Buckets with unknown reaction types
+        // (forward-compat) are dropped so the total stays consistent with what's drawn.
         val items = list.mapNotNull { r ->
-            val emoji = (r.type as? TdApi.ReactionTypeEmoji)?.emoji ?: return@mapNotNull null
-            ReactionItem(emoji, r.totalCount, r.isChosen)
+            val kind = when (val t = r.type) {
+                is TdApi.ReactionTypeEmoji -> {
+                    val text = t.emoji.orEmpty()
+                    if (text.isEmpty()) return@mapNotNull null
+                    ReactionKind.Emoji(text)
+                }
+                is TdApi.ReactionTypeCustomEmoji -> {
+                    if (t.customEmojiId == 0L) return@mapNotNull null
+                    ReactionKind.CustomEmoji(t.customEmojiId)
+                }
+                else -> return@mapNotNull null
+            }
+            ReactionItem(kind, r.totalCount, r.isChosen)
         }
         return Reactions(items.sumOf { it.count }, items)
     }

@@ -366,12 +366,15 @@ fun TimelineScreen(
             },
             isTranslated = { post -> lookup(post) != null },
             translationFor = ::lookup,
-            onReactionToggle = { post, emoji ->
+            onReactionToggle = { post, item ->
                 scope.launch {
                     val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
-                    val mine = post.reactions.items.firstOrNull { it.emoji == emoji && it.isChosen }
-                    if (mine != null) channelActions.removeReaction(post.chatId, target, emoji)
-                    else channelActions.addReaction(post.chatId, target, emoji)
+                    channelActions.toggleReaction(
+                        chatId = post.chatId,
+                        messageId = target,
+                        kind = item.kind,
+                        isChosen = item.isChosen,
+                    )
                 }
             },
             onPostClick = onOpenComments,

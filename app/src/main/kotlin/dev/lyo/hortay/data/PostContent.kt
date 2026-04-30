@@ -103,7 +103,15 @@ sealed interface PostContent {
 
     @Immutable
     data class Sticker(
+        /** Playback file: the .tgs / .webm / .webp itself (id is the sticker payload). */
         val media: TdMedia,
+        /**
+         * Static WEBP/PNG poster TDLib delivers alongside the sticker. Used as an instant
+         * placeholder while [media] downloads, and as the rendered surface for static
+         * (non-animated) stickers when [media.fileId] equals it. May be null when TDLib
+         * didn't ship a thumb (rare; usually only for cold-start old WEBP stickers).
+         */
+        val thumb: TdMedia?,
         val emoji: String,
         val format: StickerFormat,
     ) : PostContent
@@ -146,7 +154,10 @@ sealed interface PostContent {
     @Immutable
     data class AnimatedEmoji(
         val emoji: String,
+        /** Animated sticker (TGS/WebM/WEBP) for the emoji; null until TDLib resolves it. */
         val sticker: TdMedia?,
+        /** Static WEBP/PNG poster delivered alongside the sticker; instant fallback. */
+        val thumb: TdMedia?,
         val format: StickerFormat,
     ) : PostContent
 
@@ -366,9 +377,27 @@ data class ReplyPreview(
  */
 enum class SenderVerification { Verified, Scam, Fake }
 
-/** Single reaction bucket: an emoji and how many times it was used. */
+/**
+ * Reaction "kind" — Telegram supports two: a unicode emoji (any user) or a custom-emoji
+ * sticker (Premium / channel boost). Modeled as a sealed type so the chip renderer can
+ * pick a glyph or a sticker, and so the toggle action keeps both paths one-call wide.
+ */
 @Immutable
-data class ReactionItem(val emoji: String, val count: Int, val isChosen: Boolean = false)
+sealed interface ReactionKind {
+    @Immutable data class Emoji(val text: String) : ReactionKind
+    @Immutable data class CustomEmoji(val customEmojiId: Long) : ReactionKind
+}
+
+/** Stable key for a reaction bucket — used by lazy lists / animations to dedupe across ticks. */
+val ReactionKind.stableKey: String
+    get() = when (this) {
+        is ReactionKind.Emoji -> "e:$text"
+        is ReactionKind.CustomEmoji -> "c:$customEmojiId"
+    }
+
+/** Single reaction bucket: emoji or custom-emoji sticker plus a usage count. */
+@Immutable
+data class ReactionItem(val kind: ReactionKind, val count: Int, val isChosen: Boolean = false)
 
 /** Aggregated reaction summary — full per-emoji breakdown plus total. */
 @Immutable

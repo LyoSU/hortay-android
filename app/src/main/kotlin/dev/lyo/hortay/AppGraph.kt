@@ -6,6 +6,7 @@ import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.CountryRepository
+import dev.lyo.hortay.data.CustomEmojiRepository
 import dev.lyo.hortay.data.MediaCache
 import dev.lyo.hortay.data.MessageMapper
 import dev.lyo.hortay.data.PostsRepository
@@ -72,5 +73,11 @@ class AppGraph(context: Context) {
     val channelActions: ChannelActionsRepository = ChannelActionsRepository(tdClient)
 
     val countries: CountryRepository = CountryRepository(tdClient)
+
+    // Custom-emoji resolver for inline emojis in formatted text and for custom-emoji
+    // reaction buckets. Uses GetCustomEmojiStickers in batches of up to 200 ids; the
+    // request stream is debounced 50ms so a screen-full of posts coalesces into a
+    // single TDLib call.
+    val customEmoji: CustomEmojiRepository = CustomEmojiRepository(tdClient, appScope)
 }
 

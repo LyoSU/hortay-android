@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,11 +40,12 @@ fun RichText(
     formatted: FormattedText,
     style: TextStyle,
     maxLines: Int,
-    renderer: (@Composable (AnnotatedString, TextStyle, Int) -> Unit),
+    renderer: (@Composable (AnnotatedString, Map<String, InlineTextContent>, TextStyle, Int) -> Unit),
 ) {
     val quoteRanges = remember(formatted) { formatted.blockQuoteRanges() }
     if (quoteRanges.isEmpty()) {
-        renderer(rememberAnnotatedString(formatted), style, maxLines)
+        val rt = rememberRenderableText(formatted)
+        renderer(rt.text, rt.inlineContent, style, maxLines)
         return
     }
 
@@ -56,15 +58,19 @@ fun RichText(
     Column {
         segments.forEachIndexed { idx, segment ->
             if (idx > 0) Spacer(Modifier.height(8.dp))
-            val annotated = rememberAnnotatedString(segment.text)
-            if (segment.isQuote) QuoteRow(annotated, style)
-            else renderer(annotated, style, Int.MAX_VALUE)
+            val rt = rememberRenderableText(segment.text)
+            if (segment.isQuote) QuoteRow(rt.text, rt.inlineContent, style)
+            else renderer(rt.text, rt.inlineContent, style, Int.MAX_VALUE)
         }
     }
 }
 
 @Composable
-private fun QuoteRow(text: AnnotatedString, style: TextStyle) {
+private fun QuoteRow(
+    text: AnnotatedString,
+    inlineContent: Map<String, InlineTextContent>,
+    style: TextStyle,
+) {
     Row(modifier = Modifier.height(IntrinsicSize.Min)) {
         Box(
             modifier = Modifier
@@ -78,6 +84,7 @@ private fun QuoteRow(text: AnnotatedString, style: TextStyle) {
         Spacer(Modifier.width(10.dp))
         Text(
             text = text,
+            inlineContent = inlineContent,
             style = style,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(vertical = 2.dp),

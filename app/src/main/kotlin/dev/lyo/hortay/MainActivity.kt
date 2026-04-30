@@ -14,8 +14,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.data.AuthStage
 import dev.lyo.hortay.ui.auth.AuthScreen
 import dev.lyo.hortay.ui.main.MainScaffold
-import dev.lyo.hortay.ui.media.MediaViewerHost
+import dev.lyo.hortay.ui.media.LocalCustomEmoji
 import dev.lyo.hortay.ui.media.LocalMediaCache
+import dev.lyo.hortay.ui.media.MediaViewerHost
 import dev.lyo.hortay.ui.theme.HortayTheme
 
 class MainActivity : ComponentActivity() {
@@ -29,7 +30,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             HortayTheme {
-                CompositionLocalProvider(LocalMediaCache provides graph.mediaCache) {
+                CompositionLocalProvider(
+                    LocalMediaCache provides graph.mediaCache,
+                    LocalCustomEmoji provides graph.customEmoji,
+                ) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val auth by graph.tdClient.authStage.collectAsStateWithLifecycle()
                         when (auth) {
