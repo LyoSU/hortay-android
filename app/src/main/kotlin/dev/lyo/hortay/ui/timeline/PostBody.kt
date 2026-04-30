@@ -122,6 +122,12 @@ private fun AnimatedEmojiBlock(content: PostContent.AnimatedEmoji) {
 private val STICKER_MAX_SIDE = 168.dp
 private val ANIMATED_EMOJI_MAX_SIDE = 140.dp
 
+// Threshold for treating a video as "glance-able" — same heuristic Telegram uses for
+// inline silent autoplay. Videos at or below this duration play muted-and-looping in
+// the feed; longer ones keep the static poster + play-badge until the user opens
+// fullscreen, where audio and controls are available.
+private const val INLINE_AUTOPLAY_MAX_SEC = 60
+
 /**
  * Constrain a sticker box to the natural aspect ratio reported by TDLib. The longer side
  * is pinned to [maxSide]; the shorter scales down proportionally. This matters for
@@ -301,19 +307,46 @@ private fun SingleMedia(item: AlbumItem, onClick: () -> Unit) {
  * an opt-in spoiler / sensitive-content cover. The spoiler shimmer intercepts taps
  * and reveals the underlying media; once revealed, taps fall through to [onClick]
  * (fullscreen open). Used by both [SingleMedia] and the inside of [AlbumPager].
+ *
+ * For short videos (≤ [INLINE_AUTOPLAY_MAX_SEC]) we render a silent looping
+ * [TdVideoPlayer] on top of the poster instead of a static play badge — Telegram's
+ * own UX for "glance-able" clips. The poster stays underneath so the slot has a
+ * frame to show while the playback file streams in. [isActive] gates this for
+ * pager pages: only the page the user is on streams; neighbours show the still
+ * (so an album of 5 clips doesn't spawn five ExoPlayers).
  */
 @Composable
-private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit) {
+private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boolean = true) {
     var revealed by remember(item.media.fileId) {
         mutableStateOf(!item.hasSpoiler && !item.isSecret)
     }
+    val autoplayVideo = revealed
+        && isActive
+        && item is AlbumItem.Video
+        && item.durationSec in 1..INLINE_AUTOPLAY_MAX_SEC
     Box(
         modifier = Modifier
             .fillMaxSize()
             .clickable(enabled = revealed, onClick = onClick),
     ) {
         TdMediaImage(media = item.media, contentDescription = null, modifier = Modifier.fillMaxSize())
-        MediaOverlay(item)
+        if (autoplayVideo) {
+            val video = item as AlbumItem.Video
+            TdVideoPlayer(
+                fileId = video.playbackFileId,
+                autoPlay = true,
+                autoLoop = true,
+                showControls = false,
+                muted = true,
+                modifier = Modifier.fillMaxSize(),
+            )
+            DurationChip(
+                text = formatDuration(video.durationSec),
+                modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+            )
+        } else {
+            MediaOverlay(item)
+        }
         if (!revealed) {
             SpoilerOverlay(
                 kind = if (item.isSecret) SpoilerKind.Sensitive else SpoilerKind.Spoiler,
@@ -350,7 +383,11 @@ private fun AlbumPager(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
         HorizontalPager(state = state, modifier = Modifier.fillMaxSize()) { page ->
             val item = items[page]
             Box(modifier = Modifier.fillMaxSize()) {
-                MediaWithSpoiler(item = item, onClick = { onItemClick(page) })
+                MediaWithSpoiler(
+                    item = item,
+                    onClick = { onItemClick(page) },
+                    isActive = page == state.currentPage,
+                )
             }
         }
         AlbumIndicator(
