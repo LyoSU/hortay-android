@@ -43,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -126,7 +127,7 @@ fun AuthScreen(graph: AppGraph, stage: AuthStage) {
                     is AuthStage.WaitPhone -> PhoneForm(graph = graph, errorMessage = authError)
                     is AuthStage.WaitCode -> CodeForm(
                         graph = graph,
-                        phone = current.phoneNumber,
+                        stage = current,
                         errorMessage = authError,
                     )
                     is AuthStage.WaitPassword -> PasswordForm(
@@ -202,7 +203,7 @@ private fun HeroBlock(stage: AuthStage) {
         Spacer(Modifier.height(8.dp))
         Text(
             text = when (stage) {
-                is AuthStage.WaitCode -> "Ми надіслали код у Telegram на номер ${stage.phoneNumber}."
+                is AuthStage.WaitCode -> "Ми надіслали код ${stage.channelLabel}."
                 is AuthStage.WaitPassword -> if (stage.hint.isNotEmpty()) {
                     "Ваш акаунт захищено двофакторною автентифікацією."
                 } else {
@@ -411,7 +412,7 @@ private fun PhoneNumberRow(
 // ---------- Code ----------
 
 @Composable
-private fun CodeForm(graph: AppGraph, phone: String, errorMessage: String?) {
+private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: String?) {
     val client = graph.tdClient
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -419,6 +420,21 @@ private fun CodeForm(graph: AppGraph, phone: String, errorMessage: String?) {
     var code by remember { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
     var resending by remember { mutableStateOf(false) }
+
+    // Server-mandated cooldown ticks down from stage.resendAvailableInSec to 0. While it
+    // is non-zero the resend button is disabled with a "0:42" label, which is what the
+    // official Telegram client does — and saves users from spamming themselves into a
+    // FLOOD_WAIT. Resets whenever the stage emits a fresh cooldown (e.g. after a resend
+    // succeeds and TDLib hands back a new AuthorizationStateWaitCode with a new timeout).
+    var secondsLeft by remember(stage.resendAvailableInSec) {
+        mutableIntStateOf(stage.resendAvailableInSec)
+    }
+    LaunchedEffect(stage.resendAvailableInSec) {
+        while (secondsLeft > 0) {
+            kotlinx.coroutines.delay(1000)
+            secondsLeft -= 1
+        }
+    }
 
     LaunchedEffect(code) {
         if (errorMessage != null) client.clearAuthError()
@@ -434,19 +450,42 @@ private fun CodeForm(graph: AppGraph, phone: String, errorMessage: String?) {
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        OtpInput(
-            value = code,
-            onValueChange = { code = it },
-            length = 5,
-            isError = errorMessage != null,
-            enabled = !submitting,
-            onComplete = onSubmit,
-        )
+        // Numeric channels (TelegramMessage, Sms, Call, MissedCall, Fragment, Firebase)
+        // get the segmented OTP grid sized to TDLib's reported length. The exotic SmsWord
+        // / SmsPhrase channels need a free-form text field instead — those expect a word
+        // or phrase, not digits.
+        if (stage.isNumeric) {
+            OtpInput(
+                value = code,
+                onValueChange = { code = it },
+                length = stage.codeLength,
+                isError = errorMessage != null,
+                enabled = !submitting,
+                onComplete = onSubmit,
+            )
+        } else {
+            OutlinedTextField(
+                value = code,
+                onValueChange = { code = it },
+                singleLine = true,
+                isError = errorMessage != null,
+                enabled = !submitting,
+                shape = RoundedCornerShape(20.dp),
+                placeholder = { Text("Слово або фраза з SMS") },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         AnimatedFieldError(text = errorMessage)
         Spacer(Modifier.height(20.dp))
         PrimaryActionButton(
             text = stringResource(R.string.auth_continue),
-            enabled = !submitting && code.length >= 5,
+            enabled = !submitting && code.length >= minSubmitLength(stage),
             loading = submitting,
             onClick = {
                 focusManager.clearFocus()
@@ -460,7 +499,7 @@ private fun CodeForm(graph: AppGraph, phone: String, errorMessage: String?) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(
-                enabled = !resending && !submitting,
+                enabled = !resending && !submitting && secondsLeft == 0,
                 onClick = {
                     resending = true
                     scope.launch {
@@ -469,7 +508,11 @@ private fun CodeForm(graph: AppGraph, phone: String, errorMessage: String?) {
                 },
             ) {
                 Text(
-                    text = if (resending) "Надсилаємо…" else stringResource(R.string.auth_resend_code),
+                    text = resendLabel(
+                        secondsLeft = secondsLeft,
+                        resending = resending,
+                        nextChannelLabel = stage.nextChannelLabel,
+                    ),
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
@@ -484,6 +527,29 @@ private fun CodeForm(graph: AppGraph, phone: String, errorMessage: String?) {
             }
         }
     }
+}
+
+/**
+ * Minimum length to enable the primary submit button. For numeric channels we wait for
+ * exactly the digit count TDLib expects; for SmsWord / SmsPhrase any non-empty input is
+ * acceptable because we don't know the actual length up front.
+ */
+private fun minSubmitLength(stage: AuthStage.WaitCode): Int =
+    if (stage.isNumeric) stage.codeLength else 1
+
+/**
+ * "Надіслати ще раз" / "Надсилаємо…" / "0:42" / "Надіслати через SMS" depending on cool-
+ * down state. Pulling this out keeps CodeForm's layout block readable.
+ */
+private fun resendLabel(
+    secondsLeft: Int,
+    resending: Boolean,
+    nextChannelLabel: String?,
+): String = when {
+    resending -> "Надсилаємо…"
+    secondsLeft > 0 -> "Ще раз за %d:%02d".format(secondsLeft / 60, secondsLeft % 60)
+    nextChannelLabel != null -> "Надіслати $nextChannelLabel"
+    else -> "Надіслати ще раз"
 }
 
 // ---------- Password ----------

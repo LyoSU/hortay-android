@@ -3,16 +3,11 @@
     <string name="app_name">Hortay</string>
     <string name="auth_phone_label">Номер телефону</string>
     <string name="auth_phone_helper">Введіть номер з кодом країни — Telegram надішле код підтвердження.</string>
-    <string name="auth_code_label">Код підтвердження</string>
-    <string name="auth_code_helper">Перевірте Telegram або SMS на %1$s.</string>
     <string name="auth_password_label">Cloud-пароль (2FA)</string>
     <string name="auth_password_hint">Підказка: %1$s</string>
     <string name="auth_password_helper">Цей пароль ви задавали в офіційному Telegram у розділі Двофакторна автентифікація.</string>
     <string name="auth_send_code">Надіслати код</string>
     <string name="auth_continue">Продовжити</string>
-    <string name="auth_signing_in">Заходимо…</string>
-    <string name="auth_step">Крок %1$d з %2$d</string>
-    <string name="auth_resend_code">Надіслати код повторно</string>
     <string name="auth_change_number">Змінити номер</string>
     <string name="auth_back">Назад</string>
     <string name="auth_password_show">Показати пароль</string>

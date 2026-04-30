@@ -3,10 +3,13 @@ package dev.lyo.hortay.data
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.drinkless.tdlib.TdApi
 
 /**
@@ -75,15 +78,42 @@ class CountryRepository(private val sender: TdSender) {
     val detectedIso: StateFlow<String?> = _detectedIso.asStateFlow()
 
     @Volatile private var loaded = false
+    private val loadMutex = Mutex()
 
+    /**
+     * Lazily fetch the country catalogue + carrier-detected ISO. Idempotent: safe to call
+     * from each [LaunchedEffect] that mounts a phone form.
+     *
+     * Resilience to pre-auth races: TDLib rejects [TdApi.GetCountries] with `[400]
+     * Initialization parameters are needed` while it is still in
+     * [TdApi.AuthorizationStateWaitTdlibParameters]. AuthScreen calls [load] from a
+     * `LaunchedEffect(Unit)` which only fires once per composition — if that single call
+     * lost the race, the picker would stay empty for the whole session. We retry with
+     * linear back-off until [TdApi.GetCountries] succeeds, capping at [MAX_ATTEMPTS]
+     * tries so a real failure (no network at all) doesn't loop forever. The `loaded`
+     * flag is only set on success, so the next call into [load] kicks the retry chain
+     * back off.
+     */
     fun load() {
         if (loaded) return
-        loaded = true
         scope.launch {
-            runCatching { sender.send(TdApi.GetCountries()) }
-                .onSuccess { result -> _countries.value = result.countries.toCountries() }
-            runCatching { sender.send(TdApi.GetCountryCode()) }
-                .onSuccess { _detectedIso.value = it.text.takeIf(String::isNotEmpty) }
+            loadMutex.withLock {
+                if (loaded) return@withLock
+                for (attempt in 0 until MAX_ATTEMPTS) {
+                    val res = runCatching { sender.send(TdApi.GetCountries()) }
+                    val payload = res.getOrNull()
+                    if (payload != null) {
+                        _countries.value = payload.countries.toCountries()
+                        loaded = true
+                        break
+                    }
+                    delay(BACKOFF_BASE_MS * (attempt + 1))
+                }
+                if (loaded) {
+                    runCatching { sender.send(TdApi.GetCountryCode()) }
+                        .onSuccess { _detectedIso.value = it.text.takeIf(String::isNotEmpty) }
+                }
+            }
         }
     }
 
@@ -106,6 +136,15 @@ class CountryRepository(private val sender: TdSender) {
         // list verbatim and a header divider in CountryPickerSheet visually separates the
         // pinned block from the rest.
         return listOf(FragmentAnonymousNumbers, CustomCountryEntry) + real
+    }
+
+    private companion object {
+        // 5 attempts × linear back-off (300, 600, 900, 1200, 1500 ms) covers the entire
+        // expected window of TDLib bringing up its session — usually <1s on a warm DB,
+        // up to ~3s on a cold start with a slow filesystem. Past that, TDLib has bigger
+        // problems than country names.
+        const val MAX_ATTEMPTS = 5
+        const val BACKOFF_BASE_MS = 300L
     }
 }
 

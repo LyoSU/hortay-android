@@ -1,7 +1,9 @@
 package dev.lyo.hortay.data
 
 import android.content.Context
+import android.util.Log
 import dev.lyo.hortay.BuildConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +30,7 @@ class TdClient private constructor(
     private val context: Context,
     private val apiId: Int,
     private val apiHash: String,
+    private val settings: SettingsStore,
 ) : TdSender {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -123,37 +126,47 @@ class TdClient private constructor(
                     systemVersion = "Android ${android.os.Build.VERSION.RELEASE}"
                     applicationVersion = BuildConfig.VERSION_NAME
                 }
-                send(params)
+                // Failure here is unrecoverable from inside the auth loop — bad apiId/apiHash,
+                // unwritable database directory, etc. Surface a stage the UI can render
+                // ("Збій конфігурації…") instead of leaving the user on Loading forever,
+                // which is what the bare `send(params)` used to do (TdException would bubble
+                // into scope.launch's SupervisorJob and get silently swallowed).
+                runCatching { send(params) }
+                    .onFailure { err ->
+                        if (err is CancellationException) throw err
+                        Log.e(TAG, "SetTdlibParameters failed", err)
+                        _authStage.value = AuthStage.Error(
+                            "Збій конфігурації клієнта Telegram. " +
+                                "Закрийте та відкрийте застосунок ще раз.",
+                        )
+                    }
             }
             is TdApi.AuthorizationStateWaitPhoneNumber -> _authStage.value = AuthStage.WaitPhone
             is TdApi.AuthorizationStateWaitCode -> {
-                _authStage.value = AuthStage.WaitCode(lastAttemptedPhone)
+                val info = state.codeInfo
+                // Prefer TDLib's normalized phone (with proper formatting); fall back to the
+                // raw input if TDLib didn't echo one.
+                val phone = info.phoneNumber.orEmpty().ifBlank { lastAttemptedPhone }
+                _authStage.value = AuthStage.WaitCode(
+                    phoneNumber = phone,
+                    codeLength = info.type.numericLength() ?: DEFAULT_CODE_LENGTH,
+                    channelLabel = info.type.toLabel(phone),
+                    nextChannelLabel = info.nextType?.toLabel(phone),
+                    resendAvailableInSec = info.timeout,
+                    isNumeric = info.type.isNumeric(),
+                )
             }
             is TdApi.AuthorizationStateWaitPassword -> _authStage.value =
                 AuthStage.WaitPassword(state.passwordHint.orEmpty())
             is TdApi.AuthorizationStateReady -> {
                 _authStage.value = AuthStage.Ready
                 // TDLib stores everything it downloads under `tdlib-files/` and never bounds
-                // it on its own — a year of timeline scrolling can balloon to gigabytes.
-                // Run a non-blocking cleanup pass at startup with sane defaults: cap at
-                // 500 MB and drop anything not accessed in the last 30 days. This is the
-                // canonical TDLib hook for storage hygiene; the daemon does the work in
-                // the background and emits StorageStatistics back, which we ignore.
-                runCatching {
-                    send(
-                        TdApi.OptimizeStorage(
-                            /* size */ 500L * 1024 * 1024,
-                            /* ttl  */ 30 * 24 * 60 * 60,
-                            /* count */ 0,
-                            /* immunityDelay */ 60,
-                            /* fileTypes */ null,
-                            /* chatIds */ null,
-                            /* excludeChatIds */ null,
-                            /* returnDeletedFileStatistics */ false,
-                            /* chatLimit */ 0,
-                        ),
-                    )
-                }
+                // it on its own — a year of timeline scrolling can balloon to gigabytes. The
+                // sweep is throttled to once per OPTIMIZE_INTERVAL_MS via SettingsStore: every
+                // cold start triggers AuthorizationStateReady, and scanning a multi-GB cache
+                // on every launch was adding real splash latency. Caps: 500 MB total, drop
+                // anything not accessed in the last 30 days.
+                maybeOptimizeStorage()
             }
             is TdApi.AuthorizationStateLoggingOut,
             is TdApi.AuthorizationStateClosing -> _authStage.value = AuthStage.Loading
@@ -267,6 +280,41 @@ class TdClient private constructor(
             }
         }
 
+    /**
+     * Run [TdApi.OptimizeStorage] at most once per [OPTIMIZE_INTERVAL_MS]. Reads / writes the
+     * timestamp via [SettingsStore] so the throttle persists across cold starts (which is
+     * the whole point — every cold start re-enters [TdApi.AuthorizationStateReady]).
+     *
+     * Runs in the background; the caller does not await. We deliberately stamp the
+     * timestamp *before* the call returns so a long sweep can't be retriggered by a
+     * second auth-Ready in the same launch.
+     */
+    private fun maybeOptimizeStorage() {
+        scope.launch {
+            val last = settings.lastStorageOptimizeAt()
+            val now = System.currentTimeMillis()
+            if (now - last < OPTIMIZE_INTERVAL_MS) return@launch
+            settings.setLastStorageOptimizeAt(now)
+            runCatching {
+                send(
+                    TdApi.OptimizeStorage(
+                        /* size */ 500L * 1024 * 1024,
+                        /* ttl  */ 30 * 24 * 60 * 60,
+                        /* count */ 0,
+                        /* immunityDelay */ 60,
+                        /* fileTypes */ null,
+                        /* chatIds */ null,
+                        /* excludeChatIds */ null,
+                        /* returnDeletedFileStatistics */ false,
+                        /* chatLimit */ 0,
+                    ),
+                )
+            }.onFailure { err ->
+                if (err is CancellationException) throw err
+                Log.w(TAG, "OptimizeStorage failed", err)
+            }
+        }
+    }
 
     class TdException(val code: Int, message: String) : RuntimeException("[$code] $message")
 
@@ -276,8 +324,11 @@ class TdClient private constructor(
         // fatal-only because TDLib's WebPagesManager spams blockquote / link-preview
         // parses at "error" level which would clutter production crashlog tooling.
         private val LOG_VERBOSITY = if (BuildConfig.DEBUG) 1 else 0
+        private const val TAG = "TdClient"
+        private const val OPTIMIZE_INTERVAL_MS = 24L * 60 * 60 * 1000 // once per day
+        private const val DEFAULT_CODE_LENGTH = 5
 
-        fun create(context: Context): TdClient {
+        fun create(context: Context, settings: SettingsStore): TdClient {
             check(BuildConfig.TELEGRAM_API_ID != 0 && BuildConfig.TELEGRAM_API_HASH.isNotEmpty()) {
                 "Telegram api credentials missing. Add telegram.apiId / telegram.apiHash to local.properties."
             }
@@ -285,7 +336,55 @@ class TdClient private constructor(
                 context.applicationContext,
                 BuildConfig.TELEGRAM_API_ID,
                 BuildConfig.TELEGRAM_API_HASH,
+                settings,
             )
         }
     }
+}
+
+/**
+ * Digit count expected by [this] code channel, or null when the channel does not deliver
+ * a numeric code (SmsWord, SmsPhrase, FlashCall — those expect a word/phrase or pattern).
+ *
+ * Why this matters: hardcoding `length = 5` in the OTP UI breaks for 6-digit Firebase /
+ * Fragment / TelegramMessage codes — TDLib has been rolling those out steadily over the
+ * past two years. Reading [length] from the actual [TdApi.AuthenticationCodeType] is the
+ * only way to stay correct as Telegram changes channel lengths server-side.
+ */
+private fun TdApi.AuthenticationCodeType.numericLength(): Int? = when (this) {
+    is TdApi.AuthenticationCodeTypeTelegramMessage -> length
+    is TdApi.AuthenticationCodeTypeSms -> length
+    is TdApi.AuthenticationCodeTypeCall -> length
+    is TdApi.AuthenticationCodeTypeMissedCall -> length
+    is TdApi.AuthenticationCodeTypeFragment -> length
+    is TdApi.AuthenticationCodeTypeFirebaseAndroid -> length
+    is TdApi.AuthenticationCodeTypeFirebaseIos -> length
+    else -> null
+}
+
+private fun TdApi.AuthenticationCodeType.isNumeric(): Boolean = numericLength() != null
+
+/**
+ * Pre-render a Ukrainian description of the code-delivery channel so the UI doesn't have
+ * to switch on TDLib's [TdApi.AuthenticationCodeType] sum type. [phone] is the active
+ * phone number used to enrich SMS / missed-call labels with the destination number.
+ *
+ * Note on third-party limits: TDLib's docs state that [TdApi.AuthenticationCodeTypeSms],
+ * [TdApi.AuthenticationCodeTypeSmsWord] and [TdApi.AuthenticationCodeTypeSmsPhrase] are
+ * *not* sent to non-official applications. Hortay therefore mostly sees TelegramMessage,
+ * Call, MissedCall, Fragment, FirebaseAndroid; the SMS branches are kept in the mapping
+ * for completeness in case Telegram lifts the restriction.
+ */
+private fun TdApi.AuthenticationCodeType.toLabel(phone: String): String = when (this) {
+    is TdApi.AuthenticationCodeTypeTelegramMessage -> "повідомленням у Telegram на іншому пристрої"
+    is TdApi.AuthenticationCodeTypeSms -> if (phone.isNotEmpty()) "SMS на $phone" else "SMS"
+    is TdApi.AuthenticationCodeTypeSmsWord -> "слово в SMS"
+    is TdApi.AuthenticationCodeTypeSmsPhrase -> "фраза в SMS"
+    is TdApi.AuthenticationCodeTypeCall -> if (phone.isNotEmpty()) "дзвінком на $phone" else "телефонним дзвінком"
+    is TdApi.AuthenticationCodeTypeMissedCall -> "пропущеним дзвінком (введіть останні цифри номера)"
+    is TdApi.AuthenticationCodeTypeFlashCall -> "пропущеним дзвінком"
+    is TdApi.AuthenticationCodeTypeFragment -> "через Fragment"
+    is TdApi.AuthenticationCodeTypeFirebaseAndroid,
+    is TdApi.AuthenticationCodeTypeFirebaseIos -> "через перевірку пристрою"
+    else -> "іншим способом"
 }

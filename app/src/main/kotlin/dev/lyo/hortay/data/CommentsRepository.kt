@@ -253,7 +253,11 @@ class CommentsRepository(
         if (messageIds.isEmpty()) return
         runCatching {
             td.send(
-                TdApi.ViewMessages(threadChatId, messageIds.toLongArray(), null, /* forceRead */ true),
+                // forceRead=false to match PostsRepository: Hortay is a read-only browser,
+                // and silently advancing the discussion's lastReadInboxMessageId would
+                // clear unread badges in the official Telegram client — which the user
+                // didn't ask for. The view counter still bumps server-side regardless.
+                TdApi.ViewMessages(threadChatId, messageIds.toLongArray(), null, /* forceRead */ false),
             )
         }.warnUnlessCancelled(TAG, "viewMessages($threadChatId)")
     }

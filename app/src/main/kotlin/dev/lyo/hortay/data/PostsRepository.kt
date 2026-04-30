@@ -619,8 +619,15 @@ class PostsRepository(
         // chatIds yet" per ChatList, and a chat archived in Telegram is invisible to
         // GetChats(ChatListMain). Loading archive separately is what surfaces it for the
         // "Архів" tab.
-        runCatching { td.send(TdApi.LoadChats(TdApi.ChatListMain(), CHAT_LIST_HINT)) }
-        runCatching { td.send(TdApi.LoadChats(TdApi.ChatListArchive(), CHAT_LIST_HINT)) }
+        //
+        // Drain LoadChats until TDLib reports no more pages for each list. The previous
+        // implementation called LoadChats once and went straight to GetChats — on a cold
+        // start (where TDLib's local DB is still hydrating) that returned an empty/short
+        // list and the user saw a blank feed for a couple of seconds until UpdateNewChat
+        // events caught up. Looping until LoadChats fails (TDLib signals "no more chats"
+        // with [400] Chat list is empty) is the canonical way per TDLib docs.
+        drainChatList(TdApi.ChatListMain())
+        drainChatList(TdApi.ChatListArchive())
 
         val mainIds = td.send(TdApi.GetChats(TdApi.ChatListMain(), CHAT_LIST_LIMIT)).chatIds
         val archiveIds = runCatching {
@@ -662,10 +669,28 @@ class PostsRepository(
         _posts.value = PostFilterStrategy.apply(raw).toPersistentList()
     }
 
+    /**
+     * Repeatedly call [TdApi.LoadChats] until TDLib runs out of pages for [list]. TDLib
+     * signals "no more chats to load" with a synthetic 404 error — anything else (network
+     * blip, auth race) we treat as terminal and stop iterating, because retrying inside
+     * refresh would just stall the user; the next pull-to-refresh re-tries naturally.
+     *
+     * Bounded by [MAX_LOAD_CHATS_PAGES] — 10 pages × 200 hint = up to 2000 chats per list,
+     * which is well past the realistic ceiling and protects against a TDLib bug ever
+     * returning success indefinitely.
+     */
+    private suspend fun drainChatList(list: TdApi.ChatList) {
+        repeat(MAX_LOAD_CHATS_PAGES) {
+            val res = runCatching { td.send(TdApi.LoadChats(list, CHAT_LIST_HINT)) }
+            if (res.isFailure) return
+        }
+    }
+
     private companion object {
         const val TAG = "PostsRepository"
         const val CHAT_LIST_HINT = 200
         const val CHAT_LIST_LIMIT = 500
+        const val MAX_LOAD_CHATS_PAGES = 10
         const val MAX_FEED_SIZE = 1_000
         const val REFRESH_DEFAULT_LIMIT = 30
         // ~600ms is what the official Telegram client uses to coalesce album bursts.

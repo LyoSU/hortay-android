@@ -29,7 +29,12 @@ class AppGraph(context: Context) {
 
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    val tdClient: TdClient = TdClient.create(context).also { it.start() }
+    // Declared before [tdClient] because TdClient consumes it for OptimizeStorage
+    // throttling (the cleanup needs a persisted "last run at" timestamp to skip on
+    // every cold start).
+    val settingsStore: SettingsStore = SettingsStore(context)
+
+    val tdClient: TdClient = TdClient.create(context, settingsStore).also { it.start() }
 
     val mediaCache: MediaCache = MediaCache(tdClient, appScope)
 
@@ -43,8 +48,6 @@ class AppGraph(context: Context) {
     val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope)
 
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
-
-    val settingsStore: SettingsStore = SettingsStore(context)
 
     val statsRepository: StatsRepository = StatsRepository(tdClient)
 
