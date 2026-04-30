@@ -42,7 +42,12 @@ class CommentsRepositoryTest {
                     this.messageThreadId = rootId
                 }
             }
-            // 3. history page (one comment + the root mirror, mirror should be filtered).
+            // 3. OpenChat — fired before any history fetch so TDLib prioritises this
+            // thread chat and starts streaming updates for it.
+            onNext { _ -> TdApi.Ok() }
+            // 4. history page (one comment + the root mirror, mirror should be filtered).
+            // Progressive emit: Ready surfaces right after this batch, so the test's
+            // first{} cancels the flow before any subsequent page is requested.
             onNext { _ ->
                 TdApi.Messages().apply {
                     messages = arrayOf(
@@ -52,8 +57,8 @@ class CommentsRepositoryTest {
                     totalCount = 2
                 }
             }
-            // 4. empty next page → loop exits.
-            onNext { _ -> TdApi.Messages().apply { messages = emptyArray(); totalCount = 0 } }
+            // 5. CloseChat fires from the flow's finally block on cancellation.
+            onNext { _ -> TdApi.Ok() }
         }
         val repo = CommentsRepository(td, fakeMapper(td), TestScope(StandardTestDispatcher(testScheduler)))
 

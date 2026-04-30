@@ -194,11 +194,11 @@ class PostsRepository(
     /**
      * Tells TDLib the user is actively focused on [chatId]. The daemon prioritises updates
      * for this chat, prefetches history and treats subsequent [viewMessages] calls as
-     * authoritative. Always pair with [closeChat] when focus moves away.
+     * authoritative. Always pair with [closeChat] when focus moves away. Internally a
+     * thin proxy to [ChatPresence] so all OpenChat/CloseChat traffic in the app flows
+     * through one place.
      */
-    suspend fun openChat(chatId: Long) {
-        runCatching { td.send(TdApi.OpenChat(chatId)) }.warnUnlessCancelled(TAG, "openChat($chatId)")
-    }
+    suspend fun openChat(chatId: Long) = ChatPresence.openChat(td, chatId)
 
     /**
      * Loads up to [limit] additional history entries for [chatId] and folds them into the
@@ -242,9 +242,7 @@ class PostsRepository(
         }
     }
 
-    suspend fun closeChat(chatId: Long) {
-        runCatching { td.send(TdApi.CloseChat(chatId)) }.warnUnlessCancelled(TAG, "closeChat($chatId)")
-    }
+    suspend fun closeChat(chatId: Long) = ChatPresence.closeChat(td, chatId)
 
     /** Per-channel "we already paginated to the bottom of TDLib's local store" sentinel. */
     private val pageEnded = ConcurrentHashMap.newKeySet<Long>()

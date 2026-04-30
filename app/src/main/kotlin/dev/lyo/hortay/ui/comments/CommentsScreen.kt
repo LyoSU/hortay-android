@@ -28,8 +28,6 @@ import dev.lyo.hortay.ui.timeline.PostBody
 import dev.lyo.hortay.ui.timeline.PostCard
 import dev.lyo.hortay.ui.timeline.PostInteractions
 import dev.lyo.hortay.ui.timeline.ReactionChip
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
@@ -63,19 +61,10 @@ fun CommentsScreen(
         )
     }
 
-    // Tell TDLib the linked discussion chat is "open" while this screen is alive; close it
-    // when the screen leaves composition. awaitCancellation + NonCancellable guarantees the
-    // close call survives even on rapid back-press.
-    val activeThreadChatId = (state as? CommentsRepository.ThreadState.Ready)?.threadChatId
-    LaunchedEffect(activeThreadChatId) {
-        val tid = activeThreadChatId ?: return@LaunchedEffect
-        repo.openThread(tid)
-        try {
-            kotlinx.coroutines.awaitCancellation()
-        } finally {
-            withContext(NonCancellable) { repo.closeThread(tid) }
-        }
-    }
+    // Open/close of the thread chat is owned by CommentsRepository.threadFlow now —
+    // TDLib needs the chat opened *before* the first GetMessageThreadHistory so updates
+    // stream in and the daemon prioritises loading. Doing it here meant we only opened
+    // *after* the bootstrap finished, paying the cold-cache penalty on the first call.
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 

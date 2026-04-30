@@ -78,17 +78,19 @@ class CommentsRepository(
         )
 
     /**
-     * Background warm-up for posts lingering in the viewport. Probes
-     * [TdApi.GetMessageProperties] + [TdApi.GetMessageThread] once per anchor and stashes
-     * the result in [resolvedAnchors] so the eventual tap skips the resolve round-trip.
-     *
-     * Does NOT fetch history — that would burn bandwidth on posts the user might never
-     * tap. The win is purely the latency saving on tap (anchor resolution skipped). The
-     * SharedFlow cache below does NOT replace this because [shareIn] only fires when a
-     * subscriber attaches; prefetch must run out-of-band.
+     * Background warm-up for posts lingering in the viewport. Resolves the anchor AND
+     * primes TDLib's local DB with one batch of thread history, so the eventual tap hits
+     * a warm cache and `GetMessageThreadHistory` in [threadFlow] returns from local
+     * storage instead of paying a server round-trip. See [ChatPresence] for why we
+     * scope the open/close around the fetch.
      */
     suspend fun prefetchThread(chatId: Long, candidateMessageIds: List<Long>) {
-        ensureAnchor(chatId, candidateMessageIds)
+        val anchor = ensureAnchor(chatId, candidateMessageIds) ?: return
+        ChatPresence.withOpenChat(td, anchor.threadChatId) {
+            runCatching {
+                td.send(TdApi.GetMessageThreadHistory(anchor.threadChatId, anchor.rootId, 0, 0, BATCH_SIZE))
+            }.warnUnlessCancelled(TAG, "prefetchHistory(${anchor.threadChatId})")
+        }
     }
 
     /**
@@ -135,31 +137,40 @@ class CommentsRepository(
             return@flow
         }
 
-        // NOTE: do NOT issue OpenChat here. OpenChat is a "user is actively viewing this
-        // chat right now" signal — it's the UI's job to pair it with CloseChat when the
-        // screen leaves composition (see CommentsScreen). Read APIs like
-        // GetMessageThreadHistory don't require it.
+        // Open the thread chat BEFORE the first history fetch so TDLib starts streaming
+        // updates and prioritises caching for it; close it on flow termination via
+        // [ChatPresence.withOpenChat] so a fast back-press still cleans up. Without this
+        // the cold-path `GetMessageThreadHistory` pays full server round-trip latency,
+        // which is the intermittent "1–3 sec Loading" the user sees.
+        ChatPresence.withOpenChat(td, anchor.threadChatId) {
+            // Progressive emit: surface Ready as soon as the first batch lands so the user
+            // sees real comments while we keep filling up to `limit` in the background.
+            // Without this the screen sits on Loading until all 4× BATCH_SIZE round-trips
+            // complete — even when the first 50 already cover the visible viewport.
+            val live = mutableListOf<TdApi.Message>()
+            var fromId = 0L
+            while (live.size < limit) {
+                val batch = runCatching {
+                    td.send(TdApi.GetMessageThreadHistory(anchor.threadChatId, anchor.rootId, fromId, 0, BATCH_SIZE))
+                }.warnUnlessCancelled(TAG, "threadHistory(${anchor.threadChatId})").getOrNull() ?: break
+                val msgs = batch.messages.orEmpty()
+                if (msgs.isEmpty()) break
+                // Drop the channel-post mirror; only conversation messages stay.
+                for (m in msgs) if (m.id != anchor.rootId) live += m
+                fromId = msgs.last().id
+                emit(buildReady(live, anchor))
+            }
+            // Empty-thread case: nothing was emitted in the loop. Surface a Ready so the
+            // overlay leaves Loading instead of hanging on it forever.
+            if (live.isEmpty()) emit(buildReady(live, anchor))
 
-        val live = mutableListOf<TdApi.Message>()
-        var fromId = 0L
-        while (live.size < limit) {
-            val batch = runCatching {
-                td.send(TdApi.GetMessageThreadHistory(anchor.threadChatId, anchor.rootId, fromId, 0, BATCH_SIZE))
-            }.warnUnlessCancelled(TAG, "threadHistory(${anchor.threadChatId})").getOrNull() ?: break
-            val msgs = batch.messages.orEmpty()
-            if (msgs.isEmpty()) break
-            // Drop the channel-post mirror; only conversation messages stay.
-            for (m in msgs) if (m.id != anchor.rootId) live += m
-            fromId = msgs.last().id
-        }
-        emit(buildReady(live, anchor))
-
-        // Single-collector update fan-in. The previous implementation had four
-        // launchIn'd collectors all racing on the shared `live` mutable list — a plain
-        // bug that just happened not to trip in practice. With one collect we mutate
-        // from one coroutine: no Mutex, no surprises.
-        td.updates.collect { upd ->
-            if (applyUpdate(upd, anchor, live)) emit(buildReady(live, anchor))
+            // Single-collector update fan-in. The previous implementation had four
+            // launchIn'd collectors all racing on the shared `live` mutable list — a plain
+            // bug that just happened not to trip in practice. With one collect we mutate
+            // from one coroutine: no Mutex, no surprises.
+            td.updates.collect { upd ->
+                if (applyUpdate(upd, anchor, live)) emit(buildReady(live, anchor))
+            }
         }
     }
 
@@ -238,16 +249,6 @@ class CommentsRepository(
         anchor: ResolvedAnchor,
     ): ThreadState.Ready =
         ThreadState.Ready(buildTree(live, anchor.rootId), anchor.threadChatId)
-
-    suspend fun openThread(threadChatId: Long) {
-        runCatching { td.send(TdApi.OpenChat(threadChatId)) }
-            .warnUnlessCancelled(TAG, "openThread($threadChatId)")
-    }
-
-    suspend fun closeThread(threadChatId: Long) {
-        runCatching { td.send(TdApi.CloseChat(threadChatId)) }
-            .warnUnlessCancelled(TAG, "closeThread($threadChatId)")
-    }
 
     suspend fun viewMessages(threadChatId: Long, messageIds: List<Long>) {
         if (messageIds.isEmpty()) return
