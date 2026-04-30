@@ -557,6 +557,17 @@ fun TimelineScreen(
                                 for (fileId in post.content.posterFileIds()) {
                                     cache.ensure(fileId, DownloadPriority.Prefetch)
                                 }
+                                // Inline-playable media (short videos, GIF animations) get the
+                                // playback file pre-warmed too, but ONLY for the immediate next
+                                // post. Beyond +1 we'd burn megabytes speculating on posts the
+                                // user may never reach (a 30 s autoplay video is already ~5 MB).
+                                // Posters stay cheap to prefetch farther, since they're tens of
+                                // KB; playback is the heavyweight step we cap tightly.
+                                if (idx == firstVisible + 1) {
+                                    for (fileId in post.content.playbackFileIds()) {
+                                        cache.ensure(fileId, DownloadPriority.Prefetch)
+                                    }
+                                }
                             }
                         }
 
@@ -817,6 +828,16 @@ private const val MAX_PILL_BADGES = 3
 private const val PREFETCH_AHEAD = 4
 
 /**
+ * Hard cap on inline-autoplay video duration we're willing to *speculatively* prefetch the
+ * playback file for. Telegram's own autoplay threshold is 60 s, but at home-DC bitrates a
+ * 60 s clip is ~10 MB — too much to gamble on a post the user may never scroll to. 30 s
+ * keeps speculative cost ≤ ~5 MB per pre-warmed video, which on healthy Wi-Fi is sub-second
+ * and on cellular is still tolerable. Longer autoplay clips fall back to the on-mount
+ * download path; the user will see the standard loading overlay if needed.
+ */
+private const val INLINE_PREFETCH_MAX_DURATION_SEC = 30
+
+/**
  * The fileIds whose **poster / preview** should be eagerly downloaded when this content is
  * about to enter viewport. Intentionally excludes playback files (full videos, audio,
  * documents) — those are too big for speculative download, and the user's tap is the right
@@ -849,6 +870,47 @@ private fun PostContent.posterFileIds(): List<Int> = buildList {
         is PostContent.VideoNote -> content.thumb?.fileId?.let(::add)
         // Text/Audio/VoiceNote/Poll/Location/Contact/Dice/Checklist/Service/Expired/
         // Unsupported — no still preview to warm.
+        else -> Unit
+    }
+}
+
+/**
+ * Playback file ids worth pre-warming for inline auto-play (short videos, GIF animations).
+ * Honours the same spoiler/secret guards as the renderer — we never prefetch a file the
+ * user hasn't explicitly opted into seeing yet, even speculatively. Returns the empty list
+ * for content types that are *not* inline-played in the feed (long videos, photos, audio).
+ */
+private fun PostContent.playbackFileIds(): List<Int> = buildList {
+    when (val content = this@playbackFileIds) {
+        is PostContent.Video -> {
+            if (!content.hasSpoiler && !content.isSecret &&
+                content.durationSec in 1..INLINE_PREFETCH_MAX_DURATION_SEC
+            ) {
+                add(content.playbackFileId)
+            }
+        }
+        is PostContent.Animation -> {
+            if (!content.hasSpoiler && !content.isSecret) {
+                add(content.playbackFileId)
+            }
+        }
+        is PostContent.PhotoAlbum -> content.items.forEach { item ->
+            when (item) {
+                is AlbumItem.Video -> {
+                    if (!item.hasSpoiler && !item.isSecret &&
+                        item.durationSec in 1..INLINE_PREFETCH_MAX_DURATION_SEC
+                    ) {
+                        add(item.playbackFileId)
+                    }
+                }
+                is AlbumItem.Animation -> {
+                    if (!item.hasSpoiler && !item.isSecret) {
+                        add(item.playbackFileId)
+                    }
+                }
+                is AlbumItem.Photo -> Unit
+            }
+        }
         else -> Unit
     }
 }
