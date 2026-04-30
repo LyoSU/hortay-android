@@ -248,12 +248,24 @@ class MediaCache(
 
         s.value = merged
 
-        // Schedule a post-completion resync the first time we see Downloading(1.0).
-        // If TDLib's follow-up "path filled in" UpdateFile arrives normally (the
-        // happy path), we transition to Ready before this fires and the cancel below
-        // tears it down. Only when the follow-up is silently missed does the resync
-        // actually do GetFile and surface the canonical path. See [postCompletionResync].
-        if (merged is MediaState.Downloading && merged.progress >= 1f) {
+        // Schedule a post-completion resync any time TDLib reports the download as
+        // finished but we still don't have a usable path. Two signals fold into this:
+        //
+        //   (a) `isDownloadingCompleted=true` with `path=""` — TDLib's authoritative
+        //       "done, awaiting rename" snapshot. We can't trust progress for this:
+        //       `expectedSize` is a heuristic that's often *larger* than the real
+        //       final byte count, so `downloadedSize/expectedSize` lands at e.g. 0.94
+        //       and we'd otherwise miss this branch entirely.
+        //   (b) `progress >= 1f` — the legacy gate, still useful for the symmetric
+        //       case where `expectedSize == size` and TDLib announces completion via
+        //       progress hitting 1.0 first (rather than the explicit flag).
+        //
+        // Both routes converge on the same single-shot resync. Without (a), the
+        // "100% spinner sticks until I scroll away" symptom that Codex traced was
+        // unreachable from the resync path — the user only recovered via the
+        // unmount/cancel cycle's GetFile.
+        val tdlibCompleted = file.local.isDownloadingCompleted && file.local.path.orEmpty().isEmpty()
+        if (merged is MediaState.Downloading && (merged.progress >= 1f || tdlibCompleted)) {
             schedulePostCompletionResync(file.id)
         } else if (merged is MediaState.Ready || merged is MediaState.Failed) {
             postCompletionResync.remove(file.id)?.cancel()
@@ -624,9 +636,16 @@ private fun TdApi.File.toMediaState(): MediaState {
         expectedSize > 0 -> expectedSize
         else -> 0L
     }
-    val progress = if (resolvedTotal > 0) {
-        (local.downloadedSize.toFloat() / resolvedTotal.toFloat()).coerceIn(0f, 1f)
-    } else 0f
+    // When TDLib's authoritative completion flag is up but the path hasn't landed
+    // yet, force progress to 1.0 instead of trusting downloadedSize/expectedSize.
+    // `expectedSize` is a heuristic and is frequently *larger* than the real final
+    // byte count, which would otherwise pin a "completed" file at e.g. 94% — both
+    // confusing for the user and a missed signal for the reducer's resync trigger.
+    val progress = when {
+        local.isDownloadingCompleted -> 1f
+        resolvedTotal > 0 -> (local.downloadedSize.toFloat() / resolvedTotal.toFloat()).coerceIn(0f, 1f)
+        else -> 0f
+    }
     return MediaState.Downloading(
         progress = progress,
         downloadedBytes = local.downloadedSize,
