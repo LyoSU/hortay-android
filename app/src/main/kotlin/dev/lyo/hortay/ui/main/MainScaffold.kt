@@ -126,7 +126,7 @@ fun MainScaffold(graph: AppGraph) {
             status = connection,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = padding.calculateTopPadding()),
+                .statusBarsPadding(),
         )
         }
     }
