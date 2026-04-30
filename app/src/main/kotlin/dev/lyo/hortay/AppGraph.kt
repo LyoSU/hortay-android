@@ -5,6 +5,7 @@ import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
 import dev.lyo.hortay.data.CommentsRepository
+import dev.lyo.hortay.data.CountryRepository
 import dev.lyo.hortay.data.MediaCache
 import dev.lyo.hortay.data.MessageMapper
 import dev.lyo.hortay.data.PostsRepository
@@ -52,6 +53,8 @@ class AppGraph(context: Context) {
     val translations: TranslationsStore = TranslationsStore(tdClient)
 
     val channelActions: ChannelActionsRepository = ChannelActionsRepository(tdClient)
+
+    val countries: CountryRepository = CountryRepository(tdClient)
 
     // Bridge ProcessLifecycleOwner + ConnectivityManager into TDLib so the daemon knows
     // when we're foreground/online and what network it should plan downloads for. Held

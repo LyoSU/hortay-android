@@ -49,6 +49,7 @@ private fun symbolDrawable(name: String): Int = when (name) {
     "add" -> R.drawable.sym_add
     "arrow_back" -> R.drawable.sym_arrow_back
     "arrow_downward" -> R.drawable.sym_arrow_downward
+    "arrow_forward" -> R.drawable.sym_arrow_forward
     "arrow_upward" -> R.drawable.sym_arrow_upward
     "audio_file" -> R.drawable.sym_audio_file
     "bookmark" -> R.drawable.sym_bookmark
@@ -100,6 +101,7 @@ private fun symbolDrawable(name: String): Int = when (name) {
     "video_camera_front" -> R.drawable.sym_video_camera_front
     "videocam_off" -> R.drawable.sym_videocam_off
     "visibility" -> R.drawable.sym_visibility
+    "visibility_off" -> R.drawable.sym_visibility_off
     "wifi_off" -> R.drawable.sym_wifi_off
     else -> R.drawable.sym_help
 }

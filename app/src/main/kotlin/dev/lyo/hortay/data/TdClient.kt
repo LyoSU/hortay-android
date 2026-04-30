@@ -35,6 +35,16 @@ class TdClient private constructor(
     private val _authStage = MutableStateFlow<AuthStage>(AuthStage.Loading)
     val authStage: StateFlow<AuthStage> = _authStage.asStateFlow()
 
+    /**
+     * Transient errors from in-flight auth submits (PHONE_NUMBER_INVALID, FLOOD_WAIT_X,
+     * PHONE_CODE_INVALID, PASSWORD_HASH_INVALID…). Kept *separate* from [authStage] so a
+     * rejected code doesn't blow the user back to a blank screen — they stay on the same
+     * form with their input intact and an inline supporting-text error. UI clears it via
+     * [clearAuthError] when the user starts retyping.
+     */
+    private val _authError = MutableStateFlow<String?>(null)
+    val authError: StateFlow<String?> = _authError.asStateFlow()
+
     private val _connection = MutableStateFlow(ConnectionStatus.Connecting)
     /**
      * Mirrors TDLib's [TdApi.UpdateConnectionState]. The UI uses this to render a top
@@ -107,7 +117,8 @@ class TdClient private constructor(
             is TdApi.AuthorizationStateWaitCode -> {
                 _authStage.value = AuthStage.WaitCode(lastAttemptedPhone)
             }
-            is TdApi.AuthorizationStateWaitPassword -> _authStage.value = AuthStage.WaitPassword
+            is TdApi.AuthorizationStateWaitPassword -> _authStage.value =
+                AuthStage.WaitPassword(state.passwordHint.orEmpty())
             is TdApi.AuthorizationStateReady -> {
                 _authStage.value = AuthStage.Ready
                 // TDLib stores everything it downloads under `tdlib-files/` and never bounds
@@ -149,6 +160,10 @@ class TdClient private constructor(
         }
     }
 
+    fun clearAuthError() {
+        _authError.value = null
+    }
+
     suspend fun submitPhone(phone: String) {
         // Don't pre-set WaitCode optimistically — on rejection (PHONE_NUMBER_INVALID,
         // FLOOD_WAIT, BANNED…) the user used to land on an empty code screen forever
@@ -156,18 +171,44 @@ class TdClient private constructor(
         // we never bounced back. TDLib will emit AuthorizationStateWaitCode itself on
         // success, which onAuthState turns into AuthStage.WaitCode(lastAttemptedPhone).
         lastAttemptedPhone = phone
+        _authError.value = null
         runCatching { send(TdApi.SetAuthenticationPhoneNumber(phone, null)) }
-            .reportAuthFailure("phone rejected")
+            .reportAuthFailure()
     }
 
     suspend fun submitCode(code: String) {
+        _authError.value = null
         runCatching { send(TdApi.CheckAuthenticationCode(code)) }
-            .reportAuthFailure("code rejected")
+            .reportAuthFailure()
     }
 
     suspend fun submitPassword(password: String) {
+        _authError.value = null
         runCatching { send(TdApi.CheckAuthenticationPassword(password)) }
-            .reportAuthFailure("password rejected")
+            .reportAuthFailure()
+    }
+
+    /**
+     * Ask Telegram to deliver the login code through the next channel in its sequence
+     * (e.g. SMS after the in-app code). Only valid while we're in WaitCode — TDLib will
+     * reject otherwise and the error is surfaced through [authError] like any other
+     * transient failure.
+     */
+    suspend fun resendCode() {
+        _authError.value = null
+        runCatching { send(TdApi.ResendAuthenticationCode(null)) }
+            .reportAuthFailure()
+    }
+
+    /**
+     * Drop the current half-finished auth attempt and bounce back to the phone screen.
+     * Implemented as a logout because TDLib has no "cancel and stay anonymous" call —
+     * the tdlib daemon then re-emits AuthorizationStateWaitPhoneNumber and the UI rests
+     * on the phone form again with cleared state.
+     */
+    suspend fun cancelAuth() {
+        _authError.value = null
+        runCatching { send(TdApi.LogOut()) }
     }
 
     /**
@@ -177,11 +218,15 @@ class TdClient private constructor(
      * subtype of [kotlinx.coroutines.CancellationException]. That's a normal lifecycle
      * event, not an error to surface; surfacing it produced a misleading red banner with
      * "rememberCoroutineScope left the composition" right after a successful login.
+     *
+     * Real failures get translated from raw TDLib codes (PHONE_CODE_INVALID, FLOOD_WAIT_42…)
+     * into Ukrainian phrasing the user can act on, then routed to [_authError] so the
+     * current form stays mounted and shows the message inline.
      */
-    private fun Result<*>.reportAuthFailure(fallback: String) {
+    private fun Result<*>.reportAuthFailure() {
         onFailure { err ->
             if (err is kotlinx.coroutines.CancellationException) return@onFailure
-            _authStage.value = AuthStage.Error(err.message ?: fallback)
+            _authError.value = friendlyAuthErrorMessage(err)
         }
     }
 

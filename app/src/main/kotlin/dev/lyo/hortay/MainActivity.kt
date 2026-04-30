@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
                         val auth by graph.tdClient.authStage.collectAsStateWithLifecycle()
                         when (auth) {
                             AuthStage.Ready -> MediaViewerHost { MainScaffold(graph = graph) }
-                            else -> AuthScreen(client = graph.tdClient, stage = auth)
+                            else -> AuthScreen(graph = graph, stage = auth)
                         }
                     }
                 }
