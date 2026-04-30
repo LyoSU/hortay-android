@@ -40,25 +40,6 @@ class TimelineViewModel(
         else live.filter { (it.chatId to it.id) !in seen }.toPersistentList()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
 
-    val pendingChannels: StateFlow<List<ChannelBadge>> = pendingNew
-        .map { newPosts ->
-            newPosts
-                .groupBy { it.chatId }
-                .map { (chatId, group) ->
-                    val anchor = group.maxBy { it.date }
-                    ChannelBadge(
-                        chatId = chatId,
-                        title = anchor.senderName,
-                        thumb = anchor.avatarThumb,
-                        fileId = anchor.avatarFileId,
-                        latestPostDate = anchor.date,
-                    )
-                }
-                .sortedByDescending { it.latestPostDate }
-                .take(MAX_PENDING_BADGES)
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
-
     val bookmarkedKeys: StateFlow<Set<String>> = bookmarks.bookmarks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())
 
@@ -89,9 +70,20 @@ class TimelineViewModel(
         }
     }
 
-    /** Reveal all pendingNew posts (pill tap, PTR). */
+    /** Reveal all pendingNew posts (used after PTR, where the whole list is fresh). */
     fun acceptPending() {
         seenPostIds.value = livePosts.value.mapTo(hashSetOf()) { it.chatId to it.id }
+    }
+
+    /**
+     * Mark a specific subset of posts as seen — used by the pill / at-top auto-accept
+     * to ack only the posts that are actually visible in the user's current scope
+     * (e.g. tapping the pill in "All" must not silently clear pending counts that
+     * belong to the Archive tab the user hasn't even opened yet).
+     */
+    fun acceptIds(ids: Collection<Pair<Long, Long>>) {
+        if (ids.isEmpty()) return
+        seenPostIds.update { it + ids }
     }
 
     /** Soft refresh used on VM construction; the repo skips if data is still warm. */
@@ -110,7 +102,6 @@ class TimelineViewModel(
 
     private companion object {
         const val STOP_TIMEOUT_MS = 5_000L
-        const val MAX_PENDING_BADGES = 3
     }
 }
 

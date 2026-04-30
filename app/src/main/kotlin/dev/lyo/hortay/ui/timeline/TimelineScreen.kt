@@ -77,7 +77,6 @@ fun TimelineScreen(
     val posts by vm.posts.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val bookmarkedKeys by vm.bookmarkedKeys.collectAsStateWithLifecycle()
-    val pendingChannels by vm.pendingChannels.collectAsStateWithLifecycle()
     val pendingNew by vm.pendingNew.collectAsStateWithLifecycle()
     val foldersList by folders.folders.collectAsStateWithLifecycle()
     val archivedChatIds by repo.archivedChatIds.collectAsStateWithLifecycle()
@@ -158,14 +157,6 @@ fun TimelineScreen(
         }
     }
 
-    // While the user is at the top, fold pending live updates straight into the visible
-    // feed. Keyed on BOTH atTop AND pendingChannels so trickling UpdateNewMessage events
-    // keep the seen-set current — without the pendingChannels key the effect would only
-    // fire once on becoming-at-top and pending would silently accumulate.
-    LaunchedEffect(atTop, pendingChannels) {
-        if (atTop && pendingChannels.isNotEmpty()) vm.acceptPending()
-    }
-
     // Twitter-style "tap home twice": first tap scrolls to top, second one (already at top)
     // refreshes. The trigger is a monotonic timestamp from the parent, so a single bump
     // produces a single reaction.
@@ -217,9 +208,28 @@ fun TimelineScreen(
         }
     }
 
+    // Scope predicate shared by the visible feed and the "X нових постів" pill — so the
+    // pill can't surface pending posts the user can't actually see (e.g. archived chats
+    // while the user is in "Усі", or out-of-folder channels while a folder is active).
+    val scopePredicate = remember(
+        scope_filter, archivedChatIds, folderMemberIds, folderIncludesAllChannels, folderExcludedIds,
+    ) {
+        { p: TimelinePost ->
+            val isArchived = p.chatId in archivedChatIds
+            when (scope_filter) {
+                FilterScope.All -> !isArchived
+                FilterScope.Archive -> isArchived
+                is FilterScope.Folder -> {
+                    val included = folderMemberIds?.contains(p.chatId) == true ||
+                        folderIncludesAllChannels
+                    included && p.chatId !in folderExcludedIds
+                }
+            }
+        }
+    }
+
     val visiblePosts = remember(
-        posts, scope_filter, bookmarkedKeys, channelFilter, showOnlyBookmarked,
-        archivedChatIds, folderMemberIds, folderIncludesAllChannels, folderExcludedIds,
+        posts, scopePredicate, bookmarkedKeys, channelFilter, showOnlyBookmarked,
     ) {
         buildList {
             posts.forEach { p ->
@@ -235,21 +245,42 @@ fun TimelineScreen(
                     if (p.content is PostContent.ExpiredMedia) return@forEach
                 }
 
-                // Scope: All hides archived chats; Archive hides everything BUT archived;
-                // Folder respects the precomputed include/exclude set.
-                val isArchived = p.chatId in archivedChatIds
-                val passesScope = when (scope_filter) {
-                    FilterScope.All -> !isArchived
-                    FilterScope.Archive -> isArchived
-                    is FilterScope.Folder -> {
-                        val included = folderMemberIds?.contains(p.chatId) == true ||
-                            folderIncludesAllChannels
-                        included && p.chatId !in folderExcludedIds
-                    }
-                }
-                if (!passesScope) return@forEach
+                if (!scopePredicate(p)) return@forEach
                 add(p)
             }
+        }
+    }
+
+    // Pill state, scoped to the active tab. Counting pending posts the user can't see
+    // would flash a misleading "5 нових" while archive/out-of-folder posts arrive in the
+    // background.
+    val scopedPendingNew = remember(pendingNew, scopePredicate) {
+        pendingNew.filter(scopePredicate)
+    }
+    val scopedPendingChannels = remember(scopedPendingNew) {
+        scopedPendingNew
+            .groupBy { it.chatId }
+            .map { (chatId, group) ->
+                val anchor = group.maxBy { it.date }
+                ChannelBadge(
+                    chatId = chatId,
+                    title = anchor.senderName,
+                    thumb = anchor.avatarThumb,
+                    fileId = anchor.avatarFileId,
+                    latestPostDate = anchor.date,
+                )
+            }
+            .sortedByDescending { it.latestPostDate }
+            .take(MAX_PILL_BADGES)
+    }
+
+    // While the user is at the top, fold pending live updates straight into the visible
+    // feed. Keyed on the scoped pending list so we only ack what's actually visible in
+    // the current tab — pending in other scopes (archive, other folders) stays unread
+    // until the user navigates there.
+    LaunchedEffect(atTop, scopedPendingNew) {
+        if (atTop && scopedPendingNew.isNotEmpty()) {
+            vm.acceptIds(scopedPendingNew.map { it.chatId to it.id })
         }
     }
 
@@ -491,7 +522,7 @@ fun TimelineScreen(
             // delta), and while the user is already at the top of the feed (we auto-
             // accept pending in that case).
             val pillVisible = !showOnlyBookmarked && channelFilter == null &&
-                !refreshing && !atTop && pendingChannels.isNotEmpty()
+                !refreshing && !atTop && scopedPendingChannels.isNotEmpty()
             // Filter chips occupy the top ~56dp inside the same Box; offset the pill so
             // it lands just below them instead of overlapping.
             val chipsVisible = !showOnlyBookmarked && channelFilter == null
@@ -505,10 +536,12 @@ fun TimelineScreen(
                     .padding(top = pillTopPadding),
             ) {
                 NewPostsPill(
-                    channels = pendingChannels,
-                    pendingCount = pendingNew.size,
+                    channels = scopedPendingChannels,
+                    pendingCount = scopedPendingNew.size,
                     onClick = {
-                        vm.acceptPending()
+                        // Ack only scope-visible pending; archive / other-folder pending
+                        // stays unread for those tabs.
+                        vm.acceptIds(scopedPendingNew.map { it.chatId to it.id })
                         scope.launch { listState.animateScrollToItem(0) }
                     },
                 )
@@ -711,6 +744,9 @@ private const val PAGINATION_PREFETCH_THRESHOLD = 6
 
 /** How long after the last keystroke we issue the search round-trip. */
 private const val SEARCH_DEBOUNCE_MS = 300L
+
+/** Avatars in the "X нових постів" pill — same cap as the original VM-side limit. */
+private const val MAX_PILL_BADGES = 3
 
 private fun formatSubscribers(count: Int): String {
     fun compact(value: Double, suffix: String): String {
