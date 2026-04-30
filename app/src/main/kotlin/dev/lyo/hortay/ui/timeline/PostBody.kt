@@ -21,6 +21,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.ExpiredKind
@@ -103,7 +104,11 @@ private fun AnimatedEmojiBlock(content: PostContent.AnimatedEmoji) {
                 thumb = content.thumb,
                 format = content.format,
                 contentDescription = content.emoji,
-                modifier = Modifier.size(140.dp),
+                modifier = stickerBoxModifier(
+                    width = sticker.width,
+                    height = sticker.height,
+                    maxSide = ANIMATED_EMOJI_MAX_SIDE,
+                ),
             )
         } else {
             Text(
@@ -111,6 +116,30 @@ private fun AnimatedEmojiBlock(content: PostContent.AnimatedEmoji) {
                 style = MaterialTheme.typography.displayLarge,
             )
         }
+    }
+}
+
+private val STICKER_MAX_SIDE = 168.dp
+private val ANIMATED_EMOJI_MAX_SIDE = 140.dp
+
+/**
+ * Constrain a sticker box to the natural aspect ratio reported by TDLib. The longer side
+ * is pinned to [maxSide]; the shorter scales down proportionally. This matters for
+ * non-square stickers — Telegram allows up to 512×N or N×512, and a hardcoded square
+ * box would either crop the content or letterbox it with wide transparent strips
+ * (TGS/WebM frames are transparent so the strip is invisible but the layout still
+ * eats the space and pushes neighbours).
+ *
+ * Falls back to a square at [maxSide] when dimensions aren't reported (e.g. a sticker
+ * descriptor without resolved width/height during a cold start).
+ */
+private fun stickerBoxModifier(width: Int, height: Int, maxSide: Dp): Modifier {
+    if (width <= 0 || height <= 0) return Modifier.size(maxSide)
+    val ratio = width.toFloat() / height.toFloat()
+    return if (ratio >= 1f) {
+        Modifier.width(maxSide).height(maxSide / ratio)
+    } else {
+        Modifier.width(maxSide * ratio).height(maxSide)
     }
 }
 
@@ -553,8 +582,12 @@ private fun VideoNoteBlock(content: PostContent.VideoNote) {
 
 @Composable
 private fun StickerBlock(content: PostContent.Sticker) {
-    val side = 168.dp
-    Box(modifier = Modifier.size(side)) {
+    val boxModifier = stickerBoxModifier(
+        width = content.media.width,
+        height = content.media.height,
+        maxSide = STICKER_MAX_SIDE,
+    )
+    Box(modifier = boxModifier) {
         // [media] is the playback file (.webp/.tgs/.webm) and [thumb] is TDLib's static
         // WEBP/PNG preview. StickerView shows the thumb instantly, then crossfades into
         // the rendered animation once the sticker file lands.
@@ -565,15 +598,6 @@ private fun StickerBlock(content: PostContent.Sticker) {
             contentDescription = content.emoji,
             modifier = Modifier.fillMaxSize(),
         )
-        if (content.emoji.isNotEmpty()) {
-            Text(
-                text = content.emoji,
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp),
-            )
-        }
     }
 }
 

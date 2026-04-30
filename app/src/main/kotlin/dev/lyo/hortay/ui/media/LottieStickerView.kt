@@ -69,10 +69,15 @@ fun LottieStickerView(
     LaunchedEffect(fileId, priority) { fileId?.let { cache.ensure(it, priority) } }
 
     var composition by remember(fileId) { mutableStateOf<LottieComposition?>(null) }
-    LaunchedEffect(mediaState) {
-        val ready = mediaState as? MediaState.Ready ?: return@LaunchedEffect
-        if (ready.path.isEmpty()) return@LaunchedEffect
-        composition = LottieCompositionStore.load(ready.path)
+    // Key on the Ready path only — Downloading bursts emit dozens of states per second
+    // and would otherwise re-launch this coroutine that many times. The store cache
+    // also makes the second .load() call essentially free, but skipping the relaunch
+    // is the cheaper guarantee.
+    val readyPath = (mediaState as? MediaState.Ready)?.path
+    LaunchedEffect(readyPath) {
+        val path = readyPath ?: return@LaunchedEffect
+        if (path.isEmpty()) return@LaunchedEffect
+        composition = LottieCompositionStore.load(path)
     }
 
     val isPlaying = composition != null &&

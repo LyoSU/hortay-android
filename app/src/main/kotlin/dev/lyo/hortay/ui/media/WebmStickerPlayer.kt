@@ -63,10 +63,15 @@ fun WebmStickerPlayer(
         }
     }
 
-    LaunchedEffect(mediaState, fileId) {
-        val ready = mediaState as? MediaState.Ready ?: return@LaunchedEffect
-        if (ready.path.isEmpty()) return@LaunchedEffect
-        exoPlayer.setMediaItem(MediaItem.fromUri("file://${ready.path}"))
+    // Key on the Ready path only so Downloading-burst progress updates don't churn
+    // ExoPlayer's setMediaItem/prepare cycle. fileId is captured as a key so swapping
+    // to a different sticker instance triggers a fresh prepare even if the new file's
+    // path coincidentally matches the previous one.
+    val readyPath = (mediaState as? MediaState.Ready)?.path
+    LaunchedEffect(readyPath, fileId) {
+        val path = readyPath ?: return@LaunchedEffect
+        if (path.isEmpty()) return@LaunchedEffect
+        exoPlayer.setMediaItem(MediaItem.fromUri("file://${path}"))
         exoPlayer.prepare()
     }
 

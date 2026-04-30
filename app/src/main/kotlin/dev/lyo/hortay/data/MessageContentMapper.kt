@@ -353,16 +353,6 @@ internal fun TdApi.Animation.toThumbMedia(): TdMedia = TdMedia(
     minithumbBytes = minithumbnail?.data,
 )
 
-internal fun TdApi.Sticker.toMedia(): TdMedia = TdMedia(
-    // For static (WEBP) stickers the sticker file IS the image, so the fallback is fine.
-    // Animated formats (TGS/WebM) need their own renderer; for now the thumbnail is the
-    // best preview available.
-    fileId = thumbnail?.file?.id ?: sticker.id,
-    width = width,
-    height = height,
-    minithumbBytes = null,
-)
-
 internal fun TdApi.Thumbnail.toMedia(): TdMedia = TdMedia(
     fileId = file.id,
     width = width,
