@@ -84,13 +84,12 @@ fun FullScreenMediaViewer(
                     },
                 ),
         ) {
-            // Pre-warm the immediate neighbours' posters / photos at Prefetch priority
-            // so a sideways swipe never hits an unstyled blank screen. We deliberately
-            // don't prefetch neighbour *video bytes* — TdLibDataSource streams the
-            // active page on its own and starting two more downloads at full priority
-            // would steal bandwidth from the one the user is actually watching.
-            // For active photo we promote to Foreground; videos handle their own download
-            // priority through the streaming data source.
+            // Pre-warm the active page's poster + the immediate neighbours' posters at
+            // Prefetch priority so a sideways swipe never hits an unstyled blank screen.
+            // We only prefetch posters here, not playback files — neighbour videos start
+            // downloading on their own when the page becomes active (TdVideoPlayer fires
+            // MediaCache.ensure on mount), which preserves bandwidth for the page the
+            // user is currently watching.
             val cache = LocalMediaCache.current
             LaunchedEffect(pagerState.currentPage, items) {
                 val current = pagerState.currentPage
@@ -260,9 +259,9 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
 }
 
 // What to prefetch via MediaCache for an item. For photos this is the actual photo
-// file. For videos / animations it's the *poster* image — the playback bytes are
-// streamed on demand by TdLibDataSource, prefetching them here would just elbow the
-// active video out of the bandwidth pool.
+// file; for videos / animations it's the *poster* image. The playback file itself is
+// only fetched once the user lands on that page (TdVideoPlayer triggers ensure on
+// mount), so neighbour videos don't compete with the one currently being watched.
 private fun AlbumItem.posterFileId(): Int? = when (this) {
     is AlbumItem.Photo -> media.fileId
     is AlbumItem.Video -> media.fileId

@@ -203,8 +203,8 @@ internal object MessageContentMapper {
                 is TdApi.PaidMediaPhoto -> AlbumItem.Photo(piece.photo.toMedia())
                 is TdApi.PaidMediaVideo -> {
                     // PaidMediaVideo doesn't expose alternativeVideos, so the picker
-                    // is hidden (qualities.hasOptions == false). Streaming still works
-                    // via TdLibDataSource on the original file.
+                    // is hidden (qualities.hasOptions == false). The single original
+                    // quality plays back through MediaCache like any other video.
                     val qualities = VideoQualities(
                         original = videoQuality(piece.video, label = qualityLabel(piece.video.height)),
                     )
