@@ -1,5 +1,10 @@
 package dev.lyo.hortay.data
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.drinkless.tdlib.TdApi
 import java.util.Collections
 
@@ -101,6 +106,46 @@ class MessageMapper(private val td: TdSender) {
         is TdApi.MessageSenderUser -> resolveCachedUser(senderId.userId)
         is TdApi.MessageSenderChat -> resolveCachedChat(senderId.chatId)
         else -> ResolvedSender("—", null, null, null)
+    }
+
+    /**
+     * Pre-warm the supergroup handle / verification caches for a batch of channel
+     * chats. During [PostsRepository.refreshLocked] every per-channel mapping path
+     * touches [resolveChannelHandle], which fires a [TdApi.GetSupergroup] on cache
+     * miss; serialised through the per-channel concurrency semaphore that's
+     * already saturated by [TdApi.GetChatHistory] requests, those handle lookups
+     * stack at the tail of the refresh and add hundreds of milliseconds to "first
+     * post is fully resolved".
+     *
+     * Firing them in parallel here, with their own concurrency budget, means the
+     * caches are warm by the time the per-channel mappers run — they hit the
+     * `userCache` / `supergroupUsernameCache` fast path and never round-trip.
+     *
+     * Idempotent: skips supergroups already cached, so repeated calls (e.g.
+     * pull-to-refresh) cost a few HashMap probes and nothing else.
+     */
+    suspend fun prewarmChannels(chats: List<TdApi.Chat>) {
+        val needsFetch = chats.mapNotNull { chat ->
+            val sgId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return@mapNotNull null
+            if (supergroupUsernameCache[sgId] != null) null else sgId
+        }
+        if (needsFetch.isEmpty()) return
+        val semaphore = Semaphore(PREWARM_CONCURRENCY)
+        coroutineScope {
+            needsFetch.map { sgId ->
+                async {
+                    semaphore.withPermit {
+                        val sg = runCatching { td.send(TdApi.GetSupergroup(sgId)) }.getOrNull() ?: return@withPermit
+                        val handle = sg.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" }
+                        supergroupUsernameCache.putIfAbsent(sgId, handle.orEmpty())
+                        supergroupVerificationCache.putIfAbsent(
+                            sgId,
+                            sg.verificationStatus?.toMark()?.name.orEmpty(),
+                        )
+                    }
+                }
+            }.awaitAll()
+        }
     }
 
     /** Drop a stale entry — call when TDLib emits UpdateUser / UpdateSupergroup. */
@@ -240,6 +285,10 @@ class MessageMapper(private val td: TdSender) {
 
     private companion object {
         const val MAX_RESOLVER_CACHE = 512
+        // Bigger than refresh's per-channel concurrency (4) because GetSupergroup is
+        // strictly local-cache-or-API-cache fetches, much cheaper than GetChatHistory.
+        // 16 saturates the local DB without spawning more than TDLib comfortably handles.
+        const val PREWARM_CONCURRENCY = 16
     }
 }
 

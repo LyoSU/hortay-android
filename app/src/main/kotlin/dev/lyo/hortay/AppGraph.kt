@@ -14,6 +14,7 @@ import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StatsRepository
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdLifecycleBridge
+import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.ui.media.ExoPlayerPool
@@ -42,6 +43,11 @@ class AppGraph(context: Context) {
     // every cold start).
     val settingsStore: SettingsStore = SettingsStore(context)
 
+    // Tiny `(chatId, messageId)` snapshot of the top of the feed, persisted across
+    // process death so cold start renders real content sub-100ms instead of a blank
+    // screen for the multi-second refresh round-trip storm.
+    val timelineSnapshotStore: TimelineSnapshotStore = TimelineSnapshotStore(context)
+
     val tdClient: TdClient = TdClient.create(context, settingsStore).also { it.start() }
 
     // Bridge ProcessLifecycleOwner + ConnectivityManager into TDLib so the daemon knows
@@ -65,8 +71,15 @@ class AppGraph(context: Context) {
     // appearing as a feed post AND as a thread reply hits the cache twice.
     private val messageMapper: MessageMapper = MessageMapper(tdClient)
 
-    val postsRepository: PostsRepository =
-        PostsRepository(tdClient, messageMapper, appScope, userMessages, tdClient.connection)
+    val postsRepository: PostsRepository = PostsRepository(
+        td = tdClient,
+        mapper = messageMapper,
+        scope = appScope,
+        userMessages = userMessages,
+        connection = tdClient.connection,
+        snapshotStore = timelineSnapshotStore,
+        foreground = lifecycleBridge.foreground,
+    )
 
     val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope)
 

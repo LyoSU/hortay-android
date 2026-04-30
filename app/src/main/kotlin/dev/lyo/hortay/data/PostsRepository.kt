@@ -16,6 +16,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -51,6 +53,8 @@ class PostsRepository(
     private val scope: CoroutineScope,
     private val userMessages: UserMessageBus,
     private val connection: kotlinx.coroutines.flow.StateFlow<ConnectionStatus>,
+    private val snapshotStore: TimelineSnapshotStore,
+    private val foreground: kotlinx.coroutines.flow.StateFlow<Boolean>,
 ) {
 
     private val refreshMutex = Mutex()
@@ -174,6 +178,92 @@ class PostsRepository(
                 }
             }
             .launchIn(scope)
+
+        // Persist a tiny snapshot of the top of the feed whenever the app goes to the
+        // background, so the next cold start can render real content in <100ms while
+        // the full refresh runs in parallel. We save on background-transition rather
+        // than on every _posts change because the typical session pattern is many
+        // edits-per-second (UpdateMessageInteractionInfo) followed by a clean
+        // foreground→background flip; the per-edit save would be wasteful disk I/O.
+        scope.launch {
+            foreground
+                .drop(1) // Skip the initial value; only act on real transitions.
+                .filter { !it }
+                .collect { saveSnapshotNow() }
+        }
+    }
+
+    private suspend fun saveSnapshotNow() {
+        val current = _posts.value
+        if (current.isEmpty()) return
+        val top = current.take(SNAPSHOT_SIZE).flatMap { post ->
+            // Persist every album member id, not just the anchor — restoreFromSnapshot
+            // re-runs PostFilterStrategy.mergeAlbums, which needs all siblings present
+            // to rebuild the merged card.
+            val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
+            ids.map { post.chatId to it }
+        }
+        runCatching { snapshotStore.save(top) }.warnUnlessCancelled(TAG, "saveSnapshot")
+    }
+
+    /**
+     * Restore the persisted top-of-feed by asking TDLib for each cached message id.
+     * GetMessage on a known id is served from TDLib's local DB synchronously — for a
+     * 50-post snapshot the whole pass is typically < 100ms.
+     *
+     * Idempotent + safe to overlap with [refresh]: the same `_posts.update` merge
+     * policy in [refreshLocked] keeps refresh's authoritative result on top of any
+     * snapshot rows that landed first; concurrent ingest of brand-new posts also
+     * survives.
+     *
+     * Bails when `_posts` is already non-empty so a pull-to-refresh that beat us to
+     * the punch wins — there's no point spending GetMessage round-trips to recreate
+     * the same data we already have, fresher.
+     */
+    suspend fun restoreFromSnapshot(): Int {
+        if (_posts.value.isNotEmpty()) return 0
+        val snapshot = runCatching { snapshotStore.load() }
+            .warnUnlessCancelled(TAG, "loadSnapshot")
+            .getOrDefault(emptyList())
+        if (snapshot.isEmpty()) return 0
+
+        // Parallel GetMessage. Bound concurrency so a 200-message snapshot doesn't
+        // spawn 200 concurrent JNI calls and overflow TDLib's request queue.
+        val semaphore = Semaphore(SNAPSHOT_RESTORE_CONCURRENCY)
+        val messages = coroutineScope {
+            snapshot.map { (chatId, msgId) ->
+                async {
+                    semaphore.withPermit {
+                        runCatching { td.send(TdApi.GetMessage(chatId, msgId)) }.getOrNull()
+                    }
+                }
+            }.awaitAll().filterNotNull()
+        }
+        if (messages.isEmpty()) return 0
+
+        // Group by chat so each channel is mapped against a single Chat object — saves
+        // one GetChat per message in the cold-cache case.
+        val byChat = messages.groupBy { it.chatId }
+        val mapped = byChat.flatMap { (chatId, msgs) ->
+            val chat = chatCache[chatId]
+                ?: runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()?.also { chatCache[chatId] = it }
+                ?: return@flatMap emptyList()
+            if (!chat.isChannel()) emptyList()
+            else msgs.map { mapper.toChannelPost(it, chat) }
+        }
+        if (mapped.isEmpty()) return 0
+
+        var added = 0
+        _posts.update { current ->
+            // Refresh may have raced ahead; if so, keep its result intact and abandon
+            // the snapshot — fresh always wins.
+            if (current.isNotEmpty()) current
+            else {
+                added = mapped.size
+                PostFilterStrategy.apply(mapped).take(MAX_FEED_SIZE).toPersistentList()
+            }
+        }
+        return added
     }
 
     // 30 (not 20) so an album sitting on the limit boundary doesn't get split: most
@@ -775,28 +865,42 @@ class PostsRepository(
         // we can preserve ordering for the per-chat fetch.
         val chatIds = (mainIds.toList() + archiveIds).distinct().toLongArray()
 
+        // Resolve every chat object FIRST in parallel (cheap local-cache reads against
+        // TDLib) so we can hand the channel-only subset to the mapper for handle/
+        // verification pre-warming. Without this, every per-channel mapping path below
+        // would fall through to a serialised GetSupergroup at refresh time and stack
+        // hundreds of milliseconds onto the user-perceived "feed is fully resolved".
+        val chatLookupSemaphore = Semaphore(REFRESH_CONCURRENCY * 4)
+        val chats = coroutineScope {
+            chatIds.toList().map { chatId ->
+                async {
+                    chatLookupSemaphore.withPermit {
+                        runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
+                            ?.also { chatCache[chatId] = it }
+                    }
+                }
+            }.awaitAll().filterNotNull()
+        }
+        val channels = chats.filter { it.isChannel() }
+        mapper.prewarmChannels(channels)
+
         // Per-channel fetch was serial — for a user with 200 channels, ~50ms per round-trip
         // adds up to ~10s pull-to-refresh. Bound concurrency at 4 (TDLib's typical
         // simultaneous-download cap) so we don't push the daemon into FLOOD_WAIT while
         // still saturating the network.
         val semaphore = Semaphore(REFRESH_CONCURRENCY)
         val raw = coroutineScope {
-            chatIds.toList().map { chatId ->
+            channels.map { chat ->
                 async {
                     semaphore.withPermit {
-                        val chat = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
-                            ?: return@withPermit emptyList()
-                        chatCache[chatId] = chat
-                        if (!chat.isChannel()) return@withPermit emptyList()
-
                         val history = runCatching {
-                            td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limitPerChannel, false))
+                            td.send(TdApi.GetChatHistory(chat.id, /* fromMessageId */ 0, 0, limitPerChannel, false))
                         }.getOrNull() ?: return@withPermit emptyList()
 
                         val raw = history.messages.orEmpty().toList()
                         // Plug album fragments left by the window boundary (e.g. a 6-photo
                         // album whose first 5 members fell outside the latest-N slice).
-                        coalesceAlbumFragments(chatId, raw).map { mapper.toChannelPost(it, chat) }
+                        coalesceAlbumFragments(chat.id, raw).map { mapper.toChannelPost(it, chat) }
                     }
                 }
             }.awaitAll().flatten()
@@ -869,6 +973,14 @@ class PostsRepository(
         // against burst suppression. Telegram's official Android client coalesces in a
         // similar window.
         const val INTERACTION_INFO_COALESCE_MS = 200L
+        // Snapshot persistence: top-N posts saved on background. 50 covers a typical
+        // first-screen view with comfortable scroll headroom; bigger payloads make the
+        // DataStore write feel measurable on the way out without UX benefit because
+        // refresh fills the rest in parallel.
+        const val SNAPSHOT_SIZE = 50
+        // GetMessage is local but still costs a JNI round-trip; cap parallelism so the
+        // snapshot restore doesn't spike TDLib's worker thread on cold start.
+        const val SNAPSHOT_RESTORE_CONCURRENCY = 8
     }
 }
 

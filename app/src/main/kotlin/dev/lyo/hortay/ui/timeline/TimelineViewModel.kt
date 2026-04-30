@@ -56,6 +56,12 @@ class TimelineViewModel(
                 }
             }
         }
+        // Cold-start path: restore the persisted snapshot first so the user sees real
+        // content within ~100ms (TDLib serves GetMessage from local DB synchronously),
+        // then kick off the freshness check in parallel. Both write through the same
+        // race-safe `_posts.update` merge in PostsRepository, so whichever finishes
+        // first becomes visible and the other layers on top without clobbering.
+        viewModelScope.launch { repo.restoreFromSnapshot() }
         refreshIfStale()
     }
 
