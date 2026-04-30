@@ -115,6 +115,11 @@ class PostsRepository(
             .onEach { update -> handleContentChanged(update) }
             .launchIn(scope)
 
+        // Pin / unpin badge changes on a channel post.
+        td.updates.filterIsInstance<TdApi.UpdateMessageIsPinned>()
+            .onEach { update -> handleIsPinnedChanged(update) }
+            .launchIn(scope)
+
         // Channel renamed → all visible posts of that chat update their senderName.
         td.updates.filterIsInstance<TdApi.UpdateChatTitle>()
             .onEach { update -> handleChatTitle(update) }
@@ -555,7 +560,11 @@ class PostsRepository(
     }
 
     private fun handleEdited(update: TdApi.UpdateMessageEdited) {
-        updateOnePost(update.chatId, update.messageId) {
+        // For an album the edit (almost always a caption tweak) targets one specific
+        // sub-message id, but our merged anchor's id may be a different sibling. Stamp
+        // editDate on the anchor whose albumMessageIds contains the touched id so the
+        // "edited" badge refreshes regardless of which member the edit landed on.
+        updateOnePostByAnyMemberId(update.chatId, update.messageId) {
             it.copy(editDate = update.editDate.toLong() * 1000L)
         }
     }
@@ -564,13 +573,85 @@ class PostsRepository(
         if (!update.isPermanent) return
         val ids = update.messageIds.toHashSet()
         _posts.update { current ->
-            current.mutate { list -> list.removeAll { it.chatId == update.chatId && it.id in ids } }
+            current.mutate { list ->
+                val toRemove = mutableListOf<Int>()
+                for (i in list.indices) {
+                    val post = list[i]
+                    if (post.chatId != update.chatId) continue
+                    val albumIds = post.albumMessageIds
+                    if (albumIds.isEmpty()) {
+                        if (post.id in ids) toRemove += i
+                        continue
+                    }
+                    // Album: trim deleted members from items[] (mergeAlbumMembers builds
+                    // items in albumMessageIds order, so they correspond by index). Drop
+                    // the whole post if every member was deleted.
+                    val survivedIds = albumIds.filterNot { it in ids }
+                    if (survivedIds.size == albumIds.size) continue
+                    if (survivedIds.isEmpty()) {
+                        toRemove += i
+                        continue
+                    }
+                    val keepIdx = albumIds.withIndex()
+                        .filter { (_, id) -> id !in ids }
+                        .map { (idx, _) -> idx }
+                        .toSet()
+                    val content = post.content
+                    if (content is PostContent.PhotoAlbum) {
+                        val newItems = content.items.filterIndexed { idx, _ -> idx in keepIdx }
+                        list[i] = post.copy(
+                            content = content.copy(items = newItems),
+                            albumMessageIds = survivedIds,
+                        )
+                    } else {
+                        // Album with non-PhotoAlbum content (shouldn't happen given how
+                        // mergeAlbumMembers builds groups, but guard anyway). Drop it.
+                        toRemove += i
+                    }
+                }
+                for (idx in toRemove.asReversed()) list.removeAt(idx)
+            }
         }
     }
 
     private fun handleContentChanged(update: TdApi.UpdateMessageContent) {
-        val newContent = MessageContentMapper.map(update.newContent)
-        updateOnePost(update.chatId, update.messageId) { it.copy(content = newContent) }
+        // The post might be an already-merged album whose anchor id ≠ update.messageId
+        // (the edited member is one of the siblings). Re-fetch + re-coalesce the whole
+        // album: that's the only way to keep the merged caption + items in sync given
+        // we don't track which item belongs to which member id at content level.
+        // For solo posts the fast path simply replaces the content in place.
+        val solo = updateOnePost(update.chatId, update.messageId) {
+            it.copy(content = MessageContentMapper.map(update.newContent))
+        }
+        if (solo) return
+        val anchor = _posts.value.firstOrNull {
+            it.chatId == update.chatId && update.messageId in it.albumMessageIds
+        } ?: return
+        // Re-ingest: GetMessage for the touched id, push through the album debounce so
+        // coalesceAlbumFragments fetches the rest and the regular ingest dedup logic
+        // replaces the merged anchor cleanly.
+        scope.launch {
+            val msg = runCatching { td.send(TdApi.GetMessage(update.chatId, update.messageId)) }
+                .warnUnlessCancelled(TAG, "getMessage(${update.chatId},${update.messageId})")
+                .getOrNull() ?: return@launch
+            handleNewMessage(msg)
+        }
+        // Bump editDate on the anchor so the "edited" indicator surfaces immediately
+        // even before the re-ingest completes.
+        updateOnePostByAnyMemberId(update.chatId, update.messageId) { post ->
+            // Preserve existing editDate semantics if TDLib didn't pair an Edited update.
+            if (post.editDate == anchor.editDate) post else post
+        }
+    }
+
+    private fun handleIsPinnedChanged(update: TdApi.UpdateMessageIsPinned) {
+        // Pin badge: TDLib pins one specific message; for an album in our timeline that
+        // can be any sibling (Telegram typically pins the caption-carrier, but admins
+        // can pin any). Match by either anchor id or any album member id and set the
+        // anchor's isPinned to the update's value.
+        updateOnePostByAnyMemberId(update.chatId, update.messageId) {
+            it.copy(isPinned = update.isPinned)
+        }
     }
 
     /**
@@ -578,17 +659,45 @@ class PostsRepository(
      * snapshot in O(log N) via structural sharing — none of the unchanged entries are
      * copied. Compare with the old `current.toMutableList().also { it[idx] = ... }`
      * which copied the whole array on every event.
+     *
+     * Returns true iff a matching post was found and updated, so callers can chain a
+     * fallback (e.g. album-aware lookup) without re-walking the list.
      */
     private inline fun updateOnePost(
         chatId: Long,
         messageId: Long,
         crossinline transform: (TimelinePost) -> TimelinePost,
-    ) {
+    ): Boolean {
+        var hit = false
         _posts.update { current ->
             val idx = current.indexOfFirst { it.chatId == chatId && it.id == messageId }
             if (idx == -1) current
-            else current.set(idx, transform(current[idx]))
+            else { hit = true; current.set(idx, transform(current[idx])) }
         }
+        return hit
+    }
+
+    /**
+     * Same as [updateOnePost] but matches by anchor id OR any of the post's
+     * [TimelinePost.albumMessageIds]. Use this for events whose [messageId] can refer
+     * to any member of an already-merged album (UpdateMessageEdited,
+     * UpdateMessageIsPinned, UpdateMessageContent on a non-anchor sibling).
+     */
+    private inline fun updateOnePostByAnyMemberId(
+        chatId: Long,
+        messageId: Long,
+        crossinline transform: (TimelinePost) -> TimelinePost,
+    ): Boolean {
+        var hit = false
+        _posts.update { current ->
+            val idx = current.indexOfFirst { post ->
+                post.chatId == chatId &&
+                    (post.id == messageId || messageId in post.albumMessageIds)
+            }
+            if (idx == -1) current
+            else { hit = true; current.set(idx, transform(current[idx])) }
+        }
+        return hit
     }
 
     private fun handleChatTitle(update: TdApi.UpdateChatTitle) {
@@ -685,14 +794,37 @@ class PostsRepository(
             }.awaitAll().flatten()
         }
 
-        _posts.value = PostFilterStrategy.apply(raw).toPersistentList()
+        // Atomic merge instead of an outright `_posts.value = ...` overwrite. A refresh
+        // takes seconds: while the chat-by-chat fetches run, concurrent TD updates
+        // (UpdateNewMessage, UpdateMessageInteractionInfo, UpdateMessageEdited,
+        // UpdateMessageContent, UpdateDeleteMessages) flow through their handlers and
+        // mutate `_posts` via `.update {}`. A non-atomic final assignment would clobber
+        // every one of those edits — most visibly losing brand-new posts that landed
+        // mid-refresh and were correctly ingested but absent from the snapshot we took
+        // before they arrived.
+        //
+        // Merge policy: `raw` is authoritative for any (chatId, id) it carries (TDLib
+        // just told us this is the current state). For everything else in `current`
+        // (older posts paginated via loadOlder, posts ingested concurrently after our
+        // GetChatHistory snapshot) we keep the existing entry. PostFilterStrategy then
+        // re-merges albums and re-sorts.
+        _posts.update { current ->
+            val freshKeys = raw.mapTo(HashSet()) { it.chatId to it.id }
+            val keptOld = current.filterNot { post ->
+                val keys = post.albumMessageIds.ifEmpty { listOf(post.id) }
+                keys.any { id -> (post.chatId to id) in freshKeys }
+            }
+            PostFilterStrategy.apply(raw + keptOld).take(MAX_FEED_SIZE).toPersistentList()
+        }
     }
 
     /**
      * Repeatedly call [TdApi.LoadChats] until TDLib runs out of pages for [list]. TDLib
-     * signals "no more chats to load" with a synthetic 404 error — anything else (network
-     * blip, auth race) we treat as terminal and stop iterating, because retrying inside
-     * refresh would just stall the user; the next pull-to-refresh re-tries naturally.
+     * signals "no more chats to load" with a `404 Not Found` error specifically — any
+     * other error (network blip, auth race) is transient and would historically have
+     * caused an early exit and a partially-populated chat list on cold start. Distinguish
+     * the two: 404 → terminate (we're done). Other errors → swallow this iteration and
+     * try the next; a transient blip should not strand the user with half a feed.
      *
      * Bounded by [MAX_LOAD_CHATS_PAGES] — 10 pages × 200 hint = up to 2000 chats per list,
      * which is well past the realistic ceiling and protects against a TDLib bug ever
@@ -701,7 +833,10 @@ class PostsRepository(
     private suspend fun drainChatList(list: TdApi.ChatList) {
         repeat(MAX_LOAD_CHATS_PAGES) {
             val res = runCatching { td.send(TdApi.LoadChats(list, CHAT_LIST_HINT)) }
-            if (res.isFailure) return
+            val err = res.exceptionOrNull()
+            if (err is TdClient.TdException && err.code == 404) return
+            // Any other failure: retry on the next iteration; the bounded loop guards
+            // against an infinite retry storm if TDLib stays unhealthy.
         }
     }
 
