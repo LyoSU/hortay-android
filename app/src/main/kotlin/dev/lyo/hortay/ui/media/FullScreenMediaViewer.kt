@@ -31,6 +31,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.DownloadPriority
+import dev.lyo.hortay.data.VideoQuality
 import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -83,22 +84,31 @@ fun FullScreenMediaViewer(
                     },
                 ),
         ) {
-            // Promote the active item to Foreground priority while it's on screen, and
-            // pre-warm immediate neighbours at Prefetch so a sideways swipe doesn't hit
-            // a cold cache. MediaCache.ensure short-circuits when the file is already
-            // Ready and only re-issues DownloadFile when the new priority is higher.
+            // Pre-warm the immediate neighbours' posters / photos at Prefetch priority
+            // so a sideways swipe never hits an unstyled blank screen. We deliberately
+            // don't prefetch neighbour *video bytes* — TdLibDataSource streams the
+            // active page on its own and starting two more downloads at full priority
+            // would steal bandwidth from the one the user is actually watching.
+            // For active photo we promote to Foreground; videos handle their own download
+            // priority through the streaming data source.
             val cache = LocalMediaCache.current
             LaunchedEffect(pagerState.currentPage, items) {
                 val current = pagerState.currentPage
-                items.getOrNull(current)?.fileIdForPriority()?.let {
+                items.getOrNull(current)?.posterFileId()?.let {
                     cache.ensure(it, DownloadPriority.Foreground)
                 }
                 listOf(current - 1, current + 1).forEach { idx ->
-                    items.getOrNull(idx)?.fileIdForPriority()?.let {
+                    items.getOrNull(idx)?.posterFileId()?.let {
                         cache.ensure(it, DownloadPriority.Prefetch)
                     }
                 }
             }
+
+            // Per-video quality choice survives swipe-between-pages within this viewer
+            // session: when the user picks 480p on video A, swipes to B, then back to A,
+            // we restore A's pick. Keyed by the page index so the map naturally drops
+            // entries that the pager re-uses for a different message.
+            val qualityChoices = remember(items) { mutableStateMapOf<Int, VideoQuality>() }
 
             HorizontalPager(
                 state = pagerState,
@@ -106,7 +116,13 @@ fun FullScreenMediaViewer(
                     .fillMaxSize()
                     .graphicsLayer { translationY = offsetY.value },
             ) { page ->
-                MediaPage(item = items[page], isActive = page == pagerState.currentPage)
+                val item = items[page]
+                MediaPage(
+                    item = item,
+                    isActive = page == pagerState.currentPage,
+                    pickedQuality = qualityChoices[page],
+                    onQualityPick = { quality -> qualityChoices[page] = quality },
+                )
             }
 
             IconButton(
@@ -118,6 +134,23 @@ fun FullScreenMediaViewer(
                     .background(Color.Black.copy(alpha = 0.4f)),
             ) {
                 Symbol(name = "close", contentDescription = "close", tint = Color.White)
+            }
+
+            // Quality picker for the active page, top-right. Only renders for video items
+            // that ship alternativeVideos — photos and single-quality videos hide it.
+            val activeItem = items.getOrNull(pagerState.currentPage)
+            val activeQualities = (activeItem as? AlbumItem.Video)?.qualities
+            if (activeQualities?.hasOptions == true) {
+                val current = qualityChoices[pagerState.currentPage] ?: activeQualities.defaultPick
+                QualityChip(
+                    current = current,
+                    qualities = activeQualities,
+                    onPick = { qualityChoices[pagerState.currentPage] = it },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(8.dp),
+                )
             }
 
             if (items.size > 1) {
@@ -136,24 +169,35 @@ fun FullScreenMediaViewer(
 }
 
 @Composable
-private fun MediaPage(item: AlbumItem, isActive: Boolean) {
+private fun MediaPage(
+    item: AlbumItem,
+    isActive: Boolean,
+    pickedQuality: VideoQuality?,
+    onQualityPick: (VideoQuality) -> Unit,
+) {
     when (item) {
         is AlbumItem.Photo -> ZoomableImage(item)
-        is AlbumItem.Video -> TdVideoPlayer(
-            fileId = item.playbackFileId,
-            autoPlay = isActive,
-            autoLoop = false,
-            showControls = true,
-            priority = DownloadPriority.Foreground,
-            modifier = Modifier.fillMaxSize(),
-        )
+        is AlbumItem.Video -> {
+            val quality = pickedQuality ?: item.qualities.defaultPick
+            TdVideoPlayer(
+                fileId = quality.fileId,
+                autoPlay = isActive,
+                autoLoop = false,
+                showControls = true,
+                modifier = Modifier.fillMaxSize(),
+            )
+            // Touch the picker callback so an unpicked default still registers — keeps
+            // the parent's qualityChoices map authoritative for "what's playing now".
+            if (pickedQuality == null) {
+                LaunchedEffect(item.playbackFileId, item.qualities) { onQualityPick(quality) }
+            }
+        }
         is AlbumItem.Animation -> TdVideoPlayer(
             fileId = item.playbackFileId,
             autoPlay = isActive,
             autoLoop = true,
             showControls = false,
             muted = true,
-            priority = DownloadPriority.Foreground,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -213,14 +257,14 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
     }
 }
 
-// For photos, the priority-upgrade target is the actual photo file. For videos and
-// animations the *playback* file is what the user is waiting on (TdVideoPlayer also
-// upgrades it from inside, but doing it here too means prefetched neighbours start
-// downloading even before the page becomes active).
-private fun AlbumItem.fileIdForPriority(): Int? = when (this) {
+// What to prefetch via MediaCache for an item. For photos this is the actual photo
+// file. For videos / animations it's the *poster* image — the playback bytes are
+// streamed on demand by TdLibDataSource, prefetching them here would just elbow the
+// active video out of the bandwidth pool.
+private fun AlbumItem.posterFileId(): Int? = when (this) {
     is AlbumItem.Photo -> media.fileId
-    is AlbumItem.Video -> playbackFileId
-    is AlbumItem.Animation -> playbackFileId
+    is AlbumItem.Video -> media.fileId
+    is AlbumItem.Animation -> media.fileId
 }
 
 private const val MIN_SCALE = 1f

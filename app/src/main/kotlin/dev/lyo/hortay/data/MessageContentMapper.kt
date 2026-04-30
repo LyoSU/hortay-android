@@ -17,22 +17,40 @@ internal object MessageContentMapper {
             webPreview = content.linkPreview?.let(::mapWebPreview),
         )
         is TdApi.MessagePhoto -> PostContent.PhotoAlbum(
-            items = listOf(AlbumItem.Photo(content.photo.toMedia())),
+            items = listOf(
+                AlbumItem.Photo(
+                    media = content.photo.toMedia(),
+                    hasSpoiler = content.hasSpoiler,
+                    isSecret = content.isSecret,
+                ),
+            ),
             caption = mapFormattedText(content.caption),
             captionAbove = content.showCaptionAboveMedia,
         )
-        is TdApi.MessageVideo -> PostContent.Video(
-            media = content.video.toThumbMedia(),
-            playbackFileId = content.video.video.id,
-            caption = mapFormattedText(content.caption),
-            durationSec = content.video.duration,
-            captionAbove = content.showCaptionAboveMedia,
-        )
+        is TdApi.MessageVideo -> {
+            val qualities = videoQualities(content.video, content.alternativeVideos)
+            // Cover (designer-supplied poster) is preferred over auto-extracted thumb.
+            // Telegram lets the uploader pick a custom frame as cover — when it ships
+            // we render that instead of the heuristic first-frame thumb.
+            val poster = content.cover?.toMedia() ?: content.video.toThumbMedia()
+            PostContent.Video(
+                media = poster,
+                playbackFileId = qualities.defaultPick.fileId,
+                qualities = qualities,
+                caption = mapFormattedText(content.caption),
+                durationSec = content.video.duration,
+                captionAbove = content.showCaptionAboveMedia,
+                hasSpoiler = content.hasSpoiler,
+                isSecret = content.isSecret,
+            )
+        }
         is TdApi.MessageAnimation -> PostContent.Animation(
             media = content.animation.toThumbMedia(),
             playbackFileId = content.animation.animation.id,
             caption = mapFormattedText(content.caption),
             captionAbove = content.showCaptionAboveMedia,
+            hasSpoiler = content.hasSpoiler,
+            isSecret = content.isSecret,
         )
         is TdApi.MessageDocument -> PostContent.Document(
             fileId = content.document.document?.id,
@@ -183,11 +201,20 @@ internal object MessageContentMapper {
         val items = content.media.orEmpty().mapNotNull { piece ->
             when (piece) {
                 is TdApi.PaidMediaPhoto -> AlbumItem.Photo(piece.photo.toMedia())
-                is TdApi.PaidMediaVideo -> AlbumItem.Video(
-                    media = piece.video.toThumbMedia(),
-                    durationSec = piece.video.duration,
-                    playbackFileId = piece.video.video.id,
-                )
+                is TdApi.PaidMediaVideo -> {
+                    // PaidMediaVideo doesn't expose alternativeVideos, so the picker
+                    // is hidden (qualities.hasOptions == false). Streaming still works
+                    // via TdLibDataSource on the original file.
+                    val qualities = VideoQualities(
+                        original = videoQuality(piece.video, label = qualityLabel(piece.video.height)),
+                    )
+                    AlbumItem.Video(
+                        media = piece.video.toThumbMedia(),
+                        durationSec = piece.video.duration,
+                        playbackFileId = qualities.original.fileId,
+                        qualities = qualities,
+                    )
+                }
                 else -> null
             }
         }
@@ -312,3 +339,55 @@ internal fun TdApi.Thumbnail.toMedia(): TdMedia = TdMedia(
     height = height,
     minithumbBytes = null,
 )
+
+/**
+ * Synthesise a [VideoQualities] tree for a [TdApi.MessageVideo]. Original is the
+ * uploader's file; alternatives are server-generated re-encodes (sorted HD-first
+ * for the picker). When the message ships no alternatives, the resulting
+ * [VideoQualities.hasOptions] is false and the picker UI hides itself.
+ */
+internal fun videoQualities(
+    video: TdApi.Video,
+    alternatives: Array<TdApi.AlternativeVideo>?,
+): VideoQualities {
+    val original = videoQuality(video, qualityLabel(video.height))
+    val alts = alternatives.orEmpty()
+        .mapNotNull { alt ->
+            val file = alt.video ?: return@mapNotNull null
+            VideoQuality(
+                fileId = file.id,
+                width = alt.width,
+                height = alt.height,
+                label = qualityLabel(alt.height),
+                sizeBytes = file.size,
+            )
+        }
+        // Drop duplicates that match the original's resolution — Telegram occasionally
+        // ships an alternative at the same size as the original which would clutter
+        // the picker with two identical-looking entries.
+        .filter { it.height != original.height || it.width != original.width }
+        .sortedByDescending { it.height }
+    return VideoQualities(original = original, alternatives = alts)
+}
+
+internal fun videoQuality(video: TdApi.Video, label: String): VideoQuality = VideoQuality(
+    fileId = video.video.id,
+    width = video.width,
+    height = video.height,
+    label = label,
+    sizeBytes = video.video.size,
+)
+
+/** Map pixel height to the user-facing label Telegram uses (720p, 1080p, 4K, …). */
+internal fun qualityLabel(height: Int): String = when {
+    height >= 2160 -> "4K"
+    height >= 1440 -> "1440p"
+    height >= 1080 -> "1080p"
+    height >= 720 -> "720p"
+    height >= 480 -> "480p"
+    height >= 360 -> "360p"
+    height >= 240 -> "240p"
+    height >= 144 -> "144p"
+    else -> "${height}p"
+}
+

@@ -36,7 +36,21 @@ class AppGraph(context: Context) {
 
     val tdClient: TdClient = TdClient.create(context, settingsStore).also { it.start() }
 
-    val mediaCache: MediaCache = MediaCache(tdClient, appScope)
+    // Bridge ProcessLifecycleOwner + ConnectivityManager into TDLib so the daemon knows
+    // when we're foreground/online and what network it should plan downloads for. The
+    // bridge owns the canonical app-foreground signal; MediaCache reads it to park its
+    // stall watchdog while the user isn't looking. Held by the graph to keep the listener
+    // alive for the process lifetime.
+    private val lifecycleBridge: TdLifecycleBridge =
+        TdLifecycleBridge(tdClient, context, appScope).also { it.bind() }
+
+    // MediaCache reads tdClient.connection so the stall watchdog skips reissue ticks
+    // while we're WaitingForNetwork — TDLib resumes downloads itself when the link
+    // returns, and reissuing in the meantime would just rack up retry counts and prematurely
+    // mark slots Failed. lifecycleBridge.foreground does the same job for app-background:
+    // suspend the watchdog entirely (zero CPU/battery) until the app comes back to focus.
+    val mediaCache: MediaCache =
+        MediaCache(tdClient, appScope, tdClient.connection, lifecycleBridge.foreground)
 
     // Shared between PostsRepository (channel feed) and CommentsRepository (discussion
     // threads) so an author resolved in one context is reused in the other — same user
@@ -58,11 +72,5 @@ class AppGraph(context: Context) {
     val channelActions: ChannelActionsRepository = ChannelActionsRepository(tdClient)
 
     val countries: CountryRepository = CountryRepository(tdClient)
-
-    // Bridge ProcessLifecycleOwner + ConnectivityManager into TDLib so the daemon knows
-    // when we're foreground/online and what network it should plan downloads for. Held
-    // by the graph to keep the listener alive for the process lifetime.
-    private val lifecycleBridge: TdLifecycleBridge =
-        TdLifecycleBridge(tdClient, context, appScope).also { it.bind() }
 }
 

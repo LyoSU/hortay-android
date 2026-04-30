@@ -9,6 +9,8 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
@@ -44,7 +46,13 @@ class TdLifecycleBridge(
     private val appContext = context.applicationContext
     private val cm = appContext.getSystemService(ConnectivityManager::class.java)!!
 
-    private val foreground = MutableStateFlow(false)
+    private val _foreground = MutableStateFlow(false)
+    /**
+     * App-level foreground signal mirrored from [ProcessLifecycleOwner]. Exposed so other
+     * subsystems (the [MediaCache] stall watchdog) can park their work while the user
+     * isn't looking — zero CPU/battery cost via a suspending Flow collector.
+     */
+    val foreground: StateFlow<Boolean> = _foreground.asStateFlow()
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -63,11 +71,11 @@ class TdLifecycleBridge(
     fun bind() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
-                foreground.value = true
+                _foreground.value = true
             }
 
             override fun onStop(owner: LifecycleOwner) {
-                foreground.value = false
+                _foreground.value = false
             }
         })
 
@@ -95,7 +103,7 @@ class TdLifecycleBridge(
     }
 
     private fun pushNetworkType() {
-        if (!foreground.value) return
+        if (!_foreground.value) return
         scope.launch {
             runCatching { td.send(TdApi.SetNetworkType(currentNetworkType())) }
                 .warnUnlessCancelled(TAG, "networkType-update")

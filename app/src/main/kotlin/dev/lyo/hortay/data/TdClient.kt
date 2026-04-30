@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -62,8 +63,35 @@ class TdClient private constructor(
     @Volatile
     private var lastAttemptedPhone: String = ""
 
+    // Two-stage update pipeline. The JNI callback runs on a TDLib worker thread
+    // outside any coroutine context, so it can't call MutableSharedFlow.emit (which
+    // suspends). Two earlier designs both had real problems:
+    //   • scope.launch { emit } from the callback — each event spawns its own
+    //     coroutine, so identical-fileId UpdateFile bursts could deliver out of
+    //     order and combined with a SUSPEND buffer caused races where MediaCache
+    //     saw completion-before-progress.
+    //   • tryEmit + a 256-slot SharedFlow — preserved order but silently dropped
+    //     events on the cold-start burst (login emits thousands of UpdateNewChat /
+    //     UpdateChatLastMessage / UpdateUser, far more than any reasonable buffer).
+    //
+    // The fix: an UNLIMITED Channel in front of the SharedFlow. The JNI callback
+    // does a non-suspending trySend on the channel (which never fails on an
+    // unlimited buffer); a single consumer coroutine drains it and emits to the
+    // SharedFlow with proper backpressure-aware suspend semantics. FIFO is
+    // guaranteed by the channel, the SharedFlow keeps its modest 64-slot buffer
+    // because it now only buffers the *gap* between consumer reads, not the
+    // entire login burst.
+    private val incoming = Channel<TdApi.Update>(Channel.UNLIMITED)
     private val _updates = MutableSharedFlow<TdApi.Update>(extraBufferCapacity = 64)
     override val updates: SharedFlow<TdApi.Update> = _updates.asSharedFlow()
+
+    init {
+        scope.launch {
+            for (update in incoming) {
+                _updates.emit(update)
+            }
+        }
+    }
 
     private lateinit var client: Client
 
@@ -86,7 +114,9 @@ class TdClient private constructor(
         client = Client.create({ obj ->
             if (obj is TdApi.Update) {
                 handleUpdate(obj)
-                scope.launch { _updates.emit(obj) }
+                // trySend on an UNLIMITED Channel never fails — order is preserved by
+                // the channel, the consumer coroutine handles SharedFlow backpressure.
+                incoming.trySend(obj)
             }
         }, null, null)
     }

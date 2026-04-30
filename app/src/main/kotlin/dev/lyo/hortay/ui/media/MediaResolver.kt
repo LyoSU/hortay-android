@@ -12,7 +12,23 @@ import dev.lyo.hortay.data.PostContent
  */
 fun PostContent.toAlbumItems(): List<AlbumItem>? = when (this) {
     is PostContent.PhotoAlbum -> items.takeIf { it.isNotEmpty() }
-    is PostContent.Video -> listOf(AlbumItem.Video(media, durationSec, playbackFileId))
-    is PostContent.Animation -> listOf(AlbumItem.Animation(media, playbackFileId))
+    is PostContent.Video -> listOf(
+        AlbumItem.Video(
+            media = media,
+            durationSec = durationSec,
+            playbackFileId = playbackFileId,
+            qualities = qualities,
+            hasSpoiler = hasSpoiler,
+            isSecret = isSecret,
+        ),
+    )
+    is PostContent.Animation -> listOf(
+        AlbumItem.Animation(
+            media = media,
+            playbackFileId = playbackFileId,
+            hasSpoiler = hasSpoiler,
+            isSecret = isSecret,
+        ),
+    )
     else -> null
 }

@@ -41,9 +41,14 @@ sealed interface PostContent {
     data class Video(
         val media: TdMedia,
         val playbackFileId: Int,
+        val qualities: VideoQualities,
         val caption: FormattedText,
         val durationSec: Int,
         val captionAbove: Boolean = false,
+        /** Spoiler-tagged by sender — UI hides until tap. */
+        val hasSpoiler: Boolean = false,
+        /** Self-destructing / sensitive — same UX as spoiler but stronger phrasing. */
+        val isSecret: Boolean = false,
     ) : PostContent {
         override val captionPlain: String get() = caption.text
     }
@@ -54,6 +59,8 @@ sealed interface PostContent {
         val playbackFileId: Int,
         val caption: FormattedText,
         val captionAbove: Boolean = false,
+        val hasSpoiler: Boolean = false,
+        val isSecret: Boolean = false,
     ) : PostContent {
         override val captionPlain: String get() = caption.text
     }
@@ -205,20 +212,85 @@ sealed interface AlbumItem {
     val media: TdMedia
 
     @Immutable
-    data class Photo(override val media: TdMedia) : AlbumItem
+    data class Photo(
+        override val media: TdMedia,
+        val hasSpoiler: Boolean = false,
+        val isSecret: Boolean = false,
+    ) : AlbumItem
 
     @Immutable
     data class Video(
         override val media: TdMedia,
         val durationSec: Int,
         val playbackFileId: Int,
+        val qualities: VideoQualities,
+        val hasSpoiler: Boolean = false,
+        val isSecret: Boolean = false,
     ) : AlbumItem
 
     @Immutable
     data class Animation(
         override val media: TdMedia,
         val playbackFileId: Int,
+        val hasSpoiler: Boolean = false,
+        val isSecret: Boolean = false,
     ) : AlbumItem
+}
+
+/** Convenience flags shared across the three [AlbumItem] subtypes that can be hidden. */
+val AlbumItem.hasSpoiler: Boolean
+    get() = when (this) {
+        is AlbumItem.Photo -> hasSpoiler
+        is AlbumItem.Video -> hasSpoiler
+        is AlbumItem.Animation -> hasSpoiler
+    }
+
+val AlbumItem.isSecret: Boolean
+    get() = when (this) {
+        is AlbumItem.Photo -> isSecret
+        is AlbumItem.Video -> isSecret
+        is AlbumItem.Animation -> isSecret
+    }
+
+/**
+ * One re-encoded variant of a video, addressable as a TDLib file. Telegram-Android
+ * displays these in the quality picker (`360p`, `480p`, `720p`, …) — when the user
+ * picks one, playback switches to its [fileId]. The [original] is the format the
+ * uploader sent; [alternatives] are server-generated re-encodes that ship alongside
+ * the message in [org.drinkless.tdlib.TdApi.MessageVideo.alternativeVideos].
+ */
+@Immutable
+data class VideoQuality(
+    val fileId: Int,
+    val width: Int,
+    val height: Int,
+    /** Display label like "720p", "1080p", "4K". */
+    val label: String,
+    val sizeBytes: Long,
+)
+
+@Immutable
+data class VideoQualities(
+    val original: VideoQuality,
+    /** Server-generated re-encodes, sorted by descending height (HD first). */
+    val alternatives: List<VideoQuality> = emptyList(),
+) {
+    /** Original first, then alternatives — matches the picker's natural order. */
+    val all: List<VideoQuality> get() = listOf(original) + alternatives
+
+    /** Whether the picker should be shown at all. */
+    val hasOptions: Boolean get() = alternatives.isNotEmpty()
+
+    /**
+     * Picked when the user opens the video without explicit quality choice. Server
+     * re-encodes (alternatives) are typically smaller than the original at comparable
+     * perceived quality — phone-shot 4K clips bloat the original. Telegram's own
+     * default is HLS ABR which we don't implement here; the closest stable static
+     * choice is the *highest* alternative (usually 720p, the sweet spot for size and
+     * legibility on a phone screen). Falls back to original when no alternatives ship.
+     */
+    val defaultPick: VideoQuality
+        get() = alternatives.maxByOrNull { it.height } ?: original
 }
 
 /**

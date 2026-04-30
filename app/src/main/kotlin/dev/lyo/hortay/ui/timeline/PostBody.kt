@@ -27,9 +27,13 @@ import dev.lyo.hortay.data.ExpiredKind
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.ServiceEvent
+import dev.lyo.hortay.data.hasSpoiler
+import dev.lyo.hortay.data.isSecret
 import androidx.compose.foundation.clickable
 import dev.lyo.hortay.data.WebPreview
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.media.SpoilerKind
+import dev.lyo.hortay.ui.media.SpoilerOverlay
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.TdVideoPlayer
 import dev.lyo.hortay.ui.text.RichText
@@ -237,11 +241,37 @@ private fun SingleMedia(item: AlbumItem, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(ratio)
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick),
+            .clip(RoundedCornerShape(20.dp)),
+    ) {
+        MediaWithSpoiler(item = item, onClick = onClick)
+    }
+}
+
+/**
+ * Renders a single album item — photo, video poster, or animation thumbnail — with
+ * an opt-in spoiler / sensitive-content cover. The spoiler shimmer intercepts taps
+ * and reveals the underlying media; once revealed, taps fall through to [onClick]
+ * (fullscreen open). Used by both [SingleMedia] and the inside of [AlbumPager].
+ */
+@Composable
+private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit) {
+    var revealed by remember(item.media.fileId) {
+        mutableStateOf(!item.hasSpoiler && !item.isSecret)
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(enabled = revealed, onClick = onClick),
     ) {
         TdMediaImage(media = item.media, contentDescription = null, modifier = Modifier.fillMaxSize())
         MediaOverlay(item)
+        if (!revealed) {
+            SpoilerOverlay(
+                kind = if (item.isSecret) SpoilerKind.Sensitive else SpoilerKind.Spoiler,
+                seed = item.media.fileId ?: 0,
+                onReveal = { revealed = true },
+            )
+        }
     }
 }
 
@@ -270,13 +300,8 @@ private fun AlbumPager(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
     ) {
         HorizontalPager(state = state, modifier = Modifier.fillMaxSize()) { page ->
             val item = items[page]
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable { onItemClick(page) },
-            ) {
-                TdMediaImage(media = item.media, contentDescription = null, modifier = Modifier.fillMaxSize())
-                MediaOverlay(item)
+            Box(modifier = Modifier.fillMaxSize()) {
+                MediaWithSpoiler(item = item, onClick = { onItemClick(page) })
             }
         }
         AlbumIndicator(
@@ -312,7 +337,14 @@ private fun AlbumIndicator(current: Int, total: Int, modifier: Modifier = Modifi
 
 @Composable
 private fun VideoBlock(content: PostContent.Video, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int, translation: FormattedText?) {
-    val item = AlbumItem.Video(content.media, content.durationSec, content.playbackFileId)
+    val item = AlbumItem.Video(
+        media = content.media,
+        durationSec = content.durationSec,
+        playbackFileId = content.playbackFileId,
+        qualities = content.qualities,
+        hasSpoiler = content.hasSpoiler,
+        isSecret = content.isSecret,
+    )
     val items = listOf(item)
     val caption = translation ?: content.caption
     MediaCaption(caption, maxLines, above = true, show = content.captionAbove)
@@ -325,26 +357,49 @@ private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<A
     // Inline auto-loop playback: Telegram animations are silent MP4s, so we drive them via
     // ExoPlayer (Coil cannot decode MP4). Tap escalates to full-screen.
     val ratio = mediaAspectRatio(content.media.width, content.media.height)
-    val items = listOf(AlbumItem.Animation(content.media, content.playbackFileId))
+    val items = listOf(
+        AlbumItem.Animation(
+            media = content.media,
+            playbackFileId = content.playbackFileId,
+            hasSpoiler = content.hasSpoiler,
+            isSecret = content.isSecret,
+        ),
+    )
     val caption = translation ?: content.caption
+
+    var revealed by remember(content.playbackFileId) {
+        mutableStateOf(!content.hasSpoiler && !content.isSecret)
+    }
+
     MediaCaption(caption, maxLines, above = true, show = content.captionAbove)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(ratio)
             .clip(RoundedCornerShape(20.dp))
-            .clickable { onMediaClick(items, 0) },
+            .clickable(enabled = revealed) { onMediaClick(items, 0) },
     ) {
         TdMediaImage(media = content.media, contentDescription = null, modifier = Modifier.fillMaxSize())
-        TdVideoPlayer(
-            fileId = content.playbackFileId,
-            autoPlay = true,
-            autoLoop = true,
-            showControls = false,
-            muted = true,
-            modifier = Modifier.fillMaxSize(),
-        )
-        DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
+        // Only mount the video player once the spoiler is revealed — otherwise we'd start
+        // an ExoPlayer + TDLib download for content the user explicitly hasn't asked to see
+        // yet, which is exactly the leak the spoiler/secret flags are meant to prevent.
+        if (revealed) {
+            TdVideoPlayer(
+                fileId = content.playbackFileId,
+                autoPlay = true,
+                autoLoop = true,
+                showControls = false,
+                muted = true,
+                modifier = Modifier.fillMaxSize(),
+            )
+            DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
+        } else {
+            SpoilerOverlay(
+                kind = if (content.isSecret) SpoilerKind.Sensitive else SpoilerKind.Spoiler,
+                seed = content.playbackFileId,
+                onReveal = { revealed = true },
+            )
+        }
     }
     MediaCaption(caption, maxLines, above = false, show = !content.captionAbove)
 }
