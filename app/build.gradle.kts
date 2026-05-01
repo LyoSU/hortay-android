@@ -21,8 +21,9 @@ val keystoreProps = Properties().apply {
     if (f.exists()) f.inputStream().use { load(it) }
 }
 
-// Git metadata for beta builds. Lazy so we only fork `git` if a beta variant is
-// actually being assembled, and we never crash a fresh checkout that lacks .git.
+// Git metadata for release + beta builds. Lazy so we only fork `git` when a
+// signing variant is actually being assembled, and we never crash a fresh
+// checkout that lacks .git.
 val gitShortSha: String by lazy {
     runCatching {
         providers.exec {
@@ -48,7 +49,12 @@ android {
         applicationId = "dev.lyo.hortay"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
+        // Sentinel only. The real versionCode for release + beta is wired in
+        // androidComponents.onVariants below, derived from `git rev-list --count`
+        // so we never trip Play Console's "this versionCode is already used"
+        // error from a forgotten manual bump. Debug installs keep this 1 — they
+        // never go through Play.
+        versionCode = 1
         versionName = "0.1.0"
 
         buildConfigField("int", "TELEGRAM_API_ID", telegramApiId)
@@ -158,11 +164,25 @@ android {
 androidComponents {
     onVariants { variant ->
         val isBeta = variant.buildType == "beta"
+        val isRelease = variant.buildType == "release"
         variant.outputs.forEach { output ->
-            if (isBeta) {
-                // Per-commit versionCode keeps Android happy with in-place updates
-                // (otherwise testers would need to uninstall to switch betas).
+            if (isBeta || isRelease) {
+                // Per-commit versionCode for both signed channels:
+                //   • Beta — keeps Android happy with in-place updates between
+                //     consecutive testing builds (otherwise testers would need to
+                //     uninstall to switch betas).
+                //   • Release — sidesteps Play Console's "versionCode already in
+                //     use" rejection. Each release commit produces a unique,
+                //     monotonically-increasing code without manual bumps in
+                //     defaultConfig. Trade-off: you must commit before
+                //     `bundleRelease`. A no-op rebuild on the same SHA would
+                //     otherwise produce a code Play already saw.
+                // Beta and release live at separate package suffixes
+                // (.beta vs no suffix), so they don't compete for the same
+                // Play track even though they share the same number.
                 output.versionCode.set(gitCommitCount)
+            }
+            if (isBeta) {
                 val base = output.versionName.orNull ?: "0.0.0"
                 output.versionName.set("$base-$gitShortSha")
             }

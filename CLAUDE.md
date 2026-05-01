@@ -106,7 +106,9 @@ README пояснює `local.properties` (telegram.apiId/apiHash) і TDLib build
 
 ## Versioning
 
-- `versionCode = 1`, `versionName = "0.1.0"` у `defaultConfig`. Бампати РУКАМИ перед production release.
-- Beta: `versionCode` = `git rev-list --count HEAD`, `versionName` = `<base>-beta-<sha>`. Push коміт → beta APK з вищим versionCode → in-place update.
+- `versionCode` для **release** і **beta** — auto з `git rev-list --count HEAD` (вшито у `androidComponents.onVariants` в `app/build.gradle.kts:158-185`). НЕ бампати руками. Single source of truth — git history.
+- Це означає: `bundleRelease` без нового коміту видасть той самий код, який Play вже бачив → 409. Завжди коміт → потім bundle.
+- `versionCode = 1` у `defaultConfig` — це сентинель для debug-білдів (ніколи не йдуть у Play). Не міняти.
+- `versionName` — ручний (`0.1.0`). Бампати при semver-достойних релізах. Beta автоматично додає `-beta-<sha>` суфікс.
 - TDLib pin: `scripts/tdlib-version.txt` (auto-generated). Окремий коміт `chore(tdlib): bump to <sha>` при upstream bump'і.
 - Кожна user-visible зміна → `## [Unreleased]` у `CHANGELOG.md` (Keep a Changelog: Added / Changed / Fixed / Performance / Architecture).
