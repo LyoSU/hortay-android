@@ -1,5 +1,7 @@
 package dev.lyo.hortay.data
 
+import androidx.annotation.StringRes
+import dev.lyo.hortay.R
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -25,37 +27,41 @@ enum class TdErrorKind {
 }
 
 /**
- * Translate any [Throwable] (TDLib-originated or otherwise) into a user-facing
- * Ukrainian message tied to a specific [operation] verb in the infinitive form
- * ("оновити стрічку", "перекласти повідомлення", "приєднатися до каналу"). Returning
- * a [Pair] keeps the [TdErrorKind] available for callers that want to suppress
- * presentation when the network is already known to be down.
+ * Translate any [Throwable] (TDLib-originated or otherwise) into a user-facing,
+ * locale-resolved message tied to a specific [operationRes] verb in the infinitive
+ * form (e.g. R.string.op_refresh_feed → "refresh the feed" / "оновити стрічку").
+ * Returning a [Pair] keeps the [TdErrorKind] available for callers that want to
+ * suppress presentation when the network is already known to be down.
  *
  * [CancellationException] is preserved by re-throwing — silently swallowing it would
  * break structured concurrency.
  */
-fun Throwable.toUserFacing(operation: String): Pair<TdErrorKind, String> {
+fun Throwable.toUserFacing(
+    res: StringResolver,
+    @StringRes operationRes: Int,
+): Pair<TdErrorKind, String> {
     if (this is CancellationException) throw this
     val code = (this as? TdClient.TdException)?.code ?: 0
     val raw = stripCode(this.message.orEmpty())
+    val operation = res.getString(operationRes)
 
     return when {
         code == TdClient.FLOOD_WAIT_CODE -> {
             val seconds = parseLeadingDigits(raw)
-            val human = seconds?.let { humaniseSeconds(it) }
-            val msg = if (human != null) "Telegram обмежив запити. Спробуйте за $human."
-                else "Telegram обмежив запити. Спробуйте трохи пізніше."
+            val human = seconds?.let { humaniseSeconds(res, it) }
+            val msg = if (human != null) res.getString(R.string.err_flood_with_time, human)
+            else res.getString(R.string.err_flood_generic)
             TdErrorKind.FloodWait to msg
         }
-        code == 401 -> TdErrorKind.AccessDenied to "Сесію скинуто. Авторизуйтесь знову."
-        code == 403 -> TdErrorKind.AccessDenied to "Не можна $operation: дію заборонено."
-        code == 404 -> TdErrorKind.NotFound to "Не знайдено: $operation."
-        code in 500..599 -> TdErrorKind.ServerError to "Сервер Telegram тимчасово недоступний. Спробуйте ще раз."
+        code == 401 -> TdErrorKind.AccessDenied to res.getString(R.string.err_unauthorized)
+        code == 403 -> TdErrorKind.AccessDenied to res.getString(R.string.err_forbidden, operation)
+        code == 404 -> TdErrorKind.NotFound to res.getString(R.string.err_not_found, operation)
+        code in 500..599 -> TdErrorKind.ServerError to res.getString(R.string.err_server)
         // 0 covers non-TdException throwables (timeouts, JNI quirks, IO exceptions). The
         // underlying cause is usually a network blip — call it that explicitly so the
         // message lines up with the connection banner's wording.
-        code == 0 -> TdErrorKind.Network to "Немає звʼязку. Перевірте Інтернет і спробуйте ще раз."
-        else -> TdErrorKind.Unknown to "Не вдалося $operation. ($code)"
+        code == 0 -> TdErrorKind.Network to res.getString(R.string.err_no_connection)
+        else -> TdErrorKind.Unknown to res.getString(R.string.err_failed_op, operation, code)
     }
 }
 
@@ -68,19 +74,19 @@ private fun stripCode(full: String): String {
 private fun parseLeadingDigits(text: String): Long? =
     Regex("(\\d+)").find(text)?.value?.toLongOrNull()
 
-private fun humaniseSeconds(total: Long): String = when {
-    total < 60 -> "${total}с"
-    total < 3600 -> "${total / 60} хв"
-    else -> "${total / 3600} год"
+private fun humaniseSeconds(res: StringResolver, total: Long): String = when {
+    total < 60 -> res.getString(R.string.duration_seconds_short, total.toInt())
+    total < 3600 -> res.getString(R.string.duration_minutes_short, (total / 60).toInt())
+    else -> res.getString(R.string.duration_hours_short, (total / 3600).toInt())
 }
 
 /**
  * Convenience: classify a throwable, then post to [bus] only when the user actually
  * benefits from a Snackbar. Currently we suppress:
  *   • [TdErrorKind.Cancelled] — coroutine cancellation is not an error.
- *   • [TdErrorKind.Network] when the connection banner already shows "Очікує мережі"
- *     — duplicate UI. The banner state is the source of truth; piling a Snackbar on
- *     top reads as panic.
+ *   • [TdErrorKind.Network] when the connection banner already shows "Waiting for
+ *     network" / "Очікує мережі" — duplicate UI. The banner state is the source of
+ *     truth; piling a Snackbar on top reads as panic.
  *
  * Use this from any user-initiated repository call site. Background ops
  * (interaction-info coalesce, viewMessages, prefetch) should NOT use this — they
@@ -88,10 +94,13 @@ private fun humaniseSeconds(total: Long): String = when {
  */
 fun Throwable.surfaceTo(
     bus: UserMessageBus,
-    operation: String,
+    res: StringResolver,
+    @StringRes operationRes: Int,
     connection: ConnectionStatus,
 ) {
-    val (kind, msg) = try { toUserFacing(operation) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+    val (kind, msg) = try {
+        toUserFacing(res, operationRes)
+    } catch (e: kotlinx.coroutines.CancellationException) { throw e }
     when {
         kind == TdErrorKind.Cancelled -> return
         kind == TdErrorKind.Network && connection == ConnectionStatus.WaitingForNetwork -> return

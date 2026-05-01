@@ -33,6 +33,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import dev.lyo.hortay.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -84,7 +86,7 @@ fun CountryPickerSheet(
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
             Text(
-                text = "Виберіть країну",
+                text = stringResource(R.string.country_picker_title),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -92,7 +94,7 @@ fun CountryPickerSheet(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Пошук", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                placeholder = { Text(stringResource(R.string.country_picker_search), color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 leadingIcon = {
                     Symbol(
                         name = "search",
@@ -119,7 +121,7 @@ fun CountryPickerSheet(
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     Text(
-                        text = "Нічого не знайдено",
+                        text = stringResource(R.string.country_picker_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

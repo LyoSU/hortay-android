@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import dev.lyo.hortay.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,18 +40,20 @@ data class Country(
  * return them — every official Telegram client pins them at the top of the picker as a
  * dedicated entry. We do the same; the pirate flag is a friendly nod to the user's own
  * phrasing ("піратські") and matches what Fragment-bought numbers actually feel like.
+ *
+ * Names are resolved through [Resources] so the picker label tracks the active locale.
  */
-val FragmentAnonymousNumbers: Country = Country(
+internal fun fragmentAnonymousNumbers(res: StringResolver): Country = Country(
     iso = "FT",
-    name = "Анонімні номери",
+    name = res.getString(R.string.country_anonymous_numbers),
     dialCode = "+888",
     flag = "🏴‍☠️",
     allDialCodes = listOf("888"),
 )
 
-val CustomCountryEntry: Country = Country(
+internal fun customCountryEntry(res: StringResolver): Country = Country(
     iso = "??",
-    name = "Інша країна",
+    name = res.getString(R.string.country_other),
     dialCode = "+",
     flag = "🌐",
     allDialCodes = emptyList(),
@@ -67,7 +70,7 @@ val CustomCountryEntry: Country = Country(
  * the splash → auth handoff we don't fire unnecessary RPCs while TDLib is still bringing
  * up its DC connection.
  */
-class CountryRepository(private val sender: TdSender) {
+class CountryRepository(private val sender: TdSender, private val res: StringResolver) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -135,7 +138,7 @@ class CountryRepository(private val sender: TdSender) {
         // Pinned entries surface above the alphabetic list — the bottom-sheet renders the
         // list verbatim and a header divider in CountryPickerSheet visually separates the
         // pinned block from the rest.
-        return listOf(FragmentAnonymousNumbers, CustomCountryEntry) + real
+        return listOf(fragmentAnonymousNumbers(res), customCountryEntry(res)) + real
     }
 
     private companion object {

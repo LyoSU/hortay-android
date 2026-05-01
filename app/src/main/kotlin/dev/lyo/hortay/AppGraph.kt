@@ -2,6 +2,7 @@ package dev.lyo.hortay
 
 import android.content.Context
 import dev.lyo.hortay.data.BookmarkStore
+import dev.lyo.hortay.data.toStringResolver
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
 import dev.lyo.hortay.data.CommentsRepository
@@ -30,6 +31,8 @@ import kotlinx.coroutines.SupervisorJob
  * coroutines launched here use [appScope], which is cancelled only on process death.
  */
 class AppGraph(context: Context) {
+
+    private val res = context.resources.toStringResolver()
 
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -64,12 +67,12 @@ class AppGraph(context: Context) {
     // mark slots Failed. lifecycleBridge.foreground does the same job for app-background:
     // suspend the watchdog entirely (zero CPU/battery) until the app comes back to focus.
     val mediaCache: MediaCache =
-        MediaCache(tdClient, appScope, tdClient.connection, lifecycleBridge.foreground)
+        MediaCache(tdClient, appScope, tdClient.connection, lifecycleBridge.foreground, res)
 
     // Shared between PostsRepository (channel feed) and CommentsRepository (discussion
     // threads) so an author resolved in one context is reused in the other — same user
     // appearing as a feed post AND as a thread reply hits the cache twice.
-    private val messageMapper: MessageMapper = MessageMapper(tdClient)
+    private val messageMapper: MessageMapper = MessageMapper(tdClient, res)
 
     val postsRepository: PostsRepository = PostsRepository(
         td = tdClient,
@@ -79,9 +82,10 @@ class AppGraph(context: Context) {
         connection = tdClient.connection,
         snapshotStore = timelineSnapshotStore,
         foreground = lifecycleBridge.foreground,
+        res = res,
     )
 
-    val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope)
+    val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope, res)
 
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 
@@ -90,12 +94,12 @@ class AppGraph(context: Context) {
     val chatFoldersRepository: ChatFoldersRepository = ChatFoldersRepository(tdClient, appScope)
 
     val translations: TranslationsStore =
-        TranslationsStore(tdClient, appScope, userMessages, tdClient.connection)
+        TranslationsStore(tdClient, appScope, userMessages, tdClient.connection, res)
 
     val channelActions: ChannelActionsRepository =
-        ChannelActionsRepository(tdClient, userMessages, tdClient.connection)
+        ChannelActionsRepository(tdClient, userMessages, tdClient.connection, res)
 
-    val countries: CountryRepository = CountryRepository(tdClient)
+    val countries: CountryRepository = CountryRepository(tdClient, res)
 
     // Custom-emoji resolver for inline emojis in formatted text and for custom-emoji
     // reaction buckets. Uses GetCustomEmojiStickers in batches of up to 200 ids; the

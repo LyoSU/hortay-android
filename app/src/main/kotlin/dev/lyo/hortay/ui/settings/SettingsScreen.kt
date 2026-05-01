@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import coil3.SingletonImageLoader
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -18,13 +19,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.BuildConfig
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.NetworkUsage
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StatsRepository
 import dev.lyo.hortay.data.StorageUsage
 import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,7 +55,7 @@ fun SettingsScreen(
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
-                title = { Text("Профіль", style = MaterialTheme.typography.displaySmall) },
+                title = { Text(stringResource(R.string.settings_profile_title), style = MaterialTheme.typography.displaySmall) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -79,7 +80,7 @@ fun SettingsScreen(
                 ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SectionLabel("Трафік")
+            SectionLabel(stringResource(R.string.settings_section_traffic))
             TrafficCard(
                 network = network,
                 onReset = {
@@ -91,7 +92,7 @@ fun SettingsScreen(
             )
 
             Spacer(Modifier.height(8.dp))
-            SectionLabel("Сховище")
+            SectionLabel(stringResource(R.string.settings_section_storage))
             StorageCard(
                 storage = storage,
                 clearing = clearing,
@@ -110,20 +111,20 @@ fun SettingsScreen(
             )
 
             Spacer(Modifier.height(8.dp))
-            SectionLabel("Акаунт")
+            SectionLabel(stringResource(R.string.settings_section_account))
             SettingsRow(
                 symbol = "logout",
-                title = "Вийти з акаунту",
-                subtitle = "Скине сесію Telegram. Кеш збережеться.",
+                title = stringResource(R.string.settings_logout_title),
+                subtitle = stringResource(R.string.settings_logout_subtitle),
                 tint = MaterialTheme.colorScheme.error,
                 onClick = { confirmLogout = true },
             )
 
             Spacer(Modifier.height(8.dp))
-            SectionLabel("Про застосунок")
+            SectionLabel(stringResource(R.string.settings_section_about))
             SettingsRow(
                 symbol = "info",
-                title = "Версія",
+                title = stringResource(R.string.settings_version),
                 subtitle = "${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
             )
         }
@@ -136,13 +137,13 @@ fun SettingsScreen(
                 TextButton(onClick = {
                     confirmLogout = false
                     onLogout()
-                }) { Text("Вийти", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.settings_logout_confirm), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmLogout = false }) { Text("Скасувати") }
+                TextButton(onClick = { confirmLogout = false }) { Text(stringResource(R.string.settings_logout_cancel)) }
             },
-            title = { Text("Вийти з Telegram?") },
-            text = { Text("Доведеться знову ввести номер і код підтвердження.") },
+            title = { Text(stringResource(R.string.settings_logout_dialog_title)) },
+            text = { Text(stringResource(R.string.settings_logout_dialog_text)) },
         )
     }
 }
@@ -159,23 +160,24 @@ private fun SectionLabel(text: String) {
 
 @Composable
 private fun TrafficCard(network: NetworkUsage?, onReset: () -> Unit) {
+    val res = LocalContext.current.resources
     StatsCard {
         StatHero(
             primary = TwoColumn(
                 left = StatHeroValue(
                     symbol = "arrow_downward",
-                    label = "Скачано",
-                    value = network?.rxBytes?.let(::formatBytes) ?: "—",
+                    label = stringResource(R.string.settings_traffic_downloaded),
+                    value = network?.rxBytes?.let { formatBytes(it, res) } ?: "—",
                 ),
                 right = StatHeroValue(
                     symbol = "arrow_upward",
-                    label = "Відправлено",
-                    value = network?.txBytes?.let(::formatBytes) ?: "—",
+                    label = stringResource(R.string.settings_traffic_uploaded),
+                    value = network?.txBytes?.let { formatBytes(it, res) } ?: "—",
                 ),
             ),
         )
         Text(
-            text = "Накопичено за весь час роботи. Не зменшується від очистки кешу — це окремий лічильник.",
+            text = stringResource(R.string.settings_traffic_helper),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
@@ -188,7 +190,7 @@ private fun TrafficCard(network: NetworkUsage?, onReset: () -> Unit) {
         ) {
             Symbol(name = "refresh", size = 20.dp)
             Spacer(Modifier.width(8.dp))
-            Text("Скинути лічильник", fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.settings_traffic_reset), fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -203,17 +205,18 @@ private fun StorageCard(
     val filesBytes = storage?.totalFilesBytes ?: 0L
     val dbBytes = storage?.databaseSizeBytes ?: 0L
     val fillFraction = if (totalBytes <= 0L) 0f else (filesBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+    val res = LocalContext.current.resources
 
     StatsCard {
         Row(verticalAlignment = Alignment.Top) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (storage == null) "—" else formatBytes(totalBytes),
+                    text = if (storage == null) "—" else formatBytes(totalBytes, res),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "займає Hortay на цьому пристрої",
+                    text = stringResource(R.string.settings_storage_used_by),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -254,15 +257,15 @@ private fun StorageCard(
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
                 Spacer(Modifier.width(10.dp))
-                Text("Очищення…", fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.settings_storage_clearing), fontWeight = FontWeight.SemiBold)
             } else {
                 Symbol(name = "delete_sweep", size = 20.dp, tint = MaterialTheme.colorScheme.onPrimary)
                 Spacer(Modifier.width(8.dp))
-                Text("Очистити кеш медіа", fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.settings_storage_clear), fontWeight = FontWeight.SemiBold)
             }
         }
         Text(
-            text = "Видалить кеш фото, відео й файлів (включно з зображеннями Coil). База повідомлень і сесія лишаються — їх скидає лише вихід з акаунту.",
+            text = stringResource(R.string.settings_storage_clear_helper),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp),
@@ -353,19 +356,20 @@ private fun StorageBar(filesFraction: Float) {
 
 @Composable
 private fun StorageLegend(filesBytes: Long, dbBytes: Long) {
+    val res = LocalContext.current.resources
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         LegendDot(
             color = MaterialTheme.colorScheme.primary,
-            label = "Медіа",
-            value = formatBytes(filesBytes),
+            label = stringResource(R.string.settings_storage_media),
+            value = formatBytes(filesBytes, res),
         )
         LegendDot(
             color = MaterialTheme.colorScheme.tertiary,
-            label = "База даних",
-            value = formatBytes(dbBytes),
+            label = stringResource(R.string.settings_storage_db),
+            value = formatBytes(dbBytes, res),
         )
     }
 }
@@ -395,14 +399,14 @@ private fun LegendDot(color: androidx.compose.ui.graphics.Color, label: String, 
     }
 }
 
-private fun formatBytes(b: Long): String {
-    if (b < 1024) return "$b Б"
+private fun formatBytes(b: Long, res: android.content.res.Resources): String {
+    if (b < 1024) return res.getString(R.string.size_bytes, b.toInt())
     val kb = b / 1024.0
-    if (kb < 1024) return String.format(Locale.getDefault(), "%.1f КБ", kb)
+    if (kb < 1024) return res.getString(R.string.size_kb, kb.toFloat())
     val mb = kb / 1024.0
-    if (mb < 1024) return String.format(Locale.getDefault(), "%.1f МБ", mb)
+    if (mb < 1024) return res.getString(R.string.size_mb, mb.toFloat())
     val gb = mb / 1024.0
-    return String.format(Locale.getDefault(), "%.2f ГБ", gb)
+    return res.getString(R.string.size_gb, gb.toFloat())
 }
 
 @Composable

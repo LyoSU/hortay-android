@@ -14,9 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.ui.media.TdAvatar
@@ -42,7 +44,7 @@ fun ChannelsScreen(
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
-                title = { Text("Канали", style = MaterialTheme.typography.displaySmall) },
+                title = { Text(stringResource(R.string.channels_title), style = MaterialTheme.typography.displaySmall) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -153,12 +155,12 @@ private fun EmptyChannels(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "Не знайдено каналів",
+            stringResource(R.string.channels_empty_title),
             style = MaterialTheme.typography.headlineSmall,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Підпишіться на канали в Telegram — і вони з'являться тут.",
+            stringResource(R.string.channels_empty_helper),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import dev.lyo.hortay.R
 import org.drinkless.tdlib.TdApi
 
 /**
@@ -11,7 +12,7 @@ import org.drinkless.tdlib.TdApi
  */
 internal object MessageContentMapper {
 
-    fun map(content: TdApi.MessageContent): PostContent = when (content) {
+    fun map(content: TdApi.MessageContent, res: StringResolver): PostContent = when (content) {
         is TdApi.MessageText -> PostContent.Text(
             formatted = mapFormattedText(content.text),
             webPreview = content.linkPreview?.let(::mapWebPreview),
@@ -202,11 +203,11 @@ internal object MessageContentMapper {
 
         is TdApi.MessageInvoice -> PostContent.Unsupported("Invoice: ${content.productInfo?.title.orEmpty()}")
         is TdApi.MessageGiveaway -> PostContent.Unsupported("🎁 Giveaway")
-        is TdApi.MessageGiveawayCompleted -> PostContent.Unsupported("🎁 Giveaway завершено")
-        is TdApi.MessageGiveawayWinners -> PostContent.Unsupported("🎁 Giveaway · переможці")
+        is TdApi.MessageGiveawayCompleted -> PostContent.Unsupported(res.getString(R.string.content_giveaway_completed))
+        is TdApi.MessageGiveawayWinners -> PostContent.Unsupported(res.getString(R.string.content_giveaway_winners))
         is TdApi.MessageGame -> PostContent.Unsupported("🎮 Game: ${content.game?.title.orEmpty()}")
         is TdApi.MessageStory -> PostContent.Unsupported("📰 Story")
-        is TdApi.MessagePaidMedia -> mapPaidMedia(content)
+        is TdApi.MessagePaidMedia -> mapPaidMedia(content, res)
         else -> PostContent.Unsupported(content::class.java.simpleName)
     }
 
@@ -217,7 +218,7 @@ internal object MessageContentMapper {
      * intent is captured by the price, but we don't render a star bar yet (would need an
      * unlock interaction we don't support); the post still reads as media.
      */
-    private fun mapPaidMedia(content: TdApi.MessagePaidMedia): PostContent {
+    private fun mapPaidMedia(content: TdApi.MessagePaidMedia, res: StringResolver): PostContent {
         val items = content.media.orEmpty().mapNotNull { piece ->
             when (piece) {
                 is TdApi.PaidMediaPhoto -> AlbumItem.Photo(piece.photo.toMedia())
@@ -238,7 +239,7 @@ internal object MessageContentMapper {
                 else -> null
             }
         }
-        return if (items.isEmpty()) PostContent.Unsupported("⭐ Платний контент")
+        return if (items.isEmpty()) PostContent.Unsupported(res.getString(R.string.content_paid))
         else PostContent.PhotoAlbum(
             items = items,
             caption = mapFormattedText(content.caption),

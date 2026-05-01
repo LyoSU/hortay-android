@@ -74,6 +74,7 @@ class MediaCache(
     private val scope: CoroutineScope,
     private val connection: StateFlow<ConnectionStatus>,
     private val foreground: StateFlow<Boolean>,
+    private val res: StringResolver,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
@@ -378,7 +379,7 @@ class MediaCache(
             if (live.bytes != track.bytes || live.changedAt != track.changedAt) continue
             if (track.retries >= MAX_STALL_RETRIES) {
                 Log.w(TAG, "stall watchdog: giving up on $fileId after ${track.retries} retries (priority=$priority, bytes=${track.bytes}, age=${ageMs}ms)")
-                slot.value = MediaState.Failed("завантаження зависло")
+                slot.value = MediaState.Failed(res.getString(dev.lyo.hortay.R.string.media_load_stalled))
                 tracks.remove(fileId)
                 activePriority.remove(fileId)
                 continue

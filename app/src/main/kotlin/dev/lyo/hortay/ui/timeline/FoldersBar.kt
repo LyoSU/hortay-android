@@ -14,7 +14,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.R
 
 /**
  * Top-level scope a feed item belongs to. Mirrors how Telegram itself splits chats: the
@@ -48,7 +50,7 @@ fun FoldersBar(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         FolderChip(
-            label = "Усі",
+            label = stringResource(R.string.folder_all),
             selected = selected is FilterScope.All,
             onClick = { onSelected(FilterScope.All) },
         )
@@ -62,7 +64,7 @@ fun FoldersBar(
         }
         if (showArchive) {
             FolderChip(
-                label = "Архів",
+                label = stringResource(R.string.folder_archive),
                 selected = selected is FilterScope.Archive,
                 onClick = { onSelected(FilterScope.Archive) },
             )

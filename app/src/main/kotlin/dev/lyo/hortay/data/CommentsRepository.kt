@@ -43,7 +43,11 @@ class CommentsRepository(
     private val td: TdSender,
     private val mapper: MessageMapper,
     private val scope: CoroutineScope,
+    private val res: StringResolver,
 ) {
+
+    private val unavailableMsg: String get() = res.getString(dev.lyo.hortay.R.string.comments_unavailable)
+
 
     sealed interface ThreadState {
         data object Loading : ThreadState
@@ -118,7 +122,7 @@ class CommentsRepository(
         limit: Int = DEFAULT_LIMIT,
     ): Flow<ThreadState> {
         val anchorKey = candidateMessageIds.minOrNull()
-            ?: return flowOf(ThreadState.Error("Обговорення недоступне."))
+            ?: return flowOf(ThreadState.Error(unavailableMsg))
         val key = chatId to anchorKey
         return synchronized(streams) {
             streams.getOrPut(key) {
@@ -134,7 +138,7 @@ class CommentsRepository(
         limit: Int,
     ): Flow<ThreadState> = flow {
         val anchor = ensureAnchor(chatId, candidateMessageIds) ?: run {
-            emit(ThreadState.Error("Обговорення недоступне."))
+            emit(ThreadState.Error(unavailableMsg))
             return@flow
         }
 

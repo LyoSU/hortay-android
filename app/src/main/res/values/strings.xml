@@ -1,20 +1,260 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Hortay</string>
-    <string name="auth_phone_label">Номер телефону</string>
-    <string name="auth_phone_helper">Введіть номер з кодом країни — Telegram надішле код підтвердження.</string>
-    <string name="auth_password_label">Cloud-пароль (2FA)</string>
-    <string name="auth_password_hint">Підказка: %1$s</string>
-    <string name="auth_password_helper">Цей пароль ви задавали в офіційному Telegram у розділі Двофакторна автентифікація.</string>
-    <string name="auth_send_code">Надіслати код</string>
-    <string name="auth_continue">Продовжити</string>
-    <string name="auth_change_number">Змінити номер</string>
-    <string name="auth_back">Назад</string>
-    <string name="auth_password_show">Показати пароль</string>
-    <string name="auth_password_hide">Сховати пароль</string>
-    <string name="auth_retry">Почати спочатку</string>
-    <string name="auth_open_telegram_hint">Відкрийте офіційний Telegram, виконайте дію та поверніться сюди.</string>
-    <string name="timeline_title">Стрічка</string>
-    <string name="timeline_empty">Поки тут порожньо. Підпишіться на канали в Telegram — і вони з\'являться у стрічці.</string>
-    <string name="error_generic">Щось пішло не так</string>
+
+    <!-- Auth screen -->
+    <string name="auth_phone_label">Phone number</string>
+    <string name="auth_phone_helper">Enter the number with country code — Telegram will send a confirmation code.</string>
+    <string name="auth_password_label">Cloud password (2FA)</string>
+    <string name="auth_password_hint">Hint: %1$s</string>
+    <string name="auth_password_helper">This is the password you set in the official Telegram under Two-Factor Authentication.</string>
+    <string name="auth_send_code">Send code</string>
+    <string name="auth_continue">Continue</string>
+    <string name="auth_change_number">Change number</string>
+    <string name="auth_back">Back</string>
+    <string name="auth_password_show">Show password</string>
+    <string name="auth_password_hide">Hide password</string>
+    <string name="auth_retry">Start over</string>
+    <string name="auth_open_telegram_hint">Open the official Telegram, complete the action, then return here.</string>
+    <string name="auth_title_wait_code">Enter the code</string>
+    <string name="auth_title_wait_password">Cloud password</string>
+    <string name="auth_title_error">Action required</string>
+    <string name="auth_subtitle_wait_code">We sent a code via %1$s.</string>
+    <string name="auth_subtitle_password_no_hint">Your account is protected with two-factor authentication.</string>
+    <string name="auth_subtitle_password_with_hint">Your account is protected with two-factor authentication. Enter your Cloud password.</string>
+    <string name="auth_subtitle_default">A Twitter-style feed of Telegram channels.</string>
+    <string name="auth_country_label">Country</string>
+    <string name="auth_country_loading">Loading…</string>
+    <string name="auth_phone_placeholder">Phone number</string>
+    <string name="auth_code_placeholder">Word or phrase from SMS</string>
+    <string name="auth_resend_sending">Sending…</string>
+    <string name="auth_resend_countdown">Try again in %1$d:%2$02d</string>
+    <string name="auth_resend_via">Send %1$s</string>
+    <string name="auth_resend_again">Resend</string>
+
+    <!-- Country picker -->
+    <string name="country_picker_title">Choose country</string>
+    <string name="country_picker_search">Search</string>
+    <string name="country_picker_empty">Nothing found</string>
+    <string name="country_anonymous_numbers">Anonymous numbers</string>
+    <string name="country_other">Other country</string>
+
+    <!-- Auth code channels -->
+    <string name="auth_channel_telegram_message">a message in Telegram on another device</string>
+    <string name="auth_channel_sms_with_phone">SMS to %1$s</string>
+    <string name="auth_channel_sms">SMS</string>
+    <string name="auth_channel_sms_word">a word in SMS</string>
+    <string name="auth_channel_sms_phrase">a phrase in SMS</string>
+    <string name="auth_channel_call_with_phone">a call to %1$s</string>
+    <string name="auth_channel_call">a phone call</string>
+    <string name="auth_channel_missed_call">a missed call (enter the last digits of the number)</string>
+    <string name="auth_channel_flash_call">a missed call</string>
+    <string name="auth_channel_fragment">via Fragment</string>
+    <string name="auth_channel_firebase">via device verification</string>
+    <string name="auth_channel_other">another method</string>
+
+    <!-- Auth errors -->
+    <string name="auth_err_too_many_with_time">Too many attempts. Try again in %1$s.</string>
+    <string name="auth_err_too_many_generic">Too many attempts. Try again later.</string>
+    <string name="auth_err_phone_invalid">Invalid number. Check the country code and digits.</string>
+    <string name="auth_err_phone_banned">This number is banned in Telegram. Contact Telegram support.</string>
+    <string name="auth_err_phone_flood">Telegram has temporarily limited authorization from this number. Try again later.</string>
+    <string name="auth_err_phone_occupied">This number is already taken. Sign in with it instead of registering again.</string>
+    <string name="auth_err_code_invalid">Invalid code. Check and try again.</string>
+    <string name="auth_err_code_expired">Code has expired. Request a new one.</string>
+    <string name="auth_err_password_invalid">Invalid password. Try again.</string>
+    <string name="auth_err_password_too_fresh">Password was just changed — Telegram will ask you to wait before using it.</string>
+    <string name="auth_err_password_recovery_na">Password recovery is unavailable. Reset 2FA in the official Telegram.</string>
+    <string name="auth_err_session_password_needed">2FA Cloud password required.</string>
+    <string name="auth_err_app_misconfigured">App configuration error. Contact the developer.</string>
+    <string name="auth_err_token_invalid">Invalid credentials. Restart authorization.</string>
+    <string name="auth_err_generic">Something went wrong. Try again.</string>
+    <string name="auth_err_step_failed">Could not complete step (%1$s). Try again.</string>
+    <string name="auth_err_email_required">Confirm your email in the official Telegram, then return here.</string>
+    <string name="auth_err_phone_unregistered">This number is not yet registered with Telegram. Create an account in the official app.</string>
+    <string name="auth_err_other_device">Confirm sign-in via Telegram on another device.</string>
+    <string name="auth_err_premium_required">This sign-in requires Telegram Premium. Complete the subscription in the official Telegram app, then return here.</string>
+    <string name="auth_err_init_failure">Telegram client configuration failure. Close and reopen the app.</string>
+
+    <!-- Duration humanisation -->
+    <string name="duration_seconds_short">%1$ds</string>
+    <plurals name="duration_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="duration_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <string name="duration_minutes_short">%1$d min</string>
+    <string name="duration_hours_short">%1$d h</string>
+
+    <!-- Connection banner -->
+    <string name="connection_waiting">Waiting for network</string>
+    <string name="connection_connecting">Connecting…</string>
+    <string name="connection_updating">Updating…</string>
+
+    <!-- Navigation -->
+    <string name="nav_feed">Feed</string>
+    <string name="nav_channels">Channels</string>
+    <string name="nav_saved">Saved</string>
+    <string name="nav_profile">Profile</string>
+
+    <!-- Timeline -->
+    <string name="timeline_title">Feed</string>
+    <string name="timeline_empty">It\'s quiet here. Subscribe to channels in Telegram and they\'ll appear in the feed.</string>
+    <string name="timeline_empty_default_helper">Subscribe to channels in Telegram and they\'ll appear in your feed.</string>
+    <string name="timeline_empty_saved_title">No saved posts yet</string>
+    <string name="timeline_empty_saved_helper">Tap the bookmark next to a post to save it for later.</string>
+    <string name="timeline_empty_default_title">It\'s quiet here</string>
+    <string name="timeline_search_in_channel">Search in channel</string>
+    <string name="timeline_search_empty">Nothing found</string>
+    <string name="timeline_subscribers">%1$s subscribers</string>
+    <string name="timeline_saved_tab">Saved</string>
+
+    <!-- Time formatting -->
+    <string name="time_just_now">just now</string>
+    <string name="time_minutes_short">%1$dm</string>
+    <string name="time_hours_short">%1$dh</string>
+    <string name="time_days_short">%1$dd</string>
+
+    <!-- New posts pill -->
+    <string name="new_posts_overflow">99+ new posts</string>
+    <plurals name="new_posts">
+        <item quantity="one">%d new post</item>
+        <item quantity="other">%d new posts</item>
+    </plurals>
+
+    <!-- Post card -->
+    <string name="post_translated_chip">Translated · Show original</string>
+    <string name="post_forwarded_from">Forwarded from %1$s</string>
+    <string name="post_show_original">Show original</string>
+    <string name="post_translate">Translate</string>
+    <string name="post_save">Save post</string>
+    <string name="post_unsave">Remove from saved</string>
+    <string name="post_copy_text">Copy text</string>
+    <string name="post_share">Share</string>
+    <string name="post_open_telegram">Open in Telegram</string>
+    <string name="post_copied_toast">Copied</string>
+    <string name="post_show_more">Show more</string>
+
+    <!-- Service / expired media -->
+    <string name="expired_photo">Self-destructing photo expired</string>
+    <string name="expired_video">Self-destructing video expired</string>
+    <string name="expired_video_note">Video message expired</string>
+    <string name="expired_voice">Voice message expired</string>
+    <string name="service_pinned_message">Pinned a message</string>
+    <plurals name="service_boost">
+        <item quantity="one">Channel received %d boost</item>
+        <item quantity="other">Channel received %d boosts</item>
+    </plurals>
+    <string name="service_giveaway_started">Giveaway started</string>
+    <string name="service_screenshot">Screenshot</string>
+    <string name="service_video_chat_started">Group call started</string>
+    <string name="service_video_chat_ended">Group call ended</string>
+    <string name="service_video_call">Video call</string>
+    <string name="service_voice_call">Voice call</string>
+    <string name="service_other">System message</string>
+
+    <!-- Post body content -->
+    <string name="document_unnamed">Document</string>
+    <string name="voice_message">Voice message</string>
+    <string name="poll_anonymous">Anonymous poll</string>
+    <string name="poll_title">Poll</string>
+    <string name="poll_total_votes">%1$d votes</string>
+    <string name="content_giveaway_completed">🎁 Giveaway completed</string>
+    <string name="content_giveaway_winners">🎁 Giveaway · winners</string>
+    <string name="content_paid">⭐ Paid content</string>
+
+    <!-- Comments -->
+    <string name="comments_title">Discussion</string>
+    <string name="comments_loading">Loading…</string>
+    <string name="comments_no_comments">No comments yet.</string>
+    <string name="comments_replies">%1$d replies</string>
+    <string name="comments_no_thread">No discussion</string>
+    <string name="comments_unavailable">Discussion unavailable.</string>
+
+    <!-- Channels -->
+    <string name="channels_title">Channels</string>
+    <string name="channels_loading">Loading…</string>
+    <string name="channels_subscribers">%1$s subscribers</string>
+    <string name="channels_unmute">Unmute notifications</string>
+    <string name="channels_mute">Mute notifications</string>
+    <string name="channels_leave">Leave channel</string>
+    <string name="channels_join">Join</string>
+    <string name="channels_empty_title">No channels found</string>
+    <string name="channels_empty_helper">Subscribe to channels in Telegram and they\'ll appear here.</string>
+
+    <!-- Folders -->
+    <string name="folder_all">All</string>
+    <string name="folder_archive">Archive</string>
+
+    <!-- Settings -->
+    <string name="settings_profile_title">Profile</string>
+    <string name="settings_section_traffic">Traffic</string>
+    <string name="settings_section_storage">Storage</string>
+    <string name="settings_section_account">Account</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_logout_title">Sign out</string>
+    <string name="settings_logout_subtitle">Resets your Telegram session. Cache is preserved.</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_logout_dialog_title">Sign out of Telegram?</string>
+    <string name="settings_logout_dialog_text">You\'ll have to enter your number and confirmation code again.</string>
+    <string name="settings_logout_confirm">Sign out</string>
+    <string name="settings_logout_cancel">Cancel</string>
+    <string name="settings_traffic_downloaded">Downloaded</string>
+    <string name="settings_traffic_uploaded">Uploaded</string>
+    <string name="settings_traffic_helper">Accumulated since first launch. Doesn\'t decrease when cache is cleared — separate counter.</string>
+    <string name="settings_traffic_reset">Reset counter</string>
+    <string name="settings_storage_used_by">used by Hortay on this device</string>
+    <string name="settings_storage_clearing">Clearing…</string>
+    <string name="settings_storage_clear">Clear media cache</string>
+    <string name="settings_storage_clear_helper">Removes photo, video and file cache (including Coil images). Message database and session remain — only signing out clears those.</string>
+    <string name="settings_storage_media">Media</string>
+    <string name="settings_storage_db">Database</string>
+
+    <!-- Sizes -->
+    <string name="size_bytes">%1$d B</string>
+    <string name="size_kb">%1$.1f KB</string>
+    <string name="size_mb">%1$.1f MB</string>
+    <string name="size_gb">%1$.2f GB</string>
+    <string-array name="size_units">
+        <item>B</item>
+        <item>KB</item>
+        <item>MB</item>
+        <item>GB</item>
+    </string-array>
+
+    <!-- Media -->
+    <string name="media_video_quality">Video quality</string>
+    <string name="media_retry">retry</string>
+    <string name="media_load_stalled">download stalled</string>
+    <string name="spoiler_tap_to_view">Tap to view</string>
+    <string name="spoiler_sensitive_tap">Tap — confidential</string>
+
+    <!-- User defaults -->
+    <string name="user_default_name">User</string>
+    <string name="channel_default_name">Channel</string>
+
+    <!-- Generic / TD errors -->
+    <string name="error_generic">Something went wrong</string>
+    <string name="err_flood_with_time">Telegram is rate-limiting requests. Try again in %1$s.</string>
+    <string name="err_flood_generic">Telegram is rate-limiting requests. Try again later.</string>
+    <string name="err_unauthorized">Session reset. Sign in again.</string>
+    <string name="err_forbidden">Cannot %1$s: action forbidden.</string>
+    <string name="err_not_found">Not found: %1$s.</string>
+    <string name="err_server">Telegram server is temporarily unavailable. Try again.</string>
+    <string name="err_no_connection">No connection. Check the Internet and try again.</string>
+    <string name="err_failed_op">Failed to %1$s. (%2$d)</string>
+
+    <!-- Operation labels (verb in infinitive form, used inside error templates) -->
+    <string name="op_refresh_feed">refresh the feed</string>
+    <string name="op_load_channel">load the channel</string>
+    <string name="op_load_older">load older posts</string>
+    <string name="op_change_reaction">change reaction</string>
+    <string name="op_mute">mute notifications</string>
+    <string name="op_unmute">unmute notifications</string>
+    <string name="op_join_channel">join the channel</string>
+    <string name="op_leave_channel">leave the channel</string>
+    <string name="op_translate">translate the message</string>
 </resources>

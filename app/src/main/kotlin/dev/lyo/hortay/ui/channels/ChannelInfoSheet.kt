@@ -30,7 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import dev.lyo.hortay.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.data.ChannelActionsRepository
@@ -72,7 +74,7 @@ fun ChannelInfoSheet(
         Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
             if (current == null) {
                 Text(
-                    "Завантаження…",
+                    stringResource(R.string.channels_loading),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 24.dp),
@@ -96,7 +98,7 @@ fun ChannelInfoSheet(
             Spacer(Modifier.height(8.dp))
             current.subscribers?.let {
                 Text(
-                    text = "${formatThousands(it)} підписників",
+                    text = stringResource(R.string.channels_subscribers, formatThousands(it)),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -119,7 +121,7 @@ fun ChannelInfoSheet(
             Spacer(Modifier.height(20.dp))
             ActionRow(
                 symbol = if (current.isMuted) "notifications_active" else "notifications_off",
-                label = if (current.isMuted) "Увімкнути сповіщення" else "Вимкнути сповіщення",
+                label = stringResource(if (current.isMuted) R.string.channels_unmute else R.string.channels_mute),
                 onClick = {
                     val target = !current.isMuted
                     info = current.copy(isMuted = target)
@@ -129,7 +131,7 @@ fun ChannelInfoSheet(
             if (current.isMember) {
                 ActionRow(
                     symbol = "logout",
-                    label = "Покинути канал",
+                    label = stringResource(R.string.channels_leave),
                     tint = MaterialTheme.colorScheme.error,
                     onClick = {
                         info = current.copy(isMember = false)
@@ -139,7 +141,7 @@ fun ChannelInfoSheet(
             } else {
                 ActionRow(
                     symbol = "add",
-                    label = "Підписатися",
+                    label = stringResource(R.string.channels_join),
                     tint = MaterialTheme.colorScheme.primary,
                     onClick = {
                         info = current.copy(isMember = true)

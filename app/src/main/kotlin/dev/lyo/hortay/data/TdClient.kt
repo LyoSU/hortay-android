@@ -3,6 +3,7 @@ package dev.lyo.hortay.data
 import android.content.Context
 import android.util.Log
 import dev.lyo.hortay.BuildConfig
+import dev.lyo.hortay.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,9 @@ class TdClient private constructor(
     private val apiHash: String,
     private val settings: SettingsStore,
 ) : TdSender {
+
+    private val strings: StringResolver = context.resources.toStringResolver()
+
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -168,7 +172,11 @@ class TdClient private constructor(
                     useSecretChats = false
                     apiId = this@TdClient.apiId
                     apiHash = this@TdClient.apiHash
-                    systemLanguageCode = "uk"
+                    // Follow the app's resolved locale so server-localized payloads
+                    // (country names, MTProto error messages where applicable) match
+                    // what the rest of the UI shows. Falls back to "en" because the
+                    // default fallback resource bundle is English.
+                    systemLanguageCode = java.util.Locale.getDefault().language.ifBlank { "en" }
                     deviceModel = android.os.Build.MODEL
                     systemVersion = "Android ${android.os.Build.VERSION.RELEASE}"
                     applicationVersion = BuildConfig.VERSION_NAME
@@ -183,8 +191,7 @@ class TdClient private constructor(
                         if (err is CancellationException) throw err
                         Log.e(TAG, "SetTdlibParameters failed", err)
                         _authStage.value = AuthStage.Error(
-                            "Збій конфігурації клієнта Telegram. " +
-                                "Закрийте та відкрийте застосунок ще раз.",
+                            strings.getString(R.string.auth_err_init_failure),
                         )
                     }
             }
@@ -197,8 +204,8 @@ class TdClient private constructor(
                 _authStage.value = AuthStage.WaitCode(
                     phoneNumber = phone,
                     codeLength = info.type.numericLength() ?: DEFAULT_CODE_LENGTH,
-                    channelLabel = info.type.toLabel(phone),
-                    nextChannelLabel = info.nextType?.toLabel(phone),
+                    channelLabel = info.type.toLabel(strings, phone),
+                    nextChannelLabel = info.nextType?.toLabel(strings, phone),
                     resendAvailableInSec = info.timeout,
                     isNumeric = info.type.isNumeric(),
                 )
@@ -231,20 +238,18 @@ class TdClient private constructor(
             // commonly requires email-2FA on first sign-in, so WaitEmail* hits real users.
             is TdApi.AuthorizationStateWaitEmailAddress,
             is TdApi.AuthorizationStateWaitEmailCode -> _authStage.value =
-                AuthStage.Error("Підтвердьте email у офіційному Telegram, потім поверніться сюди.")
+                AuthStage.Error(strings.getString(R.string.auth_err_email_required))
             is TdApi.AuthorizationStateWaitRegistration -> _authStage.value =
-                AuthStage.Error("Цей номер ще не зареєстрований у Telegram. Створіть акаунт у офіційному застосунку.")
+                AuthStage.Error(strings.getString(R.string.auth_err_phone_unregistered))
             is TdApi.AuthorizationStateWaitOtherDeviceConfirmation -> _authStage.value =
-                AuthStage.Error("Підтвердіть вхід у Telegram на іншому пристрої.")
+                AuthStage.Error(strings.getString(R.string.auth_err_other_device))
             // TDLib emits this when sign-in requires a Telegram Premium purchase to
             // continue (a server-side rule for some fresh accounts / regions). The
             // purchase has to go through the official client's in-app billing — we
             // can't complete it ourselves. Surface that explicitly so the user isn't
             // left on a blank Loading.
             is TdApi.AuthorizationStateWaitPremiumPurchase -> _authStage.value =
-                AuthStage.Error(
-                    "Цей вхід потребує Telegram Premium. Завершіть оформлення в офіційному застосунку Telegram, потім поверніться сюди.",
-                )
+                AuthStage.Error(strings.getString(R.string.auth_err_premium_required))
             else -> Unit
         }
     }
@@ -315,7 +320,7 @@ class TdClient private constructor(
     private fun Result<*>.reportAuthFailure() {
         onFailure { err ->
             if (err is kotlinx.coroutines.CancellationException) return@onFailure
-            _authError.value = friendlyAuthErrorMessage(err)
+            _authError.value = friendlyAuthErrorMessage(strings, err)
         }
     }
 
@@ -483,16 +488,20 @@ private fun TdApi.AuthenticationCodeType.isNumeric(): Boolean = numericLength() 
  * Call, MissedCall, Fragment, FirebaseAndroid; the SMS branches are kept in the mapping
  * for completeness in case Telegram lifts the restriction.
  */
-private fun TdApi.AuthenticationCodeType.toLabel(phone: String): String = when (this) {
-    is TdApi.AuthenticationCodeTypeTelegramMessage -> "повідомленням у Telegram на іншому пристрої"
-    is TdApi.AuthenticationCodeTypeSms -> if (phone.isNotEmpty()) "SMS на $phone" else "SMS"
-    is TdApi.AuthenticationCodeTypeSmsWord -> "слово в SMS"
-    is TdApi.AuthenticationCodeTypeSmsPhrase -> "фраза в SMS"
-    is TdApi.AuthenticationCodeTypeCall -> if (phone.isNotEmpty()) "дзвінком на $phone" else "телефонним дзвінком"
-    is TdApi.AuthenticationCodeTypeMissedCall -> "пропущеним дзвінком (введіть останні цифри номера)"
-    is TdApi.AuthenticationCodeTypeFlashCall -> "пропущеним дзвінком"
-    is TdApi.AuthenticationCodeTypeFragment -> "через Fragment"
+private fun TdApi.AuthenticationCodeType.toLabel(res: StringResolver, phone: String): String = when (this) {
+    is TdApi.AuthenticationCodeTypeTelegramMessage -> res.getString(R.string.auth_channel_telegram_message)
+    is TdApi.AuthenticationCodeTypeSms ->
+        if (phone.isNotEmpty()) res.getString(R.string.auth_channel_sms_with_phone, phone)
+        else res.getString(R.string.auth_channel_sms)
+    is TdApi.AuthenticationCodeTypeSmsWord -> res.getString(R.string.auth_channel_sms_word)
+    is TdApi.AuthenticationCodeTypeSmsPhrase -> res.getString(R.string.auth_channel_sms_phrase)
+    is TdApi.AuthenticationCodeTypeCall ->
+        if (phone.isNotEmpty()) res.getString(R.string.auth_channel_call_with_phone, phone)
+        else res.getString(R.string.auth_channel_call)
+    is TdApi.AuthenticationCodeTypeMissedCall -> res.getString(R.string.auth_channel_missed_call)
+    is TdApi.AuthenticationCodeTypeFlashCall -> res.getString(R.string.auth_channel_flash_call)
+    is TdApi.AuthenticationCodeTypeFragment -> res.getString(R.string.auth_channel_fragment)
     is TdApi.AuthenticationCodeTypeFirebaseAndroid,
-    is TdApi.AuthenticationCodeTypeFirebaseIos -> "через перевірку пристрою"
-    else -> "іншим способом"
+    is TdApi.AuthenticationCodeTypeFirebaseIos -> res.getString(R.string.auth_channel_firebase)
+    else -> res.getString(R.string.auth_channel_other)
 }

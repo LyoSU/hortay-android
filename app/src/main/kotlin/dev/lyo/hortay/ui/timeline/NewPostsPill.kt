@@ -10,9 +10,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
 
@@ -46,8 +49,9 @@ fun NewPostsPill(
             }
             Symbol(name = "arrow_upward", size = 18.dp)
             Spacer(Modifier.width(6.dp))
+            val ctx = LocalContext.current
             Text(
-                text = newPostsLabel(pendingCount),
+                text = newPostsLabel(ctx.resources, pendingCount),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -82,21 +86,14 @@ private fun AvatarStack(channels: List<ChannelBadge>) {
 }
 
 /**
- * Ukrainian plural form for "new post(s)". Handles the 11–14 exception where the rule
- * differs from the last-digit-only shortcut: "11 нових", not "11 новий". Counts above 99
- * are clamped to "99+" so a transient state-flicker can't surface alarming numbers.
+ * Plural form for "new post(s)". Defers to Android's CLDR-driven [android.content.res.Resources.getQuantityString]
+ * — Ukrainian gets one/few/many forms, English gets one/other, both via the same plurals
+ * resource. Counts above 99 are clamped to a static overflow label so transient state
+ * flickers can't surface alarming numbers.
  */
-private fun newPostsLabel(n: Int): String {
-    if (n > 99) return "99+ нових постів"
-    val mod100 = n % 100
-    val mod10 = n % 10
-    val form = when {
-        mod100 in 11..14 -> "нових постів"
-        mod10 == 1 -> "новий пост"
-        mod10 in 2..4 -> "нові пости"
-        else -> "нових постів"
-    }
-    return "$n $form"
+private fun newPostsLabel(res: android.content.res.Resources, n: Int): String {
+    if (n > 99) return res.getString(R.string.new_posts_overflow)
+    return res.getQuantityString(R.plurals.new_posts, n, n)
 }
 
 private val AVATAR_SIZE = 28.dp

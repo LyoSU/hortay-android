@@ -12,10 +12,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.ThreadRow
@@ -74,7 +76,7 @@ fun CommentsScreen(
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
-                title = { Text("Обговорення", style = MaterialTheme.typography.titleLarge) },
+                title = { Text(stringResource(R.string.comments_title), style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
                         Symbol(name = "arrow_back", contentDescription = "back")
@@ -105,9 +107,9 @@ fun CommentsScreen(
             // easy to miss on channels without a linked discussion group.
             item(key = "label") {
                 val label = when (val s = state) {
-                    CommentsRepository.ThreadState.Loading -> "Завантаження…"
-                    is CommentsRepository.ThreadState.Ready -> if (s.rows.isEmpty()) "Поки немає коментарів."
-                    else "${s.rows.size} відповідей"
+                    CommentsRepository.ThreadState.Loading -> stringResource(R.string.comments_loading)
+                    is CommentsRepository.ThreadState.Ready -> if (s.rows.isEmpty()) stringResource(R.string.comments_no_comments)
+                    else stringResource(R.string.comments_replies, s.rows.size)
                     is CommentsRepository.ThreadState.Error -> null
                 }
                 if (label != null) {
@@ -152,7 +154,7 @@ private fun NoDiscussionState(message: String) {
         )
         Spacer(Modifier.height(14.dp))
         Text(
-            text = "Без обговорення",
+            text = stringResource(R.string.comments_no_thread),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -318,13 +320,14 @@ private fun ReplyBlock(authorName: String, excerpt: String) {
     }
 }
 
-private fun formatRelative(epochMs: Long): String {
+@Composable
+internal fun formatRelative(epochMs: Long): String {
     val diffMin = (System.currentTimeMillis() - epochMs) / 60_000
     return when {
-        diffMin < 1 -> "щойно"
-        diffMin < 60 -> "${diffMin}хв"
-        diffMin < 60 * 24 -> "${diffMin / 60}год"
-        diffMin < 60 * 24 * 7 -> "${diffMin / (60 * 24)}д"
+        diffMin < 1 -> stringResource(R.string.time_just_now)
+        diffMin < 60 -> stringResource(R.string.time_minutes_short, diffMin.toInt())
+        diffMin < 60 * 24 -> stringResource(R.string.time_hours_short, (diffMin / 60).toInt())
+        diffMin < 60 * 24 * 7 -> stringResource(R.string.time_days_short, (diffMin / (60 * 24)).toInt())
         else -> DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(epochMs))
     }
 }

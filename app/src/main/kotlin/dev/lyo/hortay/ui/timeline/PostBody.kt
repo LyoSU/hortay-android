@@ -16,13 +16,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.ExpiredKind
 import dev.lyo.hortay.data.FormattedText
@@ -198,10 +203,10 @@ private fun ChecklistBlock(content: PostContent.Checklist, maxLines: Int) {
 @Composable
 private fun ExpiredMediaBlock(content: PostContent.ExpiredMedia) {
     val (symbol, label) = when (content.kind) {
-        ExpiredKind.Photo -> "hide_image" to "Тимчасове фото зникло"
-        ExpiredKind.Video -> "videocam_off" to "Тимчасове відео зникло"
-        ExpiredKind.VideoNote -> "videocam_off" to "Кружок зник"
-        ExpiredKind.VoiceNote -> "mic_off" to "Голосове зникло"
+        ExpiredKind.Photo -> "hide_image" to stringResource(R.string.expired_photo)
+        ExpiredKind.Video -> "videocam_off" to stringResource(R.string.expired_video)
+        ExpiredKind.VideoNote -> "videocam_off" to stringResource(R.string.expired_video_note)
+        ExpiredKind.VoiceNote -> "mic_off" to stringResource(R.string.expired_voice)
     }
     Row(
         modifier = Modifier
@@ -224,16 +229,16 @@ private fun ExpiredMediaBlock(content: PostContent.ExpiredMedia) {
 @Composable
 private fun ServiceBlock(content: PostContent.Service) {
     val (symbol, label) = when (val e = content.event) {
-        is ServiceEvent.PinnedMessage -> "push_pin" to "Закріпили повідомлення"
+        is ServiceEvent.PinnedMessage -> "push_pin" to stringResource(R.string.service_pinned_message)
         is ServiceEvent.ChannelBoosted -> "rocket_launch" to
-            if (e.boostCount > 1) "Канал отримав ${e.boostCount} бустів" else "Канал отримав буст"
-        ServiceEvent.GiveawayStarted -> "card_giftcard" to "Розпочато розіграш"
-        ServiceEvent.ScreenshotTaken -> "photo_camera" to "Скріншот"
-        is ServiceEvent.VideoChatStarted -> "video_call" to "Розпочато груповий дзвінок"
-        ServiceEvent.VideoChatEnded -> "call_end" to "Груповий дзвінок завершено"
+            pluralStringResource(R.plurals.service_boost, e.boostCount, e.boostCount)
+        ServiceEvent.GiveawayStarted -> "card_giftcard" to stringResource(R.string.service_giveaway_started)
+        ServiceEvent.ScreenshotTaken -> "photo_camera" to stringResource(R.string.service_screenshot)
+        is ServiceEvent.VideoChatStarted -> "video_call" to stringResource(R.string.service_video_chat_started)
+        ServiceEvent.VideoChatEnded -> "call_end" to stringResource(R.string.service_video_chat_ended)
         is ServiceEvent.GroupCall -> "call" to
-            if (e.isVideo) "Відеодзвінок" else "Голосовий дзвінок"
-        ServiceEvent.Other -> "info" to "Системне повідомлення"
+            stringResource(if (e.isVideo) R.string.service_video_call else R.string.service_voice_call)
+        ServiceEvent.Other -> "info" to stringResource(R.string.service_other)
     }
     Row(
         modifier = Modifier
@@ -520,14 +525,15 @@ private fun DocumentBlock(content: PostContent.Document, maxLines: Int, translat
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = content.fileName.ifBlank { "Документ" },
+                text = content.fileName.ifBlank { stringResource(R.string.document_unnamed) },
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            val sizeUnits = stringArrayResource(R.array.size_units)
             Text(
-                text = formatFileSize(content.sizeBytes),
+                text = formatFileSize(content.sizeBytes, sizeUnits),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -584,7 +590,7 @@ private fun VoiceNoteBlock(content: PostContent.VoiceNote) {
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Голосове повідомлення",
+                text = stringResource(R.string.voice_message),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -671,7 +677,7 @@ private fun PollBlock(content: PostContent.Poll) {
             )
             Spacer(Modifier.width(6.dp))
             Text(
-                text = if (content.isAnonymous) "Анонімне опитування" else "Опитування",
+                text = stringResource(if (content.isAnonymous) R.string.poll_anonymous else R.string.poll_title),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -708,7 +714,7 @@ private fun PollBlock(content: PostContent.Poll) {
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "${content.totalVotes} голосів",
+            text = stringResource(R.string.poll_total_votes, content.totalVotes),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -949,7 +955,7 @@ private fun ExpandableText(
     )
     if (canExpand && !expanded) {
         Text(
-            text = "Показати більше",
+            text = stringResource(R.string.post_show_more),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
@@ -974,9 +980,8 @@ private fun formatDuration(seconds: Int): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
-private fun formatFileSize(bytes: Long): String {
+private fun formatFileSize(bytes: Long, units: Array<String>): String {
     if (bytes <= 0) return "—"
-    val units = arrayOf("Б", "КБ", "МБ", "ГБ")
     var size = bytes.toDouble()
     var idx = 0
     while (size >= 1024 && idx < units.lastIndex) {

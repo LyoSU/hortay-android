@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.ui.icons.Symbol
 
@@ -91,7 +92,7 @@ private fun NavTabButton(
     ) {
         Symbol(
             name = tab.symbol,
-            contentDescription = tab.label,
+            contentDescription = stringResource(tab.labelRes),
             tint = content,
             size = 24.dp,
         )

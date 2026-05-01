@@ -27,7 +27,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import dev.lyo.hortay.R
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.ui.icons.Symbol
 import kotlin.random.Random
@@ -102,8 +104,8 @@ fun SpoilerOverlay(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = when (kind) {
-                    SpoilerKind.Spoiler -> "Натисніть, щоб переглянути"
-                    SpoilerKind.Sensitive -> "Натисніть — конфіденційне"
+                    SpoilerKind.Spoiler -> stringResource(R.string.spoiler_tap_to_view)
+                    SpoilerKind.Sensitive -> stringResource(R.string.spoiler_sensitive_tap)
                 },
                 color = Color.White,
                 style = MaterialTheme.typography.labelLarge,

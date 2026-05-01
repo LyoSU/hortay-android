@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import dev.lyo.hortay.R
 import kotlinx.coroutines.flow.StateFlow
 import org.drinkless.tdlib.TdApi
 
@@ -20,6 +21,7 @@ class ChannelActionsRepository(
     private val td: TdSender,
     private val userMessages: UserMessageBus,
     private val connection: StateFlow<ConnectionStatus>,
+    private val res: StringResolver,
 ) {
 
     /**
@@ -56,7 +58,7 @@ class ChannelActionsRepository(
             }
         }
             .warnUnlessCancelled(TAG, "toggleReaction(${kind.stableKey}, isChosen=$isChosen)")
-            .onFailure { it.surfaceTo(userMessages, "змінити реакцію", connection.value) }
+            .onFailure { it.surfaceTo(userMessages, res, R.string.op_change_reaction, connection.value) }
     }
 
     private fun ReactionKind.toTd(): TdApi.ReactionType = when (this) {
@@ -94,7 +96,7 @@ class ChannelActionsRepository(
         }
         runCatching { td.send(TdApi.SetChatNotificationSettings(chatId, updated)) }
             .warnUnlessCancelled(TAG, "setMuted($muted)")
-            .onFailure { it.surfaceTo(userMessages, if (muted) "вимкнути сповіщення" else "увімкнути сповіщення", connection.value) }
+            .onFailure { it.surfaceTo(userMessages, res, if (muted) R.string.op_mute else R.string.op_unmute, connection.value) }
     }
 
     suspend fun isMuted(chatId: Long): Boolean {
@@ -107,13 +109,13 @@ class ChannelActionsRepository(
     suspend fun joinChat(chatId: Long) {
         runCatching { td.send(TdApi.JoinChat(chatId)) }
             .warnUnlessCancelled(TAG, "joinChat")
-            .onFailure { it.surfaceTo(userMessages, "приєднатися до каналу", connection.value) }
+            .onFailure { it.surfaceTo(userMessages, res, R.string.op_join_channel, connection.value) }
     }
 
     suspend fun leaveChat(chatId: Long) {
         runCatching { td.send(TdApi.LeaveChat(chatId)) }
             .warnUnlessCancelled(TAG, "leaveChat")
-            .onFailure { it.surfaceTo(userMessages, "відписатися від каналу", connection.value) }
+            .onFailure { it.surfaceTo(userMessages, res, R.string.op_leave_channel, connection.value) }
     }
 
     /**

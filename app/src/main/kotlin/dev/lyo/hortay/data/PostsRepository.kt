@@ -55,6 +55,7 @@ class PostsRepository(
     private val connection: kotlinx.coroutines.flow.StateFlow<ConnectionStatus>,
     private val snapshotStore: TimelineSnapshotStore,
     private val foreground: kotlinx.coroutines.flow.StateFlow<Boolean>,
+    private val res: StringResolver,
 ) {
 
     private val refreshMutex = Mutex()
@@ -274,7 +275,7 @@ class PostsRepository(
         runCatching { refreshLocked(limitPerChannel) }
             .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
             .warnUnlessCancelled("refresh")
-            .onFailure { it.surfaceTo(userMessages, "оновити стрічку", connection.value) }
+            .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_refresh_feed, connection.value) }
     }
 
     /**
@@ -287,7 +288,7 @@ class PostsRepository(
         runCatching { refreshLocked(REFRESH_DEFAULT_LIMIT) }
             .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
             .warnUnlessCancelled("refreshIfStale")
-            .onFailure { it.surfaceTo(userMessages, "оновити стрічку", connection.value) }
+            .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_refresh_feed, connection.value) }
     }
 
     /**
@@ -324,7 +325,7 @@ class PostsRepository(
             deepLoadCooldownUntilMs[chatId] = System.currentTimeMillis() + DEEP_LOAD_COOLDOWN_MS
         }
         return result.warnUnlessCancelled(TAG, "loadChannelHistory($chatId)")
-            .onFailure { it.surfaceTo(userMessages, "завантажити канал", connection.value) }
+            .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_load_channel, connection.value) }
     }
 
     private suspend fun loadChannelHistoryLocked(chatId: Long, limit: Int) {
@@ -368,7 +369,7 @@ class PostsRepository(
         pageJobs.remove(chatId, deferred)
         return result
             .warnUnlessCancelled(TAG, "loadOlder($chatId)")
-            .onFailure { it.surfaceTo(userMessages, "завантажити старіші пости", connection.value) }
+            .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_load_older, connection.value) }
             .getOrDefault(0)
     }
 
@@ -719,7 +720,7 @@ class PostsRepository(
         // we don't track which item belongs to which member id at content level.
         // For solo posts the fast path simply replaces the content in place.
         val solo = updateOnePost(update.chatId, update.messageId) {
-            it.copy(content = MessageContentMapper.map(update.newContent))
+            it.copy(content = MessageContentMapper.map(update.newContent, res))
         }
         if (solo) return
         val anchor = _posts.value.firstOrNull {

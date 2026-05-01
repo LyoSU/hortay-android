@@ -47,6 +47,7 @@ class TranslationsStore(
     scope: CoroutineScope,
     private val userMessages: UserMessageBus,
     private val connection: StateFlow<ConnectionStatus>,
+    private val res: StringResolver,
 ) {
 
     private val _translations = MutableStateFlow<Map<Key, FormattedText>>(emptyMap())
@@ -88,7 +89,7 @@ class TranslationsStore(
                 td.send(TdApi.TranslateMessageText(chatId, messageId, target, /* tone */ null))
             }.warnUnlessCancelled(TAG, "translate($chatId, $messageId, $target)")
             val result = attempt.getOrElse { err ->
-                err.surfaceTo(userMessages, "перекласти повідомлення", connection.value)
+                err.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_translate, connection.value)
                 return@withLock false
             }
 

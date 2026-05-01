@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import dev.lyo.hortay.R
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -25,7 +26,11 @@ import java.util.Collections
  * are touched from several coroutines (refreshLocked, handle* update collectors,
  * Update* invalidations).
  */
-class MessageMapper(private val td: TdSender) {
+class MessageMapper(private val td: TdSender, private val res: StringResolver) {
+
+    private val defaultUserName: String get() = res.getString(R.string.user_default_name)
+    private val defaultChannelName: String get() = res.getString(R.string.channel_default_name)
+
 
     private val userCache = boundedLru<Long, ResolvedSender>(MAX_RESOLVER_CACHE)
     private val chatCache = boundedLru<Long, ResolvedSender>(MAX_RESOLVER_CACHE)
@@ -51,7 +56,7 @@ class MessageMapper(private val td: TdSender) {
         senderHandle = resolveChannelHandle(chat),
         avatarThumb = chat.photo?.minithumbnail?.data,
         avatarFileId = chat.photo?.small?.id,
-        content = MessageContentMapper.map(message.content),
+        content = MessageContentMapper.map(message.content, res),
         views = message.interactionInfo?.viewCount ?: 0,
         date = message.date.toLong() * 1000L,
         editDate = message.editDate.toLong() * 1000L,
@@ -88,7 +93,7 @@ class MessageMapper(private val td: TdSender) {
             senderHandle = sender.handle,
             avatarThumb = sender.avatarThumb,
             avatarFileId = sender.avatarFileId,
-            content = MessageContentMapper.map(message.content),
+            content = MessageContentMapper.map(message.content, res),
             views = 0,
             date = message.date.toLong() * 1000L,
             editDate = message.editDate.toLong() * 1000L,
@@ -199,13 +204,13 @@ class MessageMapper(private val td: TdSender) {
 
     private suspend fun fetchUser(userId: Long): ResolvedSender {
         val u = runCatching { td.send(TdApi.GetUser(userId)) }.getOrNull()
-            ?: return ResolvedSender("Користувач", null, null, null)
+            ?: return ResolvedSender(defaultUserName, null, null, null)
         val username = u.usernames?.activeUsernames?.firstOrNull()
         val name = listOfNotNull(
             u.firstName?.takeUnless { it.isBlank() },
             u.lastName?.takeUnless { it.isBlank() },
         ).joinToString(" ").ifBlank {
-            username?.let { "@$it" } ?: "Користувач"
+            username?.let { "@$it" } ?: defaultUserName
         }
         return ResolvedSender(
             name = name,
@@ -217,9 +222,9 @@ class MessageMapper(private val td: TdSender) {
 
     private suspend fun fetchChat(chatId: Long): ResolvedSender {
         val c = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
-            ?: return ResolvedSender("Канал", null, null, null)
+            ?: return ResolvedSender(defaultChannelName, null, null, null)
         return ResolvedSender(
-            name = c.title.orEmpty().ifBlank { "Канал" },
+            name = c.title.orEmpty().ifBlank { defaultChannelName },
             handle = resolveChannelHandle(c),
             avatarThumb = c.photo?.minithumbnail?.data,
             avatarFileId = c.photo?.small?.id,

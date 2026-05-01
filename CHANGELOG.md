@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Added
+- English localization. All user-facing strings extracted to `res/values/strings.xml`
+  (English, default fallback) and `res/values-uk/strings.xml` (Ukrainian). Android
+  picks the locale automatically from system settings; non-Ukrainian devices now see
+  English. TDLib's `systemLanguageCode` follows `Locale.getDefault().language` so
+  server-localized payloads (country picker, error messages where applicable) match
+  the active app locale instead of always being Ukrainian.
+- `<plurals>` resources for grammatically correct count formatting — `new_posts`
+  (1 / 2-4 / 11-14 forms in Ukrainian, one/other in English), `service_boost` and
+  the `duration_minutes` / `duration_hours` flood-wait helpers. Replaces ad-hoc
+  `mod10/mod100` switches that previously hard-coded Ukrainian plural rules.
+- `StringResolver` interface (data layer): thin abstraction over
+  `android.content.res.Resources` so repositories don't import Android types
+  directly and JVM-only unit tests can supply a deterministic fake without
+  Robolectric or mockito.
 - Animated stickers (TGS / WebM / WEBP), animated emoji and custom-emoji
   reactions. Pipeline reuses TDLib's batched `GetCustomEmojiStickers` (up to
   200 ids per call, 50ms debounce) and serves the WEBP/PNG `Sticker.thumbnail`

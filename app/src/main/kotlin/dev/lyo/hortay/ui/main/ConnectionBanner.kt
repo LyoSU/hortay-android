@@ -16,7 +16,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ConnectionStatus
 import dev.lyo.hortay.ui.icons.Symbol
 
@@ -43,19 +45,19 @@ fun ConnectionBanner(status: ConnectionStatus, modifier: Modifier = Modifier) {
         val (symbol, label, container, content) = when (status) {
             ConnectionStatus.WaitingForNetwork -> Quad(
                 "wifi_off",
-                "Очікує мережі",
+                stringResource(R.string.connection_waiting),
                 MaterialTheme.colorScheme.errorContainer,
                 MaterialTheme.colorScheme.onErrorContainer,
             )
             ConnectionStatus.Connecting -> Quad(
                 "cloud_off",
-                "З'єднання…",
+                stringResource(R.string.connection_connecting),
                 MaterialTheme.colorScheme.secondaryContainer,
                 MaterialTheme.colorScheme.onSecondaryContainer,
             )
             ConnectionStatus.Updating -> Quad(
                 "sync",
-                "Оновлення…",
+                stringResource(R.string.connection_updating),
                 MaterialTheme.colorScheme.secondaryContainer,
                 MaterialTheme.colorScheme.onSecondaryContainer,
             )

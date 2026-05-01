@@ -52,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -192,10 +193,10 @@ private fun HeroBlock(stage: AuthStage) {
         Spacer(Modifier.height(20.dp))
         Text(
             text = when (stage) {
-                is AuthStage.WaitCode -> "Введіть код"
-                is AuthStage.WaitPassword -> "Cloud-пароль"
-                is AuthStage.Error -> "Потрібна додаткова дія"
-                else -> "Hortay"
+                is AuthStage.WaitCode -> stringResource(R.string.auth_title_wait_code)
+                is AuthStage.WaitPassword -> stringResource(R.string.auth_title_wait_password)
+                is AuthStage.Error -> stringResource(R.string.auth_title_error)
+                else -> stringResource(R.string.app_name)
             },
             style = MaterialTheme.typography.displaySmall,
             color = MaterialTheme.colorScheme.onBackground,
@@ -203,14 +204,13 @@ private fun HeroBlock(stage: AuthStage) {
         Spacer(Modifier.height(8.dp))
         Text(
             text = when (stage) {
-                is AuthStage.WaitCode -> "Ми надіслали код ${stage.channelLabel}."
-                is AuthStage.WaitPassword -> if (stage.hint.isNotEmpty()) {
-                    "Ваш акаунт захищено двофакторною автентифікацією."
-                } else {
-                    "Ваш акаунт захищено двофакторною автентифікацією. Введіть Cloud-пароль."
-                }
+                is AuthStage.WaitCode -> stringResource(R.string.auth_subtitle_wait_code, stage.channelLabel)
+                is AuthStage.WaitPassword -> stringResource(
+                    if (stage.hint.isNotEmpty()) R.string.auth_subtitle_password_no_hint
+                    else R.string.auth_subtitle_password_with_hint,
+                )
                 is AuthStage.Error -> stringResource(R.string.auth_open_telegram_hint)
-                else -> "Стрічка Telegram-каналів у форматі Twitter."
+                else -> stringResource(R.string.auth_subtitle_default)
             },
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -335,12 +335,12 @@ private fun CountrySelectorRow(country: Country?, onClick: () -> Unit) {
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Країна",
+                text = stringResource(R.string.auth_country_label),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = country?.name ?: "Завантаження…",
+                text = country?.name ?: stringResource(R.string.auth_country_loading),
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -391,7 +391,7 @@ private fun PhoneNumberRow(
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            placeholder = { Text("Номер телефону") },
+            placeholder = { Text(stringResource(R.string.auth_phone_placeholder)) },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Phone,
                 imeAction = ImeAction.Done,
@@ -477,7 +477,7 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
                 isError = errorMessage != null,
                 enabled = !submitting,
                 shape = RoundedCornerShape(20.dp),
-                placeholder = { Text("Слово або фраза з SMS") },
+                placeholder = { Text(stringResource(R.string.auth_code_placeholder)) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -513,8 +513,10 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
                     }
                 },
             ) {
+                val ctxRes = LocalContext.current.resources
                 Text(
                     text = resendLabel(
+                        res = ctxRes,
                         secondsLeft = secondsLeft,
                         resending = resending,
                         nextChannelLabel = stage.nextChannelLabel,
@@ -548,14 +550,15 @@ private fun minSubmitLength(stage: AuthStage.WaitCode): Int =
  * down state. Pulling this out keeps CodeForm's layout block readable.
  */
 private fun resendLabel(
+    res: android.content.res.Resources,
     secondsLeft: Int,
     resending: Boolean,
     nextChannelLabel: String?,
 ): String = when {
-    resending -> "Надсилаємо…"
-    secondsLeft > 0 -> "Ще раз за %d:%02d".format(secondsLeft / 60, secondsLeft % 60)
-    nextChannelLabel != null -> "Надіслати $nextChannelLabel"
-    else -> "Надіслати ще раз"
+    resending -> res.getString(R.string.auth_resend_sending)
+    secondsLeft > 0 -> res.getString(R.string.auth_resend_countdown, secondsLeft / 60, secondsLeft % 60)
+    nextChannelLabel != null -> res.getString(R.string.auth_resend_via, nextChannelLabel)
+    else -> res.getString(R.string.auth_resend_again)
 }
 
 // ---------- Password ----------

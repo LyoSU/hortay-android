@@ -1,58 +1,52 @@
 package dev.lyo.hortay.data
 
+import dev.lyo.hortay.R
+
 /**
  * TDLib speaks SCREAMING_SNAKE error codes (PHONE_NUMBER_INVALID, FLOOD_WAIT_42,
  * PASSWORD_HASH_INVALID…). It deliberately leaves localisation to the client because the
  * codes are stable contract; the messages aren't. We translate the ones a real user can
- * actually act on into Ukrainian, and fall back to a neutral phrase for the rest so we
- * never blast `[400] PHONE_NUMBER_BANNED` at someone's screen.
+ * actually act on, and fall back to a neutral phrase for the rest so we never blast
+ * `[400] PHONE_NUMBER_BANNED` at someone's screen.
+ *
+ * Strings live in `res/values{,-uk}/strings.xml`; we resolve through [Resources] rather
+ * than hold a localized lookup table here so locale changes propagate via the standard
+ * resource-config path.
  *
  * Keep the mapping ordered by likelihood (cheap wins early). Anything that contains a
  * numeric tail (FLOOD_WAIT_X) needs prefix matching; everything else is exact.
  */
-internal fun friendlyAuthErrorMessage(throwable: Throwable): String {
+internal fun friendlyAuthErrorMessage(res: StringResolver, throwable: Throwable): String {
     val raw = (throwable as? TdClient.TdException)?.let { extractCode(it.message ?: "") }
         ?: throwable.message.orEmpty()
     return when {
         raw.startsWith("FLOOD_WAIT") -> {
             val seconds = raw.substringAfter("FLOOD_WAIT_", "").toIntOrNull()
             if (seconds != null) {
-                "Забагато спроб. Спробуйте знову за ${humaniseSeconds(seconds)}."
+                res.getString(R.string.auth_err_too_many_with_time, humaniseSeconds(res, seconds))
             } else {
-                "Забагато спроб. Спробуйте трохи пізніше."
+                res.getString(R.string.auth_err_too_many_generic)
             }
         }
-        raw == "PHONE_NUMBER_INVALID" ->
-            "Невірний номер. Перевірте код країни та цифри."
-        raw == "PHONE_NUMBER_BANNED" ->
-            "Цей номер заблоковано в Telegram. Зверніться до підтримки Telegram."
-        raw == "PHONE_NUMBER_FLOOD" ->
-            "Telegram тимчасово обмежив авторизацію з цього номера. Спробуйте пізніше."
-        raw == "PHONE_NUMBER_OCCUPIED" ->
-            "Цей номер уже зайнятий. Зайдіть під ним замість того, щоб реєструвати знову."
+        raw == "PHONE_NUMBER_INVALID" -> res.getString(R.string.auth_err_phone_invalid)
+        raw == "PHONE_NUMBER_BANNED" -> res.getString(R.string.auth_err_phone_banned)
+        raw == "PHONE_NUMBER_FLOOD" -> res.getString(R.string.auth_err_phone_flood)
+        raw == "PHONE_NUMBER_OCCUPIED" -> res.getString(R.string.auth_err_phone_occupied)
         raw == "PHONE_CODE_INVALID" || raw == "PHONE_CODE_EMPTY" ->
-            "Невірний код. Перевірте та введіть ще раз."
-        raw == "PHONE_CODE_EXPIRED" ->
-            "Код прострочений. Запросіть новий."
-        raw == "PASSWORD_HASH_INVALID" ->
-            "Невірний пароль. Спробуйте ще раз."
-        raw == "PASSWORD_TOO_FRESH" ->
-            "Пароль було щойно змінено — Telegram попросить почекати, перш ніж його використати."
-        raw == "PASSWORD_RECOVERY_NA" ->
-            "Відновлення пароля недоступне. Скиньте 2FA в офіційному Telegram."
-        raw == "SESSION_PASSWORD_NEEDED" ->
-            "Потрібен Cloud-пароль 2FA."
+            res.getString(R.string.auth_err_code_invalid)
+        raw == "PHONE_CODE_EXPIRED" -> res.getString(R.string.auth_err_code_expired)
+        raw == "PASSWORD_HASH_INVALID" -> res.getString(R.string.auth_err_password_invalid)
+        raw == "PASSWORD_TOO_FRESH" -> res.getString(R.string.auth_err_password_too_fresh)
+        raw == "PASSWORD_RECOVERY_NA" -> res.getString(R.string.auth_err_password_recovery_na)
+        raw == "SESSION_PASSWORD_NEEDED" -> res.getString(R.string.auth_err_session_password_needed)
         raw == "API_ID_INVALID" || raw == "API_ID_PUBLISHED_FLOOD" ->
-            "Збій конфігурації застосунку. Зверніться до розробника."
-        raw == "ACCESS_TOKEN_INVALID" ->
-            "Невірні облікові дані. Перезапустіть авторизацію."
-        raw.isBlank() ->
-            "Щось пішло не так. Спробуйте ще раз."
-        else ->
-            // Unknown code — show a neutral message but keep the raw code in parens for
-            // bug reports. The user can't act on PHONE_MIGRATE_2 directly but they can
-            // copy it into a support message if it ever happens.
-            "Не вдалося завершити крок (${raw}). Спробуйте ще раз."
+            res.getString(R.string.auth_err_app_misconfigured)
+        raw == "ACCESS_TOKEN_INVALID" -> res.getString(R.string.auth_err_token_invalid)
+        raw.isBlank() -> res.getString(R.string.auth_err_generic)
+        // Unknown code — show a neutral message but keep the raw code in parens for bug
+        // reports. The user can't act on PHONE_MIGRATE_2 directly but they can copy it
+        // into a support message if it ever happens.
+        else -> res.getString(R.string.auth_err_step_failed, raw)
     }
 }
 
@@ -66,26 +60,14 @@ private fun extractCode(full: String): String {
     }
 }
 
-private fun humaniseSeconds(total: Int): String = when {
-    total < 60 -> "$total с"
+private fun humaniseSeconds(res: StringResolver, total: Int): String = when {
+    total < 60 -> res.getString(R.string.duration_seconds_short, total)
     total < 3600 -> {
         val m = total / 60
-        "$m ${pluralMinutes(m)}"
+        res.getQuantityString(R.plurals.duration_minutes, m, m)
     }
     else -> {
         val h = total / 3600
-        "$h ${pluralHours(h)}"
+        res.getQuantityString(R.plurals.duration_hours, h, h)
     }
-}
-
-private fun pluralMinutes(n: Int): String = when {
-    n % 10 == 1 && n % 100 != 11 -> "хвилину"
-    n % 10 in 2..4 && n % 100 !in 12..14 -> "хвилини"
-    else -> "хвилин"
-}
-
-private fun pluralHours(n: Int): String = when {
-    n % 10 == 1 && n % 100 != 11 -> "годину"
-    n % 10 in 2..4 && n % 100 !in 12..14 -> "години"
-    else -> "годин"
 }

@@ -25,8 +25,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.VideoQualities
 import dev.lyo.hortay.data.VideoQuality
 import dev.lyo.hortay.ui.icons.Symbol
@@ -106,7 +109,7 @@ private fun VideoQualityPickerSheet(
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             Text(
-                text = "Якість відео",
+                text = stringResource(R.string.media_video_quality),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
@@ -153,9 +156,10 @@ private fun QualityRow(
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             )
+            val units = stringArrayResource(R.array.size_units)
             val subtitle = buildString {
                 append("${quality.width}×${quality.height}")
-                if (quality.sizeBytes > 0) append("  ·  ${formatSize(quality.sizeBytes)}")
+                if (quality.sizeBytes > 0) append("  ·  ${formatSize(quality.sizeBytes, units)}")
             }
             Text(
                 text = subtitle,
@@ -166,9 +170,8 @@ private fun QualityRow(
     }
 }
 
-private fun formatSize(bytes: Long): String {
+private fun formatSize(bytes: Long, units: Array<String>): String {
     if (bytes <= 0) return ""
-    val units = arrayOf("Б", "КБ", "МБ", "ГБ")
     var size = bytes.toDouble()
     var idx = 0
     while (size >= 1024 && idx < units.lastIndex) {

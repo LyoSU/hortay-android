@@ -18,7 +18,7 @@ class CommentsRepositoryTest {
         val td = FakeTdSender().apply {
             onNext { _ -> TdApi.MessageProperties().apply { canGetMessageThread = false } }
         }
-        val repo = CommentsRepository(td, fakeMapper(td), TestScope(StandardTestDispatcher(testScheduler)))
+        val repo = CommentsRepository(td, fakeMapper(td), TestScope(StandardTestDispatcher(testScheduler)), FakeStrings)
 
         val state = repo.observeThread(chatId = 123L, candidateMessageIds = listOf(1L)).first()
 
@@ -60,7 +60,7 @@ class CommentsRepositoryTest {
             // 5. CloseChat fires from the flow's finally block on cancellation.
             onNext { _ -> TdApi.Ok() }
         }
-        val repo = CommentsRepository(td, fakeMapper(td), TestScope(StandardTestDispatcher(testScheduler)))
+        val repo = CommentsRepository(td, fakeMapper(td), TestScope(StandardTestDispatcher(testScheduler)), FakeStrings)
 
         val ready = repo.observeThread(chatId, listOf(anchor)).first {
             it is CommentsRepository.ThreadState.Ready
@@ -71,7 +71,7 @@ class CommentsRepositoryTest {
         assertEquals(100L, ready.rows.single().message.id)
     }
 
-    private fun fakeMapper(td: TdSender): MessageMapper = MessageMapper(td)
+    private fun fakeMapper(td: TdSender): MessageMapper = MessageMapper(td, FakeStrings)
 
     private fun message(id: Long, chatId: Long, fromUserId: Long): TdApi.Message {
         // Minimal Message — only the fields the mapper + tree builder touch.

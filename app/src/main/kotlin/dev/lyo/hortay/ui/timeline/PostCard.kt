@@ -19,12 +19,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.ReactionKind
@@ -265,7 +268,7 @@ private fun TranslationChip(onDismiss: () -> Unit) {
         )
         Spacer(Modifier.width(6.dp))
         Text(
-            text = "Перекладено · Показати оригінал",
+            text = stringResource(R.string.post_translated_chip),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.tertiary,
         )
@@ -328,7 +331,7 @@ private fun ForwardChip(origin: ForwardOrigin, onClick: (() -> Unit)?) {
         )
         Spacer(Modifier.width(6.dp))
         Text(
-            text = "Переслано від ${forwardLabel(origin)}",
+            text = stringResource(R.string.post_forwarded_from, forwardLabel(origin)),
             style = MaterialTheme.typography.labelMedium,
             color = if (onClick != null) MaterialTheme.colorScheme.tertiary
             else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -532,19 +535,19 @@ private fun PostActionSheet(
         Column(modifier = Modifier.padding(bottom = 24.dp)) {
             SheetItem(
                 symbol = "bookmark",
-                label = if (isBookmarked) "Прибрати зі збережених" else "Зберегти пост",
+                label = stringResource(if (isBookmarked) R.string.post_unsave else R.string.post_save),
                 onClick = { runAndDismiss { interactions.onBookmarkClick(post) } },
             )
             if (post.content.captionPlain.isNotBlank()) {
                 SheetItem(
                     symbol = "content_copy",
-                    label = "Скопіювати текст",
+                    label = stringResource(R.string.post_copy_text),
                     onClick = { runAndDismiss { interactions.onCopyClick(post) } },
                 )
                 val translated = interactions.isTranslated(post)
                 SheetItem(
                     symbol = "translate",
-                    label = if (translated) "Показати оригінал" else "Перекласти",
+                    label = stringResource(if (translated) R.string.post_show_original else R.string.post_translate),
                     onClick = {
                         runAndDismiss {
                             if (translated) interactions.onClearTranslationClick(post)
@@ -555,12 +558,12 @@ private fun PostActionSheet(
             }
             SheetItem(
                 symbol = "ios_share",
-                label = "Поділитися",
+                label = stringResource(R.string.post_share),
                 onClick = { runAndDismiss { interactions.onShareClick(post) } },
             )
             SheetItem(
                 symbol = "open_in_new",
-                label = "Відкрити в Telegram",
+                label = stringResource(R.string.post_open_telegram),
                 onClick = { runAndDismiss { interactions.onOpenClick(post) } },
             )
         }
@@ -590,13 +593,14 @@ private fun SheetItem(
     }
 }
 
+@Composable
 private fun formatRelative(epochMs: Long): String {
     val diffMin = (System.currentTimeMillis() - epochMs) / 60_000
     return when {
-        diffMin < 1 -> "щойно"
-        diffMin < 60 -> "${diffMin}хв"
-        diffMin < 60 * 24 -> "${diffMin / 60}год"
-        diffMin < 60 * 24 * 7 -> "${diffMin / (60 * 24)}д"
+        diffMin < 1 -> stringResource(R.string.time_just_now)
+        diffMin < 60 -> stringResource(R.string.time_minutes_short, diffMin.toInt())
+        diffMin < 60 * 24 -> stringResource(R.string.time_hours_short, (diffMin / 60).toInt())
+        diffMin < 60 * 24 * 7 -> stringResource(R.string.time_days_short, (diffMin / (60 * 24)).toInt())
         else -> DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(epochMs))
     }
 }

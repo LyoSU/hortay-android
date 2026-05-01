@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewmodel.initializer
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.ChannelActionsRepository
@@ -667,7 +669,7 @@ private fun TimelineTopBar(
                         Box {
                             if (searchQuery.isEmpty()) {
                                 Text(
-                                    "Пошук у каналі",
+                                    stringResource(R.string.timeline_search_in_channel),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -706,7 +708,7 @@ private fun TimelineTopBar(
                     )
                     channelSubscribers?.let {
                         Text(
-                            text = "${formatSubscribers(it)} підписників",
+                            text = stringResource(R.string.timeline_subscribers, formatSubscribers(it)),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -730,7 +732,7 @@ private fun TimelineTopBar(
         showOnlyBookmarked -> TopAppBar(
             title = {
                 Text(
-                    text = "Збережене",
+                    text = stringResource(R.string.timeline_saved_tab),
                     style = MaterialTheme.typography.headlineLarge,
                 )
             },
@@ -767,7 +769,7 @@ private fun SearchEmpty() {
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "Нічого не знайдено",
+            text = stringResource(R.string.timeline_search_empty),
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )
@@ -790,16 +792,13 @@ private fun EmptyState(showingSaved: Boolean) {
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = if (showingSaved) "Нема збережених постів" else "Поки тут порожньо",
+            text = stringResource(if (showingSaved) R.string.timeline_empty_saved_title else R.string.timeline_empty_default_title),
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = if (showingSaved)
-                "Натискайте на закладку поруч із постом, щоб зберегти на потім."
-            else
-                "Підпишіться на канали в Telegram — і вони з'являться у стрічці.",
+            text = stringResource(if (showingSaved) R.string.timeline_empty_saved_helper else R.string.timeline_empty_default_helper),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
