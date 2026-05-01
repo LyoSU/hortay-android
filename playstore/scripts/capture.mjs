@@ -25,6 +25,12 @@ async function main() {
     process.exit(1);
   }
 
+  // feature.html is 1024×500 (Play Store feature graphic); rest are 1080×1920.
+  const viewportFor = (filename) =>
+    filename === 'feature.html'
+      ? { width: 1024, height: 500 }
+      : { width: 1080, height: 1920 };
+
   const browser = await chromium.launch();
   const context = await browser.newContext({
     viewport: { width: 1080, height: 1920 },
@@ -37,6 +43,7 @@ async function main() {
     const langDir = path.join(buildDir, lang);
     const files = (await fs.readdir(langDir)).filter((f) => f.endsWith('.html'));
     for (const f of files) {
+      await page.setViewportSize(viewportFor(f));
       const url = 'file://' + path.join(langDir, f);
       await page.goto(url, { waitUntil: 'networkidle' });
       // Small extra wait so Google Fonts paint pass settles.

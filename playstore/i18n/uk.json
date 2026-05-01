@@ -15,5 +15,9 @@
   "comments": {
     "title": "Обговорення\nбез лавини.",
     "subtitle": "Threads замість скролу до дна"
+  },
+  "feature": {
+    "title": "Канали як\nстрічка.",
+    "subtitle": "Telegram у форматі, який читається."
   }
 }

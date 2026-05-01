@@ -15,5 +15,9 @@
   "comments": {
     "title": "Discussions,\nnot avalanches.",
     "subtitle": "Threaded replies instead of endless scroll"
+  },
+  "feature": {
+    "title": "Channels\nas a feed.",
+    "subtitle": "Telegram in a format you actually read."
   }
 }

@@ -1,0 +1,28 @@
+==============================================================================
+RELEASE NAME  (internal, max 50 chars — users do not see this)
+==============================================================================
+0.1.0 — initial release
+
+
+==============================================================================
+WHAT'S NEW  (release notes — Play Console multi-language format)
+==============================================================================
+Paste this whole block, including the language tags, into the
+"Release notes" field in Play Console. Play Console parses tags
+and shows the right language to each user.
+
+Each language max 500 chars.
+
+------------------------------------------------------------------------------
+
+<en-US>
+First public release of Hortay.
+
+A social-feed view of your Telegram channels — no chat clutter, no ads, no analytics. Reactions, threaded comments, rich formatting. Works with your existing Telegram account.
+</en-US>
+
+<uk-UA>
+Перший публічний реліз Hortay.
+
+Стрічка у форматі соцмережі для ваших Telegram-каналів — без шуму чатів, без реклами, без аналітики. Реакції, коментарі-threads, багатий формат тексту. Працює з вашим звичайним акаунтом Telegram.
+</uk-UA>

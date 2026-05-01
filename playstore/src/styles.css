@@ -140,3 +140,95 @@ body {
 .canvas[data-screen="02-storage"] .divider { background: #B07BD9; }
 .canvas[data-screen="03-formats"] .divider { background: #6B89E0; }
 .canvas[data-screen="04-comments"] .divider { background: #E0A86B; }
+
+/* ---------- Feature graphic (1024×500, Play Store store-listing banner) ---------- */
+
+body.feature {
+  width: 1024px;
+  height: 500px;
+}
+
+.feature-canvas {
+  position: relative;
+  width: 1024px;
+  height: 500px;
+  padding: 60px 80px;
+  display: flex;
+  align-items: center;
+  gap: 72px;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--grad-from) 0%, var(--grad-to) 100%);
+}
+
+.feature-glow {
+  position: absolute;
+  width: 760px;
+  height: 760px;
+  bottom: -260px;
+  right: -200px;
+  background: radial-gradient(closest-side, var(--accent-glow), transparent 72%);
+  filter: blur(32px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.feature-grain {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  pointer-events: none;
+}
+
+.feature-icon {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  width: 380px;
+  height: 380px;
+}
+
+.feature-icon img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 88px;
+  box-shadow:
+    0 44px 88px rgba(30, 15, 80, 0.32),
+    0 18px 36px rgba(30, 15, 80, 0.20);
+}
+
+.feature-text {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  min-width: 0;
+}
+
+.feature-title {
+  font-size: 88px;
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  font-feature-settings: "ss01", "cv11";
+}
+
+.feature-divider {
+  display: block;
+  width: 80px;
+  height: 4px;
+  background: var(--accent);
+  border-radius: 2px;
+  margin: 26px 0 22px;
+}
+
+.feature-subtitle {
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1.32;
+  color: var(--ink-soft);
+  letter-spacing: -0.005em;
+}

@@ -1,7 +1,9 @@
 /*
- * Render: i18n JSON × screens.json → build/<lang>/<id>.html
- * Reads:  i18n/*.json, screens/screens.json, src/template.html
- * Writes: build/<lang>/<id>.html (one HTML per language × screen)
+ * Render: i18n JSON × screens.json → build/<lang>/<id>.html (+ feature.html).
+ * Reads:  i18n/*.json, screens/screens.json, src/template.html,
+ *         src/feature-template.html
+ * Writes: build/<lang>/<id>.html (phone screenshots, 1080×1920)
+ *         build/<lang>/feature.html (Play Store feature graphic, 1024×500)
  */
 
 import fs from 'node:fs/promises';
@@ -25,6 +27,10 @@ async function main() {
   );
   const template = await fs.readFile(
     path.join(root, 'src/template.html'),
+    'utf8'
+  );
+  const featureTemplate = await fs.readFile(
+    path.join(root, 'src/feature-template.html'),
     'utf8'
   );
 
@@ -57,7 +63,21 @@ async function main() {
       await fs.writeFile(path.join(outDir, `${screen.id}.html`), html);
       count++;
     }
-    console.log(`  ✓ ${lang}/  (${screens.length} screens)`);
+
+    const feat = dict.feature;
+    if (feat?.title && feat?.subtitle) {
+      const html = featureTemplate
+        .replaceAll('{{lang}}', lang)
+        .replaceAll('{{title_plain}}', escapeHtml(titlePlain(feat.title)))
+        .replaceAll('{{title}}', titleHtml(feat.title))
+        .replaceAll('{{subtitle}}', escapeHtml(feat.subtitle));
+      await fs.writeFile(path.join(outDir, 'feature.html'), html);
+      count++;
+      console.log(`  ✓ ${lang}/  (${screens.length} screens + feature)`);
+    } else {
+      console.warn(`  ! ${lang}: missing "feature" copy, banner skipped`);
+      console.log(`  ✓ ${lang}/  (${screens.length} screens)`);
+    }
   }
   console.log(`Rendered ${count} HTML file(s) into build/`);
 }
