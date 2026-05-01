@@ -20,7 +20,12 @@
 ## Перед першим запуском
 
 1. **Отримайте `api_id` / `api_hash`** на https://my.telegram.org → API development tools.
-2. Відкрийте `app/src/main/kotlin/dev/lyo/hortay/data/TdClient.kt` → `TdClient.Companion.create(...)` і вставте свої значення. (Production-варіант — читати з `BuildConfig`, який заповнюється з `local.properties`.)
+2. Створіть `local.properties` у корені (gitignored) і додайте:
+   ```properties
+   telegram.apiId=12345
+   telegram.apiHash=your_hash_here
+   ```
+   `app/build.gradle.kts` пробрасує їх у `BuildConfig.TELEGRAM_API_ID` / `TELEGRAM_API_HASH`, які `TdClient` читає під час `create(...)`. Без цих значень білд скомпілюється, але авторизація у TDLib провалиться.
 3. **Збудуйте TDLib** (потрібен будь-який Docker — Docker Desktop, OrbStack, Colima тощо):
    ```bash
    ./scripts/update-tdlib.sh                  # default: master (TDLib не оновлює теги)
@@ -65,5 +70,3 @@ data/
 - [ ] Inline media gallery (HorizontalPager для альбомів).
 - [ ] Push-нотифікації про нові пости (TDLib has its own; need WorkManager glue).
 - [ ] Збереження прочитаного / непрочитаного.
-- [ ] BuildConfig + local.properties для api_id / api_hash.
-- [ ] ProGuard rules перевірити на release-білд.

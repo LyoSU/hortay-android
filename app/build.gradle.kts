@@ -14,11 +14,31 @@ val telegramProps = Properties().apply {
 val telegramApiId: String = telegramProps.getProperty("telegram.apiId") ?: "0"
 val telegramApiHash: String = telegramProps.getProperty("telegram.apiHash") ?: ""
 
-// Optional release signing. Drop a keystore.properties (gitignored) at the
-// project root with: storeFile=, storePassword=, keyAlias=, keyPassword=.
+// Release signing. Drop a keystore.properties (gitignored) at the project root
+// with: storeFile=, storePassword=, keyAlias=, keyPassword=. Debug builds work
+// without it; release/beta packaging fails fast at task-graph time (see
+// gradle.taskGraph.whenReady block below).
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
     if (f.exists()) f.inputStream().use { load(it) }
+}
+
+// Fail before any work happens if a release/beta packaging task is queued
+// without signing config. AGP would otherwise produce an unsigned APK that
+// silently misses upgrade installs / Play Console rejection — far worse than a
+// build-time error here. lintRelease, assembleRelease without packaging, and
+// debug tasks all stay unaffected.
+gradle.taskGraph.whenReady {
+    val needsSigning = allTasks.any { task ->
+        task.name.matches(Regex("^(package|bundle)(Release|Beta).*"))
+    }
+    if (needsSigning && !keystoreProps.containsKey("storeFile")) {
+        throw GradleException(
+            "Release/Beta packaging requires keystore.properties at the project root.\n" +
+                "Expected keys: storeFile, storePassword, keyAlias, keyPassword.\n" +
+                "See app/build.gradle.kts:17 and CLAUDE.md (Setup-delta) for details."
+        )
+    }
 }
 
 // Git metadata for release + beta builds. Lazy so we only fork `git` when a
@@ -206,11 +226,11 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
-    implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.ui.text.google.fonts)
     debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.tooling.preview)
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

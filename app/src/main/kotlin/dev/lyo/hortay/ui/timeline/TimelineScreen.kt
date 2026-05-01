@@ -56,6 +56,9 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
+// FlowPreview opt-in stays: Flow.debounce(Long) is still preview-marked in
+// kotlinx-coroutines 1.10.1 even though Flow.debounce(Duration) graduated.
+// Remove only when the Long overload is stabilised upstream.
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun TimelineScreen(

@@ -56,6 +56,16 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 - TDLib log verbosity is now `error` on debug builds and `fatal` on
   release.
 
+### Build
+- Release/Beta packaging now fails at task-graph time when
+  `keystore.properties` is missing instead of silently producing an
+  unsigned APK. Debug builds and `lintRelease` continue to work without
+  a keystore.
+- `compose-ui-tooling-preview` moved from `implementation` to
+  `debugImplementation` (canonical Google split). No `@Preview`
+  annotations exist in production source, so the preview API was dead
+  weight in release.
+
 ### Fixed
 - `MediaCache` no longer logs noisy warnings when a Composable leaves
   composition mid-download (`LeftCompositionCancellationException`).
@@ -64,6 +74,12 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   null into a `ConcurrentHashMap`.
 
 ### Performance
+- `flushPendingInteractionInfo` now does a single O(feed) pass with O(1)
+  per-post hash lookups instead of `indexOfFirst` per drained event. On a
+  burst that touches 100 posts in a 1000-post feed the worst case drops
+  from ~100 000 comparisons to ~1100. Coalescing window and semantics are
+  unchanged; updates that arrive during the flush are picked up by the
+  next `compareAndSet`.
 - Discussion threads share one `WhileSubscribed` SharedFlow per anchor —
   reopening the comments overlay no longer re-runs `GetMessageProperties`
   + `GetMessageThread` + a full history load.
@@ -81,6 +97,11 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   internal file table.
 
 ### Architecture
+- `TdLifecycleBridge.bind()` is now idempotent. The
+  `ProcessLifecycleOwner` observer + `ConnectivityManager.NetworkCallback`
+  registration would silently double up if `bind()` ever ran twice
+  (currently `HortayApp.onCreate` is the only caller, but the invariant
+  wasn't enforced in code).
 - Removed a four-coroutine race in `CommentsRepository.observeThread`
   where four `launchIn` collectors mutated a shared `MutableList` from
   concurrent dispatch threads. A single `td.updates.collect` inside the

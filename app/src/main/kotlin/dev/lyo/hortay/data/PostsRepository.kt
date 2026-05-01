@@ -639,19 +639,19 @@ class PostsRepository(
         }
         if (drained.isEmpty()) return
 
+        // Single pass over the feed, O(1) hash lookup per post — vs the previous
+        // indexOfFirst per drained event which was O(events × feed) on bursts.
         _posts.update { current ->
             current.mutate { list ->
-                for ((key, info) in drained) {
-                    val (chatId, messageId) = key
-                    val idx = list.indexOfFirst { it.chatId == chatId && it.id == messageId }
-                    if (idx == -1) continue
-                    val cur = list[idx]
-                    list[idx] = cur.copy(
+                for (i in list.indices) {
+                    val post = list[i]
+                    val info = drained[post.chatId to post.id] ?: continue
+                    list[i] = post.copy(
                         views = info.viewCount,
                         // Preserve current reactions/comments when the inner field is null —
                         // TDLib often omits sub-fields it hasn't recomputed.
-                        reactions = info.reactions?.let(::reactionsFromUpdate) ?: cur.reactions,
-                        commentCount = info.replyInfo?.replyCount ?: cur.commentCount,
+                        reactions = info.reactions?.let(::reactionsFromUpdate) ?: post.reactions,
+                        commentCount = info.replyInfo?.replyCount ?: post.commentCount,
                     )
                 }
             }

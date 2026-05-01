@@ -46,6 +46,13 @@ class TdLifecycleBridge(
     private val appContext = context.applicationContext
     private val cm = appContext.getSystemService(ConnectivityManager::class.java)!!
 
+    // bind() registers a process-lifetime ProcessLifecycleOwner observer + a
+    // ConnectivityManager.NetworkCallback — both leak silently if bind() ever
+    // runs twice (double goOnline/goOffline emits, double network pushes).
+    // Currently HortayApp.onCreate is the only caller, but the invariant isn't
+    // enforced by the type system, so guard it here.
+    private var bound = false
+
     private val _foreground = MutableStateFlow(false)
     /**
      * App-level foreground signal mirrored from [ProcessLifecycleOwner]. Exposed so other
@@ -69,6 +76,8 @@ class TdLifecycleBridge(
     }
 
     fun bind() {
+        if (bound) return
+        bound = true
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 _foreground.value = true
