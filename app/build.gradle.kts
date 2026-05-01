@@ -80,6 +80,12 @@ android {
             ndk {
                 abiFilters.clear()
                 abiFilters += "arm64-v8a"
+                // Bundle full debug symbols (function names + line numbers) for
+                // libtdjni.so into the .aab so Play Console's crash reporter can
+                // symbolicate native stack frames. Stripped from the user-facing
+                // APK by Play during dynamic delivery — adds ~tens of MB to the
+                // bundle on the developer side, zero impact on download size.
+                debugSymbolLevel = "FULL"
             }
         }
         debug {
