@@ -21,6 +21,25 @@ val keystoreProps = Properties().apply {
     if (f.exists()) f.inputStream().use { load(it) }
 }
 
+// Git metadata for beta builds. Lazy so we only fork `git` if a beta variant is
+// actually being assembled, and we never crash a fresh checkout that lacks .git.
+val gitShortSha: String by lazy {
+    runCatching {
+        providers.exec {
+            commandLine("git", "rev-parse", "--short", "HEAD")
+            isIgnoreExitValue = true
+        }.standardOutput.asText.get().trim().ifEmpty { "unknown" }
+    }.getOrDefault("unknown")
+}
+val gitCommitCount: Int by lazy {
+    runCatching {
+        providers.exec {
+            commandLine("git", "rev-list", "--count", "HEAD")
+            isIgnoreExitValue = true
+        }.standardOutput.asText.get().trim().toInt()
+    }.getOrDefault(1)
+}
+
 android {
     namespace = "dev.lyo.hortay"
     compileSdk = 36
@@ -44,6 +63,8 @@ android {
                 storePassword = keystoreProps.getProperty("storePassword")
                 keyAlias = keystoreProps.getProperty("keyAlias")
                 keyPassword = keystoreProps.getProperty("keyPassword")
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
@@ -68,6 +89,18 @@ android {
                 abiFilters.clear()
                 abiFilters += listOf("arm64-v8a", "x86_64")
             }
+        }
+        // Beta channel for tester sideload distribution. Inherits release (R8 +
+        // resource shrink + arm64-only + release signing key) so testers exercise
+        // production-shaped code, but lives at dev.lyo.hortay.beta so it installs
+        // alongside any prod build. versionCode + SHA in versionName are wired up
+        // in the androidComponents block below so each commit produces a unique
+        // installable artifact (testers get in-place updates, no uninstall dance).
+        create("beta") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            applicationIdSuffix = ".beta"
+            versionNameSuffix = "-beta"
         }
         // Build type for Macrobenchmark / Baseline Profile generation. Same as release
         // (minified, R8-optimized) so the profile maps to real production code, but
@@ -118,7 +151,15 @@ android {
 
 androidComponents {
     onVariants { variant ->
+        val isBeta = variant.buildType == "beta"
         variant.outputs.forEach { output ->
+            if (isBeta) {
+                // Per-commit versionCode keeps Android happy with in-place updates
+                // (otherwise testers would need to uninstall to switch betas).
+                output.versionCode.set(gitCommitCount)
+                val base = output.versionName.orNull ?: "0.0.0"
+                output.versionName.set("$base-$gitShortSha")
+            }
             val versionName = output.versionName.orNull ?: "unversioned"
             output.outputFileName.set("hortay-$versionName-${variant.name}.apk")
         }
