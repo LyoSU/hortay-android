@@ -48,7 +48,7 @@ android {
         applicationId = "dev.lyo.hortay"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
+        versionCode = 4
         versionName = "0.1.0"
 
         buildConfigField("int", "TELEGRAM_API_ID", telegramApiId)
