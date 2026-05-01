@@ -1,0 +1,13 @@
+==============================================================================
+APPLICATION ID  (package name) — DO NOT CHANGE
+==============================================================================
+Production : dev.lyo.hortay
+Beta       : dev.lyo.hortay.beta
+
+Defined in:
+  app/build.gradle.kts -> defaultConfig.applicationId
+  app/build.gradle.kts -> productFlavors / buildTypes (beta)
+
+Why locked: changing the applicationId forces every existing user to
+reinstall and lose their TDLib database (chat history, custom emoji
+cache, sticker cache, login). Keep stable across all releases.

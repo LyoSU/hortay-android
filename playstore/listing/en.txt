@@ -1,0 +1,45 @@
+==============================================================================
+APP TITLE  (max 30 chars)
+==============================================================================
+Hortay — channels as a feed
+
+
+==============================================================================
+SHORT DESCRIPTION  (max 80 chars)
+==============================================================================
+Telegram channels in a clean feed. Quiet instead of chat noise.
+
+
+==============================================================================
+FULL DESCRIPTION  (max 4000 chars)
+==============================================================================
+Hortay turns your Telegram channels into a clean social-media feed.
+No chat clutter, no "suggested" posts, no ads.
+
+✦ Twitter-style feed
+One post, photo, reactions — no wading through 800-message group queues.
+
+✦ Posts as written
+Quotes, infographics, custom emoji, animated stickers — never clipped,
+no "show more" after the third sentence.
+
+✦ Discussions, not avalanches
+Comments rendered as threads, like a proper social network. Not an endless
+scroll into an 8000-message group chat.
+
+✦ Doesn't eat your storage
+A "Storage and traffic" panel shows real numbers — what was downloaded,
+what is taking up space. One-tap cache clear.
+
+✦ Fast cold start
+Pre-built Baseline Profiles. No jank on 200 channels.
+
+✦ Privacy by default
+No analytics, no Firebase, no ad SDKs. Internet is used only to talk to
+Telegram. Open source.
+
+Hortay uses Telegram's official library (TDLib) — your account lives in
+the same API as the official client. It is not a "third party" — it is
+a standard login with your phone number.
+
+Hortay is for people who read Telegram channels more than they message.

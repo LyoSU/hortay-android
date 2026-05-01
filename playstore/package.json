@@ -1,0 +1,16 @@
+{
+  "name": "hortay-playstore",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Google Play Store screenshot generator for Hortay (HTML → PNG, i18n-ready)",
+  "scripts": {
+    "render": "node src/render.mjs",
+    "capture": "node scripts/capture.mjs",
+    "build": "npm run render && npm run capture",
+    "preview": "npx serve -l 4173 ."
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

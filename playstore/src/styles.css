@@ -1,0 +1,142 @@
+/*
+ * Hortay — Play Store screenshot styles.
+ * Canvas: 1080×1920 (Google Play phone screenshot, 9:16).
+ * Design: Material 3 Expressive lavender + bold typography.
+ */
+
+:root {
+  --ink:        #1A1330;
+  --ink-soft:   rgba(26, 19, 48, 0.62);
+  --grad-from:  #ECE6FB;
+  --grad-to:    #C9BEF0;
+  --accent:     #7E6BD9;
+  --accent-glow: rgba(126, 107, 217, 0.42);
+  --frame:      #14102A;
+  --frame-edge: rgba(255, 255, 255, 0.06);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 1080px;
+  height: 1920px;
+}
+
+body {
+  font-family: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: linear-gradient(165deg, var(--grad-from) 0%, var(--grad-to) 100%);
+  color: var(--ink);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.canvas {
+  position: relative;
+  width: 1080px;
+  height: 1920px;
+  padding: 140px 96px 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Soft accent halo behind the phone. */
+.glow {
+  position: absolute;
+  width: 980px;
+  height: 980px;
+  bottom: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, var(--accent-glow), transparent 72%);
+  filter: blur(28px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Subtle film grain to kill flat-gradient banding on Play Store JPEG re-encode. */
+.grain {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  pointer-events: none;
+}
+
+.text {
+  position: relative;
+  z-index: 2;
+  max-width: 880px;
+}
+
+.title {
+  font-size: 108px;
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  font-feature-settings: "ss01", "cv11";
+}
+
+.divider {
+  display: block;
+  width: 88px;
+  height: 5px;
+  background: var(--accent);
+  border-radius: 3px;
+  margin: 36px 0 30px;
+}
+
+.subtitle {
+  font-size: 38px;
+  font-weight: 400;
+  line-height: 1.32;
+  color: var(--ink-soft);
+  letter-spacing: -0.005em;
+  max-width: 760px;
+}
+
+/* Phone — closed-bezel modern Android look, intentionally device-neutral. */
+.phone-wrap {
+  position: relative;
+  z-index: 1;
+  margin-top: auto;
+  margin-bottom: -180px;
+  display: flex;
+  justify-content: center;
+}
+
+.phone {
+  width: 720px;
+  background: var(--frame);
+  border-radius: 68px;
+  padding: 16px;
+  box-shadow:
+    0 80px 140px rgba(30, 15, 80, 0.35),
+    0 28px 56px rgba(30, 15, 80, 0.22),
+    inset 0 0 0 1.5px var(--frame-edge);
+}
+
+.phone-screen {
+  position: relative;
+  background: #0b0820;
+  border-radius: 52px;
+  overflow: hidden;
+  /* Phone-screen aspect is enforced by image natural ratio.
+     Screenshots come from a real device (~1080×~2340 px) so this stays correct. */
+}
+
+.phone-screen img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 52px;
+}
+
+/* Per-screen tweaks: reserved hook (data-screen) for future divergence. */
+.canvas[data-screen="02-storage"] .divider { background: #B07BD9; }
+.canvas[data-screen="03-formats"] .divider { background: #6B89E0; }
+.canvas[data-screen="04-comments"] .divider { background: #E0A86B; }

@@ -1,0 +1,19 @@
+{
+  "_review": "Draft. Newline in title = line break on the screen.",
+  "hero": {
+    "title": "Telegram channels,\nTwitter-style.",
+    "subtitle": "A clean feed — none of the chat noise"
+  },
+  "storage": {
+    "title": "Doesn't eat\nyour storage.",
+    "subtitle": "Traffic and cache — under control"
+  },
+  "formats": {
+    "title": "Posts as\nwritten.",
+    "subtitle": "Quotes, infographics, reactions — never clipped"
+  },
+  "comments": {
+    "title": "Discussions,\nnot avalanches.",
+    "subtitle": "Threaded replies instead of endless scroll"
+  }
+}

@@ -1,0 +1,6 @@
+[
+  { "id": "01-hero",     "key": "hero",     "photo": "01-hero.jpg",     "accent": "primary" },
+  { "id": "02-storage",  "key": "storage",  "photo": "02-storage.jpg",  "accent": "primary" },
+  { "id": "03-formats",  "key": "formats",  "photo": "03-formats.jpg",  "accent": "primary" },
+  { "id": "04-comments", "key": "comments", "photo": "04-comments.jpg", "accent": "primary" }
+]

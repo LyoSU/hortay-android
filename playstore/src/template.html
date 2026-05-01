@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+  <meta charset="utf-8">
+  <title>{{title_plain}}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../src/styles.css">
+</head>
+<body>
+  <div class="canvas" data-screen="{{id}}">
+    <div class="glow" aria-hidden="true"></div>
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="text">
+      <h1 class="title">{{title}}</h1>
+      <span class="divider" aria-hidden="true"></span>
+      <p class="subtitle">{{subtitle}}</p>
+    </header>
+
+    <div class="phone-wrap" aria-hidden="true">
+      <div class="phone">
+        <div class="phone-screen">
+          <img src="../../screens/photos/{{photo}}" alt="">
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
