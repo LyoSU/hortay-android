@@ -63,4 +63,27 @@ data class TimelinePost(
     val isPinned: Boolean = false,
     /** Telegram verification mark (blue check / scam / fake). Null when none. */
     val verification: SenderVerification? = null,
+    /**
+     * Channel attribution surfaced as a secondary "in &lt;Channel&gt;" line under the
+     * sender row. Populated only when the post's [senderName]/[avatar] has been swapped
+     * to a personal author (admin posting under their own identity in the new TDLib
+     * "personal-author" channel mode), so the reader still sees which channel the post
+     * actually lives in. Null for the standard "channel-as-sender" path — that case
+     * needs no secondary attribution.
+     */
+    val channelContext: ChannelContext? = null,
+)
+
+/**
+ * Lightweight channel descriptor used for the "in &lt;Channel&gt;" subtitle when the post's
+ * displayed sender is a person rather than the channel itself. We deliberately do NOT
+ * reuse [TimelinePost] — the subtitle needs only enough to render an avatar pip + name +
+ * tap-to-filter target, and TimelinePost would drag interaction data we have no use for.
+ */
+@Immutable
+data class ChannelContext(
+    val name: String,
+    val handle: String?,
+    val avatarThumb: ByteArray?,
+    val avatarFileId: Int?,
 )

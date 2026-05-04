@@ -240,6 +240,20 @@
     <string name="spoiler_tap_to_view">Натисніть, щоб переглянути</string>
     <string name="spoiler_sensitive_tap">Натисніть — конфіденційне</string>
 
+    <!-- Personal-author channel mode -->
+    <string name="post_in_channel">у %1$s</string>
+
+    <!-- Reply / quote-card kind labels -->
+    <string name="reply_kind_photo">Фото</string>
+    <string name="reply_kind_video">Відео</string>
+    <string name="reply_kind_animation">GIF</string>
+    <string name="reply_kind_document">Файл</string>
+    <string name="reply_kind_audio">Аудіо</string>
+    <string name="reply_kind_voice">Голосове</string>
+    <string name="reply_kind_video_note">Кружечок</string>
+    <string name="reply_kind_sticker">Стікер</string>
+    <string name="reply_kind_poll">Опитування</string>
+
     <!-- User defaults -->
     <string name="user_default_name">Користувач</string>
     <string name="channel_default_name">Канал</string>

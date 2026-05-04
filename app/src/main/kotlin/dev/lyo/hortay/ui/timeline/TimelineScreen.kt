@@ -12,6 +12,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -75,6 +76,15 @@ fun TimelineScreen(
     onOpenComments: (TimelinePost) -> Unit = {},
     homeTapTrigger: Long = 0L,
     onBrandTap: () -> Unit = {},
+    /**
+     * One-shot "scroll to this message in the active feed" request. When non-null,
+     * TimelineScreen seeds [pendingScrollToMessage] from it and immediately calls
+     * [onScrollHandled] so the parent can null its own state. Used by the deep-link
+     * dispatcher in MainScaffold to land tg://openmessage / t.me/handle/<id> targets
+     * on the right row, not just the right channel.
+     */
+    scrollToMessage: Pair<Long, Long>? = null,
+    onScrollHandled: () -> Unit = {},
 ) {
     val vm: TimelineViewModel = viewModel(
         factory = remember(repo, bookmarks) {
@@ -114,8 +124,40 @@ fun TimelineScreen(
     // Without this guard the pill flashes a misleading huge count for ~1 frame.
 
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
+    // Two scroll-position holders so a channel-filter detour doesn't blow away where the
+    // user was reading the global feed. The global state is rememberLazyListState (already
+    // saveable across config changes); the filter state is keyed on [channelFilter] so
+    // entering a new channel starts at the top, while the user is in that channel rotations
+    // preserve their position. Returning to the global feed (channelFilter = null) lands
+    // them exactly where they left off.
+    val globalListState = rememberLazyListState()
+    val filterListState = rememberSaveable(channelFilter, saver = LazyListState.Saver) {
+        LazyListState()
+    }
+    val listState = if (channelFilter != null) filterListState else globalListState
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+
+    // One-shot "scroll to this messageId once it lands in the list". Two producers feed
+    // this: in-app quote-card taps (see [PostInteractions.onQuotedSourceClick]) and
+    // external deep links (the [scrollToMessage] parameter from MainScaffold). One
+    // consumer — the LaunchedEffect below — resolves the target by scanning
+    // displayedItems and clears the request on success. Cleared too on filter dismissal
+    // (C2 fix) so a stale target from a previous channel doesn't yank the user later.
+    var pendingScrollToMessage by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    LaunchedEffect(scrollToMessage) {
+        if (scrollToMessage != null) {
+            pendingScrollToMessage = scrollToMessage
+            onScrollHandled()
+        }
+    }
+    LaunchedEffect(channelFilter) {
+        // Filter went back to "all" (or switched to a different chat than the queued
+        // target referenced) — drop the stale request so we don't fire it later.
+        val target = pendingScrollToMessage
+        if (target != null && (channelFilter == null || target.first != channelFilter)) {
+            pendingScrollToMessage = null
+        }
+    }
 
     // Selected folder/archive scope. Default: "All". Stored as a saveable so the user's
     // tab survives process death; folder tabs get rebuilt against the freshest folders
@@ -184,10 +226,15 @@ fun TimelineScreen(
         if (atTop) vm.refresh() else listState.animateScrollToItem(0)
     }
 
-    // Switching the active channel context changes which posts are visible — without this,
-    // the previous scroll offset bleeds through and lands the user mid-list.
-    LaunchedEffect(channelFilter, scope_filter) {
-        listState.scrollToItem(0)
+    // Switching folders within the global feed jumps to the top — "show me the top of
+    // this folder" is the expected behaviour. Channel-filter visits don't need an explicit
+    // scroll: filterListState above is freshly remembered per channelFilter, so it starts
+    // at the top by construction. Going back to the global feed (channelFilter = null)
+    // restores globalListState, which was preserved while the user was off in the filter.
+    LaunchedEffect(scope_filter) {
+        if (channelFilter == null) {
+            globalListState.scrollToItem(0)
+        }
     }
 
     // Tell TDLib the filtered channel is in focus while the user is here, and eagerly pull
@@ -273,6 +320,48 @@ fun TimelineScreen(
         }
     }
 
+    // Threads-style grouping: when a post replies to another post that's ALSO present in the
+    // visible feed, the two are merged into a single LazyColumn slot (parent stacked above
+    // reply, joined by a connector line). Drives the main feed render; LaunchedEffects below
+    // that map "visible item indices" → posts use [FeedItem.posts] to flatten threaded slots
+    // back into individual TimelinePost entries.
+    val feedItems = remember(visiblePosts) { groupReplies(visiblePosts) }
+
+    // Source of truth for "what the LazyColumn is currently rendering". Search results stay
+    // flat (threading a search hit by its parent would surface posts the user didn't search
+    // for); outside search we reuse the grouped feedItems verbatim.
+    val displayedItems: List<FeedItem> = remember(
+        feedItems, searchActive, channelFilter, searchResults,
+    ) {
+        if (searchActive && channelFilter != null) searchResults.map(FeedItem::Single)
+        else feedItems
+    }
+
+    // Resolve the queued "scroll to messageId" once the target row appears. Keyed on
+    // [pendingScrollToMessage] alone (NOT on displayedItems) so a busy feed doesn't
+    // restart the effect dozens of times per second on every list mutation — instead we
+    // use snapshotFlow inside to react to displayedItems changes lazily, and stop
+    // collecting as soon as we land the scroll. The lookup matches both the post's
+    // canonical id AND any of its album member ids — TimelinePost collapses an album
+    // into a single row keyed on the oldest member, but a quote card may point at any
+    // member.
+    LaunchedEffect(pendingScrollToMessage) {
+        val (chatId, messageId) = pendingScrollToMessage ?: return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { displayedItems }
+            .collect { items ->
+                val idx = items.indexOfFirst { item ->
+                    item.posts().any { p ->
+                        p.chatId == chatId && (p.id == messageId || messageId in p.albumMessageIds)
+                    }
+                }
+                if (idx >= 0) {
+                    listState.animateScrollToItem(idx)
+                    pendingScrollToMessage = null
+                    return@collect
+                }
+            }
+    }
+
     // Pill state, scoped to the active tab. Counting pending posts the user can't see
     // would flash a misleading "5 нових" while archive/out-of-folder posts arrive in the
     // background.
@@ -284,11 +373,16 @@ fun TimelineScreen(
             .groupBy { it.chatId }
             .map { (chatId, group) ->
                 val anchor = group.maxBy { it.date }
+                // Personal-author posts have the admin in senderName/avatar; the channel's
+                // own identity lives in channelContext. Pick the first post in the group
+                // that has a channelContext (= it's a personal-author post and the channel
+                // info is right there) and otherwise fall back to anchor's own fields.
+                val canonical = group.firstNotNullOfOrNull { it.channelContext }
                 ChannelBadge(
                     chatId = chatId,
-                    title = anchor.senderName,
-                    thumb = anchor.avatarThumb,
-                    fileId = anchor.avatarFileId,
+                    title = canonical?.name ?: anchor.senderName,
+                    thumb = canonical?.avatarThumb ?: anchor.avatarThumb,
+                    fileId = canonical?.avatarFileId ?: anchor.avatarFileId,
                     latestPostDate = anchor.date,
                 )
             }
@@ -307,7 +401,15 @@ fun TimelineScreen(
     }
 
     val activeChannelTitle = remember(channelFilter, posts) {
-        channelFilter?.let { id -> posts.firstOrNull { it.chatId == id }?.senderName }
+        channelFilter?.let { id ->
+            // Same canonical-channel-identity rule as the channels list / pendingChannels:
+            // if any post for this filter has a channelContext (personal-author mode), use
+            // its name; otherwise fall back to the post's own senderName which IS the
+            // channel name in standard channel-as-sender mode.
+            val matches = posts.filter { it.chatId == id }
+            matches.firstNotNullOfOrNull { it.channelContext?.name }
+                ?: matches.firstOrNull()?.senderName
+        }
     }
     var activeChannelSubscribers by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(channelFilter) {
@@ -325,8 +427,8 @@ fun TimelineScreen(
             .distinctUntilChanged()
             .debounce(700)
             .collect { indices ->
-                val snapshot = visiblePosts
-                indices.mapNotNull { snapshot.getOrNull(it) }
+                val snapshot = feedItems
+                indices.flatMap { snapshot.getOrNull(it)?.posts().orEmpty() }
                     .filter { it.commentCount != null }
                     .forEach { post ->
                         val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
@@ -347,9 +449,9 @@ fun TimelineScreen(
             .distinctUntilChanged()
             .debounce(500)
             .collect { indices ->
-                val snapshot = visiblePosts
+                val snapshot = feedItems
                 if (snapshot.isEmpty() || indices.isEmpty()) return@collect
-                val grouped = indices.mapNotNull { idx -> snapshot.getOrNull(idx) }
+                val grouped = indices.flatMap { idx -> snapshot.getOrNull(idx)?.posts().orEmpty() }
                     .groupBy { it.chatId }
                 for ((chatId, group) in grouped) {
                     repo.viewMessages(chatId, group.map { it.id })
@@ -421,6 +523,18 @@ fun TimelineScreen(
                             )
                         }
                     }
+                }
+            },
+            onQuotedSourceClick = { post ->
+                // In-app "open the original" — switch the channel filter (no Intent chooser
+                // bounce) and queue a scroll-to-target. The scroll is one-shot: a
+                // LaunchedEffect below resolves it as soon as the target message lands in
+                // displayedItems, then clears the pending state. If the channel was already
+                // loaded the scroll happens on the next frame; otherwise we wait for
+                // loadChannelHistory to deliver, then snap.
+                post.reply?.let { r ->
+                    onChannelFilterChangeState.value(r.replyToChatId)
+                    pendingScrollToMessage = r.replyToChatId to r.replyToMessageId
                 }
             },
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
@@ -553,24 +667,26 @@ fun TimelineScreen(
                                 else listState.firstVisibleItemIndex
                             }
                         }
-                        LaunchedEffect(prefetchAnchor, displayed) {
+                        LaunchedEffect(prefetchAnchor, displayedItems) {
                             val firstVisible = prefetchAnchor ?: return@LaunchedEffect
-                            if (firstVisible >= displayed.size) return@LaunchedEffect
-                            val end = (firstVisible + PREFETCH_AHEAD).coerceAtMost(displayed.lastIndex)
+                            if (firstVisible >= displayedItems.size) return@LaunchedEffect
+                            val end = (firstVisible + PREFETCH_AHEAD).coerceAtMost(displayedItems.lastIndex)
                             for (idx in (firstVisible + 1)..end) {
-                                val post = displayed.getOrNull(idx) ?: continue
-                                for (fileId in post.content.posterFileIds()) {
-                                    cache.ensure(fileId, DownloadPriority.Prefetch)
-                                }
-                                // Inline-playable media (short videos, GIF animations) get the
-                                // playback file pre-warmed too, but ONLY for the immediate next
-                                // post. Beyond +1 we'd burn megabytes speculating on posts the
-                                // user may never reach (a 30 s autoplay video is already ~5 MB).
-                                // Posters stay cheap to prefetch farther, since they're tens of
-                                // KB; playback is the heavyweight step we cap tightly.
-                                if (idx == firstVisible + 1) {
-                                    for (fileId in post.content.playbackFileIds()) {
+                                val item = displayedItems.getOrNull(idx) ?: continue
+                                for (post in item.posts()) {
+                                    for (fileId in post.content.posterFileIds()) {
                                         cache.ensure(fileId, DownloadPriority.Prefetch)
+                                    }
+                                    // Inline-playable media (short videos, GIF animations) get the
+                                    // playback file pre-warmed too, but ONLY for the immediate next
+                                    // slot. Beyond +1 we'd burn megabytes speculating on posts the
+                                    // user may never reach (a 30 s autoplay video is already ~5 MB).
+                                    // Posters stay cheap to prefetch farther, since they're tens of
+                                    // KB; playback is the heavyweight step we cap tightly.
+                                    if (idx == firstVisible + 1) {
+                                        for (fileId in post.content.playbackFileIds()) {
+                                            cache.ensure(fileId, DownloadPriority.Prefetch)
+                                        }
                                     }
                                 }
                             }
@@ -585,8 +701,18 @@ fun TimelineScreen(
                                 ),
                                 modifier = Modifier.fillMaxSize(),
                             ) {
-                                items(items = displayed, key = { "${it.chatId}_${it.id}" }) { post ->
-                                    PostCard(post = post, interactions = interactions)
+                                items(items = displayedItems, key = { it.key }) { item ->
+                                    when (item) {
+                                        is FeedItem.Single -> PostCard(
+                                            post = item.post,
+                                            interactions = interactions,
+                                        )
+                                        is FeedItem.Thread -> ThreadedPostPair(
+                                            parent = item.parent,
+                                            reply = item.reply,
+                                            interactions = interactions,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -916,6 +1042,132 @@ private fun PostContent.playbackFileIds(): List<Int> = buildList {
         else -> Unit
     }
 }
+
+/**
+ * One slot in the rendered feed. A [Single] is the standard one-post-per-row case; a [Thread]
+ * is a Threads-style stacked pair where a reply and the post it's replying to are merged
+ * into a single LazyColumn slot. `key` powers LazyColumn's [items] keying — different
+ * shapes get different prefixes so a post toggling between Single↔Thread doesn't reuse the
+ * old slot's saved state (scroll position of an album row, for example).
+ */
+@Immutable
+sealed interface FeedItem {
+    val key: String
+
+    @Immutable
+    data class Single(val post: TimelinePost) : FeedItem {
+        override val key: String get() = "post_${post.chatId}_${post.id}"
+    }
+
+    @Immutable
+    data class Thread(val parent: TimelinePost, val reply: TimelinePost) : FeedItem {
+        override val key: String
+            get() = "thread_${parent.chatId}_${parent.id}_${reply.chatId}_${reply.id}"
+    }
+}
+
+/** Flatten a feed slot into its constituent posts (1 for Single, 2 for Thread). */
+internal fun FeedItem.posts(): List<TimelinePost> = when (this) {
+    is FeedItem.Single -> listOf(post)
+    is FeedItem.Thread -> listOf(parent, reply)
+}
+
+/**
+ * Two-pass grouping that collapses *fresh, consecutive* self-replies into [FeedItem.Thread]
+ * pairs and leaves everything else as [FeedItem.Single] (with the existing inline quote
+ * preview). The Threads-style stacked thread is reserved for the case it actually feels
+ * like a continuation; older callbacks render as a regular post with a Twitter-style
+ * quote pointing back to the original — which itself stays in the feed where it lives,
+ * NOT consumed by the reply. The user reaches the original by tapping the quote.
+ *
+ * Two signals must both fire to thread:
+ *   1. **Consecutive** — no other post of the same channel sits between the reply and the
+ *      parent in the visible feed. A channel that posts unrelated B in the middle, then
+ *      replies to old A, is doing a callback, not extending a thread.
+ *   2. **Fresh** — `reply.date - parent.date ≤ THREAD_FRESH_WINDOW_MS` (1 h). Two-week-old
+ *      parents thread with their replies looks like archaeology, not conversation.
+ *
+ * Cross-channel replies (parent in another channel) intentionally never thread — that's
+ * a quote relationship, semantically a citation. They render as Single with the quote
+ * preview pointing at the parent post.
+ *
+ * The feed is ordered newest-first; reply iterates BEFORE its parent. When threading
+ * fires we consume both keys so the parent's later iteration is a no-op skip. When we
+ * decide NOT to thread we leave the parent unconsumed — it shows as its own Single later,
+ * unchanged, exactly where its date placed it.
+ *
+ * Long chains (A ← B ← C, all fresh & consecutive): iteration hits C first, consumes B as
+ * its parent → Thread(B, C). A is then iterated and emitted as Single. B's inline quote
+ * preview of A still renders inside the threaded slot (parent in a thread keeps its own
+ * inline reply), giving a natural three-step visual without a triple-card stack.
+ */
+internal fun groupReplies(
+    posts: List<TimelinePost>,
+    freshWindowMs: Long = THREAD_FRESH_WINDOW_MS,
+): List<FeedItem> {
+    if (posts.size < 2) return posts.map(FeedItem::Single)
+    // Index posts by every messageId they "own" — the canonical post.id PLUS every album
+    // member id. Telegram albums are merged into a single TimelinePost whose id is the
+    // oldest member's id, but a reply may target ANY member of the album (e.g. the 3rd
+    // photo). Without indexing all member ids the lookup misses and the thread doesn't
+    // form. This was the dominant cause of early "не ворк" reports for media-heavy channels.
+    val byKey = HashMap<Pair<Long, Long>, TimelinePost>(posts.size * 2)
+    val indexOf = HashMap<Pair<Long, Long>, Int>(posts.size * 2)
+    for ((idx, p) in posts.withIndex()) {
+        byKey[p.chatId to p.id] = p
+        indexOf[p.chatId to p.id] = idx
+        for (mid in p.albumMessageIds) {
+            byKey[p.chatId to mid] = p
+            indexOf[p.chatId to mid] = idx
+        }
+    }
+    val consumed = HashSet<Pair<Long, Long>>(posts.size)
+    val out = ArrayList<FeedItem>(posts.size)
+    for ((idx, post) in posts.withIndex()) {
+        val key = post.chatId to post.id
+        if (key in consumed) continue
+        val replyTo = post.reply
+        val parent = if (replyTo != null) {
+            byKey[replyTo.replyToChatId to replyTo.replyToMessageId]
+        } else null
+        // Same-channel only: cross-channel replies stay as Single with the quote preview
+        // pointing at the parent — that's a citation, not a thread.
+        if (parent != null && parent.chatId == post.chatId) {
+            val parentKey = parent.chatId to parent.id
+            if (parentKey != key && parentKey !in consumed) {
+                val parentIdx = indexOf[parentKey] ?: -1
+                val fresh = (post.date - parent.date) in 0..freshWindowMs
+                // "Consecutive" = no other post of the same channel between reply (idx) and
+                // parent (parentIdx > idx, since posts are newest-first). Posts of other
+                // channels in between are fine; the user's experience is per-channel.
+                val consecutive = parentIdx > idx && run {
+                    var ok = true
+                    for (i in (idx + 1) until parentIdx) {
+                        if (posts[i].chatId == post.chatId) { ok = false; break }
+                    }
+                    ok
+                }
+                if (fresh && consecutive) {
+                    out.add(FeedItem.Thread(parent = parent, reply = post))
+                    consumed.add(parentKey)
+                    consumed.add(key)
+                    continue
+                }
+            }
+        }
+        out.add(FeedItem.Single(post))
+        consumed.add(key)
+    }
+    return out
+}
+
+/**
+ * How recent a parent must be (relative to the reply) to qualify as a "fresh thread".
+ * Older parents render as a quote-card on the reply (Twitter-style), with the parent
+ * staying as its own Single entry where its date placed it. 1 h matches the typical
+ * news-channel cadence — anything slower than that reads as a callback, not continuation.
+ */
+private const val THREAD_FRESH_WINDOW_MS = 60L * 60L * 1000L
 
 private fun formatSubscribers(count: Int): String {
     fun compact(value: Double, suffix: String): String {

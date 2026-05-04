@@ -41,43 +41,111 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
 
     // Reply previews sometimes hit the same source post repeatedly — same channel
     // referenced by multiple posts, or the same conversation thread visible across a
-    // refresh. Caching the resolved author name skips a td.send(GetMessage) per probe.
-    private val replyAuthorCache = boundedLru<Pair<Long, Long>, String>(MAX_RESOLVER_CACHE)
+    // refresh. We cache the full resolved context (author, thumbnail, kind, plus a
+    // fallback caption/text) so a second mapping never round-trips. The single GetMessage
+    // we'd already pay for the author also fills in thumbnail and kind, which TDLib's
+    // [MessageReplyToMessage.content] snapshot leaves null in many channel-post pathways.
+    private val replyContextCache = boundedLru<Pair<Long, Long>, ReplyContext>(MAX_RESOLVER_CACHE)
+
+    private data class ReplyContext(
+        val authorName: String,
+        val mediaThumb: TdMedia?,
+        val mediaKind: ReplyMediaKind,
+        val fallbackExcerpt: String,
+    )
 
     /**
-     * Map a channel feed post: sender info comes from the channel chat itself (its title
-     * and supergroup `@handle`). Used by [PostsRepository] for the top-level feed.
+     * Map a channel feed post.
+     *
+     * **Sender resolution**: TDLib distinguishes three cases via [TdApi.Message.senderId]:
+     *   1. `MessageSenderChat(chatId == chat.id)` — the channel itself posts. Standard path:
+     *      sender = channel name + handle + photo, `channelContext = null`.
+     *   2. `MessageSenderUser(userId)` — TDLib's "personal-author" channel mode: an admin
+     *      explicitly posted under their own identity. Sender = user's display name +
+     *      `@username` + avatar. The channel attribution is preserved in [channelContext]
+     *      so the reader still sees "in &lt;ChannelName&gt;".
+     *   3. `MessageSenderChat(chatId != chat.id)` — rare: an admin posting on behalf of a
+     *      different chat (e.g., posting as one of the admin's other channels). Treated the
+     *      same as case 2 so the foreign chat's identity is shown, with the host channel
+     *      preserved in [channelContext].
+     *
+     * This is NOT the same as `authorSignature` — that field is a free-text caption set on
+     * channel-as-sender posts ("Олег Петренко" appears as "ChannelName · Олег Петренко" in
+     * the header). Personal-author mode replaces the WHOLE identity row, including avatar.
      */
-    suspend fun toChannelPost(message: TdApi.Message, chat: TdApi.Chat): TimelinePost = TimelinePost(
-        id = message.id,
-        chatId = message.chatId,
-        mediaAlbumId = message.mediaAlbumId,
-        senderName = chat.title.orEmpty(),
-        senderHandle = resolveChannelHandle(chat),
-        avatarThumb = chat.photo?.minithumbnail?.data,
-        avatarFileId = chat.photo?.small?.id,
-        content = MessageContentMapper.map(message.content, res),
-        views = message.interactionInfo?.viewCount ?: 0,
-        date = message.date.toLong() * 1000L,
-        editDate = message.editDate.toLong() * 1000L,
-        forwardOrigin = message.forwardInfo?.origin?.let { mapForwardOrigin(it) },
-        authorSignature = message.authorSignature.takeUnless { it.isNullOrBlank() },
-        reply = mapReply(message.replyTo, message.chatId),
-        reactions = MessageContentMapper.mapReactions(message.interactionInfo?.reactions),
-        commentCount = message.interactionInfo?.replyInfo?.replyCount,
-        // Filled in by PostFilterStrategy.mergeAlbumMembers — per-message mapping has
-        // no idea which siblings exist yet.
-        albumMessageIds = emptyList(),
-        parentId = null,
-        isPinned = message.isPinned,
-        verification = resolveChannelVerification(chat),
-    )
+    suspend fun toChannelPost(message: TdApi.Message, chat: TdApi.Chat): TimelinePost {
+        val sender = message.senderId
+        val isChannelAsSender = sender is TdApi.MessageSenderChat && sender.chatId == chat.id
+        val channelHandle = resolveChannelHandle(chat)
+        val channelThumb = chat.photo?.minithumbnail?.data
+        val channelFileId = chat.photo?.small?.id
+
+        val displayName: String
+        val displayHandle: String?
+        val displayThumb: ByteArray?
+        val displayFileId: Int?
+        val channelContext: ChannelContext?
+
+        if (isChannelAsSender) {
+            displayName = chat.title.orEmpty()
+            displayHandle = channelHandle
+            displayThumb = channelThumb
+            displayFileId = channelFileId
+            channelContext = null
+        } else {
+            val resolved = resolveSender(sender)
+            displayName = resolved.name
+            displayHandle = resolved.handle
+            displayThumb = resolved.avatarThumb
+            displayFileId = resolved.avatarFileId
+            channelContext = ChannelContext(
+                name = chat.title.orEmpty(),
+                handle = channelHandle,
+                avatarThumb = channelThumb,
+                avatarFileId = channelFileId,
+            )
+        }
+
+        return TimelinePost(
+            id = message.id,
+            chatId = message.chatId,
+            mediaAlbumId = message.mediaAlbumId,
+            senderName = displayName,
+            senderHandle = displayHandle,
+            avatarThumb = displayThumb,
+            avatarFileId = displayFileId,
+            content = MessageContentMapper.map(message.content, res),
+            views = message.interactionInfo?.viewCount ?: 0,
+            date = message.date.toLong() * 1000L,
+            editDate = message.editDate.toLong() * 1000L,
+            forwardOrigin = message.forwardInfo?.origin?.let { mapForwardOrigin(it) },
+            // authorSignature is the custom-title channel admins set on channel-as-sender
+            // posts ("ChannelName · CustomTitle"). It's noise for personal-author mode —
+            // the actual admin's name is already in senderName, and TDLib sometimes echoes
+            // the same name into authorSignature, producing "Author · Author" duplicates.
+            authorSignature = if (isChannelAsSender) {
+                message.authorSignature.takeUnless { it.isNullOrBlank() }
+            } else null,
+            reply = mapReply(message.replyTo, message.chatId),
+            reactions = MessageContentMapper.mapReactions(message.interactionInfo?.reactions),
+            commentCount = message.interactionInfo?.replyInfo?.replyCount,
+            // Filled in by PostFilterStrategy.mergeAlbumMembers — per-message mapping has
+            // no idea which siblings exist yet.
+            albumMessageIds = emptyList(),
+            parentId = null,
+            isPinned = message.isPinned,
+            verification = resolveChannelVerification(chat),
+            channelContext = channelContext,
+        )
+    }
 
     /**
      * Map a discussion-thread comment: sender info comes from [TdApi.Message.senderId]
      * (a user, or a chat posting on behalf of a channel). Channel-specific fields
      * (views, commentCount, authorSignature) are zero/null because they don't apply to
-     * conversation messages.
+     * conversation messages. [TimelinePost.channelContext] is also intentionally left
+     * null — comments already live inside a thread surface, so the "in &lt;Channel&gt;"
+     * subtitle would be redundant noise stacked on top of the thread header.
      *
      * Reply previews still flow through [mapReply] — comment replies that quote another
      * comment in the same thread render with author + excerpt, identical to feed posts.
@@ -259,27 +327,106 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
 
     private suspend fun mapReply(replyTo: TdApi.MessageReplyTo?, chatId: Long): ReplyPreview? {
         val reply = replyTo as? TdApi.MessageReplyToMessage ?: return null
-        val excerpt = reply.quote?.text?.text.orEmpty().ifBlank {
-            (reply.content as? TdApi.MessageText)?.text?.text.orEmpty()
-        }
-        if (excerpt.isBlank()) return null
-
-        // Cache reply-author resolution per source message — many timeline posts reply
-        // to the same channel post (especially in news feeds), and a stale GetMessage
-        // round-trip per probe is expensive enough to feel on a 200-post refresh.
         val key = reply.chatId to reply.messageId
-        val author = replyAuthorCache[key] ?: run {
-            // Cross-chat reply (Quote / reply-to-channel-post): fall back to the SOURCE
-            // chat's name, not the post's own chat — otherwise a quoted post from channel
-            // A appearing in channel B gets misattributed to channel B.
-            val resolved = runCatching {
-                val refMsg = td.send(TdApi.GetMessage(reply.chatId, reply.messageId))
-                resolveSender(refMsg.senderId).name
-            }.getOrNull() ?: resolveCachedChat(reply.chatId).name
-            replyAuthorCache.putIfAbsent(key, resolved) ?: resolved
+
+        // Resolve author + thumbnail + kind + caption-fallback once and cache the bundle.
+        //
+        // Round-trip policy:
+        //   • TDLib gave us a non-null content snapshot → we have everything we need
+        //     (kind, thumb, caption text); skip the fetch and use the chat-name cache for
+        //     author. Fast path; covers most public channel posts.
+        //   • Snapshot is null → fall back to GetMessage to get content + author. This is
+        //     the path where TDLib doesn't preload reply content (most channel-side
+        //     reply-to-channel-post pathways), and is the only case that costs a server
+        //     round-trip.
+        // Either way the result is cached per (chatId, messageId), so a busy feed with
+        // many posts referencing the same parent pays the cost at most once.
+        val ctx = replyContextCache[key] ?: run {
+            val needsFetch = reply.content == null
+            val refMsg = if (needsFetch) {
+                runCatching { td.send(TdApi.GetMessage(reply.chatId, reply.messageId)) }
+                    .getOrNull()
+            } else null
+            val author = refMsg?.let { resolveSender(it.senderId).name }
+                ?: resolveCachedChat(reply.chatId).name
+            val effectiveContent: TdApi.MessageContent? = refMsg?.content ?: reply.content
+            val (thumb, kind) = extractReplyMedia(effectiveContent)
+            val fallback = extractTextOrCaption(effectiveContent)
+            val resolved = ReplyContext(author, thumb, kind, fallback)
+            replyContextCache.putIfAbsent(key, resolved) ?: resolved
         }
-        return ReplyPreview(authorName = author, excerpt = excerpt, isQuote = reply.quote != null)
+
+        // Excerpt priority:
+        //   1. Explicit user-selected quote (Telegram's quote-text feature).
+        //   2. The parent's own text or caption (resolved via GetMessage above).
+        //   3. Empty — the kind label takes over in the UI.
+        val excerpt = reply.quote?.text?.text.orEmpty().ifBlank { ctx.fallbackExcerpt }
+
+        return ReplyPreview(
+            authorName = ctx.authorName,
+            excerpt = excerpt,
+            isQuote = reply.quote != null,
+            replyToChatId = reply.chatId,
+            replyToMessageId = reply.messageId,
+            mediaThumb = ctx.mediaThumb,
+            mediaKind = ctx.mediaKind,
+        )
     }
+
+    /**
+     * Coarse classification + thumbnail from a parent message's content. Stickers, video
+     * notes, animations and documents all expose a `thumbnail` field; photos/videos expose
+     * the largest size. Audio / voice / polls don't have stills, so the UI falls back to a
+     * kind icon. When [content] is null entirely we degrade to None.
+     */
+    private fun extractReplyMedia(content: TdApi.MessageContent?): Pair<TdMedia?, ReplyMediaKind> = when (content) {
+        is TdApi.MessagePhoto -> content.photo.toMedia() to ReplyMediaKind.Photo
+        is TdApi.MessageVideo -> content.video.toThumbMedia() to ReplyMediaKind.Video
+        is TdApi.MessageAnimation -> content.animation.toThumbMedia() to ReplyMediaKind.Animation
+        is TdApi.MessageDocument -> (content.document.thumbnail?.toMedia()) to ReplyMediaKind.Document
+        is TdApi.MessageAudio -> null to ReplyMediaKind.Audio
+        is TdApi.MessageVoiceNote -> null to ReplyMediaKind.VoiceNote
+        is TdApi.MessageVideoNote -> content.videoNote.thumbnail?.toMedia() to ReplyMediaKind.VideoNote
+        is TdApi.MessageSticker -> content.sticker.thumbnail?.toMedia() to ReplyMediaKind.Sticker
+        is TdApi.MessagePoll -> null to ReplyMediaKind.Poll
+        // Paid-media posts (channel-monetisation feature): pull the first photo / video
+        // thumb so the quote card still shows a preview. Kind=Photo is the visually
+        // closest fit — quote cards don't have a "paid" affordance and the user knows
+        // it's gated content from the original post anyway.
+        is TdApi.MessagePaidMedia -> {
+            val thumb = content.media.firstNotNullOfOrNull { piece ->
+                when (piece) {
+                    is TdApi.PaidMediaPhoto -> piece.photo.toMedia()
+                    is TdApi.PaidMediaVideo -> piece.video.toThumbMedia()
+                    else -> null
+                }
+            }
+            thumb to ReplyMediaKind.Photo
+        }
+        // Invoices have no thumbnail surface; "Document" is the closest icon we already
+        // have. Avoids the empty-author-only-strip render the user complained about.
+        is TdApi.MessageInvoice -> null to ReplyMediaKind.Document
+        else -> null to ReplyMediaKind.None
+    }
+
+    /**
+     * First useful line of text from a parent message — the message's own text, or its
+     * caption when it's a media post. Used as the quote card's body when the user did NOT
+     * pin an explicit quote selection. Whitespace-only text is treated as missing so the
+     * UI's `ifBlank` fallback to a kind label kicks in cleanly.
+     */
+    private fun extractTextOrCaption(content: TdApi.MessageContent?): String = when (content) {
+        is TdApi.MessageText -> content.text.text
+        is TdApi.MessagePhoto -> content.caption?.text.orEmpty()
+        is TdApi.MessageVideo -> content.caption?.text.orEmpty()
+        is TdApi.MessageAnimation -> content.caption?.text.orEmpty()
+        is TdApi.MessageDocument -> content.caption?.text.orEmpty()
+        is TdApi.MessageAudio -> content.caption?.text.orEmpty()
+        is TdApi.MessageVoiceNote -> content.caption?.text.orEmpty()
+        is TdApi.MessagePaidMedia -> content.caption?.text.orEmpty()
+        is TdApi.MessageInvoice -> content.productInfo?.title.orEmpty()
+        else -> ""
+    }.trim()
 
     data class ResolvedSender(
         val name: String,

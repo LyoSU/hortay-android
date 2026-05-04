@@ -27,6 +27,28 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- tg:// deep links (resolve / privatepost / openmessage). We intentionally
+                 register without autoVerify so we appear alongside the official Telegram
+                 client in the chooser; the user can pick Hortay once and Android remembers. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tg" />
+            </intent-filter>
+
+            <!-- https://t.me/... share links. Same chooser behaviour — Android shows both
+                 Hortay and Telegram. App-link verification (autoVerify=true) requires
+                 Digital Asset Links hosted at t.me, which we don't control, so we stay as
+                 a regular browsable handler. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="t.me" />
+                <data android:scheme="http" android:host="t.me" />
+            </intent-filter>
         </activity>
 
     </application>

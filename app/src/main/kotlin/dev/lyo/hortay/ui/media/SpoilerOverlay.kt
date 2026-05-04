@@ -77,7 +77,7 @@ fun SpoilerOverlay(
             modifier = Modifier
                 .fillMaxSize()
                 .blur(SHIMMER_BLUR)
-                .background(Color.Black.copy(alpha = 0.5f)),
+                .background(Color.Black.copy(alpha = 0.62f)),
         ) {
             drawShimmerField(seed = seed, drift = drift)
         }

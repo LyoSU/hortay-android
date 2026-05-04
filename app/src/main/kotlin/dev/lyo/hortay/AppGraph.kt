@@ -8,6 +8,7 @@ import dev.lyo.hortay.data.ChatFoldersRepository
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.CountryRepository
 import dev.lyo.hortay.data.CustomEmojiRepository
+import dev.lyo.hortay.data.DeepLinkRouter
 import dev.lyo.hortay.data.MediaCache
 import dev.lyo.hortay.data.MessageMapper
 import dev.lyo.hortay.data.PostsRepository
@@ -113,5 +114,13 @@ class AppGraph(context: Context) {
     // them per minute of fast scroll on profiling — most living 0 ms. Pooling makes
     // scroll past video cards essentially free at the player layer.
     val exoPlayerPool: ExoPlayerPool = ExoPlayerPool(context)
+
+    /**
+     * Process-wide router for `tg://` and `https://t.me/...` deep links. MainActivity
+     * submits incoming intents; MainScaffold collects events and dispatches navigation.
+     * Lives on the graph so a single SharedFlow survives configuration changes — re-creating
+     * the router per Activity would lose buffered links arriving during the recreation.
+     */
+    val deepLinkRouter: DeepLinkRouter = DeepLinkRouter()
 }
 

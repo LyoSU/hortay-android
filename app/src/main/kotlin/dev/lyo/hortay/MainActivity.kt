@@ -1,5 +1,6 @@
 package dev.lyo.hortay
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -28,6 +29,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val graph = (application as HortayApp).graph
+        // Cold-launch deep link: parse + buffer it into the router *before* setContent so the
+        // router has the event ready by the time MainScaffold subscribes a frame later. Warm
+        // launches into an existing task arrive via [onNewIntent] below.
+        graph.deepLinkRouter.submit(intent?.data)
 
         setContent {
             HortayTheme {
@@ -46,5 +51,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // singleTop / re-entry path: a fresh tg:// or https://t.me URL arriving while the
+        // activity is already alive. The router's Channel.BUFFERED queue holds rapid-fire
+        // links during a transition until MainScaffold's collector drains them in order.
+        val graph = (application as HortayApp).graph
+        graph.deepLinkRouter.submit(intent.data)
     }
 }

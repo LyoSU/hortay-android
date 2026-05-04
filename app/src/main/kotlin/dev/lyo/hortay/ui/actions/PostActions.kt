@@ -18,12 +18,12 @@ import dev.lyo.hortay.data.TimelinePost
 object PostActions {
 
     /**
-     * Build the Telegram deep link for this post. Returns a `tg://` URI that any installed
-     * Telegram client (official, Telegram X, MonoGram) handles natively.
+     * Telegram-internal `tg://` URI for this post. Handed to [openInTelegram] so it routes
+     * directly into the official Telegram client without bouncing through the browser. NOT
+     * suitable for sharing externally — `tg://` is opaque to non-Telegram users; use
+     * [shareUri] for that.
      */
     fun telegramUri(post: TimelinePost): Uri {
-        // Channel handles are stored as "@username" once resolved; private channels expose
-        // none. TDLib message ids are encoded — server-side post id is the upper bits.
         val username = post.senderHandle?.removePrefix("@")
         val serverPostId = post.id ushr 20
         return when {
@@ -31,6 +31,25 @@ object PostActions {
             else -> {
                 val rawChannelId = post.chatId.toString().removePrefix("-100")
                 "tg://privatepost?channel=$rawChannelId&post=$serverPostId".toUri()
+            }
+        }
+    }
+
+    /**
+     * Public-web `https://t.me/...` URI suitable for sharing. Renders as a real preview in
+     * any messenger / browser, opens in Telegram when the recipient has the app, and falls
+     * back to t.me's own preview page otherwise. Public channels: `t.me/<handle>/<post>`;
+     * private channels: `t.me/c/<rawId>/<post>` (works only for users in that channel, but
+     * that's Telegram's invariant — same as the official "Copy link" action).
+     */
+    fun shareUri(post: TimelinePost): Uri {
+        val username = post.senderHandle?.removePrefix("@")
+        val serverPostId = post.id ushr 20
+        return when {
+            !username.isNullOrBlank() -> "https://t.me/$username/$serverPostId".toUri()
+            else -> {
+                val rawChannelId = post.chatId.toString().removePrefix("-100")
+                "https://t.me/c/$rawChannelId/$serverPostId".toUri()
             }
         }
     }
@@ -68,7 +87,10 @@ object PostActions {
 
     private fun buildShareText(post: TimelinePost): String {
         val excerpt = post.content.captionPlain.take(200)
-        val url = telegramUri(post).toString()
+        // Always share the public https://t.me URL — recipients without Telegram see the
+        // t.me preview page, while Telegram users get an in-app handoff. The internal
+        // tg:// scheme would be a dead link for everyone outside the Telegram ecosystem.
+        val url = shareUri(post).toString()
         return buildString {
             if (excerpt.isNotBlank()) {
                 append(excerpt)

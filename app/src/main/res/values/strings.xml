@@ -232,6 +232,20 @@
     <string name="spoiler_tap_to_view">Tap to view</string>
     <string name="spoiler_sensitive_tap">Tap — confidential</string>
 
+    <!-- Personal-author channel mode: "in <Channel>" subtitle under admin's name -->
+    <string name="post_in_channel">in %1$s</string>
+
+    <!-- Reply / quote-card kind labels (shown when the parent has no caption) -->
+    <string name="reply_kind_photo">Photo</string>
+    <string name="reply_kind_video">Video</string>
+    <string name="reply_kind_animation">GIF</string>
+    <string name="reply_kind_document">File</string>
+    <string name="reply_kind_audio">Audio</string>
+    <string name="reply_kind_voice">Voice message</string>
+    <string name="reply_kind_video_note">Video message</string>
+    <string name="reply_kind_sticker">Sticker</string>
+    <string name="reply_kind_poll">Poll</string>
+
     <!-- User defaults -->
     <string name="user_default_name">User</string>
     <string name="channel_default_name">Channel</string>

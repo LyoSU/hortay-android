@@ -369,7 +369,33 @@ data class ReplyPreview(
     val authorName: String,
     val excerpt: String,
     val isQuote: Boolean,
+    /**
+     * Chat id of the message being replied to. When equal to the host post's chatId, the
+     * reply is a "self-reply" inside the same channel — TimelineScreen merges those into a
+     * threaded pair so the parent appears stacked above the reply with a connector line.
+     */
+    val replyToChatId: Long,
+    /** Message id of the message being replied to. Companion to [replyToChatId]. */
+    val replyToMessageId: Long,
+    /**
+     * Optional thumbnail of the parent's media (Twitter-style quote card affordance). Sourced
+     * from [TdApi.MessageReplyToMessage.content] — TDLib gives us a snapshot of the parent's
+     * content right inside the reply payload, so we don't need a follow-up GetMessage just to
+     * decorate the quote card. May be null when the parent has no media or when TDLib didn't
+     * attach the content snapshot.
+     */
+    val mediaThumb: TdMedia? = null,
+    /** Coarse parent media kind used to pick an icon when there's no thumbnail. */
+    val mediaKind: ReplyMediaKind = ReplyMediaKind.None,
 )
+
+/**
+ * Coarse classification of the parent's media. Drives the icon shown in the quote card when
+ * no thumbnail is available (audio / voice / poll have no still preview, but their kind is
+ * still meaningful to the reader). [None] = pure-text or unknown.
+ */
+@Immutable
+enum class ReplyMediaKind { None, Photo, Video, Animation, Document, Audio, VoiceNote, VideoNote, Sticker, Poll }
 
 /**
  * Telegram verification mark on a sender (channel or user). Mutually exclusive set: a chat

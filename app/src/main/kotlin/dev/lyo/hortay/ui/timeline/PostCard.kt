@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -19,6 +20,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
@@ -28,15 +32,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.ChannelContext
 import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.ReactionKind
+import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.TdAvatar
+import dev.lyo.hortay.ui.media.TdMediaImage
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -48,6 +55,17 @@ fun PostCard(
     interactions: PostInteractions = PostInteractions.Noop,
     clickable: Boolean = true,
     expanded: Boolean = false,
+    /**
+     * When false, the bottom HorizontalDivider is omitted. Used by [ThreadedPostPair] so the
+     * parent post visually flows into the reply without a divider between them.
+     */
+    showDivider: Boolean = true,
+    /**
+     * When true, the inline `ReplyBlock` blockquote is hidden. Used by [ThreadedPostPair] for
+     * the reply post — its parent is rendered as a full card above, so the small blockquote
+     * preview would just duplicate that.
+     */
+    suppressInlineReply: Boolean = false,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
 
@@ -87,6 +105,17 @@ fun PostCard(
                     onChannelClick = { interactions.onChannelClick(post) },
                 )
 
+                // "у Channel" subtitle for personal-author posts (TDLib's new channel mode
+                // where admins post under their own identity). Tap behaves the same as the
+                // avatar/header — switches the feed filter to the host channel.
+                post.channelContext?.let { ctx ->
+                    Spacer(Modifier.height(2.dp))
+                    InChannelChip(
+                        ctx = ctx,
+                        onClick = { interactions.onChannelClick(post) },
+                    )
+                }
+
                 post.forwardOrigin?.let {
                     Spacer(Modifier.height(6.dp))
                     ForwardChip(
@@ -97,9 +126,11 @@ fun PostCard(
                     )
                 }
 
-                post.reply?.let {
-                    Spacer(Modifier.height(8.dp))
-                    ReplyBlock(it)
+                if (!suppressInlineReply) {
+                    post.reply?.let {
+                        Spacer(Modifier.height(8.dp))
+                        ReplyBlock(it, onClick = { interactions.onQuotedSourceClick(post) })
+                    }
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -128,9 +159,11 @@ fun PostCard(
             }
         }
 
-        HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-        )
+        if (showDivider) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+            )
+        }
     }
 
     if (sheetOpen) {
@@ -316,6 +349,38 @@ private fun WarningPill(label: String, color: androidx.compose.ui.graphics.Color
     }
 }
 
+/**
+ * Tiny "у &lt;Channel&gt;" affordance shown beneath the author name for personal-author
+ * posts. Pip avatar (16 dp) + name in `onSurfaceVariant`; clickable hand-off lets the
+ * reader jump to the host channel filter. We deliberately avoid a chip background — at
+ * this size a fill would compete with the surrounding text density.
+ */
+@Composable
+private fun InChannelChip(ctx: ChannelContext, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TdAvatar(
+            name = ctx.name,
+            thumb = ctx.avatarThumb,
+            fileId = ctx.avatarFileId,
+            size = 16.dp,
+            background = MaterialTheme.colorScheme.surfaceContainerHigh,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = stringResource(R.string.post_in_channel, ctx.name),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 @Composable
 private fun ForwardChip(origin: ForwardOrigin, onClick: (() -> Unit)?) {
     Row(
@@ -349,43 +414,101 @@ private fun forwardLabel(origin: ForwardOrigin): String = when (origin) {
 }
 
 /**
- * Threads-style blockquote: only a thin left bar + indented text, no surface fill.
- * IntrinsicSize.Min lets the bar's fillMaxHeight match the actual two-line text height.
+ * Twitter-style quote card surfacing the post being replied to. Visual contract:
+ *   • subtle surfaceContainer fill + 12 dp rounded corners
+ *   • left accent bar (4 dp) in primary tint — signals "tap to open the original"
+ *   • author + (if present) excerpt OR a kind label like "Фото" / "Відео" when the parent
+ *     is media-only with no caption — Telegram's own clients do exactly this so the user
+ *     immediately knows whether the reply is referring to text, a photo, voice, etc.
+ *   • optional 44 dp thumbnail on the right — shown when TDLib gave us a parent media
+ *     snapshot (photos, videos, animations, video notes, stickers, document covers).
+ *
+ * The whole card is clickable (`onClick`) and dispatches to [PostInteractions.onQuotedSourceClick].
+ * TimelineScreen wires that to switch the channel filter when the parent is in the loaded feed,
+ * or to a `tg://openmessage` deep link otherwise.
  */
 @Composable
-private fun ReplyBlock(reply: ReplyPreview) {
+private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
+    val accent = MaterialTheme.colorScheme.primary
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(onClick = onClick)
             .height(IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .width(2.dp)
+                .width(3.dp)
                 .fillMaxHeight()
-                .background(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    shape = RoundedCornerShape(1.dp),
-                ),
+                .background(accent),
         )
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        ) {
             Text(
                 text = reply.authorName,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = accent,
                 fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = reply.excerpt,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // Resolve a body line. Priority:
+            //   1. The actual excerpt (quote text, or first line of the parent's text).
+            //   2. A localized kind label ("Фото", "Голосове" …) when the parent is media-only.
+            //   3. Skip the second line entirely — should be rare (text post with no text).
+            val bodyText = reply.excerpt.ifBlank { reply.mediaKind.label() }
+            if (bodyText.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (reply.excerpt.isBlank()) {
+                        // Show a tiny kind icon when the text is the kind label itself —
+                        // matches Telegram's "[icon] Photo / Video / Voice" layout.
+                        reply.mediaKind.symbolName()?.let { name ->
+                            Symbol(
+                                name = name,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                size = 14.dp,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                    }
+                    Text(
+                        text = bodyText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        // Thumbnail (when available) — 44 dp square at the trailing edge.
+        reply.mediaThumb?.let { thumb ->
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            ) {
+                TdMediaImage(
+                    media = thumb,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
+
+// Label / symbol mappings live in `ReplyKindResources.kt` so PostCard and CommentsScreen
+// share one source of truth — keeps icons and wording in lockstep across surfaces.
 
 /**
  * Stats + per-emoji reaction chips on a single horizontal-scrollable line. Twitter/Reddit-style:
@@ -610,3 +733,69 @@ private fun formatViews(count: Int): String = when {
     count < 1_000_000 -> "%.1fK".format(count / 1_000.0).trimEnd('0').trimEnd('.')
     else -> "%.1fM".format(count / 1_000_000.0).trimEnd('0').trimEnd('.')
 }
+
+/**
+ * Threads-style stacked pair: [parent] post on top, [reply] post below, joined by a thin
+ * vertical connector line aligned with the avatar column. Used by the feed when a post
+ * replies to another post that's also present in the loaded feed — TimelineScreen merges
+ * them into a single LazyColumn slot and suppresses the parent's standalone entry.
+ *
+ * Why drawBehind + onSizeChanged instead of `Modifier.height(IntrinsicSize.Min)` with a
+ * `weight(1f)` filler line in a left rail: PostBody contains a LazyRow (album gallery),
+ * and LazyRow does not support intrinsic measurement — IntrinsicSize.Min would crash.
+ * The connector positions are deterministic from PostCard's known padding (16.dp horizontal,
+ * 14.dp vertical) and avatar size (40.dp), so we just measure the parent's row height once
+ * and draw the line in the wrapping column's draw layer.
+ */
+@Composable
+fun ThreadedPostPair(
+    parent: TimelinePost,
+    reply: TimelinePost,
+    interactions: PostInteractions = PostInteractions.Noop,
+) {
+    var parentHeightPx by remember { mutableIntStateOf(0) }
+    val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                if (parentHeightPx == 0) return@drawBehind
+                // Avatar geometry mirrors PostCard's outer Row:
+                //   horizontal padding 16.dp, then a 40.dp avatar at row start
+                //   → avatar centerX = 16 + 20 = 36.dp
+                //   vertical padding 14.dp top → avatar bottom = 14 + 40 = 54.dp from row top
+                // We pull the line ends 6.dp inside the avatars so the line doesn't quite
+                // touch the circular edge — looks crisper at 1× DPI.
+                val avatarCenterX = THREAD_AVATAR_CENTER_X.toPx()
+                val parentAvatarBottom = (THREAD_ROW_VERTICAL + THREAD_AVATAR_SIZE + THREAD_LINE_INSET).toPx()
+                val replyAvatarTop = parentHeightPx.toFloat() +
+                    (THREAD_ROW_VERTICAL - THREAD_LINE_INSET).toPx()
+                drawLine(
+                    color = lineColor,
+                    start = Offset(avatarCenterX, parentAvatarBottom),
+                    end = Offset(avatarCenterX, replyAvatarTop),
+                    strokeWidth = THREAD_LINE_WIDTH.toPx(),
+                )
+            },
+    ) {
+        Box(modifier = Modifier.onSizeChanged { parentHeightPx = it.height }) {
+            PostCard(
+                post = parent,
+                interactions = interactions,
+                showDivider = false,
+            )
+        }
+        PostCard(
+            post = reply,
+            interactions = interactions,
+            suppressInlineReply = true,
+        )
+    }
+}
+
+private val THREAD_ROW_VERTICAL = 14.dp
+private val THREAD_AVATAR_SIZE = 40.dp
+private val THREAD_AVATAR_CENTER_X = 36.dp // 16.dp horizontal padding + 20.dp avatar half-width
+private val THREAD_LINE_INSET = 6.dp
+private val THREAD_LINE_WIDTH = 2.dp

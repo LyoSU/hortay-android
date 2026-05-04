@@ -16,6 +16,12 @@ class PostInteractions(
     val onChannelClick: (post: TimelinePost) -> Unit = {},
     /** User tapped the "Переслано від …" chip — open the source channel if resolvable. */
     val onForwardSourceClick: (post: TimelinePost) -> Unit = {},
+    /**
+     * User tapped the inline quote card (Twitter-style preview of the post being replied to).
+     * Implementations switch the channel filter when the parent is in the loaded feed, or
+     * fall back to a `tg://openmessage` deep link when it isn't.
+     */
+    val onQuotedSourceClick: (post: TimelinePost) -> Unit = {},
     val onBookmarkClick: (post: TimelinePost) -> Unit = {},
     val onShareClick: (post: TimelinePost) -> Unit = {},
     val onCopyClick: (post: TimelinePost) -> Unit = {},

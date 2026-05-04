@@ -469,6 +469,25 @@ class PostsRepository(
     }
 
     /**
+     * Resolve a Telegram public `@handle` (without the leading `@`) to a TDLib chat id.
+     * Used by the deep-link dispatcher (`tg://resolve` / `https://t.me/<handle>`) so a
+     * tap on a shared link inside Hortay routes the user to the channel filter — no
+     * round-trip through the official Telegram client. TDLib serves the resolved chat
+     * from cache when known, otherwise hits the server once and writes through.
+     *
+     * Returns null when the handle doesn't exist, points at a user/bot we can't surface
+     * as a channel filter, or the request fails. Callers fall through to a generic
+     * "open external" action in that case.
+     */
+    suspend fun resolvePublicChat(handle: String): Long? {
+        val cleaned = handle.removePrefix("@").trim()
+        if (cleaned.isBlank()) return null
+        return runCatching { td.send(TdApi.SearchPublicChat(cleaned)).id }
+            .warnUnlessCancelled(TAG, "resolvePublicChat($cleaned)")
+            .getOrNull()
+    }
+
+    /**
      * Registers that the user has seen the given messages in [chatId]. This is what bumps
      * channel view counters server-side; without it, the user's "view" never lands.
      */

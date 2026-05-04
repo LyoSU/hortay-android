@@ -89,11 +89,22 @@ private fun aggregate(posts: List<TimelinePost>): List<ChannelSummary> = posts
     .groupBy { it.chatId }
     .map { (chatId, list) ->
         val anchor = list.maxByOrNull { it.date }!!
+        // Personal-author channel mode: each post's senderName / avatar is the admin who
+        // wrote it, NOT the channel. We need the channel's own identity here, which lives
+        // in [channelContext]. Prefer ANY post in the group whose channelContext is set
+        // (or, equivalently, whose own senderName is already the channel) so a channel
+        // with multiple posting admins still surfaces as one row with the right name and
+        // photo. Falling back to anchor.senderName covers the all-channel-as-sender case
+        // where channelContext is null on every post.
+        val channelLike = list.firstNotNullOfOrNull { it.channelContext }
+        val title = channelLike?.name ?: anchor.senderName
+        val thumb = channelLike?.avatarThumb ?: anchor.avatarThumb
+        val fileId = channelLike?.avatarFileId ?: anchor.avatarFileId
         ChannelSummary(
             chatId = chatId,
-            title = anchor.senderName,
-            avatarThumb = anchor.avatarThumb,
-            avatarFileId = anchor.avatarFileId,
+            title = title,
+            avatarThumb = thumb,
+            avatarFileId = fileId,
             lastPostExcerpt = anchor.content.captionPlain.take(120),
             lastPostDate = anchor.date,
             postCount = list.size,

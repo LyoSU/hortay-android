@@ -1,19 +1,23 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -126,6 +130,7 @@ private fun AnimatedEmojiBlock(content: PostContent.AnimatedEmoji) {
 
 private val STICKER_MAX_SIDE = 168.dp
 private val ANIMATED_EMOJI_MAX_SIDE = 140.dp
+private val SPOILER_BLUR_RADIUS = 28.dp
 
 // Threshold for treating a video as "glance-able" — same heuristic Telegram uses for
 // inline silent autoplay. Videos at or below this duration play muted-and-looping in
@@ -289,7 +294,7 @@ private fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<Albu
     if (items.size == 1) {
         SingleMedia(items.first(), onClick = { onMediaClick(items, 0) })
     } else {
-        AlbumPager(items, onItemClick = { idx -> onMediaClick(items, idx) })
+        AlbumRow(items, onItemClick = { idx -> onMediaClick(items, idx) })
     }
     MediaCaption(caption, maxLines, above = false, show = !content.captionAbove)
 }
@@ -337,11 +342,15 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
         // When the autoplayer mounts on top, suppress the poster's own progress spinner —
         // TdVideoPlayer renders its own MediaLoadingOverlay for the playback file, and a
         // poster-side spinner would stack visibly on top of it ("два кружки в центрі").
+        // Spoiler blur: while !revealed, the underlying photo is heavily blurred via
+        // RenderEffect (no-op on pre-S, where the shimmer dim alone obscures the image).
         TdMediaImage(
             media = item.media,
             contentDescription = null,
             showProgress = !autoplayVideo,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .let { if (revealed) it else it.blur(SPOILER_BLUR_RADIUS) },
         )
         if (autoplayVideo) {
             val video = item as AlbumItem.Video
@@ -382,54 +391,61 @@ private fun BoxScope.MediaOverlay(item: AlbumItem) {
     }
 }
 
+/**
+ * Threads/Instagram-style album row: each photo keeps its own aspect ratio at a fixed row
+ * height, items scroll horizontally with snap fling and the next item peeks past the right
+ * edge. We deliberately avoid HorizontalPager here — Pager forces every page to the same
+ * width, which destroys the "portrait + landscape side-by-side" layout users expect for
+ * mixed Telegram albums.
+ *
+ * Active-page tracking: only the most-centered item gets `isActive = true`, so silent
+ * autoplay videos (≤ INLINE_AUTOPLAY_MAX_SEC) start exactly one ExoPlayer per album. This
+ * preserves the same "one-player invariant" AlbumPager had via state.currentPage.
+ */
 @Composable
-private fun AlbumPager(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
-    val state = rememberPagerState(pageCount = { items.size })
-    val ratio = items.firstOrNull()?.let { mediaAspectRatio(it.media.width, it.media.height) } ?: (16f / 10f)
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(ratio)
-            .clip(RoundedCornerShape(20.dp)),
-    ) {
-        HorizontalPager(state = state, modifier = Modifier.fillMaxSize()) { page ->
-            val item = items[page]
-            Box(modifier = Modifier.fillMaxSize()) {
-                MediaWithSpoiler(
-                    item = item,
-                    onClick = { onItemClick(page) },
-                    isActive = page == state.currentPage,
-                )
-            }
+private fun AlbumRow(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
+    val state = rememberLazyListState()
+    val flingBehavior = rememberSnapFlingBehavior(state)
+    val activeIndex by remember(state) {
+        derivedStateOf {
+            val info = state.layoutInfo
+            val viewportCenter = (info.viewportStartOffset + info.viewportEndOffset) / 2
+            info.visibleItemsInfo
+                .minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - viewportCenter) }
+                ?.index ?: 0
         }
-        AlbumIndicator(
-            current = state.currentPage,
-            total = items.size,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 12.dp),
-        )
     }
-}
 
-@Composable
-private fun AlbumIndicator(current: Int, total: Int, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        repeat(total) { idx ->
-            val active = idx == current
-            Box(
-                modifier = Modifier
-                    .size(width = if (active) 16.dp else 6.dp, height = 6.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (active) MaterialTheme.colorScheme.surface
-                        else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                    ),
-            )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val rowWidth = maxWidth
+        val rowHeight = rowWidth * 0.75f
+        val maxItemWidth = rowWidth * 0.92f
+        val minItemWidth = rowWidth * 0.42f
+
+        LazyRow(
+            state = state,
+            flingBehavior = flingBehavior,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(rowHeight),
+        ) {
+            itemsIndexed(items) { index, item ->
+                val ratio = mediaAspectRatio(item.media.width, item.media.height)
+                val itemWidth = (rowHeight * ratio).coerceIn(minItemWidth, maxItemWidth)
+                Box(
+                    modifier = Modifier
+                        .width(itemWidth)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(20.dp)),
+                ) {
+                    MediaWithSpoiler(
+                        item = item,
+                        onClick = { onItemClick(index) },
+                        isActive = index == activeIndex,
+                    )
+                }
+            }
         }
     }
 }
@@ -480,12 +496,14 @@ private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<A
     ) {
         // Same suppression as MediaWithSpoiler: when the GIF autoplayer is mounted, its own
         // MediaLoadingOverlay covers the loading state — the poster's spinner would just
-        // stack on top.
+        // stack on top. When the spoiler is up, blur the still poster too.
         TdMediaImage(
             media = content.media,
             contentDescription = null,
             showProgress = !revealed,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .let { if (revealed) it else it.blur(SPOILER_BLUR_RADIUS) },
         )
         // Only mount the video player once the spoiler is revealed — otherwise we'd start
         // an ExoPlayer + TDLib download for content the user explicitly hasn't asked to see
