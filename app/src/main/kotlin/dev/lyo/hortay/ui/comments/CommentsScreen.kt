@@ -90,8 +90,13 @@ fun CommentsScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     // Material 3 predictive-back transform. Pivot lives at the swipe edge so the screen
-    // visibly "hinges" away from the user's thumb. Numbers (10% translate / 0.9 scale /
-    // 0.7 alpha at progress=1) match the M3 spec for cross-pane back motion.
+    // visibly "hinges" away from the user's thumb.
+    //   peek phase (0..1): translate up to 10% width, scale to 0.9, alpha to 0.7 — matches
+    //     the M3 spec for cross-pane back motion.
+    //   exit phase  (1..2): MainScaffold drives this leg after the user commits. Translates
+    //     the rest of the way off-screen, contracts to 0.85 and fades to alpha=0 so the
+    //     overlay actually "leaves" before being removed from composition. Without it the
+    //     screen would freeze at peek and then snap away.
     val backDirection = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
     val backOriginX = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 0f else 1f
     Scaffold(
@@ -99,11 +104,13 @@ fun CommentsScreen(
             .fillMaxSize()
             .graphicsLayer {
                 if (backProgress > 0f) {
-                    translationX = backDirection * size.width * 0.10f * backProgress
-                    val s = 1f - 0.10f * backProgress
+                    val peek = backProgress.coerceAtMost(1f)
+                    val exit = (backProgress - 1f).coerceAtLeast(0f)
+                    translationX = backDirection * size.width * (0.10f * peek + 0.90f * exit)
+                    val s = 1f - 0.10f * peek - 0.05f * exit
                     scaleX = s
                     scaleY = s
-                    alpha = 1f - 0.30f * backProgress
+                    alpha = (1f - 0.30f * peek) * (1f - exit)
                     transformOrigin = TransformOrigin(backOriginX, 0.5f)
                 }
             }

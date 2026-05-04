@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -29,6 +30,14 @@ import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.settings.SettingsScreen
 import dev.lyo.hortay.ui.timeline.TimelineScreen
 import kotlinx.coroutines.launch
+
+/**
+ * Predictive-back progress contract shared with [CommentsScreen.graphicsLayer]:
+ *  - 0f .. 1f = gesture peek (translate ~10%, scale to 0.9, alpha to 0.7)
+ *  - 1f .. EXIT_PROGRESS = commit exit (translate to full width, scale to 0.85, alpha to 0)
+ * Going past 1f on commit keeps the overlay visually "leaving" instead of freezing at peek.
+ */
+private const val EXIT_PROGRESS = 2f
 
 /**
  * Top-level container that owns nav-tab state, the global channel filter and the comments
@@ -111,10 +120,13 @@ fun MainScaffold(graph: AppGraph) {
                 commentsBackEdge = event.swipeEdge
                 commentsBackProgress.snapTo(event.progress)
             }
-            // Commit: finish the dismissal animation, then drop the overlay. Snapping
-            // the progress back to 0f *after* the state flip keeps the next opening
-            // from inheriting a partially-animated layer.
-            commentsBackProgress.animateTo(1f, tween(120, easing = FastOutSlowInEasing))
+            // Commit: extend progress past the peek state (1f) to a full exit (2f) so
+            // CommentsScreen continues translating off-screen and fading to zero alpha
+            // before we drop it from composition. Without this leg the overlay would
+            // freeze at peek (~70% visible) for the duration of the commit animation
+            // and then snap away — janky on a flagship-class device.
+            // FastOutLinearInEasing accelerates outwards, the canonical M3 exit curve.
+            commentsBackProgress.animateTo(EXIT_PROGRESS, tween(220, easing = FastOutLinearInEasing))
             commentsForPost = null
             commentsBackProgress.snapTo(0f)
         } catch (_: CancellationException) {
