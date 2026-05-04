@@ -1,7 +1,11 @@
 package dev.lyo.hortay.ui.main
 
+import androidx.activity.BackEventCompat
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -16,7 +20,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlin.coroutines.cancellation.CancellationException
 import dev.lyo.hortay.AppGraph
+import dev.lyo.hortay.data.DeepLink
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.ui.channels.ChannelsScreen
 import dev.lyo.hortay.ui.comments.CommentsScreen
@@ -33,6 +39,11 @@ fun MainScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
     var channelFilter by rememberSaveable { mutableStateOf<Long?>(null) }
     var commentsForPost by remember { mutableStateOf<TimelinePost?>(null) }
+    // One-shot scroll-to-message request (deep link arrived with a post id, or any
+    // future caller that needs TimelineScreen to land on a specific row). The pair is
+    // (chatId, TDLib-shifted messageId). TimelineScreen consumes via [onScrollHandled]
+    // so the request fires exactly once even if MainScaffold recomposes.
+    var pendingScrollTarget by remember { mutableStateOf<Pair<Long, Long>?>(null) }
     // Monotonic counter: each re-tap on Home (or brand) bumps it once. The Feed observes the
     // value and decides scroll-to-top vs refresh based on its own scroll position.
     var homeTapTrigger by remember { mutableLongStateOf(0L) }
@@ -51,8 +62,70 @@ fun MainScaffold(graph: AppGraph) {
         }
     }
 
-    // Back priority: dismiss overlay → clear channel filter → return to Feed → system close.
-    BackHandler(enabled = commentsForPost != null) { commentsForPost = null }
+    // Deep-link dispatcher. tg:// and https://t.me/... arrivals come through the router
+    // as already-parsed [DeepLink] events; we resolve handles to chat ids on demand and
+    // switch the navigation state. Any failure (unresolvable handle, missing subscription)
+    // is silently dropped — better than a crash on a user-tapped wild link.
+    LaunchedEffect(Unit) {
+        graph.deepLinkRouter.events.collect { link ->
+            val targetChat: Long?
+            val serverPostId: Long?
+            when (link) {
+                is DeepLink.PublicChannel -> {
+                    targetChat = graph.postsRepository.resolvePublicChat(link.handle)
+                    serverPostId = link.serverPostId
+                }
+                is DeepLink.PrivateChannel -> {
+                    targetChat = link.chatId
+                    serverPostId = link.serverPostId
+                }
+                is DeepLink.Message -> {
+                    targetChat = link.chatId
+                    serverPostId = link.serverPostId
+                }
+            }
+            if (targetChat != null) {
+                channelFilter = targetChat
+                selectedTab = NavTab.Feed
+                commentsForPost = null
+                if (serverPostId != null) {
+                    // TDLib message ids are server post number << 20. The deep-link parser
+                    // already normalises to the server number, so we shift here once
+                    // before handing the target to TimelineScreen.
+                    pendingScrollTarget = targetChat to (serverPostId shl 20)
+                }
+            }
+        }
+    }
+
+    // Predictive back for the comments overlay. We track live gesture progress so
+    // CommentsScreen can translate / scale / fade under the user's finger instead of
+    // just snapping closed on release. The edge (LEFT vs RIGHT) is forwarded because
+    // users can bind back to either side of the screen — a hard-coded translateX
+    // direction would invert the motion on right-handed setups.
+    val commentsBackProgress = remember { Animatable(0f) }
+    var commentsBackEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
+    PredictiveBackHandler(enabled = commentsForPost != null) { progress ->
+        try {
+            progress.collect { event ->
+                commentsBackEdge = event.swipeEdge
+                commentsBackProgress.snapTo(event.progress)
+            }
+            // Commit: finish the dismissal animation, then drop the overlay. Snapping
+            // the progress back to 0f *after* the state flip keeps the next opening
+            // from inheriting a partially-animated layer.
+            commentsBackProgress.animateTo(1f, tween(120, easing = FastOutSlowInEasing))
+            commentsForPost = null
+            commentsBackProgress.snapTo(0f)
+        } catch (_: CancellationException) {
+            // User released before the threshold — rewind smoothly.
+            commentsBackProgress.animateTo(0f, tween(160, easing = FastOutSlowInEasing))
+        }
+    }
+    // Back priority: clear channel filter → return to Feed → system close. These are
+    // intra-surface state changes (no z-stacked screen above), so a non-progress
+    // BackHandler is the correct primitive — a PredictiveBackHandler here would just
+    // throw away the progress and add noise.
     BackHandler(enabled = commentsForPost == null && channelFilter != null) { channelFilter = null }
     BackHandler(enabled = commentsForPost == null && channelFilter == null && selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
@@ -102,6 +175,8 @@ fun MainScaffold(graph: AppGraph) {
                     onOpenComments = { commentsForPost = it },
                     homeTapTrigger = homeTapTrigger,
                     onBrandTap = { homeTapTrigger = System.nanoTime() },
+                    scrollToMessage = pendingScrollTarget,
+                    onScrollHandled = { pendingScrollTarget = null },
                 )
                 NavTab.Channels -> ChannelsScreen(
                     repo = graph.postsRepository,
@@ -161,6 +236,8 @@ fun MainScaffold(graph: AppGraph) {
                 selectedTab = NavTab.Feed
                 commentsForPost = null
             },
+            backProgress = commentsBackProgress.value,
+            backSwipeEdge = commentsBackEdge,
         )
     }
 }

@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   `NetworkTypeNone` on background).
 - ProGuard / R8 keep rules for TDLib's JNI surface, `kotlinx.serialization`
   companions, Compose stability annotations, and coroutines metadata.
+- Material 3 predictive back gesture for the comments overlay. The screen now
+  translates ~10% in the swipe direction, scales to 0.9 and fades to 0.7 alpha
+  under the user's finger instead of snapping closed on release. Driven by
+  `PredictiveBackHandler` + an `Animatable` so cancelled gestures rewind
+  smoothly and committed ones finish the dismissal animation before unmounting.
+  Honours both LEFT and RIGHT back-edge configurations — the transform pivot
+  anchors to the swipe edge so the screen "hinges" away from the thumb.
 
 ### Changed
 - Comments overlay now opens instantly when reopened within 30 seconds.

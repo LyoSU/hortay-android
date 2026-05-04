@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.comments
 
+import androidx.activity.BackEventCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -11,25 +12,34 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.CommentsRepository
+import dev.lyo.hortay.data.ReplyMediaKind
+import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.ThreadRow
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.TdAvatar
+import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.toAlbumItems
 import dev.lyo.hortay.ui.timeline.PostBody
 import dev.lyo.hortay.ui.timeline.PostCard
 import dev.lyo.hortay.ui.timeline.PostInteractions
 import dev.lyo.hortay.ui.timeline.ReactionChip
+import dev.lyo.hortay.ui.timeline.label
+import dev.lyo.hortay.ui.timeline.symbolName
 import java.text.DateFormat
 import java.util.Date
 
@@ -37,6 +47,13 @@ import java.util.Date
  * Reddit/Twitter-style discussion overlay with live updates. While this screen is on top
  * we tell TDLib that the linked discussion chat is "open" so view counts register and new
  * messages stream in via the shared updates flow.
+ *
+ * [backProgress] / [backSwipeEdge] drive the Material 3 predictive-back animation: the
+ * overlay translates ~10% of the screen width in the swipe direction, scales down to 0.9
+ * and fades to 0.7 alpha as the user pulls. The transform pivot is anchored to the swipe
+ * edge so the screen feels "pinned" to the user's thumb while the opposite edge recedes.
+ * MainScaffold owns the [Animatable] driving these values; we receive a plain Float so
+ * this composable stays trivially testable and reusable from other entry points.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +62,8 @@ fun CommentsScreen(
     repo: CommentsRepository,
     onDismiss: () -> Unit,
     onChannelClick: (TimelinePost) -> Unit = {},
+    backProgress: Float = 0f,
+    backSwipeEdge: Int = BackEventCompat.EDGE_LEFT,
 ) {
     // For an album, all sibling ids are candidates — the thread carrier may be any of
     // them. For a standalone post the only candidate is post.id.
@@ -70,9 +89,24 @@ fun CommentsScreen(
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
+    // Material 3 predictive-back transform. Pivot lives at the swipe edge so the screen
+    // visibly "hinges" away from the user's thumb. Numbers (10% translate / 0.9 scale /
+    // 0.7 alpha at progress=1) match the M3 spec for cross-pane back motion.
+    val backDirection = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
+    val backOriginX = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 0f else 1f
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
+            .graphicsLayer {
+                if (backProgress > 0f) {
+                    translationX = backDirection * size.width * 0.10f * backProgress
+                    val s = 1f - 0.10f * backProgress
+                    scaleX = s
+                    scaleY = s
+                    alpha = 1f - 0.30f * backProgress
+                    transformOrigin = TransformOrigin(backOriginX, 0.5f)
+                }
+            }
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
@@ -250,12 +284,14 @@ private fun CommentBubble(
                 )
             }
 
-            // Quoted reply now flows from the unified MessageMapper — same renderer as
-            // feed-post replies, so a comment that quotes another thread reply gets a
-            // proper author + excerpt block instead of just an indented bubble.
-            message.reply?.let {
+            // Show the quote card ONLY for explicit user-selected quotes. Plain reply
+            // relations are structural noise here — every top-level comment is a reply
+            // to the host post, and every nested reply already sits visually under its
+            // parent comment via the thread indentation. Surfacing a quote card for those
+            // would just duplicate context the layout already conveys.
+            message.reply?.takeIf { it.isQuote }?.let {
                 Spacer(Modifier.height(6.dp))
-                ReplyBlock(it.authorName, it.excerpt)
+                ReplyBlock(it)
             }
 
             Spacer(Modifier.height(6.dp))
@@ -286,39 +322,79 @@ private fun CommentBubble(
 }
 
 @Composable
-private fun ReplyBlock(authorName: String, excerpt: String) {
+private fun ReplyBlock(reply: ReplyPreview) {
+    val accent = MaterialTheme.colorScheme.primary
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
             .height(IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .width(2.dp)
+                .width(3.dp)
                 .fillMaxHeight()
-                .background(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    shape = RoundedCornerShape(1.dp),
-                ),
+                .background(accent),
         )
-        Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+        ) {
             Text(
-                text = authorName,
+                text = reply.authorName,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = accent,
                 fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = excerpt,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            val bodyText = reply.excerpt.ifBlank { reply.mediaKind.label() }
+            if (bodyText.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (reply.excerpt.isBlank()) {
+                        reply.mediaKind.symbolName()?.let { name ->
+                            Symbol(
+                                name = name,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                size = 12.dp,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                        }
+                    }
+                    Text(
+                        text = bodyText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        reply.mediaThumb?.let { thumb ->
+            Spacer(Modifier.width(6.dp))
+            Box(
+                modifier = Modifier
+                    .padding(end = 4.dp)
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            ) {
+                TdMediaImage(
+                    media = thumb,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
+
+// Label/symbol mapping is shared with the feed quote card via dev.lyo.hortay.ui.timeline
+// .label() / .symbolName() — see ReplyKindResources.kt.
 
 @Composable
 internal fun formatRelative(epochMs: Long): String {
