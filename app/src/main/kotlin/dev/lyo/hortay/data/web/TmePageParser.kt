@@ -194,12 +194,32 @@ object TmePageParser {
         for (i in 0 until videoCount) {
             val wrap = videoWraps.getOrNull(i)
             val player = videoPlayers.getOrNull(i)
-            val src = wrap?.selectFirst("video")?.attr("src")?.ifBlank { null }
-                ?: continue // a `_video_player` link with no playable source is just a "view in
-                            // Telegram" placeholder — no media to surface.
+            val rawSrc = wrap?.selectFirst("video")?.attr("src")?.ifBlank { null }
             val thumb = player?.selectFirst(".tgme_widget_message_video_thumb")
                 ?.attr("style")
                 ?.let(::extractCssBackgroundUrl)
+            // "Media is too big" posts: t.me/s/ omits the `<video src>` element
+            // entirely, leaving only the poster + a "VIEW IN TELEGRAM" link
+            // inside `.message_media_not_supported_wrap`. The class
+            // `not_supported` on the player anchor is the marker. We still want
+            // these posts visible in the feed (otherwise they look empty —
+            // "пост лише з реакціями"), so fall back to the poster as a Photo
+            // entry. Tap → poster gallery; the actual playback is reachable via
+            // the canonical post URL we generate elsewhere.
+            val isUnsupported = player?.hasClass("not_supported") == true
+            if (rawSrc == null) {
+                if (isUnsupported && thumb != null) {
+                    out += WebMedia(
+                        kind = WebMedia.Kind.Photo,
+                        url = thumb,
+                        aspectRatio = parsePaddingAspect(wrap) ?: player?.let(::parseDataRatio),
+                        durationSec = null,
+                        thumbnailUrl = thumb,
+                    )
+                }
+                continue
+            }
+            val src = rawSrc
             val isRound = (player?.classNames()?.any { it.contains("round", ignoreCase = true) } == true)
             val isGif = (player?.classNames()?.any { it.equals("gif", ignoreCase = true) } == true)
             val duration = msg.select(".message_video_duration").getOrNull(i)

@@ -25,7 +25,7 @@ object PostActions {
      */
     fun telegramUri(post: TimelinePost): Uri {
         val username = post.senderHandle?.removePrefix("@")
-        val serverPostId = post.id ushr 20
+        val serverPostId = serverPostId(post)
         return when {
             !username.isNullOrBlank() -> "tg://resolve?domain=$username&post=$serverPostId".toUri()
             else -> {
@@ -44,7 +44,7 @@ object PostActions {
      */
     fun shareUri(post: TimelinePost): Uri {
         val username = post.senderHandle?.removePrefix("@")
-        val serverPostId = post.id ushr 20
+        val serverPostId = serverPostId(post)
         return when {
             !username.isNullOrBlank() -> "https://t.me/$username/$serverPostId".toUri()
             else -> {
@@ -53,6 +53,33 @@ object PostActions {
             }
         }
     }
+
+    /**
+     * Resolve a post's server-visible message number for inclusion in a t.me URL.
+     *
+     * In TDLib mode, [TimelinePost.id] is the bit-packed `(chatId-derived | seq)`
+     * value Telegram returns over MTProto; the visible "post number" is the high
+     * 44 bits, so we shift right by 20 to drop the per-chat low bits.
+     *
+     * In guest (anonymous) mode the post id IS the raw `t.me/<u>/<seq>` number —
+     * no TDLib bit-packing involved. Applying `ushr 20` to `seq=36046` collapses
+     * to 0, which is what produced the long-standing "copy link → /0" bug. We
+     * detect guest-mode posts by their synthesised chatId range
+     * (see [dev.lyo.hortay.data.web.WebPostAdapter.stableChatId]).
+     */
+    private fun serverPostId(post: TimelinePost): Long =
+        if (post.chatId <= GUEST_CHAT_ID_THRESHOLD) post.id
+        else post.id ushr 20
+
+    /**
+     * Below this threshold, the chatId was minted by [WebPostAdapter.stableChatId]
+     * (`-1_000_000_000_000L - hash`). Real TDLib channel chatIds are
+     * `-100<channelId>`, far above this floor — `-100<largest-32-bit-channelId>`
+     * sits around `-1.0e15` worst case, but the guest range starts at `-1.0e12`
+     * and only goes more negative. Picking the boundary at `-1e12` keeps a wide
+     * safety margin from real TDLib ids.
+     */
+    private const val GUEST_CHAT_ID_THRESHOLD = -1_000_000_000_000L
 
     fun openInTelegram(context: Context, post: TimelinePost) {
         val intent = Intent(Intent.ACTION_VIEW, telegramUri(post)).apply {
