@@ -80,19 +80,6 @@ fun AddChannelSheet(
     var input by remember { mutableStateOf("") }
     var lookupState by remember { mutableStateOf<LookupState>(LookupState.Idle) }
 
-    // Auto-suggest from clipboard if it contains a t.me link. Doesn't insert into
-    // the input — just shows a "Paste from clipboard" hint chip the user can tap.
-    val clipboardSuggestion = remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        val pasted = runCatching {
-            clipboard.getClipEntry()
-                ?.clipData?.getItemAt(0)?.text?.toString()
-        }.getOrNull()
-        if (pasted != null && parseUsernameFromInput(pasted) != null) {
-            clipboardSuggestion.value = pasted
-        }
-    }
-
     fun lookup(username: String) {
         lookupState = LookupState.Loading
         scope.launch {
@@ -135,6 +122,29 @@ fun AddChannelSheet(
         }
     }
 
+    // Auto-paste-and-validate from clipboard. If the user copied a Telegram
+    // link / @handle anywhere before tapping "Add channel", we eat the manual
+    // "paste" step entirely: fill the input and trigger lookup so they land
+    // straight on the preview card. Privacy-conscious: we only act when the
+    // clipboard text parses as a valid Telegram username via the existing
+    // [parseUsernameFromInput] regex — random clipboard contents (passwords,
+    // URLs to other sites) silently fall through to the empty default. We
+    // also gate on `input.isBlank()` so a stale clipboard never overwrites
+    // text the user is actively editing across recompositions.
+    LaunchedEffect(Unit) {
+        val pasted = runCatching {
+            clipboard.getClipEntry()
+                ?.clipData?.getItemAt(0)?.text?.toString()
+        }.getOrNull()
+        if (pasted != null && input.isBlank()) {
+            val username = parseUsernameFromInput(pasted)
+            if (username != null) {
+                input = pasted
+                lookup(username)
+            }
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -168,16 +178,6 @@ fun AddChannelSheet(
                 label = { Text(stringResource(R.string.web_add_input_label)) },
                 modifier = Modifier.fillMaxWidth(),
             )
-
-            val clip = clipboardSuggestion.value
-            if (clip != null && input.isBlank()) {
-                TextButton(onClick = {
-                    input = clip
-                    clipboardSuggestion.value = null
-                }) {
-                    Text(stringResource(R.string.web_add_paste_clipboard, clip.take(40)))
-                }
-            }
 
             when (val state = lookupState) {
                 LookupState.Idle -> Unit
