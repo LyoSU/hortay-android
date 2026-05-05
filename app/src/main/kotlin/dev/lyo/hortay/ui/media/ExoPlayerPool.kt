@@ -56,17 +56,20 @@ class ExoPlayerPool(
      * the player in IDLE; `clearMediaItems()` empties the playlist; the attribute resets
      * give the next caller a known starting state.
      *
-     * `setVideoEffects(emptyList())` is defensive: if a future caller ever attaches a
-     * `setVideoEffects` chain (e.g. the experimental luma-key shader briefly tried for
-     * guest-mode WebM stickers), the chain persists on the ExoPlayer instance and would
-     * leak into the next consumer through pool reuse. Clearing on release means a single
-     * fresh slate is the contract every acquire sees.
+     * Note: we deliberately do NOT call `setVideoEffects(emptyList())` here. The
+     * implementation reflection-loads `androidx.media3.effect.SingleInputVideoGraph$Factory`
+     * even when the list is empty; without `media3-effect` on the runtime classpath the
+     * call throws `ClassNotFoundException → IllegalStateException("Could not find
+     * required lib-effect dependencies")`. The app intentionally doesn't include
+     * `media3-effect` (the only caller, the guest-mode luma-key shader, was removed
+     * because it had unfixable visual artefacts on glyphs with intentional black
+     * regions). If a future feature adds back `setVideoEffects`, also re-add the
+     * `media3-effect` dependency *and* re-introduce a defensive clear here.
      */
     @Synchronized
     fun release(player: ExoPlayer, muted: Boolean) {
         player.stop()
         player.clearMediaItems()
-        clearVideoEffects(player)
         player.playWhenReady = false
         player.repeatMode = Player.REPEAT_MODE_OFF
         player.volume = 1f
@@ -76,11 +79,6 @@ class ExoPlayerPool(
         } else {
             player.release()
         }
-    }
-
-    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-    private fun clearVideoEffects(player: ExoPlayer) {
-        player.setVideoEffects(emptyList())
     }
 
     /** Tear down all pooled instances. Call on Activity/Process destroy. */
