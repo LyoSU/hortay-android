@@ -6,10 +6,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -126,6 +129,24 @@ fun TdVideoPlayer(
         exoPlayer.playWhenReady = wasPlaying
     }
 
+    // Track whether ExoPlayer has rendered the first frame for the current
+    // media item. PlayerView shows a black surface from mount time until
+    // playback actually starts; in inline (web-mode) usage the host stacks a
+    // poster image (TdMediaImage) UNDER this PlayerView, so during the buffer
+    // window the black surface hides the poster and the user sees a 1-2s flash
+    // of black instead of the thumbnail. Hiding PlayerView (alpha = 0f) until
+    // onRenderedFirstFrame fires lets the poster underneath show through.
+    var firstFrameReady by remember(fileId, remoteUrl) { mutableStateOf(false) }
+    DisposableEffect(exoPlayer, fileId, remoteUrl) {
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                firstFrameReady = true
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose { exoPlayer.removeListener(listener) }
+    }
+
     DisposableEffect(exoPlayer) {
         val lifecycleObserver = LifecycleEventObserver { _, event ->
             when (event) {
@@ -145,7 +166,9 @@ fun TdVideoPlayer(
 
     Box(modifier = modifier) {
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(if (firstFrameReady) 1f else 0f),
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     player = exoPlayer

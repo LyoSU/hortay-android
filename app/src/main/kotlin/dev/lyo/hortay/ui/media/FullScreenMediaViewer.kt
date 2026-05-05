@@ -180,6 +180,7 @@ private fun MediaPage(
             val quality = pickedQuality ?: item.qualities.defaultPick
             TdVideoPlayer(
                 fileId = quality.fileId,
+                remoteUrl = item.remoteVideoUrl,
                 autoPlay = isActive,
                 autoLoop = false,
                 showControls = true,
@@ -194,6 +195,7 @@ private fun MediaPage(
         }
         is AlbumItem.Animation -> TdVideoPlayer(
             fileId = item.playbackFileId,
+            remoteUrl = item.remoteVideoUrl,
             autoPlay = isActive,
             autoLoop = true,
             showControls = false,
