@@ -46,7 +46,7 @@ import kotlinx.coroutines.launch
  * Modal bottom sheet for subscribing to a new public channel. UX flow:
  *
  *   1. User pastes a t.me link / username / @handle / tg://resolve URL.
- *   2. [parseUsernameFromInput] extracts the bare username (5-32 ASCII chars).
+ *   2. [parseUsernameFromInput] extracts the bare username (2-32 ASCII chars).
  *   3. We do a one-shot [WebTelegramClient.lookupChannel] to confirm the channel
  *      exists and pre-fill the visual confirmation card (title, avatar, description).
  *   4. User taps "Додати" → [WebFeedSource.subscribeAndRefresh] writes to

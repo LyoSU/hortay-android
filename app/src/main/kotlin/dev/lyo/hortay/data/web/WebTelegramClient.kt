@@ -341,27 +341,29 @@ sealed interface LookupResult {
  *   - "tg://resolve?domain=durov"
  *
  * Returns null when the input doesn't match a Telegram public username pattern.
- * Telegram's actual rule is ASCII letters/digits/underscores, length 5-32, must start
- * with a letter; we encode that here so an obviously-broken input fails fast without
- * a network round-trip.
+ * Telegram historically required 5-32 chars; Fragment-auctioned and Premium-short
+ * usernames now go as short as 2 characters (e.g. `@io`, `@no`). We encode the
+ * loosest bound here — must start with a letter, ASCII letters/digits/underscores,
+ * length 2-32 — so an obvious typo still fails fast without a network round-trip,
+ * but legitimate short handles aren't pre-rejected by us before t.me has a say.
  */
 fun parseUsernameFromInput(input: String): String? {
     val trimmed = input.trim()
     if (trimmed.isEmpty()) return null
 
     // tg://resolve?domain=<name>
-    Regex("""^tg://resolve\?(?:.*&)?domain=([A-Za-z][A-Za-z0-9_]{4,31})\b""")
+    Regex("""^tg://resolve\?(?:.*&)?domain=([A-Za-z][A-Za-z0-9_]{1,31})\b""")
         .find(trimmed)
         ?.let { return it.groupValues[1] }
 
     // https://t.me/<name>(/<msg>)? or t.me/<name>
-    Regex("""^(?:https?://)?t\.me/(?:s/)?([A-Za-z][A-Za-z0-9_]{4,31})(?:/\d+)?/?$""")
+    Regex("""^(?:https?://)?t\.me/(?:s/)?([A-Za-z][A-Za-z0-9_]{1,31})(?:/\d+)?/?$""")
         .find(trimmed)
         ?.let { return it.groupValues[1] }
 
     // @<name> or bare <name>
     val bare = trimmed.removePrefix("@")
-    if (bare.matches(Regex("""[A-Za-z][A-Za-z0-9_]{4,31}"""))) return bare
+    if (bare.matches(Regex("""[A-Za-z][A-Za-z0-9_]{1,31}"""))) return bare
 
     return null
 }
