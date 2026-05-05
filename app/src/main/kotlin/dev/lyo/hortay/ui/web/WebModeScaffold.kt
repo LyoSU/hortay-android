@@ -9,7 +9,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -81,6 +80,10 @@ fun WebModeScaffold(graph: AppGraph) {
                 val hasChannels = graph.webFeedSource.channels
                     // Synchronous read: StateFlow value — no recomposition trigger.
                     .value.any { it.isSubscribed }
+                // No manual padding here — Scaffold positions the FAB above the
+                // bottomBar automatically. An earlier 88dp bottom padding stacked
+                // on top of Scaffold's own offset and floated the button much too
+                // high above the FloatingNavBar.
                 ExtendedFloatingActionButton(
                     onClick = { addSheetOpen = true },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -94,7 +97,6 @@ fun WebModeScaffold(graph: AppGraph) {
                         )
                     },
                     text = { Text(stringResource(R.string.web_add_channel)) },
-                    modifier = Modifier.padding(bottom = 88.dp),
                 )
             }
         },
