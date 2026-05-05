@@ -398,12 +398,48 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
 @Composable
 private fun BoxScope.MediaOverlay(item: AlbumItem) {
     when (item) {
-        is AlbumItem.Video -> PlayBadge(item.durationSec)
+        is AlbumItem.Video -> {
+            PlayBadge(item.durationSec)
+            // Unplayable videos route the tap to Telegram — telegraph that
+            // explicitly so the user understands where the tap is going
+            // before they make it. A silent app-switch is jarring without
+            // this cue.
+            if (item.isUnplayableVideo) {
+                OpenInTelegramHint(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp),
+                )
+            }
+        }
         is AlbumItem.Animation -> DurationChip(
             text = "GIF",
             modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
         )
         is AlbumItem.Photo -> Unit
+    }
+}
+
+@Composable
+private fun OpenInTelegramHint(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.Black.copy(alpha = 0.65f))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.media_open_in_telegram),
+            color = Color.White,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        Symbol(
+            name = "open_in_new",
+            tint = Color.White,
+            size = 14.dp,
+        )
     }
 }
 

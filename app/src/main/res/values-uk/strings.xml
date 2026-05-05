@@ -34,6 +34,7 @@
     <string name="web_search_clear">Очистити</string>
     <string name="web_search_prompt">Введіть запит, щоб шукати по постах у каналах, на які ви підписані.</string>
     <string name="web_search_no_results">Немає збігів для «%1$s».</string>
+    <string name="media_open_in_telegram">Відкрити в Telegram</string>
     <string name="web_status_not_found">не знайдено</string>
     <string name="web_status_private">приватний</string>
     <string name="web_status_rate_limited">перевищено ліміт</string>
