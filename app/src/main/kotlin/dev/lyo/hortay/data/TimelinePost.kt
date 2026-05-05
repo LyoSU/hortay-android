@@ -32,6 +32,13 @@ data class TimelinePost(
     val avatarThumb: ByteArray?,
     /** ProfilePhoto.small.id (160×160). Downloaded at [DownloadPriority.Avatar] — never blocks media. */
     val avatarFileId: Int?,
+    /**
+     * Optional remote URL rendered over the [TdAvatar] initial-letter fallback.
+     * TDLib-mode posts leave this null and use [avatarFileId]; web (anonymous)
+     * mode populates this with the CDN avatar URL parsed from t.me/s/ so the
+     * same PostCard renders both modes identically.
+     */
+    val avatarUrl: String? = null,
     val content: PostContent,
     /** Channel post views. Always 0 for comments. */
     val views: Int,

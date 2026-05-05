@@ -91,6 +91,7 @@ fun PostCard(
                 name = post.senderName,
                 thumb = post.avatarThumb,
                 fileId = post.avatarFileId,
+                avatarUrl = post.avatarUrl,
                 onClick = { interactions.onChannelClick(post) },
             )
             Spacer(Modifier.width(12.dp))
@@ -176,7 +177,13 @@ fun PostCard(
 }
 
 @Composable
-private fun Avatar(name: String, thumb: ByteArray?, fileId: Int?, onClick: () -> Unit) {
+private fun Avatar(
+    name: String,
+    thumb: ByteArray?,
+    fileId: Int?,
+    avatarUrl: String?,
+    onClick: () -> Unit,
+) {
     Box(
         modifier = Modifier
             .clip(CircleShape)
@@ -188,6 +195,7 @@ private fun Avatar(name: String, thumb: ByteArray?, fileId: Int?, onClick: () ->
             fileId = fileId,
             size = 40.dp,
             background = avatarBg(name),
+            remoteUrl = avatarUrl,
         )
     }
 }

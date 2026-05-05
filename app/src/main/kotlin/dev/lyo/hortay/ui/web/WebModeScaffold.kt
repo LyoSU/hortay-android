@@ -77,7 +77,6 @@ fun WebModeScaffold(graph: AppGraph) {
                         emojiResolver = graph.webCustomEmoji,
                         contentPadding = padding,
                         onAddChannel = { addSheetOpen = true },
-                        onSettings = { selectedTab = NavTab.Profile },
                     )
 
                     NavTab.Channels -> WebChannelsScreen(

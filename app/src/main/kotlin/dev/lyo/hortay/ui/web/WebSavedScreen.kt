@@ -8,28 +8,30 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
+import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.timeline.PostCard
+import dev.lyo.hortay.ui.timeline.PostInteractions
 
-/**
- * Bookmarked posts in guest mode. Mirrors the TDLib-mode "Збережене" tab —
- * same card style, same divider rhythm — but reads from
- * [WebRepository.observeBookmarked] instead of TDLib's bookmark store.
- *
- * Empty state intentionally non-prescriptive: we don't tell the user "tap the
- * bookmark icon" because that affordance doesn't exist on web posts yet
- * (Phase 2 polish task). For now, this tab just displays the empty state
- * until bookmarks are wired in.
- */
+/** Bookmarked posts in guest mode. Shares [PostCard] with TDLib mode. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WebSavedScreen(
     graph: AppGraph,
@@ -38,41 +40,65 @@ fun WebSavedScreen(
     val saved by graph.webRepository.observeBookmarked()
         .collectAsStateWithLifecycle(initialValue = kotlinx.collections.immutable.persistentListOf())
     val layoutDirection = LocalLayoutDirection.current
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        rememberTopAppBarState(),
+    )
 
-    if (saved.isEmpty()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(contentPadding),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "Поки немає збережених постів.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(32.dp),
+    Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            LargeTopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(R.string.web_saved_title),
+                        style = MaterialTheme.typography.displaySmall,
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ),
+                scrollBehavior = scrollBehavior,
             )
+        },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { padding ->
+        if (saved.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.web_empty_saved),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(32.dp),
+                )
+            }
+            return@Scaffold
         }
-        return
-    }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(
-            start = contentPadding.calculateStartPadding(layoutDirection),
-            end = contentPadding.calculateEndPadding(layoutDirection),
-            top = contentPadding.calculateTopPadding(),
-            bottom = contentPadding.calculateBottomPadding() + 16.dp,
-        ),
-    ) {
-        items(saved, key = { it.post.id }) { entry ->
-            WebPostCard(
-                post = entry.post,
-                emojiResolver = graph.webCustomEmoji,
-                channelTitle = entry.channel.title,
-                channelAvatarUrl = entry.channel.avatarUrl,
-            )
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = contentPadding.calculateStartPadding(layoutDirection),
+                end = contentPadding.calculateEndPadding(layoutDirection),
+                top = padding.calculateTopPadding(),
+                bottom = contentPadding.calculateBottomPadding() + 16.dp,
+            ),
+        ) {
+            items(saved, key = { it.id }) { post ->
+                PostCard(
+                    post = post,
+                    interactions = PostInteractions.Noop,
+                    clickable = false,
+                )
+            }
         }
     }
 }

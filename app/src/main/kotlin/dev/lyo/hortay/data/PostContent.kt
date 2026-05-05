@@ -318,9 +318,17 @@ data class TdMedia(
     val width: Int,
     val height: Int,
     val minithumbBytes: ByteArray? = null,
+    /**
+     * Optional remote-URL fallback rendered by [TdMediaImage] when [fileId] is
+     * null. Web (anonymous) mode uses this to flow t.me/s/ CDN URLs through the
+     * same media renderer as TDLib file ids — so PostCard / PostBody render
+     * web content with no parallel composable tree.
+     */
+    val remoteUrl: String? = null,
 ) {
-    override fun equals(other: Any?): Boolean = other is TdMedia && other.fileId == fileId
-    override fun hashCode(): Int = fileId ?: 0
+    override fun equals(other: Any?): Boolean =
+        other is TdMedia && other.fileId == fileId && other.remoteUrl == remoteUrl
+    override fun hashCode(): Int = (fileId ?: 0) * 31 + (remoteUrl?.hashCode() ?: 0)
 }
 
 @Immutable

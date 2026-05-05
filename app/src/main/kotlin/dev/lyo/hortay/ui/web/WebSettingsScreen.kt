@@ -21,8 +21,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.AppGraph
+import dev.lyo.hortay.R
 import kotlinx.coroutines.launch
 
 /**
@@ -58,11 +60,11 @@ fun WebSettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "Налаштування",
+            text = stringResource(R.string.web_settings_title),
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(
-            text = "Анонімний режим. Без авторизації в Telegram.",
+            text = stringResource(R.string.web_settings_subtitle),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -73,10 +75,10 @@ fun WebSettingsScreen(
             onClick = onSignIn,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Увійти в Telegram")
+            Text(stringResource(R.string.web_settings_signin))
         }
         Text(
-            text = "Дасть вам коментарі, реакції та приватні канали. Підписки збережуться.",
+            text = stringResource(R.string.web_settings_signin_helper),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -97,10 +99,13 @@ fun WebSettingsScreen(
                 contentColor = MaterialTheme.colorScheme.error,
             ),
         ) {
-            Text(if (clearing) "Очищаємо…" else "Очистити кеш")
+            Text(stringResource(
+                if (clearing) R.string.web_settings_clearing
+                else R.string.web_settings_clear_cache,
+            ))
         }
         Text(
-            text = "Видалить пости і ресурси кешу. Список підписок збережеться.",
+            text = stringResource(R.string.web_settings_clear_cache_helper),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -108,12 +113,11 @@ fun WebSettingsScreen(
         HorizontalDivider()
 
         Text(
-            text = "Що бачить Telegram у цьому режимі",
+            text = stringResource(R.string.web_settings_privacy_title),
             style = MaterialTheme.typography.titleSmall,
         )
         Text(
-            text = "Ваш IP та звичайний User-Agent десктопного браузера. " +
-                "Жодних cookies, жодного облікового запису, жодних повідомлень про вас.",
+            text = stringResource(R.string.web_settings_privacy_body),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

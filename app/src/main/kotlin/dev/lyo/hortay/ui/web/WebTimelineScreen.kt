@@ -17,42 +17,49 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.web.WebCustomEmojiResolver
 import dev.lyo.hortay.data.web.WebFeedSource
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.timeline.PostCard
+import dev.lyo.hortay.ui.timeline.PostInteractions
 import kotlinx.coroutines.launch
 
 /**
- * Production anonymous-mode timeline. Reads merged feed from
- * [WebFeedSource.posts] (DB-backed, instant cold-start), pull-to-refresh wired
- * to [WebFeedSource.refresh], add-channel surface, empty state with curated
- * suggestions.
+ * Production anonymous-mode timeline. Mirrors the TDLib mode's
+ * [dev.lyo.hortay.ui.timeline.TimelineScreen] scaffold shape: own [Scaffold] +
+ * collapsing [LargeTopAppBar] + nestedScroll behaviour. Each web tab (this,
+ * [WebChannelsScreen], [WebSavedScreen], [WebSettingsScreen]) carries its
+ * own scaffold so status-bar safe-area is handled at the inner Scaffold layer
+ * — the outer [WebModeScaffold] sets `contentWindowInsets = WindowInsets(0,0,0,0)`
+ * exactly as `MainScaffold` does, deliberately delegating insets downward.
  *
- * Why a separate screen from the TDLib-mode `TimelineScreen`: the data shape,
- * the channel-list semantics (DataStore-backed intent vs. TDLib chat list),
- * and the interaction limitations (no replies, no reactions tap, no comments
- * — those need auth) all differ. Trying to make one screen serve both modes
- * would either branch every Composable on the mode flag or produce a
- * lowest-common-denominator UI for both.
+ * Why a separate screen from the TDLib `TimelineScreen`: web posts have a
+ * narrower data shape (no replies, no reactions tap, no comments), and threading
+ * those branches through one Composable tree would either bloat each row's
+ * params or fork on every render — visual-parity is far easier to maintain by
+ * keeping two screens with mirrored scaffolds and using shared primitives
+ * ([WebPostCard], [TdAvatar], [FloatingNavBar]) below them.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,7 +68,6 @@ fun WebTimelineScreen(
     emojiResolver: WebCustomEmojiResolver,
     contentPadding: PaddingValues,
     onAddChannel: () -> Unit,
-    onSettings: () -> Unit = {},
 ) {
     val posts by feedSource.posts.collectAsStateWithLifecycle()
     val channels by feedSource.channels.collectAsStateWithLifecycle()
@@ -71,41 +77,48 @@ fun WebTimelineScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val layoutDirection = LocalLayoutDirection.current
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        rememberTopAppBarState(),
+    )
 
-    // Trigger a non-forced refresh on first composition. The staleness window
-    // inside WebFeedSource means a recent successful sweep won't re-fan-out.
     LaunchedEffect(Unit) { feedSource.refresh(force = false) }
 
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text("Стрічка") },
+            LargeTopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(R.string.web_feed_title),
+                        style = MaterialTheme.typography.displaySmall,
+                    )
+                },
                 actions = {
                     IconButton(onClick = onAddChannel) {
-                        Symbol(name = "add", contentDescription = "Додати канал")
+                        Symbol(
+                            name = "add",
+                            contentDescription = stringResource(R.string.web_add_channel),
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
+                scrollBehavior = scrollBehavior,
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        val combinedPadding = PaddingValues(
-            start = contentPadding.calculateStartPadding(layoutDirection),
-            end = contentPadding.calculateEndPadding(layoutDirection),
-            top = padding.calculateTopPadding(),
-            bottom = padding.calculateBottomPadding() +
-                contentPadding.calculateBottomPadding(),
-        )
-
-        if (channels.isEmpty()) {
+        if (channels.none { it.isSubscribed }) {
             EmptyChannelsState(
                 onAddChannel = onAddChannel,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(combinedPadding),
+                    .padding(padding)
+                    .padding(bottom = contentPadding.calculateBottomPadding()),
             )
             return@Scaffold
         }
@@ -115,15 +128,15 @@ fun WebTimelineScreen(
             onRefresh = { scope.launch { feedSource.refresh(force = true) } },
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = combinedPadding.calculateTopPadding()),
+                .padding(top = padding.calculateTopPadding()),
         ) {
             LazyColumn(
                 state = listState,
                 contentPadding = PaddingValues(
-                    start = combinedPadding.calculateStartPadding(layoutDirection),
-                    end = combinedPadding.calculateEndPadding(layoutDirection),
+                    start = contentPadding.calculateStartPadding(layoutDirection),
+                    end = contentPadding.calculateEndPadding(layoutDirection),
                     top = 0.dp,
-                    bottom = combinedPadding.calculateBottomPadding() + 16.dp,
+                    bottom = contentPadding.calculateBottomPadding() + 16.dp,
                 ),
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -136,24 +149,24 @@ fun WebTimelineScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                text = if (isRefreshing) "Завантажуємо…"
-                                    else "Поки немає постів. Перевірте підписки.",
+                                text = if (isRefreshing) stringResource(R.string.web_loading)
+                                    else stringResource(R.string.web_empty_posts),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
                 } else {
-                    items(posts, key = { it.post.id }) { entry ->
-                        // No horizontal padding here — WebPostCard mirrors TDLib
-                        // PostCard's edge-to-edge row with internal 16dp padding,
-                        // and the bottom HorizontalDivider has to span the full
-                        // viewport width like in the authenticated feed.
-                        WebPostCard(
-                            post = entry.post,
-                            emojiResolver = emojiResolver,
-                            channelTitle = entry.channel.title,
-                            channelAvatarUrl = entry.channel.avatarUrl,
+                    items(posts, key = { it.id }) { post ->
+                        // Reuse the TDLib-mode PostCard verbatim — same Avatar,
+                        // HeaderRow, PostBody, ActionRow, ReactionChip helpers.
+                        // Web content reaches this Composable as TimelinePost via
+                        // [WebPostAdapter] so visual parity is enforced by sharing
+                        // the data type, not by mirroring layouts manually.
+                        PostCard(
+                            post = post,
+                            interactions = PostInteractions.Noop,
+                            clickable = false,
                         )
                     }
                 }
@@ -180,18 +193,18 @@ private fun EmptyChannelsState(
             modifier = Modifier.padding(32.dp),
         ) {
             Text(
-                text = "Без входу",
+                text = stringResource(R.string.web_welcome_title),
                 style = MaterialTheme.typography.headlineSmall,
             )
             Text(
-                text = "Додайте кілька публічних каналів — і отримуйте їхні пости без авторизації в Telegram.",
+                text = stringResource(R.string.web_welcome_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(8.dp))
             Button(onClick = onAddChannel) {
-                Text("Додати канал")
+                Text(stringResource(R.string.web_add_channel))
             }
         }
     }
@@ -206,7 +219,7 @@ private fun ErrorBanner(message: String) {
             .padding(vertical = 8.dp),
     ) {
         Text(
-            text = "Помилка оновлення: $message",
+            text = stringResource(R.string.web_refresh_error, message),
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodySmall,
         )

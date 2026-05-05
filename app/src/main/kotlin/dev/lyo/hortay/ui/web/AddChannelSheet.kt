@@ -30,9 +30,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.web.LookupResult
 import dev.lyo.hortay.data.web.WebChannelInfo
 import dev.lyo.hortay.data.web.WebFeedSource
@@ -73,6 +75,7 @@ fun AddChannelSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
     var input by remember { mutableStateOf("") }
     var lookupState by remember { mutableStateOf<LookupState>(LookupState.Idle) }
@@ -96,14 +99,20 @@ fun AddChannelSheet(
             lookupState = when (val r = client.lookupChannel(username)) {
                 is LookupResult.Found -> LookupState.Found(r.channel)
                 is LookupResult.Empty -> LookupState.Found(r.channel)
-                LookupResult.NotFound -> LookupState.Error("Канал @$username не знайдено")
-                LookupResult.Private -> LookupState.Error("Канал приватний — публічні пости недоступні")
-                LookupResult.ParseFailure -> LookupState.Error("Telegram повернув неочікувану розмітку")
+                LookupResult.NotFound -> LookupState.Error(
+                    ctx.getString(R.string.web_add_not_found, username),
+                )
+                LookupResult.Private -> LookupState.Error(
+                    ctx.getString(R.string.web_add_private),
+                )
+                LookupResult.ParseFailure -> LookupState.Error(
+                    ctx.getString(R.string.web_add_parse_failure),
+                )
                 is LookupResult.RateLimited -> LookupState.Error(
-                    "Перевищено ліміт запитів — спробуйте за ${r.retryAfterMs / 1000} с",
+                    ctx.getString(R.string.web_add_rate_limited, (r.retryAfterMs / 1000).toInt()),
                 )
                 is LookupResult.NetworkError -> LookupState.Error(
-                    "Помилка мережі: ${r.cause.message}",
+                    ctx.getString(R.string.web_add_network_error, r.cause.message ?: ""),
                 )
             }
         }
@@ -112,7 +121,7 @@ fun AddChannelSheet(
     fun trySubmit() {
         val username = parseUsernameFromInput(input)
         if (username == null) {
-            lookupState = LookupState.Error("Введіть @username, t.me/username або повне посилання")
+            lookupState = LookupState.Error(ctx.getString(R.string.web_add_invalid))
             return
         }
         lookup(username)
@@ -138,11 +147,11 @@ fun AddChannelSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Додати канал",
+                text = stringResource(R.string.web_add_channel),
                 style = MaterialTheme.typography.titleLarge,
             )
             Text(
-                text = "Введіть @username, посилання t.me/username або вставте з буфера обміну.",
+                text = stringResource(R.string.web_add_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -156,7 +165,7 @@ fun AddChannelSheet(
                     }
                 },
                 singleLine = true,
-                label = { Text("Канал") },
+                label = { Text(stringResource(R.string.web_add_input_label)) },
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -166,7 +175,7 @@ fun AddChannelSheet(
                     input = clip
                     clipboardSuggestion.value = null
                 }) {
-                    Text("Вставити з буфера: ${clip.take(40)}")
+                    Text(stringResource(R.string.web_add_paste_clipboard, clip.take(40)))
                 }
             }
 
@@ -177,7 +186,10 @@ fun AddChannelSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp))
-                    Text("Перевіряємо…", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        text = stringResource(R.string.web_add_validating),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
                 is LookupState.Found -> ChannelPreviewCard(
                     channel = state.channel,
@@ -195,14 +207,16 @@ fun AddChannelSheet(
                     onClick = ::trySubmit,
                     enabled = input.isNotBlank() && lookupState !is LookupState.Loading,
                 ) {
-                    Text("Знайти")
+                    Text(stringResource(R.string.web_add_lookup))
                 }
-                TextButton(onClick = onDismiss) { Text("Скасувати") }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.web_cancel))
+                }
             }
 
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Популярні канали",
+                text = stringResource(R.string.web_add_curated_title),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -240,10 +254,15 @@ private fun ChannelPreviewCard(channel: WebChannelInfo, onConfirm: () -> Unit) {
                 Text(channel.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text("@${channel.username}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (channel.subscribers != null) {
-                    Text("${channel.subscribers} підписників", style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        text = stringResource(R.string.web_subscribers, channel.subscribers),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                 }
             }
-            Button(onClick = onConfirm) { Text("Додати") }
+            Button(onClick = onConfirm) {
+                Text(stringResource(R.string.web_add_confirm))
+            }
         }
     }
 }
@@ -261,7 +280,9 @@ private fun CuratedRow(suggestion: CuratedChannel, onTap: () -> Unit) {
             Text("@${suggestion.username}", style = MaterialTheme.typography.bodyMedium)
             Text(suggestion.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        TextButton(onClick = onTap) { Text("Перевірити") }
+        TextButton(onClick = onTap) {
+            Text(stringResource(R.string.web_add_check))
+        }
     }
 }
 

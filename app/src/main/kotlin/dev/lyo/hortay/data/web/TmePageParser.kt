@@ -57,9 +57,12 @@ object TmePageParser {
 
         val description = doc.selectFirst(".tgme_channel_info_description")?.text().orEmpty()
 
-        // Real avatar element: `<img class="tgme_page_photo_image bgcolor2" src="…">`. The
-        // bgcolor* class varies per channel; we match by the stable class.
-        val avatarUrl = doc.selectFirst("img.tgme_page_photo_image")?.attr("src")
+        // Avatar markup: `<i class="tgme_page_photo_image bgcolor2"><img src="…"></i>`.
+        // The `<i>` carries the class (and the bg fallback color when no IMG loads); the
+        // actual photo URL is on the nested IMG. Earlier we matched `img.tgme_page_photo_image`
+        // which never hits because the class is on the `<i>`, not the `<img>`. Fixed selector
+        // descends into the nested IMG.
+        val avatarUrl = doc.selectFirst(".tgme_page_photo_image img")?.attr("src")
             ?.ifBlank { null }
 
         // Counters: each `.tgme_channel_info_counter` has a `.counter_value` and

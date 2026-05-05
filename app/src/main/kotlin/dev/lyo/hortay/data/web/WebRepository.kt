@@ -4,6 +4,7 @@ import android.util.Log
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
+import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.web.db.ChannelQueries
 import dev.lyo.hortay.data.web.db.CustomEmojiQueries
 import dev.lyo.hortay.data.web.db.PostQueries
@@ -63,9 +64,9 @@ class WebRepository(
      * `channel.is_subscribed = 1` means unsubscribing a channel removes its
      * posts from the feed *immediately* on the next emit, with no manual filter.
      */
-    fun observeFeed(limit: Long = DEFAULT_FEED_LIMIT): Flow<PersistentList<WebFeedEntry>> =
+    fun observeFeed(limit: Long = DEFAULT_FEED_LIMIT): Flow<PersistentList<TimelinePost>> =
         postQueries
-            .selectFeed(limit, mapper = ::feedRowMapper)
+            .selectFeed(limit, mapper = ::rowToTimelinePost)
             .asFlow()
             .mapToList(ioDispatcher)
             .map { it.toPersistentList() }
@@ -75,27 +76,27 @@ class WebRepository(
     fun observeFeedByChannel(
         username: String,
         limit: Long = DEFAULT_FEED_LIMIT,
-    ): Flow<PersistentList<WebFeedEntry>> =
+    ): Flow<PersistentList<TimelinePost>> =
         postQueries
-            .selectFeedByChannel(username, limit, mapper = ::feedRowMapper)
+            .selectFeedByChannel(username, limit, mapper = ::rowToTimelinePost)
             .asFlow()
             .mapToList(ioDispatcher)
             .map { it.toPersistentList() }
             .distinctUntilChanged()
             .flowOn(ioDispatcher)
 
-    fun observeBookmarked(): Flow<PersistentList<WebFeedEntry>> =
+    fun observeBookmarked(): Flow<PersistentList<TimelinePost>> =
         postQueries
-            .selectBookmarked(mapper = ::feedRowMapper)
+            .selectBookmarked(mapper = ::rowToTimelinePost)
             .asFlow()
             .mapToList(ioDispatcher)
             .map { it.toPersistentList() }
             .distinctUntilChanged()
             .flowOn(ioDispatcher)
 
-    fun observePost(id: String): Flow<WebFeedEntry?> =
+    fun observePost(id: String): Flow<TimelinePost?> =
         postQueries
-            .selectById(id, mapper = ::feedRowMapper)
+            .selectById(id, mapper = ::rowToTimelinePost)
             .asFlow()
             .mapToOneOrNull(ioDispatcher)
             .distinctUntilChanged()
@@ -111,11 +112,11 @@ class WebRepository(
      * escaped to literal characters so a user typing "100%" doesn't accidentally
      * trigger a tautology.
      */
-    fun search(query: String, limit: Long = DEFAULT_SEARCH_LIMIT): Flow<PersistentList<WebFeedEntry>> {
+    fun search(query: String, limit: Long = DEFAULT_SEARCH_LIMIT): Flow<PersistentList<TimelinePost>> {
         val escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         val pattern = "%${escaped}%"
         return postQueries
-            .searchPlain(pattern, limit, mapper = ::feedRowMapper)
+            .searchPlain(pattern, limit, mapper = ::rowToTimelinePost)
             .asFlow()
             .mapToList(ioDispatcher)
             .map { it.toPersistentList() }
@@ -349,7 +350,7 @@ class WebRepository(
 
     // ---- Helpers (private) ---------------------------------------------------
 
-    private fun feedRowMapper(
+    private fun rowToTimelinePost(
         channel_username: String,
         seq: Long,
         id: String,
@@ -367,29 +368,25 @@ class WebRepository(
         fetched_at_ms: Long,
         channel_title: String,
         channel_avatar: String?,
-    ): WebFeedEntry {
-        @Suppress("UNUSED_VARIABLE") val unusedTextPlain = text_plain // FTS-only column
+    ): TimelinePost {
+        @Suppress("UNUSED_VARIABLE") val unusedId = id // composite PK; TimelinePost uses seq as id
+        @Suppress("UNUSED_VARIABLE") val unusedTextPlain = text_plain // FTS column
         @Suppress("UNUSED_VARIABLE") val unusedFetchedAt = fetched_at_ms
         @Suppress("UNUSED_VARIABLE") val unusedPublishedMs = published_at_ms
-        return WebFeedEntry(
-            post = WebPost(
-                id = id,
-                seq = seq,
-                publishedAt = published_at_iso,
-                textHtml = text_html,
-                media = decodeMedia(media_json),
-                webPreview = web_preview_json?.let { decodePreview(it) },
-                forwardedFrom = forwarded_from_json?.let { decodeForward(it) },
-                views = views,
-                reactions = decodeReactions(reactions_json),
-            ),
-            channel = WebChannelHeader(
-                username = channel_username,
-                title = channel_title,
-                avatarUrl = channel_avatar,
-            ),
-            isRead = is_read,
-            isBookmarked = is_bookmarked,
+        @Suppress("UNUSED_VARIABLE") val unusedRead = is_read
+        @Suppress("UNUSED_VARIABLE") val unusedBookmark = is_bookmarked
+        return WebPostAdapter.toTimelinePost(
+            seq = seq,
+            publishedAtIso = published_at_iso,
+            textHtml = text_html,
+            mediaList = decodeMedia(media_json),
+            webPreview = web_preview_json?.let { decodePreview(it) },
+            forwarded = forwarded_from_json?.let { decodeForward(it) },
+            viewsRaw = views,
+            reactionsList = decodeReactions(reactions_json),
+            channelUsername = channel_username,
+            channelTitle = channel_title,
+            channelAvatarUrl = channel_avatar,
         )
     }
 

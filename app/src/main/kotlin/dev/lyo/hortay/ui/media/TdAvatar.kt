@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import coil3.compose.AsyncImage
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.TdMedia
 
@@ -40,6 +41,12 @@ fun TdAvatar(
     background: Color = MaterialTheme.colorScheme.primaryContainer,
     textColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     textStyle: TextStyle = MaterialTheme.typography.titleMedium,
+    /**
+     * Optional remote URL layered over the initial-letter fallback. Used by web
+     * (anonymous) mode where TDLib's [fileId] / [thumb] are unavailable but a
+     * CDN avatar URL was parsed from t.me/s/. TDLib-mode callers leave this null.
+     */
+    remoteUrl: String? = null,
 ) {
     Box(
         modifier = modifier
@@ -65,6 +72,12 @@ fun TdAvatar(
                 placeholderColor = null,
                 showProgress = false,
                 priority = DownloadPriority.Avatar,
+            )
+        } else if (remoteUrl != null) {
+            AsyncImage(
+                model = remoteUrl,
+                contentDescription = name,
+                modifier = Modifier.fillMaxSize(),
             )
         }
     }

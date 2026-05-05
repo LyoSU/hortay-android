@@ -63,6 +63,26 @@ fun TdMediaImage(
     val cache = LocalMediaCache.current
     val context = LocalContext.current
     val fileId = media.fileId
+    val remoteUrl = media.remoteUrl
+
+    // Web-mode fast path: no TDLib fileId, just a remote URL. Hand straight to
+    // Coil — same crossfade, same disk cache, same Compose contract — bypassing
+    // the TDLib download orchestration that has nothing to do here. Lets the
+    // existing PostCard/PostBody render web posts through one code path.
+    if (fileId == null && remoteUrl != null) {
+        val baseModifier = if (placeholderColor != null) modifier.background(placeholderColor) else modifier
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(remoteUrl)
+                .crossfade(CROSSFADE_MS)
+                .build(),
+            contentDescription = contentDescription,
+            contentScale = contentScale,
+            modifier = baseModifier.fillMaxSize(),
+        )
+        return
+    }
+
     val state by remember(fileId) {
         if (fileId != null) cache.observe(fileId) else MutableStateFlow(MediaState.Idle)
     }.collectAsStateWithLifecycle()

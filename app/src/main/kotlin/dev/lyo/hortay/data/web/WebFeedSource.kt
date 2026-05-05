@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data.web
 
 import android.util.Log
+import dev.lyo.hortay.data.TimelinePost
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -60,8 +61,15 @@ class WebFeedSource(
     private val refreshMutex = Mutex()
     private val fetchSemaphore = Semaphore(maxConcurrentFetches)
 
-    /** Merged feed from the DB, latest first. */
-    val posts: StateFlow<PersistentList<WebFeedEntry>> =
+    /**
+     * Merged feed from the DB, mapped to [TimelinePost] so the existing
+     * [dev.lyo.hortay.ui.timeline.PostCard] (and its children Avatar, HeaderRow,
+     * PostBody, ActionRow, ReactionChip) renders web content with no parallel
+     * Composable tree. Mapping happens inside the same Flow chain so the
+     * StateFlow consumer sees one already-converted list per emit, not a raw
+     * WebFeedEntry list that needs per-item adaptation downstream.
+     */
+    val posts: StateFlow<PersistentList<TimelinePost>> =
         repository.observeFeed()
             .stateIn(scope, SharingStarted.Eagerly, kotlinx.collections.immutable.persistentListOf())
 
