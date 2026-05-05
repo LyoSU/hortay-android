@@ -124,11 +124,24 @@ fun LottieStickerView(
         )
     }
 
+    // True once Lottie has actually painted at least one frame past the start. We
+    // can't query `LottieAnimation` directly; instead we infer it from `progress`
+    // having advanced beyond zero. `animateLottieCompositionAsState` ticks
+    // `progress` on the next frame after `composition` becomes non-null, so this
+    // condition flips one frame after we have a renderable composition — exactly
+    // the boundary where it's safe to drop the static thumbnail underneath.
+    //
+    // Fix for the "black flash" the user saw on guest-mode TGS emojis: dropping
+    // the thumb the instant `composition != null` left a 1-2 frame gap before
+    // Lottie's first paint, during which the inline emoji area showed the
+    // surrounding surface (dark in night mode → looks like a black square
+    // blink). Keeping the thumb a frame longer eliminates the gap; once Lottie
+    // is drawing, the static thumb is hidden so transparent regions of the
+    // animated sticker don't reveal a frozen silhouette underneath.
+    val animationHasStarted = composition != null && progress > 0f
+
     Box(modifier = modifier) {
-        // Underlay the static thumbnail until the composition is ready. We hide it once
-        // Lottie has frames so transparent areas of the sticker don't reveal the static
-        // thumb behind them (which would look like a doubled silhouette).
-        if (thumb != null && composition == null) {
+        if (thumb != null && !animationHasStarted) {
             TdMediaImage(
                 media = thumb,
                 contentDescription = contentDescription,
@@ -145,6 +158,13 @@ fun LottieStickerView(
                 progress = { progress },
                 modifier = Modifier.fillMaxSize(),
                 dynamicProperties = dynamicProperties,
+                // safeMode skips problem frames silently instead of throwing /
+                // returning a crashed canvas. A small minority of TGS payloads
+                // Telegram serves rely on Lottie features the Android port
+                // implements with edge cases; without safeMode the crashed
+                // frame paints as a solid colour, which read to the user as
+                // "TGS broken / black background".
+                safeMode = true,
             )
         }
     }
