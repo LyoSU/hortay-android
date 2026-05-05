@@ -123,69 +123,21 @@ private fun FormattedText.blockQuoteRanges(): List<IntRange> {
 /**
  * Slice [source] into alternating non-quote / quote pieces. Each piece is a
  * [FormattedText] whose own spans are re-anchored relative to the slice start.
- *
- * Non-quote slices are trimmed of any trailing newline run that appeared in the
- * source as the paragraph break before/after the blockquote. The Column wrapping
- * the segments already inserts an 8 dp [Spacer] between them; if those `\n\n`
- * characters stayed in the slice, the rendered Text would emit one or two blank
- * lines on top of the spacer, reading as "double indent before / after the
- * quote" — exactly the visual regression users flagged.
- *
- * The trim is applied symmetrically: trailing whitespace+newlines on non-quote
- * slices that precede a quote, and leading whitespace+newlines on non-quote
- * slices that follow a quote. Quote slices themselves are left intact (the
- * BlockQuote span is anchored to the first character of the quoted body, so
- * there are no leading separators inside it to trim).
  */
 private fun buildSegments(source: FormattedText, quoteRanges: List<IntRange>): List<Segment> {
     val out = mutableListOf<Segment>()
     var cursor = 0
     for (range in quoteRanges) {
         if (cursor < range.first) {
-            val end = trimTrailingBreakBoundary(source.text, cursor, range.first)
-            if (end > cursor) {
-                out += Segment(source.slice(cursor, end), isQuote = false)
-            }
+            out += Segment(source.slice(cursor, range.first), isQuote = false)
         }
         out += Segment(source.slice(range.first, range.last), isQuote = true)
         cursor = range.last
     }
     if (cursor < source.text.length) {
-        val start = trimLeadingBreakBoundary(source.text, cursor, source.text.length)
-        if (start < source.text.length) {
-            out += Segment(source.slice(start, source.text.length), isQuote = false)
-        }
+        out += Segment(source.slice(cursor, source.text.length), isQuote = false)
     }
     return out.filter { it.text.text.isNotEmpty() }
-}
-
-/**
- * Walks back from [end] over the trailing run of newlines and inline whitespace
- * inside `[start, end)` and returns the new effective end. The caller passes
- * this trimmed end into [FormattedText.slice]; spans anchored beyond the
- * trimmed end are clipped naturally by the slicer's own bounds-coercion.
- */
-private fun trimTrailingBreakBoundary(text: String, start: Int, end: Int): Int {
-    var i = end
-    while (i > start) {
-        val c = text[i - 1]
-        if (c == '\n' || c == ' ' || c == '\t') i-- else break
-    }
-    return i
-}
-
-/**
- * Mirror of [trimTrailingBreakBoundary] for the start of a non-quote slice that
- * sits AFTER a quote — strips leading newlines (`\n\n` injected by the quote's
- * own paragraph-break suffix) and any inline whitespace adjacent to them.
- */
-private fun trimLeadingBreakBoundary(text: String, start: Int, end: Int): Int {
-    var i = start
-    while (i < end) {
-        val c = text[i]
-        if (c == '\n' || c == ' ' || c == '\t') i++ else break
-    }
-    return i
 }
 
 /**
