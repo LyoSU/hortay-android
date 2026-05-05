@@ -22,6 +22,7 @@ import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.web.GuestModeStore
 import dev.lyo.hortay.data.web.SubscriptionsStore
 import dev.lyo.hortay.data.web.WebCustomEmojiResolver
+import dev.lyo.hortay.data.web.WebFeedScheduler
 import dev.lyo.hortay.data.web.WebFeedSource
 import dev.lyo.hortay.data.web.WebRepository
 import dev.lyo.hortay.data.web.WebTelegramClient
@@ -193,6 +194,20 @@ class AppGraph(context: Context) {
         subscriptions = webSubscriptions,
         scope = appScope,
     )
+
+    /**
+     * Tier-2 foreground polling for the web pipeline. Bound here so the
+     * scheduler runs for the entire process lifetime — its foreground
+     * StateFlow source already auto-pauses sweeps when the app backgrounds,
+     * so there's no battery cost while not in use. Background sweeps
+     * (tier-3 WorkManager) and viewport-driven sweeps (tier-1) layer in
+     * later without changing this wiring.
+     */
+    val webFeedScheduler: WebFeedScheduler = WebFeedScheduler(
+        feedSource = webFeedSource,
+        foreground = lifecycleBridge.foreground,
+        scope = appScope,
+    ).also { it.bind() }
 
     init {
         // Pre-warm the web DB on a background thread. SQLDelight's AndroidSqliteDriver

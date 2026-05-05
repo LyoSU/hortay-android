@@ -18,6 +18,15 @@ Project context for Claude Code agents. README + CHANGELOG підтягують�
 
 README пояснює що це і як запустити. Нижче — те, чого README не каже і код сам по собі не показує.
 
+## Два режими
+
+Hortay вміє два режими:
+
+1. **Authenticated (TDLib)** — повний клієнт з MTProto, коментарями, реакціями, приватними каналами. Persistence власна у TDLib. Цей режим — basis оригінального README.
+2. **Guest / анонімний (web)** — читання публічних каналів через `t.me/s/<u>` без авторизації. Persistence у власному `web.db` (SQLDelight). Жодних credentials не передаємо Telegram. Активується через `GuestModeStore` flag — користувач натискає "Без входу" на `AuthScreen` або повертається через `WebSettingsSheet`.
+
+Обидва режими — single-process, single-Activity. `MainActivity` маршрутизує: `auth.Ready` → TDLib UI, `isGuest` → web UI, інакше — `AuthScreen`. Підписки користувача (DataStore `SubscriptionsStore`) переживають обидва напрямки перемикання.
+
 ## Архітектура (3 модулі)
 
 - **`:app`** — Compose UI, `AppGraph` (manual DI), repositories, ViewModels. JVM 17.
@@ -40,6 +49,9 @@ DI-граф створюється в `HortayApp.onCreate` як `graph: AppGraph
 | Cold start снапшот | `data/TimelineSnapshotStore.kt` + `TimelineViewModel:59-66` | Restore → паралельний refreshIfStale. Race-safe через `_posts.update` reducer. |
 | FLOOD_WAIT global gate | `data/TdClient.kt:100-113` | Один глобальний `AtomicLong` deadline. Per-method tracking — overkill для read-only. |
 | TDLib quirks (album sync, stall, post-completion resync) | `data/MediaCache.kt:55-71` + `PostsRepository.kt:67-74` | Issue refs: `tdlib/td#2523` (albums), `tdlib/td#2585` (stall mid-chunk). |
+| Web-mode SQL portability | `app/src/main/sqldelight/.../web/db/*.sq` | Усі upsert'и через `INSERT OR IGNORE` + `UPDATE`, **не** `ON CONFLICT DO UPDATE`. Android 8/9 SQLite < 3.24. FTS5 теж пропущено (Samsung/Pixel SQLite ship без модуля). |
+| Web-mode media TTL | `data/web/Post.sq` (`fetched_at_ms`) + `WebFeedSource.DEFAULT_MEDIA_TTL_MS` | t.me/s/ підписані CDN URL живуть 1-4 год. Канал зі стиглими URL отримує `FORCE_NETWORK` на наступному sweep, Coil failure → `markMediaStale()`. |
+| Guest-mode routing precedence | `MainActivity.kt` | `auth.Ready → MainScaffold` → `isGuest → WebModeScaffold` → `else → AuthScreen`. Підписки переживають перемикання обох напрямків. |
 
 ## Critical identifiers
 
@@ -54,8 +66,9 @@ DI-граф створюється в `HortayApp.onCreate` як `graph: AppGraph
 ## Заборонено
 
 - ❌ Hilt / Dagger / Koin — DI ручний (`AppGraph`), навмисно. Один process, ~15 синглтонів.
-- ❌ Firebase / Crashlytics / Sentry / analytics / phone-home — INTERNET виключно для TDLib.
-- ❌ Room / SQLDelight / будь-яка локальна БД — TDLib персистить сам (`useFileDatabase`/`useChatInfoDatabase`/`useMessageDatabase = true`).
+- ❌ Firebase / Crashlytics / Sentry / analytics / phone-home — INTERNET виключно для TDLib + анонімного `t.me/s/`.
+- ❌ Room — kapt overhead, замінено SQLDelight там, де БД дійсно потрібна.
+- ✅ SQLDelight 2.3 — **тільки** для `web.db` (анонімний режим, `app/src/main/sqldelight/...`). TDLib режим залишається БЕЗ БД (TDLib `useFileDatabase`/`useChatInfoDatabase`/`useMessageDatabase = true`). Не тягніть TDLib-режимні дані у `web.db`, і не вмикайте `web.db` для авторизованих юзерів — inkjections іде через `AppGraph.webDatabase` лиш у guest-mode UI tree.
 - ❌ OkHttp / Retrofit / Ktor — Coil тягне `coil-network-okhttp` для зображень, цього достатньо.
 - ❌ FCM / push через Firebase — TDLib `RegisterDevice` + `UpdateNotification` коли треба буде.
 - ❌ ViewBinding / Fragment-based screens — Compose-only, single-Activity.

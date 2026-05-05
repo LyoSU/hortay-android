@@ -8,6 +8,43 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Added
+- **Anonymous reading mode** ("гостьовий режим"). Read public Telegram channels
+  without signing in: parser ingests `https://t.me/s/<username>` previews, posts
+  surface in a Twitter-style feed, custom emoji and reactions render
+  client-side. Mode-switching from `AuthScreen` ("Без входу — читати публічні
+  канали" CTA) flips a `GuestModeStore` flag in DataStore; the user can sign in
+  later from inside web mode and subscriptions persist across the transition.
+  All anonymous-mode network access uses a desktop-Chrome User-Agent and
+  Telegram never sees a user identifier — IP is the only fingerprint we leak.
+- `WebDatabase` (SQLDelight 2.3.2) for the anonymous pipeline. Schema covers
+  channels, posts, custom-emoji resolution cache and curated/recent
+  suggestions. WAL mode + foreign keys + denormalised `published_at_ms` index
+  give the merged-feed query a single sequential disk read on the hot path.
+  FTS5 was planned but dropped — Samsung / Pixel SQLite builds ship without
+  the module; search falls back to indexed `LIKE` on `text_plain` (~100 ms on
+  5K posts) until we bundle SQLite.
+- `WebRepository` — single DAO surface with `Flow`-driven observers (SQLDelight
+  `asFlow` + `mapToList`) so UI screens never manually invalidate. Atomic
+  `ingestPage()` runs the channel upsert + N post upserts in one transaction
+  per fetched page; observers fire exactly once per logical change.
+- `WebFeedSource` — multi-channel orchestrator. Mirrors `SubscriptionsStore`
+  intent into the channel table, fans out parallel fetches under a
+  `Semaphore(6)`, and exposes the merged feed as an eager `StateFlow`. Stale
+  CDN media URLs (Telegram rotates signed tokens hourly) drive automatic
+  `FORCE_NETWORK` on the next sweep when the per-post `fetched_at_ms` exceeds
+  a 4-hour TTL.
+- `WebFeedScheduler` — tier-2 foreground polling that runs `refresh(force=false)`
+  every 5 minutes while the app is visible. Auto-pauses on background.
+  Tiers 1 (viewport-driven) and 3 (WorkManager background + Wi-Fi-only opt-in)
+  deferred to a later milestone.
+- OkHttp `Cache` (10 MB DiskLruCache under `cacheDir/web-http/`) replaces the
+  in-memory `cacheState` HashMap. Conditional GET (`If-None-Match` /
+  `If-Modified-Since`) now persists across cold starts — a 200-channel
+  morning sweep runs ~80–90 % cheaper after the first day.
+- `WebTimelineScreen`, `AddChannelSheet`, `WebSettingsSheet`,
+  `WebModeScaffold` — production guest-mode UI. Pull-to-refresh,
+  curated-channel suggestions per locale, smart-paste validator with
+  clipboard hint, lookup-before-subscribe confirmation card.
 - English localization. All user-facing strings extracted to `res/values/strings.xml`
   (English, default fallback) and `res/values-uk/strings.xml` (Ukrainian). Android
   picks the locale automatically from system settings; non-Ukrainian devices now see

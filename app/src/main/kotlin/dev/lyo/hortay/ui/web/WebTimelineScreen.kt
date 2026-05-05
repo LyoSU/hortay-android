@@ -61,7 +61,7 @@ fun WebTimelineScreen(
     emojiResolver: WebCustomEmojiResolver,
     contentPadding: PaddingValues,
     onAddChannel: () -> Unit,
-    onSettings: () -> Unit,
+    onSettings: () -> Unit = {},
 ) {
     val posts by feedSource.posts.collectAsStateWithLifecycle()
     val channels by feedSource.channels.collectAsStateWithLifecycle()
@@ -83,9 +83,6 @@ fun WebTimelineScreen(
                 actions = {
                     IconButton(onClick = onAddChannel) {
                         Symbol(name = "add", contentDescription = "Додати канал")
-                    }
-                    IconButton(onClick = onSettings) {
-                        Symbol(name = "settings", contentDescription = "Налаштування")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -125,10 +122,9 @@ fun WebTimelineScreen(
                 contentPadding = PaddingValues(
                     start = combinedPadding.calculateStartPadding(layoutDirection),
                     end = combinedPadding.calculateEndPadding(layoutDirection),
-                    top = 8.dp,
+                    top = 0.dp,
                     bottom = combinedPadding.calculateBottomPadding() + 16.dp,
                 ),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
                 if (posts.isEmpty()) {
@@ -149,12 +145,15 @@ fun WebTimelineScreen(
                     }
                 } else {
                     items(posts, key = { it.post.id }) { entry ->
+                        // No horizontal padding here — WebPostCard mirrors TDLib
+                        // PostCard's edge-to-edge row with internal 16dp padding,
+                        // and the bottom HorizontalDivider has to span the full
+                        // viewport width like in the authenticated feed.
                         WebPostCard(
                             post = entry.post,
                             emojiResolver = emojiResolver,
                             channelTitle = entry.channel.title,
                             channelAvatarUrl = entry.channel.avatarUrl,
-                            modifier = Modifier.padding(horizontal = 12.dp),
                         )
                     }
                 }
