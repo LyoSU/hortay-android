@@ -53,6 +53,7 @@ import java.util.Locale
 fun WebModeScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
     var addSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
     // Monotonic counter incremented on each "Home" re-tap — TimelineScreen
     // observes it and scrolls the feed to top (or refreshes when already at
     // top). Same mechanism as MainScaffold so the home-tap-to-scroll gesture
@@ -133,6 +134,7 @@ fun WebModeScaffold(graph: AppGraph) {
                         onChannelFilterChange = { /* no per-channel filter in guest mode */ },
                         homeTapTrigger = homeTapTrigger,
                         onBrandTap = { homeTapTrigger = System.nanoTime() },
+                        onSearchClick = { searchOpen = true },
                     )
 
                     NavTab.Channels -> WebChannelsScreen(
@@ -169,6 +171,19 @@ fun WebModeScaffold(graph: AppGraph) {
             client = graph.webClient,
             locale = locale,
             onDismiss = { addSheetOpen = false },
+        )
+    }
+
+    // Cross-channel local search overlay. Lives at the scaffold level (not as
+    // a tab) so it can grab the full screen, including the area normally
+    // occupied by the FloatingNavBar — search-as-an-overlay is the canonical
+    // Material 3 pattern, and pinning it under nav would make the keyboard
+    // collide with results.
+    if (searchOpen) {
+        WebSearchScreen(
+            repository = graph.webRepository,
+            bookmarks = graph.bookmarkStore,
+            onDismiss = { searchOpen = false },
         )
     }
 }

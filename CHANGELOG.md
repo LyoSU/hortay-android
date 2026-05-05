@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Added
+- **Cross-channel local search (guest mode)**. A search action surfaces in the
+  Feed top bar; tapping it opens a full-screen overlay with an auto-focused
+  query field. Matches stream straight from `web.db` via the existing indexed
+  `LIKE` on `text_plain` — never hits the network, so results are scoped to
+  what the user has already seen scroll past in the feed. Query input is
+  debounced 220 ms before reaching SQLDelight, then `flatMapLatest` cancels the
+  in-flight subscription on every keystroke so the DB never serves a stale
+  result set. Minimum query length of 2 chars filters out trivial single-letter
+  bursts that would otherwise pull the entire post table on first tap. Result
+  rows reuse [`PostCard`] verbatim, so a hit looks identical to the same post
+  in the feed (long-press action sheet, share / copy / bookmark, tap → open in
+  Telegram). TDLib mode is unchanged — its in-channel search via
+  `SearchChatMessages` lives at the `TimelineTopBar` level and stays the only
+  search affordance there.
 - **Animated TGS / WebM custom emojis in guest mode**. The web-mode emoji
   resolver now publishes the real `StickerFormat.{Tgs|Webm|Webp}` instead of
   forcing every asset down the static-WEBP path. New `LottieUrlStore` fetches

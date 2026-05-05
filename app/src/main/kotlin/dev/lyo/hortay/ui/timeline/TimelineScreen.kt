@@ -107,6 +107,14 @@ fun TimelineScreen(
      */
     scrollToMessage: Pair<Long, Long>? = null,
     onScrollHandled: () -> Unit = {},
+    /**
+     * When non-null, a search action is shown in the default top bar (no filter,
+     * not bookmarked-only) and tapping it invokes this callback. Guest mode wires
+     * it to a cross-channel local search overlay; TDLib mode already has its own
+     * in-channel search bar (active only when [channelFilter] is set), so it
+     * leaves this null and keeps the global feed bar minimal.
+     */
+    onSearchClick: (() -> Unit)? = null,
 ) {
     val vm: TimelineViewModel = viewModel(
         factory = remember(feed, bookmarks) {
@@ -633,6 +641,7 @@ fun TimelineScreen(
                 },
                 onBrandTap = onBrandTap,
                 onTitleTap = { channelFilter?.let { infoSheetChatId = it } },
+                onGlobalSearchClick = onSearchClick,
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -822,6 +831,7 @@ private fun TimelineTopBar(
     onClearFilter: () -> Unit,
     onBrandTap: () -> Unit,
     onTitleTap: () -> Unit,
+    onGlobalSearchClick: (() -> Unit)?,
     scrollBehavior: TopAppBarScrollBehavior,
 ) {
     val colors = TopAppBarDefaults.topAppBarColors(
@@ -919,6 +929,16 @@ private fun TimelineTopBar(
             title = {
                 Box(modifier = Modifier.clickable(onClick = onBrandTap)) {
                     BrandRow()
+                }
+            },
+            actions = {
+                onGlobalSearchClick?.let { handler ->
+                    IconButton(onClick = handler) {
+                        Symbol(
+                            name = "search",
+                            contentDescription = stringResource(R.string.web_search_action),
+                        )
+                    }
                 }
             },
             colors = colors,

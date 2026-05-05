@@ -29,6 +29,11 @@
     <string name="web_unsubscribe_body">Channel @%1$s will leave your feed. Bookmarked posts stay in Saved.</string>
     <string name="web_unsubscribe_confirm">Unsubscribe</string>
     <string name="web_cancel">Cancel</string>
+    <string name="web_search_action">Search posts</string>
+    <string name="web_search_hint">Search your channels</string>
+    <string name="web_search_clear">Clear</string>
+    <string name="web_search_prompt">Type to search across posts in your subscribed channels.</string>
+    <string name="web_search_no_results">No matches for "%1$s".</string>
     <string name="web_status_not_found">not found</string>
     <string name="web_status_private">private</string>
     <string name="web_status_rate_limited">rate limit</string>
