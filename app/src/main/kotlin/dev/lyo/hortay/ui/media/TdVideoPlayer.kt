@@ -15,6 +15,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.view.TextureView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -144,35 +145,50 @@ fun TdVideoPlayer(
     }
 
     Box(modifier = modifier) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = showControls
-                    // We render our own MediaProgressIndicator/MediaLoadingOverlay over
-                    // the player; PlayerView's built-in spinner would stack on top of
-                    // ours and read as "two crutilki" during the file:// download window.
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    // PlayerView's "shutter" is the opaque overlay that covers the
-                    // SurfaceView until ExoPlayer renders the first frame. Default is
-                    // BLACK, which produced a 1-2s black flash over the poster
-                    // (TdMediaImage stacked underneath) during the buffer window.
-                    // Transparent shutter lets the poster read through cleanly while
-                    // the player buffers; once the first frame lands, the SurfaceView
-                    // composites on top normally. This is the canonical PlayerView
-                    // path — alpha-hiding the entire AndroidView fails when first
-                    // frame never arrives (broken URL / token expiry) and leaves the
-                    // user staring at the poster forever.
-                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                }
-            },
-            update = { view ->
-                if (view.player !== exoPlayer) view.player = exoPlayer
-                view.useController = showControls
-            },
-        )
+        // Two render paths:
+        //   • showControls = true  → PlayerView (we keep its built-in scrubber /
+        //     play-pause widgets for the fullscreen viewer). PlayerView wraps a
+        //     SurfaceView, which is fine in the fullscreen case because the
+        //     player goes opaque-over-poster anyway.
+        //   • showControls = false → bare TextureView. The feed-preview path
+        //     uses this: a SurfaceView is an opaque hardware overlay that
+        //     paints solid black before the first decoded frame arrives, so
+        //     the user saw a 1-3 s black square sitting on top of the poster
+        //     during ExoPlayer's prepare/buffer window. Variable per video
+        //     because preroll latency depends on container init + key-frame
+        //     distance, not file size — exactly what the user observed.
+        //     TextureView with `isOpaque = false` blends transparently while
+        //     the texture is still empty, so the poster (drawn underneath)
+        //     reads through cleanly until the first frame paints over it.
+        if (showControls) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = true
+                        setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    }
+                },
+                update = { view ->
+                    if (view.player !== exoPlayer) view.player = exoPlayer
+                    view.useController = true
+                },
+            )
+        } else {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    TextureView(ctx).apply { isOpaque = false }
+                },
+                update = { view ->
+                    exoPlayer.setVideoTextureView(view)
+                },
+                onRelease = { exoPlayer.clearVideoTextureView(it) },
+            )
+        }
         when (val s = mediaState) {
             is MediaState.Downloading -> if (showLoadingOverlay) Box(
                 modifier = Modifier.fillMaxSize(),
