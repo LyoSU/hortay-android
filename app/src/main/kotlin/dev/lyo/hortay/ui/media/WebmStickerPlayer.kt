@@ -43,25 +43,30 @@ fun WebmStickerPlayer(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     priority: DownloadPriority = DownloadPriority.VisibleMedia,
+    /**
+     * Web-mode WebM URL. When [fileId] is null and [remoteUrl] is set, ExoPlayer
+     * streams the URL directly via its built-in HTTP DataSource — no
+     * [dev.lyo.hortay.data.MediaCache] interaction. Same path that
+     * [TdVideoPlayer] uses for guest-mode video posts, kept consistent so a
+     * future single-source-of-truth refactor merges easily.
+     */
+    remoteUrl: String? = null,
 ) {
     val cache = LocalMediaCache.current
     val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val isRemote = fileId == null && remoteUrl != null
 
     val gate = LocalScrollGate.current
     val gateOpen = gate.value
-    LaunchedEffect(fileId, priority, gateOpen) {
-        if (gateOpen) fileId?.let { cache.ensure(it, priority) }
+    LaunchedEffect(fileId, priority, gateOpen, isRemote) {
+        if (gateOpen && !isRemote) fileId?.let { cache.ensure(it, priority) }
     }
-    // Mirror TdMediaImage's dispose-cancels-download contract — otherwise a sticker that
-    // scrolled off-screen keeps holding a TDLib download slot until it finishes,
-    // queueing behind currently-visible media. Bytes survive on disk so a re-mount
-    // resumes from the saved offset.
-    DisposableEffect(fileId) {
-        onDispose { fileId?.let(cache::cancelDeferred) }
+    DisposableEffect(fileId, isRemote) {
+        onDispose { if (!isRemote) fileId?.let(cache::cancelDeferred) }
     }
-    val mediaState by remember(fileId) {
-        if (fileId != null) cache.observe(fileId)
+    val mediaState by remember(fileId, isRemote) {
+        if (fileId != null && !isRemote) cache.observe(fileId)
         else MutableStateFlow(MediaState.Idle)
     }.collectAsStateWithLifecycle()
 
@@ -77,14 +82,20 @@ fun WebmStickerPlayer(
     }
 
     // Key on the Ready path only so Downloading-burst progress updates don't churn
-    // ExoPlayer's setMediaItem/prepare cycle. fileId is captured as a key so swapping
-    // to a different sticker instance triggers a fresh prepare even if the new file's
-    // path coincidentally matches the previous one.
+    // ExoPlayer's setMediaItem/prepare cycle. fileId / remoteUrl are captured so
+    // swapping to a different sticker instance triggers a fresh prepare even if
+    // the new file's path coincidentally matches the previous one.
     val readyPath = (mediaState as? MediaState.Ready)?.path
-    LaunchedEffect(readyPath, fileId) {
-        val path = readyPath ?: return@LaunchedEffect
-        if (path.isEmpty()) return@LaunchedEffect
-        exoPlayer.setMediaItem(MediaItem.fromUri("file://${path}"))
+    LaunchedEffect(readyPath, fileId, remoteUrl, isRemote) {
+        val uri: String = when {
+            isRemote -> remoteUrl ?: return@LaunchedEffect
+            else -> {
+                val path = readyPath ?: return@LaunchedEffect
+                if (path.isEmpty()) return@LaunchedEffect
+                "file://${path}"
+            }
+        }
+        exoPlayer.setMediaItem(MediaItem.fromUri(uri))
         exoPlayer.prepare()
     }
 

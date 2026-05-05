@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Added
+- **Animated TGS / WebM custom emojis in guest mode**. The web-mode emoji
+  resolver now publishes the real `StickerFormat.{Tgs|Webm|Webp}` instead of
+  forcing every asset down the static-WEBP path. New `LottieUrlStore` fetches
+  the `.tgs` payload directly from the t.me CDN (sniffs the gzip header so it
+  handles both pre-decompressed JSON and raw `.tgs` blobs), parses through
+  `LottieCompositionFactory`, and feeds the same `LottieAnimation` pipeline
+  TDLib mode uses. WebM custom emojis stream through ExoPlayer via the
+  `WebmStickerPlayer.remoteUrl` fast path. `LocalWebHttpClient` shares the
+  guest-mode OkHttp client (with its 10MB ETag cache) across the parser, the
+  emoji resolver, and the Lottie URL store — connection-pool reuse + warm
+  cache cuts a cold sweep of TGS/WebM emojis ~80–90% on the second visit.
+- **Anonymous → authenticated migration proposal**. After the user signs in,
+  a one-time bottom sheet lists every guest-mode subscription with a
+  per-channel checkbox (Material 3 `ModalBottomSheet`). Subscribing is
+  opt-in — never automatic — because joining N channels in the second after
+  sign-in would observably page Telegram's flood-control. Confirmation
+  throttles `SearchPublicChat` + `JoinChat` at 1 channel/second with live
+  progress, persists "shown" + per-username "migrated" state in
+  `MigrationStore` (DataStore), and auto-dismisses on completion. Localised
+  EN/UK with proper plurals.
+
 - **Anonymous reading mode** ("гостьовий режим"). Read public Telegram channels
   without signing in: parser ingests `https://t.me/s/<username>` previews, posts
   surface in a Twitter-style feed, custom emoji and reactions render
@@ -111,6 +132,35 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   weight in release.
 
 ### Fixed
+- **Guest-mode post text formatting** — every reported regression in one
+  pass: leading-space-on-paragraph drift, missing line breaks between
+  paragraphs ("ліпиться в одне"), 1-2 char span offsets after styling,
+  reply-preview text occasionally rendered in place of the actual post body.
+  Replaced the gradually-grown walker (boundary checks + ad-hoc
+  `ensureLineBreak` + `text.toString().trim()` at the end) with a strictly
+  two-phase HTML→FormattedText pipeline:
+    1. `emitVerbatim` walks the Jsoup tree and emits text + spans WITHOUT
+       any whitespace normalisation. Block-level wrappers (`<div>`, `<p>`,
+       `<blockquote>`, `<pre>`) emit a paragraph break (`\n\n`) on both sides;
+       `<br>` emits a single `'\n'`; TextNodes emit verbatim. Walker is
+       purely structural — never decides what whitespace is "phantom".
+    2. `normaliseWhitespace` does a single linear pass that collapses inline
+       whitespace runs, strips whitespace adjacent to `'\n'`, caps consecutive
+       newlines at 2 (one blank line max), and trims leading + trailing
+       whitespace. Every source position records `srcToDst[i] = out.length`
+       in an explicit IntArray; spans re-anchor through that table so
+       offsets stay correct under every collapse / drop. Idempotent.
+  Side-fix in `TmePageParser`: `selectFirst(".tgme_widget_message_text")`
+  was returning the reply-preview block when one was present (it shares
+  that class with the modifier `js-message_reply_text`). The new selector
+  walks `:not(.js-message_reply_text)`, filters out anything inside a
+  `.tgme_widget_message_reply` ancestor, and prefers the innermost
+  `.tgme_widget_message_text` (Telegram wraps its post body in a double
+  div with the same class).
+  Twelve snapshot tests in `WebPostAdapterFormattingTest` lock the
+  contract: every span's `text.substring(start, end)` matches the expected
+  glyph, paragraphs never begin with phantom whitespace, runs of newlines
+  cap at 2, and re-running the parser on its own output is idempotent.
 - `MediaCache` no longer logs noisy warnings when a Composable leaves
   composition mid-download (`LeftCompositionCancellationException`).
 - Crash on `UpdateMessageInteractionInfo` events with a null payload —

@@ -18,8 +18,10 @@ import dev.lyo.hortay.ui.main.MainScaffold
 import dev.lyo.hortay.ui.media.LocalCustomEmoji
 import dev.lyo.hortay.ui.media.LocalExoPlayerPool
 import dev.lyo.hortay.ui.media.LocalMediaCache
+import dev.lyo.hortay.ui.media.LocalWebHttpClient
 import dev.lyo.hortay.ui.media.MediaViewerHost
 import dev.lyo.hortay.ui.theme.HortayTheme
+import dev.lyo.hortay.ui.web.MigrationProposalSheet
 import dev.lyo.hortay.ui.web.WebModeScaffold
 
 class MainActivity : ComponentActivity() {
@@ -41,6 +43,7 @@ class MainActivity : ComponentActivity() {
                     LocalMediaCache provides graph.mediaCache,
                     LocalCustomEmoji provides graph.customEmoji,
                     LocalExoPlayerPool provides graph.exoPlayerPool,
+                    LocalWebHttpClient provides graph.webHttpClient,
                 ) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val auth by graph.tdClient.authStage.collectAsStateWithLifecycle()
@@ -65,6 +68,23 @@ class MainActivity : ComponentActivity() {
                             // present. Without this wrap the first measure pass crashes.
                             isGuest -> MediaViewerHost { WebModeScaffold(graph = graph) }
                             else -> AuthScreen(graph = graph, stage = auth)
+                        }
+
+                        // One-time post-sign-in migration proposal. Renders ON TOP of the
+                        // authenticated UI when [MigrationCoordinator] surfaces a pending
+                        // candidate list. Self-dismisses when the user confirms / skips —
+                        // the coordinator persists "shown" so it doesn't reappear next
+                        // session.
+                        if (auth == AuthStage.Ready) {
+                            val proposal by graph.migrationCoordinator.pendingProposal
+                                .collectAsStateWithLifecycle()
+                            proposal?.let { candidates ->
+                                MigrationProposalSheet(
+                                    coordinator = graph.migrationCoordinator,
+                                    candidates = candidates,
+                                    onDismiss = { /* coordinator clears pendingProposal */ },
+                                )
+                            }
                         }
                     }
                 }

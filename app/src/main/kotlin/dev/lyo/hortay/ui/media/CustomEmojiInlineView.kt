@@ -64,6 +64,11 @@ fun CustomEmojiInlineView(
         when (sticker.format) {
             StickerFormat.Tgs -> LottieStickerView(
                 fileId = sticker.media.fileId,
+                // remoteUrl path: web (anonymous) mode where we have a URL but no
+                // TDLib fileId. LottieStickerView routes through LottieUrlStore in
+                // that case, fetching the .tgs (or pre-decompressed JSON) bytes
+                // via the shared OkHttp client. TDLib mode keeps using fileId.
+                remoteUrl = sticker.media.takeIf { it.fileId == null }?.remoteUrl,
                 thumb = sticker.thumb,
                 contentDescription = contentDescription,
                 modifier = Modifier.fillMaxSize(),
@@ -85,14 +90,20 @@ fun CustomEmojiInlineView(
                 )
             }
             StickerFormat.Webm -> {
-                // For WebM at inline size we deliberately render the static thumbnail —
-                // running an ExoPlayer instance per emoji at 24dp hurts battery for
-                // negligible visual gain (WebM stickers are already busy at full size).
-                // animateAlways=true is the escape hatch for a future picker UI where
-                // animated playback is the point.
-                if (animateAlways && sticker.media.fileId != null) {
+                // For WebM at inline size we deliberately render the static thumbnail
+                // by default — running an ExoPlayer instance per emoji at 24dp hurts
+                // battery for negligible visual gain. animateAlways=true is the
+                // escape hatch for a focused picker UI. In addition, web (anonymous)
+                // mode posts WebM URLs directly: we keep that branch animated since
+                // there's no static fallback CDN-side and the user explicitly opted
+                // into "show me the actual emoji" by signing in to the guest feed.
+                val webRemoteUrl = sticker.media.takeIf { it.fileId == null }?.remoteUrl
+                val canAnimateTdlib = animateAlways && sticker.media.fileId != null
+                val canAnimateWeb = webRemoteUrl != null
+                if (canAnimateTdlib || canAnimateWeb) {
                     WebmStickerPlayer(
                         fileId = sticker.media.fileId,
+                        remoteUrl = webRemoteUrl,
                         thumb = sticker.thumb,
                         contentDescription = contentDescription,
                         modifier = Modifier.fillMaxSize(),

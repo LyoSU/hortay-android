@@ -327,4 +327,18 @@
     <string name="op_join_channel">приєднатися до каналу</string>
     <string name="op_leave_channel">відписатися від каналу</string>
     <string name="op_translate">перекласти повідомлення</string>
+
+    <!-- Anonymous → authenticated migration proposal sheet -->
+    <string name="migration_title">Перенести анонімні підписки?</string>
+    <plurals name="migration_subtitle">
+        <item quantity="one">Ви читали %1$d канал без входу. Підписатися на нього з вашого акаунта?</item>
+        <item quantity="few">Ви читали %1$d канали без входу. Виберіть, на які підписатися з вашого акаунта.</item>
+        <item quantity="many">Ви читали %1$d каналів без входу. Виберіть, на які підписатися з вашого акаунта.</item>
+        <item quantity="other">Ви читали %1$d каналу без входу. Виберіть, на які підписатися з вашого акаунта.</item>
+    </plurals>
+    <string name="migration_select_all">Вибрати всі</string>
+    <string name="migration_deselect_all">Зняти всі</string>
+    <string name="migration_skip">Не зараз</string>
+    <string name="migration_confirm">Підписатися (%1$d)</string>
+    <string name="migration_progress_label">%1$d з %2$d</string>
 </resources>

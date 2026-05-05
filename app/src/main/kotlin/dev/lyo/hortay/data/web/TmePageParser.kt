@@ -115,7 +115,33 @@ object TmePageParser {
         // Inner HTML preserves <b>/<i>/<a>/<tg-spoiler>/<tg-emoji> spans — UI layer
         // interprets them via RichText. We deliberately don't strip to text(): formatting
         // matters for the user experience.
-        val textHtml = msg.selectFirst(".tgme_widget_message_text")?.html().orEmpty()
+        //
+        // Two markup quirks complicate picking the right text element:
+        //   1. t.me/s/ wraps post text in a DOUBLE `.tgme_widget_message_text` —
+        //      an outer wrapper plus an inner content div with the same class.
+        //      Picking the outer one with `selectFirst` would leak the wrapper's
+        //      block semantics into our walker as a phantom newline.
+        //   2. The class `tgme_widget_message_text` is ALSO worn by the reply
+        //      preview inside `<a class="tgme_widget_message_reply">` (with the
+        //      additional `js-message_reply_text` modifier), and that reply block
+        //      typically appears BEFORE the actual message body in DOM order. A
+        //      naïve "first match" picks the reply, leaving the real post text
+        //      ungreated.
+        // The fix: select all `.tgme_widget_message_text` that are NOT inside a
+        // `.tgme_widget_message_reply` and are NOT outer wrappers, then take the
+        // first surviving element. Falls back to the original selectFirst for
+        // older single-wrapper layouts.
+        val textHtml = (msg
+            .select(".tgme_widget_message_text:not(.js-message_reply_text)")
+            .filterNot { it.parents().any { p -> p.hasClass("tgme_widget_message_reply") } }
+            .firstOrNull { candidate ->
+                // Prefer the innermost: a candidate that itself has no nested
+                // `.tgme_widget_message_text` descendant.
+                candidate.selectFirst(".tgme_widget_message_text") == null
+            }
+            ?: msg.selectFirst(".tgme_widget_message_text:not(.js-message_reply_text)")
+            ?: msg.selectFirst(".tgme_widget_message_text"))
+            ?.html().orEmpty()
 
         val media = parseMedia(msg)
         val webPreview = parseWebPreview(msg)

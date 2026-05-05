@@ -59,37 +59,48 @@ fun LottieStickerView(
     priority: DownloadPriority = DownloadPriority.VisibleMedia,
     iterate: Boolean = true,
     repaintColor: Color? = null,
+    /**
+     * Web-mode TGS payload URL. When [fileId] is null and [remoteUrl] is set, we
+     * bypass the [dev.lyo.hortay.data.MediaCache] / TDLib pathway entirely and
+     * fetch the .tgs (or pre-decompressed JSON) bytes via [LottieUrlStore]. Lets
+     * guest-mode custom emoji animate through the same Lottie Composable that
+     * TDLib mode uses — same animation engine, same recolour, same lifecycle.
+     */
+    remoteUrl: String? = null,
 ) {
     val cache = LocalMediaCache.current
+    val httpClient = LocalWebHttpClient.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val mediaState by remember(fileId) {
-        if (fileId != null) cache.observe(fileId)
+    val isRemote = fileId == null && remoteUrl != null
+    val mediaState by remember(fileId, isRemote) {
+        if (fileId != null && !isRemote) cache.observe(fileId)
         else MutableStateFlow(MediaState.Idle)
     }.collectAsStateWithLifecycle()
 
     val gate = LocalScrollGate.current
     val gateOpen = gate.value
-    LaunchedEffect(fileId, priority, gateOpen) {
-        if (gateOpen) fileId?.let { cache.ensure(it, priority) }
+    LaunchedEffect(fileId, priority, gateOpen, isRemote) {
+        if (gateOpen && !isRemote) fileId?.let { cache.ensure(it, priority) }
     }
     // Mirror TdMediaImage's dispose-cancels-download contract — otherwise a TGS that
     // scrolled off-screen keeps holding a TDLib download slot until it finishes,
     // queueing behind currently-visible media. Bytes survive on disk so a re-mount
-    // resumes from the saved offset.
-    DisposableEffect(fileId) {
-        onDispose { fileId?.let(cache::cancelDeferred) }
+    // resumes from the saved offset. Web-mode (isRemote) has no cache slot to free.
+    DisposableEffect(fileId, isRemote) {
+        onDispose { if (!isRemote) fileId?.let(cache::cancelDeferred) }
     }
 
-    var composition by remember(fileId) { mutableStateOf<LottieComposition?>(null) }
-    // Key on the Ready path only — Downloading bursts emit dozens of states per second
-    // and would otherwise re-launch this coroutine that many times. The store cache
-    // also makes the second .load() call essentially free, but skipping the relaunch
-    // is the cheaper guarantee.
+    var composition by remember(fileId, remoteUrl) { mutableStateOf<LottieComposition?>(null) }
     val readyPath = (mediaState as? MediaState.Ready)?.path
-    LaunchedEffect(readyPath) {
-        val path = readyPath ?: return@LaunchedEffect
-        if (path.isEmpty()) return@LaunchedEffect
-        composition = LottieCompositionStore.load(path)
+    LaunchedEffect(readyPath, remoteUrl, isRemote) {
+        if (isRemote) {
+            val url = remoteUrl ?: return@LaunchedEffect
+            composition = LottieUrlStore.load(url, httpClient)
+        } else {
+            val path = readyPath ?: return@LaunchedEffect
+            if (path.isEmpty()) return@LaunchedEffect
+            composition = LottieCompositionStore.load(path)
+        }
     }
 
     val isPlaying = composition != null &&

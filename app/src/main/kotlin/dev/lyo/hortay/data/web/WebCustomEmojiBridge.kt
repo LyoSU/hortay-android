@@ -124,23 +124,32 @@ class WebCustomEmojiBridge(
     }
 
     private fun ResolvedEmoji.toCustomEmojiSticker(id: Long): CustomEmojiSticker {
-        // Format normalisation: the inline view's TGS/WebM paths require local
-        // file paths (via fileId → MediaCache), and we have only URLs in guest
-        // mode. Forcing StickerFormat.Webp routes the inline view through
-        // TdMediaImage's URL fallback path — static rendering, but visible. A
-        // future enhancement could cache the .tgs/.webm by URL into a local
-        // file and feed that path to LottieCompositionStore for full animation.
-        val mainUrl = thumbUrl ?: url
-        return CustomEmojiSticker(
-            customEmojiId = id,
-            media = TdMedia(
-                fileId = null,
-                width = sizePx,
-                height = sizePx,
-                minithumbBytes = null,
-                remoteUrl = mainUrl,
-            ),
-            thumb = thumbUrl?.let {
+        // Map the resolver's discovered asset type onto the same [StickerFormat]
+        // surface that TDLib mode uses. CustomEmojiInlineView now branches on the
+        // (fileId, remoteUrl) pair inside each format and does the right thing:
+        //   • Tgs: LottieUrlStore fetches .tgs bytes, parses to LottieComposition
+        //   • Webm: ExoPlayer streams the URL directly
+        //   • Webp: TdMediaImage's Coil remote-URL fallback
+        // i.e. animated guest-mode emojis are now real animations, not just thumbs.
+        val format = when (type) {
+            ResolvedEmoji.Type.Tgs -> StickerFormat.Tgs
+            ResolvedEmoji.Type.Webm -> StickerFormat.Webm
+            ResolvedEmoji.Type.Webp -> StickerFormat.Webp
+        }
+        // For Tgs the `url` field is the Lottie JSON / .tgs payload; the thumb is
+        // a small WEBP/PNG. For Webm `url` is the .webm; thumb is the WEBP poster.
+        // For Webp the same URL serves as both — we keep `thumb=null` so we don't
+        // double-fetch the same image.
+        val mainMedia = TdMedia(
+            fileId = null,
+            width = sizePx,
+            height = sizePx,
+            minithumbBytes = null,
+            remoteUrl = url,
+        )
+        val thumbMedia = thumbUrl
+            ?.takeIf { type != ResolvedEmoji.Type.Webp }
+            ?.let {
                 TdMedia(
                     fileId = null,
                     width = sizePx,
@@ -148,8 +157,16 @@ class WebCustomEmojiBridge(
                     minithumbBytes = null,
                     remoteUrl = it,
                 )
-            },
-            format = StickerFormat.Webp,
+            }
+        return CustomEmojiSticker(
+            customEmojiId = id,
+            media = mainMedia,
+            thumb = thumbMedia,
+            format = format,
+            // The t.me JSON endpoint doesn't surface needsRepainting. Defaulting to
+            // false matches the visible behaviour in the official web client — the
+            // server-recoloured monochrome emoji are a Premium-only ship-on-demand
+            // feature that the static page doesn't expose anyway.
             needsRepainting = false,
         )
     }

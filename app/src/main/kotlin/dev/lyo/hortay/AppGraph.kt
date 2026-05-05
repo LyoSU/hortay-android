@@ -20,6 +20,8 @@ import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.web.GuestModeStore
+import dev.lyo.hortay.data.web.MigrationCoordinator
+import dev.lyo.hortay.data.web.MigrationStore
 import dev.lyo.hortay.data.web.SubscriptionsStore
 import dev.lyo.hortay.data.web.WebCustomEmojiBridge
 import dev.lyo.hortay.data.web.WebCustomEmojiResolver
@@ -157,9 +159,19 @@ class AppGraph(context: Context) {
      * been done in this session avoids re-downloading every body — typically a
      * 80-90% bandwidth saving on the second-of-the-day refresh.
      */
-    val webClient: WebTelegramClient = WebTelegramClient(
+    /**
+     * Single shared OkHttpClient for the anonymous-mode pipeline. The same instance
+     * powers [webClient] (channel HTML), [webCustomEmoji] (emoji JSON), and
+     * [dev.lyo.hortay.ui.media.LottieUrlStore] (TGS payload bytes). Sharing matters:
+     * connection-pool reuse + the ETag-aware [okhttp3.Cache] under
+     * `cacheDir/web-http/` cuts a 200-channel sweep ~80-90% on a warm cache, and a
+     * cold TGS resolve hits the same H2 connection that the JSON resolve already
+     * opened to t.me.
+     */
+    val webHttpClient: okhttp3.OkHttpClient =
         WebTelegramClient.defaultHttpClient(File(context.cacheDir, "web-http"))
-    )
+
+    val webClient: WebTelegramClient = WebTelegramClient(webHttpClient)
 
     /**
      * Resolves Telegram custom-emoji ids to renderable TGS / WebM / WebP assets via
@@ -168,7 +180,7 @@ class AppGraph(context: Context) {
      * web mode would be limited to neutral chips for any emoji-id that has no
      * unicode fallback baked into the static HTML.
      */
-    val webCustomEmoji: WebCustomEmojiResolver = WebCustomEmojiResolver()
+    val webCustomEmoji: WebCustomEmojiResolver = WebCustomEmojiResolver(webHttpClient)
 
     /**
      * Persistent list of channel usernames the user has subscribed to in anonymous
@@ -223,6 +235,32 @@ class AppGraph(context: Context) {
         resolver = webCustomEmoji,
         customEmojiRepo = customEmoji,
         feed = webFeedSource.posts,
+        scope = appScope,
+    ).also { it.bind() }
+
+    /**
+     * Tracks whether the one-time "migrate guest subscriptions to your TDLib
+     * account" proposal has been shown, plus which usernames the user already
+     * approved. Held separately from [webSubscriptions] so signing out doesn't
+     * erase migration history (the user might re-add a few of the same channels
+     * in guest mode before re-authenticating).
+     */
+    val migrationStore: MigrationStore = MigrationStore(context)
+
+    /**
+     * Drives the post-sign-in migration proposal. Listens for [authStage] →
+     * Ready transitions; when one fires AND the proposal hasn't been shown
+     * AND the guest-subscription set is non-empty, exposes a non-null
+     * [MigrationCoordinator.pendingProposal] that [MainActivity] renders as a
+     * [dev.lyo.hortay.ui.web.MigrationProposalSheet]. Confirmation throttles
+     * SearchPublicChat + JoinChat at 1/sec to keep TDLib's flood-control happy.
+     */
+    val migrationCoordinator: MigrationCoordinator = MigrationCoordinator(
+        migrationStore = migrationStore,
+        subscriptions = webSubscriptions,
+        postsRepository = postsRepository,
+        channelActions = channelActions,
+        authStage = tdClient.authStage,
         scope = appScope,
     ).also { it.bind() }
 

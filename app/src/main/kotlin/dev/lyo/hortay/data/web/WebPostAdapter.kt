@@ -195,15 +195,58 @@ object WebPostAdapter {
         return -1_000_000_000_000L - base
     }
 
+    /**
+     * Test-visible hook around [htmlToFormatted]. The walker is private (it owns
+     * [trimWithSpans] and a few other helpers); exposing it here keeps the
+     * surface narrow but lets [WebPostAdapterFormattingTest] guard the offset
+     * contract against future regressions.
+     */
+    @androidx.annotation.VisibleForTesting
+    internal fun htmlToFormattedForTest(html: String): FormattedText = htmlToFormatted(html)
+
     // ---- HTML → FormattedText -------------------------------------------------
 
     /**
-     * Walk the Jsoup-parsed body and build a [FormattedText] with spans matching
-     * the TDLib entity model. Spans are emitted at the precise character offset
-     * of the assembled plain text — same contract as TDLib's `TextEntity`.
+     * Two-phase HTML → FormattedText conversion. The phases are deliberately
+     * isolated so the contract of each is small enough to test exhaustively:
+     *
+     *   Phase 1 — [emitVerbatim]: walk the Jsoup tree and emit plain text
+     *     plus span markers WITHOUT any whitespace normalisation. Block
+     *     elements emit a single `'\n'` marker before AND after their
+     *     content; `<br>` emits exactly one `'\n'`; TextNodes emit their
+     *     normalized text verbatim. The walker is purely structural — it
+     *     never decides what whitespace is "phantom" or "real".
+     *
+     *   Phase 2 — [normaliseWhitespace]: a single linear pass over the raw
+     *     buffer that applies all whitespace rules in one place:
+     *       (a) collapse runs of inline whitespace to one ' ',
+     *       (b) strip inline whitespace adjacent to '\n',
+     *       (c) cap consecutive '\n' at 2 (one blank line max),
+     *       (d) drop leading + trailing whitespace.
+     *     Every source character maps to a destination position via an
+     *     explicit `srcToDst` table; spans are re-anchored through that
+     *     table so offsets stay correct under every collapse / drop above.
+     *
+     * Why this shape: the previous implementation interleaved emission with
+     * normalisation (boundary checks in TextNode, `ensureLineBreak` helpers,
+     * trailing-whitespace trims inside the walker). Each rule lived in two
+     * places, edge cases needed cross-references between them, and a single
+     * Telegram-markup quirk could expose the gap. The 2-phase split lets the
+     * walker stay dumb and the normaliser stay total — every input string
+     * produces a fully-canonicalised output regardless of how the walker
+     * arrived at it.
      */
     private fun htmlToFormatted(html: String): FormattedText {
         if (html.isBlank()) return FormattedText.Empty
+        val (rawText, rawSpans) = emitVerbatim(html)
+        return normaliseWhitespace(rawText, rawSpans)
+    }
+
+    /** Phase 1 output: untrimmed, un-collapsed text + spans referencing it. */
+    private data class RawWalk(val text: String, val spans: List<FormattedText.Span>)
+
+    /** Phase 1 — see [htmlToFormatted]. */
+    private fun emitVerbatim(html: String): RawWalk {
         val doc = Jsoup.parseBodyFragment(html)
         val text = StringBuilder()
         val spans = mutableListOf<FormattedText.Span>()
@@ -212,60 +255,84 @@ object WebPostAdapter {
             when (node) {
                 is TextNode -> text.append(node.text())
                 is Element -> {
-                    val start = text.length
-                    when (node.normalName()) {
+                    val name = node.normalName()
+                    when (name) {
                         "br" -> text.append('\n')
+
+                        // Block-level wrappers. Emit a paragraph break (2 newlines)
+                        // on BOTH sides — visually one blank line above and below,
+                        // matching native HTML rendering of `<div>` / `<p>`. The
+                        // normaliser caps consecutive newlines at 2, so wrapping
+                        // every block this way stays correct regardless of neighbour
+                        // shape (TextNode whitespace, another block, `<br><br>`,
+                        // etc). `<br>` keeps emitting a single `'\n'` so that
+                        // `<br><br>` lands on the same paragraph-break footprint.
                         "div", "p" -> {
-                            if (text.isNotEmpty() && text.last() != '\n') text.append('\n')
+                            text.append("\n\n")
                             node.childNodes().forEach { walk(it) }
+                            text.append("\n\n")
                         }
                         "blockquote" -> {
-                            if (text.isNotEmpty() && text.last() != '\n') text.append('\n')
+                            text.append("\n\n")
+                            val start = text.length
                             node.childNodes().forEach { walk(it) }
                             spans += FormattedText.Span(start, text.length, FormattedText.Style.BlockQuote)
-                        }
-                        "b", "strong" -> {
-                            node.childNodes().forEach { walk(it) }
-                            spans += FormattedText.Span(start, text.length, FormattedText.Style.Bold)
-                        }
-                        "i", "em" -> {
-                            // <i class="emoji"> wraps just a unicode glyph — emit text only.
-                            if (node.normalName() == "i" && node.hasClass("emoji")) {
-                                val glyph = node.selectFirst("b")?.text() ?: node.ownText()
-                                if (glyph.isNotEmpty()) text.append(glyph)
-                            } else {
-                                node.childNodes().forEach { walk(it) }
-                                spans += FormattedText.Span(start, text.length, FormattedText.Style.Italic)
-                            }
-                        }
-                        "u" -> {
-                            node.childNodes().forEach { walk(it) }
-                            spans += FormattedText.Span(start, text.length, FormattedText.Style.Underline)
-                        }
-                        "s", "del", "strike" -> {
-                            node.childNodes().forEach { walk(it) }
-                            spans += FormattedText.Span(start, text.length, FormattedText.Style.Strikethrough)
-                        }
-                        "code" -> {
-                            node.childNodes().forEach { walk(it) }
-                            spans += FormattedText.Span(start, text.length, FormattedText.Style.Code)
+                            text.append("\n\n")
                         }
                         "pre" -> {
+                            text.append("\n\n")
+                            val start = text.length
                             node.childNodes().forEach { walk(it) }
                             spans += FormattedText.Span(
                                 start,
                                 text.length,
                                 FormattedText.Style.Pre(language = null),
                             )
+                            text.append("\n\n")
+                        }
+
+                        // Inline styling.
+                        "b", "strong" -> {
+                            val start = text.length
+                            node.childNodes().forEach { walk(it) }
+                            spans += FormattedText.Span(start, text.length, FormattedText.Style.Bold)
+                        }
+                        "i", "em" -> {
+                            if (name == "i" && node.hasClass("emoji")) {
+                                // <i class="emoji"> is a Telegram-specific unicode
+                                // wrapper — emit just the inner glyph, no italic.
+                                val glyph = node.selectFirst("b")?.text() ?: node.ownText()
+                                if (glyph.isNotEmpty()) text.append(glyph)
+                            } else {
+                                val start = text.length
+                                node.childNodes().forEach { walk(it) }
+                                spans += FormattedText.Span(start, text.length, FormattedText.Style.Italic)
+                            }
+                        }
+                        "u" -> {
+                            val start = text.length
+                            node.childNodes().forEach { walk(it) }
+                            spans += FormattedText.Span(start, text.length, FormattedText.Style.Underline)
+                        }
+                        "s", "del", "strike" -> {
+                            val start = text.length
+                            node.childNodes().forEach { walk(it) }
+                            spans += FormattedText.Span(start, text.length, FormattedText.Style.Strikethrough)
+                        }
+                        "code" -> {
+                            val start = text.length
+                            node.childNodes().forEach { walk(it) }
+                            spans += FormattedText.Span(start, text.length, FormattedText.Style.Code)
                         }
                         "a" -> {
                             val href = node.attr("href").trim()
+                            val start = text.length
                             if (node.childNodeSize() == 0 && href.isNotEmpty()) {
                                 text.append(href)
                             } else {
                                 node.childNodes().forEach { walk(it) }
                             }
-                            if (href.isNotEmpty()) {
+                            if (href.isNotEmpty() && text.length > start) {
                                 spans += FormattedText.Span(
                                     start,
                                     text.length,
@@ -274,19 +341,22 @@ object WebPostAdapter {
                             }
                         }
                         "tg-spoiler" -> {
+                            val start = text.length
                             node.childNodes().forEach { walk(it) }
                             spans += FormattedText.Span(start, text.length, FormattedText.Style.Spoiler)
                         }
                         "tg-emoji" -> {
-                            // Render unicode fallback glyph as text. TDLib's CustomEmoji
-                            // span takes a Long id; t.me/s/ ids fit a Long when present
-                            // so we attach the span when parseable, otherwise plain text.
+                            // Append the unicode fallback glyph; attach a CustomEmoji
+                            // span over its range so the renderer can swap in an
+                            // inline content placeholder. The span MUST start at
+                            // text.length BEFORE the glyph is appended.
                             val fallback = node.selectFirst("b")?.text()
                                 ?: node.selectFirst("i.emoji")?.text()
                                 ?: ""
+                            val start = text.length
                             if (fallback.isNotEmpty()) text.append(fallback)
                             val emojiIdLong = node.attr("emoji-id").trim().toLongOrNull()
-                            if (emojiIdLong != null && fallback.isNotEmpty()) {
+                            if (emojiIdLong != null && text.length > start) {
                                 spans += FormattedText.Span(
                                     start,
                                     text.length,
@@ -294,15 +364,101 @@ object WebPostAdapter {
                                 )
                             }
                         }
+
                         else -> node.childNodes().forEach { walk(it) }
                     }
                 }
-                else -> Unit
+                else -> Unit // comments, doctype etc.
             }
         }
 
         doc.body().childNodes().forEach { walk(it) }
-        return FormattedText(text.toString().trim(), spans)
+        return RawWalk(text.toString(), spans)
+    }
+
+    /**
+     * Phase 2 — single linear pass that canonicalises whitespace and
+     * re-anchors every span through an explicit src→dst position map.
+     *
+     * Rules, applied left-to-right with a one-character lookbehind on the
+     * destination buffer:
+     *   1. `'\n'` (newline) — strip any inline whitespace already emitted
+     *      to `out` (so we never produce `" \n"`), then count consecutive
+     *      newlines already at the tail of `out`. Append `'\n'` only if
+     *      we have fewer than two there yet (cap at one blank line). Drop
+     *      newlines entirely while `out` is empty (leading-whitespace trim).
+     *   2. inline whitespace — drop while `out` is empty, drops directly
+     *      after `'\n'`, drop after a space already in `out` (collapse
+     *      runs). Otherwise emit a single `' '`.
+     *   3. any other character — emit verbatim.
+     * After the pass, strip trailing whitespace from `out`.
+     *
+     * Each input position records `srcToDst[i] = current_out_length` either
+     * before or at the moment we decide whether to emit. Positions inside a
+     * collapsed run share the same destination index — span endpoints land
+     * cleanly on character boundaries either way.
+     *
+     * Idempotent: re-running on already-normalised text is a no-op.
+     */
+    private fun normaliseWhitespace(
+        text: String,
+        spans: List<FormattedText.Span>,
+    ): FormattedText {
+        if (text.isEmpty()) return FormattedText.Empty
+        val n = text.length
+        val out = StringBuilder(n)
+        // srcToDst[i] = position in `out` corresponding to source index i.
+        // srcToDst[n] is the destination length at end-of-input — used by spans
+        // whose `end` is exclusive at the source's last character.
+        val srcToDst = IntArray(n + 1)
+
+        for (i in 0 until n) {
+            val c = text[i]
+            when {
+                c == '\n' -> {
+                    // Strip dangling inline whitespace before the newline.
+                    while (out.isNotEmpty() && out.last() != '\n' && out.last().isWhitespace()) {
+                        out.deleteCharAt(out.length - 1)
+                    }
+                    val trailingNewlines = countTrailingNewlines(out)
+                    srcToDst[i] = out.length
+                    if (out.isNotEmpty() && trailingNewlines < 2) out.append('\n')
+                    // out empty → leading newlines drop; trailingNewlines ≥ 2 → cap.
+                }
+                c.isWhitespace() -> {
+                    val skip = out.isEmpty() || out.last() == '\n' || out.last() == ' '
+                    srcToDst[i] = out.length
+                    if (!skip) out.append(' ')
+                }
+                else -> {
+                    srcToDst[i] = out.length
+                    out.append(c)
+                }
+            }
+        }
+        // Trailing whitespace.
+        while (out.isNotEmpty() && out.last().isWhitespace()) {
+            out.deleteCharAt(out.length - 1)
+        }
+        srcToDst[n] = out.length
+
+        val finalText = out.toString()
+        val finalLen = finalText.length
+        val remappedSpans = spans.mapNotNull { sp ->
+            val s = sp.start.coerceIn(0, n)
+            val e = sp.end.coerceIn(s, n)
+            val ns = srcToDst[s].coerceIn(0, finalLen)
+            val ne = srcToDst[e].coerceIn(ns, finalLen)
+            if (ne == ns) null else FormattedText.Span(ns, ne, sp.style)
+        }
+        return FormattedText(finalText, remappedSpans)
+    }
+
+    private fun countTrailingNewlines(buf: StringBuilder): Int {
+        var k = buf.length - 1
+        var count = 0
+        while (k >= 0 && buf[k] == '\n') { count++; k-- }
+        return count
     }
 
     // ---- Helpers --------------------------------------------------------------
