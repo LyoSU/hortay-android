@@ -56,14 +56,11 @@ class ExoPlayerPool(
      * the player in IDLE; `clearMediaItems()` empties the playlist; the attribute resets
      * give the next caller a known starting state.
      *
-     * `setVideoEffects(emptyList())` is the load-bearing reset for the luma-key shader
-     * [LumaKeyEffect] used by guest-mode WebM stickers. `setVideoEffects` persists on
-     * the player instance, and a pooled `ExoPlayer` previously bound to a sticker would
-     * carry the shader into its next consumer (a regular video, a TDLib-mode WebM, etc.)
-     * unless we explicitly drop the effect chain on release. Without this clear,
-     * black-pixel regions of any subsequent video the same player handed out leaked
-     * the post card behind them — exactly the regression "із відео теж зникає чорний"
-     * that surfaced after the guest-mode emoji animation landed.
+     * `setVideoEffects(emptyList())` is defensive: if a future caller ever attaches a
+     * `setVideoEffects` chain (e.g. the experimental luma-key shader briefly tried for
+     * guest-mode WebM stickers), the chain persists on the ExoPlayer instance and would
+     * leak into the next consumer through pool reuse. Clearing on release means a single
+     * fresh slate is the contract every acquire sees.
      */
     @Synchronized
     fun release(player: ExoPlayer, muted: Boolean) {

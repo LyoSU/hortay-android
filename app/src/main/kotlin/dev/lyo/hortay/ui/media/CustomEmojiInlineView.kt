@@ -90,27 +90,44 @@ fun CustomEmojiInlineView(
                 )
             }
             StickerFormat.Webm -> {
-                // For WebM at inline size we deliberately render the static thumbnail
-                // by default in TDLib mode — running an ExoPlayer instance per emoji
-                // at 24dp hurts battery for negligible visual gain. `animateAlways
-                // = true` is the escape hatch for a focused picker UI.
+                // WebM custom emojis ALWAYS render as the static WEBP thumb at
+                // inline size. Tested approaches and why each was rejected:
                 //
-                // Guest (anonymous) mode WebMs DO animate, even at inline size: the
-                // user has explicitly opted into a richer-but-cheaper feed and the
-                // alternative for them is no animation at all (TDLib's path uses
-                // `MediaCache` + animated TGS-WebP thumbs which guest mode can't
-                // produce). The webRemoteUrl path inside [WebmStickerPlayer]
-                // applies a luma-key shader effect ([LumaKeyEffect]) to produce
-                // proper alpha — required because t.me/i/emoji serves WebMs as
-                // pre-rendered `yuv420p` against `srgb(0,0,0)` rather than the
-                // raw VP9-with-alpha file Telegram's mobile clients consume.
-                val webRemoteUrl = sticker.media.takeIf { it.fileId == null }?.remoteUrl
+                //   1. Animate via raw `WebmStickerPlayer` — t.me/i/emoji serves
+                //      WebMs as pre-rendered `yuv420p` (no alpha channel) baked
+                //      against `srgb(0,0,0)`. The original sticker carries alpha
+                //      as a sidecar VP9 stream via Matroska BlockAdditional which
+                //      standard Android `MediaCodec` ignores, so the post card
+                //      gets a solid black square wherever the sticker was supposed
+                //      to be transparent.
+                //
+                //   2. Animate + apply a luma-key fragment shader to recover
+                //      transparency (`alpha = max(r, g, b)`). Mathematically
+                //      equivalent to Telegram Web's `mix-blend-mode: lighten`.
+                //      Works visually for stickers made of bright colours but
+                //      collapses for any sticker with intentionally dark/black
+                //      glyph regions (a black pupil, a navy outline) — those
+                //      pixels read as "background" to the shader and disappear
+                //      with the actual background.
+                //
+                //   3. Add `media3-decoder-vp9` to decode the alpha sidecar via
+                //      libvpx. Correct visual but ~10 MB of native libs across
+                //      arm64 + x86_64 just to animate inline emojis at 24 dp.
+                //      Disproportionate cost vs. the WEBP thumb that already
+                //      gives the right glyph with proper alpha.
+                //
+                // The thumb is a single Coil-cached lookup so it appears
+                // instantly — no animation, but no artifacts and no delay
+                // either. Same visual contract as TDLib mode.
+                //
+                // `animateAlways = true` keeps the TDLib-mode escape hatch for a
+                // focused picker UI where the file genuinely carries alpha (HW
+                // VP9-alpha or a libvpx ext build). Guest mode never opts into
+                // it because the URL-only sticker has no alpha to recover.
                 val canAnimateTdlib = animateAlways && sticker.media.fileId != null
-                val canAnimateWeb = webRemoteUrl != null
-                if (canAnimateTdlib || canAnimateWeb) {
+                if (canAnimateTdlib) {
                     WebmStickerPlayer(
                         fileId = sticker.media.fileId,
-                        remoteUrl = webRemoteUrl,
                         thumb = sticker.thumb,
                         contentDescription = contentDescription,
                         modifier = Modifier.fillMaxSize(),

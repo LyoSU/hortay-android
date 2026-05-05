@@ -22,36 +22,30 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   Telegram). TDLib mode is unchanged — its in-channel search via
   `SearchChatMessages` lives at the `TimelineTopBar` level and stays the only
   search affordance there.
-- **Animated TGS / WebM custom emojis in guest mode**. The web-mode emoji
-  resolver now publishes the real `StickerFormat.{Tgs|Webm|Webp}` instead of
-  forcing every asset down the static-WEBP path.
+- **Animated TGS custom emojis in guest mode**. The web-mode emoji resolver
+  now publishes the real `StickerFormat.{Tgs|Webm|Webp}` instead of forcing
+  every asset down the static-WEBP path.
   - `LottieUrlStore` fetches the `.tgs` payload directly from the t.me CDN
     (sniffs the gzip header so it handles both pre-decompressed JSON and raw
     `.tgs` blobs), parses through `LottieCompositionFactory`, and feeds the
     same `LottieAnimation` pipeline TDLib mode uses.
-  - WebM emojis stream through `WebmStickerPlayer` with a custom luma-key
-    shader effect ([`LumaKeyEffect`]) wired into ExoPlayer's video-effect
-    pipeline. Required because the t.me/i/emoji endpoint serves WebMs as
-    pre-rendered `yuv420p` (no alpha channel) baked against `srgb(0,0,0)` —
-    Telegram's mobile clients receive the same file with alpha multiplexed
-    via Matroska BlockAdditional, but standard Android `MediaCodec` ignores
-    that sidecar. The fragment shader recovers transparency by mapping black
-    pixels to `alpha = 0` (`alpha = max(r, g, b)`); since the bake formula
-    simplifies to premultiplied RGB, we emit `vec4(rgb, alpha)` directly and
-    the downstream `TextureView` (`isOpaque = false`) blends it over the
-    post card without further work. This is the same trick Telegram Web
-    runs in CSS via `mix-blend-mode: lighten`, generalised to a real shader
-    so antialiased glyph edges blend smoothly.
-  - `WebmStickerPlayer` uses a `TextureView` (not `PlayerView`/`SurfaceView`)
-    so the shader output composites in the app's normal GL canvas instead
-    of punching through the window via SurfaceView's hardware overlay.
-    Thumb visibility is gated on `Player.Listener.onRenderedFirstFrame`
-    rather than `MediaState.Ready`, eliminating the ~half-second window
-    where the texture was attached but had no decoded frame yet.
+  - WebM custom emojis intentionally stay on the static-WEBP-thumb path
+    (same as TDLib mode at inline size). The t.me/i/emoji endpoint serves
+    WebMs pre-rendered as `yuv420p` baked against `srgb(0,0,0)` — the
+    original alpha lives in a Matroska BlockAdditional sidecar VP9 stream
+    that standard Android `MediaCodec` doesn't decode. We tested a luma-key
+    fragment shader (`alpha = max(r, g, b)`, the same trick Telegram Web's
+    CSS `mix-blend-mode: lighten` runs) but it can't distinguish "background
+    black" from "intentionally black glyph parts" (a black pupil, a navy
+    outline) and ate them indiscriminately. The only artefact-free animated
+    path is `media3-decoder-vp9` (libvpx ext, ~10 MB native libs × 2 archs)
+    which is disproportionate for inline-emoji size. The static WEBP thumb
+    Coil already caches has proper alpha (VP8X + ALPH chunks), renders
+    instantly, and visually matches TDLib mode exactly.
   - `LocalWebHttpClient` shares the guest-mode OkHttp client (with its 10MB
     ETag cache) across the parser, the emoji resolver, and the Lottie URL
-    store — connection-pool reuse + warm cache cuts a cold sweep of TGS /
-    WebM emojis ~80–90% on the second visit.
+    store — connection-pool reuse + warm cache cuts a cold sweep of TGS
+    emojis ~80–90% on the second visit.
 - **Anonymous → authenticated migration proposal**. After the user signs in,
   a one-time bottom sheet lists every guest-mode subscription with a
   per-channel checkbox (Material 3 `ModalBottomSheet`). Subscribing is
