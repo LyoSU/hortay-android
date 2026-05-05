@@ -59,7 +59,11 @@ class MainActivity : ComponentActivity() {
                         //      or flip the guest-mode flag.
                         when {
                             auth == AuthStage.Ready -> MediaViewerHost { MainScaffold(graph = graph) }
-                            isGuest -> WebModeScaffold(graph = graph)
+                            // Guest mode also needs MediaViewerHost: TimelineScreen reads
+                            // LocalMediaViewer to open photo/video previews on tap, and
+                            // PostCard's full media-rendering chain assumes the host is
+                            // present. Without this wrap the first measure pass crashes.
+                            isGuest -> MediaViewerHost { WebModeScaffold(graph = graph) }
                             else -> AuthScreen(graph = graph, stage = auth)
                         }
                     }
