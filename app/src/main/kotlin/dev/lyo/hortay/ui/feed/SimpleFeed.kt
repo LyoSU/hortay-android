@@ -21,7 +21,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -65,14 +64,19 @@ fun SimpleFeed(
     actionIconSymbol: String? = null,
     actionIconContentDescription: String? = null,
     onActionClick: () -> Unit = {},
+    /**
+     * When true the title slot renders the same [dev.lyo.hortay.ui.main.BrandRow]
+     * that TDLib mode's TimelineScreen uses (Hortay logo + wordmark) instead of
+     * the [title] string. Guest mode's main feed sets this true so the user
+     * sees the same brand on the home tab regardless of mode.
+     */
+    showBrand: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     val layoutDirection = LocalLayoutDirection.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         rememberTopAppBarState(),
     )
-
-    LaunchedEffect(Unit) { /* outer triggers refresh */ }
 
     Scaffold(
         modifier = modifier
@@ -81,10 +85,14 @@ fun SimpleFeed(
         topBar = {
             LargeTopAppBar(
                 title = {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.displaySmall,
-                    )
+                    if (showBrand) {
+                        dev.lyo.hortay.ui.main.BrandRow()
+                    } else {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.displaySmall,
+                        )
+                    }
                 },
                 actions = {
                     if (actionIconSymbol != null) {

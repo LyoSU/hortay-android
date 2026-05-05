@@ -21,6 +21,7 @@ import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.web.GuestModeStore
 import dev.lyo.hortay.data.web.SubscriptionsStore
+import dev.lyo.hortay.data.web.WebCustomEmojiBridge
 import dev.lyo.hortay.data.web.WebCustomEmojiResolver
 import dev.lyo.hortay.data.web.WebFeedScheduler
 import dev.lyo.hortay.data.web.WebFeedSource
@@ -206,6 +207,22 @@ class AppGraph(context: Context) {
     val webFeedScheduler: WebFeedScheduler = WebFeedScheduler(
         feedSource = webFeedSource,
         foreground = lifecycleBridge.foreground,
+        scope = appScope,
+    ).also { it.bind() }
+
+    /**
+     * Bridges resolved t.me/i/emoji/<id>.json results into the same
+     * [CustomEmojiRepository] that TDLib mode uses. Lets the shared
+     * [dev.lyo.hortay.ui.media.CustomEmojiInlineView] render web custom
+     * emojis (in formatted-text spans and reaction chips) without forking the
+     * inline-view code. Animated TGS / WebM playback in guest mode is currently
+     * a static thumb — full animation needs URL→file caching plumbed into
+     * LottieCompositionStore / ExoPlayer, planned as follow-up.
+     */
+    val webCustomEmojiBridge: WebCustomEmojiBridge = WebCustomEmojiBridge(
+        resolver = webCustomEmoji,
+        customEmojiRepo = customEmoji,
+        feed = webFeedSource.posts,
         scope = appScope,
     ).also { it.bind() }
 

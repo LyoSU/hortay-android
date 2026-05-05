@@ -65,6 +65,23 @@ class CustomEmojiRepository(
     fun get(id: Long): CustomEmojiSticker? = _stickers.value[id]
 
     /**
+     * Populate the in-memory sticker store directly. Used by guest (web) mode to
+     * bridge results from [dev.lyo.hortay.data.web.WebCustomEmojiResolver] (which
+     * resolves t.me/i/emoji/<id>.json) into the same map TDLib mode populates via
+     * GetCustomEmojiStickers. Lets [dev.lyo.hortay.ui.media.CustomEmojiInlineView]
+     * stay the single rendering path for both modes — the resolver writes here,
+     * the inline view reads via [stickers], the same Composable renders.
+     *
+     * Idempotent: re-publishing the same id is a no-op structurally but cheap.
+     * Marking an id as known-missing here also prevents the TDLib resolver loop
+     * from later re-fetching it.
+     */
+    fun populate(entries: Map<Long, CustomEmojiSticker>) {
+        if (entries.isEmpty()) return
+        _stickers.update { it.builder().also { b -> b.putAll(entries) }.build() }
+    }
+
+    /**
      * Hint: schedule resolution for these ids. Idempotent — already-resolved or known-missing
      * ids are skipped at zero cost. Safe to call from a Composable's `LaunchedEffect`.
      */

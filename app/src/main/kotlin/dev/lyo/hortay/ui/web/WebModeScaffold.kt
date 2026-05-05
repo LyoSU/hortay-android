@@ -92,6 +92,7 @@ fun WebModeScaffold(graph: AppGraph) {
                         actionIconSymbol = "add",
                         actionIconContentDescription = stringResource(R.string.web_add_channel),
                         onActionClick = { addSheetOpen = true },
+                        showBrand = true,
                     )
 
                     NavTab.Channels -> WebChannelsScreen(
