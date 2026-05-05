@@ -22,17 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   Telegram). TDLib mode is unchanged — its in-channel search via
   `SearchChatMessages` lives at the `TimelineTopBar` level and stays the only
   search affordance there.
-- **Animated TGS / WebM custom emojis in guest mode**. The web-mode emoji
-  resolver now publishes the real `StickerFormat.{Tgs|Webm|Webp}` instead of
-  forcing every asset down the static-WEBP path. New `LottieUrlStore` fetches
-  the `.tgs` payload directly from the t.me CDN (sniffs the gzip header so it
+- **Animated TGS custom emojis in guest mode**. The web-mode emoji resolver
+  now publishes the real `StickerFormat.{Tgs|Webm|Webp}` instead of forcing
+  every asset down the static-WEBP path. New `LottieUrlStore` fetches the
+  `.tgs` payload directly from the t.me CDN (sniffs the gzip header so it
   handles both pre-decompressed JSON and raw `.tgs` blobs), parses through
   `LottieCompositionFactory`, and feeds the same `LottieAnimation` pipeline
-  TDLib mode uses. WebM custom emojis stream through ExoPlayer via the
-  `WebmStickerPlayer.remoteUrl` fast path. `LocalWebHttpClient` shares the
-  guest-mode OkHttp client (with its 10MB ETag cache) across the parser, the
-  emoji resolver, and the Lottie URL store — connection-pool reuse + warm
-  cache cuts a cold sweep of TGS/WebM emojis ~80–90% on the second visit.
+  TDLib mode uses. **WebM stays on the static-thumb path** — the t.me web
+  endpoint serves pre-rendered `yuv420p` (no alpha channel) copies of WebM
+  stickers for browser compatibility; the accompanying WEBP thumb does carry
+  alpha and is the only artifact we can render correctly inline. The
+  `LocalWebHttpClient` shares the guest-mode OkHttp client (with its 10MB
+  ETag cache) across the parser, the emoji resolver, and the Lottie URL
+  store — connection-pool reuse + warm cache cuts a cold sweep of TGS emojis
+  ~80–90% on the second visit.
 - **Anonymous → authenticated migration proposal**. After the user signs in,
   a one-time bottom sheet lists every guest-mode subscription with a
   per-channel checkbox (Material 3 `ModalBottomSheet`). Subscribing is
