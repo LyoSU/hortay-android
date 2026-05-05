@@ -138,6 +138,9 @@ object WebPostAdapter {
     private fun WebMedia.toAlbumItem(): AlbumItem? = when (kind) {
         WebMedia.Kind.Photo, WebMedia.Kind.Sticker -> AlbumItem.Photo(media = toTdMedia())
         WebMedia.Kind.Video, WebMedia.Kind.RoundVideo -> AlbumItem.Video(
+            // media.remoteUrl = poster (thumbnail) for TdMediaImage; the actual
+            // video stream lives in remoteVideoUrl below so ExoPlayer doesn't
+            // try to play the poster JPEG as video.
             media = toTdMedia(thumbnailFallback = true),
             durationSec = durationSec ?: 0,
             playbackFileId = 0,
@@ -150,10 +153,12 @@ object WebPostAdapter {
                     sizeBytes = 0L,
                 ),
             ),
+            remoteVideoUrl = url,
         )
         WebMedia.Kind.Gif -> AlbumItem.Animation(
             media = toTdMedia(thumbnailFallback = true),
             playbackFileId = 0,
+            remoteVideoUrl = url,
         )
         WebMedia.Kind.Voice, WebMedia.Kind.Document -> null
     }

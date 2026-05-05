@@ -53,6 +53,11 @@ import java.util.Locale
 fun WebModeScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
     var addSheetOpen by rememberSaveable { mutableStateOf(false) }
+    // Monotonic counter incremented on each "Home" re-tap — TimelineScreen
+    // observes it and scrolls the feed to top (or refreshes when already at
+    // top). Same mechanism as MainScaffold so the home-tap-to-scroll gesture
+    // works identically in both modes.
+    var homeTapTrigger by rememberSaveable { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     val locale = remember { Locale.getDefault().language.lowercase() }
 
@@ -65,7 +70,16 @@ fun WebModeScaffold(graph: AppGraph) {
         bottomBar = {
             FloatingNavBar(
                 selected = selectedTab,
-                onSelect = { tab -> selectedTab = tab },
+                onSelect = { tab ->
+                    if (tab == selectedTab && tab == NavTab.Feed) {
+                        // Re-tap on the active Home tab → bump the counter so
+                        // TimelineScreen scrolls to top (or refreshes when
+                        // already there). Same gesture contract as TDLib mode.
+                        homeTapTrigger = System.nanoTime()
+                    } else {
+                        selectedTab = tab
+                    }
+                },
             )
         },
         floatingActionButton = {
@@ -117,6 +131,8 @@ fun WebModeScaffold(graph: AppGraph) {
                         showOnlyBookmarked = false,
                         channelFilter = null,
                         onChannelFilterChange = { /* no per-channel filter in guest mode */ },
+                        homeTapTrigger = homeTapTrigger,
+                        onBrandTap = { homeTapTrigger = System.nanoTime() },
                     )
 
                     NavTab.Channels -> WebChannelsScreen(

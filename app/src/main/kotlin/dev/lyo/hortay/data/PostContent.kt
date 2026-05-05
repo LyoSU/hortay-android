@@ -49,6 +49,8 @@ sealed interface PostContent {
         val hasSpoiler: Boolean = false,
         /** Self-destructing / sensitive — same UX as spoiler but stronger phrasing. */
         val isSecret: Boolean = false,
+        /** Web-mode CDN URL of the playback stream. See [AlbumItem.Video.remoteVideoUrl]. */
+        val remoteVideoUrl: String? = null,
     ) : PostContent {
         override val captionPlain: String get() = caption.text
     }
@@ -61,6 +63,8 @@ sealed interface PostContent {
         val captionAbove: Boolean = false,
         val hasSpoiler: Boolean = false,
         val isSecret: Boolean = false,
+        /** Web-mode CDN URL of the playback stream. */
+        val remoteVideoUrl: String? = null,
     ) : PostContent {
         override val captionPlain: String get() = caption.text
     }
@@ -237,6 +241,14 @@ sealed interface AlbumItem {
         val qualities: VideoQualities,
         val hasSpoiler: Boolean = false,
         val isSecret: Boolean = false,
+        /**
+         * Web (anonymous) mode: direct CDN URL of the video stream. TDLib
+         * mode leaves this null and uses [playbackFileId] via [MediaCache].
+         * Distinct from [media.remoteUrl] which carries the static poster
+         * for [TdMediaImage] rendering — playing the poster URL as video
+         * would (and did) just hand ExoPlayer a JPEG.
+         */
+        val remoteVideoUrl: String? = null,
     ) : AlbumItem
 
     @Immutable
@@ -245,6 +257,8 @@ sealed interface AlbumItem {
         val playbackFileId: Int,
         val hasSpoiler: Boolean = false,
         val isSecret: Boolean = false,
+        /** Web-mode CDN URL of the playback stream. See [Video.remoteVideoUrl]. */
+        val remoteVideoUrl: String? = null,
     ) : AlbumItem
 }
 
