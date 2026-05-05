@@ -6,12 +6,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Cache
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -54,23 +56,24 @@ class WebTelegramClient(
     private val gateUntilMs = AtomicLong(0L)
 
     /**
-     * Most-recent fetch metadata per channel — used to drive the next conditional GET.
-     * Tiny memory footprint (a few hundred bytes per channel) and process-scoped:
-     * persistence across launches isn't worth a DataStore round-trip when a 304-vs-200
-     * miss costs us 30 KB once, recovered on the next sweep.
-     */
-    private val cacheState: MutableMap<String, CacheState> = HashMap()
-
-    /**
      * Fetch one page of a channel preview.
+     *
+     * Conditional GET (ETag / Last-Modified) is delegated entirely to OkHttp's
+     * disk [Cache] (configured by the caller in [defaultHttpClient] / AppGraph).
+     * OkHttp persists validators across cold starts, sends If-None-Match /
+     * If-Modified-Since automatically on every request, and serves the cached
+     * body transparently when the server responds 304. We detect "not modified"
+     * by inspecting [Response.networkResponse]: when its code is 304, the wire
+     * confirmed our cached body is still valid and the caller can skip parsing.
      *
      * @param username channel handle without leading `@`. Caller is responsible for
      *   sanitizing user input (strip `@`, parse out of `t.me/<u>` links) — see
      *   [parseUsernameFromInput].
      * @param before paginate older posts: pass [WebChannelPage.olderCursor] from a
      *   previous result. null fetches the latest page.
-     * @param useCache when true (default), apply stored ETag/Last-Modified for the
-     *   conditional GET. Pull-to-refresh sets this false to force a fresh body.
+     * @param useCache when true (default), let OkHttp serve from cache + revalidate.
+     *   Pull-to-refresh and channel-lookup set this false to force a fresh body
+     *   regardless of validators.
      */
     suspend fun fetchChannelPage(
         username: String,
@@ -80,8 +83,6 @@ class WebTelegramClient(
         awaitGate()
 
         val url = buildUrl(username, before)
-        val cacheKey = if (before == null) username else "$username?before=$before"
-        val cached = if (useCache) cacheState[cacheKey] else null
 
         val request = Request.Builder()
             .url(url)
@@ -96,14 +97,15 @@ class WebTelegramClient(
             // 136 KB of valid HTML.
             .header("Accept-Language", "en-US,en;q=0.9,uk;q=0.8")
             .apply {
-                cached?.etag?.let { header("If-None-Match", it) }
-                cached?.lastModified?.let { header("If-Modified-Since", it) }
+                if (!useCache) {
+                    cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
+                }
             }
             .build()
 
         return runCatching { execute(request) }.fold(
             onSuccess = { response ->
-                response.use { handleResponse(it, username, cacheKey) }
+                response.use { handleResponse(it, username) }
             },
             onFailure = { error ->
                 Log.w(TAG, "fetchChannelPage(${username}) failed: ${error.message}")
@@ -131,11 +133,10 @@ class WebTelegramClient(
             is FetchResult.RateLimited -> LookupResult.RateLimited(result.retryAfterMs)
             is FetchResult.NetworkError -> LookupResult.NetworkError(result.cause)
             FetchResult.NotModified -> {
-                // useCache=false above means we should never hit this path — if Telegram
-                // somehow returns 304 anyway, treat as Found via stale cache (best-effort).
-                cacheState[username]?.lastPage?.channel
-                    ?.let { LookupResult.Found(it) }
-                    ?: LookupResult.NotFound
+                // lookupChannel always uses useCache=false (FORCE_NETWORK), so OkHttp
+                // can't return a 304 here — the only way to land in this branch would
+                // be a server-side bug. Treat as NotFound for safety.
+                LookupResult.NotFound
             }
             is FetchResult.ParseFailure -> LookupResult.ParseFailure
         }
@@ -144,8 +145,16 @@ class WebTelegramClient(
     private suspend fun handleResponse(
         response: Response,
         username: String,
-        cacheKey: String,
     ): FetchResult {
+        // OkHttp's Cache transparently serves a cached body on 304 — the visible
+        // response.code is 200 even when the wire returned 304. Inspecting
+        // networkResponse lets us detect "not modified" so the caller can skip
+        // re-parsing 100KB of HTML it already has. Only meaningful when the
+        // request was allowed to use cache; FORCE_NETWORK requests will always
+        // see networkResponse with the actual wire code.
+        if (response.networkResponse?.code == 304) {
+            return FetchResult.NotModified
+        }
         when (response.code) {
             200 -> {
                 val body = response.body?.string().orEmpty()
@@ -164,17 +173,11 @@ class WebTelegramClient(
                     }
                     return FetchResult.ParseFailure
                 }
-                cacheState[cacheKey] = CacheState(
+                return FetchResult.Page(
+                    page = page,
                     etag = response.header("ETag"),
                     lastModified = response.header("Last-Modified"),
-                    lastPage = page,
                 )
-                return FetchResult.Page(page)
-            }
-            304 -> {
-                val stale = cacheState[cacheKey]?.lastPage
-                return if (stale != null) FetchResult.NotModified
-                else FetchResult.NetworkError(IllegalStateException("304 without prior cache"))
             }
             404 -> return FetchResult.NotFound
             403 -> return FetchResult.PrivateChannel
@@ -229,12 +232,6 @@ class WebTelegramClient(
         }
     }
 
-    private data class CacheState(
-        val etag: String?,
-        val lastModified: String?,
-        val lastPage: WebChannelPage,
-    )
-
     companion object {
         private const val TAG = "WebTelegram"
 
@@ -260,25 +257,53 @@ class WebTelegramClient(
         // Treat 5xx as a transient signal: short backoff, retry on next poll cycle.
         private const val SERVER_ERROR_BACKOFF_SEC = 10L
 
-        fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .callTimeout(20, TimeUnit.SECONDS)
-            // Aggressive connection reuse: 200-channel sweep wants pooling. Default is
-            // 5 — bumped to keep the t.me edge connection warm during a sweep.
-            .connectionPool(okhttp3.ConnectionPool(8, 5, TimeUnit.MINUTES))
-            // Disable redirect-following for /s/<u> probes so we can detect the
-            // "private channel" redirect (t.me/s/foo → t.me/foo) cleanly. We then
-            // surface it as PrivateChannel rather than chasing the destination.
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .build()
+        /**
+         * Build the default HTTP client. Pass a [cacheDir] to enable disk-backed
+         * conditional GET (recommended) — typically the app's
+         * `Context.cacheDir / "web-http"`. When null, no HTTP cache is used and
+         * every fetch is a full body download.
+         *
+         * Cache size: 10 MB. Enough room for ~150 channel preview pages (each
+         * ~30-100 KB compressed). DiskLruCache evicts least-recently-used entries
+         * when full so a 200-channel rotation degrades gracefully.
+         */
+        fun defaultHttpClient(cacheDir: File? = null): OkHttpClient {
+            val builder = OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .callTimeout(20, TimeUnit.SECONDS)
+                // Aggressive connection reuse: 200-channel sweep wants pooling. Default is
+                // 5 — bumped to keep the t.me edge connection warm during a sweep.
+                .connectionPool(okhttp3.ConnectionPool(8, 5, TimeUnit.MINUTES))
+                // Disable redirect-following for /s/<u> probes so we can detect the
+                // "private channel" redirect (t.me/s/foo → t.me/foo) cleanly. We then
+                // surface it as PrivateChannel rather than chasing the destination.
+                .followRedirects(false)
+                .followSslRedirects(false)
+            if (cacheDir != null) {
+                if (!cacheDir.exists()) cacheDir.mkdirs()
+                builder.cache(Cache(cacheDir, HTTP_CACHE_SIZE_BYTES))
+            }
+            return builder.build()
+        }
+
+        private const val HTTP_CACHE_SIZE_BYTES = 10L * 1024 * 1024
     }
 }
 
 /** Result of a single fetch. Covers every branch the scheduler needs to handle. */
 sealed interface FetchResult {
-    data class Page(val page: WebChannelPage) : FetchResult
+    /**
+     * Successful fetch with a parsed page. [etag] / [lastModified] are surfaced so
+     * [dev.lyo.hortay.data.web.WebRepository.ingestPage] can persist them — even
+     * though OkHttp's cache also stores validators on disk, having them in the DB
+     * lets us debug "did this fetch revalidate?" without an OkHttp Cache dump.
+     */
+    data class Page(
+        val page: WebChannelPage,
+        val etag: String?,
+        val lastModified: String?,
+    ) : FetchResult
     /** Conditional GET hit — caller's existing data is still valid. */
     data object NotModified : FetchResult
     /** Channel doesn't exist or was deleted. */

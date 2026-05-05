@@ -2,6 +2,7 @@ package dev.lyo.hortay.data.web
 
 import androidx.compose.runtime.Immutable
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.serialization.Serializable
 
 /**
  * Output of [TmePageParser]. Everything reachable from a single t.me/s/<username> page
@@ -98,6 +99,7 @@ data class WebPost(
 )
 
 @Immutable
+@Serializable
 data class WebMedia(
     val kind: Kind,
     /** CDN URL extracted from the page. Photos use background-image inline style. */
@@ -126,6 +128,7 @@ data class WebMedia(
 }
 
 @Immutable
+@Serializable
 data class WebPreview(
     val url: String,
     val siteName: String?,
@@ -135,6 +138,7 @@ data class WebPreview(
 )
 
 @Immutable
+@Serializable
 data class WebForwardSource(
     val channelName: String,
     /** `https://t.me/<channel>(/<msg>)?` link from the forwarded-from header. */
@@ -148,6 +152,7 @@ data class WebForwardSource(
  * render — see field docs.
  */
 @Immutable
+@Serializable
 data class WebReaction(
     /**
      * The visible glyph if the page embedded one (most often a unicode emoji baked

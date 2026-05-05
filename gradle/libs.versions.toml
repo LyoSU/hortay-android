@@ -17,6 +17,7 @@ immutable = "0.4.0"
 lottie = "6.6.0"
 jsoup = "1.18.3"
 okhttp = "4.12.0"
+sqldelight = "2.3.2"
 junit5 = "5.11.4"
 junitPlatform = "1.11.4"
 kotlinxCoroutinesTest = "1.10.1"
@@ -65,6 +66,15 @@ lottie-compose = { group = "com.airbnb.android", name = "lottie-compose", versio
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
+# SQLDelight 2.x — typed SQL DAO for the anonymous web-mode database (web.db).
+# Android driver provides AndroidSqliteDriver wrapping AOSP SQLiteOpenHelper;
+# coroutines-extensions exposes asFlow()/mapToList() helpers for StateFlow plumbing;
+# primitive-adapters supplies built-in adapters for Boolean/Long/etc when needed.
+sqldelight-android-driver = { group = "app.cash.sqldelight", name = "android-driver", version.ref = "sqldelight" }
+sqldelight-coroutines-extensions = { group = "app.cash.sqldelight", name = "coroutines-extensions", version.ref = "sqldelight" }
+sqldelight-primitive-adapters = { group = "app.cash.sqldelight", name = "primitive-adapters", version.ref = "sqldelight" }
+sqldelight-sqlite-driver = { group = "app.cash.sqldelight", name = "sqlite-driver", version.ref = "sqldelight" }
+
 junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.ref = "junit5" }
 junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher", version.ref = "junitPlatform" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutinesTest" }
@@ -82,3 +92,4 @@ android-test = { id = "com.android.test", version.ref = "agp" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 baselineprofile = { id = "androidx.baselineprofile", version.ref = "benchmark" }
+sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }

@@ -1,0 +1,49 @@
+-- Cache of resolved /i/emoji/<id>.json results. Currently in-memory only via
+-- WebCustomEmojiResolver — that's fine within a single session but on cold start
+-- every visible post re-resolves its custom-emoji ids over the network (one
+-- 200ms-spaced request each). Persisting the resolution shifts cold-start
+-- emoji rendering from ~3s on a feed with 30 custom emojis to ~10ms.
+--
+-- TTL: 24 hours. Custom-emoji assets do rotate (Telegram occasionally re-issues
+-- the WebM/TGS URL with new signing) but only sporadically. resolved_at_ms lets
+-- us drop entries that are too old without dropping the whole table.
+
+CREATE TABLE custom_emoji (
+    emoji_id TEXT NOT NULL PRIMARY KEY,
+    -- One of: tgs | webm | webp
+    type TEXT NOT NULL,
+    url TEXT NOT NULL,
+    thumb_url TEXT,
+    size_px INTEGER,
+    resolved_at_ms INTEGER NOT NULL
+);
+
+selectFresh:
+SELECT * FROM custom_emoji
+WHERE emoji_id IN :ids
+  AND resolved_at_ms > :freshAfterMs;
+
+selectOne:
+SELECT * FROM custom_emoji
+WHERE emoji_id = :emojiId
+  AND resolved_at_ms > :freshAfterMs;
+
+-- Two-step upsert; see Channel.sq for portability rationale.
+upsertInsert:
+INSERT OR IGNORE INTO custom_emoji(emoji_id, type, url, thumb_url, size_px, resolved_at_ms)
+VALUES (:emojiId, :type, :url, :thumbUrl, :sizePx, :resolvedAtMs);
+
+upsertUpdate:
+UPDATE custom_emoji SET
+    type = :type,
+    url = :url,
+    thumb_url = :thumbUrl,
+    size_px = :sizePx,
+    resolved_at_ms = :resolvedAtMs
+WHERE emoji_id = :emojiId;
+
+deleteStale:
+DELETE FROM custom_emoji WHERE resolved_at_ms < :olderThanMs;
+
+deleteAll:
+DELETE FROM custom_emoji;

@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.baselineprofile)
+    alias(libs.plugins.sqldelight)
 }
 
 val telegramProps = Properties().apply {
@@ -181,6 +182,29 @@ android {
     }
 }
 
+// Anonymous web-mode database. Schema files live under
+// app/src/main/sqldelight/dev/lyo/hortay/data/web/db/*.sq; SQLDelight generates
+// typed DAO sources at build time. Migrations sit alongside as `<n>.sqm`.
+//
+// Why a separate database (not bundled into TDLib's storage): TDLib persists its
+// own MTProto state under `cache/td/` — opaque to us, owned by the daemon.
+// Web-mode reads public preview HTML and has zero overlap with TDLib's data
+// model. Sharing storage would also fight TDLib's vacuum/optimize cadence.
+sqldelight {
+    databases {
+        create("WebDatabase") {
+            packageName.set("dev.lyo.hortay.data.web.db")
+            // Verify each migration round-trips schema → migration → schema. Catches
+            // accidental column type changes that SQLite would silently accept.
+            verifyMigrations.set(true)
+            // Generate suspend functions on the queries that must run inside a
+            // transaction — keeps callers from accidentally hopping threads
+            // mid-write.
+            generateAsync.set(false)
+        }
+    }
+}
+
 androidComponents {
     onVariants { variant ->
         val isBeta = variant.buildType == "beta"
@@ -255,6 +279,16 @@ dependencies {
     // way to read public channels without an authenticated TDLib session.
     implementation(libs.okhttp)
     implementation(libs.jsoup)
+
+    // SQLDelight: typed DAO + Flow integration for the web.db database. Android
+    // driver is the runtime; coroutines-extensions adds the asFlow() bridge so a
+    // SELECT returns a Flow that re-emits whenever any of its source tables change
+    // (queries are reference-counted internally, so observers cost nothing while
+    // unsubscribed). Primitive-adapters covers Long↔Boolean / Long↔Instant style
+    // mappings without hand-rolling each ColumnAdapter.
+    implementation(libs.sqldelight.android.driver)
+    implementation(libs.sqldelight.coroutines.extensions)
+    implementation(libs.sqldelight.primitive.adapters)
 
     implementation(project(":libtdlib"))
 

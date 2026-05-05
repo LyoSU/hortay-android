@@ -19,13 +19,20 @@ import dev.lyo.hortay.data.TdLifecycleBridge
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.UserMessageBus
+import dev.lyo.hortay.data.web.GuestModeStore
 import dev.lyo.hortay.data.web.SubscriptionsStore
 import dev.lyo.hortay.data.web.WebCustomEmojiResolver
+import dev.lyo.hortay.data.web.WebFeedSource
+import dev.lyo.hortay.data.web.WebRepository
 import dev.lyo.hortay.data.web.WebTelegramClient
+import dev.lyo.hortay.data.web.db.WebDatabase
+import dev.lyo.hortay.data.web.db.WebDatabaseProvider
+import java.io.File
 import dev.lyo.hortay.ui.media.ExoPlayerPool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Manual dependency graph for the app. Lightweight alternative to Hilt for a single-process
@@ -127,13 +134,30 @@ class AppGraph(context: Context) {
     val deepLinkRouter: DeepLinkRouter = DeepLinkRouter()
 
     /**
-     * Anonymous web-mode client. Reads public channel previews via t.me/s/<username> with
-     * no Telegram authentication required. Phase 1 deliverable — currently exposed only
-     * through the debug screen surfaced from Settings (BuildConfig.DEBUG only); Phase 2
-     * will wire it as a primary `FeedSource` alternative to TDLib for users who choose
-     * to read without signing in.
+     * Anonymous-mode SQLDelight database. Stores channel metadata, post payloads,
+     * resolved custom-emoji assets and curated/discovery suggestions. Construction
+     * triggers schema creation on first launch and migration validation on every
+     * launch (the app's `sqldelight { verifyMigrations.set(true) }` runs at build
+     * time, but the runtime PRAGMA setup happens here in [WebDatabaseProvider]).
+     * Held by the graph so the [AndroidSqliteDriver]'s connection pool survives
+     * for the entire process lifetime — re-opening the DB per call would cost
+     * 50-100 ms of WAL-mode setup on every read.
      */
-    val webClient: WebTelegramClient = WebTelegramClient()
+    val webDatabase: WebDatabase = WebDatabaseProvider.create(context)
+
+    val webRepository: WebRepository = WebRepository(webDatabase)
+
+    /**
+     * Anonymous web-mode HTTP client. Reads public channel previews via
+     * t.me/s/<username> with no Telegram authentication required. The shared
+     * 10 MB OkHttp [Cache] under `cacheDir/web-http/` persists ETag /
+     * Last-Modified across cold starts so a 200-channel sweep that's already
+     * been done in this session avoids re-downloading every body — typically a
+     * 80-90% bandwidth saving on the second-of-the-day refresh.
+     */
+    val webClient: WebTelegramClient = WebTelegramClient(
+        WebTelegramClient.defaultHttpClient(File(context.cacheDir, "web-http"))
+    )
 
     /**
      * Resolves Telegram custom-emoji ids to renderable TGS / WebM / WebP assets via
@@ -151,5 +175,33 @@ class AppGraph(context: Context) {
      * via TdApi.SearchPublicChat + TdApi.JoinChat (throttled).
      */
     val webSubscriptions: SubscriptionsStore = SubscriptionsStore(context)
+
+    /** Persists "use the app without signing in" choice. See [GuestModeStore]. */
+    val guestMode: GuestModeStore = GuestModeStore(context)
+
+    /**
+     * Multi-channel orchestrator. Mirrors [webSubscriptions] into the channel
+     * table, fans out parallel fetches into [webRepository.ingestPage], and
+     * exposes the merged feed as a [kotlinx.coroutines.flow.StateFlow]. UI
+     * surfaces (timeline, channels list) bind directly to its `posts` /
+     * `channels` flows; the source itself is process-singleton because the
+     * DataStore→DB sync needs exactly one observer to avoid double-writes.
+     */
+    val webFeedSource: WebFeedSource = WebFeedSource(
+        client = webClient,
+        repository = webRepository,
+        subscriptions = webSubscriptions,
+        scope = appScope,
+    )
+
+    init {
+        // Pre-warm the web DB on a background thread. SQLDelight's AndroidSqliteDriver
+        // lazy-opens the underlying SupportSQLiteOpenHelper on first query — without
+        // this touch the schema creation, WAL switch and PRAGMA setup would all run
+        // synchronously inside the first observeFeed() collector on the main thread.
+        // A no-op SELECT here moves that one-time ~50-100 ms cost off the critical
+        // path so the first feed render isn't paying for it.
+        appScope.launch { webRepository.subscribedUsernames() }
+    }
 }
 

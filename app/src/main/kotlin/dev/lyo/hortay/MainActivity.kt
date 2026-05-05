@@ -20,6 +20,7 @@ import dev.lyo.hortay.ui.media.LocalExoPlayerPool
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.MediaViewerHost
 import dev.lyo.hortay.ui.theme.HortayTheme
+import dev.lyo.hortay.ui.web.WebModeScaffold
 
 class MainActivity : ComponentActivity() {
 
@@ -43,8 +44,22 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val auth by graph.tdClient.authStage.collectAsStateWithLifecycle()
-                        when (auth) {
-                            AuthStage.Ready -> MediaViewerHost { MainScaffold(graph = graph) }
+                        val isGuest by graph.guestMode.isGuest.collectAsStateWithLifecycle(
+                            initialValue = false,
+                        )
+                        // Routing precedence:
+                        //   1. Authenticated (auth.Ready) → full TDLib UI. The user signed
+                        //      in; show them everything regardless of any earlier guest
+                        //      preference.
+                        //   2. Guest-mode flag set → web-only UI. The user explicitly
+                        //      chose to read without signing in; honour that across cold
+                        //      starts even though TDLib's auth state is "WaitPhone" by
+                        //      default.
+                        //   3. Otherwise → AuthScreen, where the user can either sign in
+                        //      or flip the guest-mode flag.
+                        when {
+                            auth == AuthStage.Ready -> MediaViewerHost { MainScaffold(graph = graph) }
+                            isGuest -> WebModeScaffold(graph = graph)
                             else -> AuthScreen(graph = graph, stage = auth)
                         }
                     }

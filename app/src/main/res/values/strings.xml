@@ -10,6 +10,7 @@
     <string name="auth_password_helper">This is the password you set in the official Telegram under Two-Factor Authentication.</string>
     <string name="auth_send_code">Send code</string>
     <string name="auth_continue">Continue</string>
+    <string name="auth_continue_without_login">Continue without sign-in — read public channels</string>
     <string name="auth_change_number">Change number</string>
     <string name="auth_back">Back</string>
     <string name="auth_password_show">Show password</string>

@@ -1,0 +1,58 @@
+-- Curated discovery list + recent searches. Populated from two sources:
+--   1. Bundled JSON resource per locale (uk/en) — first-launch starter list so
+--      the Add screen isn't empty for users who don't already have channels in
+--      mind. Loaded once on first run, refreshed via app updates.
+--   2. User searches that resolved successfully (LookupResult.Found). Recent
+--      searches act as a quick re-add list when a user removes and re-adds.
+--
+-- source: 'curated' | 'history'
+-- locale: ISO-639 language code or '*' for locale-neutral (e.g., 'durov').
+
+CREATE TABLE channel_suggestion (
+    username TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    avatar_url TEXT,
+    locale TEXT NOT NULL,
+    source TEXT NOT NULL,
+    last_seen_at_ms INTEGER NOT NULL
+);
+
+CREATE INDEX channel_suggestion_locale_idx ON channel_suggestion(locale, source);
+
+selectByLocale:
+SELECT * FROM channel_suggestion
+WHERE (locale = :locale OR locale = '*')
+ORDER BY
+    CASE source WHEN 'history' THEN 0 ELSE 1 END,
+    last_seen_at_ms DESC
+LIMIT :limit;
+
+selectAll:
+SELECT * FROM channel_suggestion ORDER BY last_seen_at_ms DESC;
+
+-- Two-step upsert; see Channel.sq for portability rationale.
+-- Note: the merge-source logic (keep 'curated' even if 'history' would
+-- overwrite) lives in upsertUpdate's CASE, so the same semantics survive.
+upsertInsert:
+INSERT OR IGNORE INTO channel_suggestion(username, title, description, avatar_url, locale, source, last_seen_at_ms)
+VALUES (:username, :title, :description, :avatarUrl, :locale, :source, :lastSeenAtMs);
+
+upsertUpdate:
+UPDATE channel_suggestion SET
+    title = :title,
+    description = :description,
+    avatar_url = :avatarUrl,
+    locale = :locale,
+    source = CASE
+        WHEN source = 'curated' THEN 'curated'
+        ELSE :source
+    END,
+    last_seen_at_ms = :lastSeenAtMs
+WHERE username = :username;
+
+deleteHistory:
+DELETE FROM channel_suggestion WHERE source = 'history';
+
+deleteAll:
+DELETE FROM channel_suggestion;

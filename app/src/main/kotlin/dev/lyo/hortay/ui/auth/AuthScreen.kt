@@ -301,6 +301,24 @@ private fun PhoneForm(graph: AppGraph, errorMessage: String?) {
                 }
             },
         )
+        Spacer(Modifier.height(20.dp))
+        // Guest-mode escape hatch. Visible only on the WaitPhone stage so it
+        // doesn't compete with code/password forms mid-flow. Flipping the flag
+        // recomposes MainActivity, which routes through to WebModeScaffold.
+        // No TDLib call, no phone number, no MTProto — purely a local DataStore
+        // write. Subscriptions persist across mode switches both directions so
+        // the user can experiment without losing their channel list.
+        TextButton(
+            onClick = {
+                scope.launch { graph.guestMode.setGuest(true) }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = stringResource(R.string.auth_continue_without_login),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 
     if (sheetOpen) {

@@ -1,0 +1,120 @@
+-- Channel metadata + per-fetch state for the anonymous web pipeline.
+--
+-- We keep both subscribed channels (is_subscribed = 1) and recently-seen channels
+-- (is_subscribed = 0) in a single table. The soft-delete via flag means that:
+--   • Re-subscribing to a channel restores all its cached posts instantly (no refetch).
+--   • Posts from unsubscribed channels are filtered out of the feed but remain
+--     reachable via search until vacuum.
+--
+-- last_etag / last_modified persist across cold starts so conditional GET keeps
+-- working — the previous in-memory HashMap forgot every restart and forced a full
+-- 200×30KB body re-download on every first sweep of the morning.
+
+CREATE TABLE channel (
+    username TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    avatar_url TEXT,
+    subscribers TEXT,
+    is_verified INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    is_subscribed INTEGER AS kotlin.Boolean NOT NULL DEFAULT 1,
+    last_fetched_at_ms INTEGER,
+    last_etag TEXT,
+    last_modified TEXT,
+    older_cursor TEXT,
+    -- One of: idle | loading | ok | not_found | private | rate_limited | error | parse_failure
+    fetch_status TEXT NOT NULL DEFAULT 'idle',
+    fetch_error TEXT,
+    fetch_retry_after_ms INTEGER
+);
+
+CREATE INDEX channel_subscribed_idx ON channel(is_subscribed);
+
+selectAll:
+SELECT * FROM channel ORDER BY title COLLATE NOCASE;
+
+selectAllSubscribed:
+SELECT * FROM channel WHERE is_subscribed = 1 ORDER BY title COLLATE NOCASE;
+
+selectByUsername:
+SELECT * FROM channel WHERE username = :username;
+
+selectStaleSubscribed:
+-- Channels overdue for a re-fetch. Driven by tiered polling (Phase 1.5).
+SELECT * FROM channel
+WHERE is_subscribed = 1
+  AND (last_fetched_at_ms IS NULL OR last_fetched_at_ms < :olderThanMs);
+
+-- Two-step upsert (INSERT OR IGNORE + UPDATE) instead of ON CONFLICT DO UPDATE.
+-- Reason: Android's bundled SQLite is the OS-shipped version. Android 8.0-9.0
+-- (API 26-28, ~10% of the user base in 2026) ships SQLite < 3.24, which lacks
+-- the UPSERT (ON CONFLICT DO UPDATE) syntax. The two-step pattern is portable
+-- across every API level we target. Callers wrap both inside one transaction so
+-- the operation is still atomic. SQLite optimises the no-op INSERT (PK conflict)
+-- to a single B-tree probe — performance overhead is negligible.
+
+upsertFromFetchInsert:
+INSERT OR IGNORE INTO channel(
+    username, title, description, avatar_url, subscribers, is_verified,
+    is_subscribed, last_fetched_at_ms, last_etag, last_modified, older_cursor,
+    fetch_status, fetch_error, fetch_retry_after_ms
+) VALUES (
+    :username, :title, :description, :avatarUrl, :subscribers, :isVerified,
+    1, :lastFetchedAtMs, :lastEtag, :lastModified, :olderCursor,
+    'ok', NULL, NULL
+);
+
+upsertFromFetchUpdate:
+UPDATE channel SET
+    title = :title,
+    description = :description,
+    avatar_url = :avatarUrl,
+    subscribers = :subscribers,
+    is_verified = :isVerified,
+    is_subscribed = 1,
+    last_fetched_at_ms = :lastFetchedAtMs,
+    last_etag = :lastEtag,
+    last_modified = :lastModified,
+    older_cursor = :olderCursor,
+    fetch_status = 'ok',
+    fetch_error = NULL,
+    fetch_retry_after_ms = NULL
+WHERE username = :username;
+
+-- Status update for fetch outcomes that don't carry a parsed page (errors, 304,
+-- rate-limit). Doesn't touch the cached payload columns — keeps the previous
+-- successful fetch's data visible to the user.
+markFetchStatus:
+UPDATE channel
+SET fetch_status = :status,
+    fetch_error = :error,
+    fetch_retry_after_ms = :retryAfterMs,
+    last_fetched_at_ms = COALESCE(:lastFetchedAtMs, last_fetched_at_ms)
+WHERE username = :username;
+
+markNotModified:
+UPDATE channel
+SET fetch_status = 'ok',
+    fetch_error = NULL,
+    fetch_retry_after_ms = NULL,
+    last_fetched_at_ms = :lastFetchedAtMs
+WHERE username = :username;
+
+-- Subscription-intent operations. Calling subscribe on a never-seen channel
+-- bootstraps the row with a placeholder title — the next fetch fills it in.
+subscribeInsert:
+INSERT OR IGNORE INTO channel(username, title, is_subscribed)
+VALUES (:username, :placeholderTitle, 1);
+
+subscribeUpdate:
+UPDATE channel SET is_subscribed = 1 WHERE username = :username;
+
+unsubscribe:
+UPDATE channel SET is_subscribed = 0 WHERE username = :username;
+
+-- Hard delete used by "clear cache". Cascades to posts via FK ON DELETE CASCADE.
+deleteChannel:
+DELETE FROM channel WHERE username = :username;
+
+deleteAll:
+DELETE FROM channel;

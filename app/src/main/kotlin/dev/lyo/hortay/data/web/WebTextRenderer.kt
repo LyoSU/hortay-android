@@ -193,6 +193,22 @@ object WebTextRenderer {
     val DefaultLinkStyles: TextLinkStyles = TextLinkStyles(
         style = SpanStyle(fontStyle = FontStyle.Italic),
     )
+
+    /**
+     * Strip HTML tags to plain text suitable for FTS5 indexing and "first 280 chars"
+     * preview snippets. Pure JVM (no Compose dependency) so it can run inside
+     * [dev.lyo.hortay.data.web.WebRepository] before the post ever reaches a Composable.
+     *
+     * Implementation detail: Jsoup's `.text()` collapses runs of whitespace and
+     * inserts a single space at block boundaries — exactly what we want for search
+     * (matches don't depend on whether the source had `\n\n` or `<br><br>`).
+     * `<tg-emoji>` is preserved as its inner unicode glyph (the `<b>` fallback)
+     * so a search for "🔥" matches posts that used the custom-emoji wrapper too.
+     */
+    fun toPlainText(html: String): String {
+        if (html.isBlank()) return ""
+        return Jsoup.parseBodyFragment(html).body().text()
+    }
 }
 
 /**
