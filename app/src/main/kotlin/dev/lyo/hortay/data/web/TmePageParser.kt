@@ -300,7 +300,19 @@ object TmePageParser {
         val siteName = preview.selectFirst(".link_preview_site_name")?.text()?.ifBlank { null }
         val title = preview.selectFirst(".link_preview_title")?.text()?.ifBlank { null }
         val description = preview.selectFirst(".link_preview_description")?.text()?.ifBlank { null }
-        val image = preview.selectFirst(".link_preview_image, .link_preview_video_thumb")
+        // t.me serves three preview-image shapes:
+        //   • `.link_preview_image`        — full-width hero (most common, e.g. news)
+        //   • `.link_preview_video_thumb`  — video thumbnail with play overlay
+        //   • `.link_preview_right_image`  — small inline image floated right, for
+        //                                    pages whose og:image is too short to
+        //                                    fill the card (favicon-shaped sites).
+        // Earlier we only matched the first two — `.link_preview_right_image`
+        // posts surfaced a card with no image at all. Match all three before
+        // falling through to a raw `<img>` lookup (some clients embed images
+        // directly without the CSS-background class trick).
+        val image = preview.selectFirst(
+            ".link_preview_image, .link_preview_video_thumb, .link_preview_right_image",
+        )
             ?.attr("style")
             ?.let(::extractCssBackgroundUrl)
             ?: preview.selectFirst("img")?.attr("src")?.ifBlank { null }
