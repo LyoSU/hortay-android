@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data.web
 
 import android.util.Log
+import dev.lyo.hortay.data.FeedSource
 import dev.lyo.hortay.data.TimelinePost
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.coroutines.CoroutineScope
@@ -56,7 +57,7 @@ class WebFeedSource(
     private val maxConcurrentFetches: Int = DEFAULT_CONCURRENCY,
     private val stalenessWindowMs: Long = DEFAULT_STALENESS_WINDOW_MS,
     private val mediaTtlMs: Long = DEFAULT_MEDIA_TTL_MS,
-) {
+) : FeedSource {
 
     private val refreshMutex = Mutex()
     private val fetchSemaphore = Semaphore(maxConcurrentFetches)
@@ -69,7 +70,7 @@ class WebFeedSource(
      * StateFlow consumer sees one already-converted list per emit, not a raw
      * WebFeedEntry list that needs per-item adaptation downstream.
      */
-    val posts: StateFlow<PersistentList<TimelinePost>> =
+    override val posts: StateFlow<PersistentList<TimelinePost>> =
         repository.observeFeed()
             .stateIn(scope, SharingStarted.Eagerly, kotlinx.collections.immutable.persistentListOf())
 
@@ -111,10 +112,10 @@ class WebFeedSource(
         // is bypassed when we have additions — the user just asked to follow this
         // channel; making them wait for the next 5-minute sweep would feel broken.
         if (added.isNotEmpty()) {
-            refresh(force = true)
+            doRefresh(force = true)
         } else if (latest.isNotEmpty() && lastSuccessfulRefreshAtMs == 0L) {
             // First run on this process with existing subs — populate immediately.
-            refresh(force = false)
+            doRefresh(force = false)
         }
     }
 
@@ -127,22 +128,38 @@ class WebFeedSource(
      * Returns the launched job so callers can join() if they want to await
      * completion (test harnesses, in particular).
      */
-    fun refresh(force: Boolean = false): Job = scope.launch {
+    /**
+     * FeedSource: pull-to-refresh path. Bypasses the staleness window. Suspends
+     * until the sweep completes (or returns immediately when another refresh
+     * already holds the mutex).
+     */
+    override suspend fun refresh() = doRefresh(force = true)
+
+    /**
+     * FeedSource: foreground-resume path. Returns immediately when the previous
+     * sweep finished within [stalenessWindowMs].
+     */
+    override suspend fun refreshIfStale() = doRefresh(force = false)
+
+    /** Backwards-compatible Job-returning entry point used by external callers. */
+    fun refreshAsync(force: Boolean = false): Job = scope.launch { doRefresh(force) }
+
+    private suspend fun doRefresh(force: Boolean) {
         if (!refreshMutex.tryLock()) {
             // Another refresh in progress — silent skip is the desired pull-to-refresh
             // semantic (UI shows the in-flight indicator already).
-            return@launch
+            return
         }
         try {
             val nowMs = System.currentTimeMillis()
             val targets = repository.subscribedUsernames()
             if (targets.isEmpty()) {
                 _refreshState.value = RefreshState.Idle
-                return@launch
+                return
             }
             if (!force && nowMs - lastSuccessfulRefreshAtMs < stalenessWindowMs) {
                 _refreshState.value = RefreshState.Idle
-                return@launch
+                return
             }
 
             val staleMediaSet = repository.channelsWithStaleMedia(nowMs - mediaTtlMs).toSet()
@@ -154,9 +171,6 @@ class WebFeedSource(
                         async {
                             val outcome = fetchOne(
                                 username = username,
-                                // Force when the channel itself has stale media — even
-                                // a tier-2 cadence sweep should bypass the OkHttp Cache
-                                // for these so we get fresh signed CDN URLs.
                                 forceNetwork = force || username in staleMediaSet,
                                 fetchedAtMs = System.currentTimeMillis(),
                             )

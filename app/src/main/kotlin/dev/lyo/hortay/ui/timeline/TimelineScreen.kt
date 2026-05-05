@@ -60,35 +60,57 @@ import kotlinx.coroutines.launch
 // FlowPreview opt-in stays: Flow.debounce(Long) is still preview-marked in
 // kotlinx-coroutines 1.10.1 even though Flow.debounce(Duration) graduated.
 // Remove only when the Long overload is stabilised upstream.
+/**
+ * Mode-agnostic timeline screen. Drives both the authenticated TDLib mode and
+ * the anonymous (guest) web mode through a single Composable.
+ *
+ *   - [feed] — required, mode-defining data source (TDLib's [PostsRepository]
+ *     or web's [dev.lyo.hortay.data.web.WebFeedSource]). Both implement
+ *     [FeedSource] so the inner [TimelineViewModel] is mode-blind.
+ *   - All other parameters except [bookmarks] are nullable: when null, the
+ *     corresponding affordance is hidden. Guest mode passes [tdlibRepo] /
+ *     [commentsRepo] / [folders] / [translations] / [channelActions] = null
+ *     and gets a clean feed view. TDLib mode passes them all.
+ *
+ * What's gated by nullability:
+ *   - Folders bar — needs [folders]
+ *   - In-channel search — needs [tdlibRepo] (search uses TDLib SearchChatMessages)
+ *   - Comments tap, channel-info sheet — need [commentsRepo] / [tdlibRepo]
+ *   - Translation chip — needs [translations]
+ *   - Channel actions (mute/unmute) — needs [channelActions]
+ *   - Channel filter, archived chats, view receipts — need [tdlibRepo]
+ *
+ * What's always present (works in both modes):
+ *   - Pull-to-refresh, scroll gate, prefetch, bookmark, "new posts" pill,
+ *     LargeTopAppBar with BrandRow / saved title, empty state.
+ */
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun TimelineScreen(
-    repo: PostsRepository,
-    commentsRepo: CommentsRepository,
-    folders: ChatFoldersRepository,
-    translations: TranslationsStore,
-    channelActions: ChannelActionsRepository,
+    feed: dev.lyo.hortay.data.FeedSource,
     bookmarks: BookmarkStore,
     contentPadding: PaddingValues,
     showOnlyBookmarked: Boolean,
     channelFilter: Long?,
     onChannelFilterChange: (Long?) -> Unit,
+    tdlibRepo: PostsRepository? = null,
+    commentsRepo: CommentsRepository? = null,
+    folders: ChatFoldersRepository? = null,
+    translations: TranslationsStore? = null,
+    channelActions: ChannelActionsRepository? = null,
     onOpenComments: (TimelinePost) -> Unit = {},
     homeTapTrigger: Long = 0L,
     onBrandTap: () -> Unit = {},
     /**
-     * One-shot "scroll to this message in the active feed" request. When non-null,
-     * TimelineScreen seeds [pendingScrollToMessage] from it and immediately calls
-     * [onScrollHandled] so the parent can null its own state. Used by the deep-link
-     * dispatcher in MainScaffold to land tg://openmessage / t.me/handle/<id> targets
-     * on the right row, not just the right channel.
+     * One-shot "scroll to this message in the active feed" request. TDLib-mode
+     * deep-link dispatcher only; guest mode passes null.
      */
     scrollToMessage: Pair<Long, Long>? = null,
     onScrollHandled: () -> Unit = {},
 ) {
     val vm: TimelineViewModel = viewModel(
-        factory = remember(repo, bookmarks) {
-            viewModelFactory { initializer { TimelineViewModel(repo, bookmarks) } }
+        factory = remember(feed, bookmarks) {
+            viewModelFactory { initializer { TimelineViewModel(feed, bookmarks) } }
         },
     )
     val context = LocalContext.current
@@ -97,9 +119,15 @@ fun TimelineScreen(
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val bookmarkedKeys by vm.bookmarkedKeys.collectAsStateWithLifecycle()
     val pendingNew by vm.pendingNew.collectAsStateWithLifecycle()
-    val foldersList by folders.folders.collectAsStateWithLifecycle()
-    val archivedChatIds by repo.archivedChatIds.collectAsStateWithLifecycle()
-    val translationsMap by translations.translations.collectAsStateWithLifecycle()
+    val foldersList: List<org.drinkless.tdlib.TdApi.ChatFolderInfo> = folders?.folders
+        ?.collectAsStateWithLifecycle()?.value
+        ?: emptyList()
+    val archivedChatIds: Set<Long> = tdlibRepo?.archivedChatIds
+        ?.collectAsStateWithLifecycle()?.value
+        ?: emptySet()
+    val translationsMap = translations?.translations
+        ?.collectAsStateWithLifecycle()?.value
+        ?: emptyMap()
     var infoSheetChatId by remember { mutableStateOf<Long?>(null) }
 
     // Search state: only meaningful inside a channel filter. searchActive flips the top
@@ -108,14 +136,14 @@ fun TimelineScreen(
     var searchActive by rememberSaveable(channelFilter) { mutableStateOf(false) }
     var searchQuery by rememberSaveable(channelFilter) { mutableStateOf("") }
     var searchResults by remember(channelFilter) { mutableStateOf<List<TimelinePost>>(emptyList()) }
-    if (channelFilter != null) {
+    if (channelFilter != null && tdlibRepo != null) {
         LaunchedEffect(searchActive, searchQuery, channelFilter) {
             if (!searchActive || searchQuery.isBlank()) {
                 searchResults = emptyList()
                 return@LaunchedEffect
             }
             kotlinx.coroutines.delay(SEARCH_DEBOUNCE_MS)
-            searchResults = repo.searchInChannel(channelFilter, searchQuery.trim())
+            searchResults = tdlibRepo.searchInChannel(channelFilter, searchQuery.trim())
         }
     }
 
@@ -194,7 +222,7 @@ fun TimelineScreen(
             folderExcludeArchived = false
             return@LaunchedEffect
         }
-        val full = folders.fullFolder(folderScope.id)
+        val full = folders?.fullFolder(folderScope.id)
         if (full == null) {
             folderMemberIds = emptySet()
             folderIncludesAllChannels = false
@@ -242,12 +270,13 @@ fun TimelineScreen(
     // refresh fetched per channel.
     LaunchedEffect(channelFilter) {
         val id = channelFilter ?: return@LaunchedEffect
-        repo.openChat(id)
-        repo.loadChannelHistory(id)
+        val r = tdlibRepo ?: return@LaunchedEffect
+        r.openChat(id)
+        r.loadChannelHistory(id)
         try {
             kotlinx.coroutines.awaitCancellation()
         } finally {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { repo.closeChat(id) }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { r.closeChat(id) }
         }
     }
 
@@ -255,7 +284,7 @@ fun TimelineScreen(
     // older posts. Only fires inside a channelFilter context — paginating the global
     // mixed feed by oldest-of-each-channel would touch many channels at once and serves
     // no real "I want to read this channel further back" intent.
-    if (channelFilter != null) {
+    if (channelFilter != null && tdlibRepo != null) {
         LaunchedEffect(listState, channelFilter) {
             androidx.compose.runtime.snapshotFlow {
                 val info = listState.layoutInfo
@@ -267,7 +296,7 @@ fun TimelineScreen(
                 .collect { (total, last) ->
                     if (total == 0 || last < 0) return@collect
                     if (last >= total - PAGINATION_PREFETCH_THRESHOLD) {
-                        repo.loadOlder(channelFilter)
+                        tdlibRepo.loadOlder(channelFilter)
                     }
                 }
         }
@@ -413,7 +442,7 @@ fun TimelineScreen(
     }
     var activeChannelSubscribers by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(channelFilter) {
-        activeChannelSubscribers = channelFilter?.let { repo.channelSubscribers(it) }
+        activeChannelSubscribers = channelFilter?.let { tdlibRepo?.channelSubscribers(it) }
     }
 
     // Warm the discussion-thread cache for posts that linger in the viewport. A cold
@@ -422,19 +451,21 @@ fun TimelineScreen(
     // background while the user is reading means the comments tap is effectively
     // instant for visible posts, and avoids burning bandwidth on posts the user just
     // scrolls past. CommentsRepository de-duplicates per anchor so this is safe to spam.
-    LaunchedEffect(listState, commentsRepo) {
-        androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
-            .distinctUntilChanged()
-            .debounce(700)
-            .collect { indices ->
-                val snapshot = feedItems
-                indices.flatMap { snapshot.getOrNull(it)?.posts().orEmpty() }
-                    .filter { it.commentCount != null }
-                    .forEach { post ->
-                        val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
-                        commentsRepo.prefetchThread(post.chatId, ids)
-                    }
-            }
+    if (commentsRepo != null) {
+        LaunchedEffect(listState, commentsRepo) {
+            androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+                .distinctUntilChanged()
+                .debounce(700)
+                .collect { indices ->
+                    val snapshot = feedItems
+                    indices.flatMap { snapshot.getOrNull(it)?.posts().orEmpty() }
+                        .filter { it.commentCount != null }
+                        .forEach { post ->
+                            val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
+                            commentsRepo.prefetchThread(post.chatId, ids)
+                        }
+                }
+        }
     }
 
     // Mark visible posts as viewed (server-side view counter increments). Two safeguards:
@@ -444,19 +475,21 @@ fun TimelineScreen(
     //     row → the FLOOD_WAIT we saw earlier.
     //   • distinctUntilChanged + debounce(500): a single drag scroll emits dozens of indices
     //     transitions; we only want to ack what stayed visible after the user paused.
-    LaunchedEffect(listState, repo) {
-        androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
-            .distinctUntilChanged()
-            .debounce(500)
-            .collect { indices ->
-                val snapshot = feedItems
-                if (snapshot.isEmpty() || indices.isEmpty()) return@collect
-                val grouped = indices.flatMap { idx -> snapshot.getOrNull(idx)?.posts().orEmpty() }
-                    .groupBy { it.chatId }
-                for ((chatId, group) in grouped) {
-                    repo.viewMessages(chatId, group.map { it.id })
+    if (tdlibRepo != null) {
+        LaunchedEffect(listState, tdlibRepo) {
+            androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+                .distinctUntilChanged()
+                .debounce(500)
+                .collect { indices ->
+                    val snapshot = feedItems
+                    if (snapshot.isEmpty() || indices.isEmpty()) return@collect
+                    val grouped = indices.flatMap { idx -> snapshot.getOrNull(idx)?.posts().orEmpty() }
+                        .groupBy { it.chatId }
+                    for ((chatId, group) in grouped) {
+                        tdlibRepo.viewMessages(chatId, group.map { it.id })
+                    }
                 }
-            }
+        }
     }
 
     // Frequently-changing state that the interactions lambdas need to read at the time
@@ -482,8 +515,9 @@ fun TimelineScreen(
         // tongue. We resolve the active target on every lookup so a post's render reacts
         // to a locale change as soon as the next recomposition reads translationsState.
         fun lookup(post: TimelinePost): dev.lyo.hortay.data.FormattedText? {
+            val t = translations ?: return null
             val map = translationsState.value
-            val lang = translations.currentTargetLanguage()
+            val lang = t.currentTargetLanguage()
             map[dev.lyo.hortay.data.TranslationsStore.Key(post.chatId, post.id, lang)]?.let { return it }
             post.albumMessageIds.forEach { id ->
                 map[dev.lyo.hortay.data.TranslationsStore.Key(post.chatId, id, lang)]?.let { return it }
@@ -542,21 +576,24 @@ fun TimelineScreen(
             onCopyClick = { post -> PostActions.copyText(context, post) },
             onOpenClick = { post -> PostActions.openInTelegram(context, post) },
             onTranslateClick = { post ->
+                val t = translations ?: return@PostInteractions
                 scope.launch {
                     val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
-                    translations.translate(post.chatId, ids.first())
+                    t.translate(post.chatId, ids.first())
                 }
             },
             onClearTranslationClick = { post ->
+                val t = translations ?: return@PostInteractions
                 val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
-                ids.forEach { translations.clear(post.chatId, it) }
+                ids.forEach { t.clear(post.chatId, it) }
             },
             isTranslated = { post -> lookup(post) != null },
             translationFor = ::lookup,
             onReactionToggle = { post, item ->
+                val ca = channelActions ?: return@PostInteractions
                 scope.launch {
                     val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
-                    channelActions.toggleReaction(
+                    ca.toggleReaction(
                         chatId = post.chatId,
                         messageId = target,
                         kind = item.kind,
@@ -752,12 +789,15 @@ fun TimelineScreen(
         }
     }
 
-    infoSheetChatId?.let { chatId ->
-        ChannelInfoSheet(
-            chatId = chatId,
-            actions = channelActions,
-            onDismiss = { infoSheetChatId = null },
-        )
+    val ca = channelActions
+    if (ca != null) {
+        infoSheetChatId?.let { chatId ->
+            ChannelInfoSheet(
+                chatId = chatId,
+                actions = ca,
+                onDismiss = { infoSheetChatId = null },
+            )
+        }
     }
 }
 

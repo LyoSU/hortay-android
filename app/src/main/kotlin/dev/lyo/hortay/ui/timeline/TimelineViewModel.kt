@@ -4,7 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.lyo.hortay.data.BookmarkStore
-import dev.lyo.hortay.data.PostsRepository
+import dev.lyo.hortay.data.FeedSource
 import dev.lyo.hortay.data.TimelinePost
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
  * [pendingNew] until the user explicitly reveals it (pill tap or pull-to-refresh).
  */
 class TimelineViewModel(
-    private val repo: PostsRepository,
+    private val repo: FeedSource,
     private val bookmarks: BookmarkStore,
 ) : ViewModel() {
 

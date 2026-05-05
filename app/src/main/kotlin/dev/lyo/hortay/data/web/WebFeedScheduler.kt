@@ -73,10 +73,10 @@ class WebFeedScheduler(
             // First refresh fires immediately on resume. The staleness window
             // inside WebFeedSource means a recent pull-to-refresh won't double
             // up — the coroutine just falls through.
-            feedSource.refresh(force = false).join()
+            feedSource.refreshAsync(force = false).join()
             while (true) {
                 delay(tier2IntervalMs)
-                feedSource.refresh(force = false).join()
+                feedSource.refreshAsync(force = false).join()
             }
         }.also {
             Log.i(TAG, "tier-2 scheduler started (${tier2IntervalMs / 1000}s interval)")

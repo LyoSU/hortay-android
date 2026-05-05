@@ -18,45 +18,36 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
-import dev.lyo.hortay.R
-import dev.lyo.hortay.ui.feed.SimpleFeed
 import dev.lyo.hortay.ui.main.FloatingNavBar
 import dev.lyo.hortay.ui.main.NavTab
 import dev.lyo.hortay.ui.settings.SettingsScreen
+import dev.lyo.hortay.ui.timeline.TimelineScreen
 import kotlinx.coroutines.launch
 import java.util.Locale
 
 /**
- * Top-level container for guest (anonymous) reading mode. Mirrors
- * [dev.lyo.hortay.ui.main.MainScaffold] structure exactly: same [FloatingNavBar]
- * at the bottom, same four [NavTab] entries, same [AnimatedContent] tab
- * transition. Differs only in which Composable each tab dispatches to:
+ * Top-level container for guest (anonymous) reading mode. Uses the SAME
+ * Composables as [dev.lyo.hortay.ui.main.MainScaffold]:
+ *   - [FloatingNavBar] / [NavTab] — same bottom nav, same four tabs
+ *   - [TimelineScreen] — same feed renderer, driven by [WebFeedSource] via the
+ *     shared [dev.lyo.hortay.data.FeedSource] interface; TDLib-only services
+ *     (commentsRepo, folders, translations, channelActions, tdlibRepo) are
+ *     passed null so the screen hides those affordances cleanly.
+ *   - [SettingsScreen] — same screen, same SectionLabel / SettingsRow primitives;
+ *     guest-mode parameters (onSignIn, onClearWebCache) flip the rendered set
+ *     of sections without forking the screen.
  *
- *   - Feed     → [SimpleFeed] reading [WebFeedSource.posts]
- *   - Channels → [WebChannelsScreen] (subscribed list; channel data shape
- *               differs from TDLib's chat list, kept separate)
- *   - Saved    → [SimpleFeed] reading [WebRepository.observeBookmarked]
- *   - Profile  → [SettingsScreen] in guest mode (sign-in CTA + clear-cache)
- *
- * Web-specific files removed during the unification: WebTimelineScreen,
- * WebSavedScreen, WebSettingsScreen, WebPostCard, WebFeedEntry — replaced by
- * shared composables and types.
+ * Web-specific UI files remaining: this scaffold (mode router) and
+ * [WebChannelsScreen] / [AddChannelSheet] (channel-list + smart-paste flow
+ * tied to the web subscription store; nothing equivalent exists in TDLib mode).
  */
 @Composable
 fun WebModeScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
     var addSheetOpen by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-
     val locale = remember { Locale.getDefault().language.lowercase() }
-    val posts by graph.webFeedSource.posts.collectAsStateWithLifecycle()
-    val refreshState by graph.webFeedSource.refreshState.collectAsStateWithLifecycle()
-    val isRefreshing = refreshState is dev.lyo.hortay.data.web.WebFeedSource.RefreshState.Refreshing
-    val bookmarked by graph.webRepository.observeBookmarked()
-        .collectAsStateWithLifecycle(initialValue = kotlinx.collections.immutable.persistentListOf())
 
     BackHandler(enabled = selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
@@ -80,19 +71,13 @@ fun WebModeScaffold(graph: AppGraph) {
                 modifier = Modifier.fillMaxSize(),
             ) { tab ->
                 when (tab) {
-                    NavTab.Feed -> SimpleFeed(
-                        title = stringResource(R.string.web_feed_title),
-                        posts = posts,
-                        isRefreshing = isRefreshing,
-                        isInitialEmpty = false,
-                        emptyText = stringResource(R.string.web_empty_posts),
-                        loadingText = stringResource(R.string.web_loading),
-                        onRefresh = { scope.launch { graph.webFeedSource.refresh(force = true) } },
+                    NavTab.Feed -> TimelineScreen(
+                        feed = graph.webFeedSource,
+                        bookmarks = graph.bookmarkStore,
                         contentPadding = padding,
-                        actionIconSymbol = "add",
-                        actionIconContentDescription = stringResource(R.string.web_add_channel),
-                        onActionClick = { addSheetOpen = true },
-                        showBrand = true,
+                        showOnlyBookmarked = false,
+                        channelFilter = null,
+                        onChannelFilterChange = { /* no per-channel filter in guest mode */ },
                     )
 
                     NavTab.Channels -> WebChannelsScreen(
@@ -101,15 +86,13 @@ fun WebModeScaffold(graph: AppGraph) {
                         onChannelClick = { selectedTab = NavTab.Feed },
                     )
 
-                    NavTab.Saved -> SimpleFeed(
-                        title = stringResource(R.string.web_saved_title),
-                        posts = bookmarked,
-                        isRefreshing = false,
-                        isInitialEmpty = false,
-                        emptyText = stringResource(R.string.web_empty_saved),
-                        loadingText = stringResource(R.string.web_loading),
-                        onRefresh = { /* bookmarked has no refresh */ },
+                    NavTab.Saved -> TimelineScreen(
+                        feed = graph.webFeedSource,
+                        bookmarks = graph.bookmarkStore,
                         contentPadding = padding,
+                        showOnlyBookmarked = true,
+                        channelFilter = null,
+                        onChannelFilterChange = { /* no-op: guest mode */ },
                     )
 
                     NavTab.Profile -> SettingsScreen(

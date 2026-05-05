@@ -179,7 +179,8 @@ fun MainScaffold(graph: AppGraph) {
         ) { tab ->
             when (tab) {
                 NavTab.Feed -> TimelineScreen(
-                    repo = graph.postsRepository,
+                    feed = graph.postsRepository,
+                    tdlibRepo = graph.postsRepository,
                     commentsRepo = graph.commentsRepository,
                     folders = graph.chatFoldersRepository,
                     translations = graph.translations,
@@ -204,7 +205,8 @@ fun MainScaffold(graph: AppGraph) {
                     },
                 )
                 NavTab.Saved -> TimelineScreen(
-                    repo = graph.postsRepository,
+                    feed = graph.postsRepository,
+                    tdlibRepo = graph.postsRepository,
                     commentsRepo = graph.commentsRepository,
                     folders = graph.chatFoldersRepository,
                     translations = graph.translations,

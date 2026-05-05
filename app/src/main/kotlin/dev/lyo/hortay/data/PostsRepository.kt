@@ -56,7 +56,7 @@ class PostsRepository(
     private val snapshotStore: TimelineSnapshotStore,
     private val foreground: kotlinx.coroutines.flow.StateFlow<Boolean>,
     private val res: StringResolver,
-) {
+) : FeedSource {
 
     private val refreshMutex = Mutex()
     private val chatCache = ConcurrentHashMap<Long, TdApi.Chat>()
@@ -94,7 +94,7 @@ class PostsRepository(
     private val interactionFlushScheduled = AtomicBoolean(false)
 
     private val _posts = MutableStateFlow<PersistentList<TimelinePost>>(persistentListOf())
-    val posts: StateFlow<PersistentList<TimelinePost>> = _posts.asStateFlow()
+    override val posts: StateFlow<PersistentList<TimelinePost>> = _posts.asStateFlow()
 
     init {
         // Live feed: any new channel post arrives via UpdateNewMessage and is folded in.
@@ -221,7 +221,12 @@ class PostsRepository(
      * the punch wins — there's no point spending GetMessage round-trips to recreate
      * the same data we already have, fresher.
      */
-    suspend fun restoreFromSnapshot(): Int {
+    override suspend fun restoreFromSnapshot() {
+        restoreFromSnapshotInternal()
+    }
+
+    /** Returns the number of posts restored — exposed for callers that care. */
+    suspend fun restoreFromSnapshotInternal(): Int {
         if (_posts.value.isNotEmpty()) return 0
         val snapshot = runCatching { snapshotStore.load() }
             .warnUnlessCancelled(TAG, "loadSnapshot")
@@ -271,24 +276,27 @@ class PostsRepository(
     // albums are 2–6 members, so 30 is enough headroom for the latest few channel
     // posts to arrive whole. GetChatHistory itself returns members one-per-message, so
     // a 5-photo album consumes 5 of the 30 slots.
-    suspend fun refresh(limitPerChannel: Int = 30): Result<Unit> = refreshMutex.withLock {
-        runCatching { refreshLocked(limitPerChannel) }
-            .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
-            .warnUnlessCancelled("refresh")
-            .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_refresh_feed, connection.value) }
+    override suspend fun refresh() {
+        refreshMutex.withLock {
+            runCatching { refreshLocked(REFRESH_DEFAULT_LIMIT) }
+                .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
+                .warnUnlessCancelled("refresh")
+                .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_refresh_feed, connection.value) }
+        }
     }
 
     /**
-     * Refresh only if the last successful refresh is older than [maxAgeMs]. Reuses the same
-     * mutex as [refresh] so a concurrent pull-to-refresh isn't stomped. A skip returns
-     * [Result.success] — callers shouldn't treat "still fresh" as a failure.
+     * Refresh only if the last successful refresh is older than [REFRESH_STALE_MS].
+     * Reuses the same mutex as [refresh] so a concurrent pull-to-refresh isn't stomped.
      */
-    suspend fun refreshIfStale(maxAgeMs: Long = 60_000L): Result<Unit> = refreshMutex.withLock {
-        if (System.currentTimeMillis() - lastRefreshAtMs <= maxAgeMs) return@withLock Result.success(Unit)
-        runCatching { refreshLocked(REFRESH_DEFAULT_LIMIT) }
-            .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
-            .warnUnlessCancelled("refreshIfStale")
-            .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_refresh_feed, connection.value) }
+    override suspend fun refreshIfStale() {
+        refreshMutex.withLock {
+            if (System.currentTimeMillis() - lastRefreshAtMs <= REFRESH_STALE_MS) return@withLock
+            runCatching { refreshLocked(REFRESH_DEFAULT_LIMIT) }
+                .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
+                .warnUnlessCancelled("refreshIfStale")
+                .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_refresh_feed, connection.value) }
+        }
     }
 
     /**
@@ -979,6 +987,11 @@ class PostsRepository(
         const val MAX_LOAD_CHATS_PAGES = 10
         const val MAX_FEED_SIZE = 1_000
         const val REFRESH_DEFAULT_LIMIT = 30
+        // Mirrors the FeedSource.refreshIfStale window: skip the round-trip
+        // when last successful refresh was within the last minute. 60s tracks
+        // the WebFeedSource staleness gate so both modes feel equally responsive
+        // to foreground re-entry.
+        const val REFRESH_STALE_MS = 60_000L
         // ~600ms is what the official Telegram client uses to coalesce album bursts.
         // Shorter loses tail members on slow networks; longer makes albums feel laggy.
         const val ALBUM_DEBOUNCE_MS = 600L
