@@ -27,14 +27,32 @@ import dev.lyo.hortay.data.StorageUsage
 import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.launch
 
+/**
+ * Single Settings screen used by both TDLib and guest (anonymous) modes.
+ *
+ * Mode is encoded by which optional services are passed:
+ *   - [stats] non-null + [onLogout] non-null → authenticated TDLib mode.
+ *     Renders Traffic + Storage cards backed by [StatsRepository], a Logout
+ *     row, and the version row.
+ *   - [stats] null + [onSignIn] non-null + [onClearWebCache] non-null → guest
+ *     mode. Renders a "Sign in to Telegram" CTA, a guest-mode "Clear cache"
+ *     row that wipes web.db, a privacy footer, and the version row.
+ *
+ * Why a single Composable rather than two: section labels, dividers, the
+ * SettingsRow chip and the TopAppBar are identical across modes. Branching at
+ * the data-source level (which sections render) keeps every visual primitive
+ * in one place.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     settings: SettingsStore,
-    stats: StatsRepository,
+    stats: StatsRepository?,
     contentPadding: PaddingValues,
-    onLogout: () -> Unit,
+    onLogout: (() -> Unit)? = null,
     onOpenWebDebug: () -> Unit = {},
+    onSignIn: (() -> Unit)? = null,
+    onClearWebCache: (suspend () -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -45,10 +63,11 @@ fun SettingsScreen(
     var clearing by remember { mutableStateOf(false) }
 
     suspend fun refreshStats() {
-        network = stats.networkUsage()
-        storage = stats.storageUsage()
+        val s = stats ?: return
+        network = s.networkUsage()
+        storage = s.storageUsage()
     }
-    LaunchedEffect(Unit) { refreshStats() }
+    LaunchedEffect(stats) { refreshStats() }
 
     Scaffold(
         modifier = Modifier
@@ -81,45 +100,87 @@ fun SettingsScreen(
                 ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SectionLabel(stringResource(R.string.settings_section_traffic))
-            TrafficCard(
-                network = network,
-                onReset = {
-                    scope.launch {
-                        stats.resetTrafficStats()
-                        refreshStats()
-                    }
-                },
-            )
+            // ---- TDLib-mode-only: traffic & storage cards backed by StatsRepository ----
+            if (stats != null) {
+                SectionLabel(stringResource(R.string.settings_section_traffic))
+                TrafficCard(
+                    network = network,
+                    onReset = {
+                        scope.launch {
+                            stats.resetTrafficStats()
+                            refreshStats()
+                        }
+                    },
+                )
 
-            Spacer(Modifier.height(8.dp))
-            SectionLabel(stringResource(R.string.settings_section_storage))
-            StorageCard(
-                storage = storage,
-                clearing = clearing,
-                onClearCache = {
-                    scope.launch {
-                        clearing = true
-                        stats.clearCache()
-                        // Coil's disk cache (decoded JPEGs from minithumbs and Telegram
-                        // file IDs) is separate from TDLib's tdlib-files/. Clear both so
-                        // the user sees the actual freed space, not a leftover.
-                        SingletonImageLoader.get(context).diskCache?.clear()
-                        refreshStats()
-                        clearing = false
-                    }
-                },
-            )
+                Spacer(Modifier.height(8.dp))
+                SectionLabel(stringResource(R.string.settings_section_storage))
+                StorageCard(
+                    storage = storage,
+                    clearing = clearing,
+                    onClearCache = {
+                        scope.launch {
+                            clearing = true
+                            stats.clearCache()
+                            // Coil's disk cache lives outside TDLib's filesDir; clear both
+                            // so the user sees the actual freed space.
+                            SingletonImageLoader.get(context).diskCache?.clear()
+                            refreshStats()
+                            clearing = false
+                        }
+                    },
+                )
+            }
 
+            // ---- Guest-mode-only: web.db cache clear + privacy footer -----------------
+            if (onClearWebCache != null) {
+                Spacer(Modifier.height(8.dp))
+                SectionLabel(stringResource(R.string.web_settings_clear_cache))
+                SettingsRow(
+                    symbol = "delete",
+                    title = stringResource(
+                        if (clearing) R.string.web_settings_clearing
+                        else R.string.web_settings_clear_cache,
+                    ),
+                    subtitle = stringResource(R.string.web_settings_clear_cache_helper),
+                    onClick = {
+                        if (!clearing) scope.launch {
+                            clearing = true
+                            onClearWebCache()
+                            clearing = false
+                        }
+                    },
+                )
+
+                Spacer(Modifier.height(8.dp))
+                SectionLabel(stringResource(R.string.web_settings_privacy_title))
+                SettingsRow(
+                    symbol = "shield",
+                    title = stringResource(R.string.web_settings_privacy_title),
+                    subtitle = stringResource(R.string.web_settings_privacy_body),
+                )
+            }
+
+            // ---- Account section: logout (TDLib) OR sign-in CTA (guest) ---------------
             Spacer(Modifier.height(8.dp))
             SectionLabel(stringResource(R.string.settings_section_account))
-            SettingsRow(
-                symbol = "logout",
-                title = stringResource(R.string.settings_logout_title),
-                subtitle = stringResource(R.string.settings_logout_subtitle),
-                tint = MaterialTheme.colorScheme.error,
-                onClick = { confirmLogout = true },
-            )
+            if (onLogout != null) {
+                SettingsRow(
+                    symbol = "logout",
+                    title = stringResource(R.string.settings_logout_title),
+                    subtitle = stringResource(R.string.settings_logout_subtitle),
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = { confirmLogout = true },
+                )
+            }
+            if (onSignIn != null) {
+                SettingsRow(
+                    symbol = "login",
+                    title = stringResource(R.string.web_settings_signin),
+                    subtitle = stringResource(R.string.web_settings_signin_helper),
+                    onClick = onSignIn,
+                )
+            }
 
             Spacer(Modifier.height(8.dp))
             SectionLabel(stringResource(R.string.settings_section_about))
@@ -145,7 +206,7 @@ fun SettingsScreen(
         }
     }
 
-    if (confirmLogout) {
+    if (confirmLogout && onLogout != null) {
         AlertDialog(
             onDismissRequest = { confirmLogout = false },
             confirmButton = {

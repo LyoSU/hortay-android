@@ -18,29 +18,32 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
+import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.feed.SimpleFeed
 import dev.lyo.hortay.ui.main.FloatingNavBar
 import dev.lyo.hortay.ui.main.NavTab
+import dev.lyo.hortay.ui.settings.SettingsScreen
 import kotlinx.coroutines.launch
 import java.util.Locale
 
 /**
- * Top-level scaffold for guest (anonymous) reading mode. Mirrors
- * [dev.lyo.hortay.ui.main.MainScaffold] structure exactly: same
- * [FloatingNavBar] at the bottom, same [AnimatedContent] tab transition,
- * same set of [NavTab] entries — so the user can't visually tell they're
- * in a different mode beyond what's actually different (no chats, no auth
- * notifications, no FCM badge).
+ * Top-level container for guest (anonymous) reading mode. Mirrors
+ * [dev.lyo.hortay.ui.main.MainScaffold] structure exactly: same [FloatingNavBar]
+ * at the bottom, same four [NavTab] entries, same [AnimatedContent] tab
+ * transition. Differs only in which Composable each tab dispatches to:
  *
- * Tab mapping in guest mode:
- *   - Feed     → [WebTimelineScreen]
- *   - Channels → [WebChannelsScreen] (subscribed list)
- *   - Saved    → [WebSavedScreen] (bookmarked posts; empty until wired)
- *   - Profile  → [WebSettingsSheet] launched as a screen-style overlay,
- *               since guest mode has no profile to show.
+ *   - Feed     → [SimpleFeed] reading [WebFeedSource.posts]
+ *   - Channels → [WebChannelsScreen] (subscribed list; channel data shape
+ *               differs from TDLib's chat list, kept separate)
+ *   - Saved    → [SimpleFeed] reading [WebRepository.observeBookmarked]
+ *   - Profile  → [SettingsScreen] in guest mode (sign-in CTA + clear-cache)
  *
- * Add-channel CTA lives on the Feed top-app-bar — same affordance position
- * as TDLib mode's "compose" button would land if/when we implement posting.
+ * Web-specific files removed during the unification: WebTimelineScreen,
+ * WebSavedScreen, WebSettingsScreen, WebPostCard, WebFeedEntry — replaced by
+ * shared composables and types.
  */
 @Composable
 fun WebModeScaffold(graph: AppGraph) {
@@ -49,6 +52,11 @@ fun WebModeScaffold(graph: AppGraph) {
     val scope = rememberCoroutineScope()
 
     val locale = remember { Locale.getDefault().language.lowercase() }
+    val posts by graph.webFeedSource.posts.collectAsStateWithLifecycle()
+    val refreshState by graph.webFeedSource.refreshState.collectAsStateWithLifecycle()
+    val isRefreshing = refreshState is dev.lyo.hortay.data.web.WebFeedSource.RefreshState.Refreshing
+    val bookmarked by graph.webRepository.observeBookmarked()
+        .collectAsStateWithLifecycle(initialValue = kotlinx.collections.immutable.persistentListOf())
 
     BackHandler(enabled = selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
@@ -72,34 +80,44 @@ fun WebModeScaffold(graph: AppGraph) {
                 modifier = Modifier.fillMaxSize(),
             ) { tab ->
                 when (tab) {
-                    NavTab.Feed -> WebTimelineScreen(
-                        feedSource = graph.webFeedSource,
-                        emojiResolver = graph.webCustomEmoji,
+                    NavTab.Feed -> SimpleFeed(
+                        title = stringResource(R.string.web_feed_title),
+                        posts = posts,
+                        isRefreshing = isRefreshing,
+                        isInitialEmpty = false,
+                        emptyText = stringResource(R.string.web_empty_posts),
+                        loadingText = stringResource(R.string.web_loading),
+                        onRefresh = { scope.launch { graph.webFeedSource.refresh(force = true) } },
                         contentPadding = padding,
-                        onAddChannel = { addSheetOpen = true },
+                        actionIconSymbol = "add",
+                        actionIconContentDescription = stringResource(R.string.web_add_channel),
+                        onActionClick = { addSheetOpen = true },
                     )
 
                     NavTab.Channels -> WebChannelsScreen(
                         graph = graph,
                         contentPadding = padding,
-                        onChannelClick = {
-                            // Future: per-channel filter on feed. For now jump back
-                            // to feed tab — user can scroll to find that channel's posts.
-                            selectedTab = NavTab.Feed
-                        },
+                        onChannelClick = { selectedTab = NavTab.Feed },
                     )
 
-                    NavTab.Saved -> WebSavedScreen(
-                        graph = graph,
+                    NavTab.Saved -> SimpleFeed(
+                        title = stringResource(R.string.web_saved_title),
+                        posts = bookmarked,
+                        isRefreshing = false,
+                        isInitialEmpty = false,
+                        emptyText = stringResource(R.string.web_empty_saved),
+                        loadingText = stringResource(R.string.web_loading),
+                        onRefresh = { /* bookmarked has no refresh */ },
                         contentPadding = padding,
                     )
 
-                    NavTab.Profile -> WebSettingsScreen(
-                        graph = graph,
+                    NavTab.Profile -> SettingsScreen(
+                        settings = graph.settingsStore,
+                        stats = null,
                         contentPadding = padding,
-                        onSignIn = {
-                            scope.launch { graph.guestMode.setGuest(false) }
-                        },
+                        onLogout = null,
+                        onSignIn = { scope.launch { graph.guestMode.setGuest(false) } },
+                        onClearWebCache = { graph.webRepository.clearAllCache() },
                     )
                 }
             }
