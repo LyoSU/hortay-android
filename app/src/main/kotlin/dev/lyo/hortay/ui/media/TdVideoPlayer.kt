@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.MediaState
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -48,29 +49,40 @@ fun TdVideoPlayer(
     showControls: Boolean = true,
     muted: Boolean = false,
     priority: DownloadPriority = DownloadPriority.VisibleMedia,
+    /**
+     * Remote-URL fallback used by web (anonymous) mode. When [fileId] is 0
+     * (placeholder for "no TDLib file") and [remoteUrl] is set, ExoPlayer
+     * streams the URL directly via its built-in HTTP DataSource — bypassing
+     * the [MediaCache] download orchestration that has nothing to do here.
+     * Lets PostBody's video block render guest-mode videos through the same
+     * Composable that TDLib mode uses.
+     */
+    remoteUrl: String? = null,
 ) {
     val cache = LocalMediaCache.current
     val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val coScope = rememberCoroutineScope()
+    val isRemote = fileId == 0 && remoteUrl != null
 
     // Skip starting the download while the host list is mid-scroll — see [LocalScrollGate].
+    // Web-mode (isRemote) skips the entire MediaCache pathway: ExoPlayer handles
+    // its own buffering against the URL, and there's no fileId to ensure() anyway.
     val gate = LocalScrollGate.current
     val gateOpen = gate.value
-    LaunchedEffect(fileId, priority, gateOpen) {
-        if (gateOpen) cache.ensure(fileId, priority)
+    LaunchedEffect(fileId, priority, gateOpen, isRemote) {
+        if (gateOpen && !isRemote) cache.ensure(fileId, priority)
     }
-    // Mirror the dispose-cancels-download contract from TdMediaImage. Without this, a
-    // video that scrolled off-screen keeps holding one of TDLib's ~4 per-DC download
-    // slots until it finishes (CancelDownloadFile honours partial bytes either way, so
-    // a re-mount picks up where it left off). Keyed on fileId so a quality switch
-    // releases the slot of the old file; the surrounding ExoPlayer-level DisposableEffect
-    // is keyed on the player and would only run on full unmount.
-    DisposableEffect(fileId) {
-        onDispose { cache.cancelDeferred(fileId) }
+    // Mirror the dispose-cancels-download contract from TdMediaImage. Web-mode
+    // has no MediaCache slot to release.
+    DisposableEffect(fileId, isRemote) {
+        onDispose { if (!isRemote) cache.cancelDeferred(fileId) }
     }
-    val mediaState by cache.observe(fileId).collectAsStateWithLifecycle()
-    val showLoadingOverlay = rememberDeferredLoading(state = mediaState, key = fileId)
+    val mediaState by remember(fileId, isRemote) {
+        if (isRemote) MutableStateFlow(MediaState.Idle)
+        else cache.observe(fileId)
+    }.collectAsStateWithLifecycle()
+    val showLoadingOverlay = rememberDeferredLoading(state = mediaState, key = fileId) && !isRemote
 
     // Acquire from the shared pool. Pooled instances arrive in IDLE state with empty
     // playlist (see ExoPlayerPool.release); the apply-block here re-applies the
@@ -98,12 +110,17 @@ fun TdVideoPlayer(
     // different quality (different fileId → new MediaState.Ready with a new path).
     // We preserve playback position across the swap so a quality flip resumes
     // mid-frame instead of restarting from zero.
-    LaunchedEffect(mediaState, fileId) {
-        val ready = mediaState as? MediaState.Ready ?: return@LaunchedEffect
-        if (ready.path.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(mediaState, fileId, isRemote, remoteUrl) {
+        val uri: String = if (isRemote) {
+            remoteUrl ?: return@LaunchedEffect
+        } else {
+            val ready = mediaState as? MediaState.Ready ?: return@LaunchedEffect
+            if (ready.path.isEmpty()) return@LaunchedEffect
+            "file://${ready.path}"
+        }
         val resumeAt = exoPlayer.currentPosition.coerceAtLeast(0L)
         val wasPlaying = exoPlayer.playWhenReady
-        exoPlayer.setMediaItem(MediaItem.fromUri("file://${ready.path}"))
+        exoPlayer.setMediaItem(MediaItem.fromUri(uri))
         exoPlayer.prepare()
         if (resumeAt > 0L) exoPlayer.seekTo(resumeAt)
         exoPlayer.playWhenReady = wasPlaying

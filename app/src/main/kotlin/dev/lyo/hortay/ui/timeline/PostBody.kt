@@ -356,6 +356,7 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
             val video = item as AlbumItem.Video
             TdVideoPlayer(
                 fileId = video.playbackFileId,
+                remoteUrl = video.media.remoteUrl,
                 autoPlay = true,
                 autoLoop = true,
                 showControls = false,
@@ -511,6 +512,7 @@ private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<A
         if (revealed) {
             TdVideoPlayer(
                 fileId = content.playbackFileId,
+                remoteUrl = content.media.remoteUrl,
                 autoPlay = true,
                 autoLoop = true,
                 showControls = false,

@@ -649,10 +649,17 @@ fun TimelineScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    if (!showOnlyBookmarked && channelFilter == null) {
-                        val tabs = remember(foldersList) {
-                            foldersList.map { FolderTab(it.id, it.name?.text?.text.orEmpty()) }
-                        }
+                    // FoldersBar is hidden when there's nothing to switch between:
+                    //   - User has no custom folders AND no archive
+                    //   - Or we're in showOnlyBookmarked / channelFilter context
+                    //   - Or we're in guest mode (folders == null → empty list)
+                    // Showing a single "All" tab on its own is a vestigial control
+                    // that takes vertical space without giving the user a choice.
+                    val tabs = remember(foldersList) {
+                        foldersList.map { FolderTab(it.id, it.name?.text?.text.orEmpty()) }
+                    }
+                    val hasFolderUi = tabs.isNotEmpty() || archivedChatIds.isNotEmpty()
+                    if (!showOnlyBookmarked && channelFilter == null && hasFolderUi) {
                         FoldersBar(
                             selected = scope_filter,
                             folders = tabs,
