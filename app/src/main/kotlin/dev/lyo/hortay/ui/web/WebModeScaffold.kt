@@ -9,7 +9,11 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,7 +22,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.AppGraph
+import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.FloatingNavBar
 import dev.lyo.hortay.ui.main.NavTab
 import dev.lyo.hortay.ui.settings.SettingsScreen
@@ -60,6 +68,35 @@ fun WebModeScaffold(graph: AppGraph) {
                 selected = selectedTab,
                 onSelect = { tab -> selectedTab = tab },
             )
+        },
+        floatingActionButton = {
+            // Primary "add channel" action. Surfaced on tabs where adding a
+            // channel is contextually meaningful — Feed (where the user reads)
+            // and Channels (where the list of subscriptions lives). Settings
+            // and Saved hide it: clicking it there would feel context-mismatched.
+            // ExtendedFab (with text label) on the empty-channels case so the
+            // first-time user can't miss it; collapses to icon-only once posts
+            // exist and the affordance becomes secondary.
+            if (selectedTab == NavTab.Feed || selectedTab == NavTab.Channels) {
+                val hasChannels = graph.webFeedSource.channels
+                    // Synchronous read: StateFlow value — no recomposition trigger.
+                    .value.any { it.isSubscribed }
+                ExtendedFloatingActionButton(
+                    onClick = { addSheetOpen = true },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    expanded = !hasChannels,
+                    icon = {
+                        Symbol(
+                            name = "add",
+                            contentDescription = stringResource(R.string.web_add_channel),
+                            size = 24.dp,
+                        )
+                    },
+                    text = { Text(stringResource(R.string.web_add_channel)) },
+                    modifier = Modifier.padding(bottom = 88.dp),
+                )
+            }
         },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
