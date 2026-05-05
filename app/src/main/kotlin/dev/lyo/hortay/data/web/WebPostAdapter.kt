@@ -472,7 +472,14 @@ object WebPostAdapter {
         siteName = p.siteName.orEmpty(),
         title = p.title.orEmpty(),
         description = p.description.orEmpty(),
-        image = p.imageUrl?.let { TdMedia(fileId = null, width = 0, height = 0) },
+        // The previous implementation dropped `it` (the parsed URL) and returned
+        // a TdMedia with no fileId AND no remoteUrl — Coil had nothing to fetch
+        // and `WebPreviewCard` rendered an empty 72dp box where the thumbnail
+        // should have been. Pass the URL through so [TdMediaImage]'s remote-URL
+        // fast path can serve the image.
+        image = p.imageUrl?.let { url ->
+            TdMedia(fileId = null, width = 0, height = 0, remoteUrl = url)
+        },
     )
 
     private fun WebReaction.toReactionItem(): ReactionItem {

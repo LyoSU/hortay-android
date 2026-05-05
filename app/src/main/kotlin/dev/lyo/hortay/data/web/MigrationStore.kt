@@ -55,7 +55,15 @@ class MigrationStore(context: Context) {
     }
 
     private companion object {
-        val KEY_PROPOSAL_SHOWN = booleanPreferencesKey("guest_migration_proposal_shown")
+        // Bumped to v2 once we discovered the bug where evaluate() prematurely
+        // called markProposalShown() when the guest-subscription set happened
+        // to be empty at the moment of the first auth.Ready transition. Users
+        // affected by that bug had `guest_migration_proposal_shown=true` set
+        // forever; bumping the key gives everyone a fresh, post-fix evaluation
+        // exactly once. Old keys are abandoned (DataStore preferences are
+        // small enough that a few stale booleans don't matter — no need to
+        // migrate / delete them explicitly).
+        val KEY_PROPOSAL_SHOWN = booleanPreferencesKey("guest_migration_proposal_shown_v2")
         val KEY_MIGRATED = stringSetPreferencesKey("guest_migration_migrated_usernames")
     }
 }

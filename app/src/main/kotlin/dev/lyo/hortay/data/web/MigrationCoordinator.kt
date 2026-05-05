@@ -88,12 +88,14 @@ class MigrationCoordinator(
             .filter { it.isNotBlank() && it !in alreadyMigrated }
             .map { it.lowercase() }
             .distinct()
-        if (candidates.isEmpty()) {
-            // Nothing to propose — mark shown so we don't repeatedly hit the
-            // DataStore on every auth.Ready emission.
-            migrationStore.markProposalShown()
-            return
-        }
+        // Empty candidates → just don't show. We deliberately do NOT call
+        // markProposalShown() here: the user may sign in (auth → Ready) before
+        // they've added any guest-mode subscriptions and then add some later.
+        // If we'd marked shown now, that future "subscribe-then-relog" path
+        // would never surface the proposal. The DataStore lookup is cheap, so
+        // re-evaluating on each Ready transition while the set is still empty
+        // is the safer default.
+        if (candidates.isEmpty()) return
         _pendingProposal.value = candidates
     }
 
