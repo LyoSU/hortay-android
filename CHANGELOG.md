@@ -8,17 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Fixed
-- **Guest-mode TGS custom emojis: alpha-channel black flash** — extends the
-  earlier first-paint fix. Lottie's default `RenderMode.AUTOMATIC` switches
-  between hardware and software canvases on the fly depending on which
-  features the next frame needs; each switch allocates a fresh Canvas whose
-  alpha layer isn't blitted yet for a frame, painting a solid-colour square
-  under the actual sticker glyph. In dark theme that lands as a black flash —
-  exactly the "alpha problem" symptom. Pinned to `RenderMode.HARDWARE` so the
-  renderer stays on a single GPU-backed ARGB_8888 canvas for the lifetime of
-  the composition (also cheaper for small inline emojis, no perf trade). Also
-  enabled `applyOpacityToLayers` so per-layer alpha in fade-in TGS intros
-  resolves cleanly instead of compositing into the parent surface as a halo.
 - **Guest-mode TGS custom emojis flickered black on first render** (mostly
   visible in dark mode). Cause: the static-WEBP thumbnail was hidden the
   instant `LottieComposition` became non-null, leaving a 1–2 frame gap before
