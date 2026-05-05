@@ -20,6 +20,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.airbnb.lottie.LottieComposition
 import com.airbnb.lottie.LottieProperty
+import com.airbnb.lottie.RenderMode
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieClipSpec
 import com.airbnb.lottie.compose.LottieConstants
@@ -158,12 +159,29 @@ fun LottieStickerView(
                 progress = { progress },
                 modifier = Modifier.fillMaxSize(),
                 dynamicProperties = dynamicProperties,
-                // safeMode skips problem frames silently instead of throwing /
-                // returning a crashed canvas. A small minority of TGS payloads
-                // Telegram serves rely on Lottie features the Android port
-                // implements with edge cases; without safeMode the crashed
-                // frame paints as a solid colour, which read to the user as
-                // "TGS broken / black background".
+                // RenderMode.AUTOMATIC (the default) flips between hardware and
+                // software canvases mid-stream depending on which Lottie features
+                // the next frame uses. Each flip allocates a fresh Canvas; for a
+                // brief window the fresh Canvas hasn't blitted its alpha layer
+                // yet and paints a solid-colour square underneath the actual
+                // sticker glyph. In dark theme this lands as a black flash —
+                // exactly the "alpha-channel" symptom the user reported. HARDWARE
+                // pins the renderer to a single GPU-backed ARGB_8888 canvas for
+                // the lifetime of the composition; for the small (≤28dp) inline
+                // emojis this view is used for, hardware paths are also strictly
+                // cheaper than software rasterisation, so there's no perf trade.
+                renderMode = RenderMode.HARDWARE,
+                // applyOpacityToLayers forces per-layer alpha resolution before
+                // compositing. Without it, layer-level opacity in some Telegram
+                // TGS payloads (intro animations that fade in from 0 alpha)
+                // composites into the parent surface rather than being clipped
+                // to the layer — visible as a square halo in the layer's bounds.
+                applyOpacityToLayers = true,
+                // safeMode skips problem frames silently instead of throwing.
+                // Defensive: a small minority of TGS payloads exercise Lottie
+                // features the Android port handles with edge cases; without
+                // safeMode the crashed frame paints as a solid colour, which
+                // reads as "TGS broken / black background".
                 safeMode = true,
             )
         }
