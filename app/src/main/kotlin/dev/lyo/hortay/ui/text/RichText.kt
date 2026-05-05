@@ -138,21 +138,77 @@ private fun FormattedText.blockQuoteRanges(): List<IntRange> {
 /**
  * Slice [source] into alternating non-quote / quote pieces. Each piece is a
  * [FormattedText] whose own spans are re-anchored relative to the slice start.
+ *
+ * Boundary trim: at quote↔non-quote junctions we keep AT MOST ONE `\n` of the
+ * paragraph-break run that the walker injected around the block element. The
+ * normaliser caps consecutive newlines at 2, but Compose's Text composable
+ * renders `text\n\n` as THREE lines tall (the second `\n` reserves an empty
+ * line) — visually two blank rows above the quote where HTML browsers render
+ * one. Browsers collapse trailing block-boundary whitespace; we replicate that
+ * by cutting the slice off after the first newline of the trailing run (and,
+ * mirror, before the last newline of the leading run on the post-quote side).
+ *
+ * What we DON'T do: drop the newline entirely. That would make text run flush
+ * against the left bar — the previous regression "тепер при квотах
+ * пропадають преноси". One `\n` keeps the natural HTML paragraph-break visual,
+ * matching the source intent without doubling it.
  */
 private fun buildSegments(source: FormattedText, quoteRanges: List<IntRange>): List<Segment> {
     val out = mutableListOf<Segment>()
     var cursor = 0
     for (range in quoteRanges) {
         if (cursor < range.first) {
-            out += Segment(source.slice(cursor, range.first), isQuote = false)
+            val end = trimToSingleTrailingNewline(source.text, cursor, range.first)
+            if (end > cursor) {
+                out += Segment(source.slice(cursor, end), isQuote = false)
+            }
         }
         out += Segment(source.slice(range.first, range.last), isQuote = true)
         cursor = range.last
     }
     if (cursor < source.text.length) {
-        out += Segment(source.slice(cursor, source.text.length), isQuote = false)
+        val start = trimToSingleLeadingNewline(source.text, cursor, source.text.length)
+        if (start < source.text.length) {
+            out += Segment(source.slice(start, source.text.length), isQuote = false)
+        }
     }
     return out.filter { it.text.text.isNotEmpty() }
+}
+
+/**
+ * Walks back from [end] over trailing newlines and inline whitespace inside
+ * `[start, end)`. Keeps at most one `\n` — the slice's effective end is the
+ * position right after the FIRST newline encountered in the run (counting
+ * from [end] backwards), so a `text\n\n` source ends up as `text\n` slice,
+ * a `text\n` source stays `text\n`, and a `text` source stays `text`.
+ */
+private fun trimToSingleTrailingNewline(text: String, start: Int, end: Int): Int {
+    var i = end
+    var firstNewlinePos = -1
+    while (i > start) {
+        val c = text[i - 1]
+        if (c == '\n') firstNewlinePos = i - 1
+        else if (c != ' ' && c != '\t') break
+        i--
+    }
+    return if (firstNewlinePos >= 0) firstNewlinePos + 1 else end
+}
+
+/**
+ * Mirror of [trimToSingleTrailingNewline] — walks forward from [start] over
+ * the leading whitespace run and lands the slice's effective start AT the
+ * LAST newline in the run, so `\n\nfollowing` slices as `\nfollowing`.
+ */
+private fun trimToSingleLeadingNewline(text: String, start: Int, end: Int): Int {
+    var i = start
+    var lastNewlinePos = -1
+    while (i < end) {
+        val c = text[i]
+        if (c == '\n') lastNewlinePos = i
+        else if (c != ' ' && c != '\t') break
+        i++
+    }
+    return if (lastNewlinePos >= 0) lastNewlinePos else start
 }
 
 /**

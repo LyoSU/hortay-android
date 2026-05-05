@@ -6,7 +6,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -18,7 +20,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.view.TextureView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.MediaState
@@ -127,6 +131,11 @@ fun TdVideoPlayer(
         exoPlayer.playWhenReady = wasPlaying
     }
 
+    // Tracks the source video's aspect ratio (width / height); 0f means "not yet
+    // known" → AspectRatioFrameLayout falls back to filling the parent. Updated
+    // in onVideoSizeChanged once the decoder has read the format.
+    var videoAspect by remember(fileId, remoteUrl) { mutableStateOf(0f) }
+
     DisposableEffect(exoPlayer) {
         val lifecycleObserver = LifecycleEventObserver { _, event ->
             when (event) {
@@ -135,9 +144,23 @@ fun TdVideoPlayer(
                 else -> Unit
             }
         }
+        val playerListener = object : Player.Listener {
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (videoSize.height > 0) {
+                    val pixelRatio = if (videoSize.pixelWidthHeightRatio > 0) {
+                        videoSize.pixelWidthHeightRatio
+                    } else {
+                        1f
+                    }
+                    videoAspect = (videoSize.width * pixelRatio) / videoSize.height
+                }
+            }
+        }
         lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
+        exoPlayer.addListener(playerListener)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
+            exoPlayer.removeListener(playerListener)
             // Hand the player back to the pool instead of releasing — saves the
             // MediaCodec/decoder allocation cost on the next viewport entry.
             pool.release(exoPlayer, muted = muted)
@@ -178,15 +201,33 @@ fun TdVideoPlayer(
                 },
             )
         } else {
+            // Wrap the TextureView in AspectRatioFrameLayout so the texture is
+            // letterboxed inside the slot at the source video's aspect ratio
+            // instead of being stretched to fill. Bare TextureView fills its
+            // parent exactly — when the slot was sized from the poster (CSS
+            // padding-aspect from t.me) and the actual video resolution
+            // doesn't quite match (rounded poster aspect, transcoded source),
+            // the video squashes to the slot's box. AspectRatioFrameLayout
+            // is the same primitive PlayerView uses internally with its
+            // RESIZE_MODE_FIT, lifted out so we keep the transparent
+            // TextureView path for the alpha-correct first-frame transition.
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
-                    TextureView(ctx).apply { isOpaque = false }
+                    AspectRatioFrameLayout(ctx).apply {
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        addView(TextureView(ctx).apply { isOpaque = false })
+                    }
                 },
-                update = { view ->
-                    exoPlayer.setVideoTextureView(view)
+                update = { frame ->
+                    val texture = frame.getChildAt(0) as TextureView
+                    exoPlayer.setVideoTextureView(texture)
+                    if (videoAspect > 0f) frame.setAspectRatio(videoAspect)
                 },
-                onRelease = { exoPlayer.clearVideoTextureView(it) },
+                onRelease = { frame ->
+                    exoPlayer.clearVideoTextureView(frame.getChildAt(0) as TextureView)
+                },
             )
         }
         when (val s = mediaState) {

@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+- **Inline-preview videos showed a 2–3 s black square** before the first
+  frame, even on rewind / re-scroll where the file was already buffered.
+  Root cause: the underlying `PlayerView` wraps a `SurfaceView`, an opaque
+  hardware overlay that paints solid black until the decoder ships its
+  first frame. The previous `setShutterBackgroundColor(TRANSPARENT)`
+  worked on the foreground shutter but did nothing about the SurfaceView
+  itself. Split the renderer: fullscreen viewer (with controls) keeps
+  `PlayerView` for its scrubber widgets, but the inline-preview path now
+  uses a bare `TextureView(isOpaque = false)`. The texture is transparent
+  until the first frame paints over it, so the poster (drawn underneath
+  in `MediaWithSpoiler`) reads through cleanly during the prepare window.
+- **Web previews with `link_preview_right_image` had no thumbnail**. The
+  parser only matched the hero / video-thumb shapes and silently dropped
+  the third variant t.me uses for sites whose `og:image` is too short to
+  fill the card.
+- **Blockquote spacing — extra blank line above and below**. The walker
+  injects `\n\n` around block elements and the `RichText` segmenter
+  added an 8 dp `Spacer` on top of that, doubling the visible gap. The
+  spacer is now conditional: skipped when either side of the boundary
+  already carries a `\n` from the source HTML (so `<br><br><blockquote>`
+  renders as one paragraph break, not two), kept when neither side has a
+  natural break.
+- **`parseUsernameFromInput` rejected short Telegram handles**. Lowered
+  the regex floor from 5 to 2 characters across all three input shapes
+  (`tg://resolve?domain=`, `t.me/<name>`, `@<name>`). Fragment-auctioned
+  and Premium-short handles like `@io` / `@no` now pass validation
+  before the network round-trip.
+- **"Media is too big" video posts now read as videos, not photos**. The
+  parser used to emit them as `Kind.Photo` (no play badge, in-app gallery
+  on tap that spun on an empty URL). They now emit as `Kind.Video` with
+  an empty `url` sentinel; the UI shows the poster with a soft 8 dp blur,
+  a centred play badge, an "Open in Telegram" hint chip, and routes the
+  tap straight to the Telegram client.
+
+### Changed
+- **`AddChannelSheet` auto-pastes from the clipboard**. If the clipboard
+  contains a valid Telegram link / `@handle` when the sheet opens, we
+  fill the input and trigger lookup automatically — the user lands on
+  the preview card with the "Add" button without a manual paste step.
+  Privacy-gated through the same regex that validates manual input;
+  random clipboard contents fall through silently.
+
 ### Added
 - **Cross-channel local search (guest mode)**. A search action surfaces in the
   Feed top bar; tapping it opens a full-screen overlay with an auto-focused

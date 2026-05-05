@@ -67,10 +67,21 @@ class TmePageParserTest {
                 val expectedCursor = page.posts.minOf { it.seq }.toString()
                 assertEquals(expectedCursor, page.olderCursor)
 
-                // Every parsed media item must have a non-empty url. Empty strings here
-                // would crash Coil downstream; better to drop.
+                // Every parsed media item must have a non-empty url, with one
+                // intentional exception: Kind.Video items emitted as the
+                // "Media is too big" sentinel use url = "" to flag "no
+                // playable stream, render the poster + open-in-Telegram CTA"
+                // (see TmePageParser:200 and AlbumItem.isUnplayableVideo).
+                // Those still carry a thumbnailUrl so the poster renders.
                 page.posts.flatMap { it.media }.forEach { media ->
-                    assertTrue(media.url.isNotBlank(), "blank media url found")
+                    if (media.kind == WebMedia.Kind.Video && media.url.isEmpty()) {
+                        assertTrue(
+                            !media.thumbnailUrl.isNullOrBlank(),
+                            "unplayable-video sentinel must carry a thumbnailUrl",
+                        )
+                    } else {
+                        assertTrue(media.url.isNotBlank(), "blank media url found")
+                    }
                 }
 
                 // Reactions never carry a blank count when present (it's the trailing
@@ -316,9 +327,11 @@ class ParseUsernameFromInputTest {
 
     @Test
     fun `rejects too-short usernames`() {
-        // Telegram requires 5+ chars
-        assertNull(parseUsernameFromInput("abc"))
-        assertNull(parseUsernameFromInput("@abcd"))
+        // Telegram now allows 2-char Fragment-auctioned / Premium-short
+        // handles, so the regex floor is 2 chars. Single-char is still
+        // rejected as nonsensical.
+        assertNull(parseUsernameFromInput("a"))
+        assertNull(parseUsernameFromInput("@x"))
     }
 
     @Test
