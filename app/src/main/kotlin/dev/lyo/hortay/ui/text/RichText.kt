@@ -57,7 +57,22 @@ fun RichText(
 
     Column {
         segments.forEachIndexed { idx, segment ->
-            if (idx > 0) Spacer(Modifier.height(8.dp))
+            if (idx > 0) {
+                // Insert a manual 8 dp Spacer ONLY when the segment boundary
+                // doesn't already carry a natural paragraph break in the
+                // source text. If the previous segment ends with `\n` or this
+                // one starts with `\n` (the walker injects `\n\n` around block
+                // elements and the source's own `<br><br>` survives the
+                // normaliser), the rendered Text already produces a blank
+                // line on that side — adding another Spacer on top stacks two
+                // visible gaps and reads as "double newline before quote".
+                // The conditional preserves source-faithful whitespace
+                // ("як в оригіналі") without doubling.
+                val prevText = segments[idx - 1].text.text
+                val curText = segment.text.text
+                val naturalBreak = prevText.endsWith('\n') || curText.startsWith('\n')
+                if (!naturalBreak) Spacer(Modifier.height(8.dp))
+            }
             val rt = rememberRenderableText(segment.text)
             if (segment.isQuote) QuoteRow(rt.text, rt.inlineContent, style)
             else renderer(rt.text, rt.inlineContent, style, Int.MAX_VALUE)
