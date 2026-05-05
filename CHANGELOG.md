@@ -7,17 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
-### Fixed
-- **Guest-mode TGS custom emojis flickered black on first render** (mostly
-  visible in dark mode). Cause: the static-WEBP thumbnail was hidden the
-  instant `LottieComposition` became non-null, leaving a 1–2 frame gap before
-  `LottieAnimation` actually painted its first frame; during that gap the
-  inline emoji area exposed the surface behind it, which reads as a black
-  blink in dark theme. Fix: keep the thumb visible until `progress > 0`
-  (which `animateLottieCompositionAsState` only ticks past zero on the frame
-  Lottie has actually drawn). Also turned on Lottie's `safeMode` so a malformed
-  TGS frame doesn't paint as a solid coloured square.
-
 ### Added
 - **Cross-channel local search (guest mode)**. A search action surfaces in the
   Feed top bar; tapping it opens a full-screen overlay with an auto-focused
