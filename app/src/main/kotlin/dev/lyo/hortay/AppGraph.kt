@@ -19,6 +19,9 @@ import dev.lyo.hortay.data.TdLifecycleBridge
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.UserMessageBus
+import dev.lyo.hortay.data.web.SubscriptionsStore
+import dev.lyo.hortay.data.web.WebCustomEmojiResolver
+import dev.lyo.hortay.data.web.WebTelegramClient
 import dev.lyo.hortay.ui.media.ExoPlayerPool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -122,5 +125,31 @@ class AppGraph(context: Context) {
      * the router per Activity would lose buffered links arriving during the recreation.
      */
     val deepLinkRouter: DeepLinkRouter = DeepLinkRouter()
+
+    /**
+     * Anonymous web-mode client. Reads public channel previews via t.me/s/<username> with
+     * no Telegram authentication required. Phase 1 deliverable — currently exposed only
+     * through the debug screen surfaced from Settings (BuildConfig.DEBUG only); Phase 2
+     * will wire it as a primary `FeedSource` alternative to TDLib for users who choose
+     * to read without signing in.
+     */
+    val webClient: WebTelegramClient = WebTelegramClient()
+
+    /**
+     * Resolves Telegram custom-emoji ids to renderable TGS / WebM / WebP assets via
+     * the public `/i/emoji/<id>.json` endpoint. Used by the anonymous-mode UI to
+     * surface real custom-emoji reactions and inline-emoji animations — without it
+     * web mode would be limited to neutral chips for any emoji-id that has no
+     * unicode fallback baked into the static HTML.
+     */
+    val webCustomEmoji: WebCustomEmojiResolver = WebCustomEmojiResolver()
+
+    /**
+     * Persistent list of channel usernames the user has subscribed to in anonymous
+     * mode. Survives across cold starts independently of TDLib's chat list. When a
+     * user signs in, Phase 2's migration step uses this set to drive auto-subscribe
+     * via TdApi.SearchPublicChat + TdApi.JoinChat (throttled).
+     */
+    val webSubscriptions: SubscriptionsStore = SubscriptionsStore(context)
 }
 

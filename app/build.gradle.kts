@@ -248,6 +248,14 @@ dependencies {
 
     implementation(libs.lottie.compose)
 
+    // Anonymous web-mode pipeline: HTTP fetch + HTML parse for t.me/s/<channel>.
+    // OkHttp is already pulled transitively by coil-network-okhttp, but we declare
+    // it explicitly so the web client doesn't depend on Coil's internal version
+    // pinning. Jsoup parses Telegram's public channel preview pages — the only
+    // way to read public channels without an authenticated TDLib session.
+    implementation(libs.okhttp)
+    implementation(libs.jsoup)
+
     implementation(project(":libtdlib"))
 
     // Runtime installer for the AOT baseline profile bundled by AGP's

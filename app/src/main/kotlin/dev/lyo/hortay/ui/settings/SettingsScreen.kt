@@ -34,6 +34,7 @@ fun SettingsScreen(
     stats: StatsRepository,
     contentPadding: PaddingValues,
     onLogout: () -> Unit,
+    onOpenWebDebug: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -127,6 +128,20 @@ fun SettingsScreen(
                 title = stringResource(R.string.settings_version),
                 subtitle = "${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
             )
+
+            // Debug-only entry point for the anonymous web pipeline smoke test. Hidden
+            // in release/beta builds so end users never see it; English literals because
+            // it isn't localized as user-facing text.
+            if (BuildConfig.DEBUG) {
+                Spacer(Modifier.height(8.dp))
+                SectionLabel("Debug")
+                SettingsRow(
+                    symbol = "info",
+                    title = "Web mode (anonymous)",
+                    subtitle = "Smoke test t.me/s/<channel> pipeline",
+                    onClick = onOpenWebDebug,
+                )
+            }
         }
     }
 

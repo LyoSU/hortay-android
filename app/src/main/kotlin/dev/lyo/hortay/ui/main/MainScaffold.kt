@@ -29,6 +29,7 @@ import dev.lyo.hortay.ui.channels.ChannelsScreen
 import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.settings.SettingsScreen
 import dev.lyo.hortay.ui.timeline.TimelineScreen
+import dev.lyo.hortay.ui.webdebug.WebDebugScreen
 import kotlinx.coroutines.launch
 
 /**
@@ -56,6 +57,10 @@ fun MainScaffold(graph: AppGraph) {
     // Monotonic counter: each re-tap on Home (or brand) bumps it once. The Feed observes the
     // value and decides scroll-to-top vs refresh based on its own scroll position.
     var homeTapTrigger by remember { mutableLongStateOf(0L) }
+    // Debug-only smoke test surface for the anonymous web pipeline. Toggled from
+    // SettingsScreen when BuildConfig.DEBUG is true; release/beta builds never expose
+    // the entry point so this flag stays false in production.
+    var webDebugOpen by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val connection by graph.tdClient.connection.collectAsStateWithLifecycle()
 
@@ -225,6 +230,7 @@ fun MainScaffold(graph: AppGraph) {
                     stats = graph.statsRepository,
                     contentPadding = padding,
                     onLogout = { scope.launch { graph.tdClient.logOut() } },
+                    onOpenWebDebug = { webDebugOpen = true },
                 )
             }
         }
@@ -250,6 +256,15 @@ fun MainScaffold(graph: AppGraph) {
             },
             backProgress = commentsBackProgress.value,
             backSwipeEdge = commentsBackEdge,
+        )
+    }
+
+    if (webDebugOpen) {
+        WebDebugScreen(
+            client = graph.webClient,
+            emojiResolver = graph.webCustomEmoji,
+            contentPadding = PaddingValues(),
+            onBack = { webDebugOpen = false },
         )
     }
 }
