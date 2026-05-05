@@ -19,6 +19,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.TdMedia
@@ -110,6 +111,16 @@ fun WebmStickerPlayer(
                 "file://${path}"
             }
         }
+        // Guest-mode WebM URLs come from t.me/i/emoji which serves a yuv420p
+        // (no alpha) bake against `srgb(0,0,0)`. We pipe a luma-key shader
+        // through ExoPlayer's effect chain so black pixels become transparent
+        // and the actual sticker glyph blends naturally with the post card.
+        // TDLib-mode WebMs go through the same renderer untouched — those
+        // files DO carry alpha (libvpx ext or device-MediaCodec alpha path),
+        // so applying a luma key would over-erase legitimately-dark glyph
+        // areas (a black pupil, a navy outline). See [LumaKeyEffect] for the
+        // shader maths.
+        applyVideoEffects(exoPlayer, useLumaKey = isRemote)
         exoPlayer.setMediaItem(MediaItem.fromUri(uri))
         exoPlayer.prepare()
     }
@@ -180,4 +191,20 @@ fun WebmStickerPlayer(
             onRelease = { exoPlayer.clearVideoTextureView(it) },
         )
     }
+}
+
+/**
+ * Applies (or clears) the luma-key shader effect on [player]. Pulled out into a
+ * file-level function so the `@OptIn(UnstableApi)` annotation can attach to a
+ * function declaration — Kotlin doesn't accept it on a single expression inside
+ * a Compose `LaunchedEffect` lambda. `setVideoEffects` is currently flagged as
+ * unstable in media3 1.10 (the public effect-pipeline API is still settling),
+ * but the shader-program plumbing it goes through is the same code path
+ * `Transformer` uses, so it's stable in practice.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+private fun applyVideoEffects(player: ExoPlayer, useLumaKey: Boolean) {
+    player.setVideoEffects(
+        if (useLumaKey) listOf(LumaKeyEffect()) else emptyList(),
+    )
 }

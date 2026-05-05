@@ -91,28 +91,26 @@ fun CustomEmojiInlineView(
             }
             StickerFormat.Webm -> {
                 // For WebM at inline size we deliberately render the static thumbnail
-                // by default — running an ExoPlayer instance per emoji at 24dp hurts
-                // battery for negligible visual gain. `animateAlways = true` is the
-                // escape hatch for a focused picker UI in TDLib mode where the
-                // sticker file genuinely carries an alpha channel.
+                // by default in TDLib mode — running an ExoPlayer instance per emoji
+                // at 24dp hurts battery for negligible visual gain. `animateAlways
+                // = true` is the escape hatch for a focused picker UI.
                 //
-                // Why guest (anonymous) mode also falls through to the static thumb,
-                // even though we have a remote URL we COULD stream: the t.me/i/emoji
-                // WebM endpoint serves pre-rendered yuv420p (NO alpha-channel)
-                // copies of the sticker — verified across multiple emoji ids on
-                // 2026-05-06. Browsers can't natively play VP9-with-alpha so
-                // Telegram bakes the original sticker against an opaque background
-                // for the web. Streaming that into a TextureView would composite as
-                // a solid square (background colour bleeds through transparent
-                // regions), regardless of any SurfaceView/TextureView/blend trick
-                // on our side. The accompanying WEBP thumb DOES retain alpha (VP8X
-                // + ALPH chunks confirmed), so a static thumb is the only correct
-                // visual we can ship for inline use until/unless we find an
-                // alpha-preserving WebM endpoint.
+                // Guest (anonymous) mode WebMs DO animate, even at inline size: the
+                // user has explicitly opted into a richer-but-cheaper feed and the
+                // alternative for them is no animation at all (TDLib's path uses
+                // `MediaCache` + animated TGS-WebP thumbs which guest mode can't
+                // produce). The webRemoteUrl path inside [WebmStickerPlayer]
+                // applies a luma-key shader effect ([LumaKeyEffect]) to produce
+                // proper alpha — required because t.me/i/emoji serves WebMs as
+                // pre-rendered `yuv420p` against `srgb(0,0,0)` rather than the
+                // raw VP9-with-alpha file Telegram's mobile clients consume.
+                val webRemoteUrl = sticker.media.takeIf { it.fileId == null }?.remoteUrl
                 val canAnimateTdlib = animateAlways && sticker.media.fileId != null
-                if (canAnimateTdlib) {
+                val canAnimateWeb = webRemoteUrl != null
+                if (canAnimateTdlib || canAnimateWeb) {
                     WebmStickerPlayer(
                         fileId = sticker.media.fileId,
+                        remoteUrl = webRemoteUrl,
                         thumb = sticker.thumb,
                         contentDescription = contentDescription,
                         modifier = Modifier.fillMaxSize(),
