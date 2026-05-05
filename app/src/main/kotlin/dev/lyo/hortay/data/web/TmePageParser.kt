@@ -203,15 +203,18 @@ object TmePageParser {
             // inside `.message_media_not_supported_wrap`. The class
             // `not_supported` on the player anchor is the marker. We still want
             // these posts visible in the feed (otherwise they look empty —
-            // "пост лише з реакціями"), so fall back to the poster as a Photo
-            // entry. Tap → poster gallery; the actual playback is reachable via
-            // the canonical post URL we generate elsewhere.
+            // "пост лише з реакціями"), but emitting them as Photo would lie
+            // about the post's nature: the user gets a play badge / open-in-
+            // Telegram cue only if we keep the Video kind. We use an empty
+            // `url` as the sentinel for "unplayable" — the adapter / UI layer
+            // routes a tap on this directly to the Telegram client instead of
+            // opening the in-app gallery (which would spin on the empty URL).
             val isUnsupported = player?.hasClass("not_supported") == true
             if (rawSrc == null) {
                 if (isUnsupported && thumb != null) {
                     out += WebMedia(
-                        kind = WebMedia.Kind.Photo,
-                        url = thumb,
+                        kind = WebMedia.Kind.Video,
+                        url = "", // sentinel for unplayable
                         aspectRatio = parsePaddingAspect(wrap) ?: player?.let(::parseDataRatio),
                         durationSec = null,
                         thumbnailUrl = thumb,

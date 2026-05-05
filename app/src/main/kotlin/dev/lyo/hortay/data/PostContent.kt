@@ -278,6 +278,19 @@ val AlbumItem.isSecret: Boolean
     }
 
 /**
+ * True for a video that has no playable source — neither a TDLib file nor a
+ * direct CDN URL. Currently produced only by guest-mode "Media is too big"
+ * posts where t.me/s/ strips the `<video src>` element and only ships the
+ * poster. The UI uses this flag to show the poster with a soft blur + play
+ * badge and route the tap straight to "open in Telegram" instead of
+ * launching the in-app gallery (which would spin on the empty URL).
+ */
+val AlbumItem.isUnplayableVideo: Boolean
+    get() = this is AlbumItem.Video &&
+        playbackFileId == 0 &&
+        remoteVideoUrl.isNullOrBlank()
+
+/**
  * One re-encoded variant of a video, addressable as a TDLib file. Telegram-Android
  * displays these in the quality picker (`360p`, `480p`, `720p`, …) — when the user
  * picks one, playback switches to its [fileId]. The [original] is the format the

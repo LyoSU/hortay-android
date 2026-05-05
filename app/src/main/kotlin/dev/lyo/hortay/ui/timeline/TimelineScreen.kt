@@ -36,6 +36,7 @@ import androidx.lifecycle.viewmodel.initializer
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.BookmarkStore
+import dev.lyo.hortay.data.isUnplayableVideo
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
 import dev.lyo.hortay.data.CommentsRepository
@@ -534,7 +535,16 @@ fun TimelineScreen(
         }
         PostInteractions(
             onMediaClick = { post, idx ->
-                viewer.openFor(post.content, idx)
+                // Unplayable videos (currently guest-mode "Media is too big" posts
+                // where t.me drops the <video src>) hand the tap straight to the
+                // Telegram client. The viewer would otherwise open with an empty
+                // remoteVideoUrl and ExoPlayer would spin trying to prepare nothing.
+                val items = (post.content as? dev.lyo.hortay.data.PostContent.PhotoAlbum)?.items.orEmpty()
+                if (items.getOrNull(idx)?.isUnplayableVideo == true) {
+                    dev.lyo.hortay.ui.actions.PostActions.openInTelegram(context, post)
+                } else {
+                    viewer.openFor(post.content, idx)
+                }
             },
             onChannelClick = { post -> onChannelFilterChangeState.value(post.chatId) },
             onForwardSourceClick = { post ->

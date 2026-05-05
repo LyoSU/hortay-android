@@ -39,6 +39,7 @@ import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.ServiceEvent
 import dev.lyo.hortay.data.hasSpoiler
 import dev.lyo.hortay.data.isSecret
+import dev.lyo.hortay.data.isUnplayableVideo
 import androidx.compose.foundation.clickable
 import dev.lyo.hortay.data.WebPreview
 import dev.lyo.hortay.ui.icons.Symbol
@@ -131,6 +132,7 @@ private fun AnimatedEmojiBlock(content: PostContent.AnimatedEmoji) {
 private val STICKER_MAX_SIDE = 168.dp
 private val ANIMATED_EMOJI_MAX_SIDE = 140.dp
 private val SPOILER_BLUR_RADIUS = 28.dp
+private val UNPLAYABLE_VIDEO_BLUR_RADIUS = 8.dp
 
 // Threshold for treating a video as "glance-able" — same heuristic Telegram uses for
 // inline silent autoplay. Videos at or below this duration play muted-and-looping in
@@ -330,10 +332,23 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
     var revealed by remember(item.media.fileId) {
         mutableStateOf(!item.hasSpoiler && !item.isSecret)
     }
+    val unplayable = item.isUnplayableVideo
     val autoplayVideo = revealed
         && isActive
         && item is AlbumItem.Video
+        && !unplayable
         && item.durationSec in 1..INLINE_AUTOPLAY_MAX_SEC
+    // Blur regime:
+    //   • spoiler / sensitive: heavy blur until the user reveals — same as TDLib mode.
+    //   • unplayable video: light blur as a visual "this is a preview, you'll need to
+    //     open Telegram to actually watch it" cue. Keeps the poster recognisable while
+    //     making clear the in-app player can't drive it.
+    //   • otherwise: no blur.
+    val blur = when {
+        !revealed -> SPOILER_BLUR_RADIUS
+        unplayable -> UNPLAYABLE_VIDEO_BLUR_RADIUS
+        else -> 0.dp
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -350,7 +365,7 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
             showProgress = !autoplayVideo,
             modifier = Modifier
                 .fillMaxSize()
-                .let { if (revealed) it else it.blur(SPOILER_BLUR_RADIUS) },
+                .let { if (blur > 0.dp) it.blur(blur) else it },
         )
         if (autoplayVideo) {
             val video = item as AlbumItem.Video
@@ -878,10 +893,16 @@ private fun BoxScope.PlayBadge(durationSec: Int) {
             size = 36.dp,
         )
     }
-    DurationChip(
-        text = formatDuration(durationSec),
-        modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
-    )
+    // durationSec == 0 marks an unplayable video (currently only guest-mode
+    // "Media is too big" posts where t.me strips `<video src>`). Showing a
+    // "0:00" chip would lie about the post's length; just the play badge
+    // reads correctly as "this is a video, tap to open it elsewhere".
+    if (durationSec > 0) {
+        DurationChip(
+            text = formatDuration(durationSec),
+            modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+        )
+    }
 }
 
 @Composable
