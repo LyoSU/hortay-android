@@ -201,6 +201,15 @@ sqldelight {
             // transaction — keeps callers from accidentally hopping threads
             // mid-write.
             generateAsync.set(false)
+            // Persisted baseline schema snapshots (one .db file per version) live
+            // under the source set so a diff in a PR shows the schema change next
+            // to the migration that produced it. The `generateWebDatabaseSchema`
+            // task writes the next snapshot; `verifyWebDatabaseMigration` replays
+            // each .sqm against the previous snapshot and asserts the resulting
+            // schema matches. Without this directory configured, the verify task
+            // fails with "Verifying a migration requires a database file" and
+            // the migration pipeline is plumbed but never actually exercised.
+            schemaOutputDirectory.set(file("src/main/sqldelight/databases"))
         }
     }
 }

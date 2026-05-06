@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  API 29+ overlay for [Theme.Hortay].
+
+  enforceNavigationBarContrast was introduced in API 29 (Android 10). On older
+  devices the attribute is silently ignored — but lint flags any reference to
+  it from a base resource folder as a NewApi error against the project's
+  minSdk (26). Splitting it into values-v29/ is the canonical fix: the
+  resource resolver picks this overlay only on API 29+, the base theme keeps
+  the same attribute set on older devices, and lint sees a clean minSdk
+  surface in values/themes.xml.
+
+  Why we want it false: the system's default contrast scrim adds an opaque
+  band behind the gesture bar that breaks edge-to-edge layouts (visible as a
+  ~24 dp dark strip below the actual content). We're using transparent
+  navigation-bar colour anyway and handle our own scrim placement in
+  Compose, so the system contrast enforcement actively works against us.
+-->
+<resources>
+    <style name="Theme.Hortay" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+    </style>
+</resources>

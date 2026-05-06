@@ -411,31 +411,34 @@ class WebRepository(
 
     // ---- Helpers (private) ---------------------------------------------------
 
+    // SQLDelight emits row columns positionally to the mapper; we project only a
+    // subset into [TimelinePost]. Unused params are prefixed with `_` so the
+    // Kotlin compiler skips its UNUSED_PARAMETER check without needing a
+    // @Suppress on every line. Intentionally dropped on the floor here:
+    //   `_id` — composite PK; TimelinePost identifies posts by [seq]
+    //   `_published_at_ms` — sort key, evaluated at the SQL layer
+    //   `_text_plain` — search-index column, never displayed
+    //   `_is_read` / `_is_bookmarked` — UI state lives in BookmarkStore / DataStore
+    //   `_fetched_at_ms` — staleness gate, evaluated at the SQL layer
     private fun rowToTimelinePost(
         channel_username: String,
         seq: Long,
-        id: String,
+        _id: String,
         published_at_iso: String,
-        published_at_ms: Long,
+        _published_at_ms: Long,
         text_html: String,
-        text_plain: String,
+        _text_plain: String,
         media_json: String,
         web_preview_json: String?,
         forwarded_from_json: String?,
         reactions_json: String,
         views: String?,
-        is_read: Boolean,
-        is_bookmarked: Boolean,
-        fetched_at_ms: Long,
+        _is_read: Boolean,
+        _is_bookmarked: Boolean,
+        _fetched_at_ms: Long,
         channel_title: String,
         channel_avatar: String?,
     ): TimelinePost {
-        @Suppress("UNUSED_VARIABLE") val unusedId = id // composite PK; TimelinePost uses seq as id
-        @Suppress("UNUSED_VARIABLE") val unusedTextPlain = text_plain // FTS column
-        @Suppress("UNUSED_VARIABLE") val unusedFetchedAt = fetched_at_ms
-        @Suppress("UNUSED_VARIABLE") val unusedPublishedMs = published_at_ms
-        @Suppress("UNUSED_VARIABLE") val unusedRead = is_read
-        @Suppress("UNUSED_VARIABLE") val unusedBookmark = is_bookmarked
         return WebPostAdapter.toTimelinePost(
             seq = seq,
             publishedAtIso = published_at_iso,
@@ -451,6 +454,11 @@ class WebRepository(
         )
     }
 
+    // Same convention as [rowToTimelinePost]: `_`-prefixed params are columns the
+    // SQL projection emits but [ChannelEntry] doesn't need. Dropped here:
+    //   `_last_etag` / `_last_modified` — HTTP cache validators consumed by the
+    //   fetcher, never surfaced to the UI.
+    //   `_older_cursor` — pagination cursor, used by the fetcher.
     private fun channelEntryMapper(
         username: String,
         title: String,
@@ -460,16 +468,13 @@ class WebRepository(
         is_verified: Boolean,
         is_subscribed: Boolean,
         last_fetched_at_ms: Long?,
-        last_etag: String?,
-        last_modified: String?,
-        older_cursor: String?,
+        _last_etag: String?,
+        _last_modified: String?,
+        _older_cursor: String?,
         fetch_status: String,
         fetch_error: String?,
         fetch_retry_after_ms: Long?,
     ): ChannelEntry {
-        @Suppress("UNUSED_VARIABLE") val unusedEtag = last_etag
-        @Suppress("UNUSED_VARIABLE") val unusedModified = last_modified
-        @Suppress("UNUSED_VARIABLE") val unusedCursor = older_cursor
         return ChannelEntry(
             info = WebChannelInfo(
                 username = username,

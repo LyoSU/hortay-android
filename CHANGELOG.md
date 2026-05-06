@@ -261,6 +261,18 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   internal file table.
 
 ### Architecture
+- `web.db` migration pipeline is now end-to-end. A no-op `1.sqm` bumps the
+  schema baseline to version 2 and exercises the full
+  schema → migration → schema round-trip via `verifyWebDatabaseMigration`,
+  with a persisted `databases/<n>.db` snapshot per version checked into the
+  source set so PRs see schema deltas next to the migrations that produced
+  them. Future schema changes add `<N>.sqm` instead of relying on
+  `AndroidSqliteDriver.onCorruption` wiping the DB (which would lose user
+  bookmarks). `schemaOutputDirectory` configured in
+  `app/build.gradle.kts:sqldelight` is what makes verifyMigrations actually
+  run — without a snapshot directory the verify task short-circuits with
+  "Verifying a migration requires a database file" and the contract is
+  asserted but never exercised.
 - `TdLifecycleBridge.bind()` is now idempotent. The
   `ProcessLifecycleOwner` observer + `ConnectivityManager.NetworkCallback`
   registration would silently double up if `bind()` ever ran twice

@@ -49,11 +49,6 @@ class MigrationStore(context: Context) {
         }
     }
 
-    /** Used by the "clear all data" debug entry so the proposal can re-run. */
-    suspend fun reset() {
-        ds.edit { it.clear() }
-    }
-
     private companion object {
         val KEY_PROPOSAL_SHOWN = booleanPreferencesKey("guest_migration_proposal_shown")
         val KEY_MIGRATED = stringSetPreferencesKey("guest_migration_migrated_usernames")

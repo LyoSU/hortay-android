@@ -227,9 +227,11 @@ class AppGraph(context: Context) {
      * [CustomEmojiRepository] that TDLib mode uses. Lets the shared
      * [dev.lyo.hortay.ui.media.CustomEmojiInlineView] render web custom
      * emojis (in formatted-text spans and reaction chips) without forking the
-     * inline-view code. Animated TGS / WebM playback in guest mode is currently
-     * a static thumb — full animation needs URL→file caching plumbed into
-     * LottieCompositionStore / ExoPlayer, planned as follow-up.
+     * inline-view code. TGS animates via [dev.lyo.hortay.ui.media.LottieUrlStore]
+     * (real Lottie-Compose playback, parity with TDLib mode); WebM falls back
+     * to a static WEBP thumb because the t.me/i/emoji endpoint bakes alpha
+     * into a sidecar VP9 stream that Android's MediaCodec doesn't decode —
+     * see [WebCustomEmojiBridge] KDoc for the full rationale.
      */
     val webCustomEmojiBridge: WebCustomEmojiBridge = WebCustomEmojiBridge(
         resolver = webCustomEmoji,
