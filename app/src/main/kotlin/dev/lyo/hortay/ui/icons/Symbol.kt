@@ -108,5 +108,17 @@ private fun symbolDrawable(name: String): Int = when (name) {
     "visibility" -> R.drawable.sym_visibility
     "visibility_off" -> R.drawable.sym_visibility_off
     "wifi_off" -> R.drawable.sym_wifi_off
+    // Auto-download settings — closest existing glyphs while we don't bundle the
+    // dedicated Material Symbols vectors. Visual parity is good enough that the
+    // user identifies each row at a glance; swap in dedicated drawables later by
+    // following the file's KDoc procedure (download from fonts.google.com/icons).
+    "wifi" -> R.drawable.sym_rss_feed
+    "signal_cellular_alt" -> R.drawable.sym_smartphone
+    "public" -> R.drawable.sym_translate
+    "chevron_right" -> R.drawable.sym_arrow_forward
+    "image" -> R.drawable.sym_photo_camera
+    "gif_box" -> R.drawable.sym_play_circle
+    "data_saver_off" -> R.drawable.sym_cloud_off
+    "download_for_offline" -> R.drawable.sym_arrow_downward
     else -> R.drawable.sym_help
 }

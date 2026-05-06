@@ -61,6 +61,18 @@ class TdLifecycleBridge(
      */
     val foreground: StateFlow<Boolean> = _foreground.asStateFlow()
 
+    private val _networkType = MutableStateFlow(HortayNetworkType.None)
+    /**
+     * Coarse classification of the device's currently active default network — picked
+     * from [NetworkCapabilities] inside [networkCallback]. Exists so subsystems that
+     * apply per-network policy (e.g. [MediaAutoDownloader] resolving an
+     * [AutoDownloadPolicy]) don't each duplicate the ConnectivityManager dance. Updates
+     * are deduped by [MutableStateFlow]'s structural equality so consumers don't
+     * recompose for re-emits of the same value (a common case during quick
+     * connect-disconnect cycles on flaky networks).
+     */
+    val networkType: StateFlow<HortayNetworkType> = _networkType.asStateFlow()
+
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             pushNetworkType()
@@ -89,6 +101,10 @@ class TdLifecycleBridge(
         })
 
         cm.registerDefaultNetworkCallback(networkCallback)
+        // Seed before the first callback fires so consumers that read [networkType]
+        // synchronously at construction (e.g. [MediaAutoDownloader.activePolicy]) see
+        // a real value, not the [HortayNetworkType.None] sentinel.
+        _networkType.value = classifyNetwork()
 
         combine(td.authStage, foreground) { auth, fg -> auth is AuthStage.Ready && fg }
             .distinctUntilChanged()
@@ -112,6 +128,11 @@ class TdLifecycleBridge(
     }
 
     private fun pushNetworkType() {
+        // Re-classify on every callback regardless of foreground — consumers like
+        // [MediaAutoDownloader] need an up-to-date value while the app is in the
+        // background (a roaming cell handover that lands while the screen is off
+        // must not still read as "Wi-Fi" when the user opens the app).
+        _networkType.value = classifyNetwork()
         if (!_foreground.value) return
         scope.launch {
             runCatching { td.send(TdApi.SetNetworkType(currentNetworkType())) }
@@ -119,14 +140,35 @@ class TdLifecycleBridge(
         }
     }
 
-    private fun currentNetworkType(): TdApi.NetworkType {
-        val net = cm.activeNetwork ?: return TdApi.NetworkTypeNone()
-        val caps = cm.getNetworkCapabilities(net) ?: return TdApi.NetworkTypeNone()
+    private fun currentNetworkType(): TdApi.NetworkType = when (classifyNetwork()) {
+        HortayNetworkType.Wifi -> TdApi.NetworkTypeWiFi()
+        HortayNetworkType.Mobile,
+        HortayNetworkType.Roaming -> TdApi.NetworkTypeMobile()
+        HortayNetworkType.None -> TdApi.NetworkTypeNone()
+    }
+
+    /**
+     * Maps the current default network to our coarse [HortayNetworkType] enum.
+     * Roaming detection uses [NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING] (absent
+     * → roaming). Ethernet rolls into Wi-Fi because both are "free" from the
+     * user's tariff perspective; "Other" (Bluetooth / VPN-only) falls back to Mobile
+     * — being conservative when in doubt, which is the same call Telegram-Android
+     * makes for unknown transports.
+     */
+    private fun classifyNetwork(): HortayNetworkType {
+        val net = cm.activeNetwork ?: return HortayNetworkType.None
+        val caps = cm.getNetworkCapabilities(net) ?: return HortayNetworkType.None
         return when {
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> TdApi.NetworkTypeWiFi()
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> TdApi.NetworkTypeWiFi()
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> TdApi.NetworkTypeMobile()
-            else -> TdApi.NetworkTypeOther()
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> HortayNetworkType.Wifi
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> HortayNetworkType.Wifi
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> {
+                if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING)) {
+                    HortayNetworkType.Mobile
+                } else {
+                    HortayNetworkType.Roaming
+                }
+            }
+            else -> HortayNetworkType.Mobile
         }
     }
 
@@ -134,3 +176,13 @@ class TdLifecycleBridge(
         const val TAG = "TdLifecycleBridge"
     }
 }
+
+/**
+ * Coarse classification of the device's currently active default network. Distinct
+ * from [TdApi.NetworkType] because the daemon enum doesn't model roaming as a
+ * separate state — Telegram-Android tracks roaming on the client side too and so
+ * do we, since per-network auto-download policy needs to distinguish "home cellular"
+ * from "roaming cellular".
+ */
+enum class HortayNetworkType { Wifi, Mobile, Roaming, None }
+

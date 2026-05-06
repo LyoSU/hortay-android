@@ -1,6 +1,7 @@
 package dev.lyo.hortay
 
 import android.content.Context
+import dev.lyo.hortay.data.AutoDownloadStore
 import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.toStringResolver
 import dev.lyo.hortay.data.ChannelActionsRepository
@@ -9,6 +10,7 @@ import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.CountryRepository
 import dev.lyo.hortay.data.CustomEmojiRepository
 import dev.lyo.hortay.data.DeepLinkRouter
+import dev.lyo.hortay.data.MediaAutoDownloader
 import dev.lyo.hortay.data.MediaCache
 import dev.lyo.hortay.data.MessageMapper
 import dev.lyo.hortay.data.PostsRepository
@@ -101,6 +103,32 @@ class AppGraph(context: Context) {
     )
 
     val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope, res)
+
+    /**
+     * User-configurable per-network auto-download policy (Wi-Fi / mobile / roaming),
+     * mirroring Telegram's "Data and Storage" → "Auto-Download Media" UX. Persisted
+     * as a single JSON blob in DataStore. Held by the graph because both the
+     * settings UI (read/write) and [autoDownloader] (read-only) need the same
+     * instance — splitting them would invalidate the shared cache and force the
+     * downloader to re-decode the JSON on every settings emit.
+     */
+    val autoDownloadStore: AutoDownloadStore = AutoDownloadStore(context)
+
+    /**
+     * Background service that prefetches photos / videos / animations on new posts
+     * per [autoDownloadStore]. Bound at process start; lives for the entire app
+     * lifetime via [appScope]. Reads the network classification from
+     * [TdLifecycleBridge.networkType] (own coarse enum that distinguishes roaming,
+     * which TDLib's [TdApi.NetworkType] does not).
+     */
+    val autoDownloader: MediaAutoDownloader = MediaAutoDownloader(
+        store = autoDownloadStore,
+        cache = mediaCache,
+        postsFlow = postsRepository.posts,
+        networkType = lifecycleBridge.networkType,
+        context = context,
+        scope = appScope,
+    ).also { it.bind() }
 
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 

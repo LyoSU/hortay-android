@@ -276,6 +276,35 @@
     <string name="settings_storage_media">Media</string>
     <string name="settings_storage_db">Database</string>
 
+    <!-- Auto-download media -->
+    <string name="autodownload_section">Auto-download media</string>
+    <string name="autodownload_entry_title">Auto-download media</string>
+    <string name="autodownload_entry_subtitle">Photos, videos and GIFs over Wi-Fi, mobile data or roaming.</string>
+    <string name="autodownload_screen_title">Auto-download media</string>
+    <string name="autodownload_header_helper">New posts in your feed start downloading in the background so you don\'t see a spinner. Pick what to load and how big.</string>
+    <string name="autodownload_category_wifi">When using Wi-Fi</string>
+    <string name="autodownload_category_mobile">When using mobile data</string>
+    <string name="autodownload_category_roaming">When roaming</string>
+    <string name="autodownload_summary_off">Off</string>
+    <string name="autodownload_summary_photos">Photos</string>
+    <string name="autodownload_summary_videos_unbounded">Videos</string>
+    <string name="autodownload_summary_videos_capped">Videos to %1$s</string>
+    <string name="autodownload_summary_animations">GIFs</string>
+    <string name="autodownload_summary_separator">, </string>
+    <string name="autodownload_toggle_photos">Photos</string>
+    <string name="autodownload_toggle_photos_helper">Always small. Loads instantly even on slow networks.</string>
+    <string name="autodownload_toggle_videos">Videos</string>
+    <string name="autodownload_toggle_videos_helper">Only videos up to the size below.</string>
+    <string name="autodownload_toggle_animations">GIFs</string>
+    <string name="autodownload_toggle_animations_helper">Looping clips and animations.</string>
+    <string name="autodownload_video_max_label">Max video size</string>
+    <string name="autodownload_video_max_value">Up to %1$s</string>
+    <string name="autodownload_data_saver_note">System Data Saver is on — videos and GIFs are paused on mobile until you turn it off in Android settings.</string>
+    <string name="autodownload_reset">Reset to defaults</string>
+    <string name="autodownload_reset_done">Defaults restored</string>
+    <string name="autodownload_back">Back</string>
+    <string name="size_mb_int">%1$d MB</string>
+
     <!-- Sizes -->
     <string name="size_bytes">%1$d B</string>
     <string name="size_kb">%1$.1f KB</string>

@@ -227,6 +227,7 @@ fun MainScaffold(graph: AppGraph) {
                     stats = graph.statsRepository,
                     contentPadding = padding,
                     onLogout = { scope.launch { graph.tdClient.logOut() } },
+                    autoDownload = graph.autoDownloadStore,
                 )
             }
         }

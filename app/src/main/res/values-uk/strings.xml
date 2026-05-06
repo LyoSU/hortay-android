@@ -282,6 +282,35 @@
     <string name="settings_storage_media">Медіа</string>
     <string name="settings_storage_db">База даних</string>
 
+    <!-- Auto-download media -->
+    <string name="autodownload_section">Авто-завантаження медіа</string>
+    <string name="autodownload_entry_title">Авто-завантаження медіа</string>
+    <string name="autodownload_entry_subtitle">Фото, відео і GIF через Wi-Fi, мобільну мережу чи роумінг.</string>
+    <string name="autodownload_screen_title">Авто-завантаження</string>
+    <string name="autodownload_header_helper">Нові пости стрічки починають вантажитись у фоні — щоб ви не бачили спінер під час скролу. Оберіть, що саме і якого розміру.</string>
+    <string name="autodownload_category_wifi">Через Wi-Fi</string>
+    <string name="autodownload_category_mobile">Через мобільну мережу</string>
+    <string name="autodownload_category_roaming">У роумінгу</string>
+    <string name="autodownload_summary_off">Вимкнено</string>
+    <string name="autodownload_summary_photos">Фото</string>
+    <string name="autodownload_summary_videos_unbounded">Відео</string>
+    <string name="autodownload_summary_videos_capped">Відео до %1$s</string>
+    <string name="autodownload_summary_animations">GIF</string>
+    <string name="autodownload_summary_separator">, </string>
+    <string name="autodownload_toggle_photos">Фото</string>
+    <string name="autodownload_toggle_photos_helper">Завжди невеликі. Завантажуються миттєво навіть на повільному з\'єднанні.</string>
+    <string name="autodownload_toggle_videos">Відео</string>
+    <string name="autodownload_toggle_videos_helper">Лише відео в межах розміру нижче.</string>
+    <string name="autodownload_toggle_animations">GIF</string>
+    <string name="autodownload_toggle_animations_helper">Зациклені кліпи й анімації.</string>
+    <string name="autodownload_video_max_label">Максимальний розмір відео</string>
+    <string name="autodownload_video_max_value">До %1$s</string>
+    <string name="autodownload_data_saver_note">У системі ввімкнено Data Saver — відео і GIF призупинені у мобільній мережі, доки ви не вимкнете Data Saver у налаштуваннях Android.</string>
+    <string name="autodownload_reset">Відновити стандартні</string>
+    <string name="autodownload_reset_done">Стандартні значення відновлено</string>
+    <string name="autodownload_back">Назад</string>
+    <string name="size_mb_int">%1$d МБ</string>
+
     <!-- Sizes -->
     <string name="size_bytes">%1$d Б</string>
     <string name="size_kb">%1$.1f КБ</string>

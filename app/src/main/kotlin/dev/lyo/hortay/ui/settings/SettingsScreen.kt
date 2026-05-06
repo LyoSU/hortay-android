@@ -18,8 +18,17 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.saveable.rememberSaveable
 import dev.lyo.hortay.BuildConfig
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.AutoDownloadStore
 import dev.lyo.hortay.data.NetworkUsage
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StatsRepository
@@ -52,6 +61,57 @@ fun SettingsScreen(
     onLogout: (() -> Unit)? = null,
     onSignIn: (() -> Unit)? = null,
     onClearWebCache: (suspend () -> Unit)? = null,
+    autoDownload: AutoDownloadStore? = null,
+) {
+    // Sub-screen nav lives inside Settings — the auto-download list and category
+    // screens are conceptually "deeper" pages of the same tab. Using AnimatedContent
+    // keeps the bottom navigation visible (TG-style) and Material's shared-x slide
+    // gives the user a clear sense of depth.
+    var showAutoDownload by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = showAutoDownload) { showAutoDownload = false }
+
+    AnimatedContent(
+        targetState = showAutoDownload,
+        transitionSpec = {
+            val forward = !initialState && targetState
+            val direction = if (forward) SlideDirection.Left else SlideDirection.Right
+            (slideIntoContainer(direction, tween(220)) + fadeIn(tween(220))) togetherWith
+                (slideOutOfContainer(direction, tween(220)) + fadeOut(tween(220)))
+        },
+        label = "settings-nav",
+    ) { showSub ->
+        if (showSub && autoDownload != null) {
+            AutoDownloadHost(
+                store = autoDownload,
+                contentPadding = contentPadding,
+                onBack = { showAutoDownload = false },
+            )
+        } else {
+            SettingsMain(
+                settings = settings,
+                stats = stats,
+                contentPadding = contentPadding,
+                onLogout = onLogout,
+                onSignIn = onSignIn,
+                onClearWebCache = onClearWebCache,
+                autoDownloadAvailable = autoDownload != null,
+                onOpenAutoDownload = { showAutoDownload = true },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsMain(
+    settings: SettingsStore,
+    stats: StatsRepository?,
+    contentPadding: PaddingValues,
+    onLogout: (() -> Unit)?,
+    onSignIn: (() -> Unit)?,
+    onClearWebCache: (suspend () -> Unit)?,
+    autoDownloadAvailable: Boolean,
+    onOpenAutoDownload: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -129,6 +189,19 @@ fun SettingsScreen(
                         }
                     },
                 )
+
+                // Auto-download is TDLib-mode-only — guest mode reads via t.me/s/ HTML
+                // streams and doesn't go through MediaCache, so no policy applies there.
+                if (autoDownloadAvailable) {
+                    Spacer(Modifier.height(8.dp))
+                    SectionLabel(stringResource(R.string.autodownload_section))
+                    SettingsRow(
+                        symbol = "download_for_offline",
+                        title = stringResource(R.string.autodownload_entry_title),
+                        subtitle = stringResource(R.string.autodownload_entry_subtitle),
+                        onClick = onOpenAutoDownload,
+                    )
+                }
             }
 
             // ---- Guest-mode-only: web.db cache clear + privacy footer -----------------

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- **Auto-download media settings (TDLib mode), TG-style**. New "Авто-завантаження
+  медіа" section in Profile opens a two-level screen mirroring Telegram's
+  "Data and Storage" UX: three category rows (Wi-Fi / Mobile / Roaming), each
+  with a one-line summary like "Photos, Videos to 10 MB, GIFs". Tapping a row
+  opens a sub-screen with three Material 3 toggles (Photos / Videos / GIFs) and
+  a discrete-step Slider for the video size cap (1–500 MB, snapping to TG's
+  bucket set). Defaults match Telegram-Android exactly: liberal on Wi-Fi
+  (videos to 100 MB), 10 MB cap on mobile, all off on roaming. Persisted as a
+  single JSON blob in DataStore (`AutoDownloadStore`) so a category edit can
+  never tear across a process kill. Sub-screen uses M3 `LargeTopAppBar`,
+  `ListItem`, `Switch`, `Slider`, with a shared-x slide between list and
+  category for hierarchical depth. OS-level Data Saver is honoured: when the
+  system toggle is on, the category screen surfaces a contextual banner and the
+  resolver pauses videos / GIFs on metered networks regardless of per-network
+  preference.
+- **Background media prefetch driven by the auto-download policy**.
+  `MediaAutoDownloader` observes `PostsRepository.posts`, diffs the head against
+  a `Set<(chatId, messageId)>` of already-considered ids, and dispatches new
+  arrivals through `MediaCache.ensure(fileId, DownloadPriority.Prefetch)`. The
+  Prefetch class is priority 8 in the existing `DownloadPriority` ladder —
+  never blocks visible-media downloads (16) or the fullscreen viewer (32), and
+  TDLib's per-DC slot pool serialises behind both naturally. If the user
+  scrolls into a prefetched card, the Composable's own `ensure(VisibleMedia)`
+  upgrades the in-flight job's priority in place — `MediaCache.ensure` is
+  idempotent, the file does not restart. Videos honour `videoMaxBytes` from
+  the active policy; unknown-size videos (TDLib hasn't probed yet) are skipped
+  conservatively to avoid leaking 100 MB clips through on mobile. Photos are
+  always allowed when the toggle is on (thumbs are 30–300 KB). Settings
+  changes don't cancel inflight downloads — cancelling half-finished bytes
+  just wastes the trip already made.
+- `HortayNetworkType` enum exposed as a `StateFlow` from `TdLifecycleBridge`,
+  distinguishing `Wifi` / `Mobile` / `Roaming` / `None` (finer-grained than
+  TDLib's `TdApi.NetworkType`, which doesn't model roaming). Roaming detection
+  uses `NET_CAPABILITY_NOT_ROAMING` from `NetworkCapabilities`.
+
 ### Fixed
 - **Reactions, view counts and comment counts stopped updating on
   photo-album posts in TDLib mode**. `flushPendingInteractionInfo`
