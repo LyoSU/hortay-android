@@ -123,19 +123,38 @@ class MediaCache(
     // route it through the reducer.
     private val postCompletionResync = ConcurrentHashMap<Int, Job>()
 
-    // Single-coroutine reducer for all File mutations. Inbound `td.updates` events and
-    // `ensureSlow`'s GetFile responses BOTH flow through this channel, so the state
-    // machine has one writer instead of two-on-different-dispatchers (which silently
-    // dropped the final Ready emit when a stale Downloading snapshot from one thread
-    // landed after the Ready from the other). Capacity is unlimited — we'd rather pay
-    // a bit of memory than risk dropping a terminal event under burst pressure.
-    private val fileEvents = Channel<TdApi.File>(capacity = Channel.UNLIMITED)
+    // Single-coroutine reducer for all File-state mutations. Three producers feed it
+    // through this channel, in strict single-writer discipline — any other write to
+    // `states[id].value` / `tracks[id]` / `activePriority[id]` is a documented bug and
+    // races the reducer's own writes on Dispatchers.IO's worker pool:
+    //   1. Inbound TDLib UpdateFile events (the live stream).
+    //   2. ensureSlow's GetFile response when seeding a fresh slot.
+    //   3. User-initiated [cancelExplicit] / [retry] / [invalidate] resets, modelled as
+    //      a synthetic [FileEvent.Reset] — these used to write `states[id].value =
+    //      MediaState.Idle` directly, which raced with concurrent UpdateFile drains
+    //      (reducer flips slot back to Downloading mid-cancel → user sees a flicker).
+    // Capacity is unlimited — we'd rather pay a bit of memory than risk dropping a
+    // terminal event under burst pressure.
+    private sealed interface FileEvent {
+        /** Inbound TdApi.File payload (UpdateFile or GetFile response). */
+        data class FromTdLib(val file: TdApi.File) : FileEvent
+        /**
+         * User-initiated reset of a slot to a target state — bypasses [reduce]'s
+         * "don't slide back from Ready" guard because the cancel/retry/invalidate
+         * intent is explicit and authoritative.
+         */
+        data class Reset(val fileId: Int, val to: MediaState) : FileEvent
+    }
+    private val fileEvents = Channel<FileEvent>(capacity = Channel.UNLIMITED)
 
     init {
         // Reducer. Single writer = no data race over `states[id].value`, `tracks[id]`,
         // or `activePriority`'s read-write pairs.
         scope.launch(ioDispatcher) {
-            for (file in fileEvents) reduce(file)
+            for (event in fileEvents) when (event) {
+                is FileEvent.FromTdLib -> reduce(event.file)
+                is FileEvent.Reset -> reduceReset(event.fileId, event.to)
+            }
         }
 
         td.updates
@@ -144,7 +163,7 @@ class MediaCache(
             // [reduce]) — TDLib emits UpdateFile for everything in its database, not
             // just things this app rendered. Slots are created lazily by [observe]
             // / [ensure].
-            .onEach { update -> fileEvents.send(update.file) }
+            .onEach { update -> fileEvents.send(FileEvent.FromTdLib(update.file)) }
             .launchIn(scope)
 
         // Battery-aware stall watchdog. Three regimes:
@@ -317,6 +336,29 @@ class MediaCache(
     }
 
     /**
+     * Apply a user-initiated slot reset inside the reducer loop. Bypasses the
+     * "don't slide back from Ready" guard in [reduce] because the reset intent
+     * (cancel / retry / invalidate) is explicit and authoritative — the user
+     * either tapped the cancel control, requested a retry, or the renderer
+     * detected an evicted on-disk file. Bookkeeping (priority, tracks) follows
+     * the same shape as the terminal-transition cleanup in [reduce] so callers
+     * that immediately follow with [ensure] start from a clean slate.
+     */
+    private fun reduceReset(fileId: Int, to: MediaState) {
+        val slot = states[fileId] ?: return
+        slot.value = to
+        // Mirror [reduce]'s terminal cleanup: any non-Downloading target means
+        // we no longer hold an in-flight download, so the watchdog tracker and
+        // active-priority record become stale and must be cleared in lockstep
+        // with the state transition (otherwise the watchdog would think a
+        // freshly-Idle slot is mid-stall and reissue DownloadFile).
+        if (to !is MediaState.Downloading) {
+            activePriority.remove(fileId)
+            tracks.remove(fileId)
+        }
+    }
+
+    /**
      * Per-tick walk of active downloads. TDLib's documented behaviour (#2585) is that
      * a flaky network can leave `is_downloading_active=true` indefinitely — the daemon
      * itself never gives up, so a download stuck without progress past the priority's
@@ -453,7 +495,7 @@ class MediaCache(
                 // Hand the file to the reducer through the same channel the inbound
                 // UpdateFile stream uses — the Ready-stick / eviction / throttle logic
                 // lives in one place and runs on a single thread.
-                fileEvents.send(file)
+                fileEvents.send(FileEvent.FromTdLib(file))
                 // Don't peek `slot.value` here: the reducer hasn't necessarily run yet.
                 // Inspect the file directly — if TDLib already has it on disk we skip
                 // the redundant DownloadFile.
@@ -501,9 +543,16 @@ class MediaCache(
         postCompletionResync.remove(fileId)?.cancel()
         scope.launch(ioDispatcher) {
             runCatching { td.send(TdApi.CancelDownloadFile(fileId, /* onlyIfPending */ false)) }
-            activePriority.remove(fileId)
-            tracks.remove(fileId)
-            states[fileId]?.value = MediaState.Idle
+            // Route the slot reset through the same single-writer reducer the inbound
+            // UpdateFile stream uses. Direct `states[id].value = Idle` from this
+            // coroutine raced concurrent reducer drains: a stale UpdateFile that
+            // landed mid-cancel could flip the slot back to Downloading right after
+            // we wrote Idle, producing a brief flicker of the spinner the user just
+            // dismissed. The Reset event executes inside the reducer's loop, so any
+            // queued UpdateFile from before the cancel drains first; everything
+            // arriving AFTER the reset is a fresh-state event that the user expects
+            // to see.
+            fileEvents.send(FileEvent.Reset(fileId, MediaState.Idle))
         }
     }
 
@@ -514,10 +563,12 @@ class MediaCache(
      * failed-state placeholder.
      */
     suspend fun retry(fileId: Int, priority: DownloadPriority = DownloadPriority.VisibleMedia) {
-        states[fileId]?.value = MediaState.Idle
-        activePriority.remove(fileId)
-        tracks.remove(fileId)
+        // Reset through the reducer, not direct write — same race rationale as
+        // [cancelExplicit]. ensure() then schedules its own GetFile through the
+        // same channel, so the reducer sees: Reset → fresh GetFile → Downloading,
+        // in strictly the order ensure() emits.
         postCompletionResync.remove(fileId)?.cancel()
+        fileEvents.send(FileEvent.Reset(fileId, MediaState.Idle))
         ensure(fileId, priority)
     }
 
@@ -539,10 +590,12 @@ class MediaCache(
         if (s.value !is MediaState.Ready) return
         Log.i(TAG, "invalidate: $fileId — Ready file missing on disk; re-downloading")
         scope.launch(ioDispatcher) {
-            s.value = MediaState.Idle
-            activePriority.remove(fileId)
-            tracks.remove(fileId)
+            // Reducer-routed reset (same rationale as [cancelExplicit]). Notably
+            // [reduceReset] also clears `activePriority` / `tracks` for a non-
+            // Downloading target, so the subsequent ensure() rebuilds the
+            // bookkeeping cleanly.
             postCompletionResync.remove(fileId)?.cancel()
+            fileEvents.send(FileEvent.Reset(fileId, MediaState.Idle))
             ensure(fileId, priority)
         }
     }
@@ -575,7 +628,7 @@ class MediaCache(
             if (current !is MediaState.Downloading) return@launch
             runCatching {
                 val freshFile = td.send(TdApi.GetFile(fileId))
-                fileEvents.send(freshFile)
+                fileEvents.send(FileEvent.FromTdLib(freshFile))
             }
         }
         val existing = postCompletionResync.putIfAbsent(fileId, newJob)
@@ -660,7 +713,7 @@ class MediaCache(
                     // with the partial `downloadedSize` preserved — instead of leaving the
                     // slot on its pre-cancel Downloading snapshot until the next observe.
                     val file = td.send(TdApi.GetFile(fileId))
-                    fileEvents.send(file)
+                    fileEvents.send(FileEvent.FromTdLib(file))
                 }
                 activePriority.remove(fileId)
                 tracks.remove(fileId)
