@@ -68,6 +68,7 @@
     <string name="web_add_rate_limited">Перевищено ліміт запитів — спробуйте за %1$d с</string>
     <string name="web_add_network_error">Помилка мережі: %1$s</string>
     <string name="web_subscribers">%1$s підписників</string>
+    <string name="web_deeplink_signin_required">Увійдіть, щоб відкривати приватні канали</string>
     <string name="auth_change_number">Змінити номер</string>
     <string name="auth_back">Назад</string>
     <string name="auth_password_show">Показати пароль</string>

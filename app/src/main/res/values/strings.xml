@@ -68,6 +68,7 @@
     <string name="web_add_rate_limited">Rate limit exceeded — try again in %1$d s</string>
     <string name="web_add_network_error">Network error: %1$s</string>
     <string name="web_subscribers">%1$s subscribers</string>
+    <string name="web_deeplink_signin_required">Sign in to open private channels</string>
     <string name="auth_change_number">Change number</string>
     <string name="auth_back">Back</string>
     <string name="auth_password_show">Show password</string>

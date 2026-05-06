@@ -76,6 +76,14 @@ fun AddChannelSheet(
     client: WebTelegramClient,
     locale: String,
     onDismiss: () -> Unit,
+    // Optional caller-supplied username pre-fill. Used by deep-link arrivals in
+    // guest mode (`tg://resolve?domain=foo` shared from a browser) to land the
+    // user directly on the preview card without forcing them to re-paste. When
+    // null we fall back to the clipboard auto-paste path; specifying a value
+    // suppresses clipboard sniffing so a deep link never gets clobbered by a
+    // stale clipboard entry. Compose key on this value so re-opening the sheet
+    // with a different handle re-runs the lookup.
+    prefilledUsername: String? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -127,16 +135,29 @@ fun AddChannelSheet(
         }
     }
 
-    // Auto-paste-and-validate from clipboard. If the user copied a Telegram
-    // link / @handle anywhere before tapping "Add channel", we eat the manual
-    // "paste" step entirely: fill the input and trigger lookup so they land
-    // straight on the preview card. Privacy-conscious: we only act when the
-    // clipboard text parses as a valid Telegram username via the existing
-    // [parseUsernameFromInput] regex — random clipboard contents (passwords,
-    // URLs to other sites) silently fall through to the empty default. We
-    // also gate on `input.isBlank()` so a stale clipboard never overwrites
-    // text the user is actively editing across recompositions.
-    LaunchedEffect(Unit) {
+    // Deep-link pre-fill takes precedence over clipboard auto-paste. When the
+    // sheet was opened via a `tg://resolve?domain=foo` arrival, the caller
+    // supplies the resolved handle here; we fill the input + run lookup
+    // straight away. Clipboard sniffing is suppressed in this case so a stale
+    // clipboard entry can't clobber the deep-link target. Falling back to
+    // clipboard otherwise preserves the auto-paste UX from the manual flow.
+    LaunchedEffect(prefilledUsername) {
+        if (prefilledUsername != null) {
+            if (input.isBlank()) {
+                input = prefilledUsername
+                lookup(prefilledUsername)
+            }
+            return@LaunchedEffect
+        }
+        // Auto-paste-and-validate from clipboard. If the user copied a Telegram
+        // link / @handle anywhere before tapping "Add channel", we eat the manual
+        // "paste" step entirely: fill the input and trigger lookup so they land
+        // straight on the preview card. Privacy-conscious: we only act when the
+        // clipboard text parses as a valid Telegram username via the existing
+        // [parseUsernameFromInput] regex — random clipboard contents (passwords,
+        // URLs to other sites) silently fall through to the empty default. We
+        // also gate on `input.isBlank()` so a stale clipboard never overwrites
+        // text the user is actively editing across recompositions.
         val pasted = runCatching {
             clipboard.getClipEntry()
                 ?.clipData?.getItemAt(0)?.text?.toString()
