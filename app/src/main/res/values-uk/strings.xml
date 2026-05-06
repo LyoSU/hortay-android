@@ -70,6 +70,7 @@
     <!-- %1$s — попередньо відформатований рядок з t.me ("1.5K", "262K", "12 345"),
          не Int. Ми не парсимо число, тому <plurals> по кількості тут не застосовний. -->
     <string name="web_subscribers">%1$s підписників</string>
+    <string name="web_deeplink_signin_required">Увійдіть, щоб відкривати приватні канали</string>
     <string name="auth_change_number">Змінити номер</string>
     <string name="auth_back">Назад</string>
     <string name="auth_password_show">Показати пароль</string>

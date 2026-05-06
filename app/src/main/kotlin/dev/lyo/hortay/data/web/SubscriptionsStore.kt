@@ -39,8 +39,7 @@ class SubscriptionsStore(context: Context) {
     }
 
     suspend fun add(username: String) {
-        val normalized = username.trim().removePrefix("@")
-        if (normalized.isEmpty()) return
+        val normalized = normalize(username) ?: return
         dataStore.edit { prefs ->
             val current = prefs[KEY_SUBSCRIPTIONS] ?: emptySet()
             prefs[KEY_SUBSCRIPTIONS] = current + normalized
@@ -48,12 +47,25 @@ class SubscriptionsStore(context: Context) {
     }
 
     suspend fun remove(username: String) {
-        val normalized = username.trim().removePrefix("@")
-        if (normalized.isEmpty()) return
+        val normalized = normalize(username) ?: return
         dataStore.edit { prefs ->
             val current = prefs[KEY_SUBSCRIPTIONS] ?: emptySet()
             prefs[KEY_SUBSCRIPTIONS] = current - normalized
         }
+    }
+
+    /**
+     * Canonical username form: trimmed, no leading `@`, lowercase. Telegram handles
+     * are case-insensitive on the server side, so `@Durov` and `@durov` are the same
+     * channel — but a plain `Set<String>` will happily store both as distinct entries
+     * (and a later `add(@Durov)` won't dedupe against an earlier `add(@durov)`).
+     * Normalising at the store boundary makes the case-insensitivity invariant
+     * explicit. Matches the bare-username shape returned by [parseUsernameFromInput],
+     * which the rest of the data layer already passes through unchanged.
+     */
+    private fun normalize(username: String): String? {
+        val trimmed = username.trim().removePrefix("@").lowercase()
+        return trimmed.ifEmpty { null }
     }
 
     private companion object {

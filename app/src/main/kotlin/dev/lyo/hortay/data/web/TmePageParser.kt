@@ -129,8 +129,11 @@ object TmePageParser {
         //      ungreated.
         // The fix: select all `.tgme_widget_message_text` that are NOT inside a
         // `.tgme_widget_message_reply` and are NOT outer wrappers, then take the
-        // first surviving element. Falls back to the original selectFirst for
-        // older single-wrapper layouts.
+        // first surviving element. Falls back to the original selectFirst (with
+        // the same `:not(.js-message_reply_text)` guard) for older single-wrapper
+        // layouts. The earlier raw `.tgme_widget_message_text` fallback was
+        // dropped — it would re-introduce the reply-text bug it was supposed to
+        // fix, since reply blocks share that exact class.
         val textHtml = (msg
             .select(".tgme_widget_message_text:not(.js-message_reply_text)")
             .filterNot { it.parents().any { p -> p.hasClass("tgme_widget_message_reply") } }
@@ -139,8 +142,7 @@ object TmePageParser {
                 // `.tgme_widget_message_text` descendant.
                 candidate.selectFirst(".tgme_widget_message_text") == null
             }
-            ?: msg.selectFirst(".tgme_widget_message_text:not(.js-message_reply_text)")
-            ?: msg.selectFirst(".tgme_widget_message_text"))
+            ?: msg.selectFirst(".tgme_widget_message_text:not(.js-message_reply_text)"))
             ?.html().orEmpty()
 
         val media = parseMedia(msg)
@@ -315,7 +317,7 @@ object TmePageParser {
         )
             ?.attr("style")
             ?.let(::extractCssBackgroundUrl)
-            ?: preview.selectFirst("img")?.attr("src")?.ifBlank { null }
+            ?: preview.selectFirst("img")?.attr("src")?.ifBlank { null }?.takeIf(::isSafeHttpsUrl)
         return WebPreview(
             url = url,
             siteName = siteName,
@@ -394,7 +396,24 @@ object TmePageParser {
     private fun extractCssBackgroundUrl(style: String): String? {
         if (style.isBlank()) return null
         val match = BACKGROUND_URL_REGEX.find(style) ?: return null
-        return match.groupValues[1].takeIf { it.isNotBlank() }
+        val raw = match.groupValues[1].takeIf { it.isNotBlank() } ?: return null
+        return raw.takeIf(::isSafeHttpsUrl)
+    }
+
+    /**
+     * SSRF / loader-abuse hedge for any URL we extract from t.me HTML and hand off
+     * to Coil / OkHttp. Today we trust Telegram's rendering — it has only ever
+     * emitted `https://` CDN URLs in the wild. But Coil happily honours `file://`,
+     * `http://` (cleartext, including LAN), `data:`, `javascript:` etc. at load
+     * time, so a single compromised template (or upstream layout regression that
+     * leaks an attacker-controlled `style="background-image: url(file:///…)"`)
+     * would let our app reach for arbitrary local files or speak cleartext to an
+     * attacker's HTTP server. Five lines of protocol-allowlist neutralise that
+     * entire class of attack without restricting hosts (web previews legitimately
+     * embed og:image from arbitrary HTTPS sites).
+     */
+    private fun isSafeHttpsUrl(url: String): Boolean {
+        return url.startsWith("https://", ignoreCase = true)
     }
 
     /**

@@ -12,8 +12,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,8 +27,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.DeepLink
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.FloatingNavBar
 import dev.lyo.hortay.ui.main.NavTab
@@ -54,6 +60,10 @@ fun WebModeScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
     var addSheetOpen by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
+    // Username carried over from a deep-link arrival into the AddChannelSheet.
+    // Null in the manual-open case (clipboard auto-paste runs); set to a bare
+    // handle by the deep-link collector below to skip the paste step entirely.
+    var deepLinkPrefill by rememberSaveable { mutableStateOf<String?>(null) }
     // Monotonic counter incremented on each "Home" re-tap — TimelineScreen
     // observes it and scrolls the feed to top (or refreshes when already at
     // top). Same mechanism as MainScaffold so the home-tap-to-scroll gesture
@@ -61,6 +71,36 @@ fun WebModeScaffold(graph: AppGraph) {
     var homeTapTrigger by rememberSaveable { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     val locale = remember { Locale.getDefault().language.lowercase() }
+    val signInRequiredMsg = stringResource(R.string.web_deeplink_signin_required)
+    // Snackbar host lifted into the scaffold so deep-link rejection messages
+    // ("sign in to open private channels") land regardless of which tab the
+    // user is currently looking at. Same pattern as MainScaffold's userMessages
+    // bus — TDLib mode's UserMessageBus has no analogue in guest mode, so this
+    // is the lightest surface that satisfies the few cases we need.
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Deep-link dispatcher. Mirrors MainScaffold's collector but speaks the
+    // guest-mode dialect: only [DeepLink.PublicChannel] is actionable here
+    // (we open AddChannelSheet pre-filled with the handle so the user can
+    // confirm before subscribing — never auto-subscribing, which would join
+    // arbitrary channels under the user's nose). Private and per-message
+    // links require TDLib auth; we surface a snackbar nudging sign-in
+    // instead of silently dropping them, which would feel broken when the
+    // user clearly tapped a Telegram link.
+    LaunchedEffect(Unit) {
+        graph.deepLinkRouter.events.collect { link ->
+            when (link) {
+                is DeepLink.PublicChannel -> {
+                    deepLinkPrefill = link.handle
+                    addSheetOpen = true
+                }
+                is DeepLink.PrivateChannel,
+                is DeepLink.Message -> {
+                    snackbarHostState.showSnackbar(signInRequiredMsg)
+                }
+            }
+        }
+    }
 
     BackHandler(enabled = selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
@@ -68,6 +108,9 @@ fun WebModeScaffold(graph: AppGraph) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data -> Snackbar(snackbarData = data) }
+        },
         bottomBar = {
             FloatingNavBar(
                 selected = selectedTab,
@@ -92,9 +135,14 @@ fun WebModeScaffold(graph: AppGraph) {
             // first-time user can't miss it; collapses to icon-only once posts
             // exist and the affordance becomes secondary.
             if (selectedTab == NavTab.Feed || selectedTab == NavTab.Channels) {
-                val hasChannels = graph.webFeedSource.channels
-                    // Synchronous read: StateFlow value — no recomposition trigger.
-                    .value.any { it.isSubscribed }
+                // Subscribed via Lifecycle so the FAB collapses the moment the user
+                // adds their first channel. Earlier `channels.value.any { … }` was a
+                // raw StateFlow read inside composition — Compose never re-subscribed,
+                // so the extended FAB stayed expanded with the "Add channel" label even
+                // after subscriptions existed. derivedStateOf scopes recomposition to
+                // the boolean: only an actual any/none flip propagates further.
+                val channels by graph.webFeedSource.channels.collectAsStateWithLifecycle()
+                val hasChannels = channels.any { it.isSubscribed }
                 // No manual padding here — Scaffold positions the FAB above the
                 // bottomBar automatically. An earlier 88dp bottom padding stacked
                 // on top of Scaffold's own offset and floated the button much too
@@ -176,8 +224,15 @@ fun WebModeScaffold(graph: AppGraph) {
             repository = graph.webRepository,
             client = graph.webClient,
             locale = locale,
-            onDismiss = { addSheetOpen = false },
+            // One-shot: clear the prefill on dismiss so a manual reopen lands
+            // back on the clipboard auto-paste path instead of looping the user
+            // through the same deep-link target every time they tap "Add channel".
+            onDismiss = {
+                addSheetOpen = false
+                deepLinkPrefill = null
+            },
             onSignIn = { scope.launch { graph.guestMode.setGuest(false) } },
+            prefilledUsername = deepLinkPrefill,
         )
     }
 

@@ -15,6 +15,7 @@ import okhttp3.Request
 import okhttp3.Response
 import java.io.File
 import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
@@ -95,7 +96,13 @@ class WebTelegramClient(
             // raw gzipped bytes that look like binary garbage to the parser. Verified
             // on-device: with the header set we got 20 KB of gzip magic; without it,
             // 136 KB of valid HTML.
-            .header("Accept-Language", "en-US,en;q=0.9,uk;q=0.8")
+            // Accept-Language follows the system locale rather than a hardcoded value.
+            // A static "en-US,en;q=0.9,uk;q=0.8" sent by every Hortay user would brand
+            // a Polish, German, or Spanish device with a Ukrainian fallback — that's a
+            // unique fingerprint bit, not a neutral default. `Locale.getDefault()` is
+            // what a real browser on the same device would send, so we add zero
+            // distinguishing entropy on top of what the user already leaks.
+            .header("Accept-Language", ACCEPT_LANGUAGE)
             .apply {
                 if (!useCache) {
                     cacheControl(okhttp3.CacheControl.FORCE_NETWORK)
@@ -243,11 +250,29 @@ class WebTelegramClient(
         // telegram, nexta_live, …) at the time of authoring; if Telegram changes their
         // UA-sniffing rules, [TmePageParser] will detect the missing
         // .tgme_channel_info_header_title and surface ParseFailure to the caller.
-        // The trailing Hortay marker is preserved so server-side log analysis can
-        // attribute the traffic if needed.
-        private val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 " +
-            "Hortay/${BuildConfig.VERSION_NAME}"
+        // No app-identifying suffix: contradicts the "anonymous" promise — a
+        // `Hortay/<version>` tail makes every guest-mode request trivially
+        // attributable in Telegram's edge logs (and to anyone else on-path).
+        // We emit a plain Chrome-on-Linux UA, indistinguishable from a real
+        // browser at the HTTP layer.
+        private const val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+
+        // Computed once at class-load — Locale changes are rare enough at runtime
+        // (system-settings round trip) that a per-request alloc isn't justified, and
+        // a refresh on every fetch would in turn become a fingerprint bit if Locale
+        // changed mid-session. Format mirrors what a desktop browser sends:
+        // "<tag>,<tag>;q=0.9,en;q=0.8" — primary preference, then English fallback so
+        // pages that don't have the user's locale degrade to readable English instead
+        // of whatever Telegram's edge picks by IP.
+        private val ACCEPT_LANGUAGE: String = run {
+            val tag = Locale.getDefault().toLanguageTag()
+            if (tag.equals("en", ignoreCase = true) || tag.startsWith("en-", ignoreCase = true)) {
+                "$tag,en;q=0.9"
+            } else {
+                "$tag,en;q=0.8"
+            }
+        }
 
         // Cap on per-429 backoff. Picked to stay below user-visible timeout perception
         // (5 min is already very long) while honoring Telegram's signal. Shorter than

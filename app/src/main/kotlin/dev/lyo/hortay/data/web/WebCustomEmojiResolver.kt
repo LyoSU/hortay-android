@@ -52,7 +52,13 @@ import kotlin.coroutines.resumeWithException
  * this resolver into a DataStore-backed cache.
  */
 class WebCustomEmojiResolver(
-    private val httpClient: OkHttpClient = WebTelegramClient.defaultHttpClient(),
+    // No default value: instantiating with `WebTelegramClient.defaultHttpClient()`
+    // here was actively wrong — it built a SECOND OkHttp client without the shared
+    // disk cache, so every emoji resolution skipped the 10 MB ETag cache that
+    // [AppGraph.webHttpClient] sets up. AppGraph already passes the shared client;
+    // this signature change makes the wiring explicit so future call sites can't
+    // silently re-acquire a cache-less twin.
+    private val httpClient: OkHttpClient,
 ) {
 
     private val cache = HashMap<String, ResolvedEmoji>()
