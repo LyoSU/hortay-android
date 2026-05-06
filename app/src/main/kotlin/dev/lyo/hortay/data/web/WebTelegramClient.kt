@@ -243,11 +243,13 @@ class WebTelegramClient(
         // telegram, nexta_live, …) at the time of authoring; if Telegram changes their
         // UA-sniffing rules, [TmePageParser] will detect the missing
         // .tgme_channel_info_header_title and surface ParseFailure to the caller.
-        // The trailing Hortay marker is preserved so server-side log analysis can
-        // attribute the traffic if needed.
-        private val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 " +
-            "Hortay/${BuildConfig.VERSION_NAME}"
+        // No app-identifying suffix: contradicts the "anonymous" promise — a
+        // `Hortay/<version>` tail makes every guest-mode request trivially
+        // attributable in Telegram's edge logs (and to anyone else on-path).
+        // We emit a plain Chrome-on-Linux UA, indistinguishable from a real
+        // browser at the HTTP layer.
+        private const val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
 
         // Cap on per-429 backoff. Picked to stay below user-visible timeout perception
         // (5 min is already very long) while honoring Telegram's signal. Shorter than
