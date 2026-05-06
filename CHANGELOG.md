@@ -84,6 +84,33 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   uses `NET_CAPABILITY_NOT_ROAMING` from `NetworkCapabilities`.
 
 ### Fixed
+- **Photo albums collapsed to a single photo after restarting the app
+  (TDLib mode)**. Closing and re-opening Hortay would surface a
+  previously-merged 5-photo album as a 1-photo card, with the other
+  members never reloading. Three pile-on bugs in the same merge logic:
+  (1) `refreshLocked`'s post-update merge dropped a known-merged anchor
+  whenever any of its `albumMessageIds` was in the fresh `raw` batch —
+  but if `coalesceAlbumFragments` came up short (transient FLOOD_WAIT,
+  members aged past TDLib's local-store window), `raw` would carry only
+  one member of the album; `mergeAlbumMembers` then passed a 1-member
+  group through unchanged and the user saw a 1-photo card. (2) The next
+  `saveSnapshotNow` persisted the corrupted state with
+  `albumMessageIds=[]`, so the next cold start restored 1 message and
+  could never re-discover the missing siblings — stable visible
+  corruption. (3) Pagination paths (`loadOlder`, `loadChannelHistory`)
+  deduped fresh raw rows by `(chatId, anchor.id)` only; non-anchor
+  album members slipped past, and PostFilterStrategy re-merged anchor
+  + 4 stray fragments into a 9-item double-rendered card. All three
+  collapse into one canonical merge, `foldRawIntoCurrent`: it counts
+  raw album coverage against `current`'s known `albumMessageIds.size`,
+  drops the partial raw fragment instead of replacing the merged
+  anchor, and matches the de-dup against EVERY known member id rather
+  than just the anchor. `restoreFromSnapshotInternal` now also pipes
+  each chat's slice through `coalesceAlbumFragments` before mapping —
+  even already-corrupted snapshots self-heal on the next cold start
+  (the surviving orphan member becomes a single-member group, the
+  surround fetch pulls its siblings, the merged card rebuilds). Locked
+  with seven new unit tests in `FoldRawIntoCurrentTest`.
 - **Reactions, view counts and comment counts stopped updating on
   photo-album posts in TDLib mode**. `flushPendingInteractionInfo`
   matched buffered `UpdateMessageInteractionInfo` events against

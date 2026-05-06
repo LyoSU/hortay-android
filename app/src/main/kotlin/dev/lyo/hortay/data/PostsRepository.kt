@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import android.util.Log
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
@@ -248,14 +249,21 @@ class PostsRepository(
         if (messages.isEmpty()) return 0
 
         // Group by chat so each channel is mapped against a single Chat object — saves
-        // one GetChat per message in the cold-cache case.
+        // one GetChat per message in the cold-cache case. Each chat's slice is run
+        // through [coalesceAlbumFragments] so a corrupted single-id snapshot (the
+        // outcome of a previous partial-refresh downgrade, see [foldRawIntoCurrent])
+        // self-heals on the next cold start: the orphan album member becomes a
+        // single-member group, the surround fetch pulls its siblings, and
+        // PostFilterStrategy re-merges the full card. Without this, snapshot
+        // corruption is one-way: once `albumMessageIds` collapses to `[]`, save/
+        // restore preserves the 1-photo state forever.
         val byChat = messages.groupBy { it.chatId }
         val mapped = byChat.flatMap { (chatId, msgs) ->
             val chat = chatCache[chatId]
                 ?: runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()?.also { chatCache[chatId] = it }
                 ?: return@flatMap emptyList()
             if (!chat.isChannel()) emptyList()
-            else msgs.map { mapper.toChannelPost(it, chat) }
+            else coalesceAlbumFragments(chatId, msgs).map { mapper.toChannelPost(it, chat) }
         }
         if (mapped.isEmpty()) return 0
 
@@ -344,11 +352,7 @@ class PostsRepository(
         val raw = coalesceAlbumFragments(chatId, history.messages.orEmpty().toList())
         val mapped = raw.map { mapper.toChannelPost(it, chat) }
 
-        _posts.update { current ->
-            val seen = current.mapTo(mutableSetOf()) { it.chatId to it.id }
-            val merged = current.addAll(mapped.filter { (it.chatId to it.id) !in seen })
-            PostFilterStrategy.apply(merged).take(MAX_FEED_SIZE).toPersistentList()
-        }
+        _posts.update { current -> foldRawIntoCurrent(current, mapped, MAX_FEED_SIZE) }
     }
 
     suspend fun closeChat(chatId: Long) = ChatPresence.closeChat(td, chatId)
@@ -408,20 +412,24 @@ class PostsRepository(
         val coalesced = coalesceAlbumFragments(chatId, raw)
         val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
 
-        var added = 0
+        var prevSize = 0
+        var nextSize = 0
         _posts.update { current ->
-            val seen = current.mapTo(mutableSetOf()) { it.chatId to it.id }
-            val fresh = mapped.filter { (it.chatId to it.id) !in seen }
-            added = fresh.size
-            val merged = current.addAll(fresh)
-            PostFilterStrategy.apply(merged).take(MAX_FEED_SIZE).toPersistentList()
+            prevSize = current.size
+            val result = foldRawIntoCurrent(current, mapped, MAX_FEED_SIZE)
+            nextSize = result.size
+            result
         }
         // GetChatHistory(fromMessageId, offset=0, …) is INCLUSIVE on the boundary
         // message — at end-of-history TDLib still returns the single anchor message
         // back to us in a non-empty page. Without this guard the scroll listener would
         // re-fire loadOlder forever once the user reaches the channel's first post,
         // each time hitting GetChatHistory and getting the same one-message page. Treat
-        // a zero-fresh batch as the sentinel and stop pinging.
+        // a zero-card batch as the sentinel and stop pinging. Card-count delta (vs
+        // raw-message delta) is the right signal here because the partial-album
+        // protection in foldRawIntoCurrent may legitimately drop raw rows without
+        // shrinking the feed — those aren't end-of-history.
+        val added = (nextSize - prevSize).coerceAtLeast(0)
         if (added == 0) pageEnded += chatId
         return added
     }
@@ -984,19 +992,11 @@ class PostsRepository(
         // mid-refresh and were correctly ingested but absent from the snapshot we took
         // before they arrived.
         //
-        // Merge policy: `raw` is authoritative for any (chatId, id) it carries (TDLib
-        // just told us this is the current state). For everything else in `current`
-        // (older posts paginated via loadOlder, posts ingested concurrently after our
-        // GetChatHistory snapshot) we keep the existing entry. PostFilterStrategy then
-        // re-merges albums and re-sorts.
-        _posts.update { current ->
-            val freshKeys = raw.mapTo(HashSet()) { it.chatId to it.id }
-            val keptOld = current.filterNot { post ->
-                val keys = post.albumMessageIds.ifEmpty { listOf(post.id) }
-                keys.any { id -> (post.chatId to id) in freshKeys }
-            }
-            PostFilterStrategy.apply(raw + keptOld).take(MAX_FEED_SIZE).toPersistentList()
-        }
+        // Album-aware merge lives in [foldRawIntoCurrent]: raw is authoritative when
+        // it covers an album whole, but a partial slice is preserved against the
+        // existing merged anchor so a refresh that loses album members at the
+        // GetChatHistory window edge can't downgrade a 5-photo card to 1-photo.
+        _posts.update { current -> foldRawIntoCurrent(current, raw, MAX_FEED_SIZE) }
     }
 
     /**
@@ -1061,4 +1061,85 @@ class PostsRepository(
 private fun TdApi.Chat.isChannel(): Boolean {
     val type = this.type
     return type is TdApi.ChatTypeSupergroup && type.isChannel
+}
+
+/**
+ * Album-aware fold of a fresh per-message batch into the live feed snapshot.
+ *
+ * Canonical merge for every code path that ingests a [TdApi.GetChatHistory] /
+ * [TdApi.SearchChatMessages] result into [PostsRepository._posts]: full-feed
+ * refresh, single-channel deep load, and pagination. They all share two hazards.
+ *
+ *  1. **Partial-album downgrade.** [raw] is the per-message expansion of an
+ *     album: 5 [TimelinePost]s with [TimelinePost.mediaAlbumId] set, each
+ *     carrying a 1-item [PostContent.PhotoAlbum]. [PostsRepository.coalesceAlbumFragments]
+ *     normally plugs members lost to the GetChatHistory window edge, but its
+ *     surround fetch can come up short — TDLib FLOOD_WAIT, transient network
+ *     blip, or members aged out of the local store. The naive merge ("drop any
+ *     current entry that overlaps raw, re-run PostFilterStrategy") then replaces
+ *     a known-complete 5-photo merged anchor with a single raw fragment;
+ *     mergeAlbumMembers passes a 1-member group through unchanged and the user
+ *     sees a 1-photo card. A subsequent [PostsRepository.saveSnapshotNow]
+ *     persists `albumMessageIds=[]`, the next cold start restores 1 message and
+ *     never re-discovers the siblings — stable corruption.
+ *
+ *  2. **Album duplication on append.** Pagination paths used to drop only
+ *     entries whose `(chatId, id)` matched something in `current`, but `current`
+ *     only carries the anchor's id. Other album members slipped through, and
+ *     PostFilterStrategy would mergeAlbumMembers([merged-anchor (5 items), M2,
+ *     M3, M4, M5]) → 5 items flat-mapped from anchor + 1 each from M2..M5 = 9
+ *     items with duplicates.
+ *
+ * Strategy:
+ *  - For every (chatId, mediaAlbumId) raw covers, count members against the
+ *    known [TimelinePost.albumMessageIds] size on the existing merged anchor.
+ *    Strictly fewer raw members than known size → partial → drop the raw
+ *    fragment, preserve the anchor.
+ *  - Drop existing entries whose anchor.id OR any albumMessageIds member is in
+ *    raw's per-message id set, so a raw batch covering the full album cleanly
+ *    replaces the anchor instead of stacking on top of it.
+ *  - Run [PostFilterStrategy.apply] on the union; it re-merges album members,
+ *    drops Unsupported, and resorts.
+ */
+internal fun foldRawIntoCurrent(
+    current: PersistentList<TimelinePost>,
+    raw: List<TimelinePost>,
+    maxFeedSize: Int,
+): PersistentList<TimelinePost> {
+    val rawByAlbum = raw
+        .filter { it.mediaAlbumId != 0L }
+        .groupBy { it.chatId to it.mediaAlbumId }
+    val knownAlbumSizes = current
+        .filter { it.albumMessageIds.size > 1 }
+        .associate { (it.chatId to it.mediaAlbumId) to it.albumMessageIds.size }
+    val partialAlbumKeys = rawByAlbum.entries
+        .mapNotNullTo(HashSet()) { (key, members) ->
+            val knownSize = knownAlbumSizes[key]
+            if (knownSize != null && members.size < knownSize) key else null
+        }
+    if (partialAlbumKeys.isNotEmpty()) {
+        // Surface this — partial coverage is the symptom of an album that's
+        // either aging out of the channel's window or hitting transient
+        // FLOOD_WAIT in coalesceAlbumFragments. Either way the existing merged
+        // anchor is the more reliable rendering and we skip the raw fragment;
+        // the next refresh that catches the album whole will overwrite cleanly.
+        // runCatching keeps the helper unit-testable on the JVM where the
+        // android.util.Log static stubs throw "not mocked" by default.
+        runCatching {
+            Log.w("PostsRepository", "preserving ${partialAlbumKeys.size} merged album(s) over partial raw batch")
+        }
+    }
+    val rawSafe = if (partialAlbumKeys.isEmpty()) raw
+        else raw.filterNot { (it.chatId to it.mediaAlbumId) in partialAlbumKeys }
+
+    val freshKeys = rawSafe.mapTo(HashSet()) { it.chatId to it.id }
+    val keptOld = current.filterNot { post ->
+        // Match against EVERY member id, not just the anchor — otherwise a raw
+        // batch that contains the album's non-anchor members slips past the
+        // de-dup and PostFilterStrategy ends up merging the existing anchor
+        // with raw fragments of itself, doubling the items list.
+        val keys = post.albumMessageIds.ifEmpty { listOf(post.id) }
+        keys.any { id -> (post.chatId to id) in freshKeys }
+    }
+    return PostFilterStrategy.apply(rawSafe + keptOld).take(maxFeedSize).toPersistentList()
 }
