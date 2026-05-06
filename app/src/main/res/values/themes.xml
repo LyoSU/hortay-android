@@ -6,10 +6,13 @@
         <item name="postSplashScreenTheme">@style/Theme.Hortay</item>
     </style>
 
+    <!-- Base theme. Targets API 26+ (the project's minSdk). The
+         enforceNavigationBarContrast attribute is API 29-only; it lives in
+         values-v29/themes.xml so this file stays clean for older devices and
+         lint stops flagging NewApi against the bare minSdk surface. -->
     <style name="Theme.Hortay" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:enforceNavigationBarContrast">false</item>
     </style>
 </resources>
