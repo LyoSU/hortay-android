@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -103,6 +104,15 @@ class WebFeedSource(
 
     @Volatile
     private var lastSuccessfulRefreshAtMs: Long = 0L
+
+    // Adaptive backoff signal for [WebFeedScheduler]. Incremented on each
+    // sweep that ingested NO new posts (every channel returned 304 NotModified
+    // or the same seq it already had). Reset to 0 when a sweep brings new
+    // content or the user explicitly forces a refresh. Scheduler uses this to
+    // double its interval — a feed where nothing's been published in an hour
+    // shouldn't pay the radio cost of a full sweep every 5 minutes.
+    private val _consecutiveNoOpSweeps = MutableStateFlow(0)
+    val consecutiveNoOpSweeps: StateFlow<Int> = _consecutiveNoOpSweeps.asStateFlow()
 
     init {
         // Mirror DataStore subscription set into the channel table on every change.
@@ -203,17 +213,27 @@ class WebFeedSource(
             _refreshState.value = RefreshState.Refreshing(targets.size)
 
             try {
-                coroutineScope {
+                val outcomes = coroutineScope {
                     targets.map { username ->
                         async {
-                            val outcome = fetchOne(
+                            fetchOne(
                                 username = username,
                                 forceNetwork = force || username in staleMediaSet,
                                 fetchedAtMs = System.currentTimeMillis(),
                             )
-                            username to outcome
                         }
                     }.awaitAll()
+                }
+                // Adaptive backoff signal: when every channel returned 304 /
+                // error / parse failure (no `Page` outcome), this sweep
+                // produced zero new content. Bump the counter so the
+                // scheduler can lengthen its next interval. Any `Page` resets
+                // the streak — the user wants prompt updates after silence
+                // breaks.
+                if (outcomes.none { it }) {
+                    _consecutiveNoOpSweeps.update { it + 1 }
+                } else {
+                    _consecutiveNoOpSweeps.value = 0
                 }
                 lastSuccessfulRefreshAtMs = System.currentTimeMillis()
                 _refreshState.value = RefreshState.Idle
@@ -240,11 +260,17 @@ class WebFeedSource(
         }
     }
 
+    /**
+     * @return true when the fetch ingested fresh content (a 200 with parsed
+     *   posts), false otherwise (304 NotModified, NotFound, errors, parse
+     *   failures). The caller — [doRefresh] — aggregates these to drive the
+     *   adaptive backoff counter exposed via [consecutiveNoOpSweeps].
+     */
     private suspend fun fetchOne(
         username: String,
         forceNetwork: Boolean,
         fetchedAtMs: Long,
-    ) {
+    ): Boolean {
         repository.markFetchStatus(username, ChannelFetchStatus.Loading)
         val result = fetchSemaphore.withPermit {
             client.fetchChannelPage(username, useCache = !forceNetwork)
@@ -257,6 +283,7 @@ class WebFeedSource(
                     lastModified = result.lastModified,
                     fetchedAtMs = fetchedAtMs,
                 )
+                return true
             }
             FetchResult.NotModified -> {
                 repository.markNotModified(username, fetchedAtMs)
@@ -289,6 +316,7 @@ class WebFeedSource(
                 )
             }
         }
+        return false
     }
 
     /**

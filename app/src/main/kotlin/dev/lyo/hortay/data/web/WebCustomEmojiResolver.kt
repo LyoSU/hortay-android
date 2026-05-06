@@ -61,7 +61,18 @@ class WebCustomEmojiResolver(
     private val httpClient: OkHttpClient,
 ) {
 
-    private val cache = HashMap<String, ResolvedEmoji>()
+    // LinkedHashMap with access-order so we drop least-recently-resolved
+    // entries when the in-memory cache grows past CACHE_LIMIT. Earlier this was
+    // an unbounded HashMap — long sessions with many channels would let the map
+    // grow monotonically (200 channels × ~10 unique custom emojis ≈ 2K entries
+    // over a single sweep, more if users scroll a year of history). Each
+    // ResolvedEmoji is small (5 strings), so 1024 entries cap memory at ~100 KB
+    // worst case while still serving the hot path (recent emoji on screen) from
+    // RAM. accessOrder=true makes `removeEldestEntry` evict by recency.
+    private val cache = object : LinkedHashMap<String, ResolvedEmoji>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: Map.Entry<String, ResolvedEmoji>?): Boolean =
+            size > CACHE_LIMIT
+    }
     private val cacheMutex = Mutex()
 
     // Per-request 200 ms spacing between outbound calls (5 req/s ceiling). Mirrors
@@ -214,6 +225,12 @@ class WebCustomEmojiResolver(
         // conservative; we can probably go to 100 ms (10 req/s) but starting strict
         // and loosening with measurement is safer than the reverse.
         private const val REQUEST_SPACING_MS = 200L
+
+        // 1024 distinct emoji ids ≈ 100 KB of cached strings. Sized for "scroll
+        // a few years of feed across 200 channels"; eviction kicks in well
+        // before user-perceptible re-resolutions (LRU keeps the on-screen set
+        // hot regardless of total resolved count).
+        private const val CACHE_LIMIT = 1024
 
         private val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"

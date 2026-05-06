@@ -75,11 +75,20 @@ class WebFeedScheduler(
             // up — the coroutine just falls through.
             feedSource.refreshAsync(force = false).join()
             while (true) {
-                delay(tier2IntervalMs)
+                // Adaptive backoff: every consecutive no-op sweep doubles the
+                // delay (capped at MAX_INTERVAL_MS). A reader who keeps the app
+                // open all afternoon while their channels are quiet pays
+                // 5min → 10 → 20 → 30 → 30 … instead of 12 sweeps an hour
+                // forever. The counter resets to 0 inside WebFeedSource the
+                // moment any channel returns fresh content, so the next sweep
+                // after a publish snaps back to the base 5-minute cadence.
+                val streak = feedSource.consecutiveNoOpSweeps.value.coerceAtMost(MAX_BACKOFF_DOUBLINGS)
+                val nextDelay = (tier2IntervalMs shl streak).coerceAtMost(MAX_INTERVAL_MS)
+                delay(nextDelay)
                 feedSource.refreshAsync(force = false).join()
             }
         }.also {
-            Log.i(TAG, "tier-2 scheduler started (${tier2IntervalMs / 1000}s interval)")
+            Log.i(TAG, "tier-2 scheduler started (${tier2IntervalMs / 1000}s base, adaptive)")
         }
     }
 
@@ -99,5 +108,14 @@ class WebFeedScheduler(
          * not the full ~30 KB body anyway.
          */
         const val DEFAULT_TIER2_INTERVAL_MS = 5 * 60 * 1000L
+
+        // Adaptive backoff cap. After this many consecutive no-op sweeps we
+        // stop doubling — a 30-minute idle interval is the worst case. Picked
+        // so that a publish in the middle of a quiet stretch is observed
+        // within ~30 min, well under the threshold where a user would
+        // pull-to-refresh anyway. Beyond this counter the value clamps
+        // (`coerceAtMost`) but doesn't overflow.
+        private const val MAX_BACKOFF_DOUBLINGS = 3 // 5min × 2^3 = 40min, capped to 30min by MAX_INTERVAL_MS
+        private const val MAX_INTERVAL_MS = 30 * 60 * 1000L
     }
 }

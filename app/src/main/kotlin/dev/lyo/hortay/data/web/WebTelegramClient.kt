@@ -297,9 +297,15 @@ class WebTelegramClient(
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(15, TimeUnit.SECONDS)
                 .callTimeout(20, TimeUnit.SECONDS)
-                // Aggressive connection reuse: 200-channel sweep wants pooling. Default is
-                // 5 — bumped to keep the t.me edge connection warm during a sweep.
-                .connectionPool(okhttp3.ConnectionPool(8, 5, TimeUnit.MINUTES))
+                // Aggressive connection reuse during a sweep: 200-channel fan-out
+                // benefits from a wider pool than OkHttp's default 5. Idle keep-
+                // alive shortened from 5 minutes → 60 seconds because tier-2
+                // sweeps fire at 5-minute intervals at most: a 5-minute idle
+                // window keeps 8 sockets alive across the *entire* gap between
+                // sweeps, draining radio "tail" energy for nothing. 60 seconds
+                // amortises the connection setup over a single sweep but lets
+                // sockets close cleanly between them.
+                .connectionPool(okhttp3.ConnectionPool(8, 60, TimeUnit.SECONDS))
                 // Disable redirect-following for /s/<u> probes so we can detect the
                 // "private channel" redirect (t.me/s/foo → t.me/foo) cleanly. We then
                 // surface it as PrivateChannel rather than chasing the destination.
