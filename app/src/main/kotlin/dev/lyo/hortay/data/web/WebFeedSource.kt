@@ -228,7 +228,7 @@ class WebFeedSource(
 
     /** Re-fetch a single channel — used after an explicit error chip tap. */
     fun retry(username: String): Job = scope.launch {
-        fetchOne(username, forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
+        fetchOne(username.lowercase(), forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
     }
 
     /** Re-fetch the channel a post belongs to after Coil reports a stale media URL. */
@@ -308,10 +308,17 @@ class WebFeedSource(
      *     many channels the user accumulated in guest mode.
      */
     suspend fun subscribeAndRefresh(username: String, placeholderTitle: String = username) {
-        repository.subscribe(username, placeholderTitle)
-        subscriptions.add(username)
+        // Lower-case at the entry boundary: SQLite's PK on `channel.username` is
+        // case-sensitive by default, and a duplicate subscription with mixed
+        // casing (`@Durov` vs `@durov`) would surface as two rows pointing at
+        // the same Telegram channel. parseUsernameFromInput normalises too, but
+        // direct callers (deep-link arrivals, curated rows, future code paths)
+        // might pass a raw handle — this defends the data layer regardless.
+        val normalized = username.lowercase()
+        repository.subscribe(normalized, placeholderTitle)
+        subscriptions.add(normalized)
         scope.launch {
-            fetchOne(username, forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
+            fetchOne(normalized, forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
         }
     }
 

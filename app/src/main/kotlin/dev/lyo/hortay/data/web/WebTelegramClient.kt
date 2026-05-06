@@ -371,6 +371,14 @@ sealed interface LookupResult {
  * loosest bound here — must start with a letter, ASCII letters/digits/underscores,
  * length 2-32 — so an obvious typo still fails fast without a network round-trip,
  * but legitimate short handles aren't pre-rejected by us before t.me has a say.
+ *
+ * Result is lowercased: Telegram treats `@Durov` and `@durov` as the same handle
+ * server-side, but our SQLite primary key on `channel.username` is case-sensitive
+ * by default. Without normalising at the boundary, "Durov" and "durov" would
+ * become two distinct subscriptions pointing at the same channel — both fetching,
+ * both visible in the channels list, both showing the same content twice in the
+ * feed. Normalising here is the single point that catches every entry path
+ * (manual paste, curated tap, deep link, clipboard auto-paste).
  */
 fun parseUsernameFromInput(input: String): String? {
     val trimmed = input.trim()
@@ -379,16 +387,16 @@ fun parseUsernameFromInput(input: String): String? {
     // tg://resolve?domain=<name>
     Regex("""^tg://resolve\?(?:.*&)?domain=([A-Za-z][A-Za-z0-9_]{1,31})\b""")
         .find(trimmed)
-        ?.let { return it.groupValues[1] }
+        ?.let { return it.groupValues[1].lowercase() }
 
     // https://t.me/<name>(/<msg>)? or t.me/<name>
     Regex("""^(?:https?://)?t\.me/(?:s/)?([A-Za-z][A-Za-z0-9_]{1,31})(?:/\d+)?/?$""")
         .find(trimmed)
-        ?.let { return it.groupValues[1] }
+        ?.let { return it.groupValues[1].lowercase() }
 
     // @<name> or bare <name>
     val bare = trimmed.removePrefix("@")
-    if (bare.matches(Regex("""[A-Za-z][A-Za-z0-9_]{1,31}"""))) return bare
+    if (bare.matches(Regex("""[A-Za-z][A-Za-z0-9_]{1,31}"""))) return bare.lowercase()
 
     return null
 }
