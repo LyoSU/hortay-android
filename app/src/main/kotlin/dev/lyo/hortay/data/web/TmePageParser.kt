@@ -129,8 +129,11 @@ object TmePageParser {
         //      ungreated.
         // The fix: select all `.tgme_widget_message_text` that are NOT inside a
         // `.tgme_widget_message_reply` and are NOT outer wrappers, then take the
-        // first surviving element. Falls back to the original selectFirst for
-        // older single-wrapper layouts.
+        // first surviving element. Falls back to the original selectFirst (with
+        // the same `:not(.js-message_reply_text)` guard) for older single-wrapper
+        // layouts. The earlier raw `.tgme_widget_message_text` fallback was
+        // dropped — it would re-introduce the reply-text bug it was supposed to
+        // fix, since reply blocks share that exact class.
         val textHtml = (msg
             .select(".tgme_widget_message_text:not(.js-message_reply_text)")
             .filterNot { it.parents().any { p -> p.hasClass("tgme_widget_message_reply") } }
@@ -139,8 +142,7 @@ object TmePageParser {
                 // `.tgme_widget_message_text` descendant.
                 candidate.selectFirst(".tgme_widget_message_text") == null
             }
-            ?: msg.selectFirst(".tgme_widget_message_text:not(.js-message_reply_text)")
-            ?: msg.selectFirst(".tgme_widget_message_text"))
+            ?: msg.selectFirst(".tgme_widget_message_text:not(.js-message_reply_text)"))
             ?.html().orEmpty()
 
         val media = parseMedia(msg)
