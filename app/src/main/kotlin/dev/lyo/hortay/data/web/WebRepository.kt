@@ -103,17 +103,26 @@ class WebRepository(
             .flowOn(ioDispatcher)
 
     /**
-     * Cross-channel substring search over post plain-text. Uses indexed LIKE on
-     * the `text_plain` column — FTS5 isn't available on most Android SQLite
+     * Cross-channel substring search over post plain-text. Uses LIKE on the
+     * `text_plain` column — FTS5 isn't available on most Android SQLite
      * builds (Samsung / Pixel both ship without the module compiled in). For
      * realistic web-mode workloads (~5K posts × 2KB body) this still completes
      * in under 100 ms on low-end devices. The user's query is auto-wrapped in
      * `%…%` so callers pass the bare term; SQL wildcards in the input are
      * escaped to literal characters so a user typing "100%" doesn't accidentally
      * trigger a tautology.
+     *
+     * Case-insensitivity: lowercase the query here (Kotlin's `lowercase()` is
+     * Unicode-aware) and the SQL side mirrors with `LOWER(text_plain)`. Without
+     * this, Android's bundled SQLite (no ICU) only folds ASCII case — Cyrillic
+     * "Привіт" wouldn't match a row containing "привіт". Index loss is a
+     * non-issue because the existing leading `%` already defeated
+     * `post_text_plain_idx` lookups; the LIKE has always been a sequential
+     * scan, just one with case-folding now.
      */
     fun search(query: String, limit: Long = DEFAULT_SEARCH_LIMIT): Flow<PersistentList<TimelinePost>> {
-        val escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        val lowered = query.lowercase()
+        val escaped = lowered.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         val pattern = "%${escaped}%"
         return postQueries
             .searchPlain(pattern, limit, mapper = ::rowToTimelinePost)

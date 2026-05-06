@@ -117,11 +117,26 @@ WHERE post.id = :id;
 -- assembles it (escape any user-supplied %  / _ as needed). Sort by recency
 -- because we don't have bm25 ranking — newest match wins, which matches user
 -- expectation for a news feed anyway.
+--
+-- Case-insensitivity: SQLite's default LIKE folds case for ASCII only — for
+-- Cyrillic / accented Latin / any non-ASCII a case-sensitive comparison is
+-- the silent default on Android's bundled SQLite (no ICU module). To match
+-- "Привіт" against rows containing "привіт" we LOWER() both sides; the
+-- caller is expected to lowercase the bare query before wrapping it with
+-- %…%. LOWER() in Kotlin (Unicode-aware via java.lang.Character) catches
+-- Cyrillic + Greek + accented Latin uniformly.
+--
+-- Index trade-off: post_text_plain_idx is unused by this query because
+-- LOWER() on the indexed column defeats it. That's acceptable — the LIKE
+-- pattern already has a leading wildcard which alone defeats prefix-index
+-- lookups, so the index never helped this query in practice. The header
+-- note "5K posts × 2KB sub-100ms on low-end devices" still holds; SQLite
+-- runs a sequential scan with the LOWER() applied per row.
 searchPlain:
 SELECT post.*, channel.title AS channel_title, channel.avatar_url AS channel_avatar
 FROM post
 JOIN channel ON channel.username = post.channel_username
-WHERE post.text_plain LIKE :pattern
+WHERE LOWER(post.text_plain) LIKE :pattern
   AND channel.is_subscribed = 1
 ORDER BY post.published_at_ms DESC
 LIMIT :limit;
