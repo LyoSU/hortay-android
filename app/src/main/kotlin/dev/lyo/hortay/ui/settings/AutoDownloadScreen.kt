@@ -459,7 +459,7 @@ private fun VideoSizeSlider(
     // Snap the current value to the nearest step. The Slider works in [0..size-1]
     // discrete positions; we translate position → bytes and back using the static
     // step list so the displayed label always reflects exactly what's persisted.
-    val currentIdx = remember(currentBytes) {
+    val externalIdx = remember(currentBytes) {
         var bestIdx = 0
         var bestDelta = Long.MAX_VALUE
         steps.forEachIndexed { idx, candidate ->
@@ -471,8 +471,16 @@ private fun VideoSizeSlider(
         }
         bestIdx
     }
+    // Local drag state — decouples thumb position from the DataStore round-trip.
+    // Without this, every onValueChange wrote through DataStore.update() (a
+    // suspend IO + flow re-emit) before the Slider's `value` parameter caught
+    // up; the thumb visibly lagged the user's finger. We commit on
+    // [Slider.onValueChangeFinished] only, and re-sync to [externalIdx] when
+    // the source of truth changes from elsewhere (settings reset, profile
+    // rewritten by another path).
+    var localIdx by remember(externalIdx) { mutableStateOf(externalIdx) }
     val context = LocalContext.current
-    val displayValue = formatMbInt(steps[currentIdx], context)
+    val displayValue = formatMbInt(steps[localIdx], context)
 
     Column(
         modifier = Modifier
@@ -496,10 +504,12 @@ private fun VideoSizeSlider(
             )
         }
         Slider(
-            value = currentIdx.toFloat(),
+            value = localIdx.toFloat(),
             onValueChange = { v ->
-                val idx = v.toInt().coerceIn(0, steps.lastIndex)
-                if (steps[idx] != currentBytes) onChange(steps[idx])
+                localIdx = v.toInt().coerceIn(0, steps.lastIndex)
+            },
+            onValueChangeFinished = {
+                if (steps[localIdx] != currentBytes) onChange(steps[localIdx])
             },
             valueRange = 0f..(steps.lastIndex.toFloat()),
             // Slider's `steps` parameter counts intermediate stops *between* the

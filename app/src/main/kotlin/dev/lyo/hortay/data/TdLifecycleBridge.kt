@@ -149,18 +149,32 @@ class TdLifecycleBridge(
 
     /**
      * Maps the current default network to our coarse [HortayNetworkType] enum.
-     * Roaming detection uses [NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING] (absent
-     * → roaming). Ethernet rolls into Wi-Fi because both are "free" from the
-     * user's tariff perspective; "Other" (Bluetooth / VPN-only) falls back to Mobile
-     * — being conservative when in doubt, which is the same call Telegram-Android
-     * makes for unknown transports.
+     *
+     * Roaming detection uses [NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING]
+     * (absent → roaming).
+     *
+     * **Metered Wi-Fi → Mobile.** A Wi-Fi link can be metered (phone hotspot
+     * tethering, capped corporate networks, some home plans in EU markets);
+     * `NET_CAPABILITY_NOT_METERED` is the OS-side flag for "free bytes." When
+     * absent we treat the connection as Mobile so the user's tighter mobile
+     * policy (typically 10 MB video cap) applies instead of the liberal Wi-Fi
+     * one (100 MB). This matches Telegram-Android's behaviour and prevents
+     * the most common "I tethered through my phone and it ate 500 MB"
+     * surprise. Ethernet stays on the Wi-Fi profile because Ethernet is not a
+     * metering vector users worry about.
+     *
+     * "Other" (Bluetooth / VPN-only) falls back to Mobile — conservative for
+     * unknown transports.
      */
     private fun classifyNetwork(): HortayNetworkType {
         val net = cm.activeNetwork ?: return HortayNetworkType.None
         val caps = cm.getNetworkCapabilities(net) ?: return HortayNetworkType.None
+        val notMetered = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
         return when {
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> HortayNetworkType.Wifi
             caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> HortayNetworkType.Wifi
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> {
+                if (notMetered) HortayNetworkType.Wifi else HortayNetworkType.Mobile
+            }
             caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> {
                 if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING)) {
                     HortayNetworkType.Mobile
