@@ -1,0 +1,22 @@
+-- Schema migration: version 1 → 2.
+--
+-- Intentionally no-op (a single SELECT that does nothing). Purpose is purely
+-- structural: get the migration pipeline end-to-end so subsequent schema
+-- changes hit `<n>.sqm` files instead of relying on AndroidSqliteDriver's
+-- onCorruption callback wiping web.db (which would lose user bookmarks).
+--
+-- Why a no-op rather than no file at all: with no `.sqm` present, schema
+-- version stays at 1 forever, and the day someone needs migration #2 they
+-- discover the verifyMigrations / Schema.migrate plumbing has never run in
+-- practice. Better to exercise the path now under a no-op than under the
+-- pressure of a real schema change.
+--
+-- File-naming convention reminder for the next migration:
+--   • <N>.sqm migrates FROM schema version N TO version N+1.
+--   • So this file (1.sqm) bumps version 1 → 2; the next bump (2 → 3) is
+--     2.sqm; etc. SQLDelight runs them in order on first open of an older
+--     DB file (`AndroidSqliteDriver.Callback.onUpgrade`).
+--   • verifyMigrations = true (build.gradle.kts) round-trips
+--     schema → migration → schema and fails the build if they diverge.
+
+SELECT 1;
