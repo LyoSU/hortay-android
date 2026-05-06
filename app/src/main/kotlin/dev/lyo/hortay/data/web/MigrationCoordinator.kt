@@ -6,7 +6,9 @@ import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.PostsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -118,18 +120,54 @@ class MigrationCoordinator(
         }
         _progress.value = Progress(total = usernames.size, processed = 0, lastUsername = null)
         val migrated = mutableListOf<String>()
+        // Track failures separately. Successful joins go through `addMigrated` so
+        // they're never re-offered; a failure (FLOOD_WAIT, transient network,
+        // SearchPublicChat returning null on a temporarily-unreachable handle) is
+        // intentionally NOT recorded — markProposalShown() at the bottom would
+        // otherwise strand them forever, with no UI path to retry. By gating
+        // markProposalShown on "every requested handle resolved AND joined",
+        // a partial-failure run leaves the proposal pending; the next auth.Ready
+        // (foreground re-entry, sign out + sign in) re-evaluates and re-offers
+        // just the failed subset (alreadyMigrated filter excludes successes).
+        val anyFailure = java.util.concurrent.atomic.AtomicBoolean(false)
         for ((i, username) in usernames.withIndex()) {
+            // Cooperative cancellation: confirm() runs inside `mutex.withLock`,
+            // and `dismiss()` takes the same lock. Without an explicit
+            // ensureActive between iterations, a long throttle delay or a stuck
+            // RPC could keep the user pinned to the sheet. Now a parent-scope
+            // cancel (sheet swipe-down, sign-out mid-run) bubbles through here
+            // without waiting for the remaining channels to drain — critical
+            // for the ~30 s worst-case (30 channels × THROTTLE_MS).
+            currentCoroutineContext().ensureActive()
             val cleaned = username.removePrefix("@").trim().lowercase()
             if (cleaned.isEmpty()) continue
             _progress.value = Progress(total = usernames.size, processed = i, lastUsername = cleaned)
-            val chatId = runCatching { postsRepository.resolvePublicChat(cleaned) }
-                .getOrNull()
+            val chatId = try {
+                postsRepository.resolvePublicChat(cleaned)
+            } catch (cancellation: kotlinx.coroutines.CancellationException) {
+                throw cancellation
+            } catch (t: Throwable) {
+                Log.w(TAG, "migration: SearchPublicChat($cleaned) failed: ${t.message}")
+                anyFailure.set(true)
+                null
+            }
             if (chatId == null) {
-                Log.w(TAG, "migration: SearchPublicChat($cleaned) returned null")
+                if (!anyFailure.get()) {
+                    // null without exception = TDLib reports no such public chat.
+                    // That's a permanent classification (handle was wrong, channel
+                    // was deleted) — don't re-offer.
+                    Log.w(TAG, "migration: SearchPublicChat($cleaned) returned null (skip, won't retry)")
+                }
             } else {
-                runCatching { channelActions.joinChat(chatId) }
-                    .onFailure { Log.w(TAG, "migration: JoinChat($cleaned) failed: ${it.message}") }
-                migrated += cleaned
+                try {
+                    channelActions.joinChat(chatId)
+                    migrated += cleaned
+                } catch (cancellation: kotlinx.coroutines.CancellationException) {
+                    throw cancellation
+                } catch (t: Throwable) {
+                    Log.w(TAG, "migration: JoinChat($cleaned) failed: ${t.message}")
+                    anyFailure.set(true)
+                }
             }
             if (i < usernames.lastIndex) delay(THROTTLE_MS)
         }
@@ -143,10 +181,23 @@ class MigrationCoordinator(
             // ViewModel's init-time refreshIfStale picks the new chats up. Triggering
             // a full refresh here closes the gap so the feed updates in the same
             // session the user authenticated in.
-            runCatching { postsRepository.refresh() }
-                .onFailure { Log.w(TAG, "migration: post-join refresh failed: ${it.message}") }
+            try {
+                postsRepository.refresh()
+            } catch (cancellation: kotlinx.coroutines.CancellationException) {
+                throw cancellation
+            } catch (t: Throwable) {
+                Log.w(TAG, "migration: post-join refresh failed: ${t.message}")
+            }
         }
-        migrationStore.markProposalShown()
+        // Only suppress future proposals when EVERY requested handle either
+        // succeeded (in `migrated`) or was conclusively a no-op (null without
+        // throw — wrong handle / deleted channel). Any transient failure leaves
+        // the proposal pending so the user gets another bite at the apple.
+        if (!anyFailure.get()) {
+            migrationStore.markProposalShown()
+        } else {
+            Log.i(TAG, "migration: ${migrated.size}/${usernames.size} succeeded, retryable failures left — proposal stays pending")
+        }
         _progress.value = Progress(total = usernames.size, processed = usernames.size, lastUsername = null)
         _pendingProposal.value = null
         // After an explicit completion screen, we hold [progress] for one more
@@ -158,7 +209,15 @@ class MigrationCoordinator(
         }
     }
 
-    /** User skipped the proposal. Persist that decision so it doesn't reappear. */
+    /**
+     * User skipped the proposal. Persist that decision so it doesn't reappear.
+     * Cooperative with [confirm]: if a confirm-run is in flight (sheet still
+     * showing the throttle progress), this call waits for it to finish. The
+     * sheet's `inFlight` flag should expose a Cancel affordance that calls
+     * [scope].coroutineContext.cancelChildren() on the confirm job rather
+     * than this method — dismissing post-completion is the only canonical use
+     * of `dismiss()` in the working state machine.
+     */
     suspend fun dismiss(): Unit = mutex.withLock {
         migrationStore.markProposalShown()
         _pendingProposal.value = null
