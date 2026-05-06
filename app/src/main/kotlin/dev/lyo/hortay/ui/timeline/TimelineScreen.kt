@@ -255,8 +255,15 @@ fun TimelineScreen(
     val viewer = LocalMediaViewer.current
 
     // True when the LazyColumn is at the very top — used to auto-collapse pending posts
-    // (no pill needed if the user is already looking at the top of the feed).
-    val atTop by remember {
+    // (no pill needed if the user is already looking at the top of the feed). MUST be
+    // keyed on `listState`: the active list flips between [globalListState] and
+    // [filterListState] on `channelFilter` toggle (see selection above), and a bare
+    // `remember { derivedStateOf {...} }` would capture the first listState forever —
+    // so after entering a channel filter, `atTop` would still reflect the GLOBAL feed's
+    // scroll position. The "новi пости" pill auto-accept gate and pill visibility both
+    // read this flag, so the bug surfaced as the pill behaving for the wrong scope.
+    // Mirrors the keying applied to `scrollGate` and `prefetchAnchor` further below.
+    val atTop by remember(listState) {
         derivedStateOf {
             listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 8
         }
