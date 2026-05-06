@@ -17,6 +17,13 @@ bin/
 gen/
 release/
 
+# --- TDLib native debug symbols ---
+# Produced by scripts/update-tdlib.sh (KEEP_DEBUG=1, default). Used by AGP's
+# debugSymbolLevel=FULL to bundle native crash symbols into release AABs;
+# the overlay sourceSet `libtdlib/build/tdlib-unstripped` lives under build/
+# already, but the snapshot zip in scripts/ is too big for git.
+scripts/tdlib-debug-*.zip
+
 # --- IDE: Android Studio / IntelliJ ---
 .idea/
 *.iml

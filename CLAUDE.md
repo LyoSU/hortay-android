@@ -124,4 +124,13 @@ README пояснює `local.properties` (telegram.apiId/apiHash) і TDLib build
 - `versionCode = 1` у `defaultConfig` — це сентинель для debug-білдів (ніколи не йдуть у Play). Не міняти.
 - `versionName` — ручний (`0.1.0`). Бампати при semver-достойних релізах. Beta автоматично додає `-beta-<sha>` суфікс.
 - TDLib pin: `scripts/tdlib-version.txt` (auto-generated). Окремий коміт `chore(tdlib): bump to <sha>` при upstream bump'і.
+- Native debug symbols (Play Console crash symbolication для `libtdjni.so`):
+  `scripts/update-tdlib.sh` за замовчуванням (`KEEP_DEBUG=1`) видобуває
+  unstripped libs у `libtdlib/build/tdlib-unstripped/<abi>/libtdjni.so`
+  (gitignored). Це overlay-source у `libtdlib/build.gradle.kts:sourceSets` —
+  AGP'ів `debugSymbolLevel = "FULL"` автоматично пакує symbol info у
+  AAB metadata, далі Play Console їх підтягує без manual upload. Рилізна
+  послідовність: `./scripts/update-tdlib.sh` → коміт → `./gradlew
+  :app:bundleRelease`. Debug builds на overlay не залежать; працюють на
+  stripped libs з `src/main/jniLibs/` (committed).
 - Кожна user-visible зміна → `## [Unreleased]` у `CHANGELOG.md` (Keep a Changelog: Added / Changed / Fixed / Performance / Architecture).

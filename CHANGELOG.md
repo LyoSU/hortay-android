@@ -83,6 +83,27 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   TDLib's `TdApi.NetworkType`, which doesn't model roaming). Roaming detection
   uses `NET_CAPABILITY_NOT_ROAMING` from `NetworkCapabilities`.
 
+### Build
+- **Native debug symbols for libtdjni.so now flow into release AABs
+  automatically**. Play Console flagged 0.2.0 with "you have not
+  uploaded debug symbols" — TDLib's vendored `.so` files were
+  pre-stripped by the build pipeline, so AGP's
+  `debugSymbolLevel = "FULL"` had nothing to extract and the AAB
+  shipped without `BUNDLE-METADATA/com.android.tools.build.nativeDebug…`.
+  `scripts/update-tdlib.sh` now defaults `KEEP_DEBUG=1` and
+  additionally extracts the unstripped binaries from `tdlib-debug.zip`
+  into `libtdlib/build/tdlib-unstripped/<abi>/` (gitignored). The
+  `libtdlib` module's `sourceSets.main.jniLibs.srcDirs` lists this
+  overlay directory AFTER the committed stripped source, so AGP's
+  "last srcDir wins" merge picks unstripped libs when the overlay is
+  populated and AGP pulls debug symbols from them at bundle time. Devs
+  who haven't run `update-tdlib.sh` keep the existing fast `git clone`
+  + build experience (stripped libs are still committed; overlay is
+  optional). The 200+ MB-per-ABI unstripped binaries never enter git
+  history. Release runbook is now: `./scripts/update-tdlib.sh` → commit
+  → `./gradlew :app:bundleRelease` → upload — Play Console gets
+  symbolicated native crash / ANR stacks for libtdjni.so end-to-end.
+
 ### Added
 - **2FA password recovery in-app**. The 2-factor password screen now
   surfaces a "Не пам'ятаю пароль" / "Forgot password" link. When the

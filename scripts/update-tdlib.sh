@@ -35,7 +35,7 @@ TDLIB_REF="${1:-}"
 ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION:-23.2.8568313}"
 OPENSSL_VERSION="${OPENSSL_VERSION:-OpenSSL_1_1_1w}"
 ABIS="${ABIS:-arm64-v8a x86_64}"
-KEEP_DEBUG="${KEEP_DEBUG:-0}"
+KEEP_DEBUG="${KEEP_DEBUG:-1}"
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m==> warn:\033[0m %s\n' "$*" >&2; }
@@ -113,6 +113,30 @@ for ABI in $ABIS ; do
 done
 
 if [ "$KEEP_DEBUG" = "1" ] && [ -f "$WORKDIR/tdlib-debug.zip" ] ; then
+  # Stage unstripped libs into the gitignored overlay sourceSet for
+  # libtdlib (see jniLibs.srcDirs in libtdlib/build.gradle.kts). When this
+  # overlay exists, AGP's `debugSymbolLevel = "FULL"` extracts native debug
+  # symbols from these (~50× larger) copies and bundles them into the AAB's
+  # BUNDLE-METADATA so Play Console can symbolicate native crash / ANR
+  # stacks for libtdjni.so. The path is gitignored (everything under
+  # build/ is) so the 200+ MB-per-ABI debug binaries never enter git
+  # history; they're regenerated whenever this script runs.
+  UNSTRIPPED_DST="$LIBTDLIB_DIR/build/tdlib-unstripped"
+  rm -rf "$UNSTRIPPED_DST"
+  DEBUG_EXTRACT_DIR="$WORKDIR/extracted-debug"
+  mkdir -p "$DEBUG_EXTRACT_DIR"
+  unzip -qq "$WORKDIR/tdlib-debug.zip" -d "$DEBUG_EXTRACT_DIR"
+  for ABI in $ABIS ; do
+    DEBUG_SRC="$DEBUG_EXTRACT_DIR/tdlib/libs/$ABI"
+    if [ -d "$DEBUG_SRC" ] ; then
+      mkdir -p "$UNSTRIPPED_DST/$ABI"
+      cp -f "$DEBUG_SRC"/*.so "$UNSTRIPPED_DST/$ABI/" 2>/dev/null || true
+      log "Staged unstripped libs for $ABI to libtdlib/build/tdlib-unstripped/$ABI/"
+    fi
+  done
+  # Also keep the raw zip alongside as a "just in case" snapshot — useful
+  # for offline crash investigation when the running build's overlay has
+  # been wiped by a `./gradlew clean`.
   cp -f "$WORKDIR/tdlib-debug.zip" "$REPO_ROOT/scripts/tdlib-debug-${RESOLVED_SHA:0:10}.zip"
   log "Kept debug bundle at scripts/tdlib-debug-${RESOLVED_SHA:0:10}.zip"
 fi
