@@ -1,7 +1,7 @@
 ==============================================================================
 RELEASE NAME  (internal, max 50 chars — users do not see this)
 ==============================================================================
-0.1.0 — initial release
+0.2.0 (174) — initial public release
 
 
 ==============================================================================
@@ -11,18 +11,22 @@ Paste this whole block, including the language tags, into the
 "Release notes" field in Play Console. Play Console parses tags
 and shows the right language to each user.
 
-Each language max 500 chars.
+Each language max 500 chars. Plain text only — no HTML / Markdown.
 
 ------------------------------------------------------------------------------
 
 <en-US>
-First public release of Hortay.
+First public release of Hortay — an independent reader for Telegram channels.
 
-A social-feed view of your Telegram channels — no chat clutter, no ads, no analytics. Reactions, threaded comments, rich formatting. Works with your existing Telegram account.
+A social-feed view: no chat clutter, no ads, no analytics. Reactions, threaded comments, rich formatting, animated emojis.
+
+Sign in with Telegram, or read public channels in guest mode without an account. Cross-channel local search, cache controls, Material 3 design.
 </en-US>
 
 <uk-UA>
-Перший публічний реліз Hortay.
+Перший публічний реліз Hortay — незалежна читалка Telegram-каналів.
 
-Стрічка у форматі соцмережі для ваших Telegram-каналів — без шуму чатів, без реклами, без аналітики. Реакції, коментарі-threads, багатий формат тексту. Працює з вашим звичайним акаунтом Telegram.
+Стрічка як соцмережа: без чатів, реклами й аналітики. Реакції, threaded-коментарі, форматований текст, анімовані емодзі.
+
+Увійдіть через Telegram або читайте публічні канали без входу — у гостьовому режимі. Локальний пошук по підписках, керування кешем, Material 3 дизайн.
 </uk-UA>
