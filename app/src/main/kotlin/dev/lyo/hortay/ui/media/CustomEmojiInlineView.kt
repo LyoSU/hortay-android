@@ -2,6 +2,7 @@ package dev.lyo.hortay.ui.media
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
@@ -72,7 +73,10 @@ fun CustomEmojiInlineView(
     //   • Tgs: the static thumb if TDLib gave us one (LottieStickerView underlays
     //     it while .tgs streams), else the .tgs media itself.
     //   • Webp: the WEBP image at media.fileId.
-    //   • Webm @ inline size: always the static thumb (no animation path).
+    //   • Webm: the static thumb at inline size; if animateAlways is on (focused
+    //     picker context) and there's no thumb, fall back to the .webm media
+    //     so the placeholder waits on the actual playback file rather than
+    //     hiding before WebmStickerPlayer has a frame to draw.
     // Web mode passes null fileIds and uses the remoteUrl chain instead — there
     // we trust Coil / LottieUrlStore for their own loading visuals and let the
     // metadata-resolution placeholder be the only one we paint.
@@ -80,7 +84,11 @@ fun CustomEmojiInlineView(
         when (it.format) {
             StickerFormat.Tgs -> it.thumb?.fileId ?: it.media.fileId
             StickerFormat.Webp -> it.media.fileId
-            StickerFormat.Webm -> it.thumb?.fileId
+            StickerFormat.Webm -> {
+                val canAnimate = animateAlways && it.media.fileId != null
+                if (canAnimate) it.thumb?.fileId ?: it.media.fileId
+                else it.thumb?.fileId
+            }
         }
     }
 
@@ -232,14 +240,12 @@ fun CustomEmojiInlineView(
 }
 
 @Composable
-private fun PlaceholderDisc() {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize(0.66f)
-                .align(Alignment.Center)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f)),
-        )
-    }
+private fun BoxScope.PlaceholderDisc() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize(0.66f)
+            .align(Alignment.Center)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f)),
+    )
 }

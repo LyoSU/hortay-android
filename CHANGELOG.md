@@ -83,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   is local-fast (~50 ms), so the disc flashed and the user then sat on
   an empty box for several more seconds while `MediaCache` actually
   downloaded the .tgs / WEBP-thumb file. `CustomEmojiInlineView` now
-  observes the first user-visible file's [`MediaState`] and keeps the
+  observes the first user-visible file's `MediaState` and keeps the
   placeholder mounted as an overlay until that file lands as `Ready` —
   the underlying renderer (LottieStickerView / TdMediaImage) stays
   composed underneath so its download keeps running. Web mode is
