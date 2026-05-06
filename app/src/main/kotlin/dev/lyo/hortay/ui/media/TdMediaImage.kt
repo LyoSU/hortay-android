@@ -71,11 +71,20 @@ fun TdMediaImage(
     // existing PostCard/PostBody render web posts through one code path.
     if (fileId == null && remoteUrl != null) {
         val baseModifier = if (placeholderColor != null) modifier.background(placeholderColor) else modifier
-        AsyncImage(
-            model = ImageRequest.Builder(context)
+        // Memoise the ImageRequest. Without `remember`, every recomposition
+        // (parent emit, sibling state change, scroll-driven layout pass) builds
+        // a fresh ImageRequest reference. Coil de-dupes by URL internally but
+        // each new instance still goes through its dispatcher checks; on a
+        // 30-card viewport that's the difference between idle and ~1 ms of
+        // request churn per frame.
+        val request = remember(remoteUrl, context) {
+            ImageRequest.Builder(context)
                 .data(remoteUrl)
                 .crossfade(CROSSFADE_MS)
-                .build(),
+                .build()
+        }
+        AsyncImage(
+            model = request,
             contentDescription = contentDescription,
             contentScale = contentScale,
             modifier = baseModifier.fillMaxSize(),
@@ -119,14 +128,17 @@ fun TdMediaImage(
         // placeholder underneath.
         val minithumb = media.minithumbBytes
         if (minithumb != null && state !is MediaState.Ready) {
-            AsyncImage(
-                model = ImageRequest.Builder(context)
+            // Memoise: minithumbs are stable per-post; rebuilding the request on
+            // every recomposition would churn ~150 B requests through Coil's
+            // queue once per visible card per frame during scroll.
+            val minithumbRequest = remember(minithumb, context) {
+                ImageRequest.Builder(context)
                     .data(minithumb)
-                    // Minithumbs are deterministic from the bytes themselves; Coil's
-                    // memory cache is happy to dedupe them, but disk caching them
-                    // is wasteful — they ship inline with every UpdateNewMessage.
                     .diskCachePolicy(CachePolicy.DISABLED)
-                    .build(),
+                    .build()
+            }
+            AsyncImage(
+                model = minithumbRequest,
                 contentDescription = null,
                 contentScale = contentScale,
                 modifier = Modifier
@@ -136,13 +148,11 @@ fun TdMediaImage(
         }
         when (val s = state) {
             is MediaState.Ready -> if (s.path.isNotEmpty()) {
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
+                // Memoise on the Ready path string: rebuilding ImageRequest +
+                // re-attaching the listener every recomp churns Coil's queue.
+                val readyRequest = remember(s.path, fileId, context) {
+                    ImageRequest.Builder(context)
                         .data(File(s.path))
-                        // The file already lives in TDLib's filesDir — letting Coil
-                        // copy it into its own disk cache doubles the footprint for
-                        // every photo the user has ever scrolled past. Memory cache
-                        // (decoded Bitmap) stays on; the cost saving is on disk.
                         .diskCachePolicy(CachePolicy.DISABLED)
                         .crossfade(CROSSFADE_MS)
                         .listener(
@@ -155,7 +165,10 @@ fun TdMediaImage(
                                 fileId?.let { cache.invalidate(it, priority) }
                             },
                         )
-                        .build(),
+                        .build()
+                }
+                AsyncImage(
+                    model = readyRequest,
                     contentDescription = contentDescription,
                     contentScale = contentScale,
                     modifier = Modifier.fillMaxSize(),

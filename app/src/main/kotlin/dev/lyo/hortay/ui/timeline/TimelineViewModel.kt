@@ -26,19 +26,30 @@ class TimelineViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
 
     // Empty set means "first launch — show everything live"; once bootstrapped, the set is
-    // the snapshot of ids the user is currently looking at, and additions to livePosts beyond
-    // it are pendingNew.
-    private val seenPostIds = MutableStateFlow<Set<Pair<Long, Long>>>(emptySet())
+    // the snapshot of (chatId, id) pairs the user is currently looking at, and additions to
+    // livePosts beyond it are pendingNew. Encoded as packed Long to avoid Pair allocation
+    // on the hot filter path: each TimelinePost.chatId is a Telegram int64 (channel ids are
+    // negative supergroup-ish values; comments use real chat ids), and its id is the message
+    // id (≤ 2^32 in practice). XOR'ing the two gives a distribution-good 64-bit fingerprint
+    // that's effectively collision-free across one user's subscriptions, and avoids
+    // boxing two Longs into a Pair on every filter pass over the 1000-post feed.
+    private val seenPostIds = MutableStateFlow<Set<Long>>(emptySet())
 
     val posts: StateFlow<PersistentList<TimelinePost>> = combine(livePosts, seenPostIds) { live, seen ->
         if (seen.isEmpty()) live
-        else live.filter { (it.chatId to it.id) in seen }.toPersistentList()
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
+        else live.filter { encodeKey(it) in seen }.toPersistentList()
+    }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
 
     val pendingNew: StateFlow<PersistentList<TimelinePost>> = combine(livePosts, seenPostIds) { live, seen ->
         if (seen.isEmpty()) persistentListOf()
-        else live.filter { (it.chatId to it.id) !in seen }.toPersistentList()
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
+        else live.filter { encodeKey(it) !in seen }.toPersistentList()
+    }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
+
+    private fun encodeKey(p: TimelinePost): Long = p.chatId xor (p.id * 0x9E3779B97F4A7C15UL.toLong())
 
     val bookmarkedKeys: StateFlow<Set<String>> = bookmarks.bookmarks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())
@@ -52,7 +63,7 @@ class TimelineViewModel(
         viewModelScope.launch {
             livePosts.first { it.isNotEmpty() }.let { initial ->
                 if (seenPostIds.value.isEmpty()) {
-                    seenPostIds.value = initial.mapTo(hashSetOf()) { it.chatId to it.id }
+                    seenPostIds.value = initial.mapTo(hashSetOf()) { encodeKey(it) }
                 }
             }
         }
@@ -78,7 +89,7 @@ class TimelineViewModel(
 
     /** Reveal all pendingNew posts (used after PTR, where the whole list is fresh). */
     fun acceptPending() {
-        seenPostIds.value = livePosts.value.mapTo(hashSetOf()) { it.chatId to it.id }
+        seenPostIds.value = livePosts.value.mapTo(hashSetOf()) { encodeKey(it) }
     }
 
     /**
@@ -89,7 +100,10 @@ class TimelineViewModel(
      */
     fun acceptIds(ids: Collection<Pair<Long, Long>>) {
         if (ids.isEmpty()) return
-        seenPostIds.update { it + ids }
+        val encoded = ids.mapTo(hashSetOf()) { (chatId, id) ->
+            chatId xor (id * 0x9E3779B97F4A7C15UL.toLong())
+        }
+        seenPostIds.update { it + encoded }
     }
 
     /** Soft refresh used on VM construction; the repo skips if data is still warm. */
