@@ -20,6 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
@@ -93,6 +95,7 @@ fun WebChannelsScreen(
                         style = MaterialTheme.typography.displaySmall,
                     )
                 },
+                actions = { GuestModeBadge() },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -312,6 +315,36 @@ private fun ChannelAvatar(name: String, avatarUrl: String?) {
             )
         }
     }
+}
+
+/**
+ * Persistent reminder that the user is reading without authentication. Sits as
+ * a passive `AssistChip` in the top-bar `actions` slot — non-interactive (the
+ * onClick is a no-op) so it never competes with real action targets, but
+ * carries a `visibility` glyph and the localized "Guest mode" label so the
+ * mode is glanceable from the feed and channels screens. Without it users who
+ * leave the app and return forget which mode they're in.
+ */
+@Composable
+internal fun GuestModeBadge() {
+    AssistChip(
+        onClick = {},
+        enabled = false,
+        leadingIcon = {
+            Symbol(name = "visibility", contentDescription = null, size = 16.dp)
+        },
+        label = {
+            Text(
+                text = stringResource(R.string.guest_mode_badge),
+                style = MaterialTheme.typography.labelSmall,
+            )
+        },
+        colors = AssistChipDefaults.assistChipColors(
+            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            disabledLeadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+        modifier = Modifier.padding(end = 12.dp),
+    )
 }
 
 @Composable

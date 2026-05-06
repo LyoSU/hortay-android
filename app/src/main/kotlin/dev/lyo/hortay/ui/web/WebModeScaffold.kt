@@ -135,6 +135,7 @@ fun WebModeScaffold(graph: AppGraph) {
                         homeTapTrigger = homeTapTrigger,
                         onBrandTap = { homeTapTrigger = System.nanoTime() },
                         onSearchClick = { searchOpen = true },
+                        topBarBadge = { GuestModeBadge() },
                     )
 
                     NavTab.Channels -> WebChannelsScreen(

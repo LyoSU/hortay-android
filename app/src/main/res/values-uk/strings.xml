@@ -67,6 +67,8 @@
     <string name="web_add_parse_failure">Telegram повернув неочікувану розмітку</string>
     <string name="web_add_rate_limited">Перевищено ліміт запитів — спробуйте за %1$d с</string>
     <string name="web_add_network_error">Помилка мережі: %1$s</string>
+    <!-- %1$s — попередньо відформатований рядок з t.me ("1.5K", "262K", "12 345"),
+         не Int. Ми не парсимо число, тому <plurals> по кількості тут не застосовний. -->
     <string name="web_subscribers">%1$s підписників</string>
     <string name="auth_change_number">Змінити номер</string>
     <string name="auth_back">Назад</string>

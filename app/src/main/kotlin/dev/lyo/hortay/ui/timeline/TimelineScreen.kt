@@ -116,6 +116,13 @@ fun TimelineScreen(
      * leaves this null and keeps the global feed bar minimal.
      */
     onSearchClick: (() -> Unit)? = null,
+    /**
+     * Optional trailing badge rendered in the default top bar (the brand-row
+     * variant). Currently used by guest mode to surface a persistent "Guest
+     * mode" chip so the user doesn't forget they're unauthenticated. TDLib
+     * mode passes null (default) and the slot collapses.
+     */
+    topBarBadge: (@Composable () -> Unit)? = null,
 ) {
     val vm: TimelineViewModel = viewModel(
         factory = remember(feed, bookmarks) {
@@ -652,6 +659,7 @@ fun TimelineScreen(
                 onBrandTap = onBrandTap,
                 onTitleTap = { channelFilter?.let { infoSheetChatId = it } },
                 onGlobalSearchClick = onSearchClick,
+                topBarBadge = topBarBadge,
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -842,6 +850,7 @@ private fun TimelineTopBar(
     onBrandTap: () -> Unit,
     onTitleTap: () -> Unit,
     onGlobalSearchClick: (() -> Unit)?,
+    topBarBadge: (@Composable () -> Unit)?,
     scrollBehavior: TopAppBarScrollBehavior,
 ) {
     val colors = TopAppBarDefaults.topAppBarColors(
@@ -950,6 +959,10 @@ private fun TimelineTopBar(
                         )
                     }
                 }
+                // Trailing slot for mode-specific chips (e.g. guest-mode
+                // badge). Rendered after the search action so it sits at the
+                // edge of the bar, where users expect status indicators.
+                topBarBadge?.invoke()
             },
             colors = colors,
             scrollBehavior = scrollBehavior,

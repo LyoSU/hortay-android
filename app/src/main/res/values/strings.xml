@@ -67,6 +67,10 @@
     <string name="web_add_parse_failure">Telegram returned unexpected markup</string>
     <string name="web_add_rate_limited">Rate limit exceeded — try again in %1$d s</string>
     <string name="web_add_network_error">Network error: %1$s</string>
+    <!-- %1$s is a pre-formatted string from t.me (e.g. "1.5K", "262K", "12 345"),
+         not an Int. We don't parse the count, so this can't use <plurals> keyed
+         by quantity. If a future call site ever passes an Int, switch *that
+         site* to a new plural-keyed resource — don't migrate this one. -->
     <string name="web_subscribers">%1$s subscribers</string>
     <string name="auth_change_number">Change number</string>
     <string name="auth_back">Back</string>
