@@ -18,8 +18,11 @@
 -->
 <resources>
     <style name="Theme.Hortay" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- statusBarColor / navigationBarColor stripped: Android 15
+             deprecated their backing setters (Window.setStatusBarColor,
+             setNavigationBarColor). Transparency is owned by
+             enableEdgeToEdge() in MainActivity. See values/themes.xml for
+             the full rationale. -->
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:enforceNavigationBarContrast">false</item>
     </style>

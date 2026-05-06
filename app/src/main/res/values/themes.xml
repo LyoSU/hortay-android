@@ -9,10 +9,20 @@
     <!-- Base theme. Targets API 26+ (the project's minSdk). The
          enforceNavigationBarContrast attribute is API 29-only; it lives in
          values-v29/themes.xml so this file stays clean for older devices and
-         lint stops flagging NewApi against the bare minSdk surface. -->
+         lint stops flagging NewApi against the bare minSdk surface.
+
+         No statusBarColor / navigationBarColor here:  Android 15 (API 35)
+         deprecated `Window.setStatusBarColor` / `setNavigationBarColor`,
+         which are exactly the calls these XML attributes emit under the
+         hood at theme application — Play Console flagged the build for
+         them. Edge-to-edge transparency is now driven entirely by
+         `enableEdgeToEdge()` in MainActivity (it uses `SystemBarStyle.auto`,
+         the modern non-deprecated path, and back-ports correctly to
+         API 26-34). The legacy `android:windowLightStatusBar` flag stays
+         because it’s the only practical way to seed the *initial* light-icon
+         appearance on cold start before the activity attaches its
+         `WindowInsetsControllerCompat`. -->
     <style name="Theme.Hortay" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>
