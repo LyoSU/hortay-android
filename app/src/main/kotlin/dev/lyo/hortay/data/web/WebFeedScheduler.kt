@@ -47,13 +47,20 @@ class WebFeedScheduler(
 ) {
 
     private var tier2Job: Job? = null
+    @Volatile private var bound = false
 
     /**
      * Wire foreground transitions to the tier-2 loop. Idempotent: a duplicate
      * call is a no-op rather than spawning two parallel pollers (the latter
-     * would double our request rate against t.me/s/, hello FLOOD_WAIT).
+     * would double our request rate against t.me/s/, hello FLOOD_WAIT). The
+     * earlier comment promised idempotency but the implementation registered
+     * a fresh `foreground.onEach` collector on every call, so two `bind()`
+     * sites would both fire start/stop on every transition and racily write
+     * `tier2Job = null`. The volatile guard makes idempotency real.
      */
     fun bind() {
+        if (bound) return
+        bound = true
         // StateFlow already applies distinctUntilChanged via its own conflation,
         // so we plug onEach in directly.
         foreground
@@ -70,26 +77,48 @@ class WebFeedScheduler(
     private fun startTier2() {
         if (tier2Job?.isActive == true) return
         tier2Job = scope.launch {
-            // First refresh fires immediately on resume. The staleness window
-            // inside WebFeedSource means a recent pull-to-refresh won't double
-            // up — the coroutine just falls through.
-            feedSource.refreshAsync(force = false).join()
-            while (true) {
-                // Adaptive backoff: every consecutive no-op sweep doubles the
-                // delay (capped at MAX_INTERVAL_MS). A reader who keeps the app
-                // open all afternoon while their channels are quiet pays
-                // 5min → 10 → 20 → 30 → 30 … instead of 12 sweeps an hour
-                // forever. The counter resets to 0 inside WebFeedSource the
-                // moment any channel returns fresh content, so the next sweep
-                // after a publish snaps back to the base 5-minute cadence.
-                val streak = feedSource.consecutiveNoOpSweeps.value.coerceAtMost(MAX_BACKOFF_DOUBLINGS)
-                val nextDelay = (tier2IntervalMs shl streak).coerceAtMost(MAX_INTERVAL_MS)
-                delay(nextDelay)
-                feedSource.refreshAsync(force = false).join()
+            // Crash isolation: a single throw out of refreshAsync().join() — the
+            // call chain crosses async-await, NetworkOnMainThread guards (none
+            // here, but cheap insurance), and OkHttp's worker pool — used to kill
+            // the loop without restart. Once the loop died, the user's foreground
+            // tier-2 polling stopped for the rest of the session (until they
+            // backgrounded + foregrounded the app again to re-fire `bind`'s
+            // foreground collector). Wrap each iteration so a transient blip
+            // logs and continues; only an explicit cancellation breaks the loop.
+            try {
+                doIteration()
+                while (true) {
+                    val streak = feedSource.consecutiveNoOpSweeps.value
+                        .coerceAtMost(MAX_BACKOFF_DOUBLINGS)
+                    val nextDelay = (tier2IntervalMs shl streak).coerceAtMost(MAX_INTERVAL_MS)
+                    delay(nextDelay)
+                    doIteration()
+                }
+            } catch (cancellation: kotlinx.coroutines.CancellationException) {
+                throw cancellation
+            } catch (t: Throwable) {
+                Log.w(TAG, "tier-2 scheduler died on uncaught throw; loop exits", t)
             }
         }.also {
             Log.i(TAG, "tier-2 scheduler started (${tier2IntervalMs / 1000}s base, adaptive)")
         }
+    }
+
+    /**
+     * Single sweep wrapped so its own failure can't kill the outer loop. The
+     * adaptive-backoff doubling continues from `consecutiveNoOpSweeps`, which
+     * itself is updated inside [WebFeedSource.refresh] regardless of failure
+     * mode — so a sweep that throws just looks like a no-op to the backoff.
+     */
+    private suspend fun doIteration() {
+        // First refresh fires immediately on resume. The staleness window
+        // inside WebFeedSource means a recent pull-to-refresh won't double
+        // up — the coroutine just falls through.
+        runCatching { feedSource.refreshAsync(force = false).join() }
+            .onFailure { err ->
+                if (err is kotlinx.coroutines.CancellationException) throw err
+                Log.w(TAG, "tier-2 sweep failed; backing off then retrying", err)
+            }
     }
 
     private fun stopTier2() {

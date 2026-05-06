@@ -344,7 +344,30 @@ class WebFeedSource(
         // might pass a raw handle — this defends the data layer regardless.
         val normalized = username.lowercase()
         repository.subscribe(normalized, placeholderTitle)
+        // Pre-populate [lastKnownSubscriptionsSet] under the same lock that
+        // [handleSubscriptionsChanged] takes BEFORE we write DataStore. Without
+        // this, the imminent DataStore emission lands in handleSubscriptionsChanged
+        // with the new username appearing as "added" to the diff, which kicks
+        // a force-refresh of EVERY subscribed channel. The user's intent was
+        // "subscribe + fetch this one channel"; the side-effect was a full
+        // N-channel sweep every time a single Add-Channel sheet completed.
+        // The targeted fetchOne below handles the actual content load — and
+        // it's already direct against the new username, so nothing is missed.
+        subscriptionsMutex.withLock {
+            val previous = lastKnownSubscriptionsSet
+            if (previous != null) {
+                lastKnownSubscriptionsSet = previous + normalized
+            }
+            // previous == null: first-emit path will fan out a force refresh
+            // anyway via the normal flow; pre-populating the set on cold start
+            // would suppress the legitimate first-load case. Leave alone.
+        }
         subscriptions.add(normalized)
+        // Targeted fetch of just this one channel. Detached from the suspension
+        // chain via scope.launch so the Add-Channel UI can dismiss without
+        // awaiting the network round-trip — see [PostsRepository.refresh]'s
+        // similar fire-and-forget rationale; the user expects "added — feed
+        // updates as content lands" not a blocking spinner.
         scope.launch {
             fetchOne(normalized, forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
         }

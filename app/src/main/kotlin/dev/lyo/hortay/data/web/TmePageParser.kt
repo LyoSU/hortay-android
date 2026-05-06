@@ -47,7 +47,13 @@ object TmePageParser {
         val titleSpan = doc.selectFirst(".tgme_channel_info_header_title span")
             ?: doc.selectFirst(".tgme_channel_info_header_title")
             ?: return null
-        val title = titleSpan.text().trim().ifEmpty { return null }
+        // Don't fail the whole parse on an empty title — a freshly-renamed channel
+        // briefly serves an empty `<span dir="auto">` until its CDN propagates,
+        // and previously that flipped the channel to ParseFailure for hours
+        // (sticky status, no posts visible). Fall back to the URL handle which is
+        // always present on a valid /s/ page; it reads as "@username" in the UI
+        // until the next sweep picks up the real title.
+        val title = titleSpan.text().trim().ifEmpty { "@$fallbackUsername" }
 
         val username = doc.selectFirst(".tgme_channel_info_header_username a")
             ?.text()

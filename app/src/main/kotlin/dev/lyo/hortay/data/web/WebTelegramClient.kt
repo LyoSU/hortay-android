@@ -187,7 +187,27 @@ class WebTelegramClient(
                 )
             }
             404 -> return FetchResult.NotFound
+            // Telegram's edge sends BOTH shapes for "no /s/ preview available":
+            //   • 403 — historic / rare. Still kept as a fallback.
+            //   • 301/302 with Location: t.me/<u> (no `/s/`) — the modern path,
+            //     fires for private channels AND for handles that resolve to a
+            //     user/bot rather than a channel. With followRedirects=false in
+            //     [defaultHttpClient] (intentional, so we can detect the shape),
+            //     we receive the bare redirect and must classify it ourselves.
+            //     A redirect to anywhere else (rare; Telegram's fault) maps to
+            //     a generic NetworkError so we don't silently absorb breaking
+            //     edge changes as "private". Without this branch, the 302 path
+            //     fell through to "else → NetworkError(IOException(\"HTTP 302\"))"
+            //     and the user saw "network error, retry" instead of the correct
+            //     "private channel" CTA.
             403 -> return FetchResult.PrivateChannel
+            301, 302, 307, 308 -> {
+                val location = response.header("Location").orEmpty()
+                val redirectsToBareTme = location.contains("t.me/") &&
+                    !location.contains("t.me/s/")
+                return if (redirectsToBareTme) FetchResult.PrivateChannel
+                else FetchResult.NetworkError(IOException("HTTP ${response.code} → $location"))
+            }
             429 -> {
                 val retrySec = response.header("Retry-After")?.toLongOrNull() ?: DEFAULT_BACKOFF_SEC
                 val capped = retrySec.coerceAtMost(MAX_BACKOFF_SEC)

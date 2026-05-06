@@ -83,7 +83,115 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   TDLib's `TdApi.NetworkType`, which doesn't model roaming). Roaming detection
   uses `NET_CAPABILITY_NOT_ROAMING` from `NetworkCapabilities`.
 
+### Added
+- **2FA password recovery in-app**. The 2-factor password screen now
+  surfaces a "Не пам'ятаю пароль" / "Forgot password" link. When the
+  account has a confirmed recovery email on file (TDLib's
+  `hasRecoveryEmailAddress`), tapping it asks Telegram to email a reset
+  code (`RequestAuthenticationPasswordRecovery`), then swaps the form
+  to a one-shot recovery-code input that calls
+  `RecoverAuthenticationPassword`. When no recovery email is set, the
+  link surfaces a clear "use another device" info card instead of
+  routing the user into a TDLib error. Previously the screen read the
+  hint and nothing else — `passwordHint` was the only field plumbed
+  through `AuthStage.WaitPassword`, so a user who forgot their 2FA
+  password was permanently locked out from inside the app and had to
+  reset on another device with no UI affordance pointing them there.
+
 ### Fixed
+- **MediaCache user-action writes raced the single-coroutine reducer**.
+  `cancelExplicit`, `retry`, and `invalidate` wrote
+  `states[fileId].value = MediaState.Idle` directly from a fresh
+  `scope.launch(ioDispatcher)`, bypassing the documented
+  single-writer-via-`fileEvents`-channel invariant. A concurrent
+  `UpdateFile` reducer drain on a different IO thread could land
+  AFTER the user-action's Idle write and flip the slot back to
+  Downloading, producing a brief flicker of the spinner the user just
+  dismissed. Routes the resets through a new
+  `FileEvent.Reset(fileId, target)` channel message so they execute
+  inside the reducer loop in strict order against any queued
+  `UpdateFile` events. The reducer's terminal-cleanup logic
+  (priority/tracks reset for non-Downloading targets) is mirrored in
+  the new `reduceReset` helper so subsequent `ensure()` calls start
+  from a clean slate.
+- **"At-top" pill behaviour broke after switching channel filter**.
+  The `atTop` derivedStateOf in `TimelineScreen` had no `remember`
+  key, so it captured `globalListState` on first composition and kept
+  observing its scroll position even after the user entered a channel
+  filter (which swaps the active list to `filterListState`). The
+  result: while inside a single-channel filter, the "новi пости" pill
+  auto-accept gate and pill visibility both reflected whether the
+  GLOBAL feed was at the top — not the active filter. Keying on
+  `listState` brings it in line with `scrollGate` and `prefetchAnchor`
+  further down (which were already keyed correctly).
+- **Adding a guest-mode channel kicked a full N-channel sweep**. 
+  `WebFeedSource.subscribeAndRefresh` wrote the new username to the
+  repository and then to DataStore via `subscriptions.add`. The
+  DataStore emission landed in `handleSubscriptionsChanged`, which
+  diffs against `lastKnownSubscriptionsSet` and saw the new username
+  as "added" — kicking `doRefresh(force=true)` over EVERY subscribed
+  channel on top of the targeted `fetchOne` we already started. On a
+  200-channel set the user's "add this one" tap fired hundreds of HTTP
+  requests instead of one. `subscribeAndRefresh` now pre-populates
+  `lastKnownSubscriptionsSet` under the same mutex
+  `handleSubscriptionsChanged` takes BEFORE the DataStore write, so
+  the imminent diff observes a no-op and the targeted fetch stands
+  alone.
+- **Private guest-mode channels surfaced as "network error"**. With
+  `followRedirects=false` (intentional, so we can detect the t.me/s/
+  redirect), Telegram emits 301/302 to `t.me/<u>` for private
+  channels — but the response handler only checked for 403, then fell
+  through to `else → NetworkError(IOException("HTTP 302"))`. The
+  comment at the redirect-disabling site even called this out as the
+  intent. Now 301 / 302 / 307 / 308 with a Location pointing at bare
+  `t.me/<u>` (no `/s/`) classify as `PrivateChannel`; redirects
+  pointing elsewhere stay `NetworkError` so we don't silently absorb
+  breaking edge changes as "private".
+- **Tier-2 web-mode polling died silently on a single failed sweep**.
+  `WebFeedScheduler.startTier2`'s loop body had no try/catch; one
+  uncaught throw out of `feedSource.refreshAsync(...).join()` killed
+  the loop without restart, and only re-fired on the next
+  background→foreground transition (i.e. the user had to actively
+  switch away and back). Wrapped each iteration in a defensive
+  catch — only an explicit cancellation breaks the loop now, every
+  other throwable logs and continues so the next adaptive-backoff
+  delay still fires. Also tightened `bind()` so a duplicate call
+  doesn't register a second `foreground.onEach` collector — the KDoc
+  promised idempotency but the implementation didn't enforce it.
+- **Empty channel title flipped a guest-mode channel to ParseFailure
+  for hours**. `TmePageParser.parseChannelInfo` returned `null` when
+  the title `<span>` was empty; `WebFeedSource` then stamped the
+  channel with `ParseFailure` status, sticky until the next sweep
+  picked up a non-empty title. Telegram briefly serves an empty title
+  during channel renames (CDN-propagation gap, observed for tens of
+  minutes on busy channels). Falls back to `@<username>` from the URL
+  handle, which is always present on a valid `/s/` page; the next
+  sweep replaces it with the real title.
+- **Single malformed `published_at_ms` pinned a guest-mode post at
+  epoch 1970 forever**. `WebRepository.parseIsoToMillis` returned
+  `0L` on parse failure; the feed's `published_at_ms DESC` ordering
+  then dragged the post to the bottom of the channel and skewed
+  merged-feed chronology. Now returns null, callers fall back to
+  `fetchedAtMs` (the wallclock at the moment the page was received) —
+  keeps the post within minutes of its real publish time instead of
+  decades off.
+- **Migration partial-failure left the user permanently stranded**.
+  `MigrationCoordinator.confirm` called `markProposalShown()` at the
+  end of every run, including ones where some `JoinChat` /
+  `SearchPublicChat` calls failed (FLOOD_WAIT, transient network).
+  The failed channels were silently dropped from `migrated` and never
+  re-offered — there was no UI path to retry, the proposal simply
+  never reappeared. Now distinguishes "permanent skip" (TDLib reports
+  no such public chat — wrong handle / deleted) from "transient
+  failure" (any throw), and only suppresses the proposal when every
+  requested handle either succeeded or was a permanent skip. Any
+  retryable failure leaves the proposal pending so the next
+  auth.Ready re-evaluates and re-offers just the failed subset
+  (the existing `alreadyMigrated` filter excludes successes). Also
+  added cooperative cancellation between confirm-iterations so a
+  parent-scope cancel (sheet swipe-down, sign-out mid-run) bubbles
+  through within one `THROTTLE_MS` window instead of waiting for the
+  full ~30 s drain.
 - **Album view counts could briefly tick backward as
   `UpdateMessageInteractionInfo` updates streamed in (TDLib mode)**.
   For an album, every member can fire its own

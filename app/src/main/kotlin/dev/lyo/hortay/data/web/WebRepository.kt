@@ -283,7 +283,14 @@ class WebRepository(
         val forwardedJson = post.forwardedFrom?.let { json.encodeToString(WebForwardSource.serializer(), it) }
         val reactionsJson = json.encodeToString(reactionListSerializer, post.reactions.toList())
         val plainText = WebTextRenderer.toPlainText(post.textHtml)
-        val publishedMs = parseIsoToMillis(post.publishedAt)
+        // Fall back to fetchedAtMs (the wallclock at the moment the page was
+        // received) instead of 0L on parse failure. The feed is sorted
+        // `published_at_ms DESC`; a single malformed ISO timestamp would otherwise
+        // pin the post at epoch 1970 forever, surfacing as a phantom "ancient
+        // post" stuck at the bottom of the channel and skewing the merged-feed
+        // ordering. Using fetchedAt keeps the post in roughly-correct chronology
+        // (within minutes of its real publish time) instead of decades off.
+        val publishedMs = parseIsoToMillis(post.publishedAt) ?: fetchedAtMs
         val channelUsername = post.id.substringBefore('/')
 
         postQueries.upsertInsert(
@@ -525,11 +532,11 @@ class WebRepository(
         json.decodeFromString(WebForwardSource.serializer(), jsonStr)
     }.getOrNull()
 
-    private fun parseIsoToMillis(iso: String): Long = runCatching {
+    private fun parseIsoToMillis(iso: String): Long? = runCatching {
         // ISO-8601 with offset, e.g. "2026-04-12T18:43:00+00:00". java.time can do
         // this on API 26+ (we already require minSdk 26 for the rest of the app).
         java.time.OffsetDateTime.parse(iso).toInstant().toEpochMilli()
-    }.getOrElse { 0L }
+    }.getOrNull()
 
     companion object {
         private const val TAG = "WebRepository"
