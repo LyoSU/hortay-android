@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -53,8 +54,15 @@ fun CustomEmojiInlineView(
     // ids — no TDLib call is made on a hit.
     LaunchedEffect(customEmojiId) { repo.request(listOf(customEmojiId)) }
 
-    val store by repo.stickers.collectAsStateWithLifecycle()
-    val sticker: CustomEmojiSticker? = remember(store, customEmojiId) { store[customEmojiId] }
+    // Per-id slice via derivedStateOf: the underlying StateFlow churns whenever ANY
+    // emoji resolves, but `derivedStateOf { store[id] }` only propagates when THIS
+    // id's entry actually changes — equality check skips identical re-emits, so a
+    // 30-emoji viewport recomposes 30× total during a burst, not 30 × 30.
+    val storeState = repo.stickers.collectAsStateWithLifecycle()
+    val resolvedState = remember(customEmojiId) {
+        derivedStateOf { storeState.value[customEmojiId] }
+    }
+    val sticker: CustomEmojiSticker? = resolvedState.value
 
     Box(modifier = modifier) {
         if (sticker == null) {

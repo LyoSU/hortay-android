@@ -14,7 +14,9 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -64,15 +66,21 @@ class WebRepository(
      * `channel.is_subscribed = 1` means unsubscribing a channel removes its
      * posts from the feed *immediately* on the next emit, with no manual filter.
      */
+    @OptIn(FlowPreview::class)
     fun observeFeed(limit: Long = DEFAULT_FEED_LIMIT): Flow<PersistentList<TimelinePost>> =
         postQueries
             .selectFeed(limit, mapper = ::rowToTimelinePost)
             .asFlow()
+            // Debounce upstream of mapToList so a burst of channel/post writes during
+            // a 200-channel sweep coalesces into ONE re-read instead of one per write.
+            // 50 ms covers a single fan-out cycle without lagging foreground refresh.
+            .debounce(FEED_REEMIT_DEBOUNCE_MS)
             .mapToList(ioDispatcher)
             .map { it.toPersistentList() }
             .distinctUntilChanged()
             .flowOn(ioDispatcher)
 
+    @OptIn(FlowPreview::class)
     fun observeFeedByChannel(
         username: String,
         limit: Long = DEFAULT_FEED_LIMIT,
@@ -80,15 +88,18 @@ class WebRepository(
         postQueries
             .selectFeedByChannel(username, limit, mapper = ::rowToTimelinePost)
             .asFlow()
+            .debounce(FEED_REEMIT_DEBOUNCE_MS)
             .mapToList(ioDispatcher)
             .map { it.toPersistentList() }
             .distinctUntilChanged()
             .flowOn(ioDispatcher)
 
+    @OptIn(FlowPreview::class)
     fun observeBookmarked(): Flow<PersistentList<TimelinePost>> =
         postQueries
             .selectBookmarked(mapper = ::rowToTimelinePost)
             .asFlow()
+            .debounce(FEED_REEMIT_DEBOUNCE_MS)
             .mapToList(ioDispatcher)
             .map { it.toPersistentList() }
             .distinctUntilChanged()
@@ -532,6 +543,11 @@ class WebRepository(
         const val DEFAULT_FEED_LIMIT = 1000L
 
         const val DEFAULT_SEARCH_LIMIT = 200L
+
+        // Coalesce burst writes during sweep (markFetchStatus → ingestPage → final
+        // status, ×concurrency=6) into a single feed re-read. 50 ms is the same
+        // window CustomEmojiRepository uses to batch GetCustomEmojiStickers calls.
+        private const val FEED_REEMIT_DEBOUNCE_MS = 50L
 
         /**
          * Per-channel post-retention cap for the vacuum task. Deliberately generous —

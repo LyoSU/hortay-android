@@ -238,8 +238,21 @@ object WebPostAdapter {
      */
     private fun htmlToFormatted(html: String): FormattedText {
         if (html.isBlank()) return FormattedText.Empty
+        // LRU cache keyed on the raw HTML string. Parsing every body via Jsoup on
+        // every observeFeed re-emit is the single biggest CPU cost in guest mode:
+        // a 200-channel sweep writes the channel/post tables ~3×/channel, each
+        // mutation re-runs selectFeed → mapToList → htmlToFormatted across all
+        // 1000 rows. With a cache the work amortises to one parse per distinct
+        // post body (~5 µs lookup vs. ~100-300 µs Jsoup parse for typical bodies).
+        synchronized(formattedCache) { formattedCache[html] }?.let { return it }
         val (rawText, rawSpans) = emitVerbatim(html)
-        return normaliseWhitespace(rawText, rawSpans)
+        val result = normaliseWhitespace(rawText, rawSpans)
+        synchronized(formattedCache) { formattedCache[html] = result }
+        return result
+    }
+
+    private val formattedCache = object : LinkedHashMap<String, FormattedText>(64, 0.75f, /* accessOrder */ true) {
+        override fun removeEldestEntry(eldest: Map.Entry<String, FormattedText>?): Boolean = size > 1024
     }
 
     /** Phase 1 output: untrimmed, un-collapsed text + spans referencing it. */

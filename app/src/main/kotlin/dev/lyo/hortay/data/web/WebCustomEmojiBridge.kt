@@ -71,6 +71,12 @@ class WebCustomEmojiBridge(
     private val mutex = Mutex()
     private var bound = false
 
+    // Referential-equality guard: distinctUntilChanged() upstream filters by deep
+    // equals, but we'd still walk all 1000 posts even when the StateFlow conflates
+    // to the same instance. Tracking the last seen ref makes harvest a single
+    // pointer compare on the no-op path.
+    @Volatile private var lastPostsRef: List<TimelinePost>? = null
+
     /**
      * Start listening to the feed. Idempotent — second call is a no-op.
      * The feed parameter is typed loosely (`StateFlow<*>`) because tying the
@@ -88,6 +94,8 @@ class WebCustomEmojiBridge(
     }
 
     private suspend fun harvest(posts: List<TimelinePost>) {
+        if (posts === lastPostsRef) return
+        lastPostsRef = posts
         val ids = collectIds(posts)
         if (ids.isEmpty()) return
 
