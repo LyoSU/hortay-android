@@ -38,12 +38,24 @@ import kotlinx.coroutines.sync.withLock
  *     rate gate + in-memory cache).
  *   - Builds a [CustomEmojiSticker] with `media = TdMedia(remoteUrl = …)` so
  *     [TdMediaImage]'s remote-URL fast path renders the asset without going
- *     through TDLib's MediaCache. For TGS / WebM the *animated* asset would
- *     still need a separate file-download step (LottieCompositionStore /
- *     ExoPlayer take file paths, not URLs); for now we set the format to
- *     [StickerFormat.Webp] so [CustomEmojiInlineView] takes the static-image
- *     path which already supports remoteUrl. Animated TGS / WebM playback in
- *     guest mode is tracked as a follow-up.
+ *     through TDLib's MediaCache. The resolver's discovered type is published
+ *     faithfully as [StickerFormat]:
+ *       • [StickerFormat.Tgs] — animated. [LottieUrlStore] pulls the .tgs
+ *         payload from the t.me CDN, sniffs the gzip header (handles both
+ *         pre-decompressed JSON and raw .tgs blobs), parses through
+ *         LottieCompositionFactory, and feeds the same Lottie-Compose
+ *         pipeline TDLib mode uses. Real animation, not a static thumb.
+ *       • [StickerFormat.Webm] — falls back to the static WEBP thumb at
+ *         inline size (same as TDLib mode). The t.me/i/emoji endpoint
+ *         serves WebMs pre-rendered as yuv420p baked against srgb(0,0,0);
+ *         the original alpha lives in a Matroska BlockAdditional sidecar
+ *         VP9 stream that standard Android MediaCodec doesn't decode. A
+ *         luma-key shader can't distinguish "background black" from
+ *         "intentionally black glyph parts" — the only artefact-free
+ *         animated path is media3-decoder-vp9 (~10 MB libvpx × 2 archs)
+ *         which is disproportionate for inline-emoji size. Full rationale
+ *         in CHANGELOG.md under "Animated TGS custom emojis in guest mode".
+ *       • [StickerFormat.Webp] — TdMediaImage's Coil remote-URL fast path.
  *
  * Lifecycle: bind() once at AppGraph startup; the Flow collector lives for
  * the entire process. Idempotent.
