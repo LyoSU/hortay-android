@@ -176,6 +176,7 @@ fun WebModeScaffold(graph: AppGraph) {
             client = graph.webClient,
             locale = locale,
             onDismiss = { addSheetOpen = false },
+            onSignIn = { scope.launch { graph.guestMode.setGuest(false) } },
         )
     }
 

@@ -76,6 +76,14 @@ fun AddChannelSheet(
     client: WebTelegramClient,
     locale: String,
     onDismiss: () -> Unit,
+    /**
+     * Tapped when the user wants to escape guest mode — currently surfaced
+     * only on the "channel is private" error path, where the sign-in path is
+     * the only way to actually read the channel. Caller flips
+     * `graph.guestMode.setGuest(false)` to route MainActivity through to
+     * `AuthScreen`.
+     */
+    onSignIn: (() -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -95,13 +103,21 @@ fun AddChannelSheet(
                     ctx.getString(R.string.web_add_not_found, username),
                 )
                 LookupResult.Private -> LookupState.Error(
-                    ctx.getString(R.string.web_add_private),
+                    message = ctx.getString(R.string.web_add_private),
+                    isPrivate = true,
                 )
                 LookupResult.ParseFailure -> LookupState.Error(
                     ctx.getString(R.string.web_add_parse_failure),
                 )
+                // Ceiling division + min-1 guard: a sub-second retryAfterMs
+                // (e.g. 400ms) used to format as "0 s" via integer truncation,
+                // which read like "no wait at all" in the error and invited a
+                // rapid-fire retry.
                 is LookupResult.RateLimited -> LookupState.Error(
-                    ctx.getString(R.string.web_add_rate_limited, (r.retryAfterMs / 1000).toInt()),
+                    ctx.getString(
+                        R.string.web_add_rate_limited,
+                        ((r.retryAfterMs + 999) / 1000).toInt().coerceAtLeast(1),
+                    ),
                 )
                 is LookupResult.NetworkError -> LookupState.Error(
                     ctx.getString(R.string.web_add_network_error, r.cause.message ?: ""),
@@ -200,11 +216,33 @@ fun AddChannelSheet(
                     channel = state.channel,
                     onConfirm = { confirmSubscribe(state.channel) },
                 )
-                is LookupState.Error -> Text(
-                    text = state.message,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                is LookupState.Error -> Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = state.message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    // Private-channel-specific recovery affordance: only the
+                    // authenticated TDLib path can read private channels (we
+                    // need a session cookie to fetch the post stream — t.me/s/
+                    // returns a generic placeholder for non-public channels).
+                    // Surface "Sign in" as the obvious next step instead of
+                    // letting the user bounce back to fix an input that was
+                    // structurally fine.
+                    if (state.isPrivate && onSignIn != null) {
+                        TextButton(onClick = {
+                            scope.launch {
+                                sheetState.hide()
+                                onDismiss()
+                                onSignIn()
+                            }
+                        }) {
+                            Text(stringResource(R.string.web_add_signin_for_private))
+                        }
+                    }
+                }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -311,7 +349,10 @@ private fun ChannelPreviewCard(channel: WebChannelInfo, onConfirm: () -> Unit) {
             if (channel.avatarUrl != null) {
                 AsyncImage(
                     model = channel.avatarUrl,
-                    contentDescription = null,
+                    contentDescription = stringResource(
+                        R.string.avatar_for_channel,
+                        channel.title,
+                    ),
                     modifier = Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(20.dp)),
@@ -392,7 +433,7 @@ private sealed interface LookupState {
     data object Idle : LookupState
     data object Loading : LookupState
     data class Found(val channel: WebChannelInfo) : LookupState
-    data class Error(val message: String) : LookupState
+    data class Error(val message: String, val isPrivate: Boolean = false) : LookupState
 }
 
 /**
