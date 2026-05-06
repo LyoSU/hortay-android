@@ -56,6 +56,7 @@ private fun symbolDrawable(name: String): Int = when (name) {
     "call" -> R.drawable.sym_call
     "call_end" -> R.drawable.sym_call_end
     "call_received" -> R.drawable.sym_call_received
+    "campaign" -> R.drawable.sym_campaign
     // card_giftcard / place / poll were renamed in Material Symbols — map old names
     // to the modern glyph so call sites don't have to chase the rename.
     "card_giftcard" -> R.drawable.sym_redeem
@@ -65,6 +66,7 @@ private fun symbolDrawable(name: String): Int = when (name) {
     "close" -> R.drawable.sym_close
     "cloud_off" -> R.drawable.sym_cloud_off
     "content_copy" -> R.drawable.sym_content_copy
+    "delete" -> R.drawable.sym_delete
     "delete_sweep" -> R.drawable.sym_delete_sweep
     "description" -> R.drawable.sym_description
     "edit" -> R.drawable.sym_edit
@@ -74,6 +76,7 @@ private fun symbolDrawable(name: String): Int = when (name) {
     "info" -> R.drawable.sym_info
     "ios_share" -> R.drawable.sym_ios_share
     "lock" -> R.drawable.sym_lock
+    "login" -> R.drawable.sym_login
     "logout" -> R.drawable.sym_logout
     "mic" -> R.drawable.sym_mic
     "mic_off" -> R.drawable.sym_mic_off
@@ -90,8 +93,10 @@ private fun symbolDrawable(name: String): Int = when (name) {
     "refresh" -> R.drawable.sym_refresh
     "repeat" -> R.drawable.sym_repeat
     "rocket_launch" -> R.drawable.sym_rocket_launch
+    "rss_feed" -> R.drawable.sym_rss_feed
     "search" -> R.drawable.sym_search
     "search_off" -> R.drawable.sym_search_off
+    "shield" -> R.drawable.sym_shield
     "smartphone" -> R.drawable.sym_smartphone
     "storage" -> R.drawable.sym_storage
     "sync" -> R.drawable.sym_sync
