@@ -126,6 +126,7 @@ class AppGraph(context: Context) {
         cache = mediaCache,
         postsFlow = postsRepository.posts,
         networkType = lifecycleBridge.networkType,
+        connection = tdClient.connection,
         context = context,
         scope = appScope,
     ).also { it.bind() }

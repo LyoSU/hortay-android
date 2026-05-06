@@ -49,6 +49,7 @@ class MediaAutoDownloader(
     private val cache: MediaCache,
     private val postsFlow: StateFlow<PersistentList<TimelinePost>>,
     private val networkType: StateFlow<HortayNetworkType>,
+    private val connection: StateFlow<ConnectionStatus>,
     context: Context,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -124,6 +125,13 @@ class MediaAutoDownloader(
 
     private fun processFeed(posts: PersistentList<TimelinePost>) {
         if (posts.isEmpty()) return
+        // Hold off entirely while TDLib reports the link as down — issuing
+        // DownloadFile here would queue a request that goes nowhere AND inflate
+        // [MediaCache.tracks] retry counters when the watchdog ticks. TDLib
+        // resumes downloads itself on reconnect, and the *next* posts emit
+        // (which fires when the snapshot changes anyway) re-runs this loop with
+        // a fresh policy.
+        if (connection.value == ConnectionStatus.WaitingForNetwork) return
         val policy = activePolicy() ?: return  // network=None → nothing to do
 
         for (post in posts) {

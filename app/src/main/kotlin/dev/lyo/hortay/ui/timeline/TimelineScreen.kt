@@ -730,9 +730,17 @@ fun TimelineScreen(
                         }
 
                         // Eager prefetch: while the user reads what's on screen, warm
-                        // the next [PREFETCH_AHEAD] posts' posters at Prefetch priority.
-                        // By the time the user scrolls down, those files are already
-                        // partially or fully on disk and the loading overlay never paints.
+                        // the next [PREFETCH_AHEAD] posts' posters. The closest
+                        // [VISIBLE_BOOST_RADIUS] slots run at [DownloadPriority.VisibleMedia]
+                        // (16), the rest at [DownloadPriority.Prefetch] (8). The split
+                        // matters because [MediaAutoDownloader] also queues every post in
+                        // the feed at Prefetch on emit — at the same priority TDLib's
+                        // per-DC queue is FIFO, so a far-down post that was queued first
+                        // would otherwise download ahead of a soon-visible one queued
+                        // later. The viewport-tied bump turns "FIFO at priority" into
+                        // "scroll proximity wins" without changing the priority ladder.
+                        // [MediaCache.ensure] resolves a higher-priority re-issue as an
+                        // in-place upgrade of any in-flight job — no restart, no waste.
                         // Gated on scroll-settled (prefetchAnchor=null while scrolling)
                         // so we don't fire ensure() while the gate above is closed.
                         val cache = LocalMediaCache.current
@@ -748,19 +756,24 @@ fun TimelineScreen(
                             val end = (firstVisible + PREFETCH_AHEAD).coerceAtMost(displayedItems.lastIndex)
                             for (idx in (firstVisible + 1)..end) {
                                 val item = displayedItems.getOrNull(idx) ?: continue
+                                val priority =
+                                    if (idx <= firstVisible + VISIBLE_BOOST_RADIUS) DownloadPriority.VisibleMedia
+                                    else DownloadPriority.Prefetch
                                 for (post in item.posts()) {
                                     for (fileId in post.content.posterFileIds()) {
-                                        cache.ensure(fileId, DownloadPriority.Prefetch)
+                                        cache.ensure(fileId, priority)
                                     }
                                     // Inline-playable media (short videos, GIF animations) get the
                                     // playback file pre-warmed too, but ONLY for the immediate next
                                     // slot. Beyond +1 we'd burn megabytes speculating on posts the
                                     // user may never reach (a 30 s autoplay video is already ~5 MB).
                                     // Posters stay cheap to prefetch farther, since they're tens of
-                                    // KB; playback is the heavyweight step we cap tightly.
+                                    // KB; playback is the heavyweight step we cap tightly. The
+                                    // immediate slot's playback also rides the VisibleMedia bump so
+                                    // it doesn't get stuck behind static feed-wide prefetch.
                                     if (idx == firstVisible + 1) {
                                         for (fileId in post.content.playbackFileIds()) {
-                                            cache.ensure(fileId, DownloadPriority.Prefetch)
+                                            cache.ensure(fileId, DownloadPriority.VisibleMedia)
                                         }
                                     }
                                 }
@@ -1048,6 +1061,16 @@ private const val MAX_PILL_BADGES = 3
  * Going much higher costs bandwidth on ramped-back scrolls; lower starts to feel laggy.
  */
 private const val PREFETCH_AHEAD = 4
+
+/**
+ * How many of the [PREFETCH_AHEAD] slots get the [DownloadPriority.VisibleMedia]
+ * priority bump instead of [DownloadPriority.Prefetch]. Tighter than the prefetch
+ * window because the bump is the queue-jump signal: the closer the post is to
+ * being visible, the less we want it sitting behind feed-wide static prefetch
+ * from [MediaAutoDownloader]. Two slots covers "the user is about to flick into
+ * view" without polluting the priority-16 lane on a slow scroll.
+ */
+private const val VISIBLE_BOOST_RADIUS = 2
 
 /**
  * Hard cap on inline-autoplay video duration we're willing to *speculatively* prefetch the

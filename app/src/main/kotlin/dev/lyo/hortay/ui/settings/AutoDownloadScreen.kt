@@ -1,7 +1,9 @@
 package dev.lyo.hortay.ui.settings
 
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
@@ -339,8 +341,26 @@ private fun AutoDownloadCategoryScreen(
                 ),
         ) {
             if (isDataSaverActive) {
+                val context = LocalContext.current
                 DataSaverBanner(
                     text = stringResource(R.string.autodownload_data_saver_note),
+                    onClick = {
+                        // Surface the OS toggle directly so the user can flip it without
+                        // hunting through Android Settings. ACTION_DATA_USAGE_SETTINGS
+                        // is the documented entry point — works back to API 26
+                        // (matches our minSdk). Wrapped in runCatching because some
+                        // Samsung One UI builds have been reported to throw
+                        // ActivityNotFoundException on this exact intent on locked-down
+                        // enterprise devices; falling through silently is correct
+                        // (the banner stays visible, the user can still toggle in
+                        // Settings → Connections → Data Usage manually).
+                        runCatching {
+                            context.startActivity(
+                                Intent(Settings.ACTION_DATA_USAGE_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
@@ -491,12 +511,17 @@ private fun VideoSizeSlider(
 }
 
 @Composable
-private fun DataSaverBanner(text: String, modifier: Modifier = Modifier) {
+private fun DataSaverBanner(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.tertiaryContainer)
+            .clickable(onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -510,6 +535,13 @@ private fun DataSaverBanner(text: String, modifier: Modifier = Modifier) {
             text = text,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onTertiaryContainer,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Symbol(
+            name = "chevron_right",
+            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+            size = 22.dp,
         )
     }
 }
