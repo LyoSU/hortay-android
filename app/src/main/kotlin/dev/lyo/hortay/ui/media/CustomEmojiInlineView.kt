@@ -18,7 +18,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.data.CustomEmojiSticker
 import dev.lyo.hortay.data.DownloadPriority
+import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.StickerFormat
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Compact renderer for a Telegram `custom_emoji_id`. Used in two places:
@@ -49,6 +51,7 @@ fun CustomEmojiInlineView(
     priority: DownloadPriority = DownloadPriority.Avatar,
 ) {
     val repo = LocalCustomEmoji.current
+    val cache = LocalMediaCache.current
 
     // Hint the repository so the resolver batches us in. Idempotent for already-resolved
     // ids — no TDLib call is made on a hit.
@@ -64,23 +67,62 @@ fun CustomEmojiInlineView(
     }
     val sticker: CustomEmojiSticker? = resolvedState.value
 
+    // First fileId that actually has to be ready before SOMETHING paints in the
+    // sticker box — i.e. the file the user perceives as "the emoji loading":
+    //   • Tgs: the static thumb if TDLib gave us one (LottieStickerView underlays
+    //     it while .tgs streams), else the .tgs media itself.
+    //   • Webp: the WEBP image at media.fileId.
+    //   • Webm @ inline size: always the static thumb (no animation path).
+    // Web mode passes null fileIds and uses the remoteUrl chain instead — there
+    // we trust Coil / LottieUrlStore for their own loading visuals and let the
+    // metadata-resolution placeholder be the only one we paint.
+    val firstVisibleFileId: Int? = sticker?.let {
+        when (it.format) {
+            StickerFormat.Tgs -> it.thumb?.fileId ?: it.media.fileId
+            StickerFormat.Webp -> it.media.fileId
+            StickerFormat.Webm -> it.thumb?.fileId
+        }
+    }
+
+    val mediaState by remember(firstVisibleFileId) {
+        if (firstVisibleFileId != null) cache.observe(firstVisibleFileId)
+        else MutableStateFlow(MediaState.Idle)
+    }.collectAsStateWithLifecycle()
+
+    // Decide whether the sticker box currently has SOMETHING to paint. The
+    // placeholder stays visible while the answer is no:
+    //
+    //   • Metadata not resolved yet → no.
+    //   • TDLib mode: we know the first user-visible file's id; wait until
+    //     MediaCache reports it Ready. Without this, TDLib mode flashes the
+    //     placeholder for ~50 ms (GetCustomEmojiStickers is local-fast) and
+    //     then sits on a transparent box for several seconds while the .tgs
+    //     / thumb file actually downloads — perceived as "the emoji isn't
+    //     loading".
+    //   • Web mode: fileIds are null; Coil / LottieUrlStore handle their
+    //     own loading visuals from there, so we treat the resolver landing
+    //     as "ready" and let the metadata-resolution flash be the only
+    //     placeholder we own.
+    //   • Webm with no thumb in any mode: the inline path has no rendering
+    //     branch (no animation, no static), so the box would be dead air —
+    //     keep the placeholder so the user at least sees a loading pip.
+    val contentReady = when {
+        sticker == null -> false
+        sticker.format == StickerFormat.Webm &&
+            sticker.thumb == null &&
+            !(animateAlways && sticker.media.fileId != null) -> false
+        firstVisibleFileId == null -> true
+        else -> mediaState is MediaState.Ready
+    }
+    val needsPlaceholder = !contentReady
+
     Box(modifier = modifier) {
         if (sticker == null) {
             // Pre-resolution placeholder: a translucent grey disc, undersized
             // (66% of the inline placeholder) so adjacent emojis in a run
             // don't merge into a continuous grey strip and centred so the
-            // bead reads as a discrete "loading" pip. The moment the resolver
-            // lands the sticker we drop into the format-specific branch
-            // below — the circle disappears completely instead of bleeding
-            // through the transparent corners of irregular emoji glyphs
-            // (which is what made it look like the placeholder lingered).
-            Box(
-                modifier = Modifier
-                    .fillMaxSize(0.66f)
-                    .align(Alignment.Center)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f)),
-            )
+            // bead reads as a discrete "loading" pip.
+            PlaceholderDisc()
             return@Box
         }
 
@@ -169,7 +211,35 @@ fun CustomEmojiInlineView(
                         priority = priority,
                     )
                 }
+                // Else: no thumb AND no animation path → there is literally
+                // nothing to draw for this sticker. The needsPlaceholder
+                // overlay below keeps the loading disc visible so the box
+                // doesn't render as transparent dead space.
             }
         }
+
+        // Overlay placeholder: covers the in-flight TdMediaImage / LottieStickerView
+        // until the first visible file lands as Ready. Kept on TOP (not as an
+        // underlay) so it doesn't bleed through transparent corners of irregular
+        // glyphs once content paints — same rationale the original commit used to
+        // justify dropping the underlay variant. The composables underneath stay
+        // mounted so they keep driving their MediaCache / LottieUrlStore loads.
+        // sticker is guaranteed non-null here — the null branch returned above.
+        if (needsPlaceholder) {
+            PlaceholderDisc()
+        }
+    }
+}
+
+@Composable
+private fun PlaceholderDisc() {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize(0.66f)
+                .align(Alignment.Center)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f)),
+        )
     }
 }

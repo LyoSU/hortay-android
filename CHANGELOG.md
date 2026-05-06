@@ -74,6 +74,26 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   second row inside the button. Switched to a Material-3 stacked layout
   (primary on top, dismiss below, both `fillMaxWidth`), which keeps the
   touch targets honest at any locale length.
+- **Inline custom-emoji rendered as transparent dead air for several
+  seconds in TDLib mode** while waiting on the actual sticker file. The
+  `f4fe626` placeholder commit hid the loading disc the moment
+  `CustomEmojiRepository` resolved metadata — fine in web mode where
+  metadata-resolution dominates the wall clock (HTTP to
+  `t.me/i/emoji/<id>.json`), but in TDLib mode `GetCustomEmojiStickers`
+  is local-fast (~50 ms), so the disc flashed and the user then sat on
+  an empty box for several more seconds while `MediaCache` actually
+  downloaded the .tgs / WEBP-thumb file. `CustomEmojiInlineView` now
+  observes the first user-visible file's [`MediaState`] and keeps the
+  placeholder mounted as an overlay until that file lands as `Ready` —
+  the underlying renderer (LottieStickerView / TdMediaImage) stays
+  composed underneath so its download keeps running. Web mode is
+  unchanged because URL-only fileIds short-circuit to "ready as soon as
+  the resolver lands" (Coil and `LottieUrlStore` own their loading
+  visuals from there). Also fixes a separate dead-air case for Webm
+  custom emojis that arrived without a thumbnail and weren't in the
+  `animateAlways` picker context — the inline view literally had no
+  rendering branch for them, so they painted nothing; now the
+  placeholder stays for the duration.
 
 ## [0.2.0] — 2026-05-06
 
