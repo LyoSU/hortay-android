@@ -35,8 +35,28 @@ object PostFilterStrategy {
     private fun mergeAlbumMembers(members: List<TimelinePost>): TimelinePost {
         if (members.size == 1) return members.first()
 
-        // Stable, oldest-first sort so the resulting album reads in posting order.
-        val sorted = members.sortedBy { it.date }
+        // Sort by message id, NOT by date. Telegram emits all members of an album
+        // with the same `date` (whole-second resolution); a stable sortedBy { date }
+        // therefore preserves whatever order the upstream stage handed us — which
+        // varies between paths (refresh, snapshot restore, live ingest, pagination)
+        // and HashMap groupBy iteration. The anchor (sorted.first()) flipped per
+        // refresh, with three knock-on regressions:
+        //   • LazyColumn key churn — anchor.id changes between renders, the card
+        //     remounts mid-scroll.
+        //   • Card disappears from the feed — TimelineViewModel.seenPostIds tracks
+        //     the previously-rendered anchor.id, so a flipped anchor falls out of
+        //     the seen filter and shows up under the "новi пости" pill instead of
+        //     in the visible list ("пропадає все окрім одного").
+        //   • commentCount drops to null and reactions stop counting — TDLib's
+        //     interactionInfo only fills `replyInfo` / `reactions` on the FIRST
+        //     message of an album (tdlib/td#2312: "only the first message in an
+        //     album can receive reactions"). The first message is the lowest id;
+        //     anchor-ing anything else means the per-member maxOf aggregation
+        //     pulls from members that never carry the data.
+        // TDLib message ids are monotonic per chat, and an album lives in one chat
+        // by construction (groupBy { chatId to mediaAlbumId }), so `sortedBy { id }`
+        // is canonical chronological order with no ties.
+        val sorted = members.sortedBy { it.id }
         val anchor = sorted.first()
 
         val items = sorted.flatMap { post ->

@@ -84,6 +84,38 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   uses `NET_CAPABILITY_NOT_ROAMING` from `NetworkCapabilities`.
 
 ### Fixed
+- **Album anchor flipped between sessions, breaking reactions, comments
+  and feed visibility (TDLib mode)**. The merged-album anchor was picked
+  via `sortedBy { it.date }` — but Telegram emits every member of a
+  burst-posted album with the SAME `date` (whole-second resolution),
+  so a stable sort just preserved whatever input order the upstream
+  stage handed us. That order varied between refresh, snapshot restore,
+  live ingest, debounce flush and pagination, so the anchor flipped
+  per path. Three knock-on regressions:
+  (1) `LazyColumn` re-keyed the card mid-scroll (`post.id` is the key).
+  (2) The card disappeared from the visible feed —
+  `TimelineViewModel.seenPostIds` tracks the previous anchor.id, and a
+  flipped anchor falls out of the seen filter and shows up under the
+  "новi пости" pill instead of the visible list. The user-visible
+  symptom: "пропадає все окрім одного" after some refreshes.
+  (3) Reactions and comments stopped working — per tdlib/td#2312
+  (Aliaksei Levin: *"Only the first message in an album can receive
+  reactions. Apps aren't supposed to send reactions for other album
+  messages."*), TDLib silently rejects `AddMessageReaction` /
+  `RemoveMessageReaction` against any non-first member. Our reaction
+  toggle picked `albumMessageIds.first()`, and with the date-stable
+  sort that was usually the **newest** member (GetChatHistory returns
+  newest-first), so the reaction RPC went to the wrong message id, the
+  server rejected it, no `UpdateMessageInteractionInfo` followed, and
+  the reaction count never moved. `commentCount` aggregation worked
+  but the per-card "first id" used for thread-anchor probes drifted.
+  Fixed by sorting album members on `it.id` instead. TDLib message ids
+  are monotonic per chat, and an album lives in one chat by
+  construction (`groupBy { chatId to mediaAlbumId }`), so the lowest
+  id is the canonical "first message" — same identity TDLib uses for
+  reactions / replies / view receipts. Locked in
+  `PostFilterStrategyTest` with a permutation-invariance test that
+  exercises ascending, descending and shuffled inputs.
 - **Photo albums collapsed to a single photo after restarting the app
   (TDLib mode)**. Closing and re-opening Hortay would surface a
   previously-merged 5-photo album as a 1-photo card, with the other

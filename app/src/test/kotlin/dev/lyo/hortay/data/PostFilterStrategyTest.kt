@@ -41,6 +41,43 @@ class PostFilterStrategyTest {
     }
 
     @Test
+    fun `album anchor is the lowest-id member regardless of input order`() {
+        // Telegram emits all members of a burst-posted album with the same `date`
+        // (whole-second resolution). sortedBy { date } would be stable on ties and
+        // pick whichever member happened to land first in the upstream — varying
+        // between refresh, snapshot restore, live ingest, and pagination paths.
+        // That flip caused: (a) LazyColumn re-key churn, (b) the card disappearing
+        // from the visible feed because TimelineViewModel.seenPostIds tracks the
+        // previous anchor.id, and (c) reactions/replyInfo never landing because
+        // TDLib only fills those on the FIRST (lowest-id) album member, and our
+        // album-aware update lookup needs the anchor to ANCHOR consistently.
+        val albumId = 42L
+        val sameDate = 1_000L
+        fun member(id: Long, fileId: Int) = post(
+            id = id, mediaAlbumId = albumId, date = sameDate,
+            content = PostContent.PhotoAlbum(
+                items = listOf(AlbumItem.Photo(TdMedia(fileId = fileId, width = 1, height = 1))),
+                caption = FormattedText.Empty,
+            ),
+        )
+        val ascending = listOf(member(10L, 1), member(11L, 2), member(12L, 3))
+        val descending = ascending.reversed()
+        val shuffled = listOf(ascending[1], ascending[0], ascending[2])
+
+        for (input in listOf(ascending, descending, shuffled)) {
+            val merged = PostFilterStrategy.apply(input).single()
+            assertEquals(10L, merged.id, "anchor must be lowest-id regardless of input order")
+            assertEquals(listOf(10L, 11L, 12L), merged.albumMessageIds)
+            val items = (merged.content as PostContent.PhotoAlbum).items
+            assertEquals(3, items.size)
+            // Items must read in posting order (lowest id first), so the user sees
+            // the album in the same sequence regardless of which path produced it.
+            val itemFileIds = items.map { (it as AlbumItem.Photo).media.fileId }
+            assertEquals(listOf(1, 2, 3), itemFileIds)
+        }
+    }
+
+    @Test
     fun `albums of size 1 are passed through unchanged`() {
         val albumId = 7L
         val original = post(
