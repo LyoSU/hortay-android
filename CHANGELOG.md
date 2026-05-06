@@ -8,6 +8,46 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Added
+- **Read-state sync with the official Telegram client (TDLib mode)**. As the user
+  scrolls the merged feed, posts that stay in the viewport for ≥1 s get acked via
+  `viewMessages(forceRead=true, source=MessageSourceChatHistory)` — the canonical
+  closed-chat read path per tdlib/td#46 and tdlib/td#219, advancing
+  `lastReadInboxMessageId` so the channel's unread badge in the official Telegram
+  client clears as the user reads here. A 1 s dwell threshold (driven by
+  `collectLatest { delay(1000) }`) prevents incidental flicker from zeroing
+  badges; explicit taps (open comments / open media / open in Telegram) ack
+  immediately, since a tap is a stronger reading signal than dwell. Comments
+  overlay added the equivalent dwell-ack against the discussion thread chat,
+  fixing the prior gap where comments never advanced the discussion group's read
+  pointer at all. Replaces the previous "view counter only, never advance read
+  state" stance — kept earlier as a load-bearing UX choice but the user
+  explicitly opted into full read-state sync.
+- **Realtime reactions / views / comment counts on the post under the user's
+  gaze**. Per tdlib/td#2312 (Aliaksei Levin: *"if you view messages in an opened
+  chat, their reactions will be eventually updated"*), live interaction-info
+  updates only flow for chats currently OpenChat'd in TDLib. The merged feed
+  used to hold zero chats open, leaving update delivery to TDLib's lazy baseline
+  channel and producing the "reactions sometimes don't move" symptom. A new
+  dwell-driven focus tracker (`FOCUS_DWELL_MS = 1500`) in `TimelineScreen` keeps
+  exactly **one** merged-feed chat open — the one carrying the topmost visible
+  post — and transitions it cleanly as the user scrolls between channels. Honours
+  the maintainer's "usually one chat opened" invariant from tdlib/td#2695, and
+  composes safely with the existing channel-filter OpenChat (refcount in
+  `ChatPresence` deduplicates) and the discussion-group OpenChat in
+  `CommentsRepository.threadFlow`. The open/close swap runs under
+  `NonCancellable` so a fast scroll cancelling collectLatest mid-RPC can't leak
+  refcount drift between TDLib and our local counter.
+
+### Architecture
+- `ChatPresence` is now the single facade for all OpenChat / CloseChat /
+  ViewMessages traffic. Both `PostsRepository.viewMessages` and
+  `CommentsRepository.viewMessages` route through `ChatPresence.viewMessages(...)`
+  with explicit `MessageSource` and `forceRead` per use case (channel feed:
+  `MessageSourceChatHistory` + `forceRead=true`; comments: 
+  `MessageSourceMessageThreadHistory` + `forceRead=false` because the thread
+  chat is already opened by `withOpenChat`). One log tag for read-state TDLib
+  traffic, one place to audit policy, no chance of the two repos drifting on
+  forceRead semantics.
 - **Auto-download media settings (TDLib mode), TG-style**. New "Авто-завантаження
   медіа" section in Profile opens a two-level screen mirroring Telegram's
   "Data and Storage" UX: three category rows (Wi-Fi / Mobile / Roaming), each

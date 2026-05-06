@@ -54,6 +54,7 @@ import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -382,6 +383,18 @@ fun TimelineScreen(
         else feedItems
     }
 
+    // LaunchedEffect's block freezes its captures on the keys-last-changed composition
+    // (Compose's [remember] under the hood holds the original lambda), so subsequent
+    // changes to [displayedItems] aren't seen by the long-running effect bodies below.
+    // Routing the read through [rememberUpdatedState] gives us a [State] handle whose
+    // .value is refreshed on every recomposition without restarting any effect — the
+    // same pattern this composable already uses for [postsState], [translationsState],
+    // [bookmarkedState] further down. Critical for the read-mark / focus-chat effects
+    // because the feed list ref churns with every UpdateMessageInteractionInfo (~30 Hz
+    // on a busy news day): a stale capture would have us ack the wrong posts as
+    // forceRead=true and (worse) OpenChat the wrong chat.
+    val displayedItemsState = rememberUpdatedState(displayedItems)
+
     // Resolve the queued "scroll to messageId" once the target row appears. Keyed on
     // [pendingScrollToMessage] alone (NOT on displayedItems) so a busy feed doesn't
     // restart the effect dozens of times per second on every list mutation — instead we
@@ -476,7 +489,14 @@ fun TimelineScreen(
                 .distinctUntilChanged()
                 .debounce(700)
                 .collect { indices ->
-                    val snapshot = feedItems
+                    // Read latest list via [displayedItemsState] — captures
+                    // [feedItems] directly here would freeze on the keys-change
+                    // composition and miss subsequent feed mutations (~30 Hz on busy
+                    // news days). Indices come from the actual layoutInfo so they
+                    // already reference the latest rendered list — pairing them with
+                    // a stale snapshot would prefetch threads for posts that have
+                    // since shifted out of those positions.
+                    val snapshot = displayedItemsState.value
                     indices.flatMap { snapshot.getOrNull(it)?.posts().orEmpty() }
                         .filter { it.commentCount != null }
                         .forEach { post ->
@@ -487,27 +507,112 @@ fun TimelineScreen(
         }
     }
 
-    // Mark visible posts as viewed (server-side view counter increments). Two safeguards:
-    //   • keyed on listState (not visiblePosts) — visiblePosts gets a fresh List on every
-    //     update from TDLib (reactions, views, edits), which would otherwise restart this
-    //     LaunchedEffect 50×/sec on a busy feed and re-fire viewMessages for every visible
-    //     row → the FLOOD_WAIT we saw earlier.
-    //   • distinctUntilChanged + debounce(500): a single drag scroll emits dozens of indices
-    //     transitions; we only want to ack what stayed visible after the user paused.
+    // Read-state acks: posts that stayed visible long enough get marked as seen via
+    // viewMessages(forceRead=true). Bumps server-side view counters AND advances
+    // lastReadInboxMessageId so the unread badge in the official Telegram client
+    // clears as the user reads here — see PostsRepository.viewMessages doc for the
+    // maintainer-aligned reasoning.
+    //
+    // Why collectLatest + delay instead of debounce(): a delay inside collectLatest is
+    // cancelled on every viewport mutation, giving us a true "viewport stable for
+    // READ_DWELL_MS" gate. debounce() also throttles, but it doesn't reset on shift
+    // when the new emission lands inside the prior debounce window — collectLatest is
+    // the cleaner primitive for "user must pause this long". The dwell guard matters
+    // with forceRead=true because a fast 200-channel flick would otherwise zero out
+    // unread badges for everything that briefly flickered past the screen.
+    //
+    // ackedRead deduplicates so we don't re-issue viewMessages for the same posts on
+    // every viewport mutation. TDLib filters re-acks server-side anyway (issue #136),
+    // but skipping the round-trip altogether is cheaper. Cap is implicit: feed size
+    // is bounded by MAX_FEED_SIZE (~1000), so the set stays small.
+    val ackedRead = remember(tdlibRepo) { HashSet<Pair<Long, Long>>() }
     if (tdlibRepo != null) {
-        LaunchedEffect(listState, tdlibRepo) {
+        LaunchedEffect(listState, tdlibRepo, channelFilter) {
             androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
                 .distinctUntilChanged()
-                .debounce(500)
-                .collect { indices ->
-                    val snapshot = feedItems
-                    if (snapshot.isEmpty() || indices.isEmpty()) return@collect
-                    val grouped = indices.flatMap { idx -> snapshot.getOrNull(idx)?.posts().orEmpty() }
-                        .groupBy { it.chatId }
-                    for ((chatId, group) in grouped) {
-                        tdlibRepo.viewMessages(chatId, group.map { it.id })
+                .collectLatest { indices ->
+                    if (indices.isEmpty()) return@collectLatest
+                    kotlinx.coroutines.delay(READ_DWELL_MS)
+                    // Read the LATEST list via [displayedItemsState] — see the State
+                    // wrapper's KDoc for why feedItems-by-closure would be stale here.
+                    val snapshot = displayedItemsState.value
+                    if (snapshot.isEmpty()) return@collectLatest
+                    val visible = indices.flatMap { idx -> snapshot.getOrNull(idx)?.posts().orEmpty() }
+                    val fresh = visible.filter { (it.chatId to it.id) !in ackedRead }
+                    if (fresh.isEmpty()) return@collectLatest
+                    // Populate ackedRead BEFORE dispatching the suspending ack. If the
+                    // dispatch coroutine is cancelled mid-batch we must not leave half
+                    // the chats acked locally and the others not — that produces
+                    // inconsistent re-issue behaviour on the next dwell. The TDLib call
+                    // itself is detached into [scope] so a viewport change a frame
+                    // later doesn't kill the in-flight ack: collectLatest cancel only
+                    // affects this body, not coroutines launched from the outer scope.
+                    fresh.forEach { ackedRead.add(it.chatId to it.id) }
+                    val grouped = fresh.groupBy { it.chatId }
+                    scope.launch {
+                        grouped.forEach { (chatId, group) ->
+                            tdlibRepo.viewMessages(chatId, group.map { it.id })
+                        }
                     }
                 }
+        }
+    }
+
+    // Focus-chat tracking: keep the chat of the topmost-visible post OpenChat'd while
+    // the user is dwelling on it, then transition cleanly to the next chat as they
+    // scroll. This is what makes reactions / views / comment-counts stream live for
+    // the post the user is actually looking at — per tdlib/td#2312, those updates
+    // arrive only for chats that are currently opened in TDLib. The maintainer's
+    // canonical pattern is "usually one chat opened" (tdlib/td#2695), so we honour
+    // that strictly: at most ONE merged-feed chat is open at any time, and it's the
+    // chat of whatever post sits at the top of the viewport.
+    //
+    // Skipped when channelFilter != null: the existing single-channel screen already
+    // OpenChat's its chat (line above), and posts in the viewport are scoped to that
+    // chat anyway, so the dwell-focus would just no-op against the refcount.
+    //
+    // Hysteresis: FOCUS_DWELL_MS keeps us from rapidly cycling open/close on a quick
+    // scroll. collectLatest cancels the delay on every viewport top change — only a
+    // chat that wins the topmost slot AND holds it for FOCUS_DWELL_MS gets opened.
+    //
+    // Cleanup: try/finally with NonCancellable on the close, mirroring the
+    // channelFilter-screen pattern, so a fast screen exit still flushes CloseChat.
+    if (tdlibRepo != null && channelFilter == null) {
+        LaunchedEffect(listState, tdlibRepo) {
+            var opened: Long? = null
+            try {
+                androidx.compose.runtime.snapshotFlow {
+                    listState.layoutInfo.visibleItemsInfo.firstOrNull()?.index
+                }
+                    .distinctUntilChanged()
+                    .collectLatest { topIdx ->
+                        if (topIdx == null) return@collectLatest
+                        kotlinx.coroutines.delay(FOCUS_DWELL_MS)
+                        // Latest displayed list — same staleness reason as Effect 1.
+                        val items = displayedItemsState.value
+                        val topChat = items.getOrNull(topIdx)?.posts()?.firstOrNull()?.chatId
+                            ?: return@collectLatest
+                        if (topChat == opened) return@collectLatest
+                        // Atomic close+open via NonCancellable: ChatPresence decrements
+                        // the local refcount BEFORE issuing the network CloseChat, so a
+                        // mid-flight cancellation here would otherwise leak an opened
+                        // chat in TDLib (refcount 0 locally, but TDLib never received
+                        // CloseChat). Pinning the swap means a subsequent collectLatest
+                        // cancel waits for both calls to land before letting the next
+                        // emission start its own swap. NonCancellable doesn't block
+                        // forever — viewMessages and OpenChat/CloseChat are bounded
+                        // RPCs and ChatPresence wraps the send in runCatching anyway.
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                            opened?.let { prev -> tdlibRepo.closeChat(prev) }
+                            tdlibRepo.openChat(topChat)
+                            opened = topChat
+                        }
+                    }
+            } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    opened?.let { tdlibRepo.closeChat(it) }
+                }
+            }
         }
     }
 
@@ -523,6 +628,28 @@ fun TimelineScreen(
     val bookmarkedState = rememberUpdatedState(bookmarkedKeys)
     val onChannelFilterChangeState = rememberUpdatedState(onChannelFilterChange)
     val onOpenCommentsState = rememberUpdatedState(onOpenComments)
+
+    // Explicit-tap read ack: any deliberate "open this post" action (open comments,
+    // open media viewer, open in Telegram) marks the post as read immediately, instead
+    // of waiting for the dwell threshold. A tap is a stronger signal than dwell — if
+    // the user fast-tapped and bounced under READ_DWELL_MS, we still want the unread
+    // badge in the official client to clear. ackedRead is the same set the dwell
+    // effect populates, so a post that was tap-acked never re-fires from the dwell
+    // pass and vice-versa. Captured via rememberUpdatedState so the closure inside
+    // [interactions] always sees the current ackedRead reference (which is stable
+    // across recomposition, but this keeps the wiring uniform with the rest of the
+    // captured-state pattern in this composable).
+    val markPostReadState = rememberUpdatedState({ post: TimelinePost ->
+        val repo = tdlibRepo
+        if (repo != null) {
+            val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
+            val unacked = ids.filter { (post.chatId to it) !in ackedRead }
+            if (unacked.isNotEmpty()) {
+                unacked.forEach { ackedRead.add(post.chatId to it) }
+                scope.launch { repo.viewMessages(post.chatId, unacked) }
+            }
+        }
+    })
 
     val interactions = remember {
         // Album members share the same translation — TDLib stores translations against the
@@ -545,6 +672,7 @@ fun TimelineScreen(
         }
         PostInteractions(
             onMediaClick = { post, idx ->
+                markPostReadState.value(post)
                 // Unplayable videos (currently guest-mode "Media is too big" posts
                 // where t.me drops the <video src>) hand the tap straight to the
                 // Telegram client. The viewer would otherwise open with an empty
@@ -602,7 +730,10 @@ fun TimelineScreen(
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
             onShareClick = { post -> PostActions.share(context, post) },
             onCopyClick = { post -> PostActions.copyText(context, post) },
-            onOpenClick = { post -> PostActions.openInTelegram(context, post) },
+            onOpenClick = { post ->
+                markPostReadState.value(post)
+                PostActions.openInTelegram(context, post)
+            },
             onTranslateClick = { post ->
                 val t = translations ?: return@PostInteractions
                 scope.launch {
@@ -630,7 +761,10 @@ fun TimelineScreen(
                     )
                 }
             },
-            onPostClick = { post -> onOpenCommentsState.value(post) },
+            onPostClick = { post ->
+                markPostReadState.value(post)
+                onOpenCommentsState.value(post)
+            },
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedState.value },
         )
     }
@@ -1054,6 +1188,26 @@ private const val SEARCH_DEBOUNCE_MS = 300L
 
 /** Avatars in the "X нових постів" pill — same cap as the original VM-side limit. */
 private const val MAX_PILL_BADGES = 3
+
+/**
+ * Viewport-stable dwell required before a post counts as "read". Triggers
+ * `viewMessages(forceRead=true)`, which advances `lastReadInboxMessageId` and clears
+ * the unread badge in the official Telegram client. 1 s matches Telegram-Android's own
+ * scroll-IDLE read threshold and the IAB-style "considered viewed" minimum used by
+ * Twitter / Instagram. Lower would zero out badges on incidental flicker; higher
+ * would feel laggy ("I read this 2 s ago, why is it still bold in my other client?").
+ */
+private const val READ_DWELL_MS = 1000L
+
+/**
+ * Viewport-stable dwell before we promote the topmost post's chat to OpenChat in
+ * TDLib. Per tdlib/td#2312 only opened chats receive realtime reaction / view-counter
+ * / comment-count updates, so this is what makes interaction info come alive on the
+ * post the user is actually looking at. Slightly longer than [READ_DWELL_MS] — this
+ * one carries side effects (TDLib starts streaming updates and may fetch sponsored
+ * messages), so we wait for the dwell to feel deliberate rather than incidental.
+ */
+private const val FOCUS_DWELL_MS = 1500L
 
 /**
  * How many posts ahead of the first visible item to eagerly prefetch posters for. Tuned so

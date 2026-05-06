@@ -6,6 +6,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -42,6 +43,10 @@ import dev.lyo.hortay.ui.timeline.label
 import dev.lyo.hortay.ui.timeline.symbolName
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 /**
  * Reddit/Twitter-style discussion overlay with live updates. While this screen is on top
@@ -88,6 +93,42 @@ fun CommentsScreen(
     // *after* the bootstrap finished, paying the cold-cache penalty on the first call.
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    val listState = rememberLazyListState()
+
+    // Read-state ack for visible comments. Mirrors the feed's dwell logic, scoped to
+    // the comments overlay's discussion-thread chat. Until this existed, comments were
+    // never marked as read — the discussion group's lastReadInboxMessageId stayed put
+    // and the user kept seeing an unread badge in the official Telegram client even
+    // after they'd scrolled through the whole thread here.
+    //
+    // The comment list is keyed by `it.message.id` (a Long), and the post header /
+    // label / loading items are keyed by stable strings — so filtering visibleItemsInfo
+    // to entries whose key is a Long isolates real comment rows from chrome.
+    //
+    // forceRead is left at the CommentsRepository default (false): the discussion chat
+    // is already opened by [CommentsRepository.threadFlow]'s withOpenChat for as long
+    // as the SharedFlow has subscribers (i.e. for the lifetime of this overlay plus
+    // a 30 s linger), and TDLib advances read state automatically for opened chats.
+    val ackedRead = remember { HashSet<Long>() }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(listState, repo, post.chatId) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? Long } }
+            .distinctUntilChanged()
+            .collectLatest { ids ->
+                if (ids.isEmpty()) return@collectLatest
+                delay(COMMENT_READ_DWELL_MS)
+                val ready = state as? CommentsRepository.ThreadState.Ready ?: return@collectLatest
+                val fresh = ids.filter { it !in ackedRead }
+                if (fresh.isEmpty()) return@collectLatest
+                // Populate ackedRead BEFORE dispatching, and detach the suspending ack
+                // into [scope] so a fresh viewport emission cancelling this collector
+                // doesn't take the in-flight call with it. Mirrors TimelineScreen's
+                // read-mark effect — same reasoning applies for the discussion
+                // thread's lastReadInboxMessageId.
+                fresh.forEach { ackedRead.add(it) }
+                scope.launch { repo.viewMessages(ready.threadChatId, fresh) }
+            }
+    }
 
     // Material 3 predictive-back transform. Pivot lives at the swipe edge so the screen
     // visibly "hinges" away from the user's thumb.
@@ -133,6 +174,7 @@ fun CommentsScreen(
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 top = padding.calculateTopPadding(),
                 bottom = padding.calculateBottomPadding() + 24.dp,
@@ -416,3 +458,14 @@ internal fun formatRelative(epochMs: Long): String {
 }
 
 private const val INDENT_DP = 12
+
+/**
+ * Viewport-stable dwell before a visible comment is considered "read" and acked via
+ * `viewMessages`. Same 1 s threshold as the feed's read-mark dwell — comments scroll
+ * in the same UX shape, so any other value would make the two screens feel
+ * inconsistent. With the discussion-thread chat already opened by
+ * [CommentsRepository.threadFlow], the ack only needs `force_read=false`; TDLib
+ * advances the thread's `lastReadInboxMessageId` automatically once the message is
+ * "viewed in an opened chat" (see tdlib/td#46).
+ */
+private const val COMMENT_READ_DWELL_MS = 1000L

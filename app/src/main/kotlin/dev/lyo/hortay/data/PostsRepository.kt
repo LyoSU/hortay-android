@@ -496,27 +496,50 @@ class PostsRepository(
     }
 
     /**
-     * Registers that the user has seen the given messages in [chatId]. This is what bumps
-     * channel view counters server-side; without it, the user's "view" never lands.
+     * Registers that the user has seen the given messages in [chatId]. Bumps the
+     * server-side view counter AND advances [TdApi.Chat.lastReadInboxMessageId] —
+     * i.e. the channel's unread badge in the official Telegram client clears as the
+     * user reads here.
+     *
+     * Maintainer-aligned design (TDLib's `Aliaksei Levin` aka levlam):
+     *   - tdlib/td#2695: "Usually, users have at most one chat opened." → we DO NOT
+     *     hold OpenChat for every visible chat in the global feed; only the active
+     *     channel-filter screen opens its single chat (see [openChat]). Multi-open
+     *     is a fight against the API design and risks burst FLOOD_WAIT on a 200-channel
+     *     scroll.
+     *   - tdlib/td#46 + tdlib/td#219: when the chat isn't opened, the canonical way to
+     *     advance read state is `force_read=true` on `ViewMessages`. That's exactly the
+     *     case here — every channel except the filter target is closed.
+     *   - tdlib/td#136: `ViewMessages` is filtered server-side to messages TDLib
+     *     considers "seen" (since 1.3.0), so calling it for a viewport-stable batch is
+     *     safe even if the user only briefly glanced.
+     *   - tdlib/td#2312: "Only a few messages can be viewed in a time." Caller must
+     *     batch sensibly — TimelineScreen passes the visible viewport (3-7 posts), well
+     *     within bounds. Do NOT bulk-ack the whole feed from this function.
+     *
+     * For album posts: [TimelinePost.id] is the oldest album member's id, which matches
+     * tdlib/td#2312's note that "only the first message in an album can receive
+     * reactions" — the same id is the canonical one for view/read tracking too.
+     *
+     * The dwell gate (≥1s viewport-stable before this is called) lives in
+     * [TimelineScreen]: that's a UX policy, not a TDLib invariant, so it stays at the
+     * call site.
      */
-    suspend fun viewMessages(chatId: Long, messageIds: List<Long>) {
-        if (messageIds.isEmpty()) return
-        runCatching {
-            td.send(
-                TdApi.ViewMessages(
-                    chatId,
-                    messageIds.toLongArray(),
-                    /* source */ null,
-                    // forceRead=false: bumps the server-side view counter (we still want
-                    // that), but does NOT advance lastReadInboxMessageId, so the channel's
-                    // unread badge in the official Telegram client stays put. Hortay is a
-                    // read-only browser — silently clearing badges in another app would
-                    // surprise the user.
-                    /* forceRead */ false,
-                ),
-            )
-        }.warnUnlessCancelled(TAG, "viewMessages($chatId)")
-    }
+    suspend fun viewMessages(chatId: Long, messageIds: List<Long>) =
+        ChatPresence.viewMessages(
+            td = td,
+            chatId = chatId,
+            messageIds = messageIds,
+            // ChatHistory: the user is reading the channel feed (merged global view
+            // or single-channel filter). Both look like history scrolling to TDLib.
+            source = TdApi.MessageSourceChatHistory(),
+            // Closed chats in the global feed need force_read=true to advance read
+            // state — the maintainer-canonical alternative to OpenChat-per-channel.
+            // For the channel-filter case, the chat is already opened by the screen
+            // so force_read is a no-op; setting it true uniformly keeps the call
+            // site free of mode branching.
+            forceRead = true,
+        )
 
     private fun handleNewMessage(message: TdApi.Message) {
         if (message.mediaAlbumId == 0L) {

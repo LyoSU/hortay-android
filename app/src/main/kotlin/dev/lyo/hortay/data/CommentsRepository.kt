@@ -284,18 +284,23 @@ class CommentsRepository(
     ): ThreadState.Ready =
         ThreadState.Ready(buildTree(live, anchor.rootId), anchor.threadChatId)
 
-    suspend fun viewMessages(threadChatId: Long, messageIds: List<Long>) {
-        if (messageIds.isEmpty()) return
-        runCatching {
-            td.send(
-                // forceRead=false to match PostsRepository: Hortay is a read-only browser,
-                // and silently advancing the discussion's lastReadInboxMessageId would
-                // clear unread badges in the official Telegram client — which the user
-                // didn't ask for. The view counter still bumps server-side regardless.
-                TdApi.ViewMessages(threadChatId, messageIds.toLongArray(), null, /* forceRead */ false),
-            )
-        }.warnUnlessCancelled(TAG, "viewMessages($threadChatId)")
-    }
+    suspend fun viewMessages(threadChatId: Long, messageIds: List<Long>) =
+        ChatPresence.viewMessages(
+            td = td,
+            chatId = threadChatId,
+            messageIds = messageIds,
+            // The user is reading a comments thread overlay — explicit source helps
+            // TDLib classify the view (vs. plain chat history scrolling).
+            source = TdApi.MessageSourceMessageThreadHistory(),
+            // The thread chat is currently opened by the comments overlay
+            // (see [observeThread] / [prefetchThread] which both wrap their work in
+            // ChatPresence.withOpenChat). With the chat opened, force_read=false is
+            // sufficient — TDLib advances read state automatically. force_read=true
+            // would be redundant here; keeping it false also leaves the discussion
+            // group's per-user read pointer alone for the brief windows when the
+            // thread is being prefetched but not yet visibly opened.
+            forceRead = false,
+        )
 
     private suspend fun buildTree(messages: List<TdApi.Message>, rootMessageId: Long): List<ThreadRow> {
         if (messages.isEmpty()) return emptyList()
