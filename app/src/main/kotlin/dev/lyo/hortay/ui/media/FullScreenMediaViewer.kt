@@ -153,6 +153,12 @@ fun FullScreenMediaViewer(
             }
 
             if (items.size > 1) {
+                // Pill-shaped scrim under the counter — same pattern as the close
+                // button and QualityChip use elsewhere in this viewer. Without the
+                // scrim a white photo behind the counter ("3 / 5" against snow,
+                // sky, paper) made the digits illegible because they were also
+                // white. The black-translucent plate guarantees readable contrast
+                // on every possible photo.
                 Text(
                     text = "${pagerState.currentPage + 1} / ${items.size}",
                     color = Color.White,
@@ -160,7 +166,10 @@ fun FullScreenMediaViewer(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
-                        .padding(top = 16.dp),
+                        .padding(top = 12.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
                 )
             }
         }

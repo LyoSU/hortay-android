@@ -1,12 +1,17 @@
 package dev.lyo.hortay.ui.media
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,9 +58,21 @@ fun CustomEmojiInlineView(
 
     Box(modifier = modifier) {
         if (sticker == null) {
-            // Pre-resolution: nothing to draw. The InlineTextContent placeholder reserves
-            // the line height; once the resolver lands the sticker, the layout doesn't
-            // shift because the placeholder size is fixed by the caller.
+            // Pre-resolution placeholder: a translucent grey disc, undersized
+            // (66% of the inline placeholder) so adjacent emojis in a run
+            // don't merge into a continuous grey strip and centred so the
+            // bead reads as a discrete "loading" pip. The moment the resolver
+            // lands the sticker we drop into the format-specific branch
+            // below — the circle disappears completely instead of bleeding
+            // through the transparent corners of irregular emoji glyphs
+            // (which is what made it look like the placeholder lingered).
+            Box(
+                modifier = Modifier
+                    .fillMaxSize(0.66f)
+                    .align(Alignment.Center)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f)),
+            )
             return@Box
         }
 

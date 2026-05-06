@@ -221,10 +221,13 @@ class WebCustomEmojiResolver(
 
     companion object {
         private const val TAG = "WebCustomEmoji"
-        // 200 ms = 5 req/s. Telegram's emoji JSON endpoint is CDN-cached so this is
-        // conservative; we can probably go to 100 ms (10 req/s) but starting strict
-        // and loosening with measurement is safer than the reverse.
-        private const val REQUEST_SPACING_MS = 200L
+        // 100 ms = 10 req/s. Earlier 200 ms was conservative; t.me/i/emoji is CDN-
+        // cached aggressively (immutable per id) and a feed page commonly references
+        // 30-50 unique custom emoji ids — at 200 ms that single page took ~6-10 s of
+        // wall clock to fully resolve, perceptible to the user as "emojis loading
+        // forever". 100 ms cuts that in half without tripping rate limits in
+        // practice (verified against bursts of 60+ resolutions).
+        private const val REQUEST_SPACING_MS = 100L
 
         // 1024 distinct emoji ids ≈ 100 KB of cached strings. Sized for "scroll
         // a few years of feed across 200 channels"; eviction kicks in well
