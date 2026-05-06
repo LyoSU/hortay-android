@@ -36,10 +36,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import dev.lyo.hortay.ui.icons.Symbol
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -308,12 +310,20 @@ private fun PhoneForm(graph: AppGraph, errorMessage: String?) {
         // No TDLib call, no phone number, no MTProto — purely a local DataStore
         // write. Subscriptions persist across mode switches both directions so
         // the user can experiment without losing their channel list.
-        TextButton(
+        //
+        // Visual weight: bumped from a near-invisible TextButton to an
+        // OutlinedButton with a leading "visibility" glyph. Still secondary to
+        // the filled "Send code" PrimaryActionButton above (no background fill,
+        // outlined stroke is materially less prominent than the primary
+        // container) — guest mode is a real opt-out, not the happy path.
+        OutlinedButton(
             onClick = {
                 scope.launch { graph.guestMode.setGuest(true) }
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
+            Symbol(name = "visibility", contentDescription = null, size = 18.dp)
+            Spacer(Modifier.width(8.dp))
             Text(
                 text = stringResource(R.string.auth_continue_without_login),
                 style = MaterialTheme.typography.bodyMedium,

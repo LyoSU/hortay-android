@@ -269,9 +269,16 @@ private fun ChannelRow(
             StatusBadge(entry.status)
         }
         IconButton(onClick = onUnsubscribeClick) {
+            // Channel-aware Talkback label. "Unsubscribe" alone gave a
+            // user with N rows N identical-sounding buttons in row order
+            // — they had to land focus elsewhere first to discover which
+            // channel each one targeted. Now reads "Unsubscribe from <name>".
             Symbol(
                 name = "close",
-                contentDescription = stringResource(R.string.web_unsubscribe_confirm),
+                contentDescription = stringResource(
+                    R.string.web_unsubscribe_from,
+                    entry.info.title,
+                ),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 size = 20.dp,
             )
@@ -298,7 +305,7 @@ private fun ChannelAvatar(name: String, avatarUrl: String?) {
         if (avatarUrl != null) {
             coil3.compose.AsyncImage(
                 model = avatarUrl,
-                contentDescription = name,
+                contentDescription = stringResource(R.string.avatar_for_channel, name),
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape),
