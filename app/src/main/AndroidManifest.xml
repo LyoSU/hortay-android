@@ -39,15 +39,26 @@
             </intent-filter>
 
             <!-- https://t.me/... share links. Same chooser behaviour — Android shows both
-                 Hortay and Telegram. App-link verification (autoVerify=true) requires
-                 Digital Asset Links hosted at t.me, which we don't control, so we stay as
-                 a regular browsable handler. -->
-            <intent-filter>
+                 Hortay and Telegram. autoVerify=true is set per Android 12+ App-Link
+                 hygiene (tells Android to attempt domain verification rather than treat
+                 the filter as ambiguous). Verification WILL FAIL server-side because
+                 we don't control t.me's /.well-known/assetlinks.json, so we never become
+                 the default handler — chooser behaviour is preserved. The flag silences
+                 the AppLinkWarning lint and keeps the manifest semantically honest about
+                 what we're declaring.
+
+                 The <data> tags are split into single-attribute elements per the
+                 IntentFilterUniqueDataAttributes guidance: the runtime intent matcher
+                 takes the cross-product of every scheme × host inside one filter, so
+                 the split form is semantically equivalent here AND makes that
+                 combining behaviour explicit to anyone reading the manifest. -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="t.me" />
-                <data android:scheme="http" android:host="t.me" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="t.me" />
             </intent-filter>
         </activity>
 
