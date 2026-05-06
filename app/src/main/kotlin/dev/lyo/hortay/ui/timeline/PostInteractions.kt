@@ -32,6 +32,16 @@ class PostInteractions(
     val isTranslated: (post: TimelinePost) -> Boolean = { false },
     /** Translated text for this post (or any of its album members), null when not translated. */
     val translationFor: (post: TimelinePost) -> FormattedText? = { null },
+    /**
+     * Whether the "Translate" affordance should be surfaced at all. False in guest
+     * mode (no TDLib session = no `TranslateMessageText` RPC), so the button is
+     * suppressed entirely instead of being shown and silently no-op'ing on tap.
+     * A free third-party translator (Lingva / LibreTranslate / Google Translate)
+     * was rejected here on privacy grounds — guest mode's whole point is "Telegram
+     * sees only your IP and a desktop UA"; routing post text through Google would
+     * regress that promise without an opt-in.
+     */
+    val translateEnabled: Boolean = false,
     /** Toggle the user's reaction (emoji or custom-emoji) on the given post. */
     val onReactionToggle: (post: TimelinePost, item: ReactionItem) -> Unit = { _, _ -> },
 ) {

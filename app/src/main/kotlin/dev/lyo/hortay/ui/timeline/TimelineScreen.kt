@@ -614,6 +614,7 @@ fun TimelineScreen(
             },
             isTranslated = { post -> lookup(post) != null },
             translationFor = ::lookup,
+            translateEnabled = translations != null,
             onReactionToggle = { post, item ->
                 val ca = channelActions ?: return@PostInteractions
                 scope.launch {

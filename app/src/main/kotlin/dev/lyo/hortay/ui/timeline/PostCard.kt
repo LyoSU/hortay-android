@@ -675,17 +675,19 @@ private fun PostActionSheet(
                     label = stringResource(R.string.post_copy_text),
                     onClick = { runAndDismiss { interactions.onCopyClick(post) } },
                 )
-                val translated = interactions.isTranslated(post)
-                SheetItem(
-                    symbol = "translate",
-                    label = stringResource(if (translated) R.string.post_show_original else R.string.post_translate),
-                    onClick = {
-                        runAndDismiss {
-                            if (translated) interactions.onClearTranslationClick(post)
-                            else interactions.onTranslateClick(post)
-                        }
-                    },
-                )
+                if (interactions.translateEnabled) {
+                    val translated = interactions.isTranslated(post)
+                    SheetItem(
+                        symbol = "translate",
+                        label = stringResource(if (translated) R.string.post_show_original else R.string.post_translate),
+                        onClick = {
+                            runAndDismiss {
+                                if (translated) interactions.onClearTranslationClick(post)
+                                else interactions.onTranslateClick(post)
+                            }
+                        },
+                    )
+                }
             }
             SheetItem(
                 symbol = "ios_share",
