@@ -346,9 +346,24 @@
         <item quantity="many">Ви читали %1$d каналів без входу. Виберіть, на які підписатися з вашого акаунта.</item>
         <item quantity="other">Ви читали %1$d каналу без входу. Виберіть, на які підписатися з вашого акаунта.</item>
     </plurals>
+    <string name="migration_subtitle_disclaimer">Підписка приєднає вас до каналу в Telegram — він з\'явиться у вашому списку, і адміністратор каналу побачить вас як нового учасника.</string>
     <string name="migration_select_all">Вибрати всі</string>
     <string name="migration_deselect_all">Зняти всі</string>
-    <string name="migration_skip">Не зараз</string>
+    <!-- Чесний текст: натискання назавжди ховає шит (proposalShown=true у
+         MigrationCoordinator). Це не «пізніше» — шит більше не з\'явиться. -->
+    <string name="migration_skip">Більше не показувати</string>
     <string name="migration_confirm">Підписатися (%1$d)</string>
     <string name="migration_progress_label">%1$d з %2$d</string>
+
+    <!-- Опис аватарок / зображень для Talkback. -->
+    <string name="avatar_for_channel">Аватар каналу %1$s</string>
+
+    <!-- Постійний бейдж гостьового режиму у верхній панелі. -->
+    <string name="guest_mode_badge">Гостьовий режим</string>
+
+    <!-- CTA «Увійти», коли знайдений канал — приватний. -->
+    <string name="web_add_signin_for_private">Увійти, щоб читати приватні канали</string>
+
+    <!-- Talkback-опис кнопки відписки з назвою каналу. -->
+    <string name="web_unsubscribe_from">Відписатися від %1$s</string>
 </resources>

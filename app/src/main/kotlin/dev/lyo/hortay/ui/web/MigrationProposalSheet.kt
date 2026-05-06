@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Checkbox
@@ -101,6 +103,16 @@ fun MigrationProposalSheet(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // Trade-off disclaimer. The previous subtitle implied a one-way
+            // "import bookmarks" flow. In reality this issues real
+            // SearchPublicChat + JoinChat calls, so the user shows up in
+            // the channel admin's member list. Surface that explicitly so the
+            // confirmation is informed, not surprised-by-default.
+            Text(
+                text = stringResource(R.string.migration_subtitle_disclaimer),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -130,9 +142,23 @@ fun MigrationProposalSheet(
             ) {
                 items(items = candidates, key = { it }) { username ->
                     val checked = username in selected.value
+                    // Whole-row toggleable for Talkback users — the entire row
+                    // announces as one Checkbox-role target rather than forcing
+                    // them to land on the 24dp box. Material guidance for list
+                    // rows with leading checkboxes; passing onCheckedChange=null
+                    // to the Checkbox itself delegates click handling to the row.
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .toggleable(
+                                value = checked,
+                                enabled = !inFlight,
+                                role = Role.Checkbox,
+                                onValueChange = { isChecked ->
+                                    selected.value = if (isChecked) selected.value + username
+                                    else selected.value - username
+                                },
+                            )
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -140,10 +166,7 @@ fun MigrationProposalSheet(
                         Checkbox(
                             checked = checked,
                             enabled = !inFlight,
-                            onCheckedChange = { isChecked ->
-                                selected.value = if (isChecked) selected.value + username
-                                else selected.value - username
-                            },
+                            onCheckedChange = null,
                         )
                         Symbol(
                             name = "campaign",

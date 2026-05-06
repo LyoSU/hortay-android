@@ -336,9 +336,24 @@
         <item quantity="one">You followed %1$d channel without signing in. Want to subscribe with your account?</item>
         <item quantity="other">You followed %1$d channels without signing in. Pick the ones to subscribe to with your account.</item>
     </plurals>
+    <string name="migration_subtitle_disclaimer">Joining brings these channels into your main Telegram account — they\'ll appear in your channel list and the channel admin will see you as a new member.</string>
     <string name="migration_select_all">Select all</string>
     <string name="migration_deselect_all">Deselect all</string>
-    <string name="migration_skip">Not now</string>
+    <!-- Honest copy: tapping this permanently dismisses the sheet (proposalShown=true in
+         MigrationCoordinator). It does NOT defer to "later" — the sheet never reappears. -->
+    <string name="migration_skip">Don\'t show again</string>
     <string name="migration_confirm">Subscribe (%1$d)</string>
     <string name="migration_progress_label">%1$d of %2$d</string>
+
+    <!-- Avatar / image content descriptions for Talkback. -->
+    <string name="avatar_for_channel">Avatar for %1$s</string>
+
+    <!-- Persistent guest-mode badge in the top bar. -->
+    <string name="guest_mode_badge">Guest mode</string>
+
+    <!-- Sign-in CTA shown when the looked-up channel is private. -->
+    <string name="web_add_signin_for_private">Sign in to access private channels</string>
+
+    <!-- Channel-aware Talkback label for the unsubscribe icon. -->
+    <string name="web_unsubscribe_from">Unsubscribe from %1$s</string>
 </resources>
