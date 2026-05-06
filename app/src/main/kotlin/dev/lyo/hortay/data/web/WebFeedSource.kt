@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.SharingStarted
 
@@ -62,6 +63,18 @@ class WebFeedSource(
     private val refreshMutex = Mutex()
     private val fetchSemaphore = Semaphore(maxConcurrentFetches)
 
+    // Last-known DataStore subscription set, used for delta computation in
+    // [handleSubscriptionsChanged]. We deliberately diff against THIS rather
+    // than against `repository.subscribedUsernames()` because direct-write paths
+    // ([subscribeAndRefresh] writes to the channel table immediately) would
+    // otherwise corrupt the diff (a freshly-direct-subscribed channel would
+    // look like "should be removed" when the DataStore Flow finally emits the
+    // pre-write value). Tracking DataStore-only deltas keeps direct-channel
+    // writes out of the diff entirely. Initialised lazily on first emit.
+    @Volatile
+    private var lastKnownSubscriptionsSet: Set<String>? = null
+    private val subscriptionsMutex = Mutex()
+
     /**
      * Merged feed from the DB, mapped to [TimelinePost] so the existing
      * [dev.lyo.hortay.ui.timeline.PostCard] (and its children Avatar, HeaderRow,
@@ -95,11 +108,36 @@ class WebFeedSource(
             .launchIn(scope)
     }
 
-    private suspend fun handleSubscriptionsChanged(latest: Set<String>) {
-        // Pull current DB-side subscribed set so we know what's added vs removed.
-        val currentDb = repository.subscribedUsernames().toSet()
-        val added = latest - currentDb
-        val removed = currentDb - latest
+    private suspend fun handleSubscriptionsChanged(latest: Set<String>) = subscriptionsMutex.withLock {
+        // Diff against the LAST DataStore value we saw, not against the channel
+        // table — see field doc on [lastKnownSubscriptionsSet]. First emit is
+        // a special case: previous=null means "we have nothing to compare
+        // against yet"; treat it as a no-op delta but still pick up first-run
+        // refresh when the DataStore has subs from a previous process.
+        val previous = lastKnownSubscriptionsSet
+        lastKnownSubscriptionsSet = latest
+        if (previous == null) {
+            // First emit on this process. Reconcile direction is one-way:
+            // the channel table may have entries that pre-date this process
+            // (legitimately subscribed but DataStore was empty pre-fix), so
+            // we DON'T remove them here. We only ADD anything in DataStore
+            // not yet in the table — typical case is a no-op (add path also
+            // writes the table directly), but covers the cold-start where a
+            // previous process wrote DataStore without writing the table.
+            val currentDb = repository.subscribedUsernames().toSet()
+            val toAdd = latest - currentDb
+            for (username in toAdd) {
+                repository.subscribe(username)
+            }
+            // Populate stale empty feed if we have any subs.
+            if (latest.isNotEmpty() && lastSuccessfulRefreshAtMs == 0L) {
+                doRefresh(force = false)
+            }
+            return@withLock
+        }
+        val added = latest - previous
+        val removed = previous - latest
+        if (added.isEmpty() && removed.isEmpty()) return@withLock
 
         for (username in added) {
             repository.subscribe(username)
@@ -107,15 +145,8 @@ class WebFeedSource(
         for (username in removed) {
             repository.unsubscribe(username)
         }
-
-        // Newly added subscriptions deserve immediate content. Stale-window check
-        // is bypassed when we have additions — the user just asked to follow this
-        // channel; making them wait for the next 5-minute sweep would feel broken.
         if (added.isNotEmpty()) {
             doRefresh(force = true)
-        } else if (latest.isNotEmpty() && lastSuccessfulRefreshAtMs == 0L) {
-            // First run on this process with existing subs — populate immediately.
-            doRefresh(force = false)
         }
     }
 
@@ -259,15 +290,39 @@ class WebFeedSource(
      * Add-channel screen. Idempotent: subscribing to an already-followed channel
      * still triggers a fetch (user might be expecting fresh content) but the DB
      * upsert is a no-op.
+     *
+     * Writes go to BOTH stores:
+     *   • [repository] direct write — channel table mirrors immediately so the
+     *     UI (Channels tab row, FAB collapse, feed JOIN) reflects the new
+     *     subscription within one frame, no DataStore round-trip required.
+     *   • [subscriptions] DataStore — the source of truth for the migration
+     *     coordinator (post sign-in, the user is offered each anonymous
+     *     subscription as a TDLib JoinChat candidate). Without this write,
+     *     migration would silently surface zero candidates regardless of how
+     *     many channels the user accumulated in guest mode.
      */
     suspend fun subscribeAndRefresh(username: String, placeholderTitle: String = username) {
         repository.subscribe(username, placeholderTitle)
-        // The flow-driven sync in init will trigger a refresh once the DataStore
-        // notification round-trips, but we kick a direct fetch too so UX feels
-        // immediate — the DataStore sync is purely a mirror.
+        subscriptions.add(username)
         scope.launch {
             fetchOne(username, forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
         }
+    }
+
+    /**
+     * Wipe cached posts + channel payload, then trigger a forced refresh so
+     * the user immediately sees fresh content instead of an empty feed
+     * (cached) followed by a 5-minute scheduler tick before anything appears.
+     * Subscriptions survive the wipe — they're user intent, not cache. Mirrors
+     * the user expectation of a "Clear cache" button: short blank moment,
+     * then the same channels re-populate.
+     */
+    suspend fun clearCacheAndRefresh() {
+        repository.clearAllCache()
+        // Reset the staleness gate so the upcoming refresh isn't bounced by
+        // the 30-second cooldown — the user just asked for fresh data.
+        lastSuccessfulRefreshAtMs = 0L
+        doRefresh(force = true)
     }
 
     sealed interface RefreshState {

@@ -21,6 +21,10 @@
     <string name="web_loading">Завантажуємо…</string>
     <string name="web_empty_posts">Поки немає постів. Перевірте підписки.</string>
     <string name="web_empty_channels">Жодних підписок поки що.\nДодайте канали зі вкладки «Стрічка».</string>
+    <string name="web_empty_channels_title">Поки немає каналів</string>
+    <string name="web_empty_channels_body">Додайте публічний канал — його пости почнуть з\'являтись у вашій стрічці.</string>
+    <string name="web_add_mentioned_title">Згадуються у ваших каналах</string>
+    <string name="web_add_mentioned_count">Репостили %1$d разів у ваших підписках</string>
     <string name="web_empty_saved">Поки немає збережених постів.</string>
     <string name="web_welcome_title">Без входу</string>
     <string name="web_welcome_body">Додайте кілька публічних каналів — і отримуйте їхні пости без авторизації в Telegram.</string>

@@ -164,6 +164,53 @@ class WebRepository(
         postQueries.selectChannelsWithStaleMedia(olderThanMs).executeAsList()
     }
 
+    /**
+     * Channels the user might want to follow next: usernames mentioned via
+     * `@handle` inside post bodies, or appearing as the source of a forward,
+     * across the most recent [limitPosts] posts of every subscribed channel.
+     * Returned in descending frequency so "the channels your channels keep
+     * pointing at" surface first. Ranking is purely a count — we deliberately
+     * don't bias by recency or by which subscribed source mentioned them, so
+     * the suggestion stays explainable ("3 of your channels mention this").
+     *
+     * The username extraction is conservative: we only accept ASCII handles
+     * matching Telegram's public-username rules ([A-Za-z][A-Za-z0-9_]{1,31}),
+     * lowercased for stable comparison. Anything that doesn't match (private
+     * forwards, t.me/+invite links, group jumps) is silently skipped.
+     */
+    suspend fun mentionedUsernamesFromSubscribed(
+        limitPosts: Long = MENTIONS_DEFAULT_LIMIT,
+    ): List<Pair<String, Int>> = withContext(ioDispatcher) {
+        val rows = postQueries.selectMentionsSource(limitPosts).executeAsList()
+        if (rows.isEmpty()) return@withContext emptyList()
+        val freq = HashMap<String, Int>()
+        for (row in rows) {
+            // @username mentions inside post text. Bodies are HTML, so the
+            // regex needs to skip href attributes — we want the *visible*
+            // mention, not the t.me/<u>/<seq> URL inside an <a>.
+            VISIBLE_MENTION_REGEX.findAll(row.text_html).forEach { match ->
+                val u = match.groupValues[1].lowercase()
+                if (u.length in MENTION_MIN_LEN..MENTION_MAX_LEN) {
+                    freq.merge(u, 1, Int::plus)
+                }
+            }
+            // Forwarded-from JSON: `{"channelName":..., "channelLink":"https://t.me/<u>"}`.
+            // Cheaper to substring-extract than to spin up the JSON decoder
+            // for what is one well-known shape.
+            row.forwarded_from_json?.let { json ->
+                FORWARD_LINK_REGEX.find(json)?.let { match ->
+                    val u = match.groupValues[1].lowercase()
+                    if (u.length in MENTION_MIN_LEN..MENTION_MAX_LEN) {
+                        freq.merge(u, 1, Int::plus)
+                    }
+                }
+            }
+        }
+        freq.entries
+            .sortedByDescending { it.value }
+            .map { it.key to it.value }
+    }
+
     // ---- Writes (suspend) ---------------------------------------------------
 
     /**
@@ -313,15 +360,20 @@ class WebRepository(
     /**
      * Hard wipe — used by the "Очистити кеш" button. Subscriptions deliberately
      * survive: the user expressed intent, deleting their list would be hostile.
-     * What gets cleared: cached channel metadata payloads, all posts (including
-     * bookmarked — opt-in destruction), custom-emoji resolution cache.
+     * What gets cleared: all posts (including bookmarked — opt-in destruction)
+     * and the custom-emoji resolution cache. Channel ROWS survive (so
+     * `is_subscribed = 1` stays intact and the JOIN-based feed query still
+     * recognises subscriptions), but their cached payload columns
+     * (title / avatar_url / subscribers / fetch validators / cursor) are reset
+     * so the next sweep re-populates from scratch instead of merging into
+     * potentially-stale data. Caller is expected to trigger a refresh after
+     * this returns — see [WebFeedSource.clearCacheAndRefresh].
      */
     suspend fun clearAllCache() = withContext(ioDispatcher) {
         db.transaction {
             postQueries.deleteAll()
             customEmojiQueries.deleteAll()
-            // Channel rows survive but with nullified payload columns — the next
-            // sweep will re-fetch and the user keeps their subscription list.
+            channelQueries.resetCachedPayload()
         }
     }
 
@@ -474,6 +526,28 @@ class WebRepository(
          * is negligible (~50 KB) and they remain searchable from local history.
          */
         const val DEFAULT_KEEP_PER_CHANNEL = 200L
+
+        /**
+         * Default sample size for [mentionedUsernamesFromSubscribed]. 200 posts
+         * across all subscribed channels gives a representative "what gets
+         * forwarded / talked about most" snapshot without paying the IO cost
+         * of scanning every post (~5K possible).
+         */
+        const val MENTIONS_DEFAULT_LIMIT = 200L
+
+        // Telegram public-username constraints (matches parseUsernameFromInput).
+        private const val MENTION_MIN_LEN = 2
+        private const val MENTION_MAX_LEN = 32
+
+        // Bare `@username` in visible text (HTML or plaintext). Negative
+        // lookbehind prevents matching emails (`foo@bar`) or URL fragments
+        // (`href="...?at=@user"`).
+        private val VISIBLE_MENTION_REGEX =
+            Regex("""(?<![A-Za-z0-9_./?=&])@([A-Za-z][A-Za-z0-9_]{1,31})\b""")
+
+        // "channelLink":"https://t.me/<u>" / "tg://resolve?domain=<u>"
+        private val FORWARD_LINK_REGEX =
+            Regex(""""channelLink"\s*:\s*"(?:https?://)?t\.me/(?:s/)?([A-Za-z][A-Za-z0-9_]{1,31})""")
     }
 }
 

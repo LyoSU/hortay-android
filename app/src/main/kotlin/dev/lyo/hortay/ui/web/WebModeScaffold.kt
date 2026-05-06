@@ -141,6 +141,7 @@ fun WebModeScaffold(graph: AppGraph) {
                         graph = graph,
                         contentPadding = padding,
                         onChannelClick = { selectedTab = NavTab.Feed },
+                        onAddChannel = { addSheetOpen = true },
                     )
 
                     NavTab.Saved -> TimelineScreen(
@@ -158,7 +159,10 @@ fun WebModeScaffold(graph: AppGraph) {
                         contentPadding = padding,
                         onLogout = null,
                         onSignIn = { scope.launch { graph.guestMode.setGuest(false) } },
-                        onClearWebCache = { graph.webRepository.clearAllCache() },
+                        // Combined wipe-and-refetch so the user sees fresh
+                        // content immediately, not an empty feed waiting for
+                        // the next tier-2 sweep. Subscriptions survive.
+                        onClearWebCache = { graph.webFeedSource.clearCacheAndRefresh() },
                     )
                 }
             }
@@ -168,6 +172,7 @@ fun WebModeScaffold(graph: AppGraph) {
     if (addSheetOpen) {
         AddChannelSheet(
             feedSource = graph.webFeedSource,
+            repository = graph.webRepository,
             client = graph.webClient,
             locale = locale,
             onDismiss = { addSheetOpen = false },

@@ -200,3 +200,15 @@ DELETE FROM post WHERE channel_username = :username AND is_bookmarked = 0;
 
 deleteAll:
 DELETE FROM post;
+
+-- Lightweight projection used by the AddChannelSheet "channels mentioned in
+-- what you read" suggestion path. Returns just the two columns we scan client-
+-- side for @username + forwarded_from extraction; avoids the heavy
+-- TimelinePost JSON-decoding rowToTimelinePost pipeline used by selectFeed.
+selectMentionsSource:
+SELECT post.text_html, post.forwarded_from_json
+FROM post
+JOIN channel ON channel.username = post.channel_username
+WHERE channel.is_subscribed = 1
+ORDER BY post.published_at_ms DESC
+LIMIT :limit;

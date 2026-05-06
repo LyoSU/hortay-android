@@ -21,6 +21,10 @@
     <string name="web_loading">Loading…</string>
     <string name="web_empty_posts">No posts yet. Check your subscriptions.</string>
     <string name="web_empty_channels">No subscriptions yet.\nAdd channels from the Feed tab.</string>
+    <string name="web_empty_channels_title">No channels yet</string>
+    <string name="web_empty_channels_body">Add a public channel and its posts will start appearing in your feed.</string>
+    <string name="web_add_mentioned_title">Mentioned in your channels</string>
+    <string name="web_add_mentioned_count">Mentioned %1$d times in your subscriptions</string>
     <string name="web_empty_saved">No saved posts yet.</string>
     <string name="web_welcome_title">Without sign-in</string>
     <string name="web_welcome_body">Add a few public channels and read their posts without authenticating to Telegram.</string>

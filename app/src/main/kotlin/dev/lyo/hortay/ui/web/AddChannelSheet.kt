@@ -21,8 +21,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -33,11 +35,13 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.web.LookupResult
 import dev.lyo.hortay.data.web.WebChannelInfo
 import dev.lyo.hortay.data.web.WebFeedSource
+import dev.lyo.hortay.data.web.WebRepository
 import dev.lyo.hortay.data.web.WebTelegramClient
 import dev.lyo.hortay.data.web.parseUsernameFromInput
 import kotlinx.coroutines.launch
@@ -68,6 +72,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AddChannelSheet(
     feedSource: WebFeedSource,
+    repository: WebRepository,
     client: WebTelegramClient,
     locale: String,
     onDismiss: () -> Unit,
@@ -214,20 +219,82 @@ fun AddChannelSheet(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.web_add_curated_title),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            curatedSuggestions(locale).forEach { suggestion ->
-                CuratedRow(
-                    suggestion = suggestion,
-                    onTap = {
-                        input = suggestion.username
-                        lookup(suggestion.username)
-                    },
+            // Already-subscribed lowercase set — used to filter both the
+            // curated picks AND the "mentioned in your channels" suggestions.
+            // Reading via collectAsStateWithLifecycle so the list re-renders
+            // when the user subscribes from this very sheet (the row falls
+            // off "suggested" the moment the subscription lands).
+            val channels by feedSource.channels.collectAsStateWithLifecycle()
+            val subscribedSet by remember(channels) {
+                derivedStateOf {
+                    channels.asSequence()
+                        .filter { it.isSubscribed }
+                        .map { it.info.username.lowercase() }
+                        .toHashSet()
+                }
+            }
+
+            // One-shot scan of recent posts in subscribed channels for
+            // @mentions + forward sources. Re-runs only when [subscribedSet]
+            // changes — i.e. user subscribed/unsubscribed in another surface.
+            // Limited to the top 6 unmatched mentions so the picker doesn't
+            // bloat into a wall of suggestions.
+            val mentionedSuggestions by produceState(
+                initialValue = emptyList<MentionedChannel>(),
+                subscribedSet,
+            ) {
+                value = if (subscribedSet.isEmpty()) {
+                    emptyList()
+                } else {
+                    repository
+                        .mentionedUsernamesFromSubscribed()
+                        .asSequence()
+                        .filter { (u, _) -> u !in subscribedSet }
+                        .take(6)
+                        .map { (u, count) -> MentionedChannel(u, count) }
+                        .toList()
+                }
+            }
+
+            val curatedFiltered = remember(locale, subscribedSet) {
+                curatedSuggestions(locale)
+                    .filterNot { it.username.lowercase() in subscribedSet }
+            }
+
+            if (mentionedSuggestions.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.web_add_mentioned_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
                 )
+                mentionedSuggestions.forEach { suggestion ->
+                    MentionedRow(
+                        suggestion = suggestion,
+                        onTap = {
+                            input = suggestion.username
+                            lookup(suggestion.username)
+                        },
+                    )
+                }
+            }
+
+            if (curatedFiltered.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.web_add_curated_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                curatedFiltered.forEach { suggestion ->
+                    CuratedRow(
+                        suggestion = suggestion,
+                        onTap = {
+                            input = suggestion.username
+                            lookup(suggestion.username)
+                        },
+                    )
+                }
             }
         }
     }
@@ -263,6 +330,41 @@ private fun ChannelPreviewCard(channel: WebChannelInfo, onConfirm: () -> Unit) {
             Button(onClick = onConfirm) {
                 Text(stringResource(R.string.web_add_confirm))
             }
+        }
+    }
+}
+
+/**
+ * Channel surfaced from the user's existing subscription content (forwards
+ * and @mentions in posts they already follow). Distinct shape from
+ * [CuratedChannel] because the row also shows the mention count, which is
+ * the primary cue for "why is this suggested" — "згадується у 3 каналах"
+ * carries social proof that a flat description can't.
+ */
+private data class MentionedChannel(
+    val username: String,
+    val mentionCount: Int,
+)
+
+@Composable
+private fun MentionedRow(suggestion: MentionedChannel, onTap: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("@${suggestion.username}", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = stringResource(R.string.web_add_mentioned_count, suggestion.mentionCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(onClick = onTap) {
+            Text(stringResource(R.string.web_add_check))
         }
     }
 }
@@ -303,18 +405,35 @@ data class CuratedChannel(
     val description: String,
 )
 
+// Curated picks: each handle was verified live via
+// `curl https://t.me/s/<u>` AND its `class="counter_value">` was checked for
+// a meaningful subscriber count (≥5K) — most short / generic-sounding handles
+// turn out to be squatters with single-digit subs, not the brand they
+// resemble. We deliberately skip "Apple", "OpenAI", "Hacker News" and
+// similar Western brands that have no real Telegram presence to avoid
+// suggesting the user a 1-subscriber impostor channel.
+//
+// Mix favours culture / tech / science over hard news so first-launch
+// doesn't feel like a news firehose. No Russian-language channels.
 private fun curatedSuggestions(locale: String): List<CuratedChannel> = when (locale) {
     "uk" -> listOf(
         CuratedChannel("durov", "Засновник Telegram"),
         CuratedChannel("telegram", "Офіційні новини Telegram"),
-        CuratedChannel("nexta_live", "Незалежні новини зі Східної Європи"),
-        CuratedChannel("varlamov_news", "Новини за Іллею Варламовим"),
-        CuratedChannel("bbbreaking", "Критичні новини в реальному часі"),
+        CuratedChannel("liroom", "Лірум: культура, кіно, література"),
+        CuratedChannel("science", "Science: AI, космос, фізика (англ.)"),
+        CuratedChannel("hromadske_ua", "Громадське"),
+        CuratedChannel("ukrpravda_news", "Українська правда"),
+        CuratedChannel("suspilnenews", "Суспільне Новини"),
+        CuratedChannel("bbcukrainian", "BBC News Україна"),
     )
     else -> listOf(
-        CuratedChannel("durov", "Telegram founder Pavel Durov"),
+        CuratedChannel("durov", "Pavel Durov — Telegram founder"),
         CuratedChannel("telegram", "Official Telegram product news"),
-        CuratedChannel("nexta_live", "Independent Eastern-Europe news"),
-        CuratedChannel("breakingmash", "Breaking news, Russian-language"),
+        CuratedChannel("TelegramTips", "Telegram tips & tricks"),
+        CuratedChannel("science", "Science: AI, space, biotech, physics"),
+        CuratedChannel("deeplearning_ai", "AI & Deep Learning"),
+        CuratedChannel("guardian", "The Guardian"),
+        CuratedChannel("figma", "Figma design"),
+        CuratedChannel("kyivindependent_official", "The Kyiv Independent — Ukraine"),
     )
 }

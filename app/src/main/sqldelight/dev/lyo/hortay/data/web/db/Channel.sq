@@ -118,3 +118,26 @@ DELETE FROM channel WHERE username = :username;
 
 deleteAll:
 DELETE FROM channel;
+
+-- Used by "Clear cache": wipes the cached PRESENTATION columns (title, avatar,
+-- subscriber count, fetch validators, cursor, fetch status) but PRESERVES
+-- subscription state — the user expressed intent to follow these channels and
+-- the JOIN-based feed query still needs `is_subscribed = 1` to recognise them.
+-- After this, the next sweep re-populates with fresh data instead of merging
+-- into stale cached rows. `title` is reset to the bare username so the
+-- Channels-tab shows a sensible placeholder until the refetch lands.
+resetCachedPayload:
+UPDATE channel SET
+    title = username,
+    description = '',
+    avatar_url = NULL,
+    subscribers = NULL,
+    is_verified = 0,
+    last_fetched_at_ms = NULL,
+    last_etag = NULL,
+    last_modified = NULL,
+    older_cursor = NULL,
+    fetch_status = 'idle',
+    fetch_error = NULL,
+    fetch_retry_after_ms = NULL
+WHERE is_subscribed = 1;

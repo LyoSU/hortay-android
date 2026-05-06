@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
@@ -68,6 +69,7 @@ fun WebChannelsScreen(
     graph: AppGraph,
     contentPadding: PaddingValues,
     onChannelClick: (String) -> Unit,
+    onAddChannel: () -> Unit = {},
 ) {
     val channels by graph.webFeedSource.channels.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -101,20 +103,12 @@ fun WebChannelsScreen(
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (subscribed.isEmpty()) {
-            Box(
+            EmptyChannelsState(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(R.string.web_empty_channels),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(32.dp),
-                )
-            }
+                onAddChannel = onAddChannel,
+            )
             return@Scaffold
         }
 
@@ -161,6 +155,61 @@ fun WebChannelsScreen(
                 }
             },
         )
+    }
+}
+
+/**
+ * Friendly empty-state for first-launch / fully-unsubscribed users. Replaces
+ * the bare centered string ("Поки немає каналів") with a Material-3-shaped
+ * card: a soft tinted icon disc, a title, an explanatory subtitle, and an
+ * explicit "Add channel" CTA. The CTA duplicates the [WebModeScaffold] FAB
+ * — both routes work — but having it in the empty state means a user who
+ * landed on the Channels tab via the bottom nav doesn't have to discover
+ * the FAB to make progress.
+ */
+@Composable
+private fun EmptyChannelsState(
+    modifier: Modifier = Modifier,
+    onAddChannel: () -> Unit,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(96.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Symbol(
+                name = "rss_feed",
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                size = 48.dp,
+            )
+        }
+        Spacer(Modifier.size(20.dp))
+        Text(
+            text = stringResource(R.string.web_empty_channels_title),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.size(8.dp))
+        Text(
+            text = stringResource(R.string.web_empty_channels_body),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.size(20.dp))
+        FilledTonalButton(onClick = onAddChannel) {
+            Symbol(name = "add", contentDescription = null, size = 18.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.web_add_channel))
+        }
     }
 }
 
