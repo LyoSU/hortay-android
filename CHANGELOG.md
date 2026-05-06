@@ -84,6 +84,19 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   uses `NET_CAPABILITY_NOT_ROAMING` from `NetworkCapabilities`.
 
 ### Fixed
+- **Album view counts could briefly tick backward as
+  `UpdateMessageInteractionInfo` updates streamed in (TDLib mode)**.
+  For an album, every member can fire its own
+  `UpdateMessageInteractionInfo` against the merged anchor's slot
+  (album-aware lookup routes them all there). The per-member
+  `viewCount` can lag — TDLib catching up after a reconnect, or one
+  member's counter slightly behind the aggregate. The flush used to
+  blindly assign `views = info.viewCount`, so a delayed lower-count
+  update could downgrade a card that already showed a higher number.
+  Telegram view counts are monotonically non-decreasing per message,
+  so the flush now takes `maxOf(post.views, info.viewCount)` —
+  protects against per-member lag AND against burst-ordering between
+  members that emit updates within the same coalesce window.
 - **Album anchor flipped between sessions, breaking reactions, comments
   and feed visibility (TDLib mode)**. The merged-album anchor was picked
   via `sortedBy { it.date }` — but Telegram emits every member of a

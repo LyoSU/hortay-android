@@ -723,9 +723,22 @@ class PostsRepository(
                     val idx = byMessageId[key] ?: continue
                     val post = list[idx]
                     list[idx] = post.copy(
-                        views = info.viewCount,
+                        // Max instead of overwrite: for an album, every member can fire
+                        // its own UpdateMessageInteractionInfo against this anchor's idx,
+                        // and the per-member viewCount can lag (TDLib catching up after
+                        // a reconnect, individual member view count slightly behind the
+                        // aggregate). Telegram view counts are monotonically
+                        // non-decreasing per message, so taking the max — both against
+                        // the post's previous value AND across the burst of member
+                        // updates that flow through this loop — never downgrades a card
+                        // that already showed a higher number.
+                        views = maxOf(post.views, info.viewCount),
                         // Preserve current reactions/comments when the inner field is null —
-                        // TDLib often omits sub-fields it hasn't recomputed.
+                        // TDLib often omits sub-fields it hasn't recomputed. Per
+                        // tdlib/td#2312, only the first album member ever carries non-null
+                        // reactions / replyInfo, so the null-preserve branch is what
+                        // protects the merged card against non-first members' updates
+                        // overwriting the live aggregate with empties.
                         reactions = info.reactions?.let(::reactionsFromUpdate) ?: post.reactions,
                         commentCount = info.replyInfo?.replyCount ?: post.commentCount,
                     )
