@@ -77,6 +77,7 @@ private fun AvatarStack(channels: List<ChannelBadge>) {
                     name = ch.title,
                     thumb = ch.thumb,
                     fileId = ch.fileId,
+                    remoteUrl = ch.avatarUrl,
                     size = AVATAR_SIZE,
                     textStyle = MaterialTheme.typography.labelMedium,
                 )

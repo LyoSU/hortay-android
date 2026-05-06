@@ -428,6 +428,9 @@ fun TimelineScreen(
                     title = canonical?.name ?: anchor.senderName,
                     thumb = canonical?.avatarThumb ?: anchor.avatarThumb,
                     fileId = canonical?.avatarFileId ?: anchor.avatarFileId,
+                    // Guest mode posts carry CDN avatar URLs; TDLib posts
+                    // leave this null and use fileId/thumb.
+                    avatarUrl = anchor.avatarUrl,
                     latestPostDate = anchor.date,
                 )
             }

@@ -117,5 +117,12 @@ data class ChannelBadge(
     val title: String,
     val thumb: ByteArray?,
     val fileId: Int?,
+    /**
+     * Web/guest-mode CDN avatar URL. Null in TDLib mode (where [fileId] /
+     * [thumb] do the work); set in guest mode where TDLib services aren't
+     * available. Without it the new-posts pill rendered guest-mode channels
+     * as plain initial-letter circles.
+     */
+    val avatarUrl: String? = null,
     val latestPostDate: Long,
 )
