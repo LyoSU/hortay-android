@@ -8,6 +8,11 @@
     <string name="auth_password_label">Cloud password (2FA)</string>
     <string name="auth_password_hint">Hint: %1$s</string>
     <string name="auth_password_helper">This is the password you set in the official Telegram under Two-Factor Authentication.</string>
+    <string name="auth_password_forgot">Forgot password</string>
+    <string name="auth_password_recovery_sent">A reset code was sent to %1$s. Enter it below to sign in without your password.</string>
+    <string name="auth_password_recovery_code_label">Email code</string>
+    <string name="auth_password_recovery_back">Enter password instead</string>
+    <string name="auth_password_recovery_unavailable">No recovery email is set on this account — 2FA can only be reset from the official Telegram client on another device.</string>
     <string name="auth_send_code">Send code</string>
     <string name="auth_continue">Continue</string>
     <string name="auth_continue_without_login">Continue without sign-in — read public channels</string>

@@ -211,7 +211,11 @@ class TdClient private constructor(
                 )
             }
             is TdApi.AuthorizationStateWaitPassword -> _authStage.value =
-                AuthStage.WaitPassword(state.passwordHint.orEmpty())
+                AuthStage.WaitPassword(
+                    hint = state.passwordHint.orEmpty(),
+                    hasRecoveryEmail = state.hasRecoveryEmailAddress,
+                    recoveryEmailPattern = state.recoveryEmailAddressPattern.orEmpty(),
+                )
             is TdApi.AuthorizationStateReady -> {
                 _authStage.value = AuthStage.Ready
                 // TDLib stores everything it downloads under `tdlib-files/` and never bounds
@@ -280,6 +284,39 @@ class TdClient private constructor(
         _authError.value = null
         runCatching { send(TdApi.CheckAuthenticationPassword(password)) }
             .reportAuthFailure()
+    }
+
+    /**
+     * 2FA password-recovery flow, step 1 of 2: ask Telegram to email a recovery
+     * code to the recovery address registered on the account. Only valid while
+     * the auth state is [TdApi.AuthorizationStateWaitPassword] AND the account
+     * has a confirmed recovery email — UI gates the call on
+     * [AuthStage.WaitPassword.hasRecoveryEmail]. TDLib responds with an error
+     * for accounts without recovery email and we surface that via [authError].
+     */
+    suspend fun requestPasswordRecovery() {
+        _authError.value = null
+        runCatching { send(TdApi.RequestAuthenticationPasswordRecovery()) }
+            .reportAuthFailure()
+    }
+
+    /**
+     * 2FA password-recovery flow, step 2 of 2: submit the code Telegram emailed.
+     * On success TDLib advances auth past [WaitPassword]; on failure (wrong code,
+     * expired) the failure surfaces through [authError] and the UI keeps the
+     * password screen up so the user can re-enter the password normally.
+     */
+    suspend fun recoverPassword(recoveryCode: String) {
+        _authError.value = null
+        runCatching {
+            send(
+                TdApi.RecoverAuthenticationPassword(
+                    recoveryCode,
+                    /* newPassword */ null,
+                    /* newHint */ null,
+                ),
+            )
+        }.reportAuthFailure()
     }
 
     /**

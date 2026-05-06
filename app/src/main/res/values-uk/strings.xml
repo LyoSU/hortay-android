@@ -8,6 +8,11 @@
     <string name="auth_password_label">Cloud-пароль (2FA)</string>
     <string name="auth_password_hint">Підказка: %1$s</string>
     <string name="auth_password_helper">Цей пароль ви задавали в офіційному Telegram у розділі Двофакторна автентифікація.</string>
+    <string name="auth_password_forgot">Не пам\'ятаю пароль</string>
+    <string name="auth_password_recovery_sent">Код для скидання пароля надіслано на %1$s. Введіть його нижче, щоб увійти без пароля.</string>
+    <string name="auth_password_recovery_code_label">Код з email</string>
+    <string name="auth_password_recovery_back">Ввести пароль натомість</string>
+    <string name="auth_password_recovery_unavailable">До акаунту не привʼязано recovery email — скинути 2FA можна тільки в офіційному клієнті Telegram на іншому пристрої.</string>
     <string name="auth_send_code">Надіслати код</string>
     <string name="auth_continue">Продовжити</string>
     <string name="auth_continue_without_login">Без входу — читати публічні канали</string>

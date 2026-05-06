@@ -135,7 +135,7 @@ fun AuthScreen(graph: AppGraph, stage: AuthStage) {
                     )
                     is AuthStage.WaitPassword -> PasswordForm(
                         graph = graph,
-                        hint = current.hint,
+                        stage = current,
                         errorMessage = authError,
                     )
                     is AuthStage.Error -> RecoverableErrorBlock(
@@ -592,94 +592,209 @@ private fun resendLabel(
 // ---------- Password ----------
 
 @Composable
-private fun PasswordForm(graph: AppGraph, hint: String, errorMessage: String?) {
+private fun PasswordForm(graph: AppGraph, stage: AuthStage.WaitPassword, errorMessage: String?) {
     val client = graph.tdClient
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
 
     var password by remember { mutableStateOf("") }
+    var recoveryCode by remember { mutableStateOf("") }
     var visible by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
+    // Recovery flow has three states:
+    //   • Idle (default) — show password field + "Forgot password" link.
+    //   • Sent — link tapped, requestPasswordRecovery fired, code field shown.
+    //     Toggling back into password mode (auth_password_recovery_back) resets
+    //     to Idle without retracting Telegram's already-sent email; that's
+    //     acceptable, the code stays valid for a few minutes either way.
+    //   • Unavailable — link tapped but stage.hasRecoveryEmail is false. Static
+    //     info card explaining the user must reset on another device. No RPC.
+    var recoveryMode by remember { mutableStateOf(RecoveryMode.Idle) }
 
-    LaunchedEffect(password) {
+    LaunchedEffect(password, recoveryCode) {
         if (errorMessage != null) client.clearAuthError()
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text(stringResource(R.string.auth_password_label)) },
-            singleLine = true,
-            isError = errorMessage != null,
-            visualTransformation = if (visible) VisualTransformation.None
-            else PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Password,
-                imeAction = ImeAction.Done,
-            ),
-            shape = RoundedCornerShape(20.dp),
-            trailingIcon = {
-                IconButton(onClick = { visible = !visible }) {
+        if (recoveryMode != RecoveryMode.Sent) {
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text(stringResource(R.string.auth_password_label)) },
+                singleLine = true,
+                isError = errorMessage != null,
+                visualTransformation = if (visible) VisualTransformation.None
+                else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done,
+                ),
+                shape = RoundedCornerShape(20.dp),
+                trailingIcon = {
+                    IconButton(onClick = { visible = !visible }) {
+                        Symbol(
+                            name = if (visible) "visibility_off" else "visibility",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            size = 22.dp,
+                            contentDescription = stringResource(
+                                if (visible) R.string.auth_password_hide else R.string.auth_password_show,
+                            ),
+                        )
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            AnimatedFieldError(text = errorMessage)
+            if (stage.hint.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                ) {
                     Symbol(
-                        name = if (visible) "visibility_off" else "visibility",
+                        name = "info",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        size = 22.dp,
-                        contentDescription = stringResource(
-                            if (visible) R.string.auth_password_hide else R.string.auth_password_show,
-                        ),
+                        size = 18.dp,
+                    )
+                    Text(
+                        text = stringResource(R.string.auth_password_hint, stage.hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        AnimatedFieldError(text = errorMessage)
-        if (hint.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-            ) {
-                Symbol(
-                    name = "info",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    size = 18.dp,
-                )
-                Text(
-                    text = stringResource(R.string.auth_password_hint, hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.auth_password_helper),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.auth_password_helper),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (recoveryMode == RecoveryMode.Unavailable) {
+            Spacer(Modifier.height(12.dp))
+            RecoveryInfoCard(
+                text = stringResource(R.string.auth_password_recovery_unavailable),
+            )
+        }
+        if (recoveryMode == RecoveryMode.Sent) {
+            RecoveryInfoCard(
+                text = stringResource(
+                    R.string.auth_password_recovery_sent,
+                    stage.recoveryEmailPattern.ifEmpty { "***" },
+                ),
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = recoveryCode,
+                onValueChange = { recoveryCode = it.filter { c -> c.isDigit() }.take(8) },
+                label = { Text(stringResource(R.string.auth_password_recovery_code_label)) },
+                singleLine = true,
+                isError = errorMessage != null,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword,
+                    imeAction = ImeAction.Done,
+                ),
+                shape = RoundedCornerShape(20.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            AnimatedFieldError(text = errorMessage)
+        }
+        // Forgot-password / back-to-password toggle. Hidden when recovery is
+        // Unavailable — the info card already explains the user has no path
+        // forward in-app, a "back to password" link there would be misleading.
+        if (recoveryMode != RecoveryMode.Unavailable) {
+            Spacer(Modifier.height(8.dp))
+            val toggleText = stringResource(
+                if (recoveryMode == RecoveryMode.Sent) R.string.auth_password_recovery_back
+                else R.string.auth_password_forgot,
+            )
+            Text(
+                text = toggleText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clickable {
+                        if (recoveryMode == RecoveryMode.Sent) {
+                            recoveryMode = RecoveryMode.Idle
+                            recoveryCode = ""
+                        } else if (!stage.hasRecoveryEmail) {
+                            recoveryMode = RecoveryMode.Unavailable
+                        } else {
+                            recoveryMode = RecoveryMode.Sent
+                            scope.launch { client.requestPasswordRecovery() }
+                        }
+                    }
+                    .padding(vertical = 4.dp),
+            )
+        }
         Spacer(Modifier.height(20.dp))
-        PrimaryActionButton(
-            text = stringResource(R.string.auth_continue),
-            enabled = !submitting && password.isNotEmpty(),
-            loading = submitting,
-            onClick = {
-                focusManager.clearFocus()
-                submitting = true
-                scope.launch {
-                    try { client.submitPassword(password) } finally { submitting = false }
-                }
-            },
+        when (recoveryMode) {
+            RecoveryMode.Sent -> PrimaryActionButton(
+                text = stringResource(R.string.auth_continue),
+                enabled = !submitting && recoveryCode.isNotEmpty(),
+                loading = submitting,
+                onClick = {
+                    focusManager.clearFocus()
+                    submitting = true
+                    scope.launch {
+                        try { client.recoverPassword(recoveryCode) } finally { submitting = false }
+                    }
+                },
+            )
+            RecoveryMode.Unavailable -> Unit
+            RecoveryMode.Idle -> PrimaryActionButton(
+                text = stringResource(R.string.auth_continue),
+                enabled = !submitting && password.isNotEmpty(),
+                loading = submitting,
+                onClick = {
+                    focusManager.clearFocus()
+                    submitting = true
+                    scope.launch {
+                        try { client.submitPassword(password) } finally { submitting = false }
+                    }
+                },
+            )
+        }
+    }
+}
+
+private enum class RecoveryMode { Idle, Sent, Unavailable }
+
+@Composable
+private fun RecoveryInfoCard(text: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Symbol(
+            name = "info",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            size = 18.dp,
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

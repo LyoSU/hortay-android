@@ -33,7 +33,26 @@ sealed interface AuthStage {
         val isNumeric: Boolean,
     ) : AuthStage
 
-    data class WaitPassword(val hint: String = "") : AuthStage
+    /**
+     * 2FA password challenge. Carries enough state for the UI to offer recovery:
+     *
+     *   - [hint] — user-supplied passphrase hint shown above the password field.
+     *   - [hasRecoveryEmail] — true iff TDLib reports the account has a confirmed
+     *     recovery email on file. When false, the user has NO in-app recovery path
+     *     and must reset the password from another device — the UI surfaces a
+     *     "I forgot my password" link only when this is true. Without this field
+     *     a user who set up 2FA without recovery email would still see the link
+     *     and tap into a TDLib error; a user WITH recovery email never saw a link
+     *     and was permanently locked out from inside the app.
+     *   - [recoveryEmailPattern] — masked preview of the recovery email
+     *     (`a***@example.com`). Surfaced as a hint so the user knows which inbox
+     *     to check. Empty string when TDLib hasn't supplied it.
+     */
+    data class WaitPassword(
+        val hint: String = "",
+        val hasRecoveryEmail: Boolean = false,
+        val recoveryEmailPattern: String = "",
+    ) : AuthStage
     data object Ready : AuthStage
     /** Unrecoverable-here states (email confirm, register, other-device). UI offers reset. */
     data class Error(val message: String) : AuthStage
