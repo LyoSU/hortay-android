@@ -85,12 +85,18 @@ class WebFeedSource(
      */
     override val posts: StateFlow<PersistentList<TimelinePost>> =
         repository.observeFeed()
-            .stateIn(scope, SharingStarted.Eagerly, kotlinx.collections.immutable.persistentListOf())
+            // WhileSubscribed(5s) instead of Eagerly so authenticated users
+            // who never enter guest mode don't pay for the SQL query at
+            // AppGraph construction time. 5s grace matches the rest of the
+            // TDLib-mode SharedFlow / StateFlow lifecycle (CommentsRepository,
+            // PostsRepository) so a brief tab-switch doesn't tear down and
+            // re-establish the SQLDelight subscription.
+            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), kotlinx.collections.immutable.persistentListOf())
 
     /** All known channels, with subscription + fetch status for UI affordances. */
     val channels: StateFlow<PersistentList<ChannelEntry>> =
         repository.observeAllChannels()
-            .stateIn(scope, SharingStarted.Eagerly, kotlinx.collections.immutable.persistentListOf())
+            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), kotlinx.collections.immutable.persistentListOf())
 
     private val _refreshState = MutableStateFlow<RefreshState>(RefreshState.Idle)
     val refreshState: StateFlow<RefreshState> = _refreshState.asStateFlow()
