@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
@@ -92,9 +93,14 @@ fun WebModeScaffold(graph: AppGraph) {
             // first-time user can't miss it; collapses to icon-only once posts
             // exist and the affordance becomes secondary.
             if (selectedTab == NavTab.Feed || selectedTab == NavTab.Channels) {
-                val hasChannels = graph.webFeedSource.channels
-                    // Synchronous read: StateFlow value — no recomposition trigger.
-                    .value.any { it.isSubscribed }
+                // Subscribed via Lifecycle so the FAB collapses the moment the user
+                // adds their first channel. Earlier `channels.value.any { … }` was a
+                // raw StateFlow read inside composition — Compose never re-subscribed,
+                // so the extended FAB stayed expanded with the "Add channel" label even
+                // after subscriptions existed. derivedStateOf scopes recomposition to
+                // the boolean: only an actual any/none flip propagates further.
+                val channels by graph.webFeedSource.channels.collectAsStateWithLifecycle()
+                val hasChannels = channels.any { it.isSubscribed }
                 // No manual padding here — Scaffold positions the FAB above the
                 // bottomBar automatically. An earlier 88dp bottom padding stacked
                 // on top of Scaffold's own offset and floated the button much too
