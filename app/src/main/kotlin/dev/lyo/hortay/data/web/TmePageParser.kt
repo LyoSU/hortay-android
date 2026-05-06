@@ -315,7 +315,7 @@ object TmePageParser {
         )
             ?.attr("style")
             ?.let(::extractCssBackgroundUrl)
-            ?: preview.selectFirst("img")?.attr("src")?.ifBlank { null }
+            ?: preview.selectFirst("img")?.attr("src")?.ifBlank { null }?.takeIf(::isSafeHttpsUrl)
         return WebPreview(
             url = url,
             siteName = siteName,
@@ -394,7 +394,24 @@ object TmePageParser {
     private fun extractCssBackgroundUrl(style: String): String? {
         if (style.isBlank()) return null
         val match = BACKGROUND_URL_REGEX.find(style) ?: return null
-        return match.groupValues[1].takeIf { it.isNotBlank() }
+        val raw = match.groupValues[1].takeIf { it.isNotBlank() } ?: return null
+        return raw.takeIf(::isSafeHttpsUrl)
+    }
+
+    /**
+     * SSRF / loader-abuse hedge for any URL we extract from t.me HTML and hand off
+     * to Coil / OkHttp. Today we trust Telegram's rendering — it has only ever
+     * emitted `https://` CDN URLs in the wild. But Coil happily honours `file://`,
+     * `http://` (cleartext, including LAN), `data:`, `javascript:` etc. at load
+     * time, so a single compromised template (or upstream layout regression that
+     * leaks an attacker-controlled `style="background-image: url(file:///…)"`)
+     * would let our app reach for arbitrary local files or speak cleartext to an
+     * attacker's HTTP server. Five lines of protocol-allowlist neutralise that
+     * entire class of attack without restricting hosts (web previews legitimately
+     * embed og:image from arbitrary HTTPS sites).
+     */
+    private fun isSafeHttpsUrl(url: String): Boolean {
+        return url.startsWith("https://", ignoreCase = true)
     }
 
     /**
