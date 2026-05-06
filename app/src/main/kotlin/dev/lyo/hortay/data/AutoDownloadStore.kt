@@ -19,13 +19,22 @@ import kotlinx.serialization.json.Json
  * mobile, off on roaming. Users that change them are persisted byte-for-byte across
  * launches via [AutoDownloadStore].
  */
+/**
+ * IMPORTANT: every primary-constructor field carries a default value. This is the
+ * forward-compatibility contract for [AutoDownloadStore]'s persisted JSON: when a
+ * future build adds a new toggle / cap, old user JSON (missing that field) decodes
+ * cleanly into the constructor's default instead of raising
+ * [kotlinx.serialization.MissingFieldException] — which the store's runCatching
+ * would silently swallow, wiping the user's customised settings back to DEFAULT.
+ * The same applies to [AutoDownloadSettings]. Removing or renaming a field
+ * without preparing a JSON migration breaks this contract.
+ */
 @Serializable
 data class AutoDownloadPolicy(
-    val photos: Boolean,
-    val videos: Boolean,
-    val videoMaxBytes: Long,
-    val animations: Boolean,
-    val animationMaxBytes: Long,
+    val photos: Boolean = false,
+    val videos: Boolean = false,
+    val videoMaxBytes: Long = 0L,
+    val animations: Boolean = false,
 ) {
     companion object {
         // Round numbers chosen to match what Telegram-Android's slider snaps to (the
@@ -33,28 +42,24 @@ data class AutoDownloadPolicy(
         // sees familiar buckets. We expose the same set in [VIDEO_SIZE_STEPS] for the UI.
         const val DEFAULT_VIDEO_MAX_WIFI: Long = 100L * 1024 * 1024     // 100 MB
         const val DEFAULT_VIDEO_MAX_MOBILE: Long = 10L * 1024 * 1024    // 10 MB
-        const val DEFAULT_ANIMATION_MAX: Long = 10L * 1024 * 1024       // 10 MB
 
         val DEFAULT_WIFI = AutoDownloadPolicy(
             photos = true,
             videos = true,
             videoMaxBytes = DEFAULT_VIDEO_MAX_WIFI,
             animations = true,
-            animationMaxBytes = DEFAULT_ANIMATION_MAX,
         )
         val DEFAULT_MOBILE = AutoDownloadPolicy(
             photos = true,
             videos = true,
             videoMaxBytes = DEFAULT_VIDEO_MAX_MOBILE,
             animations = true,
-            animationMaxBytes = DEFAULT_ANIMATION_MAX,
         )
         val DEFAULT_ROAMING = AutoDownloadPolicy(
             photos = false,
             videos = false,
             videoMaxBytes = 0L,
             animations = false,
-            animationMaxBytes = 0L,
         )
 
         /**
@@ -149,7 +154,13 @@ class AutoDownloadStore(context: Context) {
     }
 
     private companion object {
-        val KEY_SETTINGS = stringPreferencesKey("auto_download_settings_v1")
+        // Schema evolution lives on [AutoDownloadPolicy] / [AutoDownloadSettings]
+        // via field defaults + ignoreUnknownKeys. This key has no version suffix
+        // because we don't intend a multi-version migration scheme; if the JSON
+        // shape ever needs a hard break (e.g. enum field with no default), the
+        // path is to bump this key name and write a one-shot migration in
+        // [AutoDownloadStore.settings].
+        val KEY_SETTINGS = stringPreferencesKey("auto_download_settings")
     }
 }
 

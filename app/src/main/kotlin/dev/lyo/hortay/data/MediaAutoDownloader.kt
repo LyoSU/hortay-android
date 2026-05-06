@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Drives auto-download of post media in TDLib mode using the user's
@@ -54,13 +56,43 @@ class MediaAutoDownloader(
 
     private val cm = context.applicationContext.getSystemService(ConnectivityManager::class.java)!!
 
-    // Bounded set of (chatId, messageId) pairs we've already considered. The feed itself
-    // is bounded by [PostsRepository] (~1000 posts), so this set's residency is bounded
-    // implicitly — when a post falls off the feed it stops re-appearing in emits and
-    // simply ages out of relevance. We don't actively evict because the keys are tiny
-    // (16 bytes per Pair<Long, Long> wrapper) and the Set's GC cost is dominated by
-    // the post objects we're tracking, which already have their own retention policy.
-    private val prefetched = HashSet<Pair<Long, Long>>()
+    // LRU set of (chatId, messageId) pairs we've already considered for prefetch.
+    //
+    // Bounded for two independent reasons:
+    //   1. **Memory.** Posts age out of the feed but we never re-walk old entries
+    //      from this set, so an unbounded HashSet grows monotonically — at typical
+    //      ~1k new posts/day per heavy subscriber that's tens of MB of permanent
+    //      heap after a week. A capped LinkedHashMap evicts the oldest key when
+    //      we cross [PREFETCH_LRU_CAPACITY], which is sized at 4× the feed cap so
+    //      a re-emit of the current feed never thrashes the cache.
+    //   2. **Concurrency.** Both [bind]'s post-flow collector and the settings
+    //      collector run on [Dispatchers.Default]'s shared workers. A plain
+    //      [HashSet] is not thread-safe under structural rehash, and `add` is the
+    //      mutation point. We synchronise through [Collections.synchronizedMap]
+    //      on the LinkedHashMap; the `add` site below holds the lock for the
+    //      lookup + insert + evict trio so two simultaneous `processFeed` runs
+    //      can't tear each other's state.
+    private val prefetched: MutableMap<Pair<Long, Long>, Boolean> = java.util.Collections
+        .synchronizedMap(object : LinkedHashMap<Pair<Long, Long>, Boolean>(
+            PREFETCH_LRU_CAPACITY,
+            0.75f,
+            /* accessOrder */ false,
+        ) {
+            override fun removeEldestEntry(eldest: Map.Entry<Pair<Long, Long>, Boolean>): Boolean {
+                return size > PREFETCH_LRU_CAPACITY
+            }
+        })
+
+    // Caps the number of `dispatchPost` jobs in flight at once. On cold start
+    // [PostsRepository] hands us hundreds of posts in a single emit; without this
+    // gate we'd `scope.launch` one coroutine per post and send 400+ concurrent
+    // [TdApi.GetFile] / [TdApi.DownloadFile] requests through TDLib's per-DC
+    // queue. TDLib's own scheduler handles the burst, but the shape of "400
+    // launches in one tick" makes the IO dispatcher heap-thrash and burns wakeup
+    // budget for nothing — we land at the same priority-8 queue position either
+    // way. 8 permits matches TDLib's typical per-DC slot count and is small
+    // enough to keep the launch-rate sane.
+    private val dispatchGate = Semaphore(permits = DISPATCH_CONCURRENCY)
 
     // Latest settings snapshot, read on every prefetch decision. @Volatile because the
     // collector coroutine writes from one dispatcher and the post observer reads from
@@ -94,15 +126,15 @@ class MediaAutoDownloader(
         if (posts.isEmpty()) return
         val policy = activePolicy() ?: return  // network=None → nothing to do
 
-        // Walk the feed once. We dispatch ensure() calls inline through scope.launch,
-        // not through suspend — TDLib's DownloadFile is non-blocking and the dispatch
-        // itself is a single channel.send under the hood. Doing this synchronously on
-        // the IO dispatcher would serialise the loop on a single thread for no benefit.
         for (post in posts) {
             val key = post.chatId to post.id
-            if (!prefetched.add(key)) continue
+            // synchronizedMap.put returns the previous value; null = first
+            // occurrence of this key, anything else = already considered. Single
+            // call covers lookup + insert + LRU eviction atomically.
+            if (prefetched.put(key, true) != null) continue
             scope.launch(ioDispatcher) {
-                dispatchPost(post, policy)
+                // Bounded concurrency — see [dispatchGate] KDoc.
+                dispatchGate.withPermit { dispatchPost(post, policy) }
             }
         }
     }
@@ -208,14 +240,20 @@ class MediaAutoDownloader(
     private suspend fun dispatchAnimation(fileId: Int, policy: AutoDownloadPolicy) {
         if (!policy.animations) return
         if (fileId == 0) return
-        // Animations don't carry a size estimate at the [PostContent] level — TDLib's
-        // `Animation` payload has expectedSize on the file metadata, but the mapper
-        // doesn't surface it on [PostContent.Animation]. We rely on the media cap
-        // [AutoDownloadPolicy.animationMaxBytes] only after [MediaCache.ensure] has
-        // populated the slot's size — for V1 we autoload all animations when the
-        // toggle is on (matches Telegram's behaviour: there's no slider for GIFs in
-        // their UI either).
+        // Animations don't carry a size estimate at the [PostContent] level and we
+        // don't surface a size cap in the UI for them either — Telegram doesn't,
+        // and GIFs are typically <5 MB so the cap would be theatre. The toggle is
+        // the only knob.
         cache.ensure(fileId, DownloadPriority.Prefetch)
     }
 
+    private companion object {
+        // 4× PostsRepository's typical feed cap so a re-emit of the visible feed
+        // never thrashes the LRU; hitting eviction means the user has seen this
+        // many distinct posts during the session, at which point dropping the
+        // oldest is acceptable (the worst that happens is a repeat ensure() call
+        // for a file already on disk — TDLib's DownloadFile is idempotent).
+        const val PREFETCH_LRU_CAPACITY = 4096
+        const val DISPATCH_CONCURRENCY = 8
+    }
 }

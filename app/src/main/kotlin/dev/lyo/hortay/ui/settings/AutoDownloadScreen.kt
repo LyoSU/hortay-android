@@ -43,12 +43,17 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -296,7 +301,7 @@ private fun AutoDownloadCategoryScreen(
     onResetCategory: () -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
-    val isDataSaverActive = rememberDataSaverActive(category)
+    val isDataSaverActive by rememberDataSaverActive(category)
     val title = when (category) {
         AutoDownloadCategory.Wifi -> stringResource(R.string.autodownload_category_wifi)
         AutoDownloadCategory.Mobile -> stringResource(R.string.autodownload_category_mobile)
@@ -537,17 +542,43 @@ private fun summarize(policy: AutoDownloadPolicy): String {
  * roaming connection is still cellular for restriction purposes — query in both
  * cases. We don't touch [HortayNetworkType] here on purpose: this banner is
  * informational about a system setting, not the user's per-network choice.
+ *
+ * Returns a [State] (not a plain Boolean) so the banner re-renders when the user
+ * toggles the OS setting and returns to the app. Two re-check sources:
+ *   • Lifecycle ON_RESUME — covers the canonical "user dipped into Android
+ *     Settings → Data Saver, came back to Hortay" path. Cheap to re-query.
+ *   • [ConnectivityManager.OnRestrictBackgroundChangedListener] does not exist
+ *     as a public API; the supported mechanism is the
+ *     ACTION_RESTRICT_BACKGROUND_CHANGED implicit broadcast, which manifest-
+ *     declared receivers can't get on Oreo+. Foreground re-check on resume
+ *     covers our use case (the banner is only seen on the foreground).
  */
 @Composable
-private fun rememberDataSaverActive(category: AutoDownloadCategory): Boolean {
+private fun rememberDataSaverActive(category: AutoDownloadCategory): State<Boolean> {
     val context = LocalContext.current
-    return remember(context, category) {
-        if (category == AutoDownloadCategory.Wifi) return@remember false
-        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return@remember false
-        runCatching {
-            cm.restrictBackgroundStatus == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
-        }.getOrDefault(false)
+    val state = remember(category) { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(category, lifecycleOwner) {
+        if (category == AutoDownloadCategory.Wifi) {
+            state.value = false
+            return@DisposableEffect onDispose { }
+        }
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        fun recompute() {
+            state.value = cm?.let {
+                runCatching {
+                    it.restrictBackgroundStatus == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
+                }.getOrDefault(false)
+            } ?: false
+        }
+        recompute()
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) recompute()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    return state
 }
 
 /** Round MB display to the nearest int — matches Telegram's slider labels exactly. */
