@@ -71,6 +71,13 @@ fun LottieStickerView(
     val cache = LocalMediaCache.current
     val httpClient = LocalWebHttpClient.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // Observe lifecycle state via Flow rather than a snapshot read so Compose
+    // recomposes when the host moves between STARTED / RESUMED / PAUSED. The
+    // earlier `lifecycle.currentState.isAtLeast(...)` form was a single-shot
+    // read that froze the playback gate at composition time, so a backgrounded
+    // sticker would keep animating until next recomposition (battery hit on
+    // long timelines with many TGS emojis).
+    val lifecycleState by lifecycle.currentStateFlow.collectAsStateWithLifecycle()
     val isRemote = fileId == null && remoteUrl != null
     val mediaState by remember(fileId, isRemote) {
         if (fileId != null && !isRemote) cache.observe(fileId)
@@ -104,7 +111,7 @@ fun LottieStickerView(
     }
 
     val isPlaying = composition != null &&
-        lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        lifecycleState.isAtLeast(Lifecycle.State.STARTED)
 
     val progress by animateLottieCompositionAsState(
         composition = composition,

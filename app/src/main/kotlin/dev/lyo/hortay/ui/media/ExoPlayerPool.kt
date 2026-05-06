@@ -92,6 +92,7 @@ class ExoPlayerPool(
         }
     }
 
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun build(muted: Boolean): ExoPlayer {
         val builder = ExoPlayer.Builder(context).apply {
             if (muted) {

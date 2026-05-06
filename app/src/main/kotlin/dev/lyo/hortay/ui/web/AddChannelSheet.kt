@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.web
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -69,6 +70,16 @@ import kotlinx.coroutines.launch
  * pre-fill the input + auto-validate, so the user never types in the empty case.
  */
 @OptIn(ExperimentalMaterial3Api::class)
+// LocalContextGetResourceValueCall: error strings are formatted inside an
+// async `scope.launch` block (the lookup result lands ~100-1000ms later),
+// not during composition itself. The lint check can't distinguish "read in
+// composition body" from "read in a coroutine spawned from composition" so
+// it flags both. Locale-change correctness is preserved because the sheet
+// re-composes on Configuration changes anyway — a lookup in flight when the
+// user switches language will format with the old locale, but that's a
+// 1-frame edge case worth less than the readability cost of capturing every
+// format-string template as a `stringResource()` val up top.
+@SuppressLint("LocalContextGetResourceValueCall")
 @Composable
 fun AddChannelSheet(
     feedSource: WebFeedSource,
