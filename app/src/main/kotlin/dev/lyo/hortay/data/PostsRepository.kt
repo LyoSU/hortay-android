@@ -666,14 +666,32 @@ class PostsRepository(
         }
         if (drained.isEmpty()) return
 
-        // Single pass over the feed, O(1) hash lookup per post — vs the previous
-        // indexOfFirst per drained event which was O(events × feed) on bursts.
+        // Album-aware lookup: an update's messageId may target ANY member of an
+        // already-merged album, but post.id is the anchor (oldest member). Build a
+        // (chatId, memberId) → postIdx index covering the anchor AND every
+        // albumMessageIds entry once, then dispatch each drained event in O(1).
+        // Without this fallback, views / reactions / commentCount updates for
+        // non-anchor album members were silently dropped — the user-visible
+        // symptom was reactions never appearing on photo-album posts, because
+        // TDLib only fills MessageReactions via these updates after the initial
+        // GetChatHistory response (which returns interactionInfo with reactions=null).
+        // Mirrors the same album-id normalisation handleEdited /
+        // handleIsPinnedChanged / handleContentChanged already do via
+        // updateOnePostByAnyMemberId.
         _posts.update { current ->
             current.mutate { list ->
+                val byMessageId = HashMap<Pair<Long, Long>, Int>(list.size * 2)
                 for (i in list.indices) {
                     val post = list[i]
-                    val info = drained[post.chatId to post.id] ?: continue
-                    list[i] = post.copy(
+                    byMessageId[post.chatId to post.id] = i
+                    for (memberId in post.albumMessageIds) {
+                        if (memberId != post.id) byMessageId[post.chatId to memberId] = i
+                    }
+                }
+                for ((key, info) in drained) {
+                    val idx = byMessageId[key] ?: continue
+                    val post = list[idx]
+                    list[idx] = post.copy(
                         views = info.viewCount,
                         // Preserve current reactions/comments when the inner field is null —
                         // TDLib often omits sub-fields it hasn't recomputed.

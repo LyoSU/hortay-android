@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Fixed
+- **Reactions, view counts and comment counts stopped updating on
+  photo-album posts in TDLib mode**. `flushPendingInteractionInfo`
+  matched buffered `UpdateMessageInteractionInfo` events against
+  `post.id` only, but for an already-merged album `post.id` is the
+  anchor (oldest member) — TDLib emits these updates against any
+  sibling. Non-anchor events were silently dropped; the user-visible
+  symptom was reactions never appearing on photo albums (TDLib doesn't
+  fill `MessageReactions` in the initial `GetChatHistory` response,
+  reactions only stream in via these updates after the fact). The flush
+  now builds a `(chatId, memberId) → postIdx` index covering anchors
+  AND every `albumMessageIds` entry once per drain, so each event lands
+  in O(1) regardless of which sibling it referenced — same album-id
+  normalisation `handleEdited` / `handleIsPinnedChanged` /
+  `handleContentChanged` already do via `updateOnePostByAnyMemberId`.
 - **Feed stayed sparse after migrating guest subscriptions on sign-in**.
   `MigrationCoordinator.confirm()` issued `JoinChat` for each accepted
   channel but never asked `PostsRepository` to refresh, so
