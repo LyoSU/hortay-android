@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.web
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -94,6 +96,13 @@ fun WebSearchScreen(
     val context = LocalContext.current
     val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
+
+    // System back dismisses the overlay. Predictive-back animation is
+    // intentionally NOT wired here (unlike CommentsScreen) — this isn't a
+    // stacked screen with its own back-stack entry, it's a modal-like overlay
+    // mounted from WebModeScaffold via a `searchOpen` boolean. Material 3
+    // search-overlay convention: tap-back closes it just like the up-arrow.
+    BackHandler { onDismiss() }
 
     var query by rememberSaveable { mutableStateOf("") }
     val trimmedQuery by remember {
@@ -218,11 +227,25 @@ private fun WebSearchBody(
     outerPadding: PaddingValues,
 ) {
     val listState = rememberLazyListState()
+    // derivedStateOf so this read recomputes only when the boolean flips,
+    // not on every scroll-frame's offset delta. AnimatedVisibility reads
+    // this ~60Hz when scrolling otherwise.
+    val isScrolledPastTop by remember(listState) {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 ||
+                listState.firstVisibleItemScrollOffset > 0
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(top = innerPadding.calculateTopPadding()),
+            .padding(top = innerPadding.calculateTopPadding())
+            // imePadding so the keyboard doesn't occlude the bottom of the
+            // result list. Lives on the result container, not the Scaffold,
+            // because the TopAppBar text field handles its own focus/keyboard
+            // and we only need to push the body up.
+            .imePadding(),
     ) {
         when {
             query.length < MIN_QUERY_LENGTH -> SearchEmptyState(
@@ -247,8 +270,7 @@ private fun WebSearchBody(
         // A subtle divider beneath the search bar so it doesn't visually float
         // on the same surface as the list when content scrolls underneath.
         AnimatedVisibility(
-            visible = listState.firstVisibleItemIndex > 0 ||
-                listState.firstVisibleItemScrollOffset > 0,
+            visible = isScrolledPastTop,
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
         ) {
             HorizontalDivider(
