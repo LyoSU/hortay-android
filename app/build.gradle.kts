@@ -76,7 +76,7 @@ android {
         // error from a forgotten manual bump. Debug installs keep this 1 — they
         // never go through Play.
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
 
         buildConfigField("int", "TELEGRAM_API_ID", telegramApiId)
         buildConfigField("String", "TELEGRAM_API_HASH", "\"$telegramApiHash\"")

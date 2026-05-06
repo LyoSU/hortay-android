@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-05-06
+
 ### Fixed
 - **Inline-preview videos showed a 2–3 s black square** before the first
   frame, even on rewind / re-scroll where the file was already buffered.
