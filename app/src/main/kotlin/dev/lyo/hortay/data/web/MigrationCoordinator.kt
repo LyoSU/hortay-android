@@ -135,6 +135,16 @@ class MigrationCoordinator(
         }
         if (migrated.isNotEmpty()) {
             migrationStore.addMigrated(migrated)
+            // JoinChat tells TDLib we're a member; UpdateNewChat eventually surfaces the
+            // chat in the main list, but GetChatHistory for the freshly-joined channels
+            // never runs unless we ask for it. Without this refresh, [PostsRepository]'s
+            // _posts shows whatever was loaded *before* the migration — typically a
+            // sparse / empty feed — until the user cold-starts the app and the
+            // ViewModel's init-time refreshIfStale picks the new chats up. Triggering
+            // a full refresh here closes the gap so the feed updates in the same
+            // session the user authenticated in.
+            runCatching { postsRepository.refresh() }
+                .onFailure { Log.w(TAG, "migration: post-join refresh failed: ${it.message}") }
         }
         migrationStore.markProposalShown()
         _progress.value = Progress(total = usernames.size, processed = usernames.size, lastUsername = null)

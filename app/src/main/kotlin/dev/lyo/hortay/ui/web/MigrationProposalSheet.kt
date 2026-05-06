@@ -206,21 +206,17 @@ fun MigrationProposalSheet(
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
-            Row(
+            // Stacked buttons rather than a Row: the UA copy "Більше не показувати"
+            // (and the EN "Don't show again") is wide enough that paired with
+            // "Підписатися (N)" it can't fit two-up on a 360dp sheet, and the
+            // primary button collapses its text to two lines under pressure.
+            // Material 3 guidance for narrow surfaces is exactly this stack —
+            // primary action on top, dismiss below — and using fillMaxWidth on
+            // both sides keeps the touch targets honest at any locale length.
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            coordinator.dismiss()
-                            onDismiss()
-                        }
-                    },
-                    enabled = !inFlight,
-                ) {
-                    Text(stringResource(R.string.migration_skip))
-                }
                 Button(
                     onClick = {
                         inFlight = true
@@ -231,12 +227,29 @@ fun MigrationProposalSheet(
                         }
                     },
                     enabled = !inFlight && selected.value.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
                         text = stringResource(
                             R.string.migration_confirm,
                             selected.value.size,
                         ),
+                        maxLines = 1,
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            coordinator.dismiss()
+                            onDismiss()
+                        }
+                    },
+                    enabled = !inFlight,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = stringResource(R.string.migration_skip),
+                        maxLines = 1,
                     )
                 }
             }

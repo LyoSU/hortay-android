@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+- **Feed stayed sparse after migrating guest subscriptions on sign-in**.
+  `MigrationCoordinator.confirm()` issued `JoinChat` for each accepted
+  channel but never asked `PostsRepository` to refresh, so
+  `GetChatHistory` for the freshly-joined chats only ran on the next
+  cold start — the user saw an empty / partial feed and had to relaunch
+  the app for the migrated channels to populate. The coordinator now
+  triggers a full `refresh()` once at least one chat was migrated, so
+  history loads in the same session the user authenticated in.
+- **Migration proposal sheet — confirm button text wrapped to two lines
+  and looked clipped**. The two-button row paired
+  "Більше не показувати" / "Don't show again" with "Підписатися (N)" /
+  "Subscribe (N)" under `Arrangement.End`; on a 360 dp sheet the pair
+  doesn't fit two-up and Compose collapsed the primary's label onto a
+  second row inside the button. Switched to a Material-3 stacked layout
+  (primary on top, dismiss below, both `fillMaxWidth`), which keeps the
+  touch targets honest at any locale length.
+
 ## [0.2.0] — 2026-05-06
 
 ### Fixed
