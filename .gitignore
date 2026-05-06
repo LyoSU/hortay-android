@@ -27,6 +27,13 @@ release/
 .vscode/
 .fleet/
 
+# --- Claude Code agent worktrees / scratch ---
+# `.claude/worktrees/agent-*` are temporary git worktrees Claude Code
+# creates for `isolation: "worktree"` agent dispatch. They have their own
+# `.git` and were being silently picked up as gitlinks (submodule pointers)
+# by `git add -A`. Never commit them.
+.claude/
+
 # --- macOS / Windows / Linux ---
 .DS_Store
 Thumbs.db
