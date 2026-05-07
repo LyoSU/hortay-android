@@ -184,6 +184,14 @@ fun MediaIndeterminateIndicator(
  * sometimes hasn't resolved the file size yet — better no label than a "5.2 / 0 MB").
  *
  * Tap on the indicator → [onCancel] (matches Telegram's tap-to-cancel during download).
+ *
+ * Visually unified: both pre-progress (no bytes yet) and mid-download states render the
+ * same M3 Expressive polygon-cycle [MediaIndeterminateIndicator]. An earlier iteration
+ * split the two — polygon for indeterminate, circle+arc for determinate — which made a
+ * single download visibly switch styles mid-flow as the first progress bytes landed.
+ * The numeric "X.X / Y.Y MB" pill underneath is the canonical surface for the actual
+ * progress percentage; the disc is just "system is downloading", same vocabulary as
+ * pull-to-refresh / auth submit / comments load.
  */
 @Composable
 fun MediaLoadingOverlay(
@@ -193,20 +201,18 @@ fun MediaLoadingOverlay(
     modifier: Modifier = Modifier,
     onCancel: (() -> Unit)? = null,
 ) {
+    // `progress` parameter unused now — kept in the signature for API stability
+    // (callers still pass it). The numeric byte-progress pill below is the
+    // canonical surface for "how many bytes landed"; the visual disc is just
+    // "system is downloading".
+    @Suppress("UNUSED_PARAMETER", "unused")
+    val keepParam = progress
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        if (progress <= 0f) {
-            MediaIndeterminateIndicator(onClick = onCancel)
-        } else {
-            MediaProgressIndicator(
-                progress = progress,
-                iconName = if (onCancel != null) "close" else "arrow_downward",
-                onClick = onCancel,
-            )
-        }
+        MediaIndeterminateIndicator(onClick = onCancel)
         if (totalBytes > 0) {
             val units = stringArrayResource(R.array.size_units)
             Spacer(Modifier.height(BYTE_LABEL_GAP))
