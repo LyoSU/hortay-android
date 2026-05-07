@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Changed
+- **Top-level destinations migrate to `MediumFlexibleTopAppBar`**.
+  Timeline default home, Timeline bookmarks-only mode, and the
+  Comments overlay now read as M3 Expressive destinations instead
+  of compact tool stages: larger title typography on first paint
+  ("you are here"), auto-collapse to 64 dp on scroll via
+  motion-token `scrollBehavior`. The 48 dp first-paint cost is
+  recovered the moment the feed scrolls — the steady state matches
+  the previous compact bar height. Drill-down stages (channel
+  filter, search-inside-filter) deliberately stay on the standard
+  compact `TopAppBar` because they're tool stages, not destinations
+  — visually flagging the hierarchy at a glance instead of bar-
+  overload everywhere.
+  Comments adds a live subtitle slot driven by `ThreadState`:
+  "Завантаження…" while loading, "Поки немає коментарів." when
+  empty, "%d відповідей" with the row count when ready, hidden on
+  error. The standalone label that used to live above the comment
+  list stays put — it's the empty-state affordance for the body
+  area, not a duplicate of the subtitle.
 - **Inline `RoundedCornerShape(N)` call sites collapsed onto
   `MaterialTheme.shapes` tokens** across 12 files / ~40 call sites.
   Auth flow (`AuthScreen`, `OtpInput`, `CountryPickerSheet`),
@@ -103,6 +121,86 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   Y range) maps cleanly into Android Vector Drawable's
   positive-only `viewportHeight=960` coord space without per-coord
   conversion.
+
+### Architecture
+- **All five TDLib media renderers now share one observation contract**.
+  [TdMediaImage], [TdVideoPlayer], [LottieStickerView],
+  [WebmStickerPlayer] and [CustomEmojiInlineView] each used to
+  re-implement the same four-step ritual that every TDLib renderer
+  must honour: (1) observe the file's [MediaState] as Compose state,
+  (2) issue [MediaCache.ensure] keyed on
+  `(fileId, priority, scroll-gate, isRemote)` so a re-mount or
+  scroll-settle picks up the download immediately while a mid-fling
+  mount defers to the gate, (3) issue [MediaCache.cancelDeferred] on
+  Composable dispose so a scrolled-past slot is released back to
+  TDLib's per-DC pool, (4) take a `web-mode no-op` shape when
+  `fileId` is null and a remote URL is set instead. An audit found
+  subtle drift across those copies — each renderer keyed `ensure()`
+  on a slightly different tuple, two of them tracked their own
+  per-instance `MutableStateFlow(Idle)` web-mode sentinel with
+  slightly different keying, and the four-step contract was held
+  only by convention. Centralised behind one
+  [rememberMediaBinding] hook in `ui/media/MediaBinding.kt`. The
+  hook returns a stable `MediaBinding` handle exposing the observed
+  state plus typed helpers (`isReady`, `readyPath`, `cancelExplicit`,
+  `retry`, `invalidate`) so per-renderer call sites can never drift
+  again. Future renderers — animated avatar, full-screen viewer
+  posters — inherit the contract for free.
+- **[MediaCache.resync] — defensive mount-time state refresh**.
+  Closes the long-standing user complaint *"показує що не загружено,
+  але якщо проскролити вниз і знову вверх — все вже там"*. Root
+  cause: a slot can drift to a stale [MediaState.Downloading] with
+  [activePriority] still set (lost UpdateFile, background-while-
+  completing race, debounced cancel firing right before TDLib's
+  `isDownloadingCompleted=true` tail event). On re-mount, the
+  existing [MediaCache.ensure] short-circuits because
+  `currentPriority >= priority.tdValue` and never asks TDLib *"what
+  is this file, really?"*, so the slot stays pinned at the stale
+  value even though TDLib has the file Ready on disk. The new
+  `resync` method unconditionally issues `GetFile` and routes the
+  reply through the reducer's [fileEvents] channel — same path as
+  inbound `UpdateFile`, so reducer sequencing and Ready-stick
+  guarantees are preserved end-to-end. [rememberMediaBinding]
+  invokes `resync` on every mount via a keyed `LaunchedEffect`, so
+  the user-described symptom self-heals on every Composable
+  attachment without requiring a scroll. Cost: one JNI roundtrip
+  on mount per renderer (~10-50 µs); on a 30-card viewport totals
+  well under a millisecond. Aligned with Levin's tdlib/td#3178
+  guidance *"the local file path can become invalid in many ways.
+  The app is supposed to call downloadFile before using the file"*
+  — this is the read-side equivalent for state freshness.
+
+### Performance
+- **`OptimizeStorage` skipped when cache is well under the cap**.
+  The daily storage sweep used to run unconditionally past its
+  24 h throttle, walking TDLib's file table to enumerate files
+  for eviction even when the cache was nowhere near the 500 MB
+  cap. [TdApi.GetStorageStatisticsFast] is a metadata-only read
+  (sub-10 ms); [TdApi.OptimizeStorage] walks the file table on a
+  populated ~500 MB cache (50-300 ms). Maybe-optimize now probes
+  size first via the fast read and skips the walk when usage is
+  below 80 % of the cap (400 MB). Levin's recommended pattern in
+  tdlib/td#667#issuecomment-521611484 — *"you can from time to
+  time use getStorageStatisticsFast to quickly get size of TDLib's
+  cache and run the method optimizeStorage if needed"*. Cold-start
+  latency win on every day-boundary launch where the cache hasn't
+  filled, plus a small battery saving (most user sessions never
+  trigger a real walk).
+- **`OptimizeStorage` scoped to media file types only**. Previously
+  passed `fileTypes = null`, which under TDLib's "all types
+  participate" semantics let a sweep close to the cap evict
+  stickers, profile photos, wallpapers and thumbnails as readily
+  as photos and videos. Those are small files (< 500 KB each) that
+  re-fetch annoyingly the next session even though they account
+  for a tiny fraction of the cache — exactly the symptom users
+  see as "стікер-пак / аватарка знову вантажиться". Now scoped
+  to [TdApi.FileTypePhoto] / [Video] / [Animation] / [VoiceNote] /
+  [Audio] / [Document] / [VideoNote] — the same media-only set
+  Telegram-Android automatic eviction sweeps. Stickers, profile
+  photos, wallpapers and thumbnails ride out across sessions.
+  `clearCache` (the user-initiated *"знести усе"* surface) keeps
+  `fileTypes = null` since the user explicitly opted into a full
+  wipe.
 
 ### Fixed
 - **220 ms grey blink between minithumb and full photo**. The

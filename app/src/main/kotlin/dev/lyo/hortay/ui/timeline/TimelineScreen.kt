@@ -1114,17 +1114,23 @@ private fun TimelineTopBar(
             colors = colors,
             scrollBehavior = scrollBehavior,
         )
-        showOnlyBookmarked -> TopAppBar(
+        // Bookmarks and Home both read as top-level destinations (vs filter /
+        // search which are tool stages drilled in from Home). M3 Expressive
+        // canon for destinations is `MediumFlexibleTopAppBar`: a larger
+        // title typography on first paint that tells the user "you are
+        // here", auto-collapsing to compact 64dp the moment the feed
+        // scrolls (motion-token-driven via [scrollBehavior]). Cost of the
+        // extra ~48dp on first paint is recovered on the first scroll
+        // gesture; benefit is one less indistinguishable bar on a
+        // hierarchically flat app.
+        showOnlyBookmarked -> MediumFlexibleTopAppBar(
             title = {
-                Text(
-                    text = stringResource(R.string.timeline_saved_tab),
-                    style = MaterialTheme.typography.headlineLarge,
-                )
+                Text(text = stringResource(R.string.timeline_saved_tab))
             },
             colors = colors,
             scrollBehavior = scrollBehavior,
         )
-        else -> TopAppBar(
+        else -> MediumFlexibleTopAppBar(
             title = {
                 Box(modifier = Modifier.clickable(onClick = onBrandTap)) {
                     BrandRow()

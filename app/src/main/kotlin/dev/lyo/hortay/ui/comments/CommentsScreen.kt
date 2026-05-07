@@ -159,8 +159,36 @@ fun CommentsScreen(
             }
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.comments_title), style = MaterialTheme.typography.titleLarge) },
+            // [MediumFlexibleTopAppBar] reads as "this is a destination, not a tool
+            // stage" — comments overlay carries its own thread-of-conversation
+            // identity that benefits from the larger title typography on first
+            // paint, then collapses to compact 64dp height as the user scrolls
+            // through the thread (motion-token-driven via [scrollBehavior]).
+            // The subtitle slot tracks the live thread state so the user reads
+            // the count at the same moment they read the title — replaces the
+            // standalone "X відповідей" label that used to sit above the list.
+            val subtitleText = when (val s = state) {
+                CommentsRepository.ThreadState.Loading -> stringResource(R.string.comments_loading)
+                is CommentsRepository.ThreadState.Ready -> if (s.rows.isEmpty()) {
+                    stringResource(R.string.comments_no_comments)
+                } else {
+                    stringResource(R.string.comments_replies, s.rows.size)
+                }
+                is CommentsRepository.ThreadState.Error -> null
+            }
+            MediumFlexibleTopAppBar(
+                title = { Text(stringResource(R.string.comments_title)) },
+                subtitle = subtitleText?.let { text ->
+                    {
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
                         Symbol(name = "arrow_back", contentDescription = "back")
