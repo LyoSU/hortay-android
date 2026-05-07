@@ -7,6 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+- **End-to-end M3 Expressive redesign**. Theme switches from
+  `MaterialTheme` to `MaterialExpressiveTheme` with
+  `MotionScheme.expressive()` — every Material component now reads
+  spring-physics motion tokens (separate spatial vs effects channels),
+  the canonical Google default for consumer apps as of I/O 2025.
+  Container scale (`HortayShapes`) bumped to 8 / 12 / 18 / 24 / 36 dp
+  (was 4 / 8 / 12 / 16 / 28) so Card / Surface / Button / Sheet /
+  Dialog / FAB pick up the softer language without per-call-site
+  edits. Inline radii bumped in lockstep across PostCard reply
+  preview (18 dp), ChannelInfoSheet description card (22 dp),
+  CountryPickerSheet rows + search field (18–22 dp), OtpInput cells
+  (18 dp), AddChannelSheet card (20 dp), AutoDownloadScreen rows +
+  buttons (18–22 dp), Settings clear-cache button (24 dp).
+- **Hero polygon morphs across every interactive surface**. New
+  `HortayExpressive` shape registry and pre-built `Morph` factories
+  drive shape-morph feedback on selection / press, the canonical M3
+  Expressive cue:
+    - Reaction chips morph `Square ↔ Cookie9Sided` on the user's own
+      reaction (the highest-touch single change in the app — readers
+      see this every time they tap a heart or fire emoji).
+    - Folder filter chips morph `Square ↔ Cookie7Sided` on selection.
+      Cookie7's odd side-count + asymmetric ridges read as visually
+      distinct from the reaction Cookie9 — both forms can sit on
+      screen at once without the eye reading them as the same idiom.
+    - FloatingNavBar tab morphs `Square ↔ Cookie7Sided` on selection
+      AND swaps the glyph to its filled variant (`fill=1` axis); the
+      active destination is heavier than its peers in two dimensions
+      (shape + glyph weight), the M3 Expressive selected-state
+      convention.
+    - ConnectionBanner uses `MaterialShapes.Bun` — soft alert pillow,
+      less alarming than a rectangle, more attention-grabbing than a
+      generic rounded chip.
+    - Empty states (Timeline, Saved) get 96 dp polygon hero badges:
+      `Flower` for "no posts yet", `Heart` for "no bookmarks yet",
+      `Cookie7Sided` for "search empty". Polygon as backdrop plus a
+      40 dp glyph centered — the largest expressive form on screen at
+      that moment, intentional under M3 Expressive's "hero shapes for
+      personality, dense surfaces stay calm" rule.
+    - StatPill (views / comments) uses `MaterialShapes.Pill` — the
+      same flattened-stadium silhouette as the new-posts pill and the
+      media-viewer counter, single visual idiom across all
+      "stat-style" affordances.
+- **NewPostsPill expressive entrance**. The "новi пости" floating
+  chip pops in with a spring-driven `scale(0.85 → 1.0)` on first
+  appearance only (gated by a one-shot LaunchedEffect), so it reads
+  as one cue when posts become available rather than re-bouncing on
+  every count tick. Container clip stays `CircleShape` — true pill
+  for an arbitrary-width Row, where the stricter `MaterialShapes.Pill`
+  polygon's interior corners would slice the trailing label
+  characters as the Row outgrew the polygon's bounding box.
+- **Loading indicators across the app**. Every
+  `CircularProgressIndicator` swapped for M3 1.5's polygon-cycling
+  `LoadingIndicator` (auth submit button, full-screen auth load,
+  comments thread load, AddChannelSheet lookup, settings clear-cache).
+  Auth's blocking loader uses `ContainedLoadingIndicator` — heavier
+  visual weight that reads as "system is working" on a full-screen
+  load vs the inline polygon spinner on buttons. Migration proposal
+  sheet's determinate progress switched to
+  `LinearWavyProgressIndicator` — sine amplitude reads as "alive"
+  between integer ticks at the 1 channel / second throttle.
+- **Top app bars switched to flexible variants with subtitles**.
+  Settings → `LargeFlexibleTopAppBar` with subtitle "Account, traffic,
+  downloads". AutoDownload list → "Photos, videos, GIFs" subtitle.
+  AutoDownload per-category → "When connected to Wi-Fi" /
+  "On mobile data" / "When roaming abroad" subtitles. New plumbed
+  string resources (`settings_subtitle_*`, `timeline_subtitle_*`) in
+  EN + UK.
+- **Full-screen media viewer chrome**. Close button gets a Cookie9
+  polygon backdrop, the page counter ("3 / 5") gets a Pill polygon
+  backdrop — viewer chrome now speaks the same expressive vocabulary
+  as the feed cards, not stock-Material glass.
+  `MediaProgressIndicator` paints a Cookie9 polygon path inside its
+  Canvas (visible silhouette), with a `CircleShape` clip bounding the
+  click ripple — the visible disc reads as a Cookie shape while the
+  click hit-test stays simple and the central icon stays unclipped.
+- **Material Symbols re-pulled at Rounded · weight 500 · 24 dp**.
+  All 61 bundled icons replaced with the heavier-stroke variant —
+  weight 400 read thin against Plus Jakarta Sans Bold display
+  typography (`displaySmall` 32 sp ExtraBold), weight 500 balances
+  visually without crossing into "loud" territory. New filled
+  (`FILL=1`) companion drawables shipped for the icons that have a
+  selected / active state: `home`, `bookmark`, `person`, `forum`,
+  `chat_bubble`, `push_pin`, `notifications_active`. The `Symbol`
+  composable takes a new `filled: Boolean` parameter — silently a
+  no-op when the named icon ships no `_filled` companion, so call
+  sites can pass `filled = isSelected` without branching.
+- **Channels tab icon**: `forum` → `dynamic_feed`. The forum
+  multi-bubble glyph read as too square inside the Cookie7 polygon
+  tab backdrop; the stacked-cards metaphor of `dynamic_feed` is
+  also semantically tighter for "list of subscribed feeds" than
+  "discussion forum".
+
+### Build
+- **material3 pinned to 1.5.0-alpha19**. The April 2026 Compose BOM
+  (2026.04.01) still ships material3 1.4.0 stable, which lacks
+  `MaterialShapes`, `LoadingIndicator`, `LargeFlexibleTopAppBar`,
+  `MotionScheme.expressive()` and the rest of the Expressive surface.
+  We override the BOM-supplied version explicitly in
+  `gradle/libs.versions.toml` (Google's documented escape hatch for
+  early-adopt of material3 ahead of the next BOM cut). When the next
+  BOM ships >= 1.5.0, drop the override.
+- **`androidx.graphics:graphics-shapes:1.1.0`** added. Pulled
+  transitively by material3 1.5.x but declared explicitly so the theme
+  module references `Morph` / `RoundedPolygon` / `toPath` directly
+  without depending on material3's internal export surface.
+- **compileSdk bumped 36 → 37**. Forced by Compose UI 1.12.0-alpha02
+  (transitive dep of material3 1.5.0-alpha19). targetSdk stays at 36
+  — runtime behaviour we tested + Play certified — bumping just the
+  compile-time API surface is Google's documented opt-in path for a
+  new Compose track without flipping app behaviour at runtime.
+
 ### Fixed
 - **`OptimizeStorage` was wiping the entire media cache every 24 h (TDLib
   mode)**. The throttled daily sweep passed `count=0` and `immunityDelay=60`
