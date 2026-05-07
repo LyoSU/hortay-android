@@ -15,9 +15,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.CommentsRepository
@@ -94,8 +99,48 @@ fun CommentsScreen(
     // stream in and the daemon prioritises loading. Doing it here meant we only opened
     // *after* the bootstrap finished, paying the cold-cache penalty on the first call.
 
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    // Pinned color-only — height is owned by the floating-bar nested scroll
+    // connection below. Mirrors the [TimelineScreen] pattern so both
+    // destination-style bars feel identical to the user.
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     val listState = rememberLazyListState()
+
+    // Twitter / Instagram floating-bar pattern — see [TimelineScreen]'s
+    // `topBarOffsetPx` block for the full reasoning. Scroll delta directly
+    // drives the bar's vertical offset, [Modifier.layout] shrinks the
+    // measured height in lockstep so Scaffold's body padding tracks the same
+    // signal — no separate animation timeline, no reflow jolt as the user
+    // scrolls between the post header and the comment thread below.
+    val topBarFullHeightPx = remember { mutableFloatStateOf(0f) }
+    val topBarOffsetPx = remember { mutableFloatStateOf(0f) }
+    val topBarNestedScroll = remember(topBarFullHeightPx) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y >= 0f) return Offset.Zero
+                val limit = -topBarFullHeightPx.floatValue
+                if (limit == 0f) return Offset.Zero
+                val previous = topBarOffsetPx.floatValue
+                val next = (previous + available.y).coerceIn(limit, 0f)
+                if (next == previous) return Offset.Zero
+                topBarOffsetPx.floatValue = next
+                return Offset(0f, next - previous)
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                if (available.y <= 0f) return Offset.Zero
+                val previous = topBarOffsetPx.floatValue
+                if (previous == 0f) return Offset.Zero
+                val next = (previous + available.y).coerceIn(-topBarFullHeightPx.floatValue, 0f)
+                if (next == previous) return Offset.Zero
+                topBarOffsetPx.floatValue = next
+                return Offset(0f, next - previous)
+            }
+        }
+    }
 
     // Read-state ack for visible comments. Mirrors the feed's dwell logic, scoped to
     // the comments overlay's discussion-thread chat. Until this existed, comments were
@@ -157,15 +202,17 @@ fun CommentsScreen(
                     transformOrigin = TransformOrigin(backOriginX, 0.5f)
                 }
             }
-            .nestedScroll(scrollBehavior.nestedScrollConnection),
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            .nestedScroll(topBarNestedScroll),
         topBar = {
-            // [MediumFlexibleTopAppBar] reads as "this is a destination, not a tool
-            // stage" — comments overlay carries its own thread-of-conversation
-            // identity that benefits from the larger title typography on first
-            // paint, then collapses to compact 64dp height as the user scrolls
-            // through the thread (motion-token-driven via [scrollBehavior]).
-            // The subtitle slot tracks the live thread state so the user reads
-            // the count at the same moment they read the title — replaces the
+            // [MediumFlexibleTopAppBar] reads as "this is a destination, not
+            // a tool stage" — comments overlay carries its own thread-of-
+            // conversation identity that benefits from the larger title
+            // typography on first paint, then slides up smoothly off-screen
+            // as the user scrolls into the thread (driven by scroll delta,
+            // not a timed animation — see [topBarNestedScroll]). The subtitle
+            // slot tracks the live thread state so the user reads the count
+            // at the same moment they read the title — replaces the
             // standalone "X відповідей" label that used to sit above the list.
             val subtitleText = when (val s = state) {
                 CommentsRepository.ThreadState.Loading -> stringResource(R.string.comments_loading)
@@ -176,30 +223,58 @@ fun CommentsScreen(
                 }
                 is CommentsRepository.ThreadState.Error -> null
             }
-            MediumFlexibleTopAppBar(
-                title = { Text(stringResource(R.string.comments_title)) },
-                subtitle = subtitleText?.let { text ->
-                    {
-                        Text(
-                            text = text,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+            // Same two-zone pattern as TimelineScreen — see that screen's
+            // topBar comment for the reasoning. Persistent zone-1 strip
+            // for status-bar height with the app's background colour, then
+            // a layout-shrunk zone-2 holding the bar with `windowInsets =
+            // WindowInsets(0)` so its content never travels into the system
+            // status-bar area.
+            Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
+                Spacer(modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsTopHeight(WindowInsets.statusBars)
+                )
+                Box(modifier = Modifier
+                    .clipToBounds()
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        if (topBarFullHeightPx.floatValue == 0f && placeable.height > 0) {
+                            topBarFullHeightPx.floatValue = placeable.height.toFloat()
+                        }
+                        val offset = topBarOffsetPx.floatValue.toInt()
+                        val height = (placeable.height + offset).coerceAtLeast(0)
+                        layout(placeable.width, height) {
+                            placeable.placeRelative(0, offset)
+                        }
                     }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onDismiss) {
-                        Symbol(name = "arrow_back", contentDescription = "back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
-                scrollBehavior = scrollBehavior,
-            )
+                ) {
+                    MediumFlexibleTopAppBar(
+                        title = { Text(stringResource(R.string.comments_title)) },
+                        subtitle = subtitleText?.let { text ->
+                            {
+                                Text(
+                                    text = text,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onDismiss) {
+                                Symbol(name = "arrow_back", contentDescription = "back")
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background,
+                            scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        ),
+                        scrollBehavior = scrollBehavior,
+                        windowInsets = WindowInsets(0),
+                    )
+                }
+            }
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->

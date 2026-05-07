@@ -24,7 +24,11 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -54,6 +58,7 @@ import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.ui.theme.asComposeShape
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
@@ -185,7 +190,76 @@ fun TimelineScreen(
         LazyListState()
     }
     val listState = if (channelFilter != null) filterListState else globalListState
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    // Pinned color-only scroll behavior — height transitions are owned by
+    // [topBarOffsetPx] below so we don't fight two systems for the same dp.
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
+
+    // Twitter / Instagram floating-bar pattern: scroll delta directly drives
+    // the destination-style bar's vertical offset, in sync with the user's
+    // finger. No separate timed animation = no reflow jolt.
+    //
+    // Earlier iterations tried `AnimatedVisibility` wrapped around the topBar
+    // slot — that runs a 150 ms shrink tween on the bar's height while the
+    // user is mid-scroll. Scaffold re-measured the topBar slot every frame
+    // of the tween, body's `padding(top = topPadding)` jumped along, the
+    // FoldersBar / LazyColumn underneath shifted up at ~750 dp/s for those
+    // 150 ms while the user's own scroll continued at ~200 dp/s. The
+    // combined velocity discontinuity was the visible jank.
+    //
+    // The fix is to drive the bar's "exit" purely by scroll delta via a
+    // [NestedScrollConnection]: every pixel the user pulls the content up
+    // moves the bar one pixel further out of view, until the bar is fully
+    // hidden. Scrolling back down at the top of the list passes leftover
+    // delta through to reveal the bar — Twitter / Instagram canonical. The
+    // bar's measured height shrinks via [Modifier.layout] in lockstep with
+    // its visual offset so Scaffold's body padding tracks the same signal,
+    // never a competing timeline.
+    val topBarFullHeightPx = remember { mutableFloatStateOf(0f) }
+    val topBarOffsetPx = remember { mutableFloatStateOf(0f) }
+    // Only the destination-style bars (home, bookmarks) participate in the
+    // scroll-hide. Filter / search-inside-filter use a compact `TopAppBar`
+    // and read as a tool stage with active input — those must stay pinned.
+    // [rememberUpdatedState] gives the connection a live read on the current
+    // scope without re-allocating the connection itself per recomposition.
+    val barHidesOnScroll = rememberUpdatedState(channelFilter == null)
+    val topBarNestedScroll = remember(topBarFullHeightPx) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (!barHidesOnScroll.value) return Offset.Zero
+                if (available.y >= 0f) return Offset.Zero
+                val limit = -topBarFullHeightPx.floatValue
+                if (limit == 0f) return Offset.Zero
+                val previous = topBarOffsetPx.floatValue
+                val next = (previous + available.y).coerceIn(limit, 0f)
+                if (next == previous) return Offset.Zero
+                topBarOffsetPx.floatValue = next
+                return Offset(0f, next - previous)
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                if (!barHidesOnScroll.value) return Offset.Zero
+                if (available.y <= 0f) return Offset.Zero
+                val previous = topBarOffsetPx.floatValue
+                if (previous == 0f) return Offset.Zero
+                val next = (previous + available.y).coerceIn(-topBarFullHeightPx.floatValue, 0f)
+                if (next == previous) return Offset.Zero
+                topBarOffsetPx.floatValue = next
+                return Offset(0f, next - previous)
+            }
+        }
+    }
+    // Reset the bar to fully visible whenever the user switches between
+    // top-level destinations (home ↔ bookmarks) or in/out of channel filter
+    // mode. Without this the bar stayed at its last hidden offset across
+    // navigation, so a fresh destination would briefly orphan the user
+    // looking at chrome they didn't expect to be missing.
+    LaunchedEffect(channelFilter, showOnlyBookmarked) {
+        topBarOffsetPx.floatValue = 0f
+    }
 
     // One-shot "scroll to this messageId once it lands in the list". Two producers feed
     // this: in-app quote-card taps (see [PostInteractions.onQuotedSourceClick]) and
@@ -784,9 +858,54 @@ fun TimelineScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .nestedScroll(scrollBehavior.nestedScrollConnection),
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            .nestedScroll(topBarNestedScroll),
         topBar = {
-            TimelineTopBar(
+            // Two-zone bar:
+            //   1. Persistent status-bar strip (always visible, painted with
+            //      the app's background) — keeps the system status bar text
+            //      legible against a stable backdrop regardless of how far
+            //      the bar content has slid. Sits OUTSIDE the layout-shrinking
+            //      block so it never moves.
+            //   2. Sliding bar content — the [TimelineTopBar] itself with
+            //      `windowInsets = WindowInsets(0)`, so its internal status-
+            //      bar padding doesn't double up with our zone-1 strip. The
+            //      [Modifier.layout] wrapper shrinks measured height in
+            //      lockstep with [topBarOffsetPx] so Scaffold's body padding
+            //      tracks the same signal — no separate animation timeline.
+            //
+            // Earlier iterations left status-bar handling inside the
+            // MediumFlexibleTopAppBar (default windowInsets) and clipped at
+            // the layout-shrinker's bounds. That clipped the bar's outline
+            // correctly but the bar's INTERNAL coordinate system put title
+            // content right after its 24 dp status-bar pad — when offset = -50
+            // shifted the placeable up, title pixels ended up at screen y =
+            // 0..24, leaking onto the status bar. Splitting status-bar into
+            // its own non-moving zone fixes that root cause.
+            Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
+                Spacer(modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsTopHeight(WindowInsets.statusBars)
+                )
+                Box(modifier = Modifier
+                    .clipToBounds()
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        // Capture the bar's natural full height the first
+                        // time we see a non-zero measure; the
+                        // [topBarNestedScroll] connection reads this to know
+                        // how far the bar can travel.
+                        if (topBarFullHeightPx.floatValue == 0f && placeable.height > 0) {
+                            topBarFullHeightPx.floatValue = placeable.height.toFloat()
+                        }
+                        val offset = topBarOffsetPx.floatValue.toInt()
+                        val height = (placeable.height + offset).coerceAtLeast(0)
+                        layout(placeable.width, height) {
+                            placeable.placeRelative(0, offset)
+                        }
+                    }
+                ) {
+                    TimelineTopBar(
                 showOnlyBookmarked = showOnlyBookmarked,
                 channelTitle = activeChannelTitle,
                 channelSubscribers = activeChannelSubscribers,
@@ -812,6 +931,8 @@ fun TimelineScreen(
                 topBarBadge = topBarBadge,
                 scrollBehavior = scrollBehavior,
             )
+                }
+            }
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
@@ -1037,6 +1158,12 @@ private fun TimelineTopBar(
         containerColor = MaterialTheme.colorScheme.background,
         scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
     )
+    // Status-bar insets are owned by the persistent zone-1 strip in the
+    // Scaffold's topBar slot — passing [WindowInsets] of 0 here prevents the
+    // bar from doubling up on top padding (and keeps its content from
+    // travelling into the system status-bar area when the layout shrinker
+    // pushes the bar upward on scroll).
+    val barInsets = WindowInsets(0)
     when {
         hasFilter && searchActive -> TopAppBar(
             title = {
@@ -1081,6 +1208,7 @@ private fun TimelineTopBar(
             },
             colors = colors,
             scrollBehavior = scrollBehavior,
+            windowInsets = barInsets,
         )
         hasFilter -> TopAppBar(
             title = {
@@ -1113,6 +1241,7 @@ private fun TimelineTopBar(
             },
             colors = colors,
             scrollBehavior = scrollBehavior,
+            windowInsets = barInsets,
         )
         // Bookmarks and Home both read as top-level destinations (vs filter /
         // search which are tool stages drilled in from Home). M3 Expressive
@@ -1129,6 +1258,7 @@ private fun TimelineTopBar(
             },
             colors = colors,
             scrollBehavior = scrollBehavior,
+            windowInsets = barInsets,
         )
         else -> MediumFlexibleTopAppBar(
             title = {
@@ -1152,6 +1282,7 @@ private fun TimelineTopBar(
             },
             colors = colors,
             scrollBehavior = scrollBehavior,
+            windowInsets = barInsets,
         )
     }
 }

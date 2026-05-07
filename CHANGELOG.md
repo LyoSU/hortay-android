@@ -8,6 +8,46 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Changed
+- **Top-bar slides off-screen on scroll, returns when the user reaches the
+  top** (Twitter / Instagram floating-bar pattern). Replaces the canonical
+  M3 `exitUntilCollapsedScrollBehavior` collapse-to-compact behaviour, which
+  always left 64 dp of permanent chrome the reader didn't need mid-thread.
+  Now: at the top the destination-style bar is fully visible (Medium); the
+  moment the user pulls the content up the bar's measured height shrinks
+  in lockstep with a scroll-driven `topBarOffsetPx`, sliding the bar
+  content up under a `clipToBounds` rect; once fully consumed scroll passes
+  through to the LazyColumn untouched. Pulling content down at the top of
+  the list reveals the bar again at the same scroll-delta rate. No timed
+  animation = no reflow jolt as the bar transitions; the same scroll
+  signal drives bar height AND Scaffold body padding, so the feed never
+  outpaces the chrome it's replacing.
+
+  Two-zone construction so the system status-bar area always reads cleanly
+  regardless of bar offset: a persistent zone-1 strip (sized via
+  `windowInsetsTopHeight(WindowInsets.statusBars)`) painted with the app's
+  background colour, then a zone-2 layout-shrunk container holding the
+  actual `MediumFlexibleTopAppBar` with `windowInsets = WindowInsets(0)`
+  to suppress its internal status-bar padding (otherwise the bar's content
+  would travel into the status-bar area as it slid up — visible as the
+  word "Hortay" leaking onto the system clock).
+
+  Tool-stage variants (channel filter, search-inside-filter — compact
+  `TopAppBar` with active inputs / back arrow) deliberately stay pinned:
+  the [NestedScrollConnection] gates on `channelFilter == null`, so a
+  feed user mid-search keeps the input on screen at all times. The bar's
+  offset also resets to 0 whenever `channelFilter` or `showOnlyBookmarked`
+  flips, so navigating between top-level destinations never lands the
+  user on partially-hidden chrome they didn't expect to be missing.
+
+  Earlier iterations tried `AnimatedVisibility(visible = atTop)` around
+  the topBar slot — that ran a 150 ms `shrinkVertically` tween on the
+  bar's height while the user was mid-scroll. Scaffold re-measured the
+  topBar slot every frame of the tween, body's padding jumped along, the
+  FoldersBar / LazyColumn underneath shifted up at ~750 dp/s while the
+  user's own scroll continued at ~200 dp/s. The combined velocity
+  discontinuity was the visible "тримає / стрімає" jank the user
+  reported. Driving the bar's exit purely by scroll delta — same signal
+  that drives the body — eliminates the discontinuity at the source.
 - **Top-level destinations migrate to `MediumFlexibleTopAppBar`**.
   Timeline default home, Timeline bookmarks-only mode, and the
   Comments overlay now read as M3 Expressive destinations instead
