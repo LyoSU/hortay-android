@@ -19,9 +19,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.data.CustomEmojiSticker
 import dev.lyo.hortay.data.DownloadPriority
-import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.StickerFormat
-import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Compact renderer for a Telegram `custom_emoji_id`. Used in two places:
@@ -52,7 +50,6 @@ fun CustomEmojiInlineView(
     priority: DownloadPriority = DownloadPriority.Avatar,
 ) {
     val repo = LocalCustomEmoji.current
-    val cache = LocalMediaCache.current
 
     // Hint the repository so the resolver batches us in. Idempotent for already-resolved
     // ids — no TDLib call is made on a hit.
@@ -92,10 +89,15 @@ fun CustomEmojiInlineView(
         }
     }
 
-    val mediaState by remember(firstVisibleFileId) {
-        if (firstVisibleFileId != null) cache.observe(firstVisibleFileId)
-        else MutableStateFlow(MediaState.Idle)
-    }.collectAsStateWithLifecycle()
+    // Bind to the first user-visible file's slot. The child renderer
+    // ([TdMediaImage] / [LottieStickerView] / [WebmStickerPlayer]) issues its
+    // own ensure() against the same fileId once it mounts, so [MediaCache]
+    // sees both calls — idempotent: same priority is a hot-path no-op, and
+    // two cancelDeferred calls on dispose collapse via the
+    // pendingCancels-replace contract. The duplication is what lets this
+    // composable be observe-only at the API level (we only need [isReady]
+    // for the placeholder gate) without a separate observe-only hook.
+    val binding = rememberMediaBinding(fileId = firstVisibleFileId, priority = priority)
 
     // Decide whether the sticker box currently has SOMETHING to paint. The
     // placeholder stays visible while the answer is no:
@@ -120,7 +122,7 @@ fun CustomEmojiInlineView(
             sticker.thumb == null &&
             !(animateAlways && sticker.media.fileId != null) -> false
         firstVisibleFileId == null -> true
-        else -> mediaState is MediaState.Ready
+        else -> binding.isReady
     }
     val needsPlaceholder = !contentReady
 

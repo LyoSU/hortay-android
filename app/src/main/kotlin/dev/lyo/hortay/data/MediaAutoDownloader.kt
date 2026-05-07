@@ -17,7 +17,11 @@ import kotlinx.coroutines.sync.withPermit
  * Drives auto-download of post media in TDLib mode using the user's
  * [AutoDownloadSettings]. Mirrors Telegram's "Data and Storage" → "Auto-Download Media"
  * UX: photos always small (no per-size gate), videos honour [AutoDownloadPolicy.videoMaxBytes],
- * animations honour [AutoDownloadPolicy.animationMaxBytes].
+ * animations honour [AutoDownloadPolicy.animationMaxBytes]. **Posters of video and
+ * animation posts ride the photos toggle, not the videos toggle** — they are
+ * separate TDLib fileIds at photo-size (30-300 KB), and the videos toggle exists
+ * to spare metered bandwidth from multi-MB playback files, not to leave video
+ * cards visually empty. Same policy Telegram-Android uses.
  *
  * Single observer: subscribes to [PostsRepository.posts] and diffs the head against a
  * `Set<(chatId, messageId)>` of already-prefetched ids. Anything new gets dispatched to
@@ -190,12 +194,32 @@ class MediaAutoDownloader(
                 if (policy.photos) c.webPreview?.image?.fileId?.let { cache.ensure(it, DownloadPriority.Prefetch) }
             }
             is PostContent.PhotoAlbum -> dispatchAlbum(c, policy)
-            is PostContent.Video -> dispatchVideo(
-                fileId = c.playbackFileId,
-                sizeBytes = c.qualities.defaultPick.sizeBytes,
-                policy = policy,
-            )
-            is PostContent.Animation -> dispatchAnimation(c.playbackFileId, policy)
+            is PostContent.Video -> {
+                // Poster (the photo-thumb the feed paints behind the play badge) and
+                // playback file are SEPARATE TDLib fileIds. Gating the poster behind
+                // [policy.videos] left video posts as a bare minithumb on metered
+                // networks — the user saw a tiny blurred placeholder until they
+                // scrolled close enough to trigger viewport-driven prefetch in
+                // [TimelineScreen.kt]'s `posterFileIds()` walk. Telegram-Android
+                // prefetches the poster regardless of the video toggle, since
+                // posters are photo-sized (30-300 KB) and the toggle's intent is
+                // "don't burn bytes on multi-MB playback files", not "leave video
+                // cards visually empty". Decouple the two: poster rides the
+                // [policy.photos] toggle (where it semantically belongs), playback
+                // rides [policy.videos] with the same size cap as before.
+                prefetchPoster(c.media, policy)
+                dispatchVideo(
+                    fileId = c.playbackFileId,
+                    sizeBytes = c.qualities.defaultPick.sizeBytes,
+                    policy = policy,
+                )
+            }
+            is PostContent.Animation -> {
+                // Same split as Video: poster is photo-sized (the still frame
+                // shown before the GIF auto-loops), playback is the actual MP4.
+                prefetchPoster(c.media, policy)
+                dispatchAnimation(c.playbackFileId, policy)
+            }
             is PostContent.Sticker,
             is PostContent.AnimatedEmoji -> {
                 // Stickers/animated emoji ride the [CustomEmojiRepository] batched path
@@ -221,13 +245,38 @@ class MediaAutoDownloader(
             is AlbumItem.Photo -> if (policy.photos) {
                 item.media.fileId?.let { cache.ensure(it, DownloadPriority.Prefetch) }
             }
-            is AlbumItem.Video -> dispatchVideo(
-                fileId = item.playbackFileId,
-                sizeBytes = item.qualities.defaultPick.sizeBytes,
-                policy = policy,
-            )
-            is AlbumItem.Animation -> dispatchAnimation(item.playbackFileId, policy)
+            is AlbumItem.Video -> {
+                // Mirrors [PostContent.Video] handling: poster on the photos
+                // toggle, playback on the videos toggle. Without the split, an
+                // album of 5 videos with `policy.videos=false` painted 5
+                // minithumbs in a row — significantly worse than the photo
+                // album it visually emulates.
+                prefetchPoster(item.media, policy)
+                dispatchVideo(
+                    fileId = item.playbackFileId,
+                    sizeBytes = item.qualities.defaultPick.sizeBytes,
+                    policy = policy,
+                )
+            }
+            is AlbumItem.Animation -> {
+                // Mirrors [PostContent.Animation] — see rationale above.
+                prefetchPoster(item.media, policy)
+                dispatchAnimation(item.playbackFileId, policy)
+            }
         }
+    }
+
+    /**
+     * Prefetch a media item's photo-poster fileId at [DownloadPriority.Prefetch],
+     * gated on [AutoDownloadPolicy.photos]. Used by Video / Animation / album
+     * Video / album Animation paths so the poster doesn't ride the playback
+     * toggle. No-op if [TdMedia.fileId] is null — TDLib reports null when no
+     * server-side photo accompanied the media (rare; e.g. a forwarded GIF
+     * that lost its thumb).
+     */
+    private suspend fun prefetchPoster(media: TdMedia, policy: AutoDownloadPolicy) {
+        if (!policy.photos) return
+        media.fileId?.let { cache.ensure(it, DownloadPriority.Prefetch) }
     }
 
     private suspend fun dispatchVideo(fileId: Int, sizeBytes: Long, policy: AutoDownloadPolicy) {

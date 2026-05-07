@@ -44,11 +44,20 @@ class StatsRepository(private val td: TdSender) {
     }
 
     /**
-     * Aggressive cache wipe: size=0 + ttl=0 + immunityDelay=0 forces TDLib to evict
-     * every file not held by an active in-flight transfer or open file handle. The
-     * currently-rendered media survives because TDLib's internal ref-count protects it
-     * regardless of these limits. The chat/database is NOT touched — that would log the
-     * user out and is surfaced as a separate destructive action.
+     * Aggressive cache wipe: size=0 + ttl=0 + immunityDelay=0 drives every
+     * eviction-driving cap to its strictest setting, so TDLib evicts every file
+     * not held by an active in-flight transfer or open file handle. Currently-
+     * rendered media survives via TDLib's internal ref-count regardless of these
+     * limits. The chat/database is NOT touched — that would log the user out
+     * and is surfaced as a separate destructive action.
+     *
+     * `fileTypes = null` is intentional: per [TdApi.OptimizeStorage]'s javadoc
+     * default it leaves thumbnails / profile photos / stickers / wallpapers
+     * intact. Telegram's own "Clear local cache" UI does the same — those are
+     * tiny files (< 500 KB each) that re-fetch annoyingly on the next session
+     * without freeing meaningful disk. A user tapping *"Очистити кеш"* expects
+     * the photo / video bulk to disappear, not their sticker packs and
+     * contacts' profile photos.
      */
     suspend fun clearCache(): Result<Unit> = runCatching {
         td.send(

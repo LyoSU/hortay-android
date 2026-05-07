@@ -5,7 +5,6 @@ import android.graphics.PorterDuffColorFilter
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,9 +27,7 @@ import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieDynamicProperties
 import com.airbnb.lottie.compose.rememberLottieDynamicProperty
 import dev.lyo.hortay.data.DownloadPriority
-import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.TdMedia
-import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Plays a Telegram TGS (gzipped Lottie) sticker. Pipeline:
@@ -68,7 +65,6 @@ fun LottieStickerView(
      */
     remoteUrl: String? = null,
 ) {
-    val cache = LocalMediaCache.current
     val httpClient = LocalWebHttpClient.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     // Observe lifecycle state via Flow rather than a snapshot read so Compose
@@ -79,33 +75,24 @@ fun LottieStickerView(
     // long timelines with many TGS emojis).
     val lifecycleState by lifecycle.currentStateFlow.collectAsStateWithLifecycle()
     val isRemote = fileId == null && remoteUrl != null
-    val mediaState by remember(fileId, isRemote) {
-        if (fileId != null && !isRemote) cache.observe(fileId)
-        else MutableStateFlow(MediaState.Idle)
-    }.collectAsStateWithLifecycle()
 
-    val gate = LocalScrollGate.current
-    val gateOpen = gate.value
-    LaunchedEffect(fileId, priority, gateOpen, isRemote) {
-        if (gateOpen && !isRemote) fileId?.let { cache.ensure(it, priority) }
-    }
-    // Mirror TdMediaImage's dispose-cancels-download contract — otherwise a TGS that
-    // scrolled off-screen keeps holding a TDLib download slot until it finishes,
-    // queueing behind currently-visible media. Bytes survive on disk so a re-mount
-    // resumes from the saved offset. Web-mode (isRemote) has no cache slot to free.
-    DisposableEffect(fileId, isRemote) {
-        onDispose { if (!isRemote) fileId?.let(cache::cancelDeferred) }
-    }
+    // Centralised observe / ensure / cancelDeferred — see [rememberMediaBinding].
+    // Earlier this Composable owned its own copy of the four-step contract; the
+    // hook now holds it once for every TDLib renderer.
+    val binding = rememberMediaBinding(fileId = fileId, priority = priority, isRemote = isRemote)
 
     var composition by remember(fileId, remoteUrl) { mutableStateOf<LottieComposition?>(null) }
-    val readyPath = (mediaState as? MediaState.Ready)?.path
+    val readyPath = binding.readyPath
     LaunchedEffect(readyPath, remoteUrl, isRemote) {
         if (isRemote) {
             val url = remoteUrl ?: return@LaunchedEffect
             composition = LottieUrlStore.load(url, httpClient)
         } else {
+            // [MediaBinding.readyPath] returns null for both "not Ready" and
+            // "Ready but path empty" (TDLib's transient post-completion-rename
+            // snapshot), so the single null-check covers both cases — no
+            // separate isEmpty guard needed.
             val path = readyPath ?: return@LaunchedEffect
-            if (path.isEmpty()) return@LaunchedEffect
             composition = LottieCompositionStore.load(path)
         }
     }

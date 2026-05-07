@@ -186,21 +186,25 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   latency win on every day-boundary launch where the cache hasn't
   filled, plus a small battery saving (most user sessions never
   trigger a real walk).
-- **`OptimizeStorage` scoped to media file types only**. Previously
-  passed `fileTypes = null`, which under TDLib's "all types
-  participate" semantics let a sweep close to the cap evict
-  stickers, profile photos, wallpapers and thumbnails as readily
-  as photos and videos. Those are small files (< 500 KB each) that
-  re-fetch annoyingly the next session even though they account
-  for a tiny fraction of the cache — exactly the symptom users
-  see as "стікер-пак / аватарка знову вантажиться". Now scoped
-  to [TdApi.FileTypePhoto] / [Video] / [Animation] / [VoiceNote] /
-  [Audio] / [Document] / [VideoNote] — the same media-only set
-  Telegram-Android automatic eviction sweeps. Stickers, profile
-  photos, wallpapers and thumbnails ride out across sessions.
+- **`OptimizeStorage` `fileTypes` made explicit**. Previously
+  passed `fileTypes = null`, which under [TdApi.OptimizeStorage]'s
+  javadoc default (*"all types except thumbnails, profile photos,
+  stickers and wallpapers are deleted"*) was already correct —
+  stickers / avatars / wallpapers were never at risk of eviction.
+  The previous shape was therefore not buggy, just opaque:
+  reading the call site, you had to remember TDLib's policy to
+  know what got touched. Now explicitly enumerates
+  [TdApi.FileTypePhoto] / [Video] / [Animation] / [VoiceNote] /
+  [Audio] / [Document] / [VideoNote] — the heavyweight media
+  types we actually serve. Two forward-looking benefits over the
+  equivalent null default: the set is self-documenting at the
+  call site, and it stays stable across TDLib version bumps (a
+  future TDLib release that adds a new "secondary" type to its
+  default-exclude set wouldn't change our behaviour).
   `clearCache` (the user-initiated *"знести усе"* surface) keeps
-  `fileTypes = null` since the user explicitly opted into a full
-  wipe.
+  `fileTypes = null` because there the default semantics'
+  protection of stickers / profile photos is the only thing
+  standing between "clear cache" and "actually clear cache".
 
 ### Fixed
 - **220 ms grey blink between minithumb and full photo**. The

@@ -495,6 +495,26 @@ class TdClient private constructor(
             if (now - last < OPTIMIZE_INTERVAL_MS) return@launch
             settings.setLastStorageOptimizeAt(now)
             runCatching {
+                // Probe before walk: a 500 MB cap is only meaningful when we're
+                // approaching it. [TdApi.GetStorageStatisticsFast] is a metadata-only
+                // read (sub-10 ms); [TdApi.OptimizeStorage] walks the file table on
+                // a populated ~500 MB cache (50-300 ms). Levin's recommended pattern
+                // in tdlib/td#667#issuecomment-521611484: *"you can from time to time
+                // use getStorageStatisticsFast to quickly get size of TDLib's cache
+                // and run the method optimizeStorage if needed."* Skip the walk when
+                // usage is well below the cap — Android cold-start latency win and
+                // a small battery saving on every day-boundary launch where the
+                // cache hasn't filled.
+                val fast = send(TdApi.GetStorageStatisticsFast())
+                val usageBytes = fast.filesSize
+                if (usageBytes < OPTIMIZE_TRIGGER_BYTES) {
+                    Log.i(
+                        TAG,
+                        "OptimizeStorage skipped: cache=${usageBytes / (1024L * 1024L)}MB " +
+                            "< ${OPTIMIZE_TRIGGER_BYTES / (1024L * 1024L)}MB trigger",
+                    )
+                    return@runCatching
+                }
                 // For OptimizeStorage's eviction-driving limits (size, ttl, count,
                 // immunityDelay) TDLib treats 0 as a literal "limit 0" and -1 as
                 // "use the default limit". An earlier version passed `count=0`
@@ -513,13 +533,32 @@ class TdClient private constructor(
                 // returned statistics" (number of chats with their own breakdown
                 // in the response), not eviction. We don't read those stats, so
                 // 0 is the correct "no per-chat breakdown" value.
+                //
+                // [fileTypes] explicitly scopes eviction to the heavyweight media
+                // types. TDLib's null-default ALREADY excludes thumbnails, profile
+                // photos, stickers and wallpapers (per TdApi.OptimizeStorage javadoc:
+                // *"By default, all types except thumbnails, profile photos, stickers
+                // and wallpapers are deleted"*) — so listing this set explicitly is a
+                // documentation win, not a behaviour change. Two reasons to keep the
+                // explicit form anyway:
+                //   • Reading this call site, you can see at a glance what's
+                //     touched without having to remember TDLib's default policy.
+                //   • Stable across TDLib version bumps. If a future TDLib release
+                //     adds a new "secondary" type to the default-exclude set
+                //     (e.g. ringtones, notification sounds), our explicit list
+                //     stays the same — the new type rides out alongside stickers,
+                //     which is the conservative default we'd choose anyway.
+                // Levin's tdlib/td#2376 reminder *"don't forget to specify all
+                // existing file_types"* applies if you SCOPE differently from us
+                // — e.g. evicting only one type. Our list already enumerates
+                // every media type we serve.
                 send(
                     TdApi.OptimizeStorage(
                         /* size */ 500L * 1024 * 1024,
                         /* ttl  */ -1,
                         /* count */ -1,
                         /* immunityDelay */ -1,
-                        /* fileTypes */ null,
+                        /* fileTypes */ MEDIA_FILE_TYPES,
                         /* chatIds */ null,
                         /* excludeChatIds */ null,
                         /* returnDeletedFileStatistics */ false,
@@ -543,6 +582,28 @@ class TdClient private constructor(
         private val LOG_VERBOSITY = if (BuildConfig.DEBUG) 1 else 0
         private const val TAG = "TdClient"
         private const val OPTIMIZE_INTERVAL_MS = 24L * 60 * 60 * 1000 // once per day
+
+        // Skip OptimizeStorage's file-table walk when usage is below this threshold.
+        // Picked at 80% of the cap (500 MB × 0.8 = 400 MB) — far enough below the
+        // hard limit that an "in-progress" sweep can still complete naturally before
+        // the next day-boundary sweep, but high enough that a typical light user
+        // never triggers a walk at all.
+        private const val OPTIMIZE_TRIGGER_BYTES = 400L * 1024 * 1024
+
+        // Media file types that participate in our daily storage sweep. Matches
+        // what Telegram-Android scopes its automatic eviction to — small types
+        // (stickers, profile photos, wallpapers, thumbnails) ride out across
+        // sessions because they re-download annoyingly for very little space win.
+        // See [TdApi.FileType] subclasses for the full taxonomy.
+        private val MEDIA_FILE_TYPES: Array<TdApi.FileType> = arrayOf(
+            TdApi.FileTypePhoto(),
+            TdApi.FileTypeVideo(),
+            TdApi.FileTypeAnimation(),
+            TdApi.FileTypeVoiceNote(),
+            TdApi.FileTypeAudio(),
+            TdApi.FileTypeDocument(),
+            TdApi.FileTypeVideoNote(),
+        )
         private const val DEFAULT_CODE_LENGTH = 5
         // Telegram's per-method rate-limit error code — same in raw MTProto and via
         // the TDLib translation layer.

@@ -626,6 +626,51 @@ class MediaCache(
     }
 
     /**
+     * Authoritative state refresh for [fileId]. Issues [TdApi.GetFile] and routes
+     * the reply through the reducer's [fileEvents] channel — same path as inbound
+     * [TdApi.UpdateFile], so reducer sequencing and Ready-stick guarantees are
+     * preserved end-to-end.
+     *
+     * Intended call site: Compose mount of any TDLib renderer (via
+     * [dev.lyo.hortay.ui.media.rememberMediaBinding]). The defensive resync exists
+     * to lock down a real bug pattern users described as *"показує що не загружено,
+     * але якщо проскролити вниз і знову вверх — все вже там"*. Root cause: a slot
+     * that has been left in [MediaState.Downloading] with [activePriority] still set
+     * (e.g. because we never observed the terminal Ready transition — lost UpdateFile,
+     * background-while-completing race, or a debounced cancel that fired right before
+     * TDLib's `isDownloadingCompleted=true` tail event). On re-mount,
+     * [ensure] short-circuits (`currentPriority >= priority.tdValue`) and the slot
+     * stays pinned at the stale value, even though TDLib has the file Ready on disk.
+     *
+     * `resync` bypasses ensure's optimisation: it unconditionally asks TDLib *"what
+     * is this file, really?"* and routes the answer through the reducer. If TDLib
+     * has it Ready, the slot transitions to Ready and the UI updates next frame.
+     * If TDLib reports a stale Downloading too, no harm done — the reducer's
+     * existing logic handles every shape correctly.
+     *
+     * Aligned with Levin's tdlib/td#3178 *"the local file path can become invalid in
+     * many ways. The app is supposed to call downloadFile before using the file"* —
+     * this is the read-side equivalent of his guidance for the write side.
+     *
+     * No-op for slots that no Composable has yet observed (creating one for a
+     * resync-only flow would defeat [evictTerminalSlots]'s memory cap). Idempotent
+     * and concurrency-safe: identical events from concurrent resyncs collapse
+     * cleanly inside the reducer.
+     */
+    fun resync(fileId: Int) {
+        if (states[fileId] == null) return
+        scope.launch(ioDispatcher) {
+            runCatching {
+                val file = td.send(TdApi.GetFile(fileId))
+                fileEvents.send(FileEvent.FromTdLib(file))
+            }.onFailure { err ->
+                if (err is kotlinx.coroutines.CancellationException) throw err
+                Log.w(TAG, "resync($fileId) failed", err)
+            }
+        }
+    }
+
+    /**
      * Single-shot, atomically-deduped GetFile [POST_COMPLETION_RESYNC_MS] from now.
      * Called whenever the reducer sees Downloading(1.0) — the canonical "tail of
      * download, awaiting TDLib rename" snapshot.

@@ -16,7 +16,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.view.TextureView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -25,7 +24,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.MediaState
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -78,29 +76,24 @@ fun TdVideoPlayer(
      */
     remoteUrl: String? = null,
 ) {
-    val cache = LocalMediaCache.current
     val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val coScope = rememberCoroutineScope()
     val isRemote = fileId == 0 && remoteUrl != null
 
-    // Skip starting the download while the host list is mid-scroll — see [LocalScrollGate].
-    // Web-mode (isRemote) skips the entire MediaCache pathway: ExoPlayer handles
-    // its own buffering against the URL, and there's no fileId to ensure() anyway.
-    val gate = LocalScrollGate.current
-    val gateOpen = gate.value
-    LaunchedEffect(fileId, priority, gateOpen, isRemote) {
-        if (gateOpen && !isRemote) cache.ensure(fileId, priority)
-    }
-    // Mirror the dispose-cancels-download contract from TdMediaImage. Web-mode
-    // has no MediaCache slot to release.
-    DisposableEffect(fileId, isRemote) {
-        onDispose { if (!isRemote) cache.cancelDeferred(fileId) }
-    }
-    val mediaState by remember(fileId, isRemote) {
-        if (isRemote) MutableStateFlow(MediaState.Idle)
-        else cache.observe(fileId)
-    }.collectAsStateWithLifecycle()
+    // Centralised observe / ensure / cancelDeferred — see [rememberMediaBinding].
+    // Web-mode (isRemote) makes the binding a no-op shape: ExoPlayer streams
+    // direct from [remoteUrl] via its built-in HTTP DataSource and the
+    // download orchestration has nothing to do here. [fileId] of `0` is the
+    // historical "no TDLib file" sentinel for this composable; pass null to
+    // the binding so it stays in [MediaState.Idle] regardless of whether
+    // [isRemote] is true or false.
+    val binding = rememberMediaBinding(
+        fileId = if (fileId == 0) null else fileId,
+        priority = priority,
+        isRemote = isRemote,
+    )
+    val mediaState = binding.state
     val showLoadingOverlay = rememberDeferredLoading(state = mediaState, key = fileId) && !isRemote
     // Tracks ExoPlayer's STATE_BUFFERING transitions for the in-playback
     // rebuffer overlay (separate from the pre-Ready download overlay).
@@ -253,7 +246,7 @@ fun TdVideoPlayer(
                     progress = s.progress,
                     downloadedBytes = s.downloadedBytes,
                     totalBytes = s.totalBytes,
-                    onCancel = { cache.cancelExplicit(fileId) },
+                    onCancel = { binding.cancelExplicit() },
                 )
             }
             is MediaState.Failed -> Box(
@@ -261,7 +254,7 @@ fun TdVideoPlayer(
                 contentAlignment = Alignment.Center,
             ) {
                 MediaFailedOverlay(
-                    onRetry = { coScope.launch { cache.retry(fileId, priority) } },
+                    onRetry = { coScope.launch { binding.retry(priority) } },
                 )
             }
             MediaState.Idle -> if (showLoadingOverlay) Box(

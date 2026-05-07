@@ -6,9 +6,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -16,13 +16,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import dev.lyo.hortay.data.DownloadPriority
-import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.TdMedia
-import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Plays a Telegram WebM (VP9) sticker. Looped, muted, no controls — the typical "video
@@ -67,23 +64,12 @@ fun WebmStickerPlayer(
      */
     remoteUrl: String? = null,
 ) {
-    val cache = LocalMediaCache.current
     val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val isRemote = fileId == null && remoteUrl != null
 
-    val gate = LocalScrollGate.current
-    val gateOpen = gate.value
-    LaunchedEffect(fileId, priority, gateOpen, isRemote) {
-        if (gateOpen && !isRemote) fileId?.let { cache.ensure(it, priority) }
-    }
-    DisposableEffect(fileId, isRemote) {
-        onDispose { if (!isRemote) fileId?.let(cache::cancelDeferred) }
-    }
-    val mediaState by remember(fileId, isRemote) {
-        if (fileId != null && !isRemote) cache.observe(fileId)
-        else MutableStateFlow(MediaState.Idle)
-    }.collectAsStateWithLifecycle()
+    // Centralised observe / ensure / cancelDeferred — see [rememberMediaBinding].
+    val binding = rememberMediaBinding(fileId = fileId, priority = priority, isRemote = isRemote)
 
     // Acquire from the shared pool. WebM stickers are inherently silent, so we
     // request the muted variant — no audio renderer is built, AudioTrack is never
@@ -100,14 +86,13 @@ fun WebmStickerPlayer(
     // ExoPlayer's setMediaItem/prepare cycle. fileId / remoteUrl are captured so
     // swapping to a different sticker instance triggers a fresh prepare even if
     // the new file's path coincidentally matches the previous one.
-    val readyPath = (mediaState as? MediaState.Ready)?.path
+    val readyPath = binding.readyPath
     LaunchedEffect(readyPath, fileId, remoteUrl, isRemote) {
         val uri: String = when {
             isRemote -> remoteUrl ?: return@LaunchedEffect
             else -> {
                 val path = readyPath ?: return@LaunchedEffect
-                if (path.isEmpty()) return@LaunchedEffect
-                "file://${path}"
+                "file://$path"
             }
         }
         exoPlayer.setMediaItem(MediaItem.fromUri(uri))

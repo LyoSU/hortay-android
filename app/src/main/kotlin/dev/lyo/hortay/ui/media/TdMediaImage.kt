@@ -5,9 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -17,7 +14,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
@@ -25,7 +21,6 @@ import coil3.request.crossfade
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.TdMedia
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -60,7 +55,6 @@ fun TdMediaImage(
     showProgress: Boolean = true,
     priority: DownloadPriority = DownloadPriority.VisibleMedia,
 ) {
-    val cache = LocalMediaCache.current
     val context = LocalContext.current
     val fileId = media.fileId
     val remoteUrl = media.remoteUrl
@@ -92,21 +86,11 @@ fun TdMediaImage(
         return
     }
 
-    val state by remember(fileId) {
-        if (fileId != null) cache.observe(fileId) else MutableStateFlow(MediaState.Idle)
-    }.collectAsStateWithLifecycle()
-
-    // Skip starting the download while the host list is mid-scroll — see [LocalScrollGate].
-    // When scroll settles, this LaunchedEffect re-runs with gateOpen=true and ensure fires.
-    val gate = LocalScrollGate.current
-    val gateOpen = gate.value
-    LaunchedEffect(fileId, priority, gateOpen) {
-        if (gateOpen) fileId?.let { cache.ensure(it, priority) }
-    }
-
-    DisposableEffect(fileId) {
-        onDispose { fileId?.let(cache::cancelDeferred) }
-    }
+    // Centralised observe / ensure / cancelDeferred — see [rememberMediaBinding].
+    // The hook handles scroll-gate gating, cancel-on-dispose, and the four-step
+    // contract that every TDLib renderer must honour, in one place.
+    val binding = rememberMediaBinding(fileId = fileId, priority = priority)
+    val state = binding.state
 
     // Loading overlay only paints after a 600 ms grace window — fast loads stay invisible
     // under the blurred minithumb. See [rememberDeferredLoading].
@@ -123,11 +107,26 @@ fun TdMediaImage(
         // thread and we Gaussian-blur the rendered output for the Telegram-style
         // "soft preview" look. The blur modifier is a GPU pass on API ≥ 31; on
         // 26-30 Compose silently no-ops the blur, and the bilinear up-scale of
-        // the 40×40 minithumb still reads as a soft placeholder. Hidden once the
-        // full image is Ready so Coil's crossfade isn't fighting a still-visible
-        // placeholder underneath.
+        // the 40×40 minithumb still reads as a soft placeholder.
+        //
+        // **Stays composed even after [MediaState.Ready] lands.** An earlier version
+        // gated this branch on `state !is Ready`, which yanked the minithumb the
+        // instant the [MediaCache] reducer flipped Ready — but that's our
+        // *download-completed* signal, NOT our *Coil-rendered-the-pixels* signal.
+        // Coil's `.crossfade(220)` on the Ready-path AsyncImage below fades the
+        // file image in from alpha 0 over 220 ms; if the minithumb is gone, that
+        // entire window paints [placeholderColor] (typically `surfaceContainerHigh`),
+        // producing a sharp grey blink between the soft minithumb and the full
+        // photo — the symptom users describe as "блимок" / "наче не дуже
+        // обробляє завантажене". Keeping the minithumb mounted under the
+        // crossfading file image lets it bleed through during the fade and get
+        // covered naturally as the file image reaches full opacity. Render
+        // cost is negligible: the minithumb bitmap is in Coil's memory cache
+        // after first decode, so what stays composed is one bitmap blit + one
+        // RenderEffect blur per visible card per frame — under the noise of the
+        // surrounding LazyColumn layout pass.
         val minithumb = media.minithumbBytes
-        if (minithumb != null && state !is MediaState.Ready) {
+        if (minithumb != null) {
             // Memoise: minithumbs are stable per-post; rebuilding the request on
             // every recomposition would churn ~150 B requests through Coil's
             // queue once per visible card per frame during scroll.
@@ -162,7 +161,7 @@ fun TdMediaImage(
                                 // tdlib/td#3178). Coil failing to open the path is our
                                 // signal that the slot is stale: invalidate it and the
                                 // cache will re-issue DownloadFile on its own scope.
-                                fileId?.let { cache.invalidate(it, priority) }
+                                binding.invalidate(priority)
                             },
                         )
                         .build()
@@ -180,7 +179,7 @@ fun TdMediaImage(
                         progress = s.progress,
                         downloadedBytes = s.downloadedBytes,
                         totalBytes = s.totalBytes,
-                        onCancel = { cache.cancelExplicit(fileId) },
+                        onCancel = { binding.cancelExplicit() },
                     )
                 }
             }
@@ -188,7 +187,7 @@ fun TdMediaImage(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     val coScope = rememberCoroutineScope()
                     MediaFailedOverlay(
-                        onRetry = { coScope.launch { cache.retry(fileId, priority) } },
+                        onRetry = { coScope.launch { binding.retry(priority) } },
                     )
                 }
             }
