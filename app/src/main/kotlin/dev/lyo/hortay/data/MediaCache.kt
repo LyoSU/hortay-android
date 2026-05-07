@@ -769,6 +769,32 @@ class MediaCache(
     private fun slot(fileId: Int): MutableStateFlow<MediaState> =
         states.computeIfAbsent(fileId) { MutableStateFlow(MediaState.Idle) }
 
+    /**
+     * Wipe every file-state slot, in-flight cancel/resync job, and download
+     * priority record. Called from [AppGraph] on logout — TDLib's database
+     * is being torn down by `LogOut`, so the fileIds we held references to
+     * (cached photo/avatar/sticker IDs from account A's chats) are about to
+     * become invalid. Without this wipe, surviving observers would see
+     * orphan Ready slots whose on-disk paths no longer exist after TDLib
+     * recreates its file table for account B.
+     *
+     * Active observers see their slots flip back to [MediaState.Idle] (via
+     * the cleared `states` map's next computeIfAbsent), and their next
+     * `ensure()` re-seeds metadata via GetFile against the fresh TDLib
+     * database. In practice every observer will already be in the middle
+     * of being torn down because the UI is in transition to AuthScreen
+     * anyway.
+     */
+    fun clear() {
+        states.clear()
+        tracks.clear()
+        activePriority.clear()
+        pendingCancels.values.forEach { it.cancel() }
+        pendingCancels.clear()
+        postCompletionResync.values.forEach { it.cancel() }
+        postCompletionResync.clear()
+    }
+
     private companion object {
         const val TAG = "MediaCache"
         // Throttle Downloading→Downloading progress emits per fileId. TDLib reports

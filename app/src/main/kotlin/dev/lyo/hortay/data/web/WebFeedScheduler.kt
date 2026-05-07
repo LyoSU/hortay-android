@@ -1,10 +1,13 @@
 package dev.lyo.hortay.data.web
 
 import android.util.Log
+import dev.lyo.hortay.data.AuthStage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -42,6 +45,7 @@ import kotlinx.coroutines.launch
 class WebFeedScheduler(
     private val feedSource: WebFeedSource,
     private val foreground: StateFlow<Boolean>,
+    private val authStage: StateFlow<AuthStage>,
     private val scope: CoroutineScope,
     private val tier2IntervalMs: Long = DEFAULT_TIER2_INTERVAL_MS,
 ) {
@@ -50,26 +54,30 @@ class WebFeedScheduler(
     @Volatile private var bound = false
 
     /**
-     * Wire foreground transitions to the tier-2 loop. Idempotent: a duplicate
-     * call is a no-op rather than spawning two parallel pollers (the latter
-     * would double our request rate against t.me/s/, hello FLOOD_WAIT). The
-     * earlier comment promised idempotency but the implementation registered
-     * a fresh `foreground.onEach` collector on every call, so two `bind()`
-     * sites would both fire start/stop on every transition and racily write
-     * `tier2Job = null`. The volatile guard makes idempotency real.
+     * Wire foreground + auth transitions to the tier-2 loop. Idempotent: a
+     * duplicate call is a no-op rather than spawning two parallel pollers
+     * (the latter would double our request rate against t.me/s/, hello
+     * FLOOD_WAIT). The earlier comment promised idempotency but the
+     * implementation registered a fresh `foreground.onEach` collector on
+     * every call, so two `bind()` sites would both fire start/stop on
+     * every transition and racily write `tier2Job = null`. The volatile
+     * guard makes idempotency real.
+     *
+     * Pause condition: tier-2 polling is suspended whenever the user is
+     * authenticated to TDLib (authStage == Ready). The web feed is hidden
+     * by [MainActivity]'s routing precedence in that mode (TDLib UI takes
+     * over), so polling t.me/s/ for invisible content burns traffic +
+     * battery and risks a t.me FLOOD_WAIT for nothing. Resumes
+     * automatically when the user signs out (authStage flips back) and
+     * the app is in the foreground.
      */
     fun bind() {
         if (bound) return
         bound = true
-        // StateFlow already applies distinctUntilChanged via its own conflation,
-        // so we plug onEach in directly.
-        foreground
-            .onEach { isForeground ->
-                if (isForeground) {
-                    startTier2()
-                } else {
-                    stopTier2()
-                }
+        combine(foreground, authStage) { fg, auth -> fg && auth !is AuthStage.Ready }
+            .distinctUntilChanged()
+            .onEach { active ->
+                if (active) startTier2() else stopTier2()
             }
             .launchIn(scope)
     }

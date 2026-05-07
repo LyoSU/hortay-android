@@ -55,6 +55,28 @@ class TdClient private constructor(
     private val _authError = MutableStateFlow<String?>(null)
     val authError: StateFlow<String?> = _authError.asStateFlow()
 
+    /**
+     * Fires when the user explicitly logs out (TDLib emits
+     * [TdApi.AuthorizationStateLoggingOut]). Subscribers — wired in
+     * [HortayApp]'s graph — wipe per-account caches (PostsRepository feed,
+     * MessageMapper resolvers, MediaCache slots, on-disk timeline snapshot,
+     * MigrationStore proposal flag, etc.) before TDLib's spawnClient
+     * rebuilds a fresh native client. This keeps account A's cached data
+     * from leaking into account B if the user signs into a different
+     * Telegram account afterward.
+     *
+     * SharedFlow with extraBufferCapacity=1 + DROP_OLDEST: if a logout
+     * happens before any subscriber attaches (hypothetical, since AppGraph
+     * subscribes at construction), the most recent event is replayed once
+     * a subscriber connects. We emit via tryEmit from the auth-state
+     * handler so we don't suspend the JNI-driven dispatcher.
+     */
+    private val _loggedOut = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+    val loggedOut: SharedFlow<Unit> = _loggedOut.asSharedFlow()
+
     private val _connection = MutableStateFlow(ConnectionStatus.Connecting)
     /**
      * Mirrors TDLib's [TdApi.UpdateConnectionState]. The UI uses this to render a top
@@ -253,7 +275,15 @@ class TdClient private constructor(
                 // anything not accessed in the last 30 days.
                 maybeOptimizeStorage()
             }
-            is TdApi.AuthorizationStateLoggingOut,
+            is TdApi.AuthorizationStateLoggingOut -> {
+                _authStage.value = AuthStage.Loading
+                // User-initiated logout: signal AppGraph to wipe per-account
+                // in-memory caches + the on-disk timeline snapshot BEFORE
+                // TDLib's eventual Closed → spawnClient races create a fresh
+                // session that could otherwise read stale state. tryEmit on a
+                // BUFFERED+DROP_OLDEST flow is non-suspending and never fails.
+                _loggedOut.tryEmit(Unit)
+            }
             is TdApi.AuthorizationStateClosing -> _authStage.value = AuthStage.Loading
             is TdApi.AuthorizationStateClosed -> {
                 // Native client is dead at this point; respawn so TDLib re-emits

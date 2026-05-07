@@ -138,6 +138,25 @@ class CustomEmojiRepository(
         }
     }
 
+    /**
+     * Wipe the resolved-sticker store + missing-id memo + pending request
+     * queue. Called from [AppGraph] on logout because [TdMedia.fileId]s in
+     * the cached [CustomEmojiSticker]s are TDLib-database-scoped — once
+     * account A's TDLib DB is wiped by LogOut, the asset fileIds become
+     * invalid. The pending set is cleared too because any in-flight
+     * GetCustomEmojiStickers RPC issued under the previous client will
+     * reject; the next account's UI will re-request what it needs.
+     */
+    suspend fun clear() {
+        _stickers.value = persistentMapOf()
+        missing.clear()
+        pendingLock.withLock {
+            pending.clear()
+            flushJob?.cancel()
+            flushJob = null
+        }
+    }
+
     private companion object {
         const val TAG = "CustomEmojiRepository"
         // Window during which back-to-back UI requests collapse into one TDLib call. 50ms

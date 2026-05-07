@@ -72,5 +72,16 @@ class ChatFoldersRepository(
         return pinned || included || folder.includeChannels
     }
 
+    /**
+     * Wipe the folder list + per-folder rule cache. Called from [AppGraph]
+     * on logout — folder ids and chat-id membership are account-scoped, and
+     * TDLib will fire fresh [TdApi.UpdateChatFolders] for the new account
+     * after re-sign-in to repopulate.
+     */
+    fun clear() {
+        _folders.value = emptyList()
+        fullFolders.clear()
+    }
+
     private companion object { const val TAG = "ChatFoldersRepository" }
 }

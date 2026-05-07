@@ -49,6 +49,22 @@ class MigrationStore(context: Context) {
         }
     }
 
+    /**
+     * Wipe the proposal-shown flag + migrated-username history. Called
+     * from [AppGraph] on logout so a user signing back in to a *different*
+     * Telegram account (which has not seen this proposal) gets the
+     * migration sheet on its first AuthorizationStateReady. Without this,
+     * the per-app proposal flag would suppress the offer for any
+     * subsequent account, regardless of which Telegram identity is
+     * currently signed in.
+     */
+    suspend fun reset() {
+        ds.edit { prefs ->
+            prefs.remove(KEY_PROPOSAL_SHOWN)
+            prefs.remove(KEY_MIGRATED)
+        }
+    }
+
     private companion object {
         val KEY_PROPOSAL_SHOWN = booleanPreferencesKey("guest_migration_proposal_shown")
         val KEY_MIGRATED = stringSetPreferencesKey("guest_migration_migrated_usernames")

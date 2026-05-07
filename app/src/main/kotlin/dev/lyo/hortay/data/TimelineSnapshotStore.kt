@@ -39,6 +39,18 @@ class TimelineSnapshotStore(context: Context) {
         dataStore.edit { it[KEY] = packed }
     }
 
+    /**
+     * Drop the persisted snapshot. Called from [AppGraph] on logout so a
+     * cold restart between sign-out and sign-in (e.g. user logs out, force-
+     * stops the app, signs in to another account next launch) doesn't
+     * paint the previous account's posts into the new account's view
+     * during the brief restoreFromSnapshot → first-refresh-completes
+     * window.
+     */
+    suspend fun clear() {
+        dataStore.edit { it.remove(KEY) }
+    }
+
     private fun parseEntry(text: String): Pair<Long, Long>? {
         val parts = text.split(SEPARATOR_FIELD, limit = 2)
         if (parts.size != 2) return null

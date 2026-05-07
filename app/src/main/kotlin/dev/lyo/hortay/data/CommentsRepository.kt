@@ -348,6 +348,22 @@ class CommentsRepository(
         return rows
     }
 
+    /**
+     * Drop the per-account anchor cache + cached SharedFlow streams. Called
+     * from [AppGraph] on logout so a thread anchor resolved for account A
+     * (which lives forever for the repo's lifetime to skip
+     * GetMessageProperties + GetMessageThread on subsequent opens) can't be
+     * served to account B's UI.
+     *
+     * Active subscribers will see their upstream upstream cancel naturally
+     * (their WhileSubscribed scope dies with the synthetic empty stream we
+     * leave in the LRU). Sign-in to a new account starts every thread fresh.
+     */
+    fun clear() {
+        resolvedAnchors.clear()
+        synchronized(streams) { streams.clear() }
+    }
+
     private companion object {
         const val TAG = "CommentsRepository"
         const val MAX_DEPTH = 3

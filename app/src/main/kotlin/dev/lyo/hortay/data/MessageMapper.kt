@@ -221,6 +221,20 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
         }
     }
 
+    /**
+     * Wipe every resolver cache. Called from [AppGraph]'s logout handler so
+     * author identities resolved for account A's view don't surface in
+     * account B's feed after a re-sign-in. Cheap — caches re-warm on the
+     * first refresh against the new account.
+     */
+    fun clear() {
+        userCache.clear()
+        chatCache.clear()
+        supergroupUsernameCache.clear()
+        supergroupVerificationCache.clear()
+        replyContextCache.clear()
+    }
+
     /** Drop a stale entry — call when TDLib emits UpdateUser / UpdateSupergroup. */
     fun invalidateUser(userId: Long) { userCache.remove(userId) }
     fun invalidateChat(chatId: Long) { chatCache.remove(chatId) }

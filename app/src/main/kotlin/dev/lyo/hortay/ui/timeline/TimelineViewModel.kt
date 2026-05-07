@@ -56,15 +56,40 @@ class TimelineViewModel(
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     init {
-        // Seed seenPostIds with whatever the feed has on first non-empty emission, so the
-        // user starts looking at the existing feed (not at an "all are new" pill).
+        // Seed seenPostIds with the bootstrap feed so the user opens to an
+        // already-seen list, not "everything is new".
+        //
+        // Trigger condition: livePosts non-empty AND refreshing has settled
+        // back to false. The "settled" half is critical because
+        // PostsRepository.refreshLocked now streams per-channel results
+        // (UX win: posts visible within ~100ms of a cold start instead of
+        // after the full ~5s drain). On the first non-empty emission we'd
+        // see only one channel's content; seeding there would mark every
+        // subsequent channel's posts as "pending new", which is wrong on
+        // first launch.
+        //
+        // combine() emits whenever either input changes; we accept the
+        // first emission satisfying both conditions. A stable empty
+        // refreshing state with non-empty livePosts can occur via two
+        // paths:
+        //   1. Cold path: refreshing flips false → true → false; once it
+        //      lands back at false, livePosts holds the full streamed
+        //      result. Seed against that.
+        //   2. Warm path: refreshIfStale skipped (data warm) so refreshing
+        //      stays false, livePosts populated from snapshot only. Seed
+        //      against the snapshot.
         viewModelScope.launch {
-            livePosts.first { it.isNotEmpty() }.let { initial ->
-                if (seenPostIds.value.isEmpty()) {
-                    seenPostIds.value = initial.groupBy({ it.chatId }, { it.id })
-                        .mapValues { (_, ids) -> ids.toHashSet() }
-                }
+            combine(livePosts, refreshing) { posts, isRefreshing ->
+                posts.takeIf { it.isNotEmpty() && !isRefreshing }
             }
+                .filterNotNull()
+                .first()
+                .let { stable ->
+                    if (seenPostIds.value.isEmpty()) {
+                        seenPostIds.value = stable.groupBy({ it.chatId }, { it.id })
+                            .mapValues { (_, ids) -> ids.toHashSet() }
+                    }
+                }
         }
         // Cold-start path: restore the persisted snapshot first so the user sees real
         // content within ~100ms (TDLib serves GetMessage from local DB synchronously),

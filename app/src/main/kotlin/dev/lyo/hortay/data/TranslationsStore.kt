@@ -139,5 +139,18 @@ class TranslationsStore(
 
     data class Key(val chatId: Long, val messageId: Long, val language: String)
 
+    /**
+     * Wipe cached translations + in-flight request mutexes. Called from
+     * [AppGraph] on logout: translation entries are keyed by
+     * (chatId, messageId, language) — chatId/messageId carry implicit
+     * account context (they reference the previous account's TDLib
+     * database). After re-sign-in those references no longer mean the
+     * same thing, so re-translating fresh is correct.
+     */
+    suspend fun clear() {
+        _translations.value = emptyMap()
+        inflightLock.withLock { inflight.clear() }
+    }
+
     private companion object { const val TAG = "TranslationsStore" }
 }

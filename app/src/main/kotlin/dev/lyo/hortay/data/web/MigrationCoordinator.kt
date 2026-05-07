@@ -173,6 +173,27 @@ class MigrationCoordinator(
         }
         if (migrated.isNotEmpty()) {
             migrationStore.addMigrated(migrated)
+            // Remove the successfully-migrated handles from the web-mode
+            // subscription list. Without this, the user's anonymous-mode
+            // `webSubscriptions` set continues to track the same channels
+            // they just joined via TDLib — and if they ever sign out
+            // again, they'd see those channels as guest-mode subs even
+            // though the canonical "subscribed via TDLib" record now
+            // exists in their account. Removing here makes the migration
+            // a true move (anon → authenticated) rather than a copy that
+            // leaves stale guest-mode duplicates behind.
+            //
+            // Channels the user explicitly skipped (in the proposal sheet)
+            // stay in webSubscriptions — those are intentional guest-mode
+            // reads, not migration candidates. They still appear in the
+            // tier-2 web fetch the next time the user is in guest mode.
+            for (username in migrated) {
+                runCatching { subscriptions.remove(username) }
+                    .onFailure { err ->
+                        if (err is kotlinx.coroutines.CancellationException) throw err
+                        Log.w(TAG, "migration: subscriptions.remove($username) failed: ${err.message}")
+                    }
+            }
             // JoinChat tells TDLib we're a member; UpdateNewChat eventually surfaces the
             // chat in the main list, but GetChatHistory for the freshly-joined channels
             // never runs unless we ask for it. Without this refresh, [PostsRepository]'s

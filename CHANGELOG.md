@@ -120,6 +120,63 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   new Compose track without flipping app behaviour at runtime.
 
 ### Fixed
+- **Per-account state survived logout (privacy bug)**. `PostsRepository`,
+  `MessageMapper`, `CommentsRepository`, `MediaCache`,
+  `CustomEmojiRepository`, `ChatFoldersRepository`, `TranslationsStore`,
+  the on-disk `TimelineSnapshotStore` and `MigrationStore`'s
+  proposal-shown flag were all process-singletons living on `AppGraph`.
+  After `LogOut`, TDLib wiped its database, but our in-memory caches
+  (cached posts, resolved sender names, comment-thread anchors, file
+  metadata, custom-emoji stickers, folder list, translations) and the
+  on-disk timeline snapshot all stayed intact — so a subsequent sign-in
+  to a *different* Telegram account briefly painted account A's last
+  feed inside account B's UI during the cold-restore → first-refresh
+  window. `MigrationStore.proposalShown=true` also persisted across
+  accounts, suppressing the migration offer when account B (which had
+  never seen it) signed in. New `TdClient.loggedOut: SharedFlow<Unit>`
+  fires on `AuthorizationStateLoggingOut`; `AppGraph` subscribes once
+  at construction and fans out `clear()` calls across every
+  per-account repo + the snapshot file + `MigrationStore.reset()`
+  before TDLib's `spawnClient` rebuilds a fresh native session.
+- **Cold-start feed appeared in one big batch ~3-5 s after launch
+  (TDLib mode)**. `PostsRepository.refreshLocked` accumulated all
+  per-channel `GetChatHistory` results via `awaitAll().flatten()`,
+  then issued a single `_posts.update`. Users sat on a blank feed
+  until the slowest of 200 channels' round-trips returned. Now each
+  per-channel result folds into `_posts` the moment it lands, so the
+  first ~10 posts surface within ~100 ms while the rest stream in
+  over the same ~3-5 s. The atomic `_posts.update` CAS contract is
+  preserved, so concurrent UpdateNewMessage / UpdateMessage*
+  handlers still interleave cleanly with refresh writes.
+- **`TimelineViewModel`'s seen-set seeded too early under the new
+  streaming refresh**. The previous `livePosts.first { it.isNotEmpty() }`
+  hook fired on the first per-channel batch, marking only that
+  channel's posts as "seen" and tagging every later channel's
+  streamed posts as `pendingNew`. Seeding now waits until both
+  `livePosts` is non-empty AND `refreshing` has settled back to
+  false — the canonical "bootstrap is complete" point. Warm path
+  (refreshIfStale skipped because data is fresh) seeds against the
+  snapshot result identically.
+- **`WebFeedScheduler` polled t.me/s/ even while signed in to TDLib
+  mode**. The tier-2 sweep was foreground-bound but auth-blind, so
+  every 5 minutes it issued ~50 HTTPS requests to t.me/s/ for web
+  subscriptions the user wasn't even seeing (TDLib UI was on top).
+  Wasted traffic, wasted battery, plus a real risk of t.me-side
+  rate-limit on a heavy guest set. Scheduler now combines the
+  foreground signal with `authStage`; tier-2 pauses when
+  `authStage == AuthStage.Ready` and resumes automatically on
+  sign-out.
+- **`MigrationCoordinator` left migrated channels in `webSubscriptions`
+  after a successful join**. A guest-mode user with 50 subs who
+  signed in and accepted migration for 30 of them ended up with 30
+  TDLib chats AND those same 30 entries still in
+  `webSubscriptions`. If the user later signed out, those 30
+  channels surfaced as guest-mode subscriptions on top of the freshly-
+  empty TDLib chat list — visible duplicates between modes. Now a
+  successful join also calls `subscriptions.remove(username)`, so
+  the migration is a true move. The 20 channels the user explicitly
+  skipped stay in `webSubscriptions` since those are intentional
+  guest-mode reads, not migration candidates.
 - **`OptimizeStorage` was wiping the entire media cache every 24 h (TDLib
   mode)**. The throttled daily sweep passed `count=0` and `immunityDelay=60`
   literally — but TDLib treats `0` as the literal limit ("keep zero files /

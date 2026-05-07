@@ -248,6 +248,12 @@ class AppGraph(context: Context) {
     val webFeedScheduler: WebFeedScheduler = WebFeedScheduler(
         feedSource = webFeedSource,
         foreground = lifecycleBridge.foreground,
+        // Auth-aware pause: when the user is signed in to TDLib, the web
+        // feed isn't shown ([MainActivity] routes Ready → MainScaffold),
+        // so polling t.me/s/ would burn traffic + battery for invisible
+        // content and risk a CDN-side FLOOD_WAIT. Scheduler resumes
+        // automatically on sign-out.
+        authStage = tdClient.authStage,
         scope = appScope,
     ).also { it.bind() }
 
@@ -303,6 +309,44 @@ class AppGraph(context: Context) {
         // A no-op SELECT here moves that one-time ~50-100 ms cost off the critical
         // path so the first feed render isn't paying for it.
         appScope.launch { webRepository.subscribedUsernames() }
+
+        // Logout cleanup fan-out. TDLib's database is being torn down
+        // (LogOut → AuthorizationStateClosing → Closed) and account A's
+        // file ids / chat ids / message ids are about to become invalid.
+        // Wipe every per-account in-memory cache + the on-disk timeline
+        // snapshot before TDLib's spawnClient() rebuilds a fresh native
+        // session, so account B (or the empty AuthScreen if the user
+        // doesn't sign in again) doesn't briefly render account A's last
+        // feed.
+        //
+        // MigrationStore is reset specifically: a per-app proposal-shown
+        // flag would otherwise suppress the migration offer when the user
+        // signs in to a *different* Telegram account on the same device,
+        // even though that account has never seen the offer.
+        //
+        // collect on appScope so the handler outlives any UI scope.
+        appScope.launch {
+            tdClient.loggedOut.collect { runLogoutCleanup() }
+        }
+    }
+
+    /**
+     * Drop every piece of per-account state held by the graph. Each repo
+     * is responsible for its own cleanup; this method is just the
+     * orchestrator. Errors from individual clears are logged but never
+     * propagated — a partial wipe is still better than aborting the
+     * cleanup midway and leaving half the caches stale.
+     */
+    private suspend fun runLogoutCleanup() {
+        runCatching { postsRepository.clear() }
+        runCatching { messageMapper.clear() }
+        runCatching { commentsRepository.clear() }
+        runCatching { mediaCache.clear() }
+        runCatching { customEmoji.clear() }
+        runCatching { chatFoldersRepository.clear() }
+        runCatching { translations.clear() }
+        runCatching { timelineSnapshotStore.clear() }
+        runCatching { migrationStore.reset() }
     }
 }
 

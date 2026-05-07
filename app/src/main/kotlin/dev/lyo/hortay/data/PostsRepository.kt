@@ -1020,38 +1020,76 @@ class PostsRepository(
         // adds up to ~10s pull-to-refresh. Bound concurrency at 4 (TDLib's typical
         // simultaneous-download cap) so we don't push the daemon into FLOOD_WAIT while
         // still saturating the network.
+        //
+        // Streaming emit (instead of awaitAll → single fold): each per-channel result
+        // folds into _posts the moment it lands. On a 200-channel cold start with
+        // ~50ms RTT and concurrency=4, the first ~10 posts appear within ~100ms instead
+        // of after the full ~3-5s drain — which is what the user perceives as "the feed
+        // loaded". CPU cost is dominated by foldRawIntoCurrent → PostFilterStrategy.apply,
+        // which is O(N log N) on N up-to-MAX_FEED_SIZE posts; 200 sorts of growing-to-1000
+        // arrays adds <50ms total, dwarfed by the network wait.
+        //
+        // The merge stays atomic. Each per-channel update interleaves cleanly with
+        // concurrent TD update handlers (UpdateNewMessage, UpdateMessageInteractionInfo,
+        // UpdateMessageEdited, UpdateMessageContent, UpdateDeleteMessages) — they all use
+        // `_posts.update { ... }`, which is a CAS loop, so a fresh-post handler firing
+        // mid-refresh can't be clobbered. foldRawIntoCurrent's partial-album protection
+        // also remains intact: a per-channel batch that contains an incomplete album is
+        // skipped against an existing merged anchor exactly as it would be in the
+        // single-shot version.
         val semaphore = Semaphore(REFRESH_CONCURRENCY)
-        val raw = coroutineScope {
+        coroutineScope {
             channels.map { chat ->
                 async {
                     semaphore.withPermit {
                         val history = runCatching {
                             td.send(TdApi.GetChatHistory(chat.id, /* fromMessageId */ 0, 0, limitPerChannel, false))
-                        }.getOrNull() ?: return@withPermit emptyList()
+                        }.getOrNull() ?: return@withPermit
 
                         val raw = history.messages.orEmpty().toList()
                         // Plug album fragments left by the window boundary (e.g. a 6-photo
                         // album whose first 5 members fell outside the latest-N slice).
-                        coalesceAlbumFragments(chat.id, raw).map { mapper.toChannelPost(it, chat) }
+                        val mapped = coalesceAlbumFragments(chat.id, raw).map { mapper.toChannelPost(it, chat) }
+                        if (mapped.isEmpty()) return@withPermit
+                        _posts.update { current -> foldRawIntoCurrent(current, mapped, MAX_FEED_SIZE) }
                     }
                 }
-            }.awaitAll().flatten()
+            }.awaitAll()
         }
+    }
 
-        // Atomic merge instead of an outright `_posts.value = ...` overwrite. A refresh
-        // takes seconds: while the chat-by-chat fetches run, concurrent TD updates
-        // (UpdateNewMessage, UpdateMessageInteractionInfo, UpdateMessageEdited,
-        // UpdateMessageContent, UpdateDeleteMessages) flow through their handlers and
-        // mutate `_posts` via `.update {}`. A non-atomic final assignment would clobber
-        // every one of those edits — most visibly losing brand-new posts that landed
-        // mid-refresh and were correctly ingested but absent from the snapshot we took
-        // before they arrived.
-        //
-        // Album-aware merge lives in [foldRawIntoCurrent]: raw is authoritative when
-        // it covers an album whole, but a partial slice is preserved against the
-        // existing merged anchor so a refresh that loses album members at the
-        // GetChatHistory window edge can't downgrade a 5-photo card to 1-photo.
-        _posts.update { current -> foldRawIntoCurrent(current, raw, MAX_FEED_SIZE) }
+    /**
+     * Wipe every piece of per-account in-memory state held by this repo.
+     * Called from [AppGraph]'s logout handler in response to
+     * [TdClient.loggedOut] so account A's cached posts / chat metadata /
+     * pagination cursors don't leak into account B if the user signs into a
+     * different Telegram account in the same process.
+     *
+     * Cancels in-flight per-channel deep loads + album debounces so they
+     * can't land after the wipe and re-pollute the cleaned state.
+     * Also drops the snapshot the previous session persisted so a cold
+     * restart between sign-out and sign-in doesn't paint stale content.
+     */
+    suspend fun clear() {
+        refreshMutex.withLock {
+            _posts.value = persistentListOf()
+            chatCache.clear()
+            pendingInteractionInfo.clear()
+            interactionFlushScheduled.set(false)
+            albumBuffers.clear()
+            albumDebounce.values.forEach { it.cancel() }
+            albumDebounce.clear()
+            deepLoadJobs.values.forEach { it.cancel() }
+            deepLoadJobs.clear()
+            deepLoadCooldownUntilMs.clear()
+            pageEnded.clear()
+            pageJobs.values.forEach { it.cancel() }
+            pageJobs.clear()
+            lastRefreshAtMs = 0L
+            _archivedChatIds.value = emptySet()
+        }
+        runCatching { snapshotStore.clear() }
+            .warnUnlessCancelled(TAG, "snapshotStore.clear")
     }
 
     /**
