@@ -1,10 +1,15 @@
 package dev.lyo.hortay.ui.main
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
@@ -14,24 +19,26 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.animation.core.animateFloatAsState
 import dev.lyo.hortay.ui.icons.Symbol
-import dev.lyo.hortay.ui.theme.HortayExpressive
-import dev.lyo.hortay.ui.theme.MorphShape
 
 /**
  * MD3 Expressive floating navigation bar.
  *
  * A pill-shaped Surface that hovers over the content with horizontal + bottom margin,
- * tonal elevation and a soft shadow. Active item shape morphs from `Square` to
- * `Cookie7Sided` on selection (the same morph the folder filter uses, intentionally —
- * a single "active state" gesture across the navigational chrome reads as one
- * visual idiom).
+ * tonal elevation and a soft shadow. Each tab is a stadium with the canonical M3
+ * Expressive **three-state corner-radius morph** — the same vocabulary as the folder
+ * filter chips and the reaction chips, so all three "selectable affordance" surfaces
+ * speak one motion language:
  *
- * The morph runs on `motionScheme.fastSpatialSpec()` (spring-based, low damping) so
- * the active indicator overshoots slightly — the canonical expressive feedback for
- * "you just changed mode". Color crossfades on `fastEffectsSpec()` separately because
- * spatial vs effects animations have intentionally different physics in M3 Expressive.
+ *   - Rest: 14 dp corners (soft rounded square).
+ *   - Pressed: 6 dp corners (compressed-under-thumb tactile cue).
+ *   - Selected: 24 dp corners (fully rounded pill).
+ *
+ * Polygon (Cookie7) morph was tried first but Cookie/Burst polygons are designed for
+ * 1:1 elements — at the nav-tab's slight horizontal aspect they almost-fit, but the
+ * inconsistency with FolderChip's stadium pattern read as two different idioms for
+ * the same "active mode" cue. Stadium with corner morph stays canonical at any
+ * aspect and matches the rest of the app.
  *
  * Material's `HorizontalFloatingToolbar` was considered but lays out around a single
  * primary FAB plus secondary actions — wrong primitive for a 4-equal-tab bottom nav.
@@ -84,17 +91,21 @@ private fun NavTabButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Shape morph from Square (rest) -> Cookie7Sided (selected). Spatial spring keeps
-    // the morph feeling "alive" — visible bounce on the leading edge of the transition,
-    // settled before the user taps the next tab.
-    val morphProgress by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    // Three-state corner-radius morph — canonical M3 Expressive vocabulary.
+    val cornerRadius by animateDpAsState(
+        targetValue = when {
+            isPressed -> 6.dp
+            selected -> 24.dp
+            else -> 14.dp
+        },
         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-        label = "nav-morph",
+        label = "nav-corner",
     )
-    // Color crossfade is intentionally a separate animation channel: the M3 Expressive
-    // motion scheme distinguishes spatial (size/shape/offset) and effects (color/alpha)
-    // because mixing physics is what makes Material 2 transitions feel cheap.
+    // Spatial vs effects channels: corner radius is spatial (spring), colour is
+    // effects (faster crossfade) — separating the two physics is what makes M3
+    // Expressive transitions feel deliberate vs Material 2 tween-soup.
     val container by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer
         else Color.Transparent,
@@ -107,27 +118,26 @@ private fun NavTabButton(
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "nav-fg",
     )
-
-    val shape = MorphShape(HortayExpressive.FolderMorph, morphProgress)
-
-    // Clip + background both follow the polygon — ripple now hugs the same Cookie
-    // silhouette the user sees, the canonical M3 Expressive feedback. The 24 dp
-    // icon at centre lives well inside Cookie7's inscribed circle (~85% of the
-    // bounding box), so the indentations don't reach the glyph.
+    val shape = RoundedCornerShape(cornerRadius)
     Box(
         modifier = modifier
             .padding(horizontal = 4.dp)
             .heightIn(min = 48.dp)
             .clip(shape)
             .background(container, shape)
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            )
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         // Filled variant on the selected tab — canonical M3 Expressive cue: the
-        // active destination is heavier than its peers, mirroring how the polygon
-        // morph and tonal container also intensify together. `filled` falls back
-        // to the outline when no `_filled` drawable is bundled (see Symbol.kt).
+        // active destination is heavier than its peers, mirroring how the
+        // corner-radius morph and tonal container also intensify together.
+        // `filled` falls back to the outline when no `_filled` drawable is
+        // bundled (see Symbol.kt).
         Symbol(
             name = tab.symbol,
             contentDescription = stringResource(tab.labelRes),

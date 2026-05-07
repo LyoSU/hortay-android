@@ -2,6 +2,7 @@ package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -581,29 +582,38 @@ private fun VerticalSeparator() {
 }
 
 /**
- * Reaction chip — M3 Expressive flavour.
+ * Reaction chip — industry-canonical "pill stadium with emoji + count" structure.
+ * Telegram, Discord, Slack, Reddit, iMessage all use the same primitive: a single
+ * rounded container with the emoji glyph followed by its count. M3 Expressive's
+ * contribution is the **three-state corner-radius morph** that gives the chip
+ * tactile feedback without breaking the familiar layout:
  *
- * Selection state drives a `MorphShape` from `Square` to `Cookie9Sided`, animated on
- * the spatial spring spec. The morph is the user-visible "this reaction is yours"
- * affordance; container and content colour also crossfade, but on the effects spec —
- * separating spatial vs effects channels is the load-bearing M3 Expressive idiom that
- * stops the transition reading like a Material-2 tween.
+ *   - **Rest**: 14 dp corners — soft rounded rectangle.
+ *   - **Pressed**: 6 dp corners — squishes inward when the user holds, the
+ *     compressed-under-thumb tactile cue documented in M3 Expressive's
+ *     interaction-states spec.
+ *   - **Selected (own reaction)**: 24 dp corners — fully pill-rounded, the
+ *     persistent "this one is yours" affordance. Container also crossfades to
+ *     `tertiaryContainer` (primary reserved for CTAs).
  *
- * Public so the comments screen can reuse the same chip for thread replies. Touch
- * target stays >= 40 dp (12dp glyph + 18dp container padding × 2 once Material's
- * automatic 8dp tap-spacing is layered on).
- *
- * Selected colour: `tertiaryContainer` rather than `primaryContainer` — Google's
- * Expressive guidance reserves primary for true call-to-action containers (FABs,
- * accept-buttons), and reactions are explicitly secondary affordances that should
- * read as "personal toggle" not "main action".
+ * Cookie/Burst/Heart polygons were considered but Google's Expressive guidance
+ * reserves them for 1:1 elements (FAB, IconButton, avatar, hero badge).
+ * Non-uniformly scaling them to a wide chip deforms the character ridges into
+ * elongated ovals — corner-radius morph on a stadium stays canonical at any
+ * aspect, including 3-digit counts.
  */
 @Composable
 internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
-    val morphProgress by animateFloatAsState(
-        targetValue = if (item.isChosen) 1f else 0f,
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val cornerRadius by androidx.compose.animation.core.animateDpAsState(
+        targetValue = when {
+            isPressed -> 6.dp
+            item.isChosen -> 24.dp
+            else -> 14.dp
+        },
         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-        label = "reaction-morph",
+        label = "reaction-corner",
     )
     val container by animateColorAsState(
         targetValue = if (item.isChosen) MaterialTheme.colorScheme.tertiaryContainer
@@ -623,21 +633,26 @@ internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "reaction-tint",
     )
-    val shape = MorphShape(HortayExpressive.ReactionMorph, morphProgress)
-    // Polygon clips both background and ripple. Cookie9's inscribed area
-    // accommodates the emoji + count with the increased horizontal padding
-    // below; the morph from Square (rest) to Cookie9 (selected) reads as a
-    // single expressive gesture.
+    val shape = RoundedCornerShape(cornerRadius)
     Row(
         modifier = Modifier
             .clip(shape)
             .background(container, shape)
-            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
-            .padding(horizontal = 14.dp, vertical = 9.dp),
+            .let {
+                if (onClick != null) it.clickable(
+                    interactionSource = interactionSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
+                    onClick = onClick,
+                ) else it
+            }
+            .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         when (val k = item.kind) {
-            is ReactionKind.Emoji -> Text(text = k.text, style = MaterialTheme.typography.titleMedium)
+            is ReactionKind.Emoji -> Text(
+                text = k.text,
+                style = MaterialTheme.typography.titleMedium,
+            )
             is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
                 customEmojiId = k.customEmojiId,
                 modifier = Modifier.size(20.dp),

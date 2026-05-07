@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,21 +24,20 @@ import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ConnectionStatus
 import dev.lyo.hortay.ui.icons.Symbol
-import dev.lyo.hortay.ui.theme.HortayExpressive
-import dev.lyo.hortay.ui.theme.asComposeShape
 
 /**
  * Slim banner that surfaces TDLib's connection state. Hidden when [status] is
  * [ConnectionStatus.Ready] — we don't want to remind the user that everything is fine.
  *
  * Visual upgrade (M3 Expressive):
- *   - Container is a `MaterialShapes.Bun`-shaped chip rather than an edge-to-edge bar.
- *     Bun reads as "soft alert pillow" — softer than a rectangle (less alarming for a
- *     transient connectivity hiccup), more attention-grabbing than a generic rounded
- *     chip (still says "look here").
- *   - Floats with a 16 dp horizontal margin and elevation rather than docking against
- *     the status-bar edge. Same visual idiom as the floating navigation bar — chrome
- *     hovering over content, not framing it.
+ *   - Container is a stadium chip (`CircleShape` on a wide Row collapses to true
+ *     pill) rather than an edge-to-edge bar. Stadium scales gracefully across
+ *     locales — Ukrainian "оновлюється…" and German "Verbindungsaufbau…" can
+ *     differ in width by 60–80 %, and the canonical Cookie/Burst/Bun polygons
+ *     would distort their character ridges into elongated ovals at the long-text
+ *     extreme. Reserved for 1:1 elements per Google's M3 Expressive guidance.
+ *   - Floats with a 16 dp horizontal margin and elevation rather than docking
+ *     against the status-bar edge. Same idiom as the floating navigation bar.
  *
  * Material 3 colour-mapping:
  *   - WaitingForNetwork → errorContainer (the freeze is the user's network, surface it).
@@ -75,16 +75,13 @@ fun ConnectionBanner(status: ConnectionStatus, modifier: Modifier = Modifier) {
             )
             ConnectionStatus.Ready -> return@AnimatedVisibility
         }
-        val shape = HortayExpressive.ConnectionBanner.asComposeShape()
+        val shape = CircleShape
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center,
         ) {
-            // Bun polygon clips the chip silhouette consistently with reaction /
-            // folder chips — single expressive vocabulary across all chip-like
-            // affordances.
             Row(
                 modifier = Modifier
                     .clip(shape)
