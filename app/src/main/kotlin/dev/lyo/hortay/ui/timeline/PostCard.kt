@@ -1,5 +1,7 @@
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -44,6 +46,9 @@ import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.media.TdMediaImage
+import dev.lyo.hortay.ui.theme.HortayExpressive
+import dev.lyo.hortay.ui.theme.MorphShape
+import dev.lyo.hortay.ui.theme.asComposeShape
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -438,10 +443,13 @@ private fun forwardLabel(origin: ForwardOrigin): String = when (origin) {
 @Composable
 private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
     val accent = MaterialTheme.colorScheme.primary
+    // Reply preview reads as Tier-C (dense reading inside the card) — keep
+    // RoundedCornerShape but bump radius from 12 to 18 dp for the M3 Expressive
+    // softness that's now the app's default container language.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .clickable(onClick = onClick)
             .height(IntrinsicSize.Min),
@@ -502,7 +510,7 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
                 modifier = Modifier
                     .padding(end = 6.dp)
                     .size(44.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             ) {
                 TdMediaImage(
@@ -573,25 +581,59 @@ private fun VerticalSeparator() {
 }
 
 /**
- * Public so the comments screen can reuse the same chip styling for thread replies. Sized
- * to clear Material 3's 40dp minimum touch target without looking visually heavy: ~36dp
- * tall (12dp emoji + 18dp container padding × 2 ≈ 40dp once you add Material's automatic
- * 8dp tap-spacing).
+ * Reaction chip — M3 Expressive flavour.
+ *
+ * Selection state drives a `MorphShape` from `Square` to `Cookie9Sided`, animated on
+ * the spatial spring spec. The morph is the user-visible "this reaction is yours"
+ * affordance; container and content colour also crossfade, but on the effects spec —
+ * separating spatial vs effects channels is the load-bearing M3 Expressive idiom that
+ * stops the transition reading like a Material-2 tween.
+ *
+ * Public so the comments screen can reuse the same chip for thread replies. Touch
+ * target stays >= 40 dp (12dp glyph + 18dp container padding × 2 once Material's
+ * automatic 8dp tap-spacing is layered on).
+ *
+ * Selected colour: `tertiaryContainer` rather than `primaryContainer` — Google's
+ * Expressive guidance reserves primary for true call-to-action containers (FABs,
+ * accept-buttons), and reactions are explicitly secondary affordances that should
+ * read as "personal toggle" not "main action".
  */
 @Composable
 internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
-    val container = if (item.isChosen) MaterialTheme.colorScheme.primaryContainer
-    else MaterialTheme.colorScheme.surfaceContainer
-    val countColor = if (item.isChosen) MaterialTheme.colorScheme.onPrimaryContainer
-    else MaterialTheme.colorScheme.onSurfaceVariant
-    val tintForCustom = if (item.isChosen) MaterialTheme.colorScheme.onPrimaryContainer
-    else MaterialTheme.colorScheme.onSurface
+    val morphProgress by animateFloatAsState(
+        targetValue = if (item.isChosen) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "reaction-morph",
+    )
+    val container by animateColorAsState(
+        targetValue = if (item.isChosen) MaterialTheme.colorScheme.tertiaryContainer
+        else MaterialTheme.colorScheme.surfaceContainer,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "reaction-bg",
+    )
+    val countColor by animateColorAsState(
+        targetValue = if (item.isChosen) MaterialTheme.colorScheme.onTertiaryContainer
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "reaction-fg",
+    )
+    val tintForCustom by animateColorAsState(
+        targetValue = if (item.isChosen) MaterialTheme.colorScheme.onTertiaryContainer
+        else MaterialTheme.colorScheme.onSurface,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "reaction-tint",
+    )
+    val shape = MorphShape(HortayExpressive.ReactionMorph, morphProgress)
+    // Polygon clips both background and ripple. Cookie9's inscribed area
+    // accommodates the emoji + count with the increased horizontal padding
+    // below; the morph from Square (rest) to Cookie9 (selected) reads as a
+    // single expressive gesture.
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(container)
+            .clip(shape)
+            .background(container, shape)
             .let { if (onClick != null) it.clickable(onClick = onClick) else it }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         when (val k = item.kind) {
@@ -619,12 +661,17 @@ private fun StatPill(
     tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
     onClick: (() -> Unit)? = null,
 ) {
+    // StatPill follows the same Expressive vocabulary as the reaction chip — when
+    // tappable, it reads as a real affordance with a polygon-shaped ripple. The
+    // Pill silhouette (subtly flattened ellipse) matches the new-posts pill in the
+    // viewer chrome, so all "stat-style" affordances share one visual idiom.
+    val tappableShape = HortayExpressive.Pill.asComposeShape()
     Row(
         modifier = if (onClick != null) {
             Modifier
-                .clip(RoundedCornerShape(10.dp))
+                .clip(tappableShape)
                 .clickable(onClick = onClick)
-                .padding(horizontal = 8.dp, vertical = 6.dp)
+                .padding(horizontal = 10.dp, vertical = 6.dp)
         } else Modifier.padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

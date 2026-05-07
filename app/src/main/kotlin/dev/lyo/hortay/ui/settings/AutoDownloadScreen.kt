@@ -30,7 +30,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -157,7 +158,7 @@ fun AutoDownloadHost(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AutoDownloadListScreen(
     settings: AutoDownloadSettings,
@@ -173,8 +174,15 @@ private fun AutoDownloadListScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
+            LargeFlexibleTopAppBar(
                 title = { Text(stringResource(R.string.autodownload_screen_title)) },
+                subtitle = {
+                    Text(
+                        stringResource(R.string.settings_subtitle_auto_download),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Symbol(name = "arrow_back", tint = MaterialTheme.colorScheme.onSurface, size = 22.dp)
@@ -232,7 +240,7 @@ private fun AutoDownloadListScreen(
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
                     .fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(20.dp),
             ) {
                 Symbol(name = "refresh", size = 20.dp, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
@@ -273,7 +281,7 @@ private fun CategoryRow(
                 Box(
                     modifier = Modifier
                         .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(18.dp))
                         .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -292,7 +300,7 @@ private fun CategoryRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AutoDownloadCategoryScreen(
     category: AutoDownloadCategory,
@@ -309,14 +317,26 @@ private fun AutoDownloadCategoryScreen(
         AutoDownloadCategory.Mobile -> stringResource(R.string.autodownload_category_mobile)
         AutoDownloadCategory.Roaming -> stringResource(R.string.autodownload_category_roaming)
     }
+    val subtitle = when (category) {
+        AutoDownloadCategory.Wifi -> stringResource(R.string.settings_subtitle_auto_download_category_wifi)
+        AutoDownloadCategory.Mobile -> stringResource(R.string.settings_subtitle_auto_download_category_mobile)
+        AutoDownloadCategory.Roaming -> stringResource(R.string.settings_subtitle_auto_download_category_roaming)
+    }
 
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
+            LargeFlexibleTopAppBar(
                 title = { Text(title) },
+                subtitle = {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Symbol(name = "arrow_back", tint = MaterialTheme.colorScheme.onSurface, size = 22.dp)
@@ -401,7 +421,7 @@ private fun AutoDownloadCategoryScreen(
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
                     .fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(20.dp),
             ) {
                 Symbol(name = "refresh", size = 20.dp, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
@@ -435,7 +455,7 @@ private fun ToggleRow(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(18.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                 contentAlignment = Alignment.Center,
             ) {
@@ -529,7 +549,7 @@ private fun DataSaverBanner(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(22.dp))
             .background(MaterialTheme.colorScheme.tertiaryContainer)
             .clickable(onClick = onClick)
             .padding(14.dp),

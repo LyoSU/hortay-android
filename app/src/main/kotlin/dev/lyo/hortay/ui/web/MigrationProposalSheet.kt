@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.lyo.hortay.ui.web
 
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +19,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -187,7 +189,11 @@ fun MigrationProposalSheet(
             if (inFlight && progress != null) {
                 val p = progress!!
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    LinearProgressIndicator(
+                    // Wavy progress reads as "live, not stuck" — important here because
+                    // the throttle is 1 channel/second, so on a 50-channel migration the
+                    // bar can sit visually static for ~1s between ticks. The sine
+                    // amplitude keeps it feeling animated even between integer ticks.
+                    LinearWavyProgressIndicator(
                         progress = {
                             if (p.total == 0) 0f
                             else p.processed.toFloat() / p.total.toFloat()

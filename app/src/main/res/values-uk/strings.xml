@@ -265,6 +265,13 @@
 
     <!-- Settings -->
     <string name="settings_profile_title">Профіль</string>
+    <string name="settings_subtitle_profile">Акаунт, трафік, завантаження</string>
+    <string name="settings_subtitle_auto_download">Фото, відео, GIF</string>
+    <string name="settings_subtitle_auto_download_category_wifi">Коли підключено до Wi-Fi</string>
+    <string name="settings_subtitle_auto_download_category_mobile">Через мобільний інтернет</string>
+    <string name="settings_subtitle_auto_download_category_roaming">У роумінгу</string>
+    <string name="timeline_subtitle_feed">%1$d каналів</string>
+    <string name="timeline_subtitle_saved">Збережені пости</string>
     <string name="settings_section_traffic">Трафік</string>
     <string name="settings_section_storage">Сховище</string>
     <string name="settings_section_account">Акаунт</string>

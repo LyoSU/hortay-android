@@ -33,6 +33,8 @@ import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.VideoQuality
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.theme.HortayExpressive
+import dev.lyo.hortay.ui.theme.asComposeShape
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -124,13 +126,22 @@ fun FullScreenMediaViewer(
                 )
             }
 
+            // Expressive close affordance: Cookie9-shaped backdrop instead of a perfect
+            // circle. Reads as "deliberate close" rather than a generic system 'X' —
+            // signature shape vocabulary that ties the viewer chrome to the rest of the
+            // app's reaction / nav-tab idiom. Bigger touch target padding compensates
+            // for the polygon's narrower visual weight.
+            val closeShape = HortayExpressive.ReactionSelected.asComposeShape()
+            // Polygon backdrop only — clipping the IconButton to a Cookie polygon
+            // would cut the close glyph at the polygon ridges. The default circular
+            // ripple stays clean inside the visible disc area.
             IconButton(
                 onClick = onDismiss,
                 modifier = Modifier
                     .statusBarsPadding()
                     .padding(8.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.4f)),
+                    .size(44.dp)
+                    .background(Color.Black.copy(alpha = 0.45f), closeShape),
             ) {
                 Symbol(name = "close", contentDescription = "close", tint = Color.White)
             }
@@ -159,6 +170,12 @@ fun FullScreenMediaViewer(
                 // sky, paper) made the digits illegible because they were also
                 // white. The black-translucent plate guarantees readable contrast
                 // on every possible photo.
+                // True Pill polygon (subtly flattened ellipse) under the counter —
+                // matches the NewPostsPill vocabulary so the viewer chrome reads as
+                // part of the same expressive system, not stock material.
+                val counterShape = HortayExpressive.Pill.asComposeShape()
+                // Pill is convex so a clip would be safe here, but the surrounding
+                // chrome is consistent: backdrop-only painting, no clip.
                 Text(
                     text = "${pagerState.currentPage + 1} / ${items.size}",
                     color = Color.White,
@@ -167,9 +184,8 @@ fun FullScreenMediaViewer(
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
                         .padding(top = 12.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.45f))
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                        .background(Color.Black.copy(alpha = 0.45f), counterShape)
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
                 )
             }
         }

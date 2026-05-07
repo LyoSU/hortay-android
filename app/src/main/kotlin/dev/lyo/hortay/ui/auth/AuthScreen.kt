@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.lyo.hortay.ui.auth
 
 import androidx.compose.animation.AnimatedContent
@@ -31,7 +33,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ContainedLoadingIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -657,7 +660,7 @@ private fun PasswordForm(graph: AppGraph, stage: AuthStage.WaitPassword, errorMe
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(20.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainerLow)
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                 ) {
@@ -782,7 +785,7 @@ private fun RecoveryInfoCard(text: String) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
@@ -822,10 +825,12 @@ private fun PrimaryActionButton(
         modifier = Modifier.fillMaxWidth(),
     ) {
         if (loading) {
-            CircularProgressIndicator(
+            // Inline expressive spinner that morphs through the canonical M3 polygon
+            // cycle (Circle → SoftBurst → Cookie9 → Pill → Sunny). Reads as "alive"
+            // even at 20 dp where a circular ring would be a static halo.
+            LoadingIndicator(
+                modifier = Modifier.size(24.dp),
                 color = LocalContentColor.current,
-                strokeWidth = 2.5.dp,
-                modifier = Modifier.size(20.dp),
             )
         } else {
             Text(text, style = MaterialTheme.typography.titleMedium)
@@ -842,7 +847,10 @@ private val PaddingValuesPrimary
 @Composable
 private fun LoadingForm() {
     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
+        // ContainedLoadingIndicator wraps the morphing polygon cycle in a tonal
+        // surface — heavier visual weight that reads as "system is working" on a
+        // full-screen blocking loader, vs the inline LoadingIndicator on buttons.
+        ContainedLoadingIndicator()
     }
 }
 

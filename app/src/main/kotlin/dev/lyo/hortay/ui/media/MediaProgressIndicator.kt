@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import dev.lyo.hortay.data.MediaState
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
@@ -32,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringArrayResource
@@ -40,6 +42,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.theme.HortayExpressive
+import dev.lyo.hortay.ui.theme.asComposeShape
 
 /**
  * Telegram-style determinate media progress indicator. A semi-transparent black disk
@@ -78,6 +82,17 @@ fun MediaProgressIndicator(
         ),
         label = "media-progress-spin-angle",
     )
+    // Expressive twist on the Telegram-canonical media disc: the translucent backdrop
+    // is now a `Cookie9Sided` polygon instead of a perfect circle. Subtle visual cue
+    // that ties the media-overlay vocabulary to the reaction / close-button vocabulary
+    // elsewhere. The circular progress arc still runs inside the polygon's bounding
+    // box — at 44 dp the cookie's ridges read as a halo around the arc, rather than
+    // competing with it.
+    val diskShape = HortayExpressive.ReactionSelected.asComposeShape()
+    // Click area stays a clean circle (CircleShape clip) so the ripple doesn't
+    // bleed past the visible disc. The polygon is painted directly inside the
+    // Canvas via drawPath so the visible silhouette reads as a Cookie shape while
+    // the click hit-test stays simple and the central icon never gets clipped.
     val diskModifier = Modifier
         .size(size)
         .clip(CircleShape)
@@ -89,12 +104,14 @@ fun MediaProgressIndicator(
             val inset = stroke / 2f
             val arcSize = Size(diameter - stroke, diameter - stroke)
             val arcOffset = Offset(inset, inset)
-            // Translucent disk — anchors the indicator on any media background, even
-            // a fully white photo, without picking up theme colors.
-            drawCircle(
-                color = Color.Black.copy(alpha = DISK_ALPHA),
-                radius = diameter / 2f,
-            )
+            // Polygon-shaped translucent backdrop. Drawn via `drawPath` of the
+            // diskShape outline so the fill matches the clip.
+            val outline = diskShape.createOutline(this.size, layoutDirection, this)
+            if (outline is Outline.Generic) {
+                drawPath(outline.path, color = Color.Black.copy(alpha = DISK_ALPHA))
+            } else {
+                drawCircle(color = Color.Black.copy(alpha = DISK_ALPHA), radius = diameter / 2f)
+            }
             // Faint full ring as the "track" — gives the eye a stable reference for
             // how much is left.
             drawArc(
@@ -150,6 +167,11 @@ fun MediaIndeterminateIndicator(
         ),
         label = "media-indeterminate-angle",
     )
+    val diskShape = HortayExpressive.ReactionSelected.asComposeShape()
+    // Click area stays a clean circle (CircleShape clip) so the ripple doesn't
+    // bleed past the visible disc. The polygon is painted directly inside the
+    // Canvas via drawPath so the visible silhouette reads as a Cookie shape while
+    // the click hit-test stays simple and the central icon never gets clipped.
     val diskModifier = Modifier
         .size(size)
         .clip(CircleShape)
@@ -161,10 +183,12 @@ fun MediaIndeterminateIndicator(
             val inset = stroke / 2f
             val arcSize = Size(diameter - stroke, diameter - stroke)
             val arcOffset = Offset(inset, inset)
-            drawCircle(
-                color = Color.Black.copy(alpha = DISK_ALPHA),
-                radius = diameter / 2f,
-            )
+            val outline = diskShape.createOutline(this.size, layoutDirection, this)
+            if (outline is Outline.Generic) {
+                drawPath(outline.path, color = Color.Black.copy(alpha = DISK_ALPHA))
+            } else {
+                drawCircle(color = Color.Black.copy(alpha = DISK_ALPHA), radius = diameter / 2f)
+            }
             drawArc(
                 color = Color.White,
                 startAngle = -90f + spin,
@@ -235,11 +259,12 @@ fun MediaFailedOverlay(
     size: Dp = 44.dp,
     onRetry: (() -> Unit)? = null,
 ) {
+    val diskShape = HortayExpressive.ReactionSelected.asComposeShape()
     Box(
         modifier = modifier
             .size(size)
             .clip(CircleShape)
-            .background(Color.Black.copy(alpha = DISK_ALPHA))
+            .background(Color.Black.copy(alpha = DISK_ALPHA), diskShape)
             .let { if (onRetry != null) it.clickable(onClick = onRetry) else it },
         contentAlignment = Alignment.Center,
     ) {

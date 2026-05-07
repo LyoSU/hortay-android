@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.lyo.hortay.ui.settings
 
 import androidx.compose.foundation.background
@@ -133,8 +135,19 @@ private fun SettingsMain(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
+            // M3 Expressive: LargeFlexibleTopAppBar swaps a fixed two-line layout for
+            // an adaptive title block that can carry a subtitle, multi-row actions and
+            // an optional leading slot — same scrollBehavior contract as LargeTopAppBar
+            // so the existing nestedScroll wiring keeps working unchanged.
+            LargeFlexibleTopAppBar(
                 title = { Text(stringResource(R.string.settings_profile_title), style = MaterialTheme.typography.displaySmall) },
+                subtitle = {
+                    Text(
+                        stringResource(R.string.settings_subtitle_profile),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -320,7 +333,10 @@ private fun TrafficCard(network: NetworkUsage?, onReset: () -> Unit) {
         TextButton(
             onClick = onReset,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
+            // M3 Expressive button corner — 24 dp matches the bumped HortayShapes
+            // medium / large tokens so primary actions read as part of one
+            // softness language across the app.
+            shape = RoundedCornerShape(24.dp),
         ) {
             Symbol(name = "refresh", size = 20.dp)
             Spacer(Modifier.width(8.dp))
@@ -378,16 +394,18 @@ private fun StorageCard(
             onClick = onClearCache,
             enabled = !clearing && filesBytes > 0L,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
+            // M3 Expressive button corner — 24 dp matches the bumped HortayShapes
+            // medium / large tokens so primary actions read as part of one
+            // softness language across the app.
+            shape = RoundedCornerShape(24.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             ),
         ) {
             if (clearing) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
+                LoadingIndicator(
+                    modifier = Modifier.size(20.dp),
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
                 Spacer(Modifier.width(10.dp))

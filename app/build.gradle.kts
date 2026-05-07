@@ -64,7 +64,12 @@ val gitCommitCount: Int by lazy {
 
 android {
     namespace = "dev.lyo.hortay"
-    compileSdk = 36
+    // compileSdk = 37 is forced by Compose UI 1.12.0-alpha02 (transitive dep of
+    // material3 1.5.0-alpha19, which we pin explicitly for M3 Expressive). targetSdk
+    // stays at 36 — runtime behaviour we tested + Play certified — bumping just the
+    // compile-time API surface is the canonical Google-recommended way to opt into a
+    // new compose track without flipping app behaviour at runtime.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.lyo.hortay"
@@ -260,6 +265,7 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.material3)
+    implementation(libs.androidx.graphics.shapes)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.ui.text.google.fonts)
     debugImplementation(libs.compose.ui.tooling)

@@ -3,6 +3,20 @@ agp = "9.2.0"
 kotlin = "2.3.10"
 ksp = "2.3.10-2.0.0"
 composeBom = "2026.04.01"
+# material3 explicitly pinned to the Expressive alpha (released 2026-05-06).
+# The April BOM ships material3 1.4.0 stable, which lacks MaterialShapes,
+# LoadingIndicator, FloatingToolbar, ButtonGroup, FlexibleTopAppBar and the
+# expressive motion scheme — i.e. the entire surface this app's design refresh
+# is built on. We override the BOM-supplied version explicitly (Google's
+# documented escape hatch for ranged early-adopt of material3 ahead of the
+# next BOM cut). When the next BOM ships >=1.5.0, drop this override.
+composeMaterial3 = "1.5.0-alpha19"
+# graphics-shapes powers the Morph API used for shape interpolation between
+# MaterialShapes presets (e.g. Square <-> Cookie9Sided on reaction toggle).
+# Pulled transitively by material3 1.5.x, but declaring it explicitly lets the
+# theme module reference Morph / RoundedPolygon directly without depending on
+# material3's internal export surface.
+graphicsShapes = "1.1.0"
 coreKtx = "1.16.0"
 activityCompose = "1.10.0"
 lifecycle = "2.9.0"
@@ -43,7 +57,8 @@ compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+compose-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "composeMaterial3" }
+androidx-graphics-shapes = { group = "androidx.graphics", name = "graphics-shapes", version.ref = "graphicsShapes" }
 compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 compose-ui-text-google-fonts = { group = "androidx.compose.ui", name = "ui-text-google-fonts" }
 

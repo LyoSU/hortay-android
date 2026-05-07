@@ -4,7 +4,9 @@ import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -86,17 +88,28 @@ private val DarkScheme: ColorScheme = darkColorScheme(
 )
 
 /**
- * Hortay's Material 3 theme entry point.
+ * Hortay's Material 3 Expressive theme entry point.
  *
- * Default behaviour: Material You dynamic color when the device supports it
- * (Android 12+). The wallpaper-derived palette adapts to whatever the user's home-screen
- * looks like, which is the polished default Android users now expect from Material 3
- * apps; the periwinkle brand palette stays the fallback for pre-12 devices and any
- * future Settings opt-out.
+ * Layers, in order of how they shape what the user sees:
+ *   1. **Color** — Material You dynamic palette on Android 12+ (wallpaper-derived);
+ *      brand periwinkle fallback on older devices and as the deterministic baseline
+ *      for tests / dynamic-color-disabled paths.
+ *   2. **Typography** — Plus Jakarta Sans for display/headline (brand voice on hero
+ *      surfaces), Inter for body/label (dense reading). Scale calibrated for the
+ *      Expressive type-contrast ratio (display 32 sp+ vs body 14–16 sp).
+ *   3. **Shapes** — flat rounded rectangles for dense reading containers
+ *      (`HortayShapes`); MaterialShapes presets for hero moments via
+ *      `HortayExpressive` (reactions, FAB press, loading, empty states).
+ *   4. **Motion** — `MotionScheme.expressive()` swaps the standard duration+easing
+ *      animation specs for spring-based physics across every Material component
+ *      that reads from `MaterialTheme.motionScheme`. Visible overshoot on selection
+ *      transitions, faster damping on scroll-anchored chrome — Google's recommended
+ *      default for consumer-facing apps as of M3 Expressive (I/O 2025).
  *
- * Adjusts the system status-bar appearance (light vs dark icons) to keep contrast right
- * regardless of which theme renders below.
+ * Status-bar icon contrast follows the system theme so the chrome reads correctly
+ * regardless of which scheme renders below.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HortayTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -121,10 +134,11 @@ fun HortayTheme(
         }
     }
 
-    MaterialTheme(
+    MaterialExpressiveTheme(
         colorScheme = scheme,
         typography = HortayTypography,
         shapes = HortayShapes,
+        motionScheme = MotionScheme.expressive(),
         content = content,
     )
 }

@@ -16,17 +16,23 @@ import dev.lyo.hortay.R
  * App-wide icon entry point.
  *
  * Resolves a Material Symbols snake_case name to a bundled `res/drawable/sym_*.xml`
- * vector drawable downloaded from `fonts.google.com/icons` (canonical Google source,
- * synced from `google/material-design-icons` on GitHub). This is the path Google
- * officially recommends after deprecating `androidx.compose.material:material-icons*`
- * in 2026: bundle only the icons you use as individual XML drawables, ~1-2 KB each,
- * stripped of unused glyphs at compile time.
+ * vector drawable. Source axis pinned to **Rounded · weight 500 · grade 0 · 24 dp**
+ * — Google's canonical pairing for M3 Expressive consumer apps with bold display
+ * typography (Plus Jakarta Sans Bold here). Weight 400 reads thin against
+ * `displaySmall` 32 sp ExtraBold; weight 500 balances visually without crossing
+ * into "loud" weight 600+.
  *
- * The 50+ call sites in the app keep their `Symbol("name")` form — only this single
- * file changes when adding / swapping / re-styling an icon. To add a new symbol:
- *   1. Visit https://fonts.google.com/icons , pick the icon, choose "Rounded" style.
- *   2. Click the Android tab → Download → save as `res/drawable/sym_<name>.xml`.
- *   3. Add a `"<name>" -> R.drawable.sym_<name>` line below.
+ * Some icons ship a `_filled` companion drawable (e.g. `sym_home_filled.xml`,
+ * `sym_bookmark_filled.xml`) for the `filled = true` axis — used to express
+ * selected / active state in nav bars and toggles, the M3 Expressive convention.
+ * When a drawable lacks a filled twin the parameter is silently a no-op so call
+ * sites can pass `filled = isSelected` without branching.
+ *
+ * To add a new symbol:
+ *   1. Visit https://fonts.google.com/icons, pick the icon, choose "Rounded".
+ *   2. Set Weight=500, Optical size=24px, Fill=0, Grade=0.
+ *   3. Click Android → save as `res/drawable/sym_<name>.xml`.
+ *   4. Add a `"<name>" -> R.drawable.sym_<name>` line below.
  */
 @Composable
 fun Symbol(
@@ -35,9 +41,10 @@ fun Symbol(
     contentDescription: String? = null,
     tint: Color = LocalContentColor.current,
     size: Dp = 24.dp,
+    filled: Boolean = false,
 ) {
     Icon(
-        painter = painterResource(symbolDrawable(name)),
+        painter = painterResource(symbolDrawable(name, filled)),
         contentDescription = contentDescription,
         tint = tint,
         modifier = modifier.size(size),
@@ -45,7 +52,21 @@ fun Symbol(
 }
 
 @DrawableRes
-private fun symbolDrawable(name: String): Int = when (name) {
+private fun symbolDrawable(name: String, filled: Boolean = false): Int {
+    if (filled) {
+        when (name) {
+            "home" -> return R.drawable.sym_home_filled
+            "bookmark" -> return R.drawable.sym_bookmark_filled
+            "person" -> return R.drawable.sym_person_filled
+            "forum" -> return R.drawable.sym_forum_filled
+            "dynamic_feed" -> return R.drawable.sym_dynamic_feed_filled
+            "chat_bubble" -> return R.drawable.sym_chat_bubble_filled
+            "push_pin" -> return R.drawable.sym_push_pin_filled
+            "notifications_active" -> return R.drawable.sym_notifications_active_filled
+            // No filled variant bundled — fall through to the outline below.
+        }
+    }
+    return when (name) {
     "add" -> R.drawable.sym_add
     "arrow_back" -> R.drawable.sym_arrow_back
     "arrow_downward" -> R.drawable.sym_arrow_downward
@@ -69,6 +90,7 @@ private fun symbolDrawable(name: String): Int = when (name) {
     "delete" -> R.drawable.sym_delete
     "delete_sweep" -> R.drawable.sym_delete_sweep
     "description" -> R.drawable.sym_description
+    "dynamic_feed" -> R.drawable.sym_dynamic_feed
     "edit" -> R.drawable.sym_edit
     "forum" -> R.drawable.sym_forum
     "hide_image" -> R.drawable.sym_hide_image
@@ -121,4 +143,5 @@ private fun symbolDrawable(name: String): Int = when (name) {
     "data_saver_off" -> R.drawable.sym_cloud_off
     "download_for_offline" -> R.drawable.sym_arrow_downward
     else -> R.drawable.sym_help
+    }
 }

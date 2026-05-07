@@ -149,12 +149,12 @@ private fun OtpCell(
     Box(
         modifier = modifier
             .height(64.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(containerColor)
             .border(
                 width = if (active || isError) 2.dp else 1.dp,
                 color = borderColor,
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(18.dp),
             ),
         contentAlignment = Alignment.Center,
     ) {

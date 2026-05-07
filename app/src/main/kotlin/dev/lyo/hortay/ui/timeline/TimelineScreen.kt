@@ -50,6 +50,9 @@ import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.ui.channels.ChannelInfoSheet
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import dev.lyo.hortay.ui.theme.asComposeShape
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
@@ -1139,12 +1142,11 @@ private fun SearchEmpty() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Symbol(
-            name = "search_off",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            size = 48.dp,
+        ExpressiveEmptyHero(
+            symbol = "search_off",
+            shape = dev.lyo.hortay.ui.theme.HortayExpressive.FolderSelected,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
         Text(
             text = stringResource(R.string.timeline_search_empty),
             style = MaterialTheme.typography.titleMedium,
@@ -1162,12 +1164,14 @@ private fun EmptyState(showingSaved: Boolean) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Symbol(
-            name = if (showingSaved) "bookmark" else "forum",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            size = 56.dp,
+        // Bookmark hero uses the Heart polygon (matches the bookmark-active morph token);
+        // empty-feed hero uses Flower for a friendly "nothing here yet, but pleasantly".
+        ExpressiveEmptyHero(
+            symbol = if (showingSaved) "bookmark" else "forum",
+            shape = if (showingSaved) dev.lyo.hortay.ui.theme.HortayExpressive.BookmarkSelected
+                    else dev.lyo.hortay.ui.theme.HortayExpressive.EmptyStateMask,
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(20.dp))
         Text(
             text = stringResource(if (showingSaved) R.string.timeline_empty_saved_title else R.string.timeline_empty_default_title),
             style = MaterialTheme.typography.titleMedium,
@@ -1179,6 +1183,37 @@ private fun EmptyState(showingSaved: Boolean) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/**
+ * Expressive empty-state hero badge: a 96 dp polygon-masked tile in `secondaryContainer`
+ * with a 40 dp glyph centred inside. The polygon (Flower / Heart / Cookie7) is the
+ * single largest expressive form on screen at this moment, which is the canonical use
+ * Google designers reach for in the M3 Expressive guidelines: hero for personality,
+ * dense surfaces stay calm. Pre-allocates the Compose Shape via `asComposeShape` so
+ * recompositions don't allocate a fresh PolygonShape per frame.
+ */
+@Composable
+private fun ExpressiveEmptyHero(
+    symbol: String,
+    shape: androidx.graphics.shapes.RoundedPolygon,
+) {
+    val composeShape = shape.asComposeShape()
+    // No clip — Flower / Heart / Cookie polygons have dips that would slice the
+    // central glyph. Painting the polygon as the backdrop only keeps the icon
+    // fully visible while the silhouette reads as the expressive shape.
+    Box(
+        modifier = Modifier
+            .size(96.dp)
+            .background(MaterialTheme.colorScheme.secondaryContainer, composeShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Symbol(
+            name = symbol,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            size = 40.dp,
         )
     }
 }

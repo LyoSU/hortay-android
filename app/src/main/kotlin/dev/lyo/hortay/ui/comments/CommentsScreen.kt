@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.lyo.hortay.ui.comments
 
 import androidx.activity.BackEventCompat
@@ -208,7 +210,7 @@ fun CommentsScreen(
             when (val s = state) {
                 CommentsRepository.ThreadState.Loading -> item(key = "loading") {
                     Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                        LoadingIndicator()
                     }
                 }
                 is CommentsRepository.ThreadState.Ready -> items(items = s.rows, key = { it.message.id }) { row ->
@@ -376,7 +378,7 @@ private fun ReplyBlock(reply: ReplyPreview) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
@@ -429,7 +431,7 @@ private fun ReplyBlock(reply: ReplyPreview) {
                 modifier = Modifier
                     .padding(end = 4.dp)
                     .size(36.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             ) {
                 TdMediaImage(

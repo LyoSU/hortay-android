@@ -259,6 +259,13 @@
 
     <!-- Settings -->
     <string name="settings_profile_title">Profile</string>
+    <string name="settings_subtitle_profile">Account, traffic, downloads</string>
+    <string name="settings_subtitle_auto_download">Photos, videos, GIFs</string>
+    <string name="settings_subtitle_auto_download_category_wifi">When connected to Wi-Fi</string>
+    <string name="settings_subtitle_auto_download_category_mobile">On mobile data</string>
+    <string name="settings_subtitle_auto_download_category_roaming">When roaming abroad</string>
+    <string name="timeline_subtitle_feed">%1$d channels</string>
+    <string name="timeline_subtitle_saved">Bookmarked posts</string>
     <string name="settings_section_traffic">Traffic</string>
     <string name="settings_section_storage">Storage</string>
     <string name="settings_section_account">Account</string>
