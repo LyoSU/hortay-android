@@ -166,7 +166,7 @@ private fun ChecklistBlock(content: PostContent.Checklist, maxLines: Int) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(16.dp),
     ) {
@@ -218,7 +218,7 @@ private fun ExpiredMediaBlock(content: PostContent.ExpiredMedia) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -308,7 +308,7 @@ private fun SingleMedia(item: AlbumItem, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(ratio)
-            .clip(RoundedCornerShape(20.dp)),
+            .clip(MaterialTheme.shapes.medium),
     ) {
         MediaWithSpoiler(item = item, onClick = onClick)
     }
@@ -424,7 +424,7 @@ private fun BoxScope.MediaOverlay(item: AlbumItem) {
 private fun OpenInTelegramHint(modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(Color.Black.copy(alpha = 0.65f))
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -489,7 +489,7 @@ private fun AlbumRow(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
                     modifier = Modifier
                         .width(itemWidth)
                         .fillMaxHeight()
-                        .clip(RoundedCornerShape(20.dp)),
+                        .clip(MaterialTheme.shapes.medium),
                 ) {
                     MediaWithSpoiler(
                         item = item,
@@ -543,7 +543,7 @@ private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<A
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(ratio)
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .clickable(enabled = revealed) { onMediaClick(items, 0) },
     ) {
         // Same suppression as MediaWithSpoiler: when the GIF autoplayer is mounted, its own
@@ -587,7 +587,7 @@ private fun DocumentBlock(content: PostContent.Document, maxLines: Int, translat
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -620,7 +620,7 @@ private fun AudioBlock(content: PostContent.Audio) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -652,7 +652,7 @@ private fun VoiceNoteBlock(content: PostContent.VoiceNote) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
+            .clip(MaterialTheme.shapes.large)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -736,7 +736,7 @@ private fun PollBlock(content: PostContent.Poll) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(16.dp),
     ) {
@@ -797,7 +797,7 @@ private fun LocationBlock(content: PostContent.Location) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(16.dp),
     ) {
@@ -823,7 +823,7 @@ private fun ContactBlock(content: PostContent.Contact) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -865,7 +865,7 @@ private fun WebPreviewCard(preview: WebPreview) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(enabled = preview.url.isNotBlank()) {
                 runCatching { uriHandler.openUri(preview.url) }
@@ -877,7 +877,7 @@ private fun WebPreviewCard(preview: WebPreview) {
             Box(
                 modifier = Modifier
                     .size(72.dp)
-                    .clip(RoundedCornerShape(12.dp)),
+                    .clip(MaterialTheme.shapes.small),
             ) {
                 TdMediaImage(media = it, contentDescription = null, modifier = Modifier.fillMaxSize())
             }
@@ -962,7 +962,7 @@ private fun IconBadge(symbol: String) {
     Box(
         modifier = Modifier
             .size(40.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center,
     ) {

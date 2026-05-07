@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -180,7 +179,7 @@ private fun HeroBlock(stage: AuthStage) {
         Box(
             modifier = Modifier
                 .size(72.dp)
-                .clip(RoundedCornerShape(24.dp))
+                .clip(MaterialTheme.shapes.large)
                 .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
@@ -351,7 +350,7 @@ private fun CountrySelectorRow(country: Country?, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 16.dp),
@@ -407,7 +406,7 @@ private fun PhoneNumberRow(
             onValueChange = onCustomDialChange,
             readOnly = !isCustom,
             singleLine = true,
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             isError = isError,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
@@ -429,7 +428,7 @@ private fun PhoneNumberRow(
             ),
             singleLine = true,
             isError = isError,
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -507,7 +506,7 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
                 singleLine = true,
                 isError = errorMessage != null,
                 enabled = !submitting,
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 placeholder = { Text(stringResource(R.string.auth_code_placeholder)) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -632,7 +631,7 @@ private fun PasswordForm(graph: AppGraph, stage: AuthStage.WaitPassword, errorMe
                     keyboardType = KeyboardType.Password,
                     imeAction = ImeAction.Done,
                 ),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 trailingIcon = {
                     IconButton(onClick = { visible = !visible }) {
                         Symbol(
@@ -660,7 +659,7 @@ private fun PasswordForm(graph: AppGraph, stage: AuthStage.WaitPassword, errorMe
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .background(MaterialTheme.colorScheme.surfaceContainerLow)
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                 ) {
@@ -707,7 +706,7 @@ private fun PasswordForm(graph: AppGraph, stage: AuthStage.WaitPassword, errorMe
                     keyboardType = KeyboardType.NumberPassword,
                     imeAction = ImeAction.Done,
                 ),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -785,7 +784,7 @@ private fun RecoveryInfoCard(text: String) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {

@@ -444,13 +444,13 @@ private fun forwardLabel(origin: ForwardOrigin): String = when (origin) {
 @Composable
 private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
     val accent = MaterialTheme.colorScheme.primary
-    // Reply preview reads as Tier-C (dense reading inside the card) — keep
-    // RoundedCornerShape but bump radius from 12 to 18 dp for the M3 Expressive
-    // softness that's now the app's default container language.
+    // Reply preview reads as Tier-C (dense reading inside the card) — uses
+    // the medium shape token so the bumped HortayShapes scale (18 dp) ripples
+    // through here without per-call-site edits.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .clickable(onClick = onClick)
             .height(IntrinsicSize.Min),
@@ -511,7 +511,7 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
                 modifier = Modifier
                     .padding(end = 6.dp)
                     .size(44.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             ) {
                 TdMediaImage(

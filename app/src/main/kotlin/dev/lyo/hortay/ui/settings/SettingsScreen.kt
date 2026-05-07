@@ -333,10 +333,7 @@ private fun TrafficCard(network: NetworkUsage?, onReset: () -> Unit) {
         TextButton(
             onClick = onReset,
             modifier = Modifier.fillMaxWidth(),
-            // M3 Expressive button corner — 24 dp matches the bumped HortayShapes
-            // medium / large tokens so primary actions read as part of one
-            // softness language across the app.
-            shape = RoundedCornerShape(24.dp),
+            shape = MaterialTheme.shapes.large,
         ) {
             Symbol(name = "refresh", size = 20.dp)
             Spacer(Modifier.width(8.dp))
@@ -394,10 +391,7 @@ private fun StorageCard(
             onClick = onClearCache,
             enabled = !clearing && filesBytes > 0L,
             modifier = Modifier.fillMaxWidth(),
-            // M3 Expressive button corner — 24 dp matches the bumped HortayShapes
-            // medium / large tokens so primary actions read as part of one
-            // softness language across the app.
-            shape = RoundedCornerShape(24.dp),
+            shape = MaterialTheme.shapes.large,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -430,7 +424,7 @@ private fun StatsCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(16.dp),
         content = content,
@@ -572,7 +566,7 @@ private fun SettingsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(MaterialTheme.shapes.medium)
             .let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(16.dp),

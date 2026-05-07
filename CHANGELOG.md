@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Changed
+- **Inline `RoundedCornerShape(N)` call sites collapsed onto
+  `MaterialTheme.shapes` tokens** across 12 files / ~40 call sites.
+  Auth flow (`AuthScreen`, `OtpInput`, `CountryPickerSheet`),
+  channels (`ChannelInfoSheet`, `ChannelsScreen`), comments
+  (`CommentsScreen.ReplyBlock` + thumb), settings (`SettingsScreen`,
+  `AutoDownloadScreen`), feed (`PostBody` 13 sites, `PostCard`
+  `ReplyBlock`), and guest-mode UI (`AddChannelSheet`,
+  `WebChannelsScreen`) all read radii from
+  `MaterialTheme.shapes.{small, medium, large}` instead of
+  hand-tuned 14 / 16 / 18 / 20 / 22 / 24 / 28 dp literals. The 18 →
+  20 → 22 → 24 dp inline gradient that earlier migrations introduced
+  for hierarchy is consciously flattened — at this scale the 2 dp
+  steps fall below the user's perceptual threshold across surfaces,
+  and a single source of truth (`HortayShapes` in `theme/Shape.kt`)
+  pays back the next time the M3 Expressive scale shifts (no more
+  per-call-site chase). Mapping that drove the refactor:
+  `12 → small`, `14 / 16 / 18 / 20 → medium` (18 dp),
+  `22 / 24 / 28 → large` (24 dp). Sub-token literals (1 / 4 / 6 / 8 dp,
+  used for dividers and tiny inline thumbnails) stay raw — there is no
+  shape token below 8 dp by design. Animated 3-state corner-radius
+  patterns (`FoldersBar`, `FloatingNavBar`, `PostCard` reaction chips)
+  also stay raw — they're keyframe-driven by interaction state, not
+  static. Net effect: `Shape.kt`'s `HortayShapes` declaration is now
+  the single load-bearing dial for the app's softness language.
 - **Fullscreen video viewer ships its own M3 Expressive chrome**.
   The viewer used to delegate playback controls to media3's stock
   `PlayerView` (`useController = true`) — which paints a grey 2010s

@@ -378,7 +378,7 @@ private fun ReplyBlock(reply: ReplyPreview) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
@@ -431,7 +431,7 @@ private fun ReplyBlock(reply: ReplyPreview) {
                 modifier = Modifier
                     .padding(end = 4.dp)
                     .size(36.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             ) {
                 TdMediaImage(

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
@@ -149,12 +148,12 @@ private fun OtpCell(
     Box(
         modifier = modifier
             .height(64.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(containerColor)
             .border(
                 width = if (active || isError) 2.dp else 1.dp,
                 color = borderColor,
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.medium,
             ),
         contentAlignment = Alignment.Center,
     ) {

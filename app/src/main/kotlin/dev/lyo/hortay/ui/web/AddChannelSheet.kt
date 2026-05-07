@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.LoadingIndicator
@@ -374,7 +373,7 @@ fun AddChannelSheet(
 
 @Composable
 private fun ChannelPreviewCard(channel: WebChannelInfo, onConfirm: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -389,7 +388,7 @@ private fun ChannelPreviewCard(channel: WebChannelInfo, onConfirm: () -> Unit) {
                     ),
                     modifier = Modifier
                         .size(40.dp)
-                        .clip(RoundedCornerShape(20.dp)),
+                        .clip(MaterialTheme.shapes.medium),
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
