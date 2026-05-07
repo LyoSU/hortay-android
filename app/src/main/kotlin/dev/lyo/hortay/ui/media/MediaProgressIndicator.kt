@@ -82,17 +82,12 @@ fun MediaProgressIndicator(
         ),
         label = "media-progress-spin-angle",
     )
-    // Expressive twist on the Telegram-canonical media disc: the translucent backdrop
-    // is now a `Cookie9Sided` polygon instead of a perfect circle. Subtle visual cue
-    // that ties the media-overlay vocabulary to the reaction / close-button vocabulary
-    // elsewhere. The circular progress arc still runs inside the polygon's bounding
-    // box — at 44 dp the cookie's ridges read as a halo around the arc, rather than
-    // competing with it.
-    val diskShape = HortayExpressive.ReactionSelected.asComposeShape()
-    // Click area stays a clean circle (CircleShape clip) so the ripple doesn't
-    // bleed past the visible disc. The polygon is painted directly inside the
-    // Canvas via drawPath so the visible silhouette reads as a Cookie shape while
-    // the click hit-test stays simple and the central icon never gets clipped.
+    // Determinate-progress disc keeps the Telegram-canonical look: clean black
+    // translucent circle, circular arc that travels around it as bytes flow,
+    // central action icon. M3 Expressive's polygon-morph cue lives in the
+    // *indeterminate* sibling below; mixing the two on the determinate disc
+    // (Cookie ridges around a circular arc) read as visual noise — the arc
+    // and the polygon ridges fought for the eye instead of compounding.
     val diskModifier = Modifier
         .size(size)
         .clip(CircleShape)
@@ -104,16 +99,12 @@ fun MediaProgressIndicator(
             val inset = stroke / 2f
             val arcSize = Size(diameter - stroke, diameter - stroke)
             val arcOffset = Offset(inset, inset)
-            // Polygon-shaped translucent backdrop. Drawn via `drawPath` of the
-            // diskShape outline so the fill matches the clip.
-            val outline = diskShape.createOutline(this.size, layoutDirection, this)
-            if (outline is Outline.Generic) {
-                drawPath(outline.path, color = Color.Black.copy(alpha = DISK_ALPHA))
-            } else {
-                drawCircle(color = Color.Black.copy(alpha = DISK_ALPHA), radius = diameter / 2f)
-            }
-            // Faint full ring as the "track" — gives the eye a stable reference for
-            // how much is left.
+            drawCircle(
+                color = Color.Black.copy(alpha = DISK_ALPHA),
+                radius = diameter / 2f,
+            )
+            // Faint full ring as the "track" — gives the eye a stable reference
+            // for how much is left.
             drawArc(
                 color = Color.White.copy(alpha = TRACK_ALPHA),
                 startAngle = 0f,
@@ -123,9 +114,9 @@ fun MediaProgressIndicator(
                 size = arcSize,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
             )
-            // Active arc. We sweep from animatedProgress, but rotate the start angle
-            // by `spin` so the arc visibly travels — Telegram does this so a stalled
-            // 0% isn't indistinguishable from a hung indicator.
+            // Active arc. We sweep from animatedProgress, but rotate the start
+            // angle by `spin` so the arc visibly travels — Telegram does this so
+            // a stalled 0% isn't indistinguishable from a hung indicator.
             val sweep = (animatedProgress * 360f).coerceAtLeast(MIN_SWEEP_DEGREES)
             drawArc(
                 color = Color.White,
@@ -151,54 +142,31 @@ fun MediaProgressIndicator(
  * and "first progress update arrived". Same look as [MediaProgressIndicator], but
  * the arc is a fixed-length sweep that just spins.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MediaIndeterminateIndicator(
     modifier: Modifier = Modifier,
     size: Dp = 44.dp,
     onClick: (() -> Unit)? = null,
 ) {
-    val transition = rememberInfiniteTransition(label = "media-indeterminate")
-    val spin by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = SPIN_PERIOD_MS, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "media-indeterminate-angle",
-    )
-    val diskShape = HortayExpressive.ReactionSelected.asComposeShape()
-    // Click area stays a clean circle (CircleShape clip) so the ripple doesn't
-    // bleed past the visible disc. The polygon is painted directly inside the
-    // Canvas via drawPath so the visible silhouette reads as a Cookie shape while
-    // the click hit-test stays simple and the central icon never gets clipped.
+    // Indeterminate state — the brief window before progress data lands —
+    // delegates to M3 Expressive's `LoadingIndicator`: it morphs through the
+    // canonical polygon cycle (Circle → SoftBurst → Cookie9 → Pill → Sunny),
+    // the same vocabulary used by pull-to-refresh, auth-submit and comments
+    // thread load. Black translucent disc backdrop keeps the indicator
+    // legible on any photo (white snow, black headlines, mid-grey portraits).
+    // Cancel-X overlays the polygon when [onClick] is wired (tap-to-cancel
+    // matches Telegram's affordance during download).
     val diskModifier = Modifier
         .size(size)
         .clip(CircleShape)
+        .background(Color.Black.copy(alpha = DISK_ALPHA))
         .let { if (onClick != null) it.clickable(onClick = onClick) else it }
     Box(modifier = modifier.then(diskModifier), contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.size(size)) {
-            val diameter = this.size.minDimension
-            val stroke = diameter * STROKE_FRACTION
-            val inset = stroke / 2f
-            val arcSize = Size(diameter - stroke, diameter - stroke)
-            val arcOffset = Offset(inset, inset)
-            val outline = diskShape.createOutline(this.size, layoutDirection, this)
-            if (outline is Outline.Generic) {
-                drawPath(outline.path, color = Color.Black.copy(alpha = DISK_ALPHA))
-            } else {
-                drawCircle(color = Color.Black.copy(alpha = DISK_ALPHA), radius = diameter / 2f)
-            }
-            drawArc(
-                color = Color.White,
-                startAngle = -90f + spin,
-                sweepAngle = INDETERMINATE_SWEEP_DEGREES,
-                useCenter = false,
-                topLeft = arcOffset,
-                size = arcSize,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
-            )
-        }
+        androidx.compose.material3.LoadingIndicator(
+            modifier = Modifier.size(size * 0.7f),
+            color = Color.White,
+        )
         if (onClick != null) {
             Symbol(
                 name = "close",

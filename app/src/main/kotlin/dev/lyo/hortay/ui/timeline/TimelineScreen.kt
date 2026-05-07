@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.AnimatedVisibility
@@ -818,10 +820,27 @@ fun TimelineScreen(
                 .fillMaxSize()
                 .padding(top = padding.calculateTopPadding()),
         ) {
+            // M3 Expressive pull-to-refresh: the default indicator slot is the
+            // 1.4 circular spinner; `PullToRefreshDefaults.LoadingIndicator()` is
+            // the 1.5 expressive variant that morphs through the same polygon
+            // cycle as the inline `LoadingIndicator` (Circle → SoftBurst →
+            // Cookie9 → Pill → Sunny). Single visual idiom for "system loading"
+            // across pull-to-refresh, auth submit, comments thread load, and
+            // settings clear-cache.
+            val pullState = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
             PullToRefreshBox(
                 isRefreshing = refreshing,
                 onRefresh = vm::refresh,
+                state = pullState,
                 modifier = Modifier.fillMaxSize(),
+                indicator = {
+                    androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+                        .LoadingIndicator(
+                            state = pullState,
+                            isRefreshing = refreshing,
+                            modifier = Modifier.align(Alignment.TopCenter),
+                        )
+                },
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     // FoldersBar is hidden when there's nothing to switch between:

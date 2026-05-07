@@ -88,6 +88,9 @@ fun TdVideoPlayer(
         else cache.observe(fileId)
     }.collectAsStateWithLifecycle()
     val showLoadingOverlay = rememberDeferredLoading(state = mediaState, key = fileId) && !isRemote
+    // Tracks ExoPlayer's STATE_BUFFERING transitions for the in-playback
+    // rebuffer overlay (separate from the pre-Ready download overlay).
+    var isBuffering by remember(fileId) { mutableStateOf(false) }
 
     // Acquire from the shared pool. Pooled instances arrive in IDLE state with empty
     // playlist (see ExoPlayerPool.release); the apply-block here re-applies the
@@ -154,6 +157,17 @@ fun TdVideoPlayer(
                     }
                     videoAspect = (videoSize.width * pixelRatio) / videoSize.height
                 }
+            }
+
+            // Track ExoPlayer's playback state so the M3 Expressive buffering
+            // overlay below can paint when the player is mid-rebuffer (download
+            // already finished, but the decoder ran out of demuxed frames). The
+            // download-progress overlay handles the pre-Ready window; this
+            // listener handles every stall AFTER the file is local — common on
+            // long videos where ExoPlayer's buffer dries out faster than the
+            // disk can refill it.
+            override fun onPlaybackStateChanged(state: Int) {
+                isBuffering = state == Player.STATE_BUFFERING
             }
         }
         lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
@@ -257,6 +271,21 @@ fun TdVideoPlayer(
                 MediaIndeterminateIndicator()
             }
             is MediaState.Ready -> Unit
+        }
+        // Mid-playback rebuffer overlay. Uses the same M3 Expressive
+        // LoadingIndicator (polygon cycle) as the pre-download path, so a
+        // stall during a watched video reads identically to a stall before
+        // the file lands — single visual idiom for "busy". Only paints when
+        // the file is actually local (mediaState is Ready) and the player
+        // says it ran out of demuxed frames; the download overlay above
+        // takes the pre-Ready stalls.
+        if (mediaState is MediaState.Ready && isBuffering) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                MediaIndeterminateIndicator()
+            }
         }
     }
 }
