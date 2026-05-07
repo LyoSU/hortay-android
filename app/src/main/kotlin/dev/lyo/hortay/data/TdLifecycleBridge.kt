@@ -100,11 +100,19 @@ class TdLifecycleBridge(
             }
         })
 
-        cm.registerDefaultNetworkCallback(networkCallback)
-        // Seed before the first callback fires so consumers that read [networkType]
-        // synchronously at construction (e.g. [MediaAutoDownloader.activePolicy]) see
-        // a real value, not the [HortayNetworkType.None] sentinel.
+        // Seed BEFORE registering the callback. With the previous order, a
+        // network change firing between register() and the seed write could
+        // see the callback push a freshly-classified value, then have the seed
+        // overwrite it back to a stale snapshot we read inside this method.
+        // Now the seed lands first; any subsequent callback always wins, and a
+        // race between "callback fires immediately on register()" and "seed
+        // here" resolves with the callback's value (which is the desired
+        // outcome — it's the more recent observation). Consumers that read
+        // [networkType] synchronously at construction (e.g.
+        // [MediaAutoDownloader.activePolicy]) see a real value, not the
+        // [HortayNetworkType.None] sentinel.
         _networkType.value = classifyNetwork()
+        cm.registerDefaultNetworkCallback(networkCallback)
 
         combine(td.authStage, foreground) { auth, fg -> auth is AuthStage.Ready && fg }
             .distinctUntilChanged()
@@ -119,6 +127,36 @@ class TdLifecycleBridge(
             .warnUnlessCancelled(TAG, "online=true")
         runCatching { td.send(TdApi.SetNetworkType(currentNetworkType())) }
             .warnUnlessCancelled(TAG, "networkType")
+        applyReadOnlyClientOptions()
+    }
+
+    /**
+     * Read-only-client tuning. Applied on every goOnline because TDLib clears
+     * non-persistent options on a closed→reopened session and reissuing on
+     * re-auth keeps the daemon's state aligned without us having to track
+     * which options need re-application after AuthorizationStateClosed.
+     *
+     *   • `disable_top_chats=true` — Hortay never surfaces "frequently
+     *     contacted users" or top-chats UI. Telling TDLib stops it from
+     *     maintaining the local heuristic and saves a small amount of RAM
+     *     plus a bit of background server traffic. Per maintainer guidance
+     *     in tdlib/td#669: "If your application is read-only and doesn't
+     *     show top chats, set this to true."
+     *   • `notification_group_count_max=0` — TDLib otherwise reserves
+     *     buffer slots for grouped local notifications, which Hortay does
+     *     not produce (we don't run TDLib's notification subsystem at all).
+     *     Zero releases that buffer.
+     *
+     * Each option is sent best-effort: a failure here doesn't break the
+     * client, just leaves a default that costs marginal extra resources.
+     */
+    private suspend fun applyReadOnlyClientOptions() {
+        runCatching {
+            td.send(TdApi.SetOption("disable_top_chats", TdApi.OptionValueBoolean(true)))
+        }.warnUnlessCancelled(TAG, "disable_top_chats")
+        runCatching {
+            td.send(TdApi.SetOption("notification_group_count_max", TdApi.OptionValueInteger(0L)))
+        }.warnUnlessCancelled(TAG, "notification_group_count_max")
     }
 
     private suspend fun goOffline() {

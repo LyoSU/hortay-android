@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+- **`OptimizeStorage` was wiping the entire media cache every 24 h (TDLib
+  mode)**. The throttled daily sweep passed `count=0` and `immunityDelay=60`
+  literally — but TDLib treats `0` as the literal limit ("keep zero files /
+  immunity-protect for 60 s") and `-1` as "use the default limit". The
+  strictest of the simultaneous eviction limits won, so `count=0` overrode
+  `size=500MB` and TDLib evicted everything that wasn't actively in flight
+  on every cold-start past the 24 h throttle window. Visible symptom: avatar
+  pyramid + every cached photo / video re-downloaded the next day even
+  though no eviction was supposed to happen until the 500 MB cap kicked in.
+  Now passes `-1` for `ttl`, `count` and `immunityDelay`, so only the
+  explicit `size=500MB` cap drives eviction and freshly-downloaded media is
+  immune for TDLib's default window. `chatLimit` stays `0`: per its
+  javadoc it "Affects only returned statistics" (per-chat breakdown in the
+  response), not eviction, and we don't read those statistics.
+- **Several smaller TDLib-layer races and divergences from maintainer
+  guidance**:
+  - `MediaCache.invalidate` peeked `slot.value !is Ready` outside the
+    reducer's single-writer loop; a concurrent UpdateFile flipping the slot
+    Ready→Downloading between the peek and the launched coroutine could let
+    invalidate ressetting an already-restarted download. New
+    `FileEvent.ResetIfReady` runs the is-Ready check + state flip inside
+    the reducer so the two steps happen against the same serial event
+    stream.
+  - `MediaCache.schedulePostCompletionResync` left finished Job references
+    in `postCompletionResync` forever after a natural completion (the
+    map.remove only fired on the reducer's terminal-transition cleanup
+    path). Now the job's own try/finally compare-and-removes its entry,
+    and a follow-up schedule for the same fileId can't race against a
+    dead Job.
+  - `loadChannelHistory` set the 60 s cooldown on every success, including
+    "success-shaped no-op" (chat became inaccessible mid-load, empty
+    GetChatHistory response). Now the cooldown is gated on at least one
+    mapped post landing — a transient empty success no longer locks a
+    channel out of refreshes for a full minute.
+  - `searchInChannel` swallowed all failures into an empty result list,
+    leaving the user wondering whether the channel really had no matches
+    or whether the query failed (FLOOD_WAIT, transient TDLib reject).
+    Errors now route through the same `UserMessageBus` other user-initiated
+    operations use.
+  - `TdLifecycleBridge.bind()` seeded `_networkType` after registering the
+    NetworkCallback; a callback firing between register and seed could be
+    overwritten by the seed's snapshot. Order swapped: seed first, then
+    register, so any callback emission wins (which is the desired outcome
+    — it's the more recent observation).
+  - `PostsRepository.handleChatTitle` / `handleChatPhoto` now mutate the
+    cached `TdApi.Chat` through `ConcurrentHashMap.compute()` rather than
+    a bare `chatCache[id]?.let { it.title = … }` — bucket-locked replace
+    keeps cross-field updates serialised against concurrent compute()s
+    (single-field ref-writes were already atomic, this is hardening).
+  - `GetChats(limit=500)` clipped power users with >500 channels;
+    `Int.MAX_VALUE` is the canonical local-cache pagination since the
+    actual ceiling is enforced by `LoadChats` page count above.
+  - `CommentsRepository.ensureAnchor` ran a `GetMessageProperties` probe
+    even for standalone (single-id) posts; the probe exists exclusively
+    for album disambiguation per tdlib/td#2312. Standalone posts now go
+    directly to `GetMessageThread`, saving one JNI hop on every first
+    comments-open.
+
+### Changed
+- **TDLib log stream is now configured explicitly via `SetLogStream`**.
+  Default TDLib behaviour is to log to stdout, which on Android disappears
+  into /dev/null — making non-zero `LOG_VERBOSITY` useless for debugging.
+  Debug builds now write a 5 MB rotating log under
+  `filesDir/td-logs/td.log` (with stderr redirected into the same file)
+  so a TDLib-internal complaint during development is actually
+  observable. Release builds use `LogStreamEmpty()`, which combined with
+  `LOG_VERBOSITY=0` (fatal-only) means zero log I/O on the hot path.
+- **Read-only-client TDLib options applied on every goOnline**.
+  `disable_top_chats=true` (Hortay never surfaces "frequently contacted
+  users" UI, so TDLib stops maintaining the local heuristic) and
+  `notification_group_count_max=0` (we don't run TDLib's notification
+  subsystem at all). Both options are non-persistent across
+  AuthorizationStateClosed → reopen, so reapplying on each goOnline
+  keeps the daemon aligned without us having to track which options
+  need re-application after re-auth.
+
 ### Added
 - **Read-state sync with the official Telegram client (TDLib mode)**. As the user
   scrolls the merged feed, posts that stay in the viewport for ≥1 s get acked via

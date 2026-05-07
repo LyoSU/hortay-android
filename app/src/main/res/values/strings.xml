@@ -368,6 +368,7 @@
     <string name="op_join_channel">join the channel</string>
     <string name="op_leave_channel">leave the channel</string>
     <string name="op_translate">translate the message</string>
+    <string name="op_search">search the channel</string>
 
     <!-- Anonymous → authenticated migration proposal sheet -->
     <string name="migration_title">Migrate anonymous subscriptions?</string>

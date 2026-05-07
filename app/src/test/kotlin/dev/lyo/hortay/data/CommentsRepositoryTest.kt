@@ -14,13 +14,20 @@ import org.junit.jupiter.api.Test
 class CommentsRepositoryTest {
 
     @Test
-    fun `error state when no candidate has canGetMessageThread`() = runTest {
+    fun `error state when no album candidate has canGetMessageThread`() = runTest {
+        // Multi-id input (album) — exercises the GetMessageProperties probe loop;
+        // standalone single-id posts now skip the probe entirely (B9 optimisation
+        // in CommentsRepository.ensureAnchor) so they wouldn't reach this code
+        // path. Two MessageProperties responders are queued, both reporting
+        // canGetMessageThread=false, so firstOrNull returns null and the flow
+        // surfaces Error.
         val td = FakeTdSender().apply {
+            onNext { _ -> TdApi.MessageProperties().apply { canGetMessageThread = false } }
             onNext { _ -> TdApi.MessageProperties().apply { canGetMessageThread = false } }
         }
         val repo = CommentsRepository(td, fakeMapper(td), TestScope(StandardTestDispatcher(testScheduler)), FakeStrings)
 
-        val state = repo.observeThread(chatId = 123L, candidateMessageIds = listOf(1L)).first()
+        val state = repo.observeThread(chatId = 123L, candidateMessageIds = listOf(1L, 2L)).first()
 
         assertTrue(state is CommentsRepository.ThreadState.Error)
     }
@@ -32,20 +39,22 @@ class CommentsRepositoryTest {
         val threadChatId = 9999L
         val rootId = 7L
 
+        // Standalone post (single-id input) — ensureAnchor's B9 fast path skips
+        // GetMessageProperties and goes directly to GetMessageThread. The
+        // responder queue mirrors that order: GetMessageThread → OpenChat →
+        // history page → CloseChat.
         val td = FakeTdSender().apply {
-            // 1. probe canGetMessageThread.
-            onNext { _ -> TdApi.MessageProperties().apply { canGetMessageThread = true } }
-            // 2. resolve thread.
+            // 1. resolve thread directly (no GetMessageProperties for standalone).
             onNext { _ ->
                 TdApi.MessageThreadInfo().apply {
                     this.chatId = threadChatId
                     this.messageThreadId = rootId
                 }
             }
-            // 3. OpenChat — fired before any history fetch so TDLib prioritises this
+            // 2. OpenChat — fired before any history fetch so TDLib prioritises this
             // thread chat and starts streaming updates for it.
             onNext { _ -> TdApi.Ok() }
-            // 4. history page (one comment + the root mirror, mirror should be filtered).
+            // 3. history page (one comment + the root mirror, mirror should be filtered).
             // Progressive emit: Ready surfaces right after this batch, so the test's
             // first{} cancels the flow before any subsequent page is requested.
             onNext { _ ->
@@ -57,7 +66,7 @@ class CommentsRepositoryTest {
                     totalCount = 2
                 }
             }
-            // 5. CloseChat fires from the flow's finally block on cancellation.
+            // 4. CloseChat fires from the flow's finally block on cancellation.
             onNext { _ -> TdApi.Ok() }
         }
         val repo = CommentsRepository(td, fakeMapper(td), TestScope(StandardTestDispatcher(testScheduler)), FakeStrings)

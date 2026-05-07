@@ -374,6 +374,7 @@
     <string name="op_join_channel">приєднатися до каналу</string>
     <string name="op_leave_channel">відписатися від каналу</string>
     <string name="op_translate">перекласти повідомлення</string>
+    <string name="op_search">шукати в каналі</string>
 
     <!-- Anonymous → authenticated migration proposal sheet -->
     <string name="migration_title">Перенести анонімні підписки?</string>

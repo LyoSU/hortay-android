@@ -207,16 +207,30 @@ class CommentsRepository(
         val key = chatId to anchorKey
         resolvedAnchors[key]?.let { return it }
 
-        // Telegram pins the discussion thread to a single member of an album (typically
-        // the one with the caption); GetMessageThread on any other member returns 400.
-        // GetMessageProperties is a local capability lookup with no server round-trip,
-        // so we probe candidates in order and pick the carrier.
-        val anchorId = candidateMessageIds.firstOrNull { id ->
-            runCatching { td.send(TdApi.GetMessageProperties(chatId, id)) }
-                .warnUnlessCancelled(TAG, "messageProperties($chatId,$id)")
-                .getOrNull()
-                ?.canGetMessageThread == true
-        } ?: return null
+        // Standalone post (non-album): GetMessageThread succeeds against the
+        // single id directly, so we skip the GetMessageProperties probe — a
+        // free saving of one JNI hop per first-time comments open. The probe
+        // exists exclusively for album disambiguation: Telegram pins the
+        // discussion thread to a single album member (per tdlib/td#2312, the
+        // first/oldest one), and calling GetMessageThread on any other
+        // sibling returns "Message has no thread".
+        val anchorId = if (candidateMessageIds.size == 1) {
+            candidateMessageIds.single()
+        } else {
+            // Album: probe candidates in ascending-id order until we find the
+            // thread carrier. PostFilterStrategy already builds albumMessageIds
+            // sorted ascending, so the first candidate is the oldest member —
+            // which per tdlib/td#2312 is the canonical thread carrier — and
+            // this loop normally exits on the first iteration. The fallback
+            // walk still exists for the rare case where Telegram pins the
+            // thread to a different album member.
+            candidateMessageIds.firstOrNull { id ->
+                runCatching { td.send(TdApi.GetMessageProperties(chatId, id)) }
+                    .warnUnlessCancelled(TAG, "messageProperties($chatId,$id)")
+                    .getOrNull()
+                    ?.canGetMessageThread == true
+            } ?: return null
+        }
 
         val info = runCatching { td.send(TdApi.GetMessageThread(chatId, anchorId)) }
             .warnUnlessCancelled(TAG, "messageThread($chatId,$anchorId)")

@@ -79,7 +79,11 @@ class PostsRepository(
     // channel filter within DEEP_LOAD_COOLDOWN_MS reuses the previous load (no second
     // GetChatHistory(80) round-trip). Failed loads do NOT mark cooldown, so transient
     // network blips don't lock a channel out for a full minute.
-    private val deepLoadJobs = ConcurrentHashMap<Long, Deferred<Result<Unit>>>()
+    // Boolean payload: true = at least one post landed, false = success-shaped
+    // no-op (empty batch, non-channel chat). The cooldown gate honours that
+    // distinction so a transient empty success doesn't strand a channel for
+    // DEEP_LOAD_COOLDOWN_MS.
+    private val deepLoadJobs = ConcurrentHashMap<Long, Deferred<Result<Boolean>>>()
     private val deepLoadCooldownUntilMs = ConcurrentHashMap<Long, Long>()
 
     // Coalescing buffer for UpdateMessageInteractionInfo. On busy days these arrive in
@@ -337,22 +341,33 @@ class PostsRepository(
         }
         val result = deferred.await()
         deepLoadJobs.remove(chatId, deferred)
-        if (result.isSuccess) {
+        // Mark cooldown only if we actually loaded posts. A "successful empty
+        // batch" result (chat became inaccessible mid-load, transient TDLib
+        // reject swallowed by getOrNull, GetChatHistory returned empty list)
+        // shouldn't pin the channel out of fetches for 60 s — the user might
+        // have just joined and is waiting for first content. The
+        // [Result<Boolean>] contract: true = at least one mapped post landed,
+        // false = success-shaped no-op.
+        if (result.getOrNull() == true) {
             deepLoadCooldownUntilMs[chatId] = System.currentTimeMillis() + DEEP_LOAD_COOLDOWN_MS
         }
-        return result.warnUnlessCancelled(TAG, "loadChannelHistory($chatId)")
+        return result
+            .map { Unit }
+            .warnUnlessCancelled(TAG, "loadChannelHistory($chatId)")
             .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_load_channel, connection.value) }
     }
 
-    private suspend fun loadChannelHistoryLocked(chatId: Long, limit: Int) {
+    private suspend fun loadChannelHistoryLocked(chatId: Long, limit: Int): Boolean {
         val chat = chatCache[chatId] ?: td.send(TdApi.GetChat(chatId)).also { chatCache[chatId] = it }
-        if (!chat.isChannel()) return
+        if (!chat.isChannel()) return false
 
         val history = td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limit, false))
         val raw = coalesceAlbumFragments(chatId, history.messages.orEmpty().toList())
         val mapped = raw.map { mapper.toChannelPost(it, chat) }
+        if (mapped.isEmpty()) return false
 
         _posts.update { current -> foldRawIntoCurrent(current, mapped, MAX_FEED_SIZE) }
+        return true
     }
 
     suspend fun closeChat(chatId: Long) = ChatPresence.closeChat(td, chatId)
@@ -446,7 +461,14 @@ class PostsRepository(
         if (query.isBlank()) return emptyList()
         val chat = chatCache[chatId] ?: runCatching { td.send(TdApi.GetChat(chatId)) }
             .warnUnlessCancelled(TAG, "searchInChannel/getChat")
+            .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_search, connection.value) }
             .getOrNull()?.also { chatCache[chatId] = it } ?: return emptyList()
+        // Search failures used to be silently swallowed → empty list, leaving the
+        // user wondering whether the channel really has nothing matching or
+        // whether the query failed (FLOOD_WAIT, transient TDLib reject…).
+        // Surface the failure to the same message bus that other user-initiated
+        // operations route through; callers still get the empty list so the
+        // UI's "no results" state renders normally.
         val result = runCatching {
             td.send(
                 TdApi.SearchChatMessages(
@@ -460,7 +482,10 @@ class PostsRepository(
                     /* filter */ null,
                 ),
             )
-        }.warnUnlessCancelled(TAG, "searchInChannel").getOrNull() ?: return emptyList()
+        }
+            .warnUnlessCancelled(TAG, "searchInChannel")
+            .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_search, connection.value) }
+            .getOrNull() ?: return emptyList()
 
         val raw = result.messages.orEmpty().toList()
         val coalesced = coalesceAlbumFragments(chatId, raw)
@@ -889,7 +914,15 @@ class PostsRepository(
     }
 
     private fun handleChatTitle(update: TdApi.UpdateChatTitle) {
-        chatCache[update.chatId]?.let { it.title = update.title }
+        // Don't mutate the existing TdApi.Chat in-place — multiple workers read
+        // chatCache[chatId] concurrently (refreshLocked, ingest, coalesceAlbum…),
+        // and TdApi.Chat is a Java POJO without internal synchronisation, so a
+        // mid-flight reader could see torn fields (e.g. fresh title paired with
+        // stale photo). compute(): atomic replace of the map slot — readers either
+        // see the old object whole or the new one whole, never half of each.
+        chatCache.compute(update.chatId) { _, old ->
+            old?.also { it.title = update.title }
+        }
         _posts.update { current ->
             current.mutate { list ->
                 for (i in list.indices) {
@@ -903,7 +936,11 @@ class PostsRepository(
     }
 
     private fun handleChatPhoto(update: TdApi.UpdateChatPhoto) {
-        chatCache[update.chatId]?.let { it.photo = update.photo }
+        // See [handleChatTitle] for why we use compute() instead of direct
+        // mutation — bucket-lock keeps concurrent compute()s ordered.
+        chatCache.compute(update.chatId) { _, old ->
+            old?.also { it.photo = update.photo }
+        }
         val newThumb = update.photo?.minithumbnail?.data
         val newFileId = update.photo?.small?.id
         _posts.update { current ->
@@ -945,9 +982,14 @@ class PostsRepository(
         drainChatList(TdApi.ChatListMain())
         drainChatList(TdApi.ChatListArchive())
 
-        val mainIds = td.send(TdApi.GetChats(TdApi.ChatListMain(), CHAT_LIST_LIMIT)).chatIds
+        // Int.MAX_VALUE: TDLib's GetChats only returns chat ids already loaded
+        // into local memory by drainChatList above, so the "limit" is purely a
+        // ceiling on the response size. Hard-coding 500 silently clipped power
+        // users with >500 channels — the only effective protection is the
+        // bounded `drainChatList` page count, which itself caps at 2000.
+        val mainIds = td.send(TdApi.GetChats(TdApi.ChatListMain(), Int.MAX_VALUE)).chatIds
         val archiveIds = runCatching {
-            td.send(TdApi.GetChats(TdApi.ChatListArchive(), CHAT_LIST_LIMIT)).chatIds.toList()
+            td.send(TdApi.GetChats(TdApi.ChatListArchive(), Int.MAX_VALUE)).chatIds.toList()
         }.getOrElse { emptyList() }
         _archivedChatIds.value = archiveIds.toSet()
 

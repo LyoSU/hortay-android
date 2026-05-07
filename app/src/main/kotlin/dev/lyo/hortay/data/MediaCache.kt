@@ -144,6 +144,16 @@ class MediaCache(
          * intent is explicit and authoritative.
          */
         data class Reset(val fileId: Int, val to: MediaState) : FileEvent
+        /**
+         * Conditional Reset: only flip the slot to [to] if it is currently in
+         * [MediaState.Ready] (Coil's onError callback semantics — "the file I
+         * just tried to render is gone"). Routed through the reducer so the
+         * is-Ready check + the state flip happen as one atomic step against
+         * the inbound UpdateFile stream; otherwise a concurrent UpdateFile
+         * landing between the IO-thread `is Ready` peek and the write would
+         * be silently clobbered.
+         */
+        data class ResetIfReady(val fileId: Int, val to: MediaState) : FileEvent
     }
     private val fileEvents = Channel<FileEvent>(capacity = Channel.UNLIMITED)
 
@@ -154,6 +164,12 @@ class MediaCache(
             for (event in fileEvents) when (event) {
                 is FileEvent.FromTdLib -> reduce(event.file)
                 is FileEvent.Reset -> reduceReset(event.fileId, event.to)
+                is FileEvent.ResetIfReady -> {
+                    val slot = states[event.fileId]
+                    if (slot != null && slot.value is MediaState.Ready) {
+                        reduceReset(event.fileId, event.to)
+                    }
+                }
             }
         }
 
@@ -586,16 +602,25 @@ class MediaCache(
      * cancelled by the very recomposition the state flip triggers.
      */
     fun invalidate(fileId: Int, priority: DownloadPriority = DownloadPriority.VisibleMedia) {
-        val s = states[fileId] ?: return
-        if (s.value !is MediaState.Ready) return
+        // Don't peek `slot.value` here — race window: Coil sees a file-not-found
+        // error, calls invalidate(), and between this peek and the launched
+        // coroutine's send, the reducer drains an UpdateFile that legitimately
+        // pushed the slot from Ready to Downloading (TDLib evicted then started
+        // re-downloading). The early-return on the peek would still be racy.
+        // Route the is-Ready check through the reducer's single-writer loop via
+        // [FileEvent.ResetIfReady] so the check + flip happen against the same
+        // serial event stream that the reducer uses.
+        if (states[fileId] == null) return
         Log.i(TAG, "invalidate: $fileId — Ready file missing on disk; re-downloading")
         scope.launch(ioDispatcher) {
-            // Reducer-routed reset (same rationale as [cancelExplicit]). Notably
-            // [reduceReset] also clears `activePriority` / `tracks` for a non-
-            // Downloading target, so the subsequent ensure() rebuilds the
-            // bookkeeping cleanly.
             postCompletionResync.remove(fileId)?.cancel()
-            fileEvents.send(FileEvent.Reset(fileId, MediaState.Idle))
+            fileEvents.send(FileEvent.ResetIfReady(fileId, MediaState.Idle))
+            // ensure() is a no-op when the slot is already Downloading, so a
+            // racing UpdateFile that flipped Ready → Downloading between the
+            // ResetIfReady event and here just makes ensure() short-circuit
+            // (the existing Downloading state is preserved). Only when
+            // ResetIfReady actually flipped to Idle does ensure() restart the
+            // download.
             ensure(fileId, priority)
         }
     }
@@ -617,20 +642,35 @@ class MediaCache(
      * built but never started, so they cost almost nothing to discard.
      */
     private fun schedulePostCompletionResync(fileId: Int) {
+        lateinit var jobRef: Job
         val newJob = scope.launch(ioDispatcher, start = kotlinx.coroutines.CoroutineStart.LAZY) {
-            delay(POST_COMPLETION_RESYNC_MS)
-            // If the reducer already landed on Ready/Failed, our work is moot — bail
-            // without an extra TDLib roundtrip. The reducer also proactively removes
-            // (and cancels) this job on the terminal transition, so we'd typically
-            // be cancelled before reaching here; this check covers the race where
-            // the transition happens between delay() and now.
-            val current = states[fileId]?.value
-            if (current !is MediaState.Downloading) return@launch
-            runCatching {
-                val freshFile = td.send(TdApi.GetFile(fileId))
-                fileEvents.send(FileEvent.FromTdLib(freshFile))
+            try {
+                delay(POST_COMPLETION_RESYNC_MS)
+                // If the reducer already landed on Ready/Failed, our work is moot — bail
+                // without an extra TDLib roundtrip. The reducer also proactively removes
+                // (and cancels) this job on the terminal transition, so we'd typically
+                // be cancelled before reaching here; this check covers the race where
+                // the transition happens between delay() and now.
+                val current = states[fileId]?.value
+                if (current !is MediaState.Downloading) return@launch
+                runCatching {
+                    val freshFile = td.send(TdApi.GetFile(fileId))
+                    fileEvents.send(FileEvent.FromTdLib(freshFile))
+                }
+            } finally {
+                // Whether we ran the resync, were cancelled by the reducer's
+                // Ready/Failed cleanup, or returned early — drop our entry from
+                // the map. Without this, a job that finished naturally (no
+                // subsequent terminal-transition cancel) leaves a stale Job
+                // reference in [postCompletionResync] forever, and the next
+                // schedulePostCompletionResync(fileId) call's putIfAbsent races
+                // against that ghost entry. compare-and-remove via the 2-arg
+                // overload protects against a fresh schedulePostCompletionResync
+                // having already replaced our slot in the meantime.
+                postCompletionResync.remove(fileId, jobRef)
             }
         }
+        jobRef = newJob
         val existing = postCompletionResync.putIfAbsent(fileId, newJob)
         if (existing == null) newJob.start() else newJob.cancel()
     }

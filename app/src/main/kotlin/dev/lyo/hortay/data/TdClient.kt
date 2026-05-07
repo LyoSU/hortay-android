@@ -118,7 +118,34 @@ class TdClient private constructor(
 
     fun start() {
         if (this::client.isInitialized) return
-        // Silence TDLib's default verbose stdout chatter; we still log warnings via Log.w.
+        // Configure TDLib's native logging BEFORE spawning the client.
+        //
+        // TDLib's default sink is stdout, which on Android disappears into
+        // /dev/null — making non-zero LOG_VERBOSITY useless and leaving any
+        // TDLib-internal complaint invisible during development. The TDLib
+        // README explicitly recommends calling SetLogStream during startup
+        // to redirect output somewhere you can read.
+        //
+        //   • Debug: rotating file under filesDir/td-logs/. 5 MB cap, picked up
+        //     when crash-investigating. redirectStderr=true also catches the
+        //     handful of low-level prints that TDLib still does outside its
+        //     normal log pipeline (during early startup, mostly).
+        //   • Release: LogStreamEmpty() — TDLib doesn't open a file handle at
+        //     all. Combined with LOG_VERBOSITY=0 (fatal-only) this means zero
+        //     log I/O on the hot path in production.
+        runCatching {
+            val stream: TdApi.LogStream = if (BuildConfig.DEBUG) {
+                val logsDir = context.filesDir.resolve("td-logs").apply { mkdirs() }
+                TdApi.LogStreamFile(
+                    logsDir.resolve("td.log").absolutePath,
+                    /* maxFileSize */ 5L * 1024 * 1024,
+                    /* redirectStderr */ true,
+                )
+            } else {
+                TdApi.LogStreamEmpty()
+            }
+            Client.execute(TdApi.SetLogStream(stream))
+        }.onFailure { Log.w(TAG, "SetLogStream failed", it) }
         Client.execute(TdApi.SetLogVerbosityLevel(LOG_VERBOSITY))
         spawnClient()
     }
@@ -438,12 +465,30 @@ class TdClient private constructor(
             if (now - last < OPTIMIZE_INTERVAL_MS) return@launch
             settings.setLastStorageOptimizeAt(now)
             runCatching {
+                // For OptimizeStorage's eviction-driving limits (size, ttl, count,
+                // immunityDelay) TDLib treats 0 as a literal "limit 0" and -1 as
+                // "use the default limit". An earlier version passed `count=0`
+                // and `immunityDelay=60`, which under "strictest-limit-wins"
+                // semantics overrode our intended `size=500MB` cap and made the
+                // daily sweep evict everything not currently in flight. Users
+                // saw it as the avatar pyramid + cached photos re-downloading
+                // the next day. Fix:
+                //   • size          = 500 MB hard cap (kept)
+                //   • ttl           = -1 (TDLib default)
+                //   • count         = -1 (no count cap; size drives eviction)
+                //   • immunityDelay = -1 (TDLib default ~7 days, so a freshly
+                //                     downloaded file isn't evictable on the
+                //                     next 24h sweep)
+                // chatLimit stays 0 — per the field's javadoc it "Affects only
+                // returned statistics" (number of chats with their own breakdown
+                // in the response), not eviction. We don't read those stats, so
+                // 0 is the correct "no per-chat breakdown" value.
                 send(
                     TdApi.OptimizeStorage(
                         /* size */ 500L * 1024 * 1024,
-                        /* ttl  */ 30 * 24 * 60 * 60,
-                        /* count */ 0,
-                        /* immunityDelay */ 60,
+                        /* ttl  */ -1,
+                        /* count */ -1,
+                        /* immunityDelay */ -1,
                         /* fileTypes */ null,
                         /* chatIds */ null,
                         /* excludeChatIds */ null,
