@@ -338,14 +338,20 @@ class AppGraph(context: Context) {
      * cleanup midway and leaving half the caches stale.
      */
     private suspend fun runLogoutCleanup() {
+        // PostsRepository.clear() already wipes the on-disk snapshot
+        // internally (it owns the snapshotStore reference and the
+        // semantic ownership), so we don't double-clear it here.
+        // ChatPresence is a process-singleton object — wipe its
+        // refcount map so account A's leftover OpenChat counts can't
+        // poison account B's open/close arithmetic.
         runCatching { postsRepository.clear() }
+        runCatching { dev.lyo.hortay.data.ChatPresence.clear() }
         runCatching { messageMapper.clear() }
         runCatching { commentsRepository.clear() }
         runCatching { mediaCache.clear() }
         runCatching { customEmoji.clear() }
         runCatching { chatFoldersRepository.clear() }
         runCatching { translations.clear() }
-        runCatching { timelineSnapshotStore.clear() }
         runCatching { migrationStore.reset() }
     }
 }

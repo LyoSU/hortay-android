@@ -139,6 +139,38 @@ internal object ChatPresence {
      * guarding upstream. Errors are swallowed-and-logged: a transient ack failure
      * just means TDLib retries later — not a UI-actionable error.
      */
+    /**
+     * Wipe the per-account refcount map. Called from [AppGraph] on logout.
+     *
+     * Why this matters: the refcount map is process-singleton (this is an
+     * `internal object`), but its entries are per-account — TDLib chat ids
+     * are scoped to the local TDLib database, which `LogOut` wipes. After
+     * logout, a stale `refCounts[chatId] = 1` entry from account A can
+     * collide with the same numerical chat id used by another chat in
+     * account B's database (TDLib re-uses internal supergroup ids
+     * within its local db sequence; collisions are rare but possible).
+     * If account B's UI then opens that chat, the refcount goes 1 → 2,
+     * and the eventual close goes 2 → 1 — never sending CloseChat to
+     * TDLib because the 0-transition never fires. Worse: if B never
+     * opens that exact id and only closes it via some other path, the
+     * close goes 1 → 0 and TDLib sees a CloseChat for a chat that was
+     * never opened in this session.
+     *
+     * Wiping the map at logout makes the next account's refcount
+     * accounting start from a true zero, regardless of what the previous
+     * session left behind. UI cleanup (TimelineScreen's focus tracker,
+     * channel-filter screen) still flushes its own CloseChat via the
+     * `try { … } finally { closeChat(...) }` pattern when its scope
+     * cancels — that path runs concurrently with this clear, but the
+     * `closeChat` it issues will see refcount 0 (post-clear) and treat
+     * the unbalanced close as a no-op (the defensive branch in
+     * [closeChat]). Net result: no stray CloseChat to TDLib, no
+     * stale state for the next account.
+     */
+    suspend fun clear() {
+        refMutex.withLock { refCounts.clear() }
+    }
+
     suspend fun viewMessages(
         td: TdSender,
         chatId: Long,
