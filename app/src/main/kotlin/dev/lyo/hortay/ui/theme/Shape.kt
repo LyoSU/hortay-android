@@ -81,6 +81,15 @@ object HortayExpressive {
     /** "New posts" floating pill: micro-decoration around the count badge. */
     val Pill: RoundedPolygon = MaterialShapes.Pill
 
+    /** Video player play/pause toggle backdrop. Square reads as "stopped", Circle as
+     *  "in motion" — the pair Google's Material 3 sample app uses for every media
+     *  toggle (play/pause, mute/unmute, record start/stop). Reusing one shape idiom
+     *  for every toggle keeps the visual vocabulary lean: same morph everywhere
+     *  the user expects "this control switches state". Cookie / Burst / Heart
+     *  remain for hero / personality moments and are intentionally NOT used here. */
+    val PlayPausePaused: RoundedPolygon = MaterialShapes.Square
+    val PlayPausePlaying: RoundedPolygon = MaterialShapes.Circle
+
     /** Connection status / warning chip. Bun reads as "alert pillow". */
     val ConnectionBanner: RoundedPolygon = MaterialShapes.Bun
 
@@ -101,6 +110,7 @@ object HortayExpressive {
     val BookmarkMorph: Morph = Morph(BookmarkRest, BookmarkSelected)
     val FolderMorph: Morph = Morph(FolderRest, FolderSelected)
     val FabPressMorph: Morph = Morph(FabRest, FabPressed)
+    val PlayPauseMorph: Morph = Morph(PlayPausePaused, PlayPausePlaying)
 }
 
 /**

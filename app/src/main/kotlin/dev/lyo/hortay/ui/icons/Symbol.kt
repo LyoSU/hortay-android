@@ -105,10 +105,12 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
     "notifications_active" -> R.drawable.sym_notifications_active
     "notifications_off" -> R.drawable.sym_notifications_off
     "open_in_new" -> R.drawable.sym_open_in_new
+    "pause" -> R.drawable.sym_pause
     "person" -> R.drawable.sym_person
     "photo_camera" -> R.drawable.sym_photo_camera
     "pin" -> R.drawable.sym_pin
     "place" -> R.drawable.sym_location_on
+    "play_arrow" -> R.drawable.sym_play_arrow
     "play_circle" -> R.drawable.sym_play_circle
     "poll" -> R.drawable.sym_ballot
     "push_pin" -> R.drawable.sym_push_pin
@@ -129,6 +131,8 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
     "videocam_off" -> R.drawable.sym_videocam_off
     "visibility" -> R.drawable.sym_visibility
     "visibility_off" -> R.drawable.sym_visibility_off
+    "volume_off" -> R.drawable.sym_volume_off
+    "volume_up" -> R.drawable.sym_volume_up
     "wifi_off" -> R.drawable.sym_wifi_off
     // Auto-download settings — closest existing glyphs while we don't bundle the
     // dedicated Material Symbols vectors. Visual parity is good enough that the

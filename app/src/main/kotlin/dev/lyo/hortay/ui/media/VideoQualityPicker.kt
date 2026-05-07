@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -23,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -33,15 +31,23 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.data.VideoQualities
 import dev.lyo.hortay.data.VideoQuality
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.theme.HortayExpressive
+import dev.lyo.hortay.ui.theme.asComposeShape
 
 /**
- * Compact quality indicator that lives on the full-screen viewer's overlay row,
- * styled to match Telegram: dark translucent pill, single label like "720p" plus
- * a small chevron. Tap opens a [VideoQualityPickerSheet] with the full ladder of
- * available re-encodes (and the original).
+ * Compact quality indicator that lives on the full-screen viewer's overlay row.
+ * Single label like "720p" inside a translucent backdrop. Tap opens
+ * [VideoQualityPickerSheet] with the full ladder of available re-encodes (and
+ * the original).
  *
  * Visible only when [VideoQualities.hasOptions] is true — single-quality videos
  * never see this UI.
+ *
+ * Backdrop uses the canonical M3 Expressive `Pill` polygon (`MaterialShapes.Pill`)
+ * so the chip speaks the same shape vocabulary as the close button (Cookie9),
+ * the page counter (Pill) and `NewPostsPill` elsewhere in the app — every
+ * piece of viewer chrome reads as part of one expressive system instead of
+ * a stock-Material round-rect carved into the polygon language.
  */
 @Composable
 fun QualityChip(
@@ -51,10 +57,10 @@ fun QualityChip(
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
+    val chipShape = HortayExpressive.Pill.asComposeShape()
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(Color.Black.copy(alpha = 0.45f))
+            .background(Color.Black.copy(alpha = 0.45f), chipShape)
             .clickable { open = true }
             .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,

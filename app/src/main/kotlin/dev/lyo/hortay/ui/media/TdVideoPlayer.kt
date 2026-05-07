@@ -23,7 +23,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.MediaState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,12 +32,27 @@ import kotlinx.coroutines.launch
  * Plays a TDLib-managed video. Asks [dev.lyo.hortay.data.MediaCache] to download the
  * file (deduplicated and priority-aware) and once it lands on disk, hands the path
  * to a single [ExoPlayer]. While the download is in flight a [MediaIndeterminateIndicator]
- * is shown over a transparent [PlayerView]; underlying composables (typically the
+ * is shown over a transparent surface; underlying composables (typically the
  * blurred poster from [TdMediaImage]) remain visible.
  *
  * Lifecycle:
  *   • Tied to the host's [Lifecycle]: pauses on STOP, releases on DESTROY.
  *   • [autoLoop] = true → silent looping (Telegram "GIF" animations).
+ *
+ * Render path: bare [TextureView] inside [AspectRatioFrameLayout] for every call
+ * site, fullscreen and feed-preview alike. An earlier iteration used media3's
+ * `PlayerView` (with `useController=true`) for the fullscreen path to get its
+ * built-in scrubber widgets; that surface ships stock 2010s system styling that
+ * clashed with the rest of the app's M3 Expressive vocabulary (polygon shapes,
+ * wavy progress, motion-token transitions). Replaced by [VideoPlayerControls],
+ * a Compose chrome painted over the same TextureView. Two render-path benefits
+ * fall out for free:
+ *   • The transparent `TextureView` continues to read through to the underlying
+ *     poster while ExoPlayer prepares (kills the 2-3 s black-square preroll a
+ *     `SurfaceView`-backed `PlayerView` produced).
+ *   • Quality / mute / playback / seek state is now a pure Compose concern,
+ *     so the chrome composes through the same `@Immutable` stability chain as
+ *     the rest of the UI instead of hiding mutation behind an `AndroidView`.
  *
  * Quality switch: the caller changes [fileId]. [MediaCache] is asked to download
  * the new file; once it's Ready, ExoPlayer's MediaItem is swapped while preserving
@@ -90,7 +104,25 @@ fun TdVideoPlayer(
     val showLoadingOverlay = rememberDeferredLoading(state = mediaState, key = fileId) && !isRemote
     // Tracks ExoPlayer's STATE_BUFFERING transitions for the in-playback
     // rebuffer overlay (separate from the pre-Ready download overlay).
+    //
+    // ExoPlayer flips into STATE_BUFFERING for many sub-second reasons that
+    // are NOT user-visible "the video froze" events: source switch on quality
+    // change (~50-200 ms), seek (~100-300 ms), normal chunk-boundary refills
+    // on tight buffers (~50-150 ms). Painting the indicator immediately on
+    // every such blip produced a visible flash of the disc-and-spinner during
+    // healthy playback — same UX bug the pre-Ready download path solved with
+    // [rememberDeferredLoading]. Reusing the same primitive here so a true
+    // network-rebuffer (>400 ms of starved decoder) gets feedback while every
+    // blip-and-recover stays invisible. 400 ms < the 600 ms used for the
+    // download path because the user is mid-watch (more attentive); a longer
+    // wait while the video is frozen reads worse than the same wait staring
+    // at a thumbnail.
     var isBuffering by remember(fileId) { mutableStateOf(false) }
+    val showRebufferOverlay = rememberDeferredLoading(
+        pending = isBuffering,
+        key = fileId,
+        graceMs = REBUFFER_OVERLAY_GRACE_MS,
+    )
 
     // Acquire from the shared pool. Pooled instances arrive in IDLE state with empty
     // playlist (see ExoPlayerPool.release); the apply-block here re-applies the
@@ -182,68 +214,36 @@ fun TdVideoPlayer(
     }
 
     Box(modifier = modifier) {
-        // Two render paths:
-        //   • showControls = true  → PlayerView (we keep its built-in scrubber /
-        //     play-pause widgets for the fullscreen viewer). PlayerView wraps a
-        //     SurfaceView, which is fine in the fullscreen case because the
-        //     player goes opaque-over-poster anyway.
-        //   • showControls = false → bare TextureView. The feed-preview path
-        //     uses this: a SurfaceView is an opaque hardware overlay that
-        //     paints solid black before the first decoded frame arrives, so
-        //     the user saw a 1-3 s black square sitting on top of the poster
-        //     during ExoPlayer's prepare/buffer window. Variable per video
-        //     because preroll latency depends on container init + key-frame
-        //     distance, not file size — exactly what the user observed.
-        //     TextureView with `isOpaque = false` blends transparently while
-        //     the texture is still empty, so the poster (drawn underneath)
-        //     reads through cleanly until the first frame paints over it.
-        if (showControls) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = exoPlayer
-                        useController = true
-                        setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    }
-                },
-                update = { view ->
-                    if (view.player !== exoPlayer) view.player = exoPlayer
-                    view.useController = true
-                },
-            )
-        } else {
-            // Wrap the TextureView in AspectRatioFrameLayout so the texture is
-            // letterboxed inside the slot at the source video's aspect ratio
-            // instead of being stretched to fill. Bare TextureView fills its
-            // parent exactly — when the slot was sized from the poster (CSS
-            // padding-aspect from t.me) and the actual video resolution
-            // doesn't quite match (rounded poster aspect, transcoded source),
-            // the video squashes to the slot's box. AspectRatioFrameLayout
-            // is the same primitive PlayerView uses internally with its
-            // RESIZE_MODE_FIT, lifted out so we keep the transparent
-            // TextureView path for the alpha-correct first-frame transition.
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    AspectRatioFrameLayout(ctx).apply {
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        addView(TextureView(ctx).apply { isOpaque = false })
-                    }
-                },
-                update = { frame ->
-                    val texture = frame.getChildAt(0) as TextureView
-                    exoPlayer.setVideoTextureView(texture)
-                    if (videoAspect > 0f) frame.setAspectRatio(videoAspect)
-                },
-                onRelease = { frame ->
-                    exoPlayer.clearVideoTextureView(frame.getChildAt(0) as TextureView)
-                },
-            )
-        }
+        // Single render path: bare TextureView inside AspectRatioFrameLayout.
+        // A SurfaceView (what the old `PlayerView` branch wrapped) is an opaque
+        // hardware overlay that paints solid black before the first decoded
+        // frame lands — produced a 1-3 s black-square preroll on top of the
+        // blurred poster while ExoPlayer prepared. TextureView with
+        // `isOpaque = false` blends transparently until the texture is
+        // populated, so the poster underneath reads through cleanly during
+        // the prepare/buffer window. AspectRatioFrameLayout letterboxes the
+        // texture at the source video's aspect ratio (the same primitive the
+        // old PlayerView used internally with RESIZE_MODE_FIT) — without it,
+        // a poster-sized slot stretches the video when the actual resolution
+        // doesn't quite match the rounded CSS aspect.
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                AspectRatioFrameLayout(ctx).apply {
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    addView(TextureView(ctx).apply { isOpaque = false })
+                }
+            },
+            update = { frame ->
+                val texture = frame.getChildAt(0) as TextureView
+                exoPlayer.setVideoTextureView(texture)
+                if (videoAspect > 0f) frame.setAspectRatio(videoAspect)
+            },
+            onRelease = { frame ->
+                exoPlayer.clearVideoTextureView(frame.getChildAt(0) as TextureView)
+            },
+        )
         when (val s = mediaState) {
             is MediaState.Downloading -> if (showLoadingOverlay) Box(
                 modifier = Modifier.fillMaxSize(),
@@ -277,9 +277,11 @@ fun TdVideoPlayer(
         // stall during a watched video reads identically to a stall before
         // the file lands — single visual idiom for "busy". Only paints when
         // the file is actually local (mediaState is Ready) and the player
-        // says it ran out of demuxed frames; the download overlay above
-        // takes the pre-Ready stalls.
-        if (mediaState is MediaState.Ready && isBuffering) {
+        // has been starved past [REBUFFER_OVERLAY_GRACE_MS]; the download
+        // overlay above takes the pre-Ready stalls. Sub-grace blips
+        // (seeks / source switches / brief chunk refills) never reach
+        // showRebufferOverlay so the disc doesn't flash on healthy playback.
+        if (mediaState is MediaState.Ready && showRebufferOverlay) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
@@ -287,5 +289,30 @@ fun TdVideoPlayer(
                 MediaIndeterminateIndicator()
             }
         }
+        // Custom Compose chrome: 72 dp polygon-morph play/pause, M3 Slider
+        // seek bar, mute toggle, auto-hide, double-tap ±10s seek. Replaces
+        // the stock media3 PlayerView controller surface. TDLib mode mounts
+        // the chrome only after the file is local (pre-Ready the user sees
+        // the download affordance via MediaLoadingOverlay above and playback
+        // chrome would be in the way). Web mode (isRemote) skips the
+        // MediaCache pathway entirely — ExoPlayer streams from the URL and
+        // owns its own ready-state — so the chrome mounts as soon as the
+        // composable enters: any pre-roll buffering is handled via the
+        // player's STATE_BUFFERING listener inside [VideoPlayerControls].
+        if (showControls && (isRemote || mediaState is MediaState.Ready)) {
+            VideoPlayerControls(
+                player = exoPlayer,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
+
+// 400 ms grace window before the mid-playback rebuffer overlay paints. Catches
+// real "video froze" events (>400 ms of starved decoder, typical on cellular
+// hand-off or tight buffer drain on big videos) while hiding sub-second blips
+// (seek, source switch, chunk-boundary refill) that mean nothing to the user.
+// Tighter than the 600 ms used pre-Ready: the user is mid-watch and more
+// attentive — a longer freeze with no feedback reads worse than the same
+// wait while staring at a thumbnail.
+private const val REBUFFER_OVERLAY_GRACE_MS = 400L

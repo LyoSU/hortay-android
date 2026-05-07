@@ -8,6 +8,128 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Changed
+- **Fullscreen video viewer ships its own M3 Expressive chrome**.
+  The viewer used to delegate playback controls to media3's stock
+  `PlayerView` (`useController = true`) — which paints a grey 2010s
+  scrubber + blocky pause button via its own XML layout, visually
+  inert against everything else in the app (polygon shapes, wavy
+  progress, motion-token transitions). Replaced by `VideoPlayerControls`,
+  a Compose chrome painted over the same `TextureView` that feed-
+  preview uses. The hero choices, all canonical M3E patterns:
+    - **Centre play/pause**: 72 dp filled disc with a polygon backdrop
+      morphing `Square (paused) ↔ Circle (playing)`. The pair Google's
+      Material 3 sample app uses for every media-state toggle (play/
+      pause, mute/unmute, record start/stop) — one shape idiom for
+      every "this control switches state" affordance instead of one
+      per control. `Cookie` / `Burst` / `Heart` shapes intentionally
+      stay reserved for hero / personality moments (reactions, empty
+      states); the play button is high-frequency UI, expressive but
+      calm. Glyph crossfades between `play_arrow` and `pause` while
+      the shape morph runs on M3E's spatial-channel medium-bouncy
+      spring.
+    - **Seek bar**: standard M3 `Slider` with a visible white thumb
+      against a translucent track. First cut here used
+      `LinearWavyProgressIndicator` — but its canonical M3E rendering
+      paints the wave only on the *completed* portion of the track,
+      so at `0:00` the bar reads as a straight line and after a seek
+      mid-clip it suddenly reads as wavy. The visual asymmetry is
+      correct for an upload-style ongoing-process indicator but reads
+      as a bug on a seekable media bar where the user expects one
+      stable shape to drag. Wavy progress remains the right
+      affordance elsewhere (download, migration sweep) where the bar
+      fills monotonically.
+    - **Mute toggle**: 40 dp `IconButton` with a `MaterialShapes.Pill`
+      polygon backdrop, glyph crossfade between `volume_up` and
+      `volume_off`. Same toggle vocabulary as the centre play/pause,
+      visually subordinated by size.
+    - **Touch model**: single tap toggles chrome, double-tap on the
+      left or right half seeks ∓10 s (Telegram / YouTube canonical).
+      Auto-hides 3 s after the last interaction, but only while
+      playing — paused state pins the play button as the resume
+      affordance.
+  Two render-path benefits fall out for free: the bare
+  `TextureView` (vs `PlayerView`'s `SurfaceView`-backed surface)
+  blends transparently while ExoPlayer prepares, so the blurred
+  poster reads through cleanly during the prepare/buffer window
+  instead of getting masked by a 2-3 s opaque-black square; and
+  playback / seek / mute state becomes a pure Compose concern that
+  composes through the same `@Immutable` stability chain as the
+  rest of the UI.
+- **`QualityChip` switches to `MaterialShapes.Pill` polygon backdrop**.
+  Previously rounded-rect on `RoundedCornerShape(50)` while every
+  other piece of viewer chrome (close button on `Cookie9Sided`, page
+  counter on `Pill`, the new mute toggle on `Pill`) spoke the
+  expressive polygon vocabulary — the chip read as the one
+  stock-Material rectangle in an otherwise-cohesive overlay.
+- **`HortayExpressive` shape registry adds `PlayPausePaused` /
+  `PlayPausePlaying` / `PlayPauseMorph`** for the centre play/pause
+  control. Pre-built `Morph` (paused = `MaterialShapes.Square`,
+  playing = `MaterialShapes.Circle`) avoids re-allocating the float
+  arrays per frame as the morph progress animates.
+
+### Added
+- **Four new Material Symbols vector drawables** (`Rounded · weight 500
+  · 24 dp`, the project's canonical pairing for M3 Expressive consumer
+  apps with bold display typography): `play_arrow`, `pause`,
+  `volume_up`, `volume_off`. Wired through `Symbol.kt`'s
+  `name → drawable` table for use anywhere a media-toggle glyph is
+  needed. Source paths use a `<group android:translateY="960">`
+  wrapper so Material Symbols' canonical
+  `viewBox="0 -960 960 960"` (bottom-left origin, paths in `[-960, 0]`
+  Y range) maps cleanly into Android Vector Drawable's
+  positive-only `viewportHeight=960` coord space without per-coord
+  conversion.
+
+### Fixed
+- **220 ms grey blink between minithumb and full photo**. The
+  blurred minithumbnail (the inline ~150-byte JPEG TDLib ships with
+  every photo / video poster) was hidden the instant the
+  [MediaCache] reducer flipped the slot to [MediaState.Ready] —
+  but Ready is the *download-completed* signal, not the
+  *Coil-rendered-the-pixels* signal. Coil's `.crossfade(220)` on
+  the file-image AsyncImage then faded the photo in from alpha 0
+  over 220 ms with nothing underneath, so the entire fade window
+  painted the surface-container placeholder colour, producing a
+  visible "блимок" between the soft minithumb and the full image.
+  Fix: keep the minithumb composed under the file image and let
+  Coil's crossfade cover it naturally as the file image reaches
+  full opacity. Render cost is negligible — the minithumb bitmap
+  is in Coil's memory cache after first decode, so what stays
+  composed is one bitmap blit + one RenderEffect blur per visible
+  card per frame, well under the noise of the surrounding
+  LazyColumn layout pass.
+- **Mid-playback rebuffer indicator flashed during healthy
+  playback**. ExoPlayer's `STATE_BUFFERING` fires for many
+  sub-second reasons that aren't user-visible "the video froze"
+  events: source switch on quality change (~50-200 ms), seek
+  (~100-300 ms), normal chunk-boundary refills on tight buffers
+  (~50-150 ms). Painting the indicator immediately on every blip
+  surfaced as a visible disc-and-spinner flash during normal
+  playback. The pre-Ready download path already solved this with
+  [rememberDeferredLoading]; reusing the same primitive at 400 ms
+  grace (tighter than the 600 ms used pre-Ready, since the user
+  is mid-watch and more attentive) so a true network rebuffer
+  gets feedback while every blip-and-recover stays invisible.
+- **Video / animation posters didn't auto-download on metered
+  networks**. The poster (the photo-thumb the feed paints behind
+  the play badge) and the playback file are SEPARATE TDLib
+  fileIds, but [MediaAutoDownloader.dispatchPost] gated the
+  poster behind [AutoDownloadPolicy.videos]. Users who turned
+  videos off on Mobile / Roaming saw bare blurred minithumbs in
+  every video card until they scrolled close enough to trigger
+  the viewport-driven prefetch in [TimelineScreen]'s
+  `posterFileIds()` walk — significantly worse on long feeds
+  with frequent-jump scrolling. Telegram-Android prefetches
+  posters regardless of the video toggle, since posters are
+  photo-sized (30-300 KB) and the toggle's intent is "don't burn
+  bytes on multi-MB playback files", not "leave video cards
+  visually empty". Decoupled: posters now ride
+  [AutoDownloadPolicy.photos] (where they semantically belong),
+  playback continues to ride [AutoDownloadPolicy.videos] with
+  the same size cap. Same change for [PostContent.Animation],
+  [AlbumItem.Video] and [AlbumItem.Animation].
+
+### Changed
 - **End-to-end M3 Expressive redesign**. Theme switches from
   `MaterialTheme` to `MaterialExpressiveTheme` with
   `MotionScheme.expressive()` — every Material component now reads
