@@ -128,6 +128,11 @@ class TdLifecycleBridge(
         runCatching { td.send(TdApi.SetNetworkType(currentNetworkType())) }
             .warnUnlessCancelled(TAG, "networkType")
         applyReadOnlyClientOptions()
+        // Threshold-driven storage probe on every foreground transition. The probe is
+        // metadata-only (~10 ms); the actual sweep only runs if the cache is over the
+        // 80%-of-cap trigger or the 24h housekeeping timer is due. Catches gigabyte
+        // accumulation during a long single session that never cycled foreground.
+        td.maybeOptimizeStorage()
     }
 
     /**

@@ -480,41 +480,57 @@ class TdClient private constructor(
     }
 
     /**
-     * Run [TdApi.OptimizeStorage] at most once per [OPTIMIZE_INTERVAL_MS]. Reads / writes the
-     * timestamp via [SettingsStore] so the throttle persists across cold starts (which is
-     * the whole point — every cold start re-enters [TdApi.AuthorizationStateReady]).
+     * Run [TdApi.OptimizeStorage] when the on-disk media cache approaches the cap, or
+     * (lower priority) once per [OPTIMIZE_INTERVAL_MS] for housekeeping. The 24h timer
+     * alone proved insufficient — a heavy listening session can pile gigabytes between
+     * sweeps if the user doesn't cycle the app — so we now ALSO trigger on a fast probe
+     * showing the cache approaching its cap, regardless of when the last sweep ran.
      *
-     * Runs in the background; the caller does not await. We deliberately stamp the
-     * timestamp *before* the call returns so a long sweep can't be retriggered by a
-     * second auth-Ready in the same launch.
+     * Decision matrix (probe → sweep):
+     *   - usage ≥ [OPTIMIZE_TRIGGER_BYTES]  → sweep immediately, ignoring timer
+     *   - usage < trigger AND 24h elapsed   → sweep (housekeeping)
+     *   - otherwise                         → skip
+     *
+     * Called from:
+     *   1. [TdApi.AuthorizationStateReady] — cold start after login.
+     *   2. [TdLifecycleBridge.goOnline] — every background → foreground transition.
+     *      The fast-probe path makes this cheap (~10 ms metadata read); only when usage
+     *      is over the threshold do we pay the file-table walk (50-300 ms on a populated
+     *      cache).
+     *
+     * Runs in the background; the caller does not await. We stamp the timestamp *before*
+     * the call returns so a long sweep can't be retriggered by a concurrent invocation.
      */
-    private fun maybeOptimizeStorage() {
+    fun maybeOptimizeStorage() {
         scope.launch {
-            val last = settings.lastStorageOptimizeAt()
-            val now = System.currentTimeMillis()
-            if (now - last < OPTIMIZE_INTERVAL_MS) return@launch
-            settings.setLastStorageOptimizeAt(now)
             runCatching {
-                // Probe before walk: a 500 MB cap is only meaningful when we're
-                // approaching it. [TdApi.GetStorageStatisticsFast] is a metadata-only
-                // read (sub-10 ms); [TdApi.OptimizeStorage] walks the file table on
-                // a populated ~500 MB cache (50-300 ms). Levin's recommended pattern
-                // in tdlib/td#667#issuecomment-521611484: *"you can from time to time
-                // use getStorageStatisticsFast to quickly get size of TDLib's cache
-                // and run the method optimizeStorage if needed."* Skip the walk when
-                // usage is well below the cap — Android cold-start latency win and
-                // a small battery saving on every day-boundary launch where the
-                // cache hasn't filled.
+                // [TdApi.GetStorageStatisticsFast] is a metadata-only read (sub-10 ms);
+                // [TdApi.OptimizeStorage] walks the file table on a populated ~500 MB
+                // cache (50-300 ms). Levin's recommended pattern in
+                // tdlib/td#667#issuecomment-521611484: *"you can from time to time use
+                // getStorageStatisticsFast to quickly get size of TDLib's cache and run
+                // the method optimizeStorage if needed."* The probe is cheap enough to
+                // run on every foreground transition.
                 val fast = send(TdApi.GetStorageStatisticsFast())
                 val usageBytes = fast.filesSize
-                if (usageBytes < OPTIMIZE_TRIGGER_BYTES) {
+                val now = System.currentTimeMillis()
+                val last = settings.lastStorageOptimizeAt()
+                val overThreshold = usageBytes >= OPTIMIZE_TRIGGER_BYTES
+                val timerDue = (now - last) >= OPTIMIZE_INTERVAL_MS
+                if (!overThreshold && !timerDue) {
                     Log.i(
                         TAG,
                         "OptimizeStorage skipped: cache=${usageBytes / (1024L * 1024L)}MB " +
-                            "< ${OPTIMIZE_TRIGGER_BYTES / (1024L * 1024L)}MB trigger",
+                            "(under ${OPTIMIZE_TRIGGER_BYTES / (1024L * 1024L)}MB trigger and within 24h)",
                     )
                     return@runCatching
                 }
+                settings.setLastStorageOptimizeAt(now)
+                Log.i(
+                    TAG,
+                    "OptimizeStorage running: cache=${usageBytes / (1024L * 1024L)}MB " +
+                        "(overThreshold=$overThreshold, timerDue=$timerDue)",
+                )
                 // For OptimizeStorage's eviction-driving limits (size, ttl, count,
                 // immunityDelay) TDLib treats 0 as a literal "limit 0" and -1 as
                 // "use the default limit". An earlier version passed `count=0`
@@ -526,9 +542,11 @@ class TdClient private constructor(
                 //   • size          = 500 MB hard cap (kept)
                 //   • ttl           = -1 (TDLib default)
                 //   • count         = -1 (no count cap; size drives eviction)
-                //   • immunityDelay = -1 (TDLib default ~7 days, so a freshly
-                //                     downloaded file isn't evictable on the
-                //                     next 24h sweep)
+                //   • immunityDelay = -1 (TDLib default 1 h — keeps a freshly
+                //                     downloaded file safe from eviction during
+                //                     the immediate post-download window when
+                //                     the user is most likely still looking at
+                //                     it; size cap drives long-term eviction)
                 // chatLimit stays 0 — per the field's javadoc it "Affects only
                 // returned statistics" (number of chats with their own breakdown
                 // in the response), not eviction. We don't read those stats, so

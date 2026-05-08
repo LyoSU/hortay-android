@@ -115,18 +115,23 @@ class AppGraph(context: Context) {
     val autoDownloadStore: AutoDownloadStore = AutoDownloadStore(context)
 
     /**
-     * Background service that prefetches photos / videos / animations on new posts
-     * per [autoDownloadStore]. Bound at process start; lives for the entire app
-     * lifetime via [appScope]. Reads the network classification from
-     * [TdLifecycleBridge.networkType] (own coarse enum that distinguishes roaming,
-     * which TDLib's [TdApi.NetworkType] does not).
+     * Background service that prefetches photos / videos / animations for posts that
+     * arrive via [TdApi.UpdateNewMessage] (real-time) per [autoDownloadStore]. Posts
+     * pulled by refresh / pagination / snapshot restore / channel-history back-fill are
+     * NOT auto-downloaded — those go through the viewport-driven prefetch path in
+     * [TimelineScreen] when (and only when) the user scrolls them into view.
+     *
+     * Bound at process start; lives for the entire app lifetime via [appScope]. Reads
+     * the network classification from [TdLifecycleBridge.networkType] (own coarse enum
+     * that distinguishes roaming, which TDLib's [TdApi.NetworkType] does not).
      */
     val autoDownloader: MediaAutoDownloader = MediaAutoDownloader(
         store = autoDownloadStore,
         cache = mediaCache,
-        postsFlow = postsRepository.posts,
+        newArrivalsFlow = postsRepository.newArrivals,
         networkType = lifecycleBridge.networkType,
         connection = tdClient.connection,
+        foreground = lifecycleBridge.foreground,
         context = context,
         scope = appScope,
     ).also { it.bind() }

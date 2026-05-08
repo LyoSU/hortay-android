@@ -12,7 +12,10 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.StateFlow
@@ -100,6 +103,37 @@ class PostsRepository(
 
     private val _posts = MutableStateFlow<PersistentList<TimelinePost>>(persistentListOf())
     override val posts: StateFlow<PersistentList<TimelinePost>> = _posts.asStateFlow()
+
+    // Real-time *new* post stream — emits ONLY for posts that arrived via
+    // [TdApi.UpdateNewMessage] (direct + album-debounce flush), i.e. through
+    // [ingest]. Refresh / loadOlder / restoreFromSnapshot / loadChannelHistory /
+    // search write to [_posts] without going through [ingest], so they do NOT
+    // emit here.
+    //
+    // Why this matters: [posts] is a *state* of the merged feed, so any
+    // observer (.onEach) sees the entire feed re-emitted on every fold.
+    // Subscribing to [posts] for "what's new" is a category error — it makes
+    // every cold-start refresh / pagination / snapshot rehydrate look like
+    // 1000 freshly-arrived posts. [MediaAutoDownloader] consumes this delta
+    // stream so auto-download policy applies *only* to genuinely new posts
+    // (the same shape Telegram-Android uses), not to history that's already
+    // visible-but-scrolled-past on the feed.
+    //
+    // Buffer policy:
+    //   - extraBufferCapacity = 64: a single album burst can flush ~10
+    //     members into a single ingest; a small handful of channels can post
+    //     concurrently. 64 is comfortable headroom.
+    //   - BufferOverflow.DROP_OLDEST: under an extreme burst we'd rather
+    //     lose a stale prefetch hint than back-pressure ingest (which would
+    //     stall the live feed itself). The viewport-driven prefetch in
+    //     [TimelineScreen] picks up anything we missed the moment the user
+    //     scrolls into it.
+    private val _newArrivals = MutableSharedFlow<TimelinePost>(
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+    val newArrivals: SharedFlow<TimelinePost> = _newArrivals.asSharedFlow()
 
     init {
         // Live feed: any new channel post arrives via UpdateNewMessage and is folded in.
@@ -613,6 +647,11 @@ class PostsRepository(
             .filter { it.content !is PostContent.Unsupported }
         if (newPosts.isEmpty()) return
 
+        // Track what actually got added so we can emit it on [newArrivals] AFTER the
+        // CAS-loop below settles. Captured by reference inside the `update` lambda;
+        // the final successful retry's value wins (earlier retries may overwrite, that
+        // is correct — we want the addition computed against the actually-written state).
+        var addedForEmit: List<TimelinePost> = emptyList()
         _posts.update { current ->
             // When an incoming batch contains album members, [coalesceAlbumFragments] has
             // already fetched the full sibling set for each affected mediaAlbumId, so the
@@ -630,9 +669,14 @@ class PostsRepository(
                 }
             val existingKeys = pruned.mapTo(mutableSetOf()) { it.chatId to it.id }
             val addition = newPosts.filterNot { (it.chatId to it.id) in existingKeys }
+            addedForEmit = addition
             if (addition.isEmpty() && pruned === current) current
             else PostFilterStrategy.apply(pruned.addAll(addition)).take(MAX_FEED_SIZE).toPersistentList()
         }
+        // Emit AFTER the state write so any listener sees a consistent feed.
+        // tryEmit can never block under DROP_OLDEST, so we don't risk back-pressuring
+        // the ingest path on a slow downstream collector.
+        for (post in addedForEmit) _newArrivals.tryEmit(post)
     }
 
     /**

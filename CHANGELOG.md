@@ -8,6 +8,75 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Fixed
+- **Auto-download dumped multi-GB into the cache the moment the feed
+  opened, even before the user scrolled (TDLib mode)**. User report:
+  "очистив кеш, відкрив стрічку, нічого не гортав — а вже 5 ГБ
+  накачано". Root cause was `MediaAutoDownloader` subscribing to
+  `PostsRepository.posts` — a *state* flow that re-emits the entire
+  merged feed (up to `MAX_FEED_SIZE = 1000`) on every fold. Cold-start
+  refresh streamed per-channel batches, each emit re-walked the full
+  feed, and every video that fit under the user's `videoMaxBytes`
+  cap got queued for download regardless of whether it was anywhere
+  near the viewport. On a 200-channel subscription with the prior
+  `DEFAULT_VIDEO_MAX_WIFI = 100 MB`, a single foreground entry could
+  dispatch hundreds of multi-MB videos to TDLib's queue, blowing
+  past the 500 MB `OptimizeStorage` cap before the daily 24h sweep
+  even noticed. Three coordinated changes to align with how
+  Telegram-Android applies the same policy:
+    1. **`PostsRepository.newArrivals: SharedFlow<TimelinePost>`** —
+       a delta stream emitted ONLY from `ingest()`, the single code
+       path for `UpdateNewMessage` (direct + album-debounce flush).
+       Refresh / `loadOlder` / `restoreFromSnapshot` /
+       `loadChannelHistory` / `searchInChannel` write to `_posts`
+       directly without going through `ingest`, so they don't
+       emit. `MutableSharedFlow(buffer=64, DROP_OLDEST)` so an
+       extreme burst loses a stale prefetch hint rather than
+       back-pressuring the live-feed write path. The dedup that
+       was previously done by `MediaAutoDownloader`'s LRU
+       `prefetched` set falls out for free — `ingest`'s existing
+       `existingKeys` filter already drops a duplicate
+       `UpdateNewMessage` from a TDLib reconnect echo before it
+       reaches `_newArrivals`.
+    2. **`MediaAutoDownloader` subscribes to `newArrivals`**
+       instead of `posts`. The `processFeed` walk and its 4096-entry
+       LRU are gone. Cold-start, restored snapshots and pagination
+       now download zero bytes through the auto-download path —
+       minithumbs are inline in the `GetChatHistory` payload so the
+       user sees blurred previews instantly, and visible cards
+       download on demand via the per-Composable
+       `ensure(VisibleMedia)` already wired through
+       `rememberMediaBinding`. Real-time arrivals continue to
+       prefetch under the active policy so a freshly-arrived post
+       has its media warm by the time the user taps the
+       "новi пости" pill. Also gated on `lifecycleBridge.foreground`
+       — speculative DownloadFile against a phone in the user's
+       pocket isn't free (TDLib keeps the link alive a while after
+       backgrounding, so prefetch *would* fire), and Hortay
+       positions itself as a battery-conscious lightweight reader.
+       Telegram-Android applies the same foreground gate.
+    3. **`DEFAULT_VIDEO_MAX_WIFI` lowered 100 MB → 50 MB**, matching
+       Telegram-Android's shipping value. Existing users who had
+       customised their setting (e.g. raised it to 200 MB or lowered
+       it) keep their choice — `AutoDownloadStore` decodes their
+       persisted JSON before falling back to the default.
+- **`OptimizeStorage` couldn't catch a long single session that didn't
+  cycle foreground**. The 24h timer was the only trigger for the daily
+  sweep; a heavy user listening for 12h straight could pile gigabytes
+  past the 500 MB cap and never see eviction until they cold-restarted
+  the app. The decision matrix is now threshold-first:
+    - usage ≥ 80% of cap → sweep immediately, ignoring timer.
+    - usage < threshold AND 24h elapsed → sweep (housekeeping).
+    - otherwise → skip.
+  Plus a new trigger point: every background → foreground transition
+  via `TdLifecycleBridge.goOnline` calls `maybeOptimizeStorage`. The
+  fast-probe path makes this cheap (sub-10 ms metadata read); only
+  when the cache is actually approaching the cap do we pay the
+  file-table walk (50-300 ms). A user who opens / closes the app a
+  few times per day now gets sub-cap eviction without waiting for the
+  daily timer. Also corrected an outdated comment claiming TDLib's
+  default `immunity_delay` was ~7 days — actual upstream default is
+  1 hour, which was never the load-bearing reason for the previous
+  symptom (stale 24h throttle was).
 - **"Новi пости" pill counted older pagination arrivals as new**.
   The pill state machine in `TimelineViewModel` tracked seen content
   as a per-channel set of message ids

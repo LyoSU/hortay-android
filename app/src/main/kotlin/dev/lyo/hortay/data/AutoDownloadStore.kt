@@ -40,13 +40,24 @@ data class AutoDownloadPolicy(
         // Round numbers chosen to match what Telegram-Android's slider snaps to (the
         // labels are 1/2/5/10/30/50/100/200/300/500 MB), so a returning Telegram user
         // sees familiar buckets. We expose the same set in [VIDEO_SIZE_STEPS] for the UI.
-        const val DEFAULT_VIDEO_MAX_WIFI: Long = 100L * 1024 * 1024     // 100 MB
+        //
+        // Wi-Fi default lowered from 100 MB → 50 MB to match Telegram-Android's shipping
+        // value. The earlier 100 MB cap, paired with `MediaAutoDownloader` walking the
+        // entire feed (since fixed: prefetch is now scoped to UpdateNewMessage arrivals),
+        // could blow the on-disk cache to multi-GB on a fresh cold start of a 200-channel
+        // feed with even a small fraction of large videos. 50 MB still covers the vast
+        // majority of Telegram channel videos (typical clips are 5-30 MB at the tariff
+        // bitrates server-side encoders pick) while bounding the worst case. Existing
+        // users who customised their setting upward (e.g. to 200 MB) keep their choice
+        // because [AutoDownloadStore] decodes their persisted JSON before falling back
+        // to this default.
+        const val DEFAULT_VIDEO_MAX_WIFI: Long = 50L * 1024 * 1024      // 50 MB
         const val DEFAULT_VIDEO_MAX_MOBILE: Long = 10L * 1024 * 1024    // 10 MB
 
         val DEFAULT_WIFI = AutoDownloadPolicy(
             photos = true,
             videos = true,
-            videoMaxBytes = DEFAULT_VIDEO_MAX_WIFI,
+            videoMaxBytes = DEFAULT_VIDEO_MAX_WIFI,  // 50 MB, see KDoc above
             animations = true,
         )
         val DEFAULT_MOBILE = AutoDownloadPolicy(
