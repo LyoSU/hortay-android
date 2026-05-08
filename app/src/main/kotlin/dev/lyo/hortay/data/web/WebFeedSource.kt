@@ -229,25 +229,7 @@ class WebFeedSource(
                         }
                     }.awaitAll()
                 }
-                // Adaptive backoff signal. Three outcome buckets matter:
-                //   - any Fresh → reset; the user wants prompt updates after
-                //     silence breaks.
-                //   - any Transient (RateLimited / NetworkError) without Fresh →
-                //     leave the counter alone. A 429-burst that returned zero
-                //     new content is NOT a "feed has been quiet" signal —
-                //     conflating it would push the scheduler to 30-min idle
-                //     intervals after a single t.me throttle blip, costing an
-                //     hour of update lag for what's actually a transient
-                //     network condition. Edge already told us via Retry-After
-                //     when to come back; the gate in [WebTelegramClient] honours
-                //     that on the next fetch.
-                //   - all NoOp (304 / ParseFailure / NotFound / Private) →
-                //     increment, this really was a quiet sweep.
-                when {
-                    outcomes.any { it == FetchOutcome.Fresh } -> _consecutiveNoOpSweeps.value = 0
-                    outcomes.any { it == FetchOutcome.Transient } -> Unit
-                    else -> _consecutiveNoOpSweeps.update { it + 1 }
-                }
+                _consecutiveNoOpSweeps.value = nextNoOpStreak(outcomes, _consecutiveNoOpSweeps.value)
                 lastSuccessfulRefreshAtMs = System.currentTimeMillis()
                 _refreshState.value = RefreshState.Idle
             } catch (t: Throwable) {
@@ -357,7 +339,7 @@ class WebFeedSource(
         }
     }
 
-    private enum class FetchOutcome { Fresh, NoOp, Transient }
+    internal enum class FetchOutcome { Fresh, NoOp, Transient }
 
     /**
      * Convenience "subscribe and refresh" that's the common path from the
@@ -437,6 +419,31 @@ class WebFeedSource(
 
     companion object {
         private const val TAG = "WebFeedSource"
+
+        /**
+         * Adaptive-backoff aggregator. Three outcome buckets matter:
+         *   - any [FetchOutcome.Fresh] → reset; the user wants prompt
+         *     updates after silence breaks.
+         *   - any [FetchOutcome.Transient] (RateLimited / NetworkError)
+         *     without Fresh → leave the counter alone. A 429-burst that
+         *     returned zero new content is NOT a "feed has been quiet"
+         *     signal — conflating it would push the scheduler to 30-min
+         *     idle intervals after a single t.me throttle blip, costing
+         *     an hour of update lag for what's actually a transient
+         *     network condition. Edge already told us via Retry-After
+         *     when to come back; the gate in [WebTelegramClient] honours
+         *     that on the next fetch.
+         *   - all [FetchOutcome.NoOp] (304 / ParseFailure / NotFound /
+         *     Private) → increment, this really was a quiet sweep.
+         *
+         * Pure function: extracted from [doRefresh] so the bucket logic
+         * is testable without spinning up an HTTP / SQLite stack.
+         */
+        internal fun nextNoOpStreak(outcomes: List<FetchOutcome>, current: Int): Int = when {
+            outcomes.any { it == FetchOutcome.Fresh } -> 0
+            outcomes.any { it == FetchOutcome.Transient } -> current
+            else -> current + 1
+        }
 
         /**
          * Cap on simultaneous in-flight HTTP requests. 6 picked empirically — high

@@ -204,6 +204,9 @@ object WebPostAdapter {
     @androidx.annotation.VisibleForTesting
     internal fun htmlToFormattedForTest(html: String): FormattedText = htmlToFormatted(html)
 
+    @androidx.annotation.VisibleForTesting
+    internal fun parseShortNumberForTest(s: String): Int = parseShortNumber(s)
+
     // ---- HTML → FormattedText -------------------------------------------------
 
     /**

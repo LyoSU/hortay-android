@@ -39,6 +39,25 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   channel still lands above the seeded mark and registers
   correctly. The partition `posts ∪ pendingNew = livePosts` is
   preserved end-to-end.
+- **Floating-bar `NestedScrollConnection` extracted to
+  `rememberFloatingTopBarBehavior()`** in
+  `ui/main/FloatingTopBar.kt`. `TimelineScreen` and `CommentsScreen`
+  previously kept identical ~30-LOC copies of the same
+  scroll-driven offset logic — load-bearing patternник that any
+  future bug-fix would have had to apply to both copies (and
+  probably wouldn't, the second time around). Single helper now,
+  with an optional `enabled = { … }` lambda for the Timeline's
+  channel-filter / search-inside-filter pinning case.
+- **17 new unit tests** across two pure-function targets surfaced
+  by the audit fix batch:
+  - `WebPostAdapterParseShortNumberTest` (11 cases) pins the
+    locale-aware number parser including the comma-decimal
+    regression fix ("1,5K" → 1500).
+  - `WebFeedSourceBackoffTest` (6 cases) pins the adaptive-backoff
+    bucket logic so a 429-burst can't silently look identical to a
+    quiet sweep. The aggregator was extracted from `doRefresh`
+    into a pure `nextNoOpStreak(outcomes, current)` companion fn
+    so it can be tested without an HTTP / SQLite stack.
 - **Several races and lifecycle leaks surfaced by a focused
   concurrency audit.** Each was a real-world hazard rather than a
   theoretical one — fixes below land before they grow into

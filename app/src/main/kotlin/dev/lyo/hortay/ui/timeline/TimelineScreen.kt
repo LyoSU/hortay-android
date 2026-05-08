@@ -24,9 +24,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
@@ -57,6 +54,7 @@ import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.ui.channels.ChannelInfoSheet
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
+import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -215,44 +213,15 @@ fun TimelineScreen(
     // bar's measured height shrinks via [Modifier.layout] in lockstep with
     // its visual offset so Scaffold's body padding tracks the same signal,
     // never a competing timeline.
-    val topBarFullHeightPx = remember { mutableFloatStateOf(0f) }
-    val topBarOffsetPx = remember { mutableFloatStateOf(0f) }
     // Only the destination-style bars (home, bookmarks) participate in the
     // scroll-hide. Filter / search-inside-filter use a compact `TopAppBar`
     // and read as a tool stage with active input — those must stay pinned.
-    // [rememberUpdatedState] gives the connection a live read on the current
-    // scope without re-allocating the connection itself per recomposition.
-    val barHidesOnScroll = rememberUpdatedState(channelFilter == null)
-    val topBarNestedScroll = remember(topBarFullHeightPx) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (!barHidesOnScroll.value) return Offset.Zero
-                if (available.y >= 0f) return Offset.Zero
-                val limit = -topBarFullHeightPx.floatValue
-                if (limit == 0f) return Offset.Zero
-                val previous = topBarOffsetPx.floatValue
-                val next = (previous + available.y).coerceIn(limit, 0f)
-                if (next == previous) return Offset.Zero
-                topBarOffsetPx.floatValue = next
-                return Offset(0f, next - previous)
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                if (!barHidesOnScroll.value) return Offset.Zero
-                if (available.y <= 0f) return Offset.Zero
-                val previous = topBarOffsetPx.floatValue
-                if (previous == 0f) return Offset.Zero
-                val next = (previous + available.y).coerceIn(-topBarFullHeightPx.floatValue, 0f)
-                if (next == previous) return Offset.Zero
-                topBarOffsetPx.floatValue = next
-                return Offset(0f, next - previous)
-            }
-        }
-    }
+    // The behavior helper reads `enabled` live so toggling it doesn't
+    // re-allocate the NestedScrollConnection.
+    val floatingBar = rememberFloatingTopBarBehavior(enabled = { channelFilter == null })
+    val topBarFullHeightPx = floatingBar.fullHeightPx
+    val topBarOffsetPx = floatingBar.offsetPx
+    val topBarNestedScroll = floatingBar.nestedScroll
     // Reset the bar to fully visible whenever the user switches between
     // top-level destinations (home ↔ bookmarks) or in/out of channel filter
     // mode. Without this the bar stayed at its last hidden offset across

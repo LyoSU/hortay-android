@@ -15,11 +15,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
@@ -37,6 +34,7 @@ import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.ThreadRow
 import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.TdAvatar
@@ -111,36 +109,10 @@ fun CommentsScreen(
     // measured height in lockstep so Scaffold's body padding tracks the same
     // signal — no separate animation timeline, no reflow jolt as the user
     // scrolls between the post header and the comment thread below.
-    val topBarFullHeightPx = remember { mutableFloatStateOf(0f) }
-    val topBarOffsetPx = remember { mutableFloatStateOf(0f) }
-    val topBarNestedScroll = remember(topBarFullHeightPx) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y >= 0f) return Offset.Zero
-                val limit = -topBarFullHeightPx.floatValue
-                if (limit == 0f) return Offset.Zero
-                val previous = topBarOffsetPx.floatValue
-                val next = (previous + available.y).coerceIn(limit, 0f)
-                if (next == previous) return Offset.Zero
-                topBarOffsetPx.floatValue = next
-                return Offset(0f, next - previous)
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                if (available.y <= 0f) return Offset.Zero
-                val previous = topBarOffsetPx.floatValue
-                if (previous == 0f) return Offset.Zero
-                val next = (previous + available.y).coerceIn(-topBarFullHeightPx.floatValue, 0f)
-                if (next == previous) return Offset.Zero
-                topBarOffsetPx.floatValue = next
-                return Offset(0f, next - previous)
-            }
-        }
-    }
+    val floatingBar = rememberFloatingTopBarBehavior()
+    val topBarFullHeightPx = floatingBar.fullHeightPx
+    val topBarOffsetPx = floatingBar.offsetPx
+    val topBarNestedScroll = floatingBar.nestedScroll
 
     // Read-state ack for visible comments. Mirrors the feed's dwell logic, scoped to
     // the comments overlay's discussion-thread chat. Until this existed, comments were
