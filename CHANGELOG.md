@@ -171,6 +171,40 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Performance
 
+- **Tamed TDLib pool contention** that surfaced as multi-second stalls on
+  user-facing photos and the "comments sometimes load slowly" complaint. Live
+  logcat showed user-staring files sitting at `bytes=0` for 5-79 s while
+  newer-issued speculative downloads jumped ahead of them. Per Levin
+  ([tdlib/td#786](https://github.com/tdlib/td/issues/786)), TDLib serves
+  same-priority `DownloadFile` requests in **reverse order of issue** (LIFO);
+  combined with the per-DC active-slot pool, every additional ensure() at the
+  same priority pushed earlier (visible) files toward the back. Three fixes
+  converge on this:
+  1. `PREFETCH_AHEAD: 4 → 2` — half the speculative storm, matching
+     Telegram-Android's empirical neighbour-cell window.
+  2. Prefetched neighbours moved off [VisibleMedia] into [Prefetch] (priority
+     8 instead of 16). Visible posts self-ensure at 16 via
+     `rememberMediaBinding`, so the priority-aware scheduler now serves visible
+     first regardless of LIFO inside each lane.
+  3. `MediaCache.checkStalled` skips the watchdog reissue for non-user-facing
+     files (`Avatar` / `Prefetch`). Reissue at the same priority on an
+     already-active job is a TDLib no-op (per `ResourceManager.cpp`); 200
+     channel avatars × 15-s cadence × 3 retries was 600 wasted RPCs/h
+     contributing to the very pool contention the watchdog was meant to fix.
+- **`prefetchThread` fan-out capped at top-3 visible posts**. Without the cap,
+  5-10 simultaneous `GetMessageProperties + GetMessageThread +
+  GetMessageThreadHistory` bursts blocked the TDLib RPC queue exactly when the
+  user tapped a different post's comments — surfacing the "comments slow"
+  symptom. Three slots covers the dwell-likely set without owning the pipe.
+- **Photo size selection now matches Telegram-Android's display-tier picker**
+  (TDLib mode). Feed cards used the largest available variant (`w`, ~2560 px)
+  for 1080-px screens — paying ~3-4× the bytes / decode CPU per photo.
+  `Photo.toMedia(targetMaxSidePx)` now picks the smallest variant whose longer
+  side ≥ target. Three tiers: Preview (320 px) for reply previews + link-preview
+  thumbs; Inline (1280 px) for feed cards / video posters; Fullscreen (largest)
+  for the pinch-zoom viewer. The viewer stacks the inline variant under the
+  fullscreen one for progressive enhancement — feed-cached `y` paints
+  immediately on tap and `w` crossfades over once it lands.
 - **Skip JSON re-encoding for unchanged web posts**. New `selectFingerprint`
   query reads `(text_html, views)` and skips four serialises + UPDATE on a
   match. ~28 s of CPU saved per hour of foreground sweeping on 200 channels.

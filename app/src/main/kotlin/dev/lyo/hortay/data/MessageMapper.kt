@@ -394,7 +394,11 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
      * kind icon. When [content] is null entirely we degrade to None.
      */
     private fun extractReplyMedia(content: TdApi.MessageContent?): Pair<TdMedia?, ReplyMediaKind> = when (content) {
-        is TdApi.MessagePhoto -> content.photo.toMedia() to ReplyMediaKind.Photo
+        // Reply previews paint at ~40 dp — Preview tier (≈`m`, 320 px) is the
+        // smallest variant that still survives a 3x density without visible
+        // pixelation. Pulling the inline / fullscreen variant would burn
+        // 3-4× the bytes for a thumbnail the user reads as "icon".
+        is TdApi.MessagePhoto -> content.photo.toMedia(PHOTO_TARGET_PREVIEW_PX) to ReplyMediaKind.Photo
         is TdApi.MessageVideo -> content.video.toThumbMedia() to ReplyMediaKind.Video
         is TdApi.MessageAnimation -> content.animation.toThumbMedia() to ReplyMediaKind.Animation
         is TdApi.MessageDocument -> (content.document.thumbnail?.toMedia()) to ReplyMediaKind.Document
@@ -410,7 +414,7 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
         is TdApi.MessagePaidMedia -> {
             val thumb = content.media.firstNotNullOfOrNull { piece ->
                 when (piece) {
-                    is TdApi.PaidMediaPhoto -> piece.photo.toMedia()
+                    is TdApi.PaidMediaPhoto -> piece.photo.toMedia(PHOTO_TARGET_PREVIEW_PX)
                     is TdApi.PaidMediaVideo -> piece.video.toThumbMedia()
                     else -> null
                 }

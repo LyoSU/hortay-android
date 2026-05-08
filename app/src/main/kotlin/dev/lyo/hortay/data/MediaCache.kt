@@ -414,9 +414,15 @@ class MediaCache(
      *     as aggressive here (a chunk-to-chunk gap on a slow-but-progressing connection
      *     is 1-5 s legitimately), so 6 s is the line where it reads as "stuck" rather
      *     than "slow". Once the file gets going, this is the relevant threshold.
-     *   • [STALL_THRESHOLD_MS] — for `Prefetch`/`Avatar` (speculative, off-screen, or
-     *     always second-class). No UX win from spamming reissue for a thumbnail the
-     *     user may never see; 15 s matches TDLib's own session-reconnect window.
+     *   • Non-user-facing files (`Prefetch`/`Avatar`) — **no reissue**. Reissue at the
+     *     same priority on an already-active job is a TDLib no-op (per Levin's #786
+     *     + ResourceManager.cpp), so the previous Prefetch/Avatar reissue path was
+     *     pure RPC pollution: 200 channel avatars × 15-s cadence × 3 retries = 600
+     *     wasted RPCs/h. The skip is safe because the user can't perceive the stall
+     *     (avatar pyramid falls back to letter+minithumb; prefetch is off-screen
+     *     by definition), and a viewport-driven priority bump from
+     *     [rememberMediaBinding] later is a *real* promotion (different priority
+     *     lane → genuine queue jump in TDLib) rather than the same-priority no-op.
      *
      * Skip non-active entries entirely: a file queued in TDLib's per-DC slot pool reads
      * as `is_downloading_active=false` even though it has [MediaState.Downloading] in
@@ -435,11 +441,31 @@ class MediaCache(
             if (!track.isActive) continue
             val priority = activePriority[fileId] ?: DownloadPriority.VisibleMedia.tdValue
             val isUserFacing = priority >= DownloadPriority.VisibleMedia.tdValue
-            val threshold = when {
-                isUserFacing && track.bytes == 0L -> STALL_THRESHOLD_FIRST_BYTE_MS
-                isUserFacing -> STALL_THRESHOLD_FOREGROUND_MS
-                else -> STALL_THRESHOLD_MS
-            }
+            // Skip the watchdog entirely for non-user-facing files (Prefetch=8,
+            // Avatar=2). Three reasons converge here:
+            //   1. The user can't perceive the stall — avatars fall back to
+            //      letter+minithumb, prefetch is off-screen by definition.
+            //   2. Reissuing [TdApi.DownloadFile] at the same priority on an
+            //      already-active job is a no-op for TDLib (per Levin's
+            //      #786 + ResourceManager.cpp): the file stays in the same slot
+            //      with the same priority. We were just polluting the RPC pipe
+            //      with same-shaped requests, contributing to the very pool
+            //      saturation we're trying to alleviate. A 200-channel feed
+            //      walks past 200 avatars; each one ticking the watchdog at
+            //      15-s cadence × 3 retries = 600 wasted RPCs/h.
+            //   3. The Failed-after-3-retries escalation has no UX value here:
+            //      the user never sees the avatar/prefetch slot at all, so
+            //      there's nothing to "give up on". When (and if) they scroll
+            //      into view, [rememberMediaBinding]'s viewport-driven ensure()
+            //      naturally bumps to [DownloadPriority.VisibleMedia], and the
+            //      reissue logic at the new priority *does* re-promote the file
+            //      in TDLib's queue (different priority lane, real promotion).
+            //
+            // We keep the entry in `tracks` so the next bytes movement still
+            // resets `changedAt` and a future priority bump's reissue path
+            // works correctly. We just don't drive the kick from here.
+            if (!isUserFacing) continue
+            val threshold = if (track.bytes == 0L) STALL_THRESHOLD_FIRST_BYTE_MS else STALL_THRESHOLD_FOREGROUND_MS
             val ageMs = now - track.changedAt
             if (ageMs < threshold) continue
             val slot = states[fileId] ?: run {
@@ -873,11 +899,12 @@ class MediaCache(
         // wait 30s for the next sweep. 5s keeps wake-ups cheap (12/min when truly
         // idle) while making first-stall detection feel instant.
         const val IDLE_TICK_MS = 5_000L
-        // No bytes for this long → reissue. Tuned down from 30s: TDLib treats
-        // DownloadFile reissue as a free "kick the queue" (not a restart), so an
-        // unnecessary nudge during a slow-but-progressing transfer costs us nothing
-        // (real progress resets `changedAt` — only true zero-byte intervals trip the
-        // watchdog), while a genuine stall recovers ~2× faster.
+        // Historical "any active download stalled this long" threshold. No
+        // longer drives reissue (we now skip the watchdog kick entirely for
+        // non-user-facing files; see [checkStalled]), but the constant survives
+        // because the [post-completion-resync] doc references it as the next
+        // escalation step if TDLib's rename never lands. 15 s aligns with
+        // TDLib's session-reconnect window.
         const val STALL_THRESHOLD_MS = 15_000L
         // Tighter threshold for files the user is actively staring at
         // (Foreground/VisibleMedia priorities) once bytes have started flowing. Server-side

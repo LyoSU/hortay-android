@@ -231,6 +231,22 @@ sealed interface AlbumItem {
         override val media: TdMedia,
         val hasSpoiler: Boolean = false,
         val isSecret: Boolean = false,
+        /**
+         * Higher-resolution variant for the [FullScreenMediaViewer]. Telegram
+         * ships a photo size pyramid (`m`/`x`/`y`/`w`); the feed renders
+         * [media] (≈`y`, 1280 px) but pinch-zoom + full-screen need the `w`
+         * (≈2560 px) variant to stay sharp. Defaults to [media] for
+         * compatibility with paths that don't have access to the full
+         * pyramid (paid media, web-mode posts) — those cases simply zoom
+         * the same fileId the feed uses, which is the existing behaviour.
+         *
+         * The viewer's progressive-enhancement path stacks [media] (already
+         * Ready in [MediaCache] from feed rendering) under [fullscreen], so
+         * the user sees the inline variant immediately on open and the `w`
+         * variant crossfades over once it lands — no minithumb-blur stage
+         * on full-screen open.
+         */
+        val fullscreen: TdMedia = media,
     ) : AlbumItem
 
     @Immutable

@@ -565,8 +565,24 @@ fun TimelineScreen(
                     // a stale snapshot would prefetch threads for posts that have
                     // since shifted out of those positions.
                     val snapshot = displayedItemsState.value
+                    // Cap how many threads we warm per viewport-stable window. Each
+                    // [CommentsRepository.prefetchThread] fires
+                    // [TdApi.GetMessageProperties] + [TdApi.GetMessageThread] +
+                    // [TdApi.GetMessageThreadHistory] on the same TDLib RPC pipe that
+                    // also carries the user's interactive calls (taps, ack-on-dwell,
+                    // chat presence). With 5-10 visible posts having comments, the
+                    // burst flooded the pipe in the *exact* moment the user might tap
+                    // a different post's comments — surfacing as the "сomments
+                    // sometimes load slowly" symptom. Per Levin (tdlib/td#3019), TDLib
+                    // serialises RPC requests through a single per-client queue, so
+                    // unbounded fan-out blocks the head of the queue for the duration
+                    // of the burst. Top-3 visible posts is the **plurality** of
+                    // dwell-targets a user is likely to tap into without scrolling
+                    // again — covers the warm-up benefit without owning the pipe.
                     indices.flatMap { snapshot.getOrNull(it)?.posts().orEmpty() }
+                        .asSequence()
                         .filter { it.commentCount != null }
+                        .take(COMMENTS_PREFETCH_LIMIT)
                         .forEach { post ->
                             val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
                             commentsRepo.prefetchThread(post.chatId, ids)
@@ -1011,19 +1027,16 @@ fun TimelineScreen(
                         }
 
                         // Eager prefetch: while the user reads what's on screen, warm
-                        // the next [PREFETCH_AHEAD] posts' posters. The closest
-                        // [VISIBLE_BOOST_RADIUS] slots run at [DownloadPriority.VisibleMedia]
-                        // (16), the rest at [DownloadPriority.Prefetch] (8). The split
-                        // matters because [MediaAutoDownloader] also queues every post in
-                        // the feed at Prefetch on emit — at the same priority TDLib's
-                        // per-DC queue is FIFO, so a far-down post that was queued first
-                        // would otherwise download ahead of a soon-visible one queued
-                        // later. The viewport-tied bump turns "FIFO at priority" into
-                        // "scroll proximity wins" without changing the priority ladder.
-                        // [MediaCache.ensure] resolves a higher-priority re-issue as an
-                        // in-place upgrade of any in-flight job — no restart, no waste.
+                        // the next [PREFETCH_AHEAD] posts' posters at
+                        // [DownloadPriority.Prefetch] (8). Visible posts self-ensure at
+                        // [DownloadPriority.VisibleMedia] (16) via [rememberMediaBinding] —
+                        // the priority gap between the lanes is what makes TDLib's
+                        // priority-aware scheduler serve visible first regardless of
+                        // [Levin's LIFO same-priority rule](https://github.com/tdlib/td/issues/786).
                         // Gated on scroll-settled (prefetchAnchor=null while scrolling)
-                        // so we don't fire ensure() while the gate above is closed.
+                        // so we don't fire ensure() while the user is mid-fling — that
+                        // would saturate TDLib's per-DC pool with cards about to scroll
+                        // past the cancel-debounce window anyway.
                         val cache = LocalMediaCache.current
                         val prefetchAnchor by remember(listState) {
                             derivedStateOf {
@@ -1037,24 +1050,33 @@ fun TimelineScreen(
                             val end = (firstVisible + PREFETCH_AHEAD).coerceAtMost(displayedItems.lastIndex)
                             for (idx in (firstVisible + 1)..end) {
                                 val item = displayedItems.getOrNull(idx) ?: continue
-                                val priority =
-                                    if (idx <= firstVisible + VISIBLE_BOOST_RADIUS) DownloadPriority.VisibleMedia
-                                    else DownloadPriority.Prefetch
+                                // All prefetch at [DownloadPriority.Prefetch]. Visible posts
+                                // already self-ensure at [DownloadPriority.VisibleMedia] via
+                                // [rememberMediaBinding], so promoting prefetched neighbours
+                                // to the same lane just adds LIFO contention against what
+                                // the user is actively staring at — the very thing the
+                                // logcat audit (PREFETCH_AHEAD=4 era) caught as multi-second
+                                // bytes=0 stalls on user-facing files. Per Levin
+                                // (tdlib/td#2179): "the most recently seen file will be
+                                // downloaded first" — at the same priority that means our
+                                // newest prefetch jumps the queue ahead of the post on
+                                // screen. The fix is priority *separation*, not bump:
+                                // visible files own lane 16, prefetch owns lane 8, TDLib's
+                                // priority-aware scheduler then serves visible first
+                                // regardless of LIFO ordering inside each lane.
                                 for (post in item.posts()) {
                                     for (fileId in post.content.posterFileIds()) {
-                                        cache.ensure(fileId, priority)
+                                        cache.ensure(fileId, DownloadPriority.Prefetch)
                                     }
                                     // Inline-playable media (short videos, GIF animations) get the
                                     // playback file pre-warmed too, but ONLY for the immediate next
                                     // slot. Beyond +1 we'd burn megabytes speculating on posts the
                                     // user may never reach (a 30 s autoplay video is already ~5 MB).
                                     // Posters stay cheap to prefetch farther, since they're tens of
-                                    // KB; playback is the heavyweight step we cap tightly. The
-                                    // immediate slot's playback also rides the VisibleMedia bump so
-                                    // it doesn't get stuck behind static feed-wide prefetch.
+                                    // KB; playback is the heavyweight step we cap tightly.
                                     if (idx == firstVisible + 1) {
                                         for (fileId in post.content.playbackFileIds()) {
-                                            cache.ensure(fileId, DownloadPriority.VisibleMedia)
+                                            cache.ensure(fileId, DownloadPriority.Prefetch)
                                         }
                                     }
                                 }
@@ -1405,21 +1427,35 @@ private const val READ_DWELL_MS = 1000L
 private const val FOCUS_DWELL_MS = 1500L
 
 /**
- * How many posts ahead of the first visible item to eagerly prefetch posters for. Tuned so
- * a single forward-flick (~3 cards in a 1080p phone viewport) lands on already-warm files.
- * Going much higher costs bandwidth on ramped-back scrolls; lower starts to feel laggy.
+ * How many posts ahead of the first visible item to eagerly prefetch posters for.
+ *
+ * Tuned **down to 2** after live logcat showed pool saturation under the previous
+ * value of 4. Per Levin (tdlib/td#786), TDLib serves same-priority `DownloadFile`
+ * requests in **reverse order of issue** (LIFO): "files with the same priority are
+ * downloaded in the reverse order of downloadFile requests... downloading recently
+ * requested files first." Combined with TDLib's per-DC active-slot pool (~4
+ * simultaneous), every additional ensure() at the same priority pushes earlier
+ * (often *visible*) files toward the back of the queue. The watchdog reissue
+ * partially compensates by re-promoting stuck files, but the underlying
+ * contention is what costs end-user time. Value 2 matches Telegram-Android's
+ * empirical neighbour-cell prefetch window.
+ *
+ * Lower starts to feel laggy on a forward flick; higher reintroduces the LIFO
+ * eviction we just fixed. 2 is the sweet spot for a phone viewport rendering
+ * 3-5 cards at a time.
  */
-private const val PREFETCH_AHEAD = 4
+private const val PREFETCH_AHEAD = 2
 
 /**
- * How many of the [PREFETCH_AHEAD] slots get the [DownloadPriority.VisibleMedia]
- * priority bump instead of [DownloadPriority.Prefetch]. Tighter than the prefetch
- * window because the bump is the queue-jump signal: the closer the post is to
- * being visible, the less we want it sitting behind feed-wide static prefetch
- * from [MediaAutoDownloader]. Two slots covers "the user is about to flick into
- * view" without polluting the priority-16 lane on a slow scroll.
+ * Cap on `prefetchThread` fan-out per viewport-stable burst. With ~5-10 visible
+ * posts that have comments, fan-out without a cap fired
+ * [TdApi.GetMessageProperties] + [TdApi.GetMessageThread] +
+ * [TdApi.GetMessageThreadHistory] for each at once on TDLib's single RPC queue —
+ * the user's interactive comments tap got stuck behind the burst until it
+ * cleared (~hundreds of ms on a slow DC). Three slots covers the dwell-likely
+ * set (top of viewport plus immediate neighbours) without owning the pipe.
  */
-private const val VISIBLE_BOOST_RADIUS = 2
+private const val COMMENTS_PREFETCH_LIMIT = 3
 
 /**
  * Hard cap on inline-autoplay video duration we're willing to *speculatively* prefetch the

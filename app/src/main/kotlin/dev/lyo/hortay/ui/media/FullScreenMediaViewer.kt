@@ -239,6 +239,8 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
 
+    val sameTier = item.fullscreen.fileId == item.media.fileId
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -247,7 +249,7 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
             // at scale==1 is left unconsumed so the outer `Modifier.draggable` (the swipe-to-
             // dismiss handler) can pick it up. Without this branch, every swipe was eaten by
             // the transform handler and only video pages dismissed.
-            .pointerInput(item.media.fileId) {
+            .pointerInput(item.fullscreen.fileId) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
                     do {
@@ -271,28 +273,64 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
             },
         contentAlignment = Alignment.Center,
     ) {
+        val zoom = Modifier
+            .fillMaxSize()
+            .graphicsLayer(
+                scaleX = scale,
+                scaleY = scale,
+                translationX = offsetX,
+                translationY = offsetY,
+            )
+
+        // Progressive enhancement: paint the inline variant first (typically
+        // already Ready in MediaCache from feed rendering — no spinner), then
+        // overlay the higher-resolution fullscreen variant once it lands.
+        // Coil's CROSSFADE_MS on the Ready-path AsyncImage in TdMediaImage
+        // fades the fullscreen image in over the inline one; without this
+        // stack the user would see the soft minithumb-blur on every viewer
+        // open until `w` finishes downloading.
+        //
+        // When the inline and fullscreen tiers resolve to the same fileId
+        // (small uploads where TDLib's pyramid only ships one variant at or
+        // above the inline target) we skip the bottom layer — drawing the
+        // same fileId twice would just double the Coil request churn for
+        // identical pixels.
+        if (!sameTier) {
+            TdMediaImage(
+                media = item.media,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                // No progress chrome on the bottom layer — the fullscreen
+                // layer above owns the spinner / failed / cancel affordance
+                // and rendering them twice would clash visually.
+                showProgress = false,
+                placeholderColor = null,
+                priority = DownloadPriority.Foreground,
+                modifier = zoom,
+            )
+        }
         TdMediaImage(
-            media = item.media,
+            media = item.fullscreen,
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offsetX,
-                    translationY = offsetY,
-                ),
+            // Transparent placeholder so the inline layer underneath bleeds
+            // through during the fullscreen variant's download window.
+            placeholderColor = if (sameTier) MaterialTheme.colorScheme.surfaceContainerHigh else null,
+            priority = DownloadPriority.Foreground,
+            modifier = zoom,
         )
     }
 }
 
-// What to prefetch via MediaCache for an item. For photos this is the actual photo
-// file; for videos / animations it's the *poster* image. The playback file itself is
-// only fetched once the user lands on that page (TdVideoPlayer triggers ensure on
-// mount), so neighbour videos don't compete with the one currently being watched.
+// What to prefetch via MediaCache for an item. For photos we pre-warm the
+// *fullscreen* variant — that's what ZoomableImage actually paints, and the
+// inline variant (if different) is overwhelmingly likely to already be Ready
+// from feed rendering. For videos / animations the prefetch target is the
+// poster image; the playback file itself is only fetched once the user lands
+// on that page (TdVideoPlayer triggers ensure on mount), so neighbour videos
+// don't compete with the one currently being watched.
 private fun AlbumItem.posterFileId(): Int? = when (this) {
-    is AlbumItem.Photo -> media.fileId
+    is AlbumItem.Photo -> fullscreen.fileId
     is AlbumItem.Video -> media.fileId
     is AlbumItem.Animation -> media.fileId
 }

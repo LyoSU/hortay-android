@@ -20,7 +20,8 @@ internal object MessageContentMapper {
         is TdApi.MessagePhoto -> PostContent.PhotoAlbum(
             items = listOf(
                 AlbumItem.Photo(
-                    media = content.photo.toMedia(),
+                    media = content.photo.toMedia(PHOTO_TARGET_INLINE_PX),
+                    fullscreen = content.photo.toMedia(PHOTO_TARGET_FULLSCREEN_PX),
                     hasSpoiler = content.hasSpoiler,
                     isSecret = content.isSecret,
                 ),
@@ -33,7 +34,10 @@ internal object MessageContentMapper {
             // Cover (designer-supplied poster) is preferred over auto-extracted thumb.
             // Telegram lets the uploader pick a custom frame as cover — when it ships
             // we render that instead of the heuristic first-frame thumb.
-            val poster = content.cover?.toMedia() ?: content.video.toThumbMedia()
+            // Poster is rendered inline in the feed and never independently
+            // pinch-zoomed (tap opens the video, not the still). Inline tier
+            // is the right cap.
+            val poster = content.cover?.toMedia(PHOTO_TARGET_INLINE_PX) ?: content.video.toThumbMedia()
             PostContent.Video(
                 media = poster,
                 playbackFileId = qualities.defaultPick.fileId,
@@ -221,7 +225,10 @@ internal object MessageContentMapper {
     private fun mapPaidMedia(content: TdApi.MessagePaidMedia, res: StringResolver): PostContent {
         val items = content.media.orEmpty().mapNotNull { piece ->
             when (piece) {
-                is TdApi.PaidMediaPhoto -> AlbumItem.Photo(piece.photo.toMedia())
+                is TdApi.PaidMediaPhoto -> AlbumItem.Photo(
+                    media = piece.photo.toMedia(PHOTO_TARGET_INLINE_PX),
+                    fullscreen = piece.photo.toMedia(PHOTO_TARGET_FULLSCREEN_PX),
+                )
                 is TdApi.PaidMediaVideo -> {
                     // PaidMediaVideo doesn't expose alternativeVideos, so the picker
                     // is hidden (qualities.hasOptions == false). The single original
@@ -312,9 +319,13 @@ internal object MessageContentMapper {
         title = p.title.orEmpty(),
         description = p.description?.text.orEmpty(),
         image = p.type?.let { type ->
+            // Link-preview thumbs render in a 64-96 dp box and never open into a
+            // zoomable viewer — the tap opens the URL. Preview tier (≈`m`,
+            // 320 px) covers the rendered size at any phone density without
+            // burning the bytes / decode CPU of the inline / `w` variants.
             when (type) {
-                is TdApi.LinkPreviewTypeArticle -> type.photo?.toMedia()
-                is TdApi.LinkPreviewTypePhoto -> type.photo.toMedia()
+                is TdApi.LinkPreviewTypeArticle -> type.photo?.toMedia(PHOTO_TARGET_PREVIEW_PX)
+                is TdApi.LinkPreviewTypePhoto -> type.photo.toMedia(PHOTO_TARGET_PREVIEW_PX)
                 is TdApi.LinkPreviewTypeVideo -> type.video?.thumbnail?.toMedia()
                 else -> null
             }
@@ -328,12 +339,81 @@ internal object MessageContentMapper {
     }
 }
 
-internal fun TdApi.Photo.toMedia(): TdMedia {
-    val largest = sizes.maxByOrNull { it.width.toLong() * it.height.toLong() } ?: sizes.first()
+/**
+ * Display-tier targets for [TdApi.Photo.toMedia]. Telegram's server-side photo
+ * pyramid ships standard variants per `tdlib/td` photo-types: `m` (~320 px) for
+ * thumbnails, `x` (~800 px), `y` (~1280 px) for inline message bodies, `w`
+ * (~2560 px) for the full-screen viewer. Asking for the smallest variant whose
+ * longer side ≥ target replicates Telegram-Android's
+ * `chooseClosestPhotoSizeWithSide(sizes, side)` selection — the inline path
+ * never burns the bytes / decode CPU of `w` to paint a card capped at the
+ * device width.
+ *
+ * Decoupling tiers from "always pick largest" is the difference between a
+ * 200-channel feed pulling 2-3 MB JPEGs per card and the same feed pulling
+ * 300-600 KB JPEGs that already exceed the screen's pixel grid. The
+ * fullscreen viewer still gets the canonical `w` variant — see
+ * [FullScreenMediaViewer]'s stacked progressive-enhancement path which keeps
+ * the inline variant on screen while the fullscreen file downloads.
+ */
+internal const val PHOTO_TARGET_PREVIEW_PX = 320
+internal const val PHOTO_TARGET_INLINE_PX = 1280
+internal const val PHOTO_TARGET_FULLSCREEN_PX = Int.MAX_VALUE
+
+/**
+ * Pick the smallest [TdApi.PhotoSize] whose longer side ≥ [targetMaxSidePx],
+ * falling back to the largest available when no variant meets the target.
+ * Returns null only when [TdApi.Photo.sizes] is empty (the API contract says
+ * it never is, but we treat it as a defensive null so callers can choose to
+ * skip the post entirely rather than dereference). Matches Telegram-Android's
+ * `chooseClosestPhotoSizeWithSide` semantics.
+ */
+private fun TdApi.Photo.pickSize(targetMaxSidePx: Int): TdApi.PhotoSize? {
+    val list = sizes
+    if (list.isEmpty()) return null
+    var bestAtOrAbove: TdApi.PhotoSize? = null
+    var largest: TdApi.PhotoSize = list[0]
+    for (s in list) {
+        val side = maxOf(s.width, s.height)
+        if (side >= targetMaxSidePx) {
+            val curBest = bestAtOrAbove
+            if (curBest == null || maxOf(s.width, s.height) < maxOf(curBest.width, curBest.height)) {
+                bestAtOrAbove = s
+            }
+        }
+        if (maxOf(s.width, s.height) > maxOf(largest.width, largest.height)) {
+            largest = s
+        }
+    }
+    return bestAtOrAbove ?: largest
+}
+
+/**
+ * Map [TdApi.Photo] to a [TdMedia] for the requested display tier — see
+ * [PHOTO_TARGET_PREVIEW_PX] / [PHOTO_TARGET_INLINE_PX] / [PHOTO_TARGET_FULLSCREEN_PX].
+ *
+ * The minithumb is the same regardless of tier (~150 B inline JPEG, used as
+ * the soft placeholder); the picked variant only affects the fileId we hand
+ * to [MediaCache] and the dimensions that drive aspect-ratio layout.
+ */
+internal fun TdApi.Photo.toMedia(targetMaxSidePx: Int = PHOTO_TARGET_INLINE_PX): TdMedia {
+    // Defensive degradation when TDLib hands us a Photo with an empty sizes
+    // pyramid. The TdApi javadoc says the array is "Available variants of the
+    // photo" — never explicitly nullable, but in practice the daemon has been
+    // observed to ship empty arrays for partially-deserialised messages
+    // arriving mid-DC migration and for some payment-receipt thumbs that
+    // strip the pyramid before forwarding. The original "maxByOrNull(...) ?:
+    // sizes.first()" shape would crash with IndexOutOfBoundsException on
+    // those — surfacing the bug as a feed scroll that hard-crashes the app.
+    // Returning a TdMedia with fileId=null keeps the renderer on the
+    // minithumb-only path (the same shape we use for forwarded GIFs without
+    // a server-side thumb), so the post still surfaces — just without the
+    // full-resolution variant the message never carried.
+    val pick = pickSize(targetMaxSidePx)
     return TdMedia(
-        fileId = largest.photo.id,
-        width = largest.width,
-        height = largest.height,
+        fileId = pick?.photo?.id,
+        width = pick?.width ?: 0,
+        height = pick?.height ?: 0,
         minithumbBytes = minithumbnail?.data,
     )
 }
