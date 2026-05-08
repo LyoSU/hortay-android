@@ -1022,8 +1022,16 @@ class PostsRepository(
         // list and the user saw a blank feed for a couple of seconds until UpdateNewChat
         // events caught up. Looping until LoadChats fails (TDLib signals "no more chats"
         // with [400] Chat list is empty) is the canonical way per TDLib docs.
-        drainChatList(TdApi.ChatListMain())
-        drainChatList(TdApi.ChatListArchive())
+        //
+        // Run Main + Archive concurrently. Each list drains independently — TDLib serves
+        // them from separate cursors and the JNI bridge handles parallel calls fine.
+        // Serial drain on a first-auth cold start (TDLib's local DB empty, every
+        // LoadChats round-trips to the server) was costing ~1-2 s of straight wait
+        // before per-channel history fetch could even start.
+        coroutineScope {
+            launch { drainChatList(TdApi.ChatListMain()) }
+            launch { drainChatList(TdApi.ChatListArchive()) }
+        }
 
         // Int.MAX_VALUE: TDLib's GetChats only returns chat ids already loaded
         // into local memory by drainChatList above, so the "limit" is purely a
@@ -1069,7 +1077,19 @@ class PostsRepository(
                 }
             }.awaitAll().filterNotNull()
         }
-        val channels = chats.filter { it.isChannel() }
+        // Sort channels by recency BEFORE per-channel history fetch. The semaphore-bounded
+        // fan-out below ships per-channel results to [_posts] as they land (streaming
+        // emit), and async{} order is FIFO into the semaphore — so whatever comes first in
+        // this list wins the first slot, lands first in the merged feed, and is what the
+        // user sees while the rest stream in. Sort key is the last message date from the
+        // already-resolved [TdApi.Chat] (no extra RPC). Power-user with 200 subscriptions
+        // typically actively reads ~20; recency-sort means those get history fetched in
+        // the first ~5 RPC instead of being shuffled mid-list. Channels with no last
+        // message (just-joined / dead) sink to the end. Stable sort preserves TDLib's
+        // own list order for ties.
+        val channels = chats
+            .filter { it.isChannel() }
+            .sortedByDescending { it.lastMessage?.date ?: 0 }
         mapper.prewarmChannels(channels)
 
         // Per-channel fetch was serial — for a user with 200 channels, ~50ms per round-trip
