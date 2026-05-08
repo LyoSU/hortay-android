@@ -43,10 +43,15 @@ object PostFilterStrategy {
         // refresh, with three knock-on regressions:
         //   • LazyColumn key churn — anchor.id changes between renders, the card
         //     remounts mid-scroll.
-        //   • Card disappears from the feed — TimelineViewModel.seenPostIds tracks
-        //     the previously-rendered anchor.id, so a flipped anchor falls out of
-        //     the seen filter and shows up under the "новi пости" pill instead of
-        //     in the visible list ("пропадає все окрім одного").
+        //   • Card disappears from the feed — when TimelineViewModel still tracked
+        //     pending by message-id sets, a flipped anchor.id fell out of the seen
+        //     set and re-surfaced under the "новi пости" pill instead of in the
+        //     visible list ("пропадає все окрім одного"). The pill is now date-
+        //     based (TimelineViewModel.seenHighWater) so this specific re-surface
+        //     no longer happens — every member shares the same date, so an anchor
+        //     flip is a no-op for pending classification — but the LazyColumn
+        //     re-key churn (point 1) and the reaction-anchor mismatch (point 3)
+        //     still demand a stable id, so the lowest-id sort is load-bearing.
         //   • commentCount drops to null and reactions stop counting — TDLib's
         //     interactionInfo only fills `replyInfo` / `reactions` on the FIRST
         //     message of an album (tdlib/td#2312: "only the first message in an

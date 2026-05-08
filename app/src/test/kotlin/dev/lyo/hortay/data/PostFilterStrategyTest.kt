@@ -47,8 +47,10 @@ class PostFilterStrategyTest {
         // pick whichever member happened to land first in the upstream — varying
         // between refresh, snapshot restore, live ingest, and pagination paths.
         // That flip caused: (a) LazyColumn re-key churn, (b) the card disappearing
-        // from the visible feed because TimelineViewModel.seenPostIds tracks the
-        // previous anchor.id, and (c) reactions/replyInfo never landing because
+        // from the visible feed back when TimelineViewModel keyed pending on
+        // message-id sets (the now-date-based high-water makes this point a no-op
+        // since every album member shares one date), and (c) reactions/replyInfo
+        // never landing because
         // TDLib only fills those on the FIRST (lowest-id) album member, and our
         // album-aware update lookup needs the anchor to ANCHOR consistently.
         val albumId = 42L

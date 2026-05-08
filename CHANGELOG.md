@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Fixed
+- **"Новi пости" pill counted older pagination arrivals as new**.
+  The pill state machine in `TimelineViewModel` tracked seen content
+  as a per-channel set of message ids
+  (`Map<chatId, Set<messageId>>`); pending = anything in livePosts
+  not in that set. But `PostsRepository` writes `_posts` from five
+  paths, only one of which is "actually new":
+  `handleNewMessage` (UpdateNewMessage — real new posts), `refresh`
+  / `refreshIfStale` (top-N per channel, immediately acked on PTR
+  or seeded on bootstrap), `restoreFromSnapshot` (cold-start cache
+  rehydration), `loadOlder` (pagination scroll-down — *older*
+  posts) and `loadChannelHistory` (channel-filter open / fresh-join
+  back-fill — also *older* posts). Paths 3 / 4 / 5 all wrote ids
+  the bootstrap set didn't know about, so they surfaced under the
+  pill the moment they landed — the user-reported "якось дивно,
+  рандомно" symptom: scroll down a thread, suddenly the pill
+  claims "12 нових постів" pointing at posts weeks old. Switched
+  the model to a per-channel **date** high-water mark
+  (`Map<chatId, Long>` of `max(date) the user has acked`); pending
+  = posts with `date > hw[chatId]`. Pagination loads with `date <
+  hw[chatId]` are now semantically invisible to the pill while
+  legitimate `UpdateNewMessage` events with newer dates correctly
+  register as pending. Telegram-Android, X, Mastodon all use the
+  same per-channel date / id high-water pattern. Brand-new chatIds
+  appearing in livePosts after bootstrap (user opens a channel
+  filter that triggers `loadChannelHistory` for a channel never
+  previously in the merged feed) are auto-seeded with their
+  initial max-date — so those 80 back-filled posts don't flash as
+  pending, while a *subsequent* UpdateNewMessage on that same
+  channel still lands above the seeded mark and registers
+  correctly. The partition `posts ∪ pendingNew = livePosts` is
+  preserved end-to-end.
 - **Several races and lifecycle leaks surfaced by a focused
   concurrency audit.** Each was a real-world hazard rather than a
   theoretical one — fixes below land before they grow into

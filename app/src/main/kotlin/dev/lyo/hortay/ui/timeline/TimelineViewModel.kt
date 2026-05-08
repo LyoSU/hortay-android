@@ -13,9 +13,42 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 /**
- * Twitter-style "новi пости" semantics: the visible feed is frozen on what the user has
- * already seen ([seenPostIds]); anything the live repo has on top of that is held back as
- * [pendingNew] until the user explicitly reveals it (pill tap or pull-to-refresh).
+ * Twitter-style "новi пости" semantics, anchored on a per-channel **date** high-water mark
+ * rather than a set of message ids. A post is "pending new" iff `post.date > seenHighWater[chatId]`.
+ *
+ * Why date and not ids:
+ * The repository writes `_posts` from many sources, only one of which is "actually new":
+ *   • [FeedSource.refresh] — top-N per channel; on cold start everything here is the bootstrap
+ *     baseline (and on PTR everything is acked immediately by [acceptPending]).
+ *   • [PostsRepository.handleNewMessage] via [TdApi.UpdateNewMessage] — *real* new posts; their
+ *     date is strictly greater than what the user has already seen.
+ *   • [PostsRepository.loadOlder] — pagination scroll-down; intentionally *older* posts.
+ *   • [PostsRepository.loadChannelHistory] — channel-filter open or fresh-join deep load;
+ *     *older* posts back-filled into the per-channel slice.
+ *   • [FeedSource.restoreFromSnapshot] — cold-start cache rehydration.
+ *
+ * The previous id-set model classified anything not in [seenPostIds] as pending, so paths
+ * 3 / 4 / 5 (older posts, never-seen-before older posts) all surfaced under the "новi пости"
+ * pill the moment they landed — the user-reported "якось дивно, рандомно" symptom: scroll
+ * down, suddenly the pill claims "12 нових постів" pointing at posts weeks old.
+ *
+ * Date-based high-water makes pagination semantically invisible to the pill (older arrivals
+ * never satisfy `date > hw`) while preserving correct behaviour for `UpdateNewMessage`
+ * (newer date → pending). Telegram-Android, X, Mastodon all use the same per-channel
+ * date / id high-water pattern.
+ *
+ * Bootstrap: on the first stable [livePosts] emission (`!refreshing && livePosts.isNotEmpty()`),
+ * every channel is seeded with its current max-date. After bootstrap, brand-new chatIds
+ * appearing in [livePosts] (e.g. user opens a channel filter that triggers
+ * [PostsRepository.loadChannelHistory] for a channel never previously in the merged feed)
+ * are auto-seeded with their initial max-date — so those 80 back-filled posts don't all
+ * flash as pending, while a *subsequent* [UpdateNewMessage] for that same channel still
+ * lands above the seeded mark and registers as pending.
+ *
+ * Bootstrap is gated on `!isRefreshing` because [PostsRepository.refreshLocked] streams
+ * per-channel results (UX win: posts visible within ~100ms of cold start instead of after
+ * the full ~5s drain). Seeding on the first non-empty emission would mark only one
+ * channel's content as "seen" and tag every subsequent channel's streamed posts as pending.
  */
 class TimelineViewModel(
     private val repo: FeedSource,
@@ -25,29 +58,42 @@ class TimelineViewModel(
     private val livePosts: StateFlow<PersistentList<TimelinePost>> = repo.posts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
 
-    // Empty map means "first launch — show everything live"; once bootstrapped, this is
-    // the chatId → set-of-message-ids snapshot the user is currently looking at, and any
-    // additions to livePosts beyond it are pendingNew. Stored as Map<Long, Set<Long>>
-    // rather than Set<Pair<Long, Long>> to avoid boxing two Longs into a Pair on every
-    // filter pass over the 1000-post feed (the per-post `it.chatId to it.id` allocation
-    // is the actual per-emit cost — the lookup itself is cheap either way). Indexing by
-    // chatId also keeps identity exact: no fingerprint collisions are possible since
-    // (chatId, id) is preserved 1:1 instead of being hashed into a single Long.
-    private val seenPostIds = MutableStateFlow<Map<Long, Set<Long>>>(emptyMap())
+    // chatId → max post.date the user has acknowledged seeing in this channel. Pending =
+    // posts in livePosts whose date strictly exceeds this mark for their chatId. Empty
+    // map until bootstrap completes — see [bootstrapped] below.
+    private val seenHighWater = MutableStateFlow<Map<Long, Long>>(emptyMap())
+    // True once the first stable livePosts emission has seeded [seenHighWater]. Both
+    // pendingNew and posts gate on this so a fast first-paint (snapshot restore) doesn't
+    // briefly classify the whole feed as either "all pending" (empty hw + filter `>`) or
+    // "all visible" (empty hw + filter passthrough) before bootstrap settles.
+    private val bootstrapped = MutableStateFlow(false)
 
-    val posts: StateFlow<PersistentList<TimelinePost>> = combine(livePosts, seenPostIds) { live, seen ->
-        if (seen.isEmpty()) live
-        else live.filter { p -> seen[p.chatId]?.contains(p.id) == true }.toPersistentList()
-    }
-        .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
+    // Visible feed: pre-bootstrap, show everything live (avoid blank-screen during cold
+    // start); post-bootstrap, hide posts that exceed the per-channel mark — those are the
+    // user's pending. New chatIds (`mark == null`) are visible by default; they're auto-
+    // seeded immediately after first sighting (see init block) so subsequent UpdateNewMessage
+    // events on that channel are correctly pending.
+    val posts: StateFlow<PersistentList<TimelinePost>> =
+        combine(livePosts, seenHighWater, bootstrapped) { live, hw, ready ->
+            if (!ready) live
+            else live.filter { p ->
+                val mark = hw[p.chatId] ?: return@filter true
+                p.date <= mark
+            }.toPersistentList()
+        }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
 
-    val pendingNew: StateFlow<PersistentList<TimelinePost>> = combine(livePosts, seenPostIds) { live, seen ->
-        if (seen.isEmpty()) persistentListOf()
-        else live.filter { p -> seen[p.chatId]?.contains(p.id) != true }.toPersistentList()
-    }
-        .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
+    val pendingNew: StateFlow<PersistentList<TimelinePost>> =
+        combine(livePosts, seenHighWater, bootstrapped) { live, hw, ready ->
+            if (!ready) persistentListOf()
+            else live.filter { p ->
+                val mark = hw[p.chatId] ?: return@filter false
+                p.date > mark
+            }.toPersistentList()
+        }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
 
     val bookmarkedKeys: StateFlow<Set<String>> = bookmarks.bookmarks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())
@@ -56,28 +102,13 @@ class TimelineViewModel(
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     init {
-        // Seed seenPostIds with the bootstrap feed so the user opens to an
-        // already-seen list, not "everything is new".
-        //
-        // Trigger condition: livePosts non-empty AND refreshing has settled
-        // back to false. The "settled" half is critical because
-        // PostsRepository.refreshLocked now streams per-channel results
-        // (UX win: posts visible within ~100ms of a cold start instead of
-        // after the full ~5s drain). On the first non-empty emission we'd
-        // see only one channel's content; seeding there would mark every
-        // subsequent channel's posts as "pending new", which is wrong on
-        // first launch.
-        //
-        // combine() emits whenever either input changes; we accept the
-        // first emission satisfying both conditions. A stable empty
-        // refreshing state with non-empty livePosts can occur via two
-        // paths:
-        //   1. Cold path: refreshing flips false → true → false; once it
-        //      lands back at false, livePosts holds the full streamed
-        //      result. Seed against that.
-        //   2. Warm path: refreshIfStale skipped (data warm) so refreshing
-        //      stays false, livePosts populated from snapshot only. Seed
-        //      against the snapshot.
+        // Bootstrap: first stable emission seeds [seenHighWater] for every chatId in
+        // livePosts with that channel's max date, then flips [bootstrapped] true.
+        // Two arrival paths satisfy the gate:
+        //   1. Cold path: refreshing flips false → true → false; once back at false,
+        //      livePosts holds the streamed result.
+        //   2. Warm path: refreshIfStale skipped (data warm) — refreshing stays false,
+        //      livePosts populated from snapshot only.
         viewModelScope.launch {
             combine(livePosts, refreshing) { posts, isRefreshing ->
                 posts.takeIf { it.isNotEmpty() && !isRefreshing }
@@ -85,11 +116,39 @@ class TimelineViewModel(
                 .filterNotNull()
                 .first()
                 .let { stable ->
-                    if (seenPostIds.value.isEmpty()) {
-                        seenPostIds.value = stable.groupBy({ it.chatId }, { it.id })
-                            .mapValues { (_, ids) -> ids.toHashSet() }
+                    if (!bootstrapped.value) {
+                        seenHighWater.value = stable
+                            .groupBy { it.chatId }
+                            .mapValues { (_, ps) -> ps.maxOf { it.date } }
+                        bootstrapped.value = true
                     }
                 }
+        }
+        // Auto-seed brand-new channels: after bootstrap, any chatId entering livePosts
+        // that's not yet in the high-water map gets its current max date stamped in.
+        // Drives the "user opens a fresh channel filter → loadChannelHistory back-fills 80
+        // older posts → none of those should be pending, but a later UpdateNewMessage on
+        // that channel should be" path.
+        viewModelScope.launch {
+            bootstrapped.first { it }
+            livePosts.collect { live ->
+                val knownChats = seenHighWater.value.keys
+                val unseenChats = HashSet<Long>()
+                for (p in live) {
+                    if (p.chatId !in knownChats) unseenChats += p.chatId
+                }
+                if (unseenChats.isEmpty()) return@collect
+                seenHighWater.update { current ->
+                    val updated = HashMap(current)
+                    for (chatId in unseenChats) {
+                        val maxDate = live.asSequence()
+                            .filter { it.chatId == chatId }
+                            .maxOfOrNull { it.date } ?: continue
+                        updated.putIfAbsent(chatId, maxDate)
+                    }
+                    updated
+                }
+            }
         }
         // Cold-start path: restore the persisted snapshot first so the user sees real
         // content within ~100ms (TDLib serves GetMessage from local DB synchronously),
@@ -111,27 +170,61 @@ class TimelineViewModel(
         }
     }
 
-    /** Reveal all pendingNew posts (used after PTR, where the whole list is fresh). */
+    /**
+     * Reveal all pendingNew posts (used after PTR, where the whole list is fresh).
+     * Bumps each channel's high-water to the live max-date — never lowers it, so a
+     * concurrent [acceptIds] firing from auto-accept-at-top during the PTR window
+     * (refresh takes seconds; UpdateNewMessage events can stream in and trigger
+     * auto-accept while it runs) can't be clobbered by this full-rebuild.
+     */
     fun acceptPending() {
-        seenPostIds.value = livePosts.value.groupBy({ it.chatId }, { it.id })
-            .mapValues { (_, ids) -> ids.toHashSet() }
+        val live = livePosts.value
+        if (live.isEmpty()) return
+        val maxByChat = HashMap<Long, Long>()
+        for (p in live) {
+            val prev = maxByChat[p.chatId]
+            if (prev == null || p.date > prev) maxByChat[p.chatId] = p.date
+        }
+        if (maxByChat.isEmpty()) return
+        seenHighWater.update { current ->
+            val updated = HashMap(current)
+            for ((chatId, date) in maxByChat) {
+                val existing = updated[chatId]
+                updated[chatId] = if (existing == null) date else maxOf(existing, date)
+            }
+            updated
+        }
+        if (!bootstrapped.value) bootstrapped.value = true
     }
 
     /**
-     * Mark a specific subset of posts as seen — used by the pill / at-top auto-accept
-     * to ack only the posts that are actually visible in the user's current scope
-     * (e.g. tapping the pill in "All" must not silently clear pending counts that
-     * belong to the Archive tab the user hasn't even opened yet).
+     * Mark a specific subset of posts as seen — used by the pill / at-top auto-accept to
+     * ack only the posts that are actually visible in the user's current scope (e.g.
+     * tapping the pill in "All" must not silently clear pending counts that belong to the
+     * Archive tab the user hasn't even opened yet). The call site passes (chatId, id)
+     * pairs; we look up each pair's date in livePosts and bump that channel's high-water
+     * to the max acked date — any older post the caller might have included is already
+     * covered by the bump, no per-id state needed.
      */
     fun acceptIds(ids: Collection<Pair<Long, Long>>) {
         if (ids.isEmpty()) return
-        seenPostIds.update { current ->
-            val merged = HashMap<Long, MutableSet<Long>>(current.size + 4)
-            for ((chatId, set) in current) merged[chatId] = HashSet(set)
-            for ((chatId, id) in ids) {
-                merged.getOrPut(chatId) { HashSet() }.add(id)
+        val live = livePosts.value
+        if (live.isEmpty()) return
+        val targets = ids.toHashSet()
+        val maxDateByChat = HashMap<Long, Long>()
+        for (p in live) {
+            if ((p.chatId to p.id) !in targets) continue
+            val prev = maxDateByChat[p.chatId]
+            if (prev == null || p.date > prev) maxDateByChat[p.chatId] = p.date
+        }
+        if (maxDateByChat.isEmpty()) return
+        seenHighWater.update { current ->
+            val updated = HashMap(current)
+            for ((chatId, date) in maxDateByChat) {
+                val existing = updated[chatId]
+                updated[chatId] = if (existing == null) date else maxOf(existing, date)
             }
-            merged
+            updated
         }
     }
 
