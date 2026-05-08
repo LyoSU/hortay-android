@@ -59,6 +59,23 @@ and this project adheres to [Semantic Versioning](https://semver.org).
        customised their setting (e.g. raised it to 200 MB or lowered
        it) keep their choice — `AutoDownloadStore` decodes their
        persisted JSON before falling back to the default.
+- **`maybeOptimizeStorage` was double-triggered on cold start**. Both
+  `AuthorizationStateReady` (in `TdClient`) and `goOnline` (in
+  `TdLifecycleBridge`) fired the storage probe back-to-back as cold-
+  start raced through `auth.Ready` → `(auth.Ready && foreground) =
+  true`. Two parallel `scope.launch` corутini both read the stale
+  timestamp before either wrote a fresh one, so both passed the gate
+  and TDLib serialised two `OptimizeStorage` walks (50-300 ms each).
+  Removed the `auth.Ready` trigger; `goOnline` covers the same
+  cold-start edge plus every later background → foreground transition,
+  with no race.
+- **Coil disk cache could grow into gigabytes on big phones**.
+  `maxSizePercent(0.02)` is 2.5 GB on a 128 GB device — outsized for an
+  app whose primary media pipeline is TDLib (which manages its own 500
+  MB cap). Clamped to `[32 MB, 256 MB]` via `minimumMaxSizeBytes` /
+  `maximumMaxSizeBytes`. Web-mode thumbs and AsyncImage-served avatars
+  remain comfortably cached; a 1 TB device no longer dedicates GBs of
+  working storage to the thin set of URLs Coil actually serves.
 - **`OptimizeStorage` couldn't catch a long single session that didn't
   cycle foreground**. The 24h timer was the only trigger for the daily
   sweep; a heavy user listening for 12h straight could pile gigabytes

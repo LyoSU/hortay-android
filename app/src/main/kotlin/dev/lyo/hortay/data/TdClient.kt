@@ -267,13 +267,14 @@ class TdClient private constructor(
                 )
             is TdApi.AuthorizationStateReady -> {
                 _authStage.value = AuthStage.Ready
-                // TDLib stores everything it downloads under `tdlib-files/` and never bounds
-                // it on its own — a year of timeline scrolling can balloon to gigabytes. The
-                // sweep is throttled to once per OPTIMIZE_INTERVAL_MS via SettingsStore: every
-                // cold start triggers AuthorizationStateReady, and scanning a multi-GB cache
-                // on every launch was adding real splash latency. Caps: 500 MB total, drop
-                // anything not accessed in the last 30 days.
-                maybeOptimizeStorage()
+                // [maybeOptimizeStorage] runs from [TdLifecycleBridge.goOnline]
+                // instead — that fires whenever (auth.Ready && foreground=true)
+                // becomes true, which is the same edge as cold-start completion
+                // *plus* every later background → foreground transition. We
+                // used to call it here too, but the two triggers fired
+                // back-to-back on cold start and racing-launched two parallel
+                // OptimizeStorage walks that TDLib then serialised — wasted
+                // 50-300 ms on every launch.
             }
             is TdApi.AuthorizationStateLoggingOut -> {
                 _authStage.value = AuthStage.Loading
