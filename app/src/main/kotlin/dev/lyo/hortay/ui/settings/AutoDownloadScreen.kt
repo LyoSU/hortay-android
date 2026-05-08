@@ -595,7 +595,7 @@ private fun summarize(policy: AutoDownloadPolicy): String {
         )
     }
     if (policy.animations) parts += stringResource(R.string.autodownload_summary_animations)
-    return parts.joinToString(stringResource(R.string.autodownload_summary_separator))
+    return parts.joinToString(", ")
 }
 
 /**

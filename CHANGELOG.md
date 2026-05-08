@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+- **Auto-download category summary lost the space after each comma**
+  ("Фото,Відео до 10 МБ,GIF" instead of "Фото, Відео до 10 МБ, GIF").
+  The list separator was a string resource declared as `<string
+  name="autodownload_summary_separator">, </string>` — but `aapt2`
+  trims trailing whitespace from string resources at compile time, so
+  the runtime got back `","` with the space stripped. The canonical
+  XML escape (`<string>", "</string>` with literal double-quotes) would
+  preserve it, but `", "` is the only correct separator across every
+  locale we ship, so the resource is now gone and `joinToString(", ")`
+  in `AutoDownloadScreen.summarize` carries it directly. One fewer
+  resource, one fewer trap for the next translator.
+
+### Changed
+- **Copy pass across all user-facing strings** (uk + en). The corpus
+  had been growing at "what does this say?" pace rather than "how
+  would a human say this?" pace — readable but stilted, with the
+  AI-slop tells the user flagged: trailing periods on standalone short
+  phrases / button labels / status chips, em-dashes splicing
+  conjunctions ("Канал приватний — публічні пости недоступні" reads
+  as one beat instead of two), heavy-handed openers ("Введіть номер з
+  кодом країни" → "Номер з кодом країни"), and verb framings that
+  read as system narration rather than direct address ("Завантаження…"
+  → "Завантажуємо…", "Накопичено за весь час роботи. Не зменшується
+  від очистки кешу" → "Сумарно за весь час. Очистка кешу не скидає
+  лічильник"). Touched every section: auth, errors, web mode,
+  timeline, channels, comments, settings, auto-download, migration.
+  Plurals, plural keys, format specifiers (`%1$s`, `%1$d`, `%2$d`)
+  and the EN/UK key parity all preserved — only the human-readable
+  payload moved.
+
 ### Changed
 - **Top-bar slides off-screen on scroll, returns when the user reaches the
   top** (Twitter / Instagram floating-bar pattern). Replaces the canonical

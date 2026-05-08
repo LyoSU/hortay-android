@@ -4,18 +4,18 @@
 
     <!-- Auth screen -->
     <string name="auth_phone_label">Phone number</string>
-    <string name="auth_phone_helper">Enter the number with country code — Telegram will send a confirmation code.</string>
+    <string name="auth_phone_helper">Number with country code. Telegram will send a confirmation code</string>
     <string name="auth_password_label">Cloud password (2FA)</string>
     <string name="auth_password_hint">Hint: %1$s</string>
-    <string name="auth_password_helper">This is the password you set in the official Telegram under Two-Factor Authentication.</string>
+    <string name="auth_password_helper">The same one you set in the official Telegram under Two-Factor Authentication</string>
     <string name="auth_password_forgot">Forgot password</string>
-    <string name="auth_password_recovery_sent">A reset code was sent to %1$s. Enter it below to sign in without your password.</string>
+    <string name="auth_password_recovery_sent">Reset code sent to %1$s. Enter it to sign in without your password</string>
     <string name="auth_password_recovery_code_label">Email code</string>
     <string name="auth_password_recovery_back">Enter password instead</string>
-    <string name="auth_password_recovery_unavailable">No recovery email is set on this account — 2FA can only be reset from the official Telegram client on another device.</string>
+    <string name="auth_password_recovery_unavailable">No recovery email is set. 2FA can only be reset from the official Telegram on another device</string>
     <string name="auth_send_code">Send code</string>
     <string name="auth_continue">Continue</string>
-    <string name="auth_continue_without_login">Continue without sign-in — read public channels</string>
+    <string name="auth_continue_without_login">No sign-in: read public channels</string>
 
     <!-- Web (anonymous / guest) mode -->
     <string name="web_feed_title">Feed</string>
@@ -24,25 +24,25 @@
     <string name="web_settings_title">Settings</string>
     <string name="web_add_channel">Add channel</string>
     <string name="web_loading">Loading…</string>
-    <string name="web_empty_posts">No posts yet. Check your subscriptions.</string>
-    <string name="web_empty_channels">No subscriptions yet.\nAdd channels from the Feed tab.</string>
+    <string name="web_empty_posts">Nothing here yet. Check your subscriptions</string>
+    <string name="web_empty_channels">No subscriptions yet.\nAdd channels from the Feed tab</string>
     <string name="web_empty_channels_title">No channels yet</string>
-    <string name="web_empty_channels_body">Add a public channel and its posts will start appearing in your feed.</string>
+    <string name="web_empty_channels_body">Add a public channel and its posts will start showing up in your feed</string>
     <string name="web_add_mentioned_title">Mentioned in your channels</string>
     <string name="web_add_mentioned_count">Mentioned %1$d times in your subscriptions</string>
-    <string name="web_empty_saved">No saved posts yet.</string>
+    <string name="web_empty_saved">Nothing saved yet</string>
     <string name="web_welcome_title">Without sign-in</string>
-    <string name="web_welcome_body">Add a few public channels and read their posts without authenticating to Telegram.</string>
+    <string name="web_welcome_body">Add a few public channels and read them without signing in to Telegram</string>
     <string name="web_refresh_error">Update failed: %1$s</string>
     <string name="web_unsubscribe_title">Unsubscribe?</string>
-    <string name="web_unsubscribe_body">Channel @%1$s will leave your feed. Bookmarked posts stay in Saved.</string>
+    <string name="web_unsubscribe_body">Channel @%1$s will leave your feed. Bookmarked posts stay in Saved</string>
     <string name="web_unsubscribe_confirm">Unsubscribe</string>
     <string name="web_cancel">Cancel</string>
     <string name="web_search_action">Search posts</string>
     <string name="web_search_hint">Search your channels</string>
     <string name="web_search_clear">Clear</string>
-    <string name="web_search_prompt">Type to search across posts in your subscribed channels.</string>
-    <string name="web_search_no_results">No matches for "%1$s".</string>
+    <string name="web_search_prompt">Type to search posts in your subscribed channels</string>
+    <string name="web_search_no_results">Nothing for "%1$s"</string>
     <string name="media_open_in_telegram">Open in Telegram</string>
     <string name="web_status_not_found">not found</string>
     <string name="web_status_private">private</string>
@@ -50,15 +50,15 @@
     <string name="web_status_error">connection error</string>
     <string name="web_status_parse_failure">parse error</string>
     <string name="web_status_loading">updating…</string>
-    <string name="web_settings_subtitle">Anonymous mode. No Telegram authentication.</string>
+    <string name="web_settings_subtitle">No Telegram sign-in</string>
     <string name="web_settings_signin">Sign in to Telegram</string>
-    <string name="web_settings_signin_helper">Unlocks comments, reactions and private channels. Subscriptions are kept.</string>
+    <string name="web_settings_signin_helper">Unlocks comments, reactions and private channels. Subscriptions stay</string>
     <string name="web_settings_clear_cache">Clear cache</string>
     <string name="web_settings_clearing">Clearing…</string>
-    <string name="web_settings_clear_cache_helper">Removes cached posts and assets. Subscription list is preserved.</string>
+    <string name="web_settings_clear_cache_helper">Removes cached posts and assets. Subscription list stays</string>
     <string name="web_settings_privacy_title">What Telegram sees in this mode</string>
-    <string name="web_settings_privacy_body">Your IP and a desktop-browser User-Agent. No cookies, no account, no notifications about you.</string>
-    <string name="web_add_body">Enter @username, t.me/username link, or paste from the clipboard.</string>
+    <string name="web_settings_privacy_body">Your IP and a desktop-browser User-Agent. No cookies, no account, nothing about you personally</string>
+    <string name="web_add_body">@username, t.me/username link, or paste from clipboard</string>
     <string name="web_add_input_label">Channel</string>
     <string name="web_add_paste_clipboard">Paste from clipboard: %1$s</string>
     <string name="web_add_validating">Validating…</string>
@@ -66,11 +66,11 @@
     <string name="web_add_confirm">Add</string>
     <string name="web_add_curated_title">Popular channels</string>
     <string name="web_add_check">Check</string>
-    <string name="web_add_invalid">Enter @username, t.me/username, or a full link.</string>
+    <string name="web_add_invalid">Enter @username or a t.me/… link</string>
     <string name="web_add_not_found">Channel @%1$s not found</string>
-    <string name="web_add_private">Channel is private — public posts unavailable</string>
-    <string name="web_add_parse_failure">Telegram returned unexpected markup</string>
-    <string name="web_add_rate_limited">Rate limit exceeded — try again in %1$d s</string>
+    <string name="web_add_private">Channel is private. Public posts unavailable</string>
+    <string name="web_add_parse_failure">Couldn\'t parse Telegram\'s response</string>
+    <string name="web_add_rate_limited">Rate limit hit. Try again in %1$d s</string>
     <string name="web_add_network_error">Network error: %1$s</string>
     <!-- %1$s is a pre-formatted string from t.me (e.g. "1.5K", "262K", "12 345"),
          not an Int. We don't parse the count, so this can't use <plurals> keyed
@@ -83,14 +83,14 @@
     <string name="auth_password_show">Show password</string>
     <string name="auth_password_hide">Hide password</string>
     <string name="auth_retry">Start over</string>
-    <string name="auth_open_telegram_hint">Open the official Telegram, complete the action, then return here.</string>
+    <string name="auth_open_telegram_hint">Open the official Telegram, do what\'s needed, then come back</string>
     <string name="auth_title_wait_code">Enter the code</string>
     <string name="auth_title_wait_password">Cloud password</string>
     <string name="auth_title_error">Action required</string>
-    <string name="auth_subtitle_wait_code">We sent a code via %1$s.</string>
-    <string name="auth_subtitle_password_no_hint">Your account is protected with two-factor authentication.</string>
-    <string name="auth_subtitle_password_with_hint">Your account is protected with two-factor authentication. Enter your Cloud password.</string>
-    <string name="auth_subtitle_default">A Twitter-style feed of Telegram channels.</string>
+    <string name="auth_subtitle_wait_code">Sent a code via %1$s</string>
+    <string name="auth_subtitle_password_no_hint">Account is protected with two-factor authentication</string>
+    <string name="auth_subtitle_password_with_hint">Account is protected with two-factor authentication. Enter your Cloud password</string>
+    <string name="auth_subtitle_default">A Twitter-style feed of Telegram channels</string>
     <string name="auth_country_label">Country</string>
     <string name="auth_country_loading">Loading…</string>
     <string name="auth_phone_placeholder">Phone number</string>
@@ -122,27 +122,27 @@
     <string name="auth_channel_other">another method</string>
 
     <!-- Auth errors -->
-    <string name="auth_err_too_many_with_time">Too many attempts. Try again in %1$s.</string>
-    <string name="auth_err_too_many_generic">Too many attempts. Try again later.</string>
-    <string name="auth_err_phone_invalid">Invalid number. Check the country code and digits.</string>
-    <string name="auth_err_phone_banned">This number is banned in Telegram. Contact Telegram support.</string>
-    <string name="auth_err_phone_flood">Telegram has temporarily limited authorization from this number. Try again later.</string>
-    <string name="auth_err_phone_occupied">This number is already taken. Sign in with it instead of registering again.</string>
-    <string name="auth_err_code_invalid">Invalid code. Check and try again.</string>
-    <string name="auth_err_code_expired">Code has expired. Request a new one.</string>
-    <string name="auth_err_password_invalid">Invalid password. Try again.</string>
-    <string name="auth_err_password_too_fresh">Password was just changed — Telegram will ask you to wait before using it.</string>
-    <string name="auth_err_password_recovery_na">Password recovery is unavailable. Reset 2FA in the official Telegram.</string>
-    <string name="auth_err_session_password_needed">2FA Cloud password required.</string>
-    <string name="auth_err_app_misconfigured">App configuration error. Contact the developer.</string>
-    <string name="auth_err_token_invalid">Invalid credentials. Restart authorization.</string>
-    <string name="auth_err_generic">Something went wrong. Try again.</string>
-    <string name="auth_err_step_failed">Could not complete step (%1$s). Try again.</string>
-    <string name="auth_err_email_required">Confirm your email in the official Telegram, then return here.</string>
-    <string name="auth_err_phone_unregistered">This number is not yet registered with Telegram. Create an account in the official app.</string>
-    <string name="auth_err_other_device">Confirm sign-in via Telegram on another device.</string>
-    <string name="auth_err_premium_required">This sign-in requires Telegram Premium. Complete the subscription in the official Telegram app, then return here.</string>
-    <string name="auth_err_init_failure">Telegram client configuration failure. Close and reopen the app.</string>
+    <string name="auth_err_too_many_with_time">Too many attempts. Wait %1$s</string>
+    <string name="auth_err_too_many_generic">Too many attempts. Try again later</string>
+    <string name="auth_err_phone_invalid">Check the country code and digits</string>
+    <string name="auth_err_phone_banned">Telegram banned this number. Contact Telegram support</string>
+    <string name="auth_err_phone_flood">Telegram temporarily limited sign-in from this number. Try later</string>
+    <string name="auth_err_phone_occupied">This number already has an account. Sign in instead of registering</string>
+    <string name="auth_err_code_invalid">Wrong code. Check and try again</string>
+    <string name="auth_err_code_expired">Code expired. Request a new one</string>
+    <string name="auth_err_password_invalid">Wrong password. Try again</string>
+    <string name="auth_err_password_too_fresh">Password was just changed. Telegram will ask you to wait a bit</string>
+    <string name="auth_err_password_recovery_na">Password recovery isn\'t available here. Reset 2FA in the official Telegram</string>
+    <string name="auth_err_session_password_needed">2FA Cloud password required</string>
+    <string name="auth_err_app_misconfigured">App configuration error. Contact the developer</string>
+    <string name="auth_err_token_invalid">Credentials don\'t match. Restart sign-in</string>
+    <string name="auth_err_generic">Something went wrong. Try again</string>
+    <string name="auth_err_step_failed">Couldn\'t complete step (%1$s). Try again</string>
+    <string name="auth_err_email_required">Confirm email in the official Telegram, then come back</string>
+    <string name="auth_err_phone_unregistered">No Telegram account on this number yet. Create one in the official app</string>
+    <string name="auth_err_other_device">Confirm sign-in via Telegram on another device</string>
+    <string name="auth_err_premium_required">Telegram Premium required. Subscribe in the official Telegram, then come back</string>
+    <string name="auth_err_init_failure">Couldn\'t configure the Telegram client. Restart the app</string>
 
     <!-- Duration humanisation -->
     <string name="duration_seconds_short">%1$ds</string>
@@ -170,10 +170,10 @@
 
     <!-- Timeline -->
     <string name="timeline_title">Feed</string>
-    <string name="timeline_empty">It\'s quiet here. Subscribe to channels in Telegram and they\'ll appear in the feed.</string>
-    <string name="timeline_empty_default_helper">Subscribe to channels in Telegram and they\'ll appear in your feed.</string>
-    <string name="timeline_empty_saved_title">No saved posts yet</string>
-    <string name="timeline_empty_saved_helper">Tap the bookmark next to a post to save it for later.</string>
+    <string name="timeline_empty">It\'s quiet here. Subscribe to channels in Telegram and they\'ll show up in the feed</string>
+    <string name="timeline_empty_default_helper">Subscribe to channels in Telegram and they\'ll show up in the feed</string>
+    <string name="timeline_empty_saved_title">Nothing saved yet</string>
+    <string name="timeline_empty_saved_helper">Tap the bookmark next to a post to save it for later</string>
     <string name="timeline_empty_default_title">It\'s quiet here</string>
     <string name="timeline_search_in_channel">Search in channel</string>
     <string name="timeline_search_empty">Nothing found</string>
@@ -237,10 +237,10 @@
     <!-- Comments -->
     <string name="comments_title">Discussion</string>
     <string name="comments_loading">Loading…</string>
-    <string name="comments_no_comments">No comments yet.</string>
+    <string name="comments_no_comments">No comments yet</string>
     <string name="comments_replies">%1$d replies</string>
     <string name="comments_no_thread">No discussion</string>
-    <string name="comments_unavailable">Discussion unavailable.</string>
+    <string name="comments_unavailable">Discussion unavailable</string>
 
     <!-- Channels -->
     <string name="channels_title">Channels</string>
@@ -250,8 +250,8 @@
     <string name="channels_mute">Mute notifications</string>
     <string name="channels_leave">Leave channel</string>
     <string name="channels_join">Join</string>
-    <string name="channels_empty_title">No channels found</string>
-    <string name="channels_empty_helper">Subscribe to channels in Telegram and they\'ll appear here.</string>
+    <string name="channels_empty_title">No channels yet</string>
+    <string name="channels_empty_helper">Subscribe to channels in Telegram and they\'ll show up here</string>
 
     <!-- Folders -->
     <string name="folder_all">All</string>
@@ -261,9 +261,9 @@
     <string name="settings_profile_title">Profile</string>
     <string name="settings_subtitle_profile">Account, traffic, downloads</string>
     <string name="settings_subtitle_auto_download">Photos, videos, GIFs</string>
-    <string name="settings_subtitle_auto_download_category_wifi">When connected to Wi-Fi</string>
+    <string name="settings_subtitle_auto_download_category_wifi">Over Wi-Fi</string>
     <string name="settings_subtitle_auto_download_category_mobile">On mobile data</string>
-    <string name="settings_subtitle_auto_download_category_roaming">When roaming abroad</string>
+    <string name="settings_subtitle_auto_download_category_roaming">When roaming</string>
     <string name="timeline_subtitle_feed">%1$d channels</string>
     <string name="timeline_subtitle_saved">Bookmarked posts</string>
     <string name="settings_section_traffic">Traffic</string>
@@ -271,47 +271,46 @@
     <string name="settings_section_account">Account</string>
     <string name="settings_section_about">About</string>
     <string name="settings_logout_title">Sign out</string>
-    <string name="settings_logout_subtitle">Resets your Telegram session. Cache is preserved.</string>
+    <string name="settings_logout_subtitle">Telegram session resets, cache stays</string>
     <string name="settings_version">Version</string>
     <string name="settings_logout_dialog_title">Sign out of Telegram?</string>
-    <string name="settings_logout_dialog_text">You\'ll have to enter your number and confirmation code again.</string>
+    <string name="settings_logout_dialog_text">You\'ll need to enter your number and confirmation code again</string>
     <string name="settings_logout_confirm">Sign out</string>
     <string name="settings_logout_cancel">Cancel</string>
     <string name="settings_traffic_downloaded">Downloaded</string>
     <string name="settings_traffic_uploaded">Uploaded</string>
-    <string name="settings_traffic_helper">Accumulated since first launch. Doesn\'t decrease when cache is cleared — separate counter.</string>
+    <string name="settings_traffic_helper">Total since first launch. Clearing cache doesn\'t reset this, it\'s a separate counter</string>
     <string name="settings_traffic_reset">Reset counter</string>
     <string name="settings_storage_used_by">used by Hortay on this device</string>
     <string name="settings_storage_clearing">Clearing…</string>
     <string name="settings_storage_clear">Clear media cache</string>
-    <string name="settings_storage_clear_helper">Removes photo, video and file cache (including Coil images). Message database and session remain — only signing out clears those.</string>
+    <string name="settings_storage_clear_helper">Removes cached photos, videos and files. Message database and session stay, only signing out clears those</string>
     <string name="settings_storage_media">Media</string>
     <string name="settings_storage_db">Database</string>
 
     <!-- Auto-download media -->
     <string name="autodownload_section">Auto-download media</string>
     <string name="autodownload_entry_title">Auto-download media</string>
-    <string name="autodownload_entry_subtitle">Photos, videos and GIFs over Wi-Fi, mobile data or roaming.</string>
-    <string name="autodownload_screen_title">Auto-download media</string>
-    <string name="autodownload_header_helper">New posts in your feed start downloading in the background so you don\'t see a spinner. Pick what to load and how big.</string>
-    <string name="autodownload_category_wifi">When using Wi-Fi</string>
-    <string name="autodownload_category_mobile">When using mobile data</string>
+    <string name="autodownload_entry_subtitle">Photos, videos and GIFs over Wi-Fi, mobile data or roaming</string>
+    <string name="autodownload_screen_title">Auto-download</string>
+    <string name="autodownload_header_helper">New posts download in the background so you don\'t see a spinner. Pick what to load and how big</string>
+    <string name="autodownload_category_wifi">Over Wi-Fi</string>
+    <string name="autodownload_category_mobile">Over mobile data</string>
     <string name="autodownload_category_roaming">When roaming</string>
     <string name="autodownload_summary_off">Off</string>
     <string name="autodownload_summary_photos">Photos</string>
     <string name="autodownload_summary_videos_unbounded">Videos</string>
     <string name="autodownload_summary_videos_capped">Videos to %1$s</string>
     <string name="autodownload_summary_animations">GIFs</string>
-    <string name="autodownload_summary_separator">, </string>
     <string name="autodownload_toggle_photos">Photos</string>
-    <string name="autodownload_toggle_photos_helper">Always small. Loads instantly even on slow networks.</string>
+    <string name="autodownload_toggle_photos_helper">Always small. Loads instantly even on slow networks</string>
     <string name="autodownload_toggle_videos">Videos</string>
-    <string name="autodownload_toggle_videos_helper">Only videos up to the size below.</string>
+    <string name="autodownload_toggle_videos_helper">Only videos up to the size below</string>
     <string name="autodownload_toggle_animations">GIFs</string>
-    <string name="autodownload_toggle_animations_helper">Looping clips and animations.</string>
+    <string name="autodownload_toggle_animations_helper">Looping clips and animations</string>
     <string name="autodownload_video_max_label">Max video size</string>
     <string name="autodownload_video_max_value">Up to %1$s</string>
-    <string name="autodownload_data_saver_note">System Data Saver is on — videos and GIFs are paused on mobile until you turn it off in Android settings.</string>
+    <string name="autodownload_data_saver_note">System Data Saver is on. Videos and GIFs are paused on mobile until you turn it off in Android settings</string>
     <string name="autodownload_reset">Reset to defaults</string>
     <string name="autodownload_reset_done">Defaults restored</string>
     <string name="autodownload_back">Back</string>
@@ -334,7 +333,7 @@
     <string name="media_retry">retry</string>
     <string name="media_load_stalled">download stalled</string>
     <string name="spoiler_tap_to_view">Tap to view</string>
-    <string name="spoiler_sensitive_tap">Tap — confidential</string>
+    <string name="spoiler_sensitive_tap">Sensitive. Tap to view</string>
 
     <!-- Personal-author channel mode: "in <Channel>" subtitle under admin's name -->
     <string name="post_in_channel">in %1$s</string>
@@ -356,14 +355,14 @@
 
     <!-- Generic / TD errors -->
     <string name="error_generic">Something went wrong</string>
-    <string name="err_flood_with_time">Telegram is rate-limiting requests. Try again in %1$s.</string>
-    <string name="err_flood_generic">Telegram is rate-limiting requests. Try again later.</string>
-    <string name="err_unauthorized">Session reset. Sign in again.</string>
-    <string name="err_forbidden">Cannot %1$s: action forbidden.</string>
-    <string name="err_not_found">Not found: %1$s.</string>
-    <string name="err_server">Telegram server is temporarily unavailable. Try again.</string>
-    <string name="err_no_connection">No connection. Check the Internet and try again.</string>
-    <string name="err_failed_op">Failed to %1$s. (%2$d)</string>
+    <string name="err_flood_with_time">Telegram is rate-limiting requests. Try again in %1$s</string>
+    <string name="err_flood_generic">Telegram is rate-limiting requests. Try again later</string>
+    <string name="err_unauthorized">Session reset. Sign in again</string>
+    <string name="err_forbidden">Can\'t %1$s: action forbidden</string>
+    <string name="err_not_found">Not found: %1$s</string>
+    <string name="err_server">Telegram server is temporarily unavailable. Try in a minute</string>
+    <string name="err_no_connection">No connection. Check the internet and try again</string>
+    <string name="err_failed_op">Couldn\'t %1$s (%2$d)</string>
 
     <!-- Operation labels (verb in infinitive form, used inside error templates) -->
     <string name="op_refresh_feed">refresh the feed</string>
@@ -380,10 +379,10 @@
     <!-- Anonymous → authenticated migration proposal sheet -->
     <string name="migration_title">Migrate anonymous subscriptions?</string>
     <plurals name="migration_subtitle">
-        <item quantity="one">You followed %1$d channel without signing in. Want to subscribe with your account?</item>
-        <item quantity="other">You followed %1$d channels without signing in. Pick the ones to subscribe to with your account.</item>
+        <item quantity="one">You followed %1$d channel without signing in. Subscribe with your account?</item>
+        <item quantity="other">You followed %1$d channels without signing in. Pick the ones to subscribe to with your account</item>
     </plurals>
-    <string name="migration_subtitle_disclaimer">Joining brings these channels into your main Telegram account — they\'ll appear in your channel list and the channel admin will see you as a new member.</string>
+    <string name="migration_subtitle_disclaimer">Joining adds the channel to your Telegram. The admin will see you as a new member</string>
     <string name="migration_select_all">Select all</string>
     <string name="migration_deselect_all">Deselect all</string>
     <!-- Honest copy: tapping this permanently dismisses the sheet (proposalShown=true in

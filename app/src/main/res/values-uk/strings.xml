@@ -4,18 +4,18 @@
 
     <!-- Auth screen -->
     <string name="auth_phone_label">Номер телефону</string>
-    <string name="auth_phone_helper">Введіть номер з кодом країни — Telegram надішле код підтвердження.</string>
+    <string name="auth_phone_helper">Номер з кодом країни. Telegram надішле код підтвердження</string>
     <string name="auth_password_label">Cloud-пароль (2FA)</string>
     <string name="auth_password_hint">Підказка: %1$s</string>
-    <string name="auth_password_helper">Цей пароль ви задавали в офіційному Telegram у розділі Двофакторна автентифікація.</string>
+    <string name="auth_password_helper">Той самий, який ви задавали в офіційному Telegram у двофакторній автентифікації</string>
     <string name="auth_password_forgot">Не пам\'ятаю пароль</string>
-    <string name="auth_password_recovery_sent">Код для скидання пароля надіслано на %1$s. Введіть його нижче, щоб увійти без пароля.</string>
+    <string name="auth_password_recovery_sent">Код для скидання надіслали на %1$s. Введіть його, щоб увійти без пароля</string>
     <string name="auth_password_recovery_code_label">Код з email</string>
     <string name="auth_password_recovery_back">Ввести пароль натомість</string>
-    <string name="auth_password_recovery_unavailable">До акаунту не привʼязано recovery email — скинути 2FA можна тільки в офіційному клієнті Telegram на іншому пристрої.</string>
+    <string name="auth_password_recovery_unavailable">До акаунту не привʼязано recovery email. Скинути 2FA можна лише в офіційному Telegram на іншому пристрої</string>
     <string name="auth_send_code">Надіслати код</string>
     <string name="auth_continue">Продовжити</string>
-    <string name="auth_continue_without_login">Без входу — читати публічні канали</string>
+    <string name="auth_continue_without_login">Без входу: читати публічні канали</string>
 
     <!-- Web (anonymous / guest) mode -->
     <string name="web_feed_title">Стрічка</string>
@@ -24,25 +24,25 @@
     <string name="web_settings_title">Налаштування</string>
     <string name="web_add_channel">Додати канал</string>
     <string name="web_loading">Завантажуємо…</string>
-    <string name="web_empty_posts">Поки немає постів. Перевірте підписки.</string>
-    <string name="web_empty_channels">Жодних підписок поки що.\nДодайте канали зі вкладки «Стрічка».</string>
-    <string name="web_empty_channels_title">Поки немає каналів</string>
-    <string name="web_empty_channels_body">Додайте публічний канал — його пости почнуть з\'являтись у вашій стрічці.</string>
+    <string name="web_empty_posts">Поки тут пусто. Гляньте підписки</string>
+    <string name="web_empty_channels">Поки нема підписок.\nДодайте канал зі Стрічки</string>
+    <string name="web_empty_channels_title">Поки тут пусто</string>
+    <string name="web_empty_channels_body">Додайте публічний канал, і його пости зʼявляться у стрічці</string>
     <string name="web_add_mentioned_title">Згадуються у ваших каналах</string>
     <string name="web_add_mentioned_count">Репостили %1$d разів у ваших підписках</string>
-    <string name="web_empty_saved">Поки немає збережених постів.</string>
+    <string name="web_empty_saved">Поки нічого не збережено</string>
     <string name="web_welcome_title">Без входу</string>
-    <string name="web_welcome_body">Додайте кілька публічних каналів — і отримуйте їхні пости без авторизації в Telegram.</string>
+    <string name="web_welcome_body">Додайте кілька публічних каналів і читайте їх без входу в Telegram</string>
     <string name="web_refresh_error">Помилка оновлення: %1$s</string>
     <string name="web_unsubscribe_title">Відписатися?</string>
-    <string name="web_unsubscribe_body">Канал @%1$s зникне зі стрічки. Збережені пости залишаться у «Збережене».</string>
+    <string name="web_unsubscribe_body">Канал @%1$s зникне зі стрічки. Збережені пости лишаться</string>
     <string name="web_unsubscribe_confirm">Відписатися</string>
     <string name="web_cancel">Скасувати</string>
     <string name="web_search_action">Пошук постів</string>
-    <string name="web_search_hint">Пошук у ваших каналах</string>
+    <string name="web_search_hint">Шукати у ваших каналах</string>
     <string name="web_search_clear">Очистити</string>
-    <string name="web_search_prompt">Введіть запит, щоб шукати по постах у каналах, на які ви підписані.</string>
-    <string name="web_search_no_results">Немає збігів для «%1$s».</string>
+    <string name="web_search_prompt">Шукаємо по постах із ваших каналів. Введіть слово</string>
+    <string name="web_search_no_results">Нічого по «%1$s»</string>
     <string name="media_open_in_telegram">Відкрити в Telegram</string>
     <string name="web_status_not_found">не знайдено</string>
     <string name="web_status_private">приватний</string>
@@ -50,15 +50,15 @@
     <string name="web_status_error">помилка з\'єднання</string>
     <string name="web_status_parse_failure">помилка парсингу</string>
     <string name="web_status_loading">оновлюється…</string>
-    <string name="web_settings_subtitle">Анонімний режим. Без авторизації в Telegram.</string>
+    <string name="web_settings_subtitle">Без входу в Telegram</string>
     <string name="web_settings_signin">Увійти в Telegram</string>
-    <string name="web_settings_signin_helper">Дасть вам коментарі, реакції та приватні канали. Підписки збережуться.</string>
+    <string name="web_settings_signin_helper">Зʼявляться коментарі, реакції і приватні канали. Підписки залишаться</string>
     <string name="web_settings_clear_cache">Очистити кеш</string>
     <string name="web_settings_clearing">Очищаємо…</string>
-    <string name="web_settings_clear_cache_helper">Видалить пости і ресурси кешу. Список підписок збережеться.</string>
+    <string name="web_settings_clear_cache_helper">Видалить кешовані пости і медіа. Підписки залишаться</string>
     <string name="web_settings_privacy_title">Що бачить Telegram у цьому режимі</string>
-    <string name="web_settings_privacy_body">Ваш IP та звичайний User-Agent десктопного браузера. Жодних cookies, жодного облікового запису, жодних повідомлень про вас.</string>
-    <string name="web_add_body">Введіть @username, посилання t.me/username або вставте з буфера обміну.</string>
+    <string name="web_settings_privacy_body">Ваш IP і десктопний User-Agent. Ніяких cookies, ніякого акаунту, нічого про вас особисто</string>
+    <string name="web_add_body">@username, посилання t.me/username або з буфера обміну</string>
     <string name="web_add_input_label">Канал</string>
     <string name="web_add_paste_clipboard">Вставити з буфера: %1$s</string>
     <string name="web_add_validating">Перевіряємо…</string>
@@ -66,11 +66,11 @@
     <string name="web_add_confirm">Додати</string>
     <string name="web_add_curated_title">Популярні канали</string>
     <string name="web_add_check">Перевірити</string>
-    <string name="web_add_invalid">Введіть @username, t.me/username або повне посилання.</string>
+    <string name="web_add_invalid">Введіть @username або посилання t.me/…</string>
     <string name="web_add_not_found">Канал @%1$s не знайдено</string>
-    <string name="web_add_private">Канал приватний — публічні пости недоступні</string>
-    <string name="web_add_parse_failure">Telegram повернув неочікувану розмітку</string>
-    <string name="web_add_rate_limited">Перевищено ліміт запитів — спробуйте за %1$d с</string>
+    <string name="web_add_private">Канал приватний. Публічні пости недоступні</string>
+    <string name="web_add_parse_failure">Не вдалося розібрати відповідь Telegram</string>
+    <string name="web_add_rate_limited">Перевищено ліміт. Спробуйте за %1$d с</string>
     <string name="web_add_network_error">Помилка мережі: %1$s</string>
     <!-- %1$s — попередньо відформатований рядок з t.me ("1.5K", "262K", "12 345"),
          не Int. Ми не парсимо число, тому <plurals> по кількості тут не застосовний. -->
@@ -81,16 +81,16 @@
     <string name="auth_password_show">Показати пароль</string>
     <string name="auth_password_hide">Сховати пароль</string>
     <string name="auth_retry">Почати спочатку</string>
-    <string name="auth_open_telegram_hint">Відкрийте офіційний Telegram, виконайте дію та поверніться сюди.</string>
+    <string name="auth_open_telegram_hint">Відкрийте офіційний Telegram, зробіть, що треба, і поверніться сюди</string>
     <string name="auth_title_wait_code">Введіть код</string>
     <string name="auth_title_wait_password">Cloud-пароль</string>
     <string name="auth_title_error">Потрібна додаткова дія</string>
-    <string name="auth_subtitle_wait_code">Ми надіслали код %1$s.</string>
-    <string name="auth_subtitle_password_no_hint">Ваш акаунт захищено двофакторною автентифікацією.</string>
-    <string name="auth_subtitle_password_with_hint">Ваш акаунт захищено двофакторною автентифікацією. Введіть Cloud-пароль.</string>
-    <string name="auth_subtitle_default">Стрічка Telegram-каналів у форматі Twitter.</string>
+    <string name="auth_subtitle_wait_code">Надіслали код %1$s</string>
+    <string name="auth_subtitle_password_no_hint">Акаунт захищено двофакторною автентифікацією</string>
+    <string name="auth_subtitle_password_with_hint">Акаунт захищено двофакторною автентифікацією. Введіть Cloud-пароль</string>
+    <string name="auth_subtitle_default">Стрічка Telegram-каналів як у Twitter</string>
     <string name="auth_country_label">Країна</string>
-    <string name="auth_country_loading">Завантаження…</string>
+    <string name="auth_country_loading">Завантажуємо…</string>
     <string name="auth_phone_placeholder">Номер телефону</string>
     <string name="auth_code_placeholder">Слово або фраза з SMS</string>
     <string name="auth_resend_sending">Надсилаємо…</string>
@@ -120,27 +120,27 @@
     <string name="auth_channel_other">іншим способом</string>
 
     <!-- Auth errors -->
-    <string name="auth_err_too_many_with_time">Забагато спроб. Спробуйте знову за %1$s.</string>
-    <string name="auth_err_too_many_generic">Забагато спроб. Спробуйте трохи пізніше.</string>
-    <string name="auth_err_phone_invalid">Невірний номер. Перевірте код країни та цифри.</string>
-    <string name="auth_err_phone_banned">Цей номер заблоковано в Telegram. Зверніться до підтримки Telegram.</string>
-    <string name="auth_err_phone_flood">Telegram тимчасово обмежив авторизацію з цього номера. Спробуйте пізніше.</string>
-    <string name="auth_err_phone_occupied">Цей номер уже зайнятий. Зайдіть під ним замість того, щоб реєструвати знову.</string>
-    <string name="auth_err_code_invalid">Невірний код. Перевірте та введіть ще раз.</string>
-    <string name="auth_err_code_expired">Код прострочений. Запросіть новий.</string>
-    <string name="auth_err_password_invalid">Невірний пароль. Спробуйте ще раз.</string>
-    <string name="auth_err_password_too_fresh">Пароль було щойно змінено — Telegram попросить почекати, перш ніж його використати.</string>
-    <string name="auth_err_password_recovery_na">Відновлення пароля недоступне. Скиньте 2FA в офіційному Telegram.</string>
-    <string name="auth_err_session_password_needed">Потрібен Cloud-пароль 2FA.</string>
-    <string name="auth_err_app_misconfigured">Збій конфігурації застосунку. Зверніться до розробника.</string>
-    <string name="auth_err_token_invalid">Невірні облікові дані. Перезапустіть авторизацію.</string>
-    <string name="auth_err_generic">Щось пішло не так. Спробуйте ще раз.</string>
-    <string name="auth_err_step_failed">Не вдалося завершити крок (%1$s). Спробуйте ще раз.</string>
-    <string name="auth_err_email_required">Підтвердьте email у офіційному Telegram, потім поверніться сюди.</string>
-    <string name="auth_err_phone_unregistered">Цей номер ще не зареєстрований у Telegram. Створіть акаунт у офіційному застосунку.</string>
-    <string name="auth_err_other_device">Підтвердіть вхід у Telegram на іншому пристрої.</string>
-    <string name="auth_err_premium_required">Цей вхід потребує Telegram Premium. Завершіть оформлення в офіційному застосунку Telegram, потім поверніться сюди.</string>
-    <string name="auth_err_init_failure">Збій конфігурації клієнта Telegram. Закрийте та відкрийте застосунок ще раз.</string>
+    <string name="auth_err_too_many_with_time">Забагато спроб. Зачекайте %1$s</string>
+    <string name="auth_err_too_many_generic">Забагато спроб. Спробуйте пізніше</string>
+    <string name="auth_err_phone_invalid">Перевірте код країни і цифри</string>
+    <string name="auth_err_phone_banned">Telegram заблокував цей номер. Зверніться до підтримки Telegram</string>
+    <string name="auth_err_phone_flood">Telegram тимчасово обмежив вхід з цього номера. Спробуйте пізніше</string>
+    <string name="auth_err_phone_occupied">На цьому номері вже є акаунт. Зайдіть під ним замість реєстрації</string>
+    <string name="auth_err_code_invalid">Код не підходить. Перевірте і спробуйте ще раз</string>
+    <string name="auth_err_code_expired">Код прострочився. Запросіть новий</string>
+    <string name="auth_err_password_invalid">Пароль не підходить. Спробуйте ще раз</string>
+    <string name="auth_err_password_too_fresh">Пароль щойно змінили. Telegram попросить трохи почекати</string>
+    <string name="auth_err_password_recovery_na">Тут не можна відновити пароль. Скиньте 2FA в офіційному Telegram</string>
+    <string name="auth_err_session_password_needed">Потрібен Cloud-пароль 2FA</string>
+    <string name="auth_err_app_misconfigured">Помилка конфігурації застосунку. Напишіть розробнику</string>
+    <string name="auth_err_token_invalid">Дані не підходять. Почніть авторизацію заново</string>
+    <string name="auth_err_generic">Щось пішло не так. Спробуйте ще раз</string>
+    <string name="auth_err_step_failed">Не вдалося завершити крок (%1$s). Спробуйте ще раз</string>
+    <string name="auth_err_email_required">Підтвердіть email в офіційному Telegram і поверніться сюди</string>
+    <string name="auth_err_phone_unregistered">На цьому номері ще нема акаунту. Створіть його в офіційному Telegram</string>
+    <string name="auth_err_other_device">Підтвердіть вхід у Telegram на іншому пристрої</string>
+    <string name="auth_err_premium_required">Потрібен Telegram Premium. Оформіть його в офіційному Telegram і поверніться</string>
+    <string name="auth_err_init_failure">Не вдалося налаштувати клієнт Telegram. Перезапустіть застосунок</string>
 
     <!-- Duration humanisation -->
     <string name="duration_seconds_short">%1$dс</string>
@@ -160,9 +160,9 @@
     <string name="duration_hours_short">%1$d год</string>
 
     <!-- Connection banner -->
-    <string name="connection_waiting">Очікує мережі</string>
-    <string name="connection_connecting">З\'єднання…</string>
-    <string name="connection_updating">Оновлення…</string>
+    <string name="connection_waiting">Чекаємо мережу</string>
+    <string name="connection_connecting">Зʼєднуємося…</string>
+    <string name="connection_updating">Оновлюємо…</string>
 
     <!-- Navigation -->
     <string name="nav_feed">Стрічка</string>
@@ -172,11 +172,11 @@
 
     <!-- Timeline -->
     <string name="timeline_title">Стрічка</string>
-    <string name="timeline_empty">Поки тут порожньо. Підпишіться на канали в Telegram — і вони з\'являться у стрічці.</string>
-    <string name="timeline_empty_default_helper">Підпишіться на канали в Telegram — і вони з\'являться у стрічці.</string>
-    <string name="timeline_empty_saved_title">Нема збережених постів</string>
-    <string name="timeline_empty_saved_helper">Натискайте на закладку поруч із постом, щоб зберегти на потім.</string>
-    <string name="timeline_empty_default_title">Поки тут порожньо</string>
+    <string name="timeline_empty">Поки тут пусто. Підпишіться на канали в Telegram, і вони зʼявляться у стрічці</string>
+    <string name="timeline_empty_default_helper">Підпишіться на канали в Telegram, і вони зʼявляться у стрічці</string>
+    <string name="timeline_empty_saved_title">Нічого не збережено</string>
+    <string name="timeline_empty_saved_helper">Тицьніть закладку біля поста, щоб зберегти його на потім</string>
+    <string name="timeline_empty_default_title">Поки тут пусто</string>
     <string name="timeline_search_in_channel">Пошук у каналі</string>
     <string name="timeline_search_empty">Нічого не знайдено</string>
     <string name="timeline_subscribers">%1$s підписників</string>
@@ -213,7 +213,7 @@
     <!-- Service / expired media -->
     <string name="expired_photo">Тимчасове фото зникло</string>
     <string name="expired_video">Тимчасове відео зникло</string>
-    <string name="expired_video_note">Кружок зник</string>
+    <string name="expired_video_note">Кружечок зник</string>
     <string name="expired_voice">Голосове зникло</string>
     <string name="service_pinned_message">Закріпили повідомлення</string>
     <plurals name="service_boost">
@@ -242,22 +242,22 @@
 
     <!-- Comments -->
     <string name="comments_title">Обговорення</string>
-    <string name="comments_loading">Завантаження…</string>
-    <string name="comments_no_comments">Поки немає коментарів.</string>
+    <string name="comments_loading">Завантажуємо…</string>
+    <string name="comments_no_comments">Поки немає коментарів</string>
     <string name="comments_replies">%1$d відповідей</string>
     <string name="comments_no_thread">Без обговорення</string>
-    <string name="comments_unavailable">Обговорення недоступне.</string>
+    <string name="comments_unavailable">Обговорення недоступне</string>
 
     <!-- Channels -->
     <string name="channels_title">Канали</string>
-    <string name="channels_loading">Завантаження…</string>
+    <string name="channels_loading">Завантажуємо…</string>
     <string name="channels_subscribers">%1$s підписників</string>
     <string name="channels_unmute">Увімкнути сповіщення</string>
     <string name="channels_mute">Вимкнути сповіщення</string>
     <string name="channels_leave">Покинути канал</string>
     <string name="channels_join">Підписатися</string>
-    <string name="channels_empty_title">Не знайдено каналів</string>
-    <string name="channels_empty_helper">Підпишіться на канали в Telegram — і вони з\'являться тут.</string>
+    <string name="channels_empty_title">Каналів немає</string>
+    <string name="channels_empty_helper">Підпишіться на канали в Telegram, і вони зʼявляться тут</string>
 
     <!-- Folders -->
     <string name="folder_all">Усі</string>
@@ -267,7 +267,7 @@
     <string name="settings_profile_title">Профіль</string>
     <string name="settings_subtitle_profile">Акаунт, трафік, завантаження</string>
     <string name="settings_subtitle_auto_download">Фото, відео, GIF</string>
-    <string name="settings_subtitle_auto_download_category_wifi">Коли підключено до Wi-Fi</string>
+    <string name="settings_subtitle_auto_download_category_wifi">Через Wi-Fi</string>
     <string name="settings_subtitle_auto_download_category_mobile">Через мобільний інтернет</string>
     <string name="settings_subtitle_auto_download_category_roaming">У роумінгу</string>
     <string name="timeline_subtitle_feed">%1$d каналів</string>
@@ -277,29 +277,29 @@
     <string name="settings_section_account">Акаунт</string>
     <string name="settings_section_about">Про застосунок</string>
     <string name="settings_logout_title">Вийти з акаунту</string>
-    <string name="settings_logout_subtitle">Скине сесію Telegram. Кеш збережеться.</string>
+    <string name="settings_logout_subtitle">Сесія Telegram скинеться, кеш залишиться</string>
     <string name="settings_version">Версія</string>
     <string name="settings_logout_dialog_title">Вийти з Telegram?</string>
-    <string name="settings_logout_dialog_text">Доведеться знову ввести номер і код підтвердження.</string>
+    <string name="settings_logout_dialog_text">Доведеться знов вводити номер і код підтвердження</string>
     <string name="settings_logout_confirm">Вийти</string>
     <string name="settings_logout_cancel">Скасувати</string>
     <string name="settings_traffic_downloaded">Скачано</string>
     <string name="settings_traffic_uploaded">Відправлено</string>
-    <string name="settings_traffic_helper">Накопичено за весь час роботи. Не зменшується від очистки кешу — це окремий лічильник.</string>
+    <string name="settings_traffic_helper">Сумарно за весь час. Очистка кешу не скидає лічильник, це окрема статистика</string>
     <string name="settings_traffic_reset">Скинути лічильник</string>
-    <string name="settings_storage_used_by">займає Hortay на цьому пристрої</string>
-    <string name="settings_storage_clearing">Очищення…</string>
+    <string name="settings_storage_used_by">займає Hortay на пристрої</string>
+    <string name="settings_storage_clearing">Очищаємо…</string>
     <string name="settings_storage_clear">Очистити кеш медіа</string>
-    <string name="settings_storage_clear_helper">Видалить кеш фото, відео й файлів (включно з зображеннями Coil). База повідомлень і сесія лишаються — їх скидає лише вихід з акаунту.</string>
+    <string name="settings_storage_clear_helper">Видалить кеш фото, відео і файлів. База повідомлень і сесія залишаться, їх скидає лише вихід з акаунту</string>
     <string name="settings_storage_media">Медіа</string>
     <string name="settings_storage_db">База даних</string>
 
     <!-- Auto-download media -->
     <string name="autodownload_section">Авто-завантаження медіа</string>
     <string name="autodownload_entry_title">Авто-завантаження медіа</string>
-    <string name="autodownload_entry_subtitle">Фото, відео і GIF через Wi-Fi, мобільну мережу чи роумінг.</string>
+    <string name="autodownload_entry_subtitle">Фото, відео і GIF через Wi-Fi, мобільну мережу чи роумінг</string>
     <string name="autodownload_screen_title">Авто-завантаження</string>
-    <string name="autodownload_header_helper">Нові пости стрічки починають вантажитись у фоні — щоб ви не бачили спінер під час скролу. Оберіть, що саме і якого розміру.</string>
+    <string name="autodownload_header_helper">Нові пости підвантажуються у фоні, щоб ви не чекали на спінер під час скролу. Виберіть, що саме і якого розміру</string>
     <string name="autodownload_category_wifi">Через Wi-Fi</string>
     <string name="autodownload_category_mobile">Через мобільну мережу</string>
     <string name="autodownload_category_roaming">У роумінгу</string>
@@ -308,17 +308,16 @@
     <string name="autodownload_summary_videos_unbounded">Відео</string>
     <string name="autodownload_summary_videos_capped">Відео до %1$s</string>
     <string name="autodownload_summary_animations">GIF</string>
-    <string name="autodownload_summary_separator">, </string>
     <string name="autodownload_toggle_photos">Фото</string>
-    <string name="autodownload_toggle_photos_helper">Завжди невеликі. Завантажуються миттєво навіть на повільному з\'єднанні.</string>
+    <string name="autodownload_toggle_photos_helper">Завжди невеликі. Вантажаться миттєво навіть на повільному звʼязку</string>
     <string name="autodownload_toggle_videos">Відео</string>
-    <string name="autodownload_toggle_videos_helper">Лише відео в межах розміру нижче.</string>
+    <string name="autodownload_toggle_videos_helper">Тільки в межах розміру нижче</string>
     <string name="autodownload_toggle_animations">GIF</string>
-    <string name="autodownload_toggle_animations_helper">Зациклені кліпи й анімації.</string>
+    <string name="autodownload_toggle_animations_helper">Зациклені кліпи й анімації</string>
     <string name="autodownload_video_max_label">Максимальний розмір відео</string>
     <string name="autodownload_video_max_value">До %1$s</string>
-    <string name="autodownload_data_saver_note">У системі ввімкнено Data Saver — відео і GIF призупинені у мобільній мережі, доки ви не вимкнете Data Saver у налаштуваннях Android.</string>
-    <string name="autodownload_reset">Відновити стандартні</string>
+    <string name="autodownload_data_saver_note">Система в режимі Data Saver. Відео і GIF не вантажаться по мобільній мережі, поки ви не вимкнете Data Saver у налаштуваннях Android</string>
+    <string name="autodownload_reset">Скинути до стандартних</string>
     <string name="autodownload_reset_done">Стандартні значення відновлено</string>
     <string name="autodownload_back">Назад</string>
     <string name="size_mb_int">%1$d МБ</string>
@@ -339,8 +338,8 @@
     <string name="media_video_quality">Якість відео</string>
     <string name="media_retry">повторити</string>
     <string name="media_load_stalled">завантаження зависло</string>
-    <string name="spoiler_tap_to_view">Натисніть, щоб переглянути</string>
-    <string name="spoiler_sensitive_tap">Натисніть — конфіденційне</string>
+    <string name="spoiler_tap_to_view">Тицьніть, щоб переглянути</string>
+    <string name="spoiler_sensitive_tap">Делікатне. Тицьніть, щоб переглянути</string>
 
     <!-- Personal-author channel mode -->
     <string name="post_in_channel">у %1$s</string>
@@ -362,14 +361,14 @@
 
     <!-- Generic / TD errors -->
     <string name="error_generic">Щось пішло не так</string>
-    <string name="err_flood_with_time">Telegram обмежив запити. Спробуйте за %1$s.</string>
-    <string name="err_flood_generic">Telegram обмежив запити. Спробуйте трохи пізніше.</string>
-    <string name="err_unauthorized">Сесію скинуто. Авторизуйтесь знову.</string>
-    <string name="err_forbidden">Не можна %1$s: дію заборонено.</string>
-    <string name="err_not_found">Не знайдено: %1$s.</string>
-    <string name="err_server">Сервер Telegram тимчасово недоступний. Спробуйте ще раз.</string>
-    <string name="err_no_connection">Немає звʼязку. Перевірте Інтернет і спробуйте ще раз.</string>
-    <string name="err_failed_op">Не вдалося %1$s. (%2$d)</string>
+    <string name="err_flood_with_time">Telegram обмежив запити. Спробуйте за %1$s</string>
+    <string name="err_flood_generic">Telegram обмежив запити. Спробуйте пізніше</string>
+    <string name="err_unauthorized">Сесію скинуто. Увійдіть знову</string>
+    <string name="err_forbidden">Не можна %1$s: дію заборонено</string>
+    <string name="err_not_found">Не знайдено: %1$s</string>
+    <string name="err_server">Сервер Telegram тимчасово недоступний. Спробуйте за хвилину</string>
+    <string name="err_no_connection">Немає мережі. Перевірте інтернет і спробуйте ще раз</string>
+    <string name="err_failed_op">Не вдалося %1$s (%2$d)</string>
 
     <!-- Operation labels (verb in infinitive form, used inside error templates) -->
     <string name="op_refresh_feed">оновити стрічку</string>
@@ -386,12 +385,12 @@
     <!-- Anonymous → authenticated migration proposal sheet -->
     <string name="migration_title">Перенести анонімні підписки?</string>
     <plurals name="migration_subtitle">
-        <item quantity="one">Ви читали %1$d канал без входу. Підписатися на нього з вашого акаунта?</item>
-        <item quantity="few">Ви читали %1$d канали без входу. Виберіть, на які підписатися з вашого акаунта.</item>
-        <item quantity="many">Ви читали %1$d каналів без входу. Виберіть, на які підписатися з вашого акаунта.</item>
-        <item quantity="other">Ви читали %1$d каналу без входу. Виберіть, на які підписатися з вашого акаунта.</item>
+        <item quantity="one">Ви читали %1$d канал без входу. Підписатися на нього з вашого акаунту?</item>
+        <item quantity="few">Ви читали %1$d канали без входу. Виберіть, на які підписатися з акаунту</item>
+        <item quantity="many">Ви читали %1$d каналів без входу. Виберіть, на які підписатися з акаунту</item>
+        <item quantity="other">Ви читали %1$d каналу без входу. Виберіть, на які підписатися з акаунту</item>
     </plurals>
-    <string name="migration_subtitle_disclaimer">Підписка приєднає вас до каналу в Telegram — він з\'явиться у вашому списку, і адміністратор каналу побачить вас як нового учасника.</string>
+    <string name="migration_subtitle_disclaimer">Підписка додасть канал у ваш Telegram. Адмін побачить вас як нового учасника</string>
     <string name="migration_select_all">Вибрати всі</string>
     <string name="migration_deselect_all">Зняти всі</string>
     <!-- Чесний текст: натискання назавжди ховає шит (proposalShown=true у
