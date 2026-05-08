@@ -74,6 +74,14 @@ fun ChannelsScreen(
     }
 }
 
+// @Immutable required: the ByteArray field defeats Compose's automatic
+// stability inference (arrays are mutable references), so without the
+// annotation every ChannelRow in a 200-channel LazyColumn re-composes on any
+// upstream list mutation — even if the row's own ChannelSummary didn't change.
+// The annotation is a contract: ChannelSummary instances are never mutated
+// after construction (and `aggregate` builds fresh ones every recomposition,
+// so this trivially holds).
+@androidx.compose.runtime.Immutable
 private data class ChannelSummary(
     val chatId: Long,
     val title: String,

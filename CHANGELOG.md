@@ -8,6 +8,161 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 ### Fixed
+- **Several races and lifecycle leaks surfaced by a focused
+  concurrency audit.** Each was a real-world hazard rather than a
+  theoretical one — fixes below land before they grow into
+  user-visible regressions.
+  - **`MediaCache.evictTerminalSlots` TOCTOU**. The watchdog read
+    `subscriptionCount.value > 0` outside the reducer loop, then
+    `iter.remove()`'d the entry. Between the two, a fresh
+    `observe(fileId)` could call `slot()` → `computeIfAbsent`
+    return the existing flow → start collecting; the eviction
+    then yanked that flow out of the map, and any subsequent
+    `UpdateFile` for this id hit `states[file.id] ?: return` in
+    [reduce] — the observer was silently starved of state. Replaced
+    iterator+remove with `ConcurrentHashMap.compute(id) { … }` so
+    the subscriptionCount probe + the entry removal happen under
+    the same bin lock as any concurrent `slot()`'s
+    `computeIfAbsent`. Symptom would have been a rare "media slot
+    appears stuck on Idle / Downloading until the surrounding
+    Composable is destroyed and re-created."
+  - **`PostsRepository.refreshLocked` clobbered concurrent archive
+    add/remove updates**. `_archivedChatIds.value = archiveIds.toSet()`
+    was a direct assignment that stomped on whatever the parallel
+    `UpdateChatAddedToList` / `UpdateChatRemovedFromList` handler
+    had merged in via `update {}`. A user who archived a channel in
+    the official Telegram client during the seconds-long
+    `drainChatList + N×GetChat` block would lose that update until
+    a TDLib reconnect re-fired it. Now uses `update {}` with a
+    snapshot-plus-existing-not-in-main union, so the archive flow
+    survives concurrent membership changes.
+  - **`WebTelegramClient.awaitGate` rate-limit TOCTOU**. With
+    `Semaphore(6)` permitting six parallel `fetchChannelPage`
+    calls, all six read `gateUntilMs` BEFORE the first 429 pushed
+    a fresh deadline — earning five additional 429s in the same
+    rate-limit window and pushing the gate even further out. Now
+    loops, re-reading `gateUntilMs` after each delay, so any push
+    issued during our wait extends our sleep. One real 429 is now
+    contained instead of compounding.
+  - **`ChannelFetchStatus.Loading` could stick forever after a
+    process kill mid-fetch**. `markFetchStatus(Loading)` was set on
+    entry to `fetchOne` and cleared on exit; OOM / ANR / system
+    reap killed the cleanup path, leaving the `loading` row
+    permanent — Channels tab spinner forever. Wrapped the body in
+    `try { … } catch (t: Throwable) { /* mark Error */ }` so any
+    exception (other than CancellationException, which propagates)
+    demotes the row to Error; AND added `WebRepository.clearStaleLoading()`
+    that runs once at `WebFeedSource` init to demote any rows left
+    over from a prior crashed fetch.
+  - **Adaptive backoff conflated rate-limited with no-op sweeps**.
+    A 429-burst that returned zero new content was being treated as
+    "feed is quiet" — the scheduler doubled its interval, eventually
+    hitting the 30-min cap. A single t.me throttle blip would cost
+    an hour of update lag. Refactored to three buckets: any `Fresh`
+    resets the counter; any `Transient` (RateLimited / NetworkError)
+    leaves it alone; only all-`NoOp` increments it.
+  - **`WebTelegramClient.lookupChannel` could freeze the
+    AddChannelSheet UI for the full 120 s rate-limit gate**. Bound
+    by `withTimeout(15 s)`; on timeout, surfaces
+    `LookupResult.RateLimited` (with the actual remaining gate
+    duration) instead of `NetworkError`, so the UI can show
+    "rate limited, try in N s" rather than a generic connectivity
+    blame.
+  - **`MainScaffold.commentsForPost` overlay vanished after a
+    process kill**. `TimelinePost` is not Parcelable (deep
+    @Immutable graph with PersistentList / ByteArray fields →
+    big Parcelize blast radius). Switched to a paired state:
+    saveable `pendingCommentsKey: Pair<Long, Long>?` (chatId,
+    post.id) survives process death; transient
+    `commentsForPost: TimelinePost?` is restored from the live
+    feed via a `LaunchedEffect` that does
+    `posts.map { firstOrNull-by-key }.filterNotNull().first()`.
+    Match works against either `post.id` or any
+    `albumMessageIds` entry to survive album-anchor reshuffle on
+    cold restart.
+  - **`TimelineScreen.interactions` captured stale references after
+    logout/login**. `val interactions = remember { … }` had no
+    keys; the lambdas closed over `vm`, `viewer`, `tdlibRepo`,
+    `channelActions`, `translations`, `feed`, `bookmarks` — and a
+    feed-swap (logout / login on Activity-scoped VMStore) left
+    these pointing at the previous account's repos. Same root
+    cause as the recent per-account-state-survives-logout fix on
+    the data layer, just on the UI side. Now keyed on every long-
+    lived dep so a swap rebuilds the callbacks.
+  - **`ChannelsScreen.ChannelSummary` lacked `@Immutable`**. Class
+    contains a `ByteArray?` field, which Compose stability
+    inference correctly flags as Unstable — the entire LazyColumn
+    of 200 channel rows recomposed on any upstream list mutation,
+    even when the row's own ChannelSummary was identical. Added
+    the annotation; instances are constructed fresh by `aggregate`
+    each recomposition so the contract trivially holds.
+
+### Fixed (web mode)
+- **`WebPostAdapter.parseShortNumber("1,5K") = 1500`**, not 15000.
+  Telegram renders `1,5K` views in locales with comma decimals
+  (uk, ru, fr); the regex `[^0-9.]` was dropping the comma before
+  `toDoubleOrNull`, parsing as `15` × 1000. Now normalises comma
+  → dot before the strip.
+- **`POST_NOTIFICATIONS` permission removed**. Declared but never
+  used — `RegisterDevice` is not wired up and TDLib's notification
+  subsystem is explicitly disabled via `notification_group_count_max=0`
+  in `TdLifecycleBridge`. Play Console flagged the unused permission
+  as gratuitous attack-surface; the app still has zero need for it
+  until push notifications land properly.
+- **`WebRepository.observeFeed` switched debounce(50ms) →
+  sample(150ms)**. Under a 200-channel burst sweep, individual post
+  inserts can land closer than the debounce window so debounce kept
+  resetting and never emitted — the feed appeared frozen until the
+  entire sweep completed (3-5 s of nothing). `sample` guarantees up
+  to ~7 emits/s under continuous burst, so the UI sees the feed
+  grow incrementally as channels land. Bursts shorter than 150 ms
+  still coalesce, which is the original goal.
+
+### Performance
+- **Skip JSON re-encoding for unchanged web posts**. Most posts
+  are unchanged between sweeps; `WebRepository.ingestPost` was
+  serialising four JSON blobs (media / preview / forward /
+  reactions) on every incoming post anyway. New
+  `selectFingerprint(channelUsername, seq)` query reads the
+  existing `(text_html, views)` and skips both the four
+  serialises and the UPDATE on a match. ~28 s of CPU saved per
+  hour of foreground sweeping on a 200-channel set.
+- **Dropped dead `post_text_plain_idx`**. Created in v1 to "speed
+  up" the LIKE-based cross-channel search; in practice
+  `LOWER(text_plain) LIKE '%pattern%'` defeats any B-tree index
+  (functional expression on the column AND a leading wildcard,
+  either of which is sufficient). EXPLAIN QUERY PLAN confirmed the
+  index never participated in any query, but every INSERT / UPDATE
+  paid the maintenance cost: ~40 MB disk on 5K posts and ~20 %
+  INSERT overhead, all for nothing. Migration `2.sqm` (v2 → v3)
+  drops it; `verifyDebugWebDatabaseMigration` round-trips cleanly.
+
+### Architecture
+- **A11y batch**: replaced 9 hard-coded `contentDescription`
+  literals (`"back"`, `"close"`, `"clear"`, `"search"`, `"edited"`,
+  `"pinned"`) with `stringResource(R.string.action_*)`. TalkBack now
+  reads the user's locale instead of English regardless. Added 9
+  `Modifier.clickable(role = Role.Button, …)` on semantically-button
+  Rows / Boxes (PostCard avatar / header / forward chip / reply
+  block / stat pill / sheet item; TimelineScreen channel title +
+  brand row) — TalkBack now announces "button" instead of "text
+  link" for those affordances.
+
+### Build
+- **Removed unused build configuration**: `POST_NOTIFICATIONS`
+  permission (above), `JitPack` repository (no transitive
+  dependency reaches it), `sqldelight-sqlite-driver` and
+  `androidx-test-runner` library aliases (declared but never
+  consumed). Trimmed `androidxTest` version constant since its
+  only consumer was `androidx-test-runner`.
+- **Added R8 keep rules for SQLDelight generated code**. The
+  Android driver invokes `<DatabaseName>.Schema` reflectively at
+  create-or-migrate time; without a keep rule, R8 may strip the
+  Schema field and crash the very first SQLDelight query on
+  release with `NoSuchFieldError`. Belt-and-suspenders coverage
+  for both `dev.lyo.hortay.data.web.db.**` and `app.cash.sqldelight.**`.
+
+### Fixed
 - **Auto-download category summary lost the space after each comma**
   ("Фото,Відео до 10 МБ,GIF" instead of "Фото, Відео до 10 МБ, GIF").
   The list separator was a string resource declared as `<string

@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -193,7 +194,7 @@ private fun Avatar(
     Box(
         modifier = Modifier
             .clip(CircleShape)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
     ) {
         TdAvatar(
             name = name,
@@ -248,7 +249,7 @@ private fun HeaderRow(
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .clickable(onClick = onChannelClick),
+            .clickable(role = Role.Button, onClick = onChannelClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
@@ -271,7 +272,7 @@ private fun HeaderRow(
         if (pinned) {
             Symbol(
                 name = "push_pin",
-                contentDescription = "pinned",
+                contentDescription = stringResource(R.string.post_badge_pinned),
                 tint = MaterialTheme.colorScheme.primary,
                 size = 14.dp,
             )
@@ -280,7 +281,7 @@ private fun HeaderRow(
         if (editDate > 0L) {
             Symbol(
                 name = "edit",
-                contentDescription = "edited",
+                contentDescription = stringResource(R.string.post_badge_edited),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 size = 14.dp,
             )
@@ -374,7 +375,7 @@ private fun InChannelChip(ctx: ChannelContext, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TdAvatar(
@@ -399,7 +400,7 @@ private fun InChannelChip(ctx: ChannelContext, onClick: () -> Unit) {
 private fun ForwardChip(origin: ForwardOrigin, onClick: (() -> Unit)?) {
     Row(
         modifier = if (onClick != null) {
-            Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick)
+            Modifier.clip(RoundedCornerShape(6.dp)).clickable(role = Role.Button, onClick = onClick)
         } else Modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -452,7 +453,7 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -685,7 +686,7 @@ private fun StatPill(
         modifier = if (onClick != null) {
             Modifier
                 .clip(tappableShape)
-                .clickable(onClick = onClick)
+                .clickable(role = Role.Button, onClick = onClick)
                 .padding(horizontal = 10.dp, vertical = 6.dp)
         } else Modifier.padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -774,7 +775,7 @@ private fun SheetItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

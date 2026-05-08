@@ -26,9 +26,11 @@ import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.VideoQuality
@@ -143,7 +145,7 @@ fun FullScreenMediaViewer(
                     .size(44.dp)
                     .background(Color.Black.copy(alpha = 0.45f), closeShape),
             ) {
-                Symbol(name = "close", contentDescription = "close", tint = Color.White)
+                Symbol(name = "close", contentDescription = stringResource(R.string.action_close), tint = Color.White)
             }
 
             // Quality picker for the active page, top-right. Only renders for video items

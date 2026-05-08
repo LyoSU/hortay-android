@@ -72,11 +72,13 @@ CREATE INDEX post_bookmark_idx ON post(is_bookmarked) WHERE is_bookmarked = 1;
 -- the FTS5 module compiled in. CREATE VIRTUAL TABLE … USING fts5 fails with
 -- "no such module: fts5" on those builds. Until we bundle SQLite (Phase 2.5+,
 -- via androidx.sqlite-bundled or similar), [searchPlain] below does a LIKE scan
--- on [text_plain] — at 5K posts × 2KB average body the worst case is sub-100ms
--- on low-end devices, acceptable for type-to-search UX. The text_plain column
--- and its index stay so the search-by-LIKE path uses an index-driven scan
--- rather than full-table.
-CREATE INDEX post_text_plain_idx ON post(text_plain);
+-- on [text_plain]. No index is created on this column: SQLite cannot use a
+-- B-tree index for `LOWER(text_plain) LIKE '%pattern%'` (functional expression
+-- on the indexed column AND a leading wildcard both defeat any index). An
+-- earlier `post_text_plain_idx` was created in v1 with the (false) hope of
+-- "index-driven scan rather than full-table", but EXPLAIN QUERY PLAN confirms
+-- it never participated in the search path; meanwhile every INSERT / UPDATE
+-- paid the index-maintenance cost. Dropped in migration 2.sqm (v2 → v3).
 
 -- Queries. Each uses the appropriate index above so EXPLAIN QUERY PLAN should
 -- never show SCAN TABLE for the hot paths.
@@ -170,6 +172,18 @@ UPDATE post SET
     reactions_json = :reactionsJson,
     views = :views,
     fetched_at_ms = :fetchedAtMs
+WHERE channel_username = :channelUsername AND seq = :seq;
+
+-- Cheap fingerprint for the upsert path. ingestPost serialises 4 JSON blobs
+-- (media / preview / forward / reactions) on EVERY incoming post — even the
+-- ones that didn't change since the last sweep. On a 200-channel daily sweep
+-- where most channels publish nothing, this is ~80 % wasted work. Fingerprint
+-- compares text_html + views (the two fields that almost always change first
+-- when a post is edited or reacted to) under the same composite key the
+-- upsert uses; on a match we skip the four JSON serialises and the UPDATE.
+-- Returns a single row when the post exists, empty otherwise.
+selectFingerprint:
+SELECT text_html, views FROM post
 WHERE channel_username = :channelUsername AND seq = :seq;
 
 markRead:

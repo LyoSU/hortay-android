@@ -125,9 +125,31 @@ class WebTelegramClient(
      * Cheap "does this channel exist?" probe used by [AddChannelScreen] to validate user
      * input before subscribing. Reuses [fetchChannelPage] but classifies the outcome
      * differently — we care about validity, not freshness.
+     *
+     * Hard-capped at [LOOKUP_TIMEOUT_MS] so a stuck rate-limit gate (a sweep just
+     * collected a 429 and pushed `gateUntilMs` 120 s out, the user then opens
+     * Add-channel) doesn't freeze the UI for two minutes with no recourse —
+     * the user gets a clear RateLimited result and can retry instead of
+     * staring at a "Validating…" spinner that looks like the app died.
      */
     suspend fun lookupChannel(username: String): LookupResult {
-        return when (val result = fetchChannelPage(username, useCache = false)) {
+        val result = try {
+            kotlinx.coroutines.withTimeout(LOOKUP_TIMEOUT_MS) {
+                fetchChannelPage(username, useCache = false)
+            }
+        } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+            // The most common cause is the rate-limit gate: surface that
+            // explicitly so the UI can show "rate limited, try in N s" using
+            // the deadline already on [gateUntilMs]. Falling back to network
+            // error would be a worse UX (looks like a connectivity problem).
+            val remainingMs = (gateUntilMs.get() - System.currentTimeMillis()).coerceAtLeast(0L)
+            return if (remainingMs > 0L) {
+                LookupResult.RateLimited(remainingMs)
+            } else {
+                LookupResult.NetworkError(java.io.IOException("Lookup timed out"))
+            }
+        }
+        return when (result) {
             is FetchResult.Page -> {
                 if (result.page.posts.isEmpty()) {
                     LookupResult.Empty(result.page.channel)
@@ -230,9 +252,18 @@ class WebTelegramClient(
     }
 
     private suspend fun awaitGate() {
-        val until = gateUntilMs.get()
-        val now = System.currentTimeMillis()
-        if (until > now) {
+        // Loop, not single-shot: with [fetchSemaphore] permitting up to 6 concurrent
+        // fetchChannelPage calls, all six can read [gateUntilMs] before the first
+        // one of them hits a 429 and pushes a fresh deadline. Without re-checking,
+        // the other five sail past awaitGate and fire requests into the rate-limit
+        // window — earning five more 429s and pushing the gate further out for
+        // every other in-flight request. Reading after each delay closes the race:
+        // any 429 issued during our wait extends the deadline and we keep sleeping
+        // until the deadline truly is in the past.
+        while (true) {
+            val until = gateUntilMs.get()
+            val now = System.currentTimeMillis()
+            if (until <= now) return
             delay(until - now)
         }
     }
@@ -276,7 +307,7 @@ class WebTelegramClient(
         // We emit a plain Chrome-on-Linux UA, indistinguishable from a real
         // browser at the HTTP layer.
         private const val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 
         // Computed once at class-load — Locale changes are rare enough at runtime
         // (system-settings round trip) that a per-request alloc isn't justified, and
@@ -299,6 +330,13 @@ class WebTelegramClient(
         // TdClient's FLOOD_WAIT_CAP because t.me/s/ recovers faster than MTProto floods.
         private const val MAX_BACKOFF_SEC = 120L
         private const val DEFAULT_BACKOFF_SEC = 30L
+
+        // Cap on [lookupChannel] so the AddChannelSheet can't deadlock the UI
+        // for the full ~120 s rate-limit gate. 15 s lets a slow but live
+        // 3G connection complete a real lookup; longer than that is almost
+        // always a stuck gate or a dropped connection — neither benefits from
+        // continued waiting.
+        private const val LOOKUP_TIMEOUT_MS = 15_000L
         // Treat 5xx as a transient signal: short backoff, retry on next poll cycle.
         private const val SERVER_ERROR_BACKOFF_SEC = 10L
 

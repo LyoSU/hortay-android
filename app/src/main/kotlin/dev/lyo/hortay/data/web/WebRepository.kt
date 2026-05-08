@@ -16,7 +16,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -71,10 +71,14 @@ class WebRepository(
         postQueries
             .selectFeed(limit, mapper = ::rowToTimelinePost)
             .asFlow()
-            // Debounce upstream of mapToList so a burst of channel/post writes during
-            // a 200-channel sweep coalesces into ONE re-read instead of one per write.
-            // 50 ms covers a single fan-out cycle without lagging foreground refresh.
-            .debounce(FEED_REEMIT_DEBOUNCE_MS)
+            // sample, not debounce: under a 200-channel burst sweep, individual
+            // post inserts can land closer than the debounce window, so debounce
+            // keeps resetting and never emits — the feed appears frozen until
+            // the entire sweep completes (3-5 s of nothing). sample(150ms)
+            // guarantees up to ~7 emits/s under continuous burst, so the UI
+            // sees the feed grow incrementally as channels land. Bursts shorter
+            // than 150 ms still coalesce, which is the original goal.
+            .sample(FEED_REEMIT_SAMPLE_MS)
             .mapToList(ioDispatcher)
             .map { it.toPersistentList() }
             .distinctUntilChanged()
@@ -88,7 +92,7 @@ class WebRepository(
         postQueries
             .selectFeedByChannel(username, limit, mapper = ::rowToTimelinePost)
             .asFlow()
-            .debounce(FEED_REEMIT_DEBOUNCE_MS)
+            .sample(FEED_REEMIT_SAMPLE_MS)
             .mapToList(ioDispatcher)
             .map { it.toPersistentList() }
             .distinctUntilChanged()
@@ -99,7 +103,7 @@ class WebRepository(
         postQueries
             .selectBookmarked(mapper = ::rowToTimelinePost)
             .asFlow()
-            .debounce(FEED_REEMIT_DEBOUNCE_MS)
+            .sample(FEED_REEMIT_SAMPLE_MS)
             .mapToList(ioDispatcher)
             .map { it.toPersistentList() }
             .distinctUntilChanged()
@@ -278,6 +282,24 @@ class WebRepository(
     }
 
     private fun ingestPost(post: WebPost, fetchedAtMs: Long) {
+        val channelUsername = post.id.substringBefore('/')
+        // Fingerprint guard: most posts are unchanged between sweeps. Skip the
+        // four JSON serialises + UPDATE when text_html + views match the
+        // existing row exactly. text_html captures edits (Telegram rewrites the
+        // whole HTML on any text change including formatting / inline emoji);
+        // views captures the much-faster-moving counter that we still want to
+        // refresh. Other fields (media, preview, forward, reactions) only
+        // change in lockstep with text_html in practice — a post whose text
+        // didn't change rarely has new media, and reaction-count drift is
+        // surfaced via the views/reactions tail of the same UPDATE we're
+        // skipping anyway. media_url-rotation (the 4 h CDN TTL refresh) goes
+        // through markMediaStale → fetched_at_ms = 0 → next sweep forces a
+        // full re-ingest with forceNetwork=true, bypassing this guard via the
+        // Page outcome path.
+        val existing = postQueries.selectFingerprint(channelUsername, post.seq).executeAsOneOrNull()
+        if (existing != null && existing.text_html == post.textHtml && existing.views == post.views) {
+            return
+        }
         val mediaJson = json.encodeToString(mediaListSerializer, post.media.toList())
         val previewJson = post.webPreview?.let { json.encodeToString(WebPreview.serializer(), it) }
         val forwardedJson = post.forwardedFrom?.let { json.encodeToString(WebForwardSource.serializer(), it) }
@@ -291,7 +313,6 @@ class WebRepository(
         // ordering. Using fetchedAt keeps the post in roughly-correct chronology
         // (within minutes of its real publish time) instead of decades off.
         val publishedMs = parseIsoToMillis(post.publishedAt) ?: fetchedAtMs
-        val channelUsername = post.id.substringBefore('/')
 
         postQueries.upsertInsert(
             channelUsername = channelUsername,
@@ -342,6 +363,17 @@ class WebRepository(
 
     suspend fun markNotModified(username: String, fetchedAtMs: Long) = withContext(ioDispatcher) {
         channelQueries.markNotModified(username = username, lastFetchedAtMs = fetchedAtMs)
+    }
+
+    /**
+     * Reset any [ChannelFetchStatus.Loading] rows back to [ChannelFetchStatus.Idle].
+     * The 'loading' marker is set on entry to a fetch and cleared on exit; a
+     * process kill mid-fetch leaves it stuck and the UI shows a permanent
+     * spinner. Called once on [WebFeedSource] construction so the next sweep
+     * picks the row up cleanly.
+     */
+    suspend fun clearStaleLoading() = withContext(ioDispatcher) {
+        channelQueries.clearStaleLoading()
     }
 
     /**
@@ -554,7 +586,12 @@ class WebRepository(
         // Coalesce burst writes during sweep (markFetchStatus → ingestPage → final
         // status, ×concurrency=6) into a single feed re-read. 50 ms is the same
         // window CustomEmojiRepository uses to batch GetCustomEmojiStickers calls.
-        private const val FEED_REEMIT_DEBOUNCE_MS = 50L
+        // sample window for the SQLDelight asFlow() pipeline. Picked to be longer
+    // than a typical inter-write gap during a 200-channel burst sweep, so the
+    // UI receives steady ~7Hz updates as content lands. Bursts shorter than
+    // this window still coalesce. Earlier value was a 50ms debounce, but
+    // debounce never settled under continuous burst → feed appeared frozen.
+    private const val FEED_REEMIT_SAMPLE_MS = 150L
 
         /**
          * Per-channel post-retention cap for the vacuum task. Deliberately generous —

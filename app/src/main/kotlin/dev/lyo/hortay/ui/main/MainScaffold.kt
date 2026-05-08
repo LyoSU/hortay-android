@@ -29,6 +29,9 @@ import dev.lyo.hortay.ui.channels.ChannelsScreen
 import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.settings.SettingsScreen
 import dev.lyo.hortay.ui.timeline.TimelineScreen
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -47,7 +50,42 @@ private const val EXIT_PROGRESS = 2f
 fun MainScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
     var channelFilter by rememberSaveable { mutableStateOf<Long?>(null) }
+    // Two-state pair for the comments overlay so it survives a process kill:
+    //   • pendingCommentsKey — (chatId, post.id), saveable across process death
+    //     because TimelinePost itself is not Parcelable (deep @Immutable graph
+    //     including PersistentList/ByteArray fields → big Parcelize blast
+    //     radius and ongoing schema-stability cost). The pair is.
+    //   • commentsForPost — transient TimelinePost?, derived. Setters update
+    //     both in lockstep via [openComments] / clearing both via the back
+    //     stack. After process restoration, the LaunchedEffect below
+    //     re-resolves the post from the live feed once it loads — small
+    //     latency price, but the overlay reappears on the same post the
+    //     user was reading instead of vanishing.
+    var pendingCommentsKey by rememberSaveable { mutableStateOf<Pair<Long, Long>?>(null) }
     var commentsForPost by remember { mutableStateOf<TimelinePost?>(null) }
+    val openComments: (TimelinePost?) -> Unit = { post ->
+        commentsForPost = post
+        pendingCommentsKey = post?.let { it.chatId to it.id }
+    }
+    // Restoration: after process kill, commentsForPost is null but pendingCommentsKey
+    // survives. Watch the live feed and re-derive the post once it loads — match
+    // either by anchor id or by any album member id (the user could have been
+    // reading the album-anchor's comments before the kill, and on restore the
+    // anchor id may have shuffled — see PostFilterStrategy album-id stability).
+    LaunchedEffect(pendingCommentsKey) {
+        val key = pendingCommentsKey ?: return@LaunchedEffect
+        if (commentsForPost?.let { it.chatId to it.id } == key) return@LaunchedEffect
+        val match = graph.postsRepository.posts
+            .map { posts ->
+                posts.firstOrNull { post ->
+                    post.chatId == key.first &&
+                        (post.id == key.second || key.second in post.albumMessageIds)
+                }
+            }
+            .filterNotNull()
+            .first()
+        commentsForPost = match
+    }
     // One-shot scroll-to-message request (deep link arrived with a post id, or any
     // future caller that needs TimelineScreen to land on a specific row). The pair is
     // (chatId, TDLib-shifted messageId). TimelineScreen consumes via [onScrollHandled]
@@ -96,7 +134,7 @@ fun MainScaffold(graph: AppGraph) {
             if (targetChat != null) {
                 channelFilter = targetChat
                 selectedTab = NavTab.Feed
-                commentsForPost = null
+                openComments(null)
                 if (serverPostId != null) {
                     // TDLib message ids are server post number << 20. The deep-link parser
                     // already normalises to the server number, so we shift here once
@@ -127,7 +165,7 @@ fun MainScaffold(graph: AppGraph) {
             // and then snap away — janky on a flagship-class device.
             // FastOutLinearInEasing accelerates outwards, the canonical M3 exit curve.
             commentsBackProgress.animateTo(EXIT_PROGRESS, tween(220, easing = FastOutLinearInEasing))
-            commentsForPost = null
+            openComments(null)
             commentsBackProgress.snapTo(0f)
         } catch (_: CancellationException) {
             // User released before the threshold — rewind smoothly.
@@ -185,7 +223,7 @@ fun MainScaffold(graph: AppGraph) {
                     showOnlyBookmarked = false,
                     channelFilter = channelFilter,
                     onChannelFilterChange = { channelFilter = it },
-                    onOpenComments = { commentsForPost = it },
+                    onOpenComments = openComments,
                     homeTapTrigger = homeTapTrigger,
                     onBrandTap = { homeTapTrigger = System.nanoTime() },
                     scrollToMessage = pendingScrollTarget,
@@ -218,7 +256,7 @@ fun MainScaffold(graph: AppGraph) {
                             selectedTab = NavTab.Feed
                         }
                     },
-                    onOpenComments = { commentsForPost = it },
+                    onOpenComments = openComments,
                     homeTapTrigger = 0L,
                     onBrandTap = {},
                 )
@@ -245,11 +283,11 @@ fun MainScaffold(graph: AppGraph) {
         CommentsScreen(
             post = post,
             repo = graph.commentsRepository,
-            onDismiss = { commentsForPost = null },
+            onDismiss = { openComments(null) },
             onChannelClick = { p ->
                 channelFilter = p.chatId
                 selectedTab = NavTab.Feed
-                commentsForPost = null
+                openComments(null)
             },
             backProgress = commentsBackProgress.value,
             backSwipeEdge = commentsBackEdge,

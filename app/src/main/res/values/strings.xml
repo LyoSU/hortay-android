@@ -402,4 +402,14 @@
 
     <!-- Channel-aware Talkback label for the unsubscribe icon. -->
     <string name="web_unsubscribe_from">Unsubscribe from %1$s</string>
+
+    <!-- Generic action labels surfaced as TalkBack contentDescription on
+         icon-only buttons across top bars and toolbars. -->
+    <string name="action_back">Back</string>
+    <string name="action_close">Close</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_search">Search</string>
+    <!-- Inline status badges next to a post. -->
+    <string name="post_badge_edited">Edited</string>
+    <string name="post_badge_pinned">Pinned</string>
 </resources>

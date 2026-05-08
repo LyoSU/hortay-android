@@ -263,7 +263,7 @@ fun CommentsScreen(
                         },
                         navigationIcon = {
                             IconButton(onClick = onDismiss) {
-                                Symbol(name = "arrow_back", contentDescription = "back")
+                                Symbol(name = "arrow_back", contentDescription = stringResource(R.string.action_back))
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -425,7 +425,7 @@ private fun CommentBubble(
                 if (message.editDate > 0L) {
                     Symbol(
                         name = "edit",
-                        contentDescription = "edited",
+                        contentDescription = stringResource(R.string.post_badge_edited),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         size = 13.dp,
                     )

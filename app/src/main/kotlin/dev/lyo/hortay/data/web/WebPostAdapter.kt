@@ -521,8 +521,12 @@ object WebPostAdapter {
             'B' -> 1_000_000_000.0
             else -> 1.0
         }
-        val numeric = if (multiplier == 1.0) cleaned.replace(Regex("[^0-9.]"), "")
-        else cleaned.dropLast(1).replace(Regex("[^0-9.]"), "")
+        // Telegram renders "1,5K" in locales with comma decimals (uk, ru, fr).
+        // Normalise comma -> dot BEFORE stripping non-digit/dot, otherwise the
+        // comma is dropped by the regex and "1,5K" parses as 15 -> 15000
+        // instead of 1500.
+        val raw = if (multiplier == 1.0) cleaned else cleaned.dropLast(1)
+        val numeric = raw.replace(',', '.').replace(Regex("[^0-9.]"), "")
         val value = numeric.toDoubleOrNull() ?: return 0
         return (value * multiplier).toInt()
     }

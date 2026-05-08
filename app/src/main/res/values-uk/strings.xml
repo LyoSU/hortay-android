@@ -410,4 +410,13 @@
 
     <!-- Talkback-опис кнопки відписки з назвою каналу. -->
     <string name="web_unsubscribe_from">Відписатися від %1$s</string>
+
+    <!-- Загальні TalkBack-описи для іконок-кнопок на верхніх панелях. -->
+    <string name="action_back">Назад</string>
+    <string name="action_close">Закрити</string>
+    <string name="action_clear">Очистити</string>
+    <string name="action_search">Пошук</string>
+    <!-- Інлайн-позначки біля поста. -->
+    <string name="post_badge_edited">Відредаговано</string>
+    <string name="post_badge_pinned">Закріплено</string>
 </resources>

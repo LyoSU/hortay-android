@@ -228,16 +228,36 @@ class MediaCache(
      */
     private fun evictTerminalSlots() {
         if (states.size <= SLOT_EVICTION_THRESHOLD) return
-        val iter = states.entries.iterator()
-        while (iter.hasNext()) {
-            val (id, flow) = iter.next()
-            if (flow.subscriptionCount.value > 0) continue
-            if (tracks.containsKey(id) || pendingCancels.containsKey(id) || postCompletionResync.containsKey(id)) continue
-            val s = flow.value
-            val terminal = s is MediaState.Ready || s is MediaState.Failed || s is MediaState.Idle
-            if (!terminal) continue
-            iter.remove()
-            activePriority.remove(id)
+        // Use [ConcurrentHashMap.compute] (not iterator+remove) so the
+        // subscriptionCount check + the entry removal happen under the same
+        // bin lock as any concurrent [slot] / [observe]'s [computeIfAbsent].
+        // Without that synchronisation, the iterator approach could read
+        // subscriptionCount==0, then between the read and `iter.remove()` a
+        // brand-new observer could call slot(id) → computeIfAbsent returns
+        // the old MutableStateFlow (still in the map) → starts collect().
+        // The watchdog then removes that flow, leaving an orphan subscriber
+        // whose flow is no longer in `states`: a future UpdateFile for this
+        // fileId hits `states[file.id] ?: return` in [reduce] and the
+        // observer is silently starved of state.
+        //
+        // With compute, the entry is locked while we evaluate. A concurrent
+        // computeIfAbsent for the same key blocks until our compute returns;
+        // if we returned null (evicted), it creates a fresh flow, and the
+        // observer collects from the new (in-map) one.
+        val keys = states.keys.toList()
+        for (id in keys) {
+            states.compute(id) { _, flow ->
+                if (flow == null) return@compute null
+                if (flow.subscriptionCount.value > 0) return@compute flow
+                if (tracks.containsKey(id) || pendingCancels.containsKey(id) || postCompletionResync.containsKey(id)) {
+                    return@compute flow
+                }
+                val s = flow.value
+                val terminal = s is MediaState.Ready || s is MediaState.Failed || s is MediaState.Idle
+                if (!terminal) return@compute flow
+                activePriority.remove(id)
+                null
+            }
         }
     }
 

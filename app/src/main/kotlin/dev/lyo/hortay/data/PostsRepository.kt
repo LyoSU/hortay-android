@@ -849,12 +849,11 @@ class PostsRepository(
                 .getOrNull() ?: return@launch
             handleNewMessage(msg)
         }
-        // Bump editDate on the anchor so the "edited" indicator surfaces immediately
-        // even before the re-ingest completes.
-        updateOnePostByAnyMemberId(update.chatId, update.messageId) { post ->
-            // Preserve existing editDate semantics if TDLib didn't pair an Edited update.
-            if (post.editDate == anchor.editDate) post else post
-        }
+        // Note: we deliberately do not bump editDate here — the paired
+        // UpdateMessageEdited event arrives separately and is the authoritative
+        // source. The re-ingest above resyncs the full album content; any
+        // intermediate "edited" badge would beat the official update only by
+        // a frame and isn't worth the read-modify-write on _posts.
     }
 
     private fun handleIsPinnedChanged(update: TdApi.UpdateMessageIsPinned) {
@@ -991,7 +990,20 @@ class PostsRepository(
         val archiveIds = runCatching {
             td.send(TdApi.GetChats(TdApi.ChatListArchive(), Int.MAX_VALUE)).chatIds.toList()
         }.getOrElse { emptyList() }
-        _archivedChatIds.value = archiveIds.toSet()
+        // CAS-update instead of `.value = …`: a parallel UpdateChatAddedToList /
+        // UpdateChatRemovedFromList handler also writes through `_archivedChatIds.update {}`
+        // and a direct assignment here would silently clobber any add/remove that
+        // landed during the seconds-long drainChatList + N×GetChat block above.
+        // Take the snapshot result as the new ground truth, then re-apply any
+        // membership changes the handler observed in the meantime: the union of
+        // (a) ids the handler had added that weren't reflected in the snapshot
+        // (b) the snapshot itself, minus ids the handler subsequently removed.
+        // Simplest correct form: snapshot + (currently-tracked - mainIdsSet).
+        val mainIdSet = mainIds.toSet()
+        val freshArchive = archiveIds.toSet()
+        _archivedChatIds.update { existing ->
+            freshArchive + existing.filterNot { it in mainIdSet }
+        }
 
         // Single channel set — duplicates collapse via toSet, then we go back to a List so
         // we can preserve ordering for the per-chat fetch.
@@ -1117,7 +1129,6 @@ class PostsRepository(
     private companion object {
         const val TAG = "PostsRepository"
         const val CHAT_LIST_HINT = 200
-        const val CHAT_LIST_LIMIT = 500
         const val MAX_LOAD_CHATS_PAGES = 10
         const val MAX_FEED_SIZE = 1_000
         const val REFRESH_DEFAULT_LIMIT = 30

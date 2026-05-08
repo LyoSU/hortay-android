@@ -122,6 +122,11 @@ class WebFeedSource(
             .distinctUntilChanged()
             .onEach { handleSubscriptionsChanged(it) }
             .launchIn(scope)
+        // Recover from any 'loading' status rows left behind by a prior process
+        // kill mid-fetch. fetchOne stamps Loading on entry and clears it on exit;
+        // without this sweep, a row that crashed mid-fetch sticks at Loading and
+        // surfaces a permanent spinner in the Channels tab.
+        scope.launch { repository.clearStaleLoading() }
     }
 
     private suspend fun handleSubscriptionsChanged(latest: Set<String>) = subscriptionsMutex.withLock {
@@ -224,16 +229,24 @@ class WebFeedSource(
                         }
                     }.awaitAll()
                 }
-                // Adaptive backoff signal: when every channel returned 304 /
-                // error / parse failure (no `Page` outcome), this sweep
-                // produced zero new content. Bump the counter so the
-                // scheduler can lengthen its next interval. Any `Page` resets
-                // the streak — the user wants prompt updates after silence
-                // breaks.
-                if (outcomes.none { it }) {
-                    _consecutiveNoOpSweeps.update { it + 1 }
-                } else {
-                    _consecutiveNoOpSweeps.value = 0
+                // Adaptive backoff signal. Three outcome buckets matter:
+                //   - any Fresh → reset; the user wants prompt updates after
+                //     silence breaks.
+                //   - any Transient (RateLimited / NetworkError) without Fresh →
+                //     leave the counter alone. A 429-burst that returned zero
+                //     new content is NOT a "feed has been quiet" signal —
+                //     conflating it would push the scheduler to 30-min idle
+                //     intervals after a single t.me throttle blip, costing an
+                //     hour of update lag for what's actually a transient
+                //     network condition. Edge already told us via Retry-After
+                //     when to come back; the gate in [WebTelegramClient] honours
+                //     that on the next fetch.
+                //   - all NoOp (304 / ParseFailure / NotFound / Private) →
+                //     increment, this really was a quiet sweep.
+                when {
+                    outcomes.any { it == FetchOutcome.Fresh } -> _consecutiveNoOpSweeps.value = 0
+                    outcomes.any { it == FetchOutcome.Transient } -> Unit
+                    else -> _consecutiveNoOpSweeps.update { it + 1 }
                 }
                 lastSuccessfulRefreshAtMs = System.currentTimeMillis()
                 _refreshState.value = RefreshState.Idle
@@ -261,63 +274,90 @@ class WebFeedSource(
     }
 
     /**
-     * @return true when the fetch ingested fresh content (a 200 with parsed
-     *   posts), false otherwise (304 NotModified, NotFound, errors, parse
-     *   failures). The caller — [doRefresh] — aggregates these to drive the
-     *   adaptive backoff counter exposed via [consecutiveNoOpSweeps].
+     * @return [FetchOutcome] describing the sweep's contribution. The caller
+     *   ([doRefresh]) aggregates these to drive the adaptive backoff counter
+     *   exposed via [consecutiveNoOpSweeps].
+     *
+     * The Loading status set on entry is cleared by every branch of `when` —
+     * AND additionally by the outer try/catch, so a thrown exception (process
+     * kill is handled by [WebRepository.clearStaleLoading] on init; everything
+     * else lands here) doesn't leave a stuck spinner in the Channels tab.
      */
     private suspend fun fetchOne(
         username: String,
         forceNetwork: Boolean,
         fetchedAtMs: Long,
-    ): Boolean {
+    ): FetchOutcome {
         repository.markFetchStatus(username, ChannelFetchStatus.Loading)
-        val result = fetchSemaphore.withPermit {
-            client.fetchChannelPage(username, useCache = !forceNetwork)
+        try {
+            val result = fetchSemaphore.withPermit {
+                client.fetchChannelPage(username, useCache = !forceNetwork)
+            }
+            when (result) {
+                is FetchResult.Page -> {
+                    repository.ingestPage(
+                        page = result.page,
+                        etag = result.etag,
+                        lastModified = result.lastModified,
+                        fetchedAtMs = fetchedAtMs,
+                    )
+                    return FetchOutcome.Fresh
+                }
+                FetchResult.NotModified -> {
+                    repository.markNotModified(username, fetchedAtMs)
+                    return FetchOutcome.NoOp
+                }
+                FetchResult.NotFound -> {
+                    repository.markFetchStatus(username, ChannelFetchStatus.NotFound, error = null)
+                    return FetchOutcome.NoOp
+                }
+                FetchResult.PrivateChannel -> {
+                    repository.markFetchStatus(username, ChannelFetchStatus.Private)
+                    return FetchOutcome.NoOp
+                }
+                is FetchResult.RateLimited -> {
+                    repository.markFetchStatus(
+                        username = username,
+                        status = ChannelFetchStatus.RateLimited,
+                        retryAfterMs = result.retryAfterMs,
+                    )
+                    return FetchOutcome.Transient
+                }
+                is FetchResult.NetworkError -> {
+                    repository.markFetchStatus(
+                        username = username,
+                        status = ChannelFetchStatus.Error,
+                        error = result.cause.message,
+                    )
+                    return FetchOutcome.Transient
+                }
+                FetchResult.ParseFailure -> {
+                    repository.markFetchStatus(
+                        username = username,
+                        status = ChannelFetchStatus.ParseFailure,
+                        error = "parse failed",
+                    )
+                    return FetchOutcome.NoOp
+                }
+            }
+        } catch (t: Throwable) {
+            // Belt: an exception thrown anywhere between the Loading marker and
+            // a successful when-branch would otherwise leave the row stuck at
+            // Loading until the next process restart. Demote to Error so the
+            // Channels tab paints a real failure chip instead of a permanent
+            // spinner. We re-throw cancellation so the caller's structured
+            // concurrency stays intact.
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            repository.markFetchStatus(
+                username = username,
+                status = ChannelFetchStatus.Error,
+                error = t.message,
+            )
+            return FetchOutcome.Transient
         }
-        when (result) {
-            is FetchResult.Page -> {
-                repository.ingestPage(
-                    page = result.page,
-                    etag = result.etag,
-                    lastModified = result.lastModified,
-                    fetchedAtMs = fetchedAtMs,
-                )
-                return true
-            }
-            FetchResult.NotModified -> {
-                repository.markNotModified(username, fetchedAtMs)
-            }
-            FetchResult.NotFound -> {
-                repository.markFetchStatus(username, ChannelFetchStatus.NotFound, error = null)
-            }
-            FetchResult.PrivateChannel -> {
-                repository.markFetchStatus(username, ChannelFetchStatus.Private)
-            }
-            is FetchResult.RateLimited -> {
-                repository.markFetchStatus(
-                    username = username,
-                    status = ChannelFetchStatus.RateLimited,
-                    retryAfterMs = result.retryAfterMs,
-                )
-            }
-            is FetchResult.NetworkError -> {
-                repository.markFetchStatus(
-                    username = username,
-                    status = ChannelFetchStatus.Error,
-                    error = result.cause.message,
-                )
-            }
-            FetchResult.ParseFailure -> {
-                repository.markFetchStatus(
-                    username = username,
-                    status = ChannelFetchStatus.ParseFailure,
-                    error = "parse failed",
-                )
-            }
-        }
-        return false
     }
+
+    private enum class FetchOutcome { Fresh, NoOp, Transient }
 
     /**
      * Convenience "subscribe and refresh" that's the common path from the

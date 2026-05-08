@@ -100,6 +100,15 @@ SET fetch_status = 'ok',
     last_fetched_at_ms = :lastFetchedAtMs
 WHERE username = :username;
 
+-- Startup cleanup. The 'loading' status is set on the way INTO a fetch and
+-- cleared on the way out — but if the process is killed mid-fetch (OOM,
+-- ANR, user swipe-kill, system low-memory reap), the cleanup never runs
+-- and the row sticks at 'loading' forever, surfacing a permanent spinner
+-- in the Channels tab. Called once on WebFeedSource init to demote any
+-- stuck rows to 'idle' so the next sweep can pick them up cleanly.
+clearStaleLoading:
+UPDATE channel SET fetch_status = 'idle' WHERE fetch_status = 'loading';
+
 -- Subscription-intent operations. Calling subscribe on a never-seen channel
 -- bootstraps the row with a placeholder title — the next fetch fills it in.
 subscribeInsert:

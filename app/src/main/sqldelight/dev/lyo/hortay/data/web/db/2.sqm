@@ -1,0 +1,20 @@
+-- Schema migration: version 2 → 3.
+--
+-- Drops `post_text_plain_idx`, a B-tree index on `post.text_plain` that was
+-- created in v1 to "speed up" the LIKE-based cross-channel search. Audit
+-- showed it never participated in any query plan: SQLite cannot use a B-tree
+-- index for `LOWER(text_plain) LIKE '%pattern%'` (functional expression on
+-- the indexed column + leading wildcard, either of which is sufficient to
+-- defeat the index). Net effect on the live db: ~40 MB of disk for 5K posts
+-- + ~20% INSERT/UPDATE overhead per post, all for nothing. Dropping is safe
+-- — search continues to work via the same SCAN TABLE path it was already
+-- using under the hood.
+--
+-- File-naming convention reminder for the next migration:
+--   • <N>.sqm migrates FROM schema version N TO version N+1.
+--   • So this file (2.sqm) bumps version 2 → 3; the next bump (3 → 4) is
+--     3.sqm; etc.
+
+DROP INDEX IF EXISTS post_text_plain_idx;
+
+PRAGMA user_version = 3;

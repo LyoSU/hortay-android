@@ -31,6 +31,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -737,7 +738,22 @@ fun TimelineScreen(
         }
     })
 
-    val interactions = remember {
+    // Key on every long-lived dependency the lambdas close over. Without these
+    // keys, a logout/login that swaps `feed` (and with it the new vm instance,
+    // a fresh PostsRepository, a re-mounted MediaViewerHost) would leave the
+    // already-cached interactions object pointing at the previous account's
+    // ViewModel + repos — every callback would silently route to torn-down
+    // state. The same root cause as the per-account-state-survived-logout fix
+    // on the data layer, just on the UI side.
+    val interactions = remember(
+        vm,
+        viewer,
+        translations,
+        channelActions,
+        tdlibRepo,
+        feed,
+        bookmarks,
+    ) {
         // Album members share the same translation — TDLib stores translations against the
         // caption-carrying message id, but for the UI any post in the album should look
         // translated. Fall back to scanning album members when the lookup misses.
@@ -1196,13 +1212,13 @@ private fun TimelineTopBar(
             },
             navigationIcon = {
                 IconButton(onClick = onClearFilter) {
-                    Symbol(name = "arrow_back", contentDescription = "back")
+                    Symbol(name = "arrow_back", contentDescription = stringResource(R.string.action_back))
                 }
             },
             actions = {
                 if (searchQuery.isNotEmpty()) {
                     IconButton(onClick = { onSearchQueryChange("") }) {
-                        Symbol(name = "close", contentDescription = "clear")
+                        Symbol(name = "close", contentDescription = stringResource(R.string.action_clear))
                     }
                 }
             },
@@ -1212,7 +1228,7 @@ private fun TimelineTopBar(
         )
         hasFilter -> TopAppBar(
             title = {
-                Column(modifier = Modifier.clickable(onClick = onTitleTap)) {
+                Column(modifier = Modifier.clickable(role = Role.Button, onClick = onTitleTap)) {
                     Text(
                         text = channelTitle.orEmpty(),
                         style = MaterialTheme.typography.titleMedium,
@@ -1231,12 +1247,12 @@ private fun TimelineTopBar(
             },
             navigationIcon = {
                 IconButton(onClick = onClearFilter) {
-                    Symbol(name = "arrow_back", contentDescription = "back")
+                    Symbol(name = "arrow_back", contentDescription = stringResource(R.string.action_back))
                 }
             },
             actions = {
                 IconButton(onClick = onSearchToggle) {
-                    Symbol(name = "search", contentDescription = "search")
+                    Symbol(name = "search", contentDescription = stringResource(R.string.action_search))
                 }
             },
             colors = colors,
@@ -1262,7 +1278,7 @@ private fun TimelineTopBar(
         )
         else -> MediumFlexibleTopAppBar(
             title = {
-                Box(modifier = Modifier.clickable(onClick = onBrandTap)) {
+                Box(modifier = Modifier.clickable(role = Role.Button, onClick = onBrandTap)) {
                     BrandRow()
                 }
             },
