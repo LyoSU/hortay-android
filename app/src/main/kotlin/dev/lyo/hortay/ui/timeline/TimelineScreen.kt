@@ -134,7 +134,19 @@ fun TimelineScreen(
      */
     topBarBadge: (@Composable () -> Unit)? = null,
 ) {
+    // viewModel() keys the cached instance by VM class only; the `factory`
+    // parameter is consulted *just* on first creation. With both MainScaffold
+    // (feed = postsRepository) and WebModeScaffold (feed = webFeedSource)
+    // mounting TimelineScreen in the same Activity-scoped ViewModelStore, the
+    // mode the user enters first wins — every subsequent switch reuses that
+    // cached VM and silently observes the wrong feed (web posts ingested but
+    // VM watches PostsRepository.posts, or vice versa). User-visible: "added a
+    // channel in web mode, no posts appear" and "after sign-in I still see
+    // anon posts". Distinct-key per feed class lets both VMs coexist; the
+    // routing (MainActivity) already shows only one tree at a time, so they
+    // never collide visually.
     val vm: TimelineViewModel = viewModel(
+        key = feed.javaClass.name,
         factory = remember(feed, bookmarks) {
             viewModelFactory { initializer { TimelineViewModel(feed, bookmarks) } }
         },
