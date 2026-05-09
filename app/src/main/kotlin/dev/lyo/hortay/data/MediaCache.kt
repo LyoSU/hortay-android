@@ -35,7 +35,17 @@ import java.util.concurrent.ConcurrentHashMap
 enum class DownloadPriority(val tdValue: Int) {
     /** Active full-screen viewer / playing video. */
     Foreground(32),
-    /** Photo / video thumb currently visible in the timeline. */
+    /**
+     * Card whose centre is closest to the viewport centre — i.e. what the user is
+     * most likely staring at right now. Sits one tier above plain [VisibleMedia]
+     * so on a tight TDLib pool (mobile/roaming, ~4 active slots per
+     * [tdlib/td#786](https://github.com/tdlib/td/issues/786)) the dominant card
+     * always grabs a slot first regardless of LIFO ordering inside lane 16. On
+     * Wi-Fi the pool is wide enough that the priority gap is invisible — same
+     * file lands on both, the gap is just defence in depth.
+     */
+    VisibleCenter(24),
+    /** Photo / video thumb currently visible in the timeline (off-centre). */
     VisibleMedia(16),
     /** Off-screen but next-up — speculative prefetch. */
     Prefetch(8),
@@ -74,6 +84,7 @@ class MediaCache(
     private val scope: CoroutineScope,
     private val connection: StateFlow<ConnectionStatus>,
     private val foreground: StateFlow<Boolean>,
+    private val networkType: StateFlow<HortayNetworkType>,
     private val res: StringResolver,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -790,14 +801,32 @@ class MediaCache(
      * Why debounce: a LazyColumn dispose-and-remount within the same frame (typical on
      * fast scroll) would otherwise issue cancel + ensure on the IO dispatcher with no
      * ordering, and a cancel landing *after* the fresh DownloadFile would silently kill
-     * the slot. [CANCEL_DEBOUNCE_MS] gives the re-mount a window to abort the cancel
-     * before it fires; any previously queued cancel for the same fileId is replaced and
-     * cancelled.
+     * the slot. [CANCEL_DEBOUNCE_WIFI_MS] / [CANCEL_DEBOUNCE_METERED_MS] give the
+     * re-mount a window to abort the cancel before it fires; any previously queued
+     * cancel for the same fileId is replaced and cancelled.
+     *
+     * Why network-adaptive: on Wi-Fi TDLib's per-DC slot pool is large enough that a
+     * scroll-past ghost holding a slot for an extra 250 ms is invisible — the debounce
+     * is pure savings (fewer CancelDownloadFile RPCs on jittery scroll). On metered
+     * connections (Mobile/Roaming) the pool is tight (~4 active slots per DC, see
+     * [tdlib/td#786](https://github.com/tdlib/td/issues/786)) and Telegram-Android's
+     * recipe is "rip cancel the moment a cell detaches"; the 250 ms window is the
+     * difference between a freshly-centered photo grabbing its slot now versus a
+     * second from now. We keep a small ~80 ms cushion (5 frames at 60 fps) so that a
+     * one-frame LazyColumn dispose-then-mount still aborts the cancel — instant-zero
+     * would race the very same-frame remount that this debounce was added to protect.
+     * The cost on metered is one extra `CancelDownloadFile` RPC per dispose-without-
+     * remount, which compared to the slot-contention savings is a clear net win.
      */
     fun cancelDeferred(fileId: Int) {
         lateinit var jobRef: Job
+        val debounceMs = if (networkType.value == HortayNetworkType.Wifi) {
+            CANCEL_DEBOUNCE_WIFI_MS
+        } else {
+            CANCEL_DEBOUNCE_METERED_MS
+        }
         val job = scope.launch(ioDispatcher) {
-            delay(CANCEL_DEBOUNCE_MS)
+            delay(debounceMs)
             val slot = states[fileId]
             // No-op for slots that aren't actually downloading — common during scroll-
             // gated transient mounts that dispose without ever triggering ensure(),
@@ -925,11 +954,22 @@ class MediaCache(
         // more retry than before, since a single flaky DC-migration window can eat
         // the first reissue cycle without that being a permanent failure.
         const val MAX_STALL_RETRIES = 3
-        // Window during which a re-mount can rescue a queued cancel. 250ms covers a
-        // LazyColumn dispose-and-remount cycle (one frame at 60fps + some slack)
-        // without keeping cancelled downloads pinned long enough for a real
-        // navigation-away to feel laggy.
-        const val CANCEL_DEBOUNCE_MS = 250L
+        // Wi-Fi window during which a re-mount can rescue a queued cancel. 250ms
+        // covers a LazyColumn dispose-and-remount cycle (one frame at 60fps + slack)
+        // and amortises CancelDownloadFile RPCs across jittery scrolls. Pool is wide
+        // enough that holding a partially-downloaded ghost for an extra quarter-second
+        // is invisible to the user; we trade slot retention for fewer RPCs.
+        const val CANCEL_DEBOUNCE_WIFI_MS = 250L
+        // Metered window. TDLib's per-DC active-slot pool on [TdApi.NetworkTypeMobile]
+        // is much smaller (~4 slots per `ResourceManager.cpp` defaults), and a
+        // scroll-past ghost holding a slot is the user's "тупить на 4G" experience —
+        // the freshly-centered card has to wait for the ghost to either finish or
+        // get cancelled. Telegram-Android cancels on detach with no debounce; we
+        // keep ~80 ms (5 frames at 60 fps) which is the smallest window that still
+        // lets a one-frame dispose-then-mount abort the cancel. The trade-off is
+        // one extra CancelDownloadFile RPC per dispose-without-remount, which on a
+        // tight pool is dwarfed by the slot-availability win.
+        const val CANCEL_DEBOUNCE_METERED_MS = 80L
         // Delay between seeing Downloading(1.0) and forcing a GetFile resync. Long
         // enough that the happy-path follow-up UpdateFile (which arrives in single-
         // digit ms) has every chance to land first and cancel the resync; short

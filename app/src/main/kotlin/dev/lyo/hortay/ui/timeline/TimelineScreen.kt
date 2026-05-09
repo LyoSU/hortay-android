@@ -59,6 +59,7 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.ui.theme.asComposeShape
+import dev.lyo.hortay.ui.media.LocalIsCenteredItem
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
@@ -1083,6 +1084,32 @@ fun TimelineScreen(
                             }
                         }
 
+                        // Viewport-centre key: the item whose centre is closest to
+                        // the visible viewport centre. Each item composes its own
+                        // [LocalIsCenteredItem] = (this.key == centeredItemKey),
+                        // which [rememberMediaBinding] reads to promote
+                        // [DownloadPriority.VisibleMedia] callers to
+                        // [DownloadPriority.VisibleCenter] for the dominant card.
+                        // On a tight TDLib pool (mobile/roaming, ~4 active slots
+                        // per [tdlib/td#786](https://github.com/tdlib/td/issues/786))
+                        // this guarantees the user-staring card always grabs a
+                        // slot first regardless of LIFO ordering inside lane 16.
+                        // `derivedStateOf` skips recomposition when the centre
+                        // hasn't actually changed across snapshot reads.
+                        val centeredItemKey by remember(listState) {
+                            derivedStateOf {
+                                val info = listState.layoutInfo
+                                val visible = info.visibleItemsInfo
+                                if (visible.isEmpty()) return@derivedStateOf null
+                                val viewportCenter =
+                                    (info.viewportStartOffset + info.viewportEndOffset) / 2
+                                visible.minByOrNull { item ->
+                                    val itemCenter = item.offset + item.size / 2
+                                    kotlin.math.abs(itemCenter - viewportCenter)
+                                }?.key
+                            }
+                        }
+
                         CompositionLocalProvider(LocalScrollGate provides scrollGate) {
                             LazyColumn(
                                 state = listState,
@@ -1093,16 +1120,24 @@ fun TimelineScreen(
                                 modifier = Modifier.fillMaxSize(),
                             ) {
                                 items(items = displayedItems, key = { it.key }) { item ->
-                                    when (item) {
-                                        is FeedItem.Single -> PostCard(
-                                            post = item.post,
-                                            interactions = interactions,
-                                        )
-                                        is FeedItem.Thread -> ThreadedPostPair(
-                                            parent = item.parent,
-                                            reply = item.reply,
-                                            interactions = interactions,
-                                        )
+                                    // Per-item State so a centre flip recomposes
+                                    // only the two affected items (old centre →
+                                    // false, new centre → true) instead of the
+                                    // whole feed.
+                                    val isCentered = remember { mutableStateOf(false) }
+                                    isCentered.value = item.key == centeredItemKey
+                                    CompositionLocalProvider(LocalIsCenteredItem provides isCentered) {
+                                        when (item) {
+                                            is FeedItem.Single -> PostCard(
+                                                post = item.post,
+                                                interactions = interactions,
+                                            )
+                                            is FeedItem.Thread -> ThreadedPostPair(
+                                                parent = item.parent,
+                                                reply = item.reply,
+                                                interactions = interactions,
+                                            )
+                                        }
                                     }
                                 }
                             }

@@ -1,7 +1,5 @@
 package dev.lyo.hortay.data
 
-import android.content.Context
-import android.net.ConnectivityManager
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,11 +44,10 @@ import kotlinx.coroutines.sync.withPermit
  *   • Touch the file size for photos. Telegram thumbs are 30-300 KB and
  *     the per-size toggle in TG is just visual parity — even on the
  *     slowest tariff, the photo cap would exclude nothing real.
- *   • Add our own data-saver toggle on top of Android's. We honour the
- *     OS-level Data Saver via
- *     [ConnectivityManager.getRestrictBackgroundStatus]; layering a
- *     second toggle on top creates "I disabled it but it still doesn't
- *     work" confusion.
+ *   • Add our own data-saver toggle on top of Android's. The
+ *     [activePolicy] metered clamp already gates videos/animations off
+ *     on every non-Wi-Fi network — broader than the OS Data Saver flag
+ *     ever was — so the per-user toggle is redundant.
  *   • Pre-fetch reply-quote thumbnails or avatar pyramids. Those are
  *     wired through [DownloadPriority.Avatar]/[DownloadPriority.VisibleMedia]
  *     when they appear; a speculative pyramid for every post would 5x the
@@ -69,12 +66,9 @@ class MediaAutoDownloader(
     private val networkType: StateFlow<HortayNetworkType>,
     private val connection: StateFlow<ConnectionStatus>,
     private val foreground: StateFlow<Boolean>,
-    context: Context,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-
-    private val cm = context.applicationContext.getSystemService(ConnectivityManager::class.java)!!
 
     // Caps the number of `dispatchPost` jobs in flight at once. An album burst
     // can flush ~10 posts into [newArrivalsFlow] in one debounce window, and a
@@ -141,40 +135,7 @@ class MediaAutoDownloader(
         }
     }
 
-    /**
-     * Resolves the active [AutoDownloadPolicy] from settings + the device's current
-     * network. Honours the OS-level Data Saver: when enabled (whitelist mode is
-     * "ENABLED" — meaning background data is restricted for non-whitelisted apps,
-     * and we are non-whitelisted by default), we treat the connection as if videos
-     * were off, regardless of the user's per-network preference. This matches what
-     * Telegram and other Android apps do; the OS toggle is a system-wide promise.
-     *
-     * Returns null when the device has no active network — there's no meaningful
-     * policy in that state, and TDLib will queue any DownloadFile until it reconnects
-     * anyway, so issuing the call now is wasted work.
-     */
-    private fun activePolicy(): AutoDownloadPolicy? {
-        val raw = when (networkType.value) {
-            HortayNetworkType.Wifi -> current.onWifi
-            HortayNetworkType.Mobile -> current.onMobile
-            HortayNetworkType.Roaming -> current.onRoaming
-            HortayNetworkType.None -> return null
-        }
-        // Data Saver applies only to metered connections (mobile/roaming).
-        if (networkType.value != HortayNetworkType.Wifi && isDataSaverActive()) {
-            return raw.copy(videos = false, animations = false)
-        }
-        return raw
-    }
-
-    private fun isDataSaverActive(): Boolean = try {
-        cm.restrictBackgroundStatus == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
-    } catch (_: SecurityException) {
-        // Some manufacturers have been known to throw here on edge OS builds. Defaulting
-        // to "off" matches the behaviour the user sees on a fresh install — they didn't
-        // ask for restriction, and the setting is opt-in.
-        false
-    }
+    private fun activePolicy(): AutoDownloadPolicy? = resolveActivePolicy(networkType.value, current)
 
     private suspend fun dispatchPost(post: TimelinePost, policy: AutoDownloadPolicy) {
         when (val c = post.content) {
@@ -280,4 +241,49 @@ class MediaAutoDownloader(
     private companion object {
         const val DISPATCH_CONCURRENCY = 8
     }
+}
+
+/**
+ * Pure resolver for the active [AutoDownloadPolicy] given the current network
+ * and the user's stored settings. Extracted so the metered-clamp branch is
+ * unit-testable without instantiating [MediaAutoDownloader] (which needs Android
+ * Context for [android.net.ConnectivityManager], a TDLib client, etc.).
+ *
+ * Two-layer rule:
+ *
+ *   1. Pick the per-network bucket from [settings].
+ *   2. **Metered prefetch clamp.** TDLib's per-DC active-slot pool is much
+ *      smaller on [org.drinkless.tdlib.TdApi.NetworkTypeMobile] than on Wi-Fi
+ *      (see `td/telegram/files/ResourceManager.cpp` defaults), and our
+ *      auto-download path issues `DownloadFile` for the *whole file*. A single
+ *      5 MB animation prefetched from a real-time arrival pins one of those
+ *      few slots for seconds — exactly when a user-visible photo tries to
+ *      grab a slot. Telegram-Android sidesteps this by streaming videos via
+ *      MTProto range requests (no full-file DownloadFile in the prefetch
+ *      lane); until we ship an equivalent streaming layer, the responsible
+ *      default is to keep *only* photo prefetch on metered networks (30-300
+ *      KB, completes in one chunk). The video card still renders its inline
+ *      poster on metered (posters ride [AutoDownloadPolicy.photos], not
+ *      [AutoDownloadPolicy.videos]); the playback file simply downloads on
+ *      tap instead of speculatively. This is independent of the user's video
+ *      size cap — even a generous cap doesn't help if the pool is clogged
+ *      when the user actually looks at the feed.
+ *
+ * Returns null when the device has no active network — TDLib would queue any
+ * `DownloadFile` until it reconnects anyway.
+ */
+internal fun resolveActivePolicy(
+    network: HortayNetworkType,
+    settings: AutoDownloadSettings,
+): AutoDownloadPolicy? {
+    val raw = when (network) {
+        HortayNetworkType.Wifi -> settings.onWifi
+        HortayNetworkType.Mobile -> settings.onMobile
+        HortayNetworkType.Roaming -> settings.onRoaming
+        HortayNetworkType.None -> return null
+    }
+    if (network != HortayNetworkType.Wifi) {
+        return raw.copy(videos = false, animations = false)
+    }
+    return raw
 }

@@ -84,7 +84,14 @@ class AppGraph(context: Context) {
     // mark slots Failed. lifecycleBridge.foreground does the same job for app-background:
     // suspend the watchdog entirely (zero CPU/battery) until the app comes back to focus.
     val mediaCache: MediaCache =
-        MediaCache(tdClient, appScope, tdClient.connection, lifecycleBridge.foreground, res)
+        MediaCache(
+            td = tdClient,
+            scope = appScope,
+            connection = tdClient.connection,
+            foreground = lifecycleBridge.foreground,
+            networkType = lifecycleBridge.networkType,
+            res = res,
+        )
 
     // Shared between PostsRepository (channel feed) and CommentsRepository (discussion
     // threads) so an author resolved in one context is reused in the other — same user
@@ -132,7 +139,6 @@ class AppGraph(context: Context) {
         networkType = lifecycleBridge.networkType,
         connection = tdClient.connection,
         foreground = lifecycleBridge.foreground,
-        context = context,
         scope = appScope,
     ).also { it.bind() }
 

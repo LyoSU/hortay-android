@@ -187,6 +187,37 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Performance
 
+- **"Тупить на 4G, у Wi-Fi норм"**. Three converging fixes for media stalls
+  on metered networks, where TDLib's per-DC active-slot pool is much smaller
+  than on Wi-Fi (~4 vs ~10 per [tdlib/td#786](https://github.com/tdlib/td/issues/786))
+  and a single multi-MB animation prefetch can clog the pipe for seconds while
+  the user stares at a photo trying to grab the same slot. None of these
+  involves changing TDLib options — the pool sizing is fine, the contention
+  was on our side:
+  1. **Metered prefetch clamp** in `MediaAutoDownloader.activePolicy()`. On
+     Mobile / Roaming the resolved policy now forces `videos = false` and
+     `animations = false` regardless of the user's per-network toggles,
+     keeping only photo prefetch (30-300 KB, completes in one chunk and
+     frees the slot fast). Photo posters still ride this lane so video /
+     animation cards keep their inline preview; the playback file simply
+     downloads on tap. Until we ship MTProto-range video streaming this is
+     the only way to keep the prefetch lane from clogging the visible lane
+     on a tight pool. Telegram-Android achieves the same effect through
+     streaming rather than a clamp.
+  2. **Viewport-centre priority decay**. New
+     `DownloadPriority.VisibleCenter` (24, between `VisibleMedia` 16 and
+     `Foreground` 32) propagated through `LocalIsCenteredItem`. The single
+     LazyColumn item whose centre is closest to the viewport centre gets
+     promoted from `VisibleMedia` to `VisibleCenter` so on a tight pool the
+     dominant card always grabs a slot first regardless of LIFO ordering
+     inside lane 16. On Wi-Fi the priority gap is invisible (pool is wide
+     enough) — defence in depth.
+  3. **Network-adaptive cancel debounce**. `CANCEL_DEBOUNCE_METERED_MS = 80`
+     vs `CANCEL_DEBOUNCE_WIFI_MS = 250` in `MediaCache.cancelDeferred`. On
+     metered, scrolling a card off-screen frees its slot ~3× faster for the
+     freshly-centered card; the 80 ms cushion still lets a one-frame
+     dispose-then-mount abort the cancel. Cost: one extra `CancelDownloadFile`
+     RPC per dispose-without-remount, dwarfed by the slot-availability win.
 - **Tamed TDLib pool contention** that surfaced as multi-second stalls on
   user-facing photos and the "comments sometimes load slowly" complaint. Live
   logcat showed user-staring files sitting at `bytes=0` for 5-79 s while

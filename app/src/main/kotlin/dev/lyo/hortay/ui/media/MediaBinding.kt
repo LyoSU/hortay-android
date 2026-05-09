@@ -81,16 +81,35 @@ fun rememberMediaBinding(
 
     // Scroll-gate-aware ensure. Re-runs on gate flips so a fling-then-settle
     // landing the user on a new viewport burst-issues ensure() in one frame.
-    // The (fileId, priority, gateOpen, isRemote) tuple is the canonical keying
-    // that survived several iterations: dropping `gateOpen` made ensure() fire
-    // mid-fling and saturate the per-DC pool with cancelled-on-dispose ghost
+    // The (fileId, effectivePriority, gateOpen, isRemote) tuple is the canonical
+    // keying that survived several iterations: dropping `gateOpen` made ensure()
+    // fire mid-fling and saturate the per-DC pool with cancelled-on-dispose ghost
     // downloads; dropping `priority` masked the in-place upgrade path; dropping
     // `isRemote` made web-mode call sites still hit the cache for a no-op
     // ensure().
+    //
+    // Viewport-centre upgrade: when the host feed has marked this item as the
+    // centre (via [LocalIsCenteredItem]) and the renderer requested
+    // [DownloadPriority.VisibleMedia], we promote to [DownloadPriority.VisibleCenter]
+    // (24 vs 16) so TDLib's priority-aware scheduler always serves the centre
+    // card first on a tight pool. The upgrade is scoped to VisibleMedia callers
+    // only — Avatar/Foreground/Prefetch keep their explicit priority since each
+    // has its own semantic meaning that the centre-of-viewport heuristic
+    // shouldn't override (an avatar at priority 2 is "loses to media on
+    // purpose"; a fullscreen viewer at 32 is already maximum). Recomputed on
+    // every [LocalIsCenteredItem.value] flip so a card sliding into / out of the
+    // centre re-issues `ensure` with the new priority and TDLib promotes /
+    // demotes the in-flight job in place.
     val gate = LocalScrollGate.current
     val gateOpen = gate.value
-    LaunchedEffect(fileId, priority, gateOpen, isRemote) {
-        if (gateOpen && !isRemote) fileId?.let { cache.ensure(it, priority) }
+    val isCentered = LocalIsCenteredItem.current.value
+    val effectivePriority = if (isCentered && priority == DownloadPriority.VisibleMedia) {
+        DownloadPriority.VisibleCenter
+    } else {
+        priority
+    }
+    LaunchedEffect(fileId, effectivePriority, gateOpen, isRemote) {
+        if (gateOpen && !isRemote) fileId?.let { cache.ensure(it, effectivePriority) }
     }
     DisposableEffect(fileId, isRemote) {
         onDispose { if (!isRemote) fileId?.let(cache::cancelDeferred) }
