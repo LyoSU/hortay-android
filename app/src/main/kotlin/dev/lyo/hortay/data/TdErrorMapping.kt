@@ -46,7 +46,9 @@ fun Throwable.toUserFacing(
     val operation = res.getString(operationRes)
 
     return when {
-        code == TdClient.FLOOD_WAIT_CODE -> {
+        // Both 420 (legacy MTProto) and 429 (translated layer) signify rate limiting;
+        // see [TdClient.isFloodWaitCode] for the rationale.
+        TdClient.isFloodWaitCode(code) -> {
             val seconds = parseLeadingDigits(raw)
             val human = seconds?.let { humaniseSeconds(res, it) }
             val msg = if (human != null) res.getString(R.string.err_flood_with_time, human)

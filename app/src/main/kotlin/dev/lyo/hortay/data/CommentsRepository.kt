@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
@@ -57,11 +58,52 @@ class CommentsRepository(
 
     private data class ResolvedAnchor(val threadChatId: Long, val rootId: Long)
 
-    // Permanent for the lifetime of the repo. ~16 bytes per entry; even with thousands
-    // of unique posts viewed in a session this is negligible. Keeping it forever means
-    // a thread that aged out of the SharedFlow LRU still skips GetMessageProperties +
-    // GetMessageThread on the next observe — only the history fetch runs.
-    private val resolvedAnchors = ConcurrentHashMap<Pair<Long, Long>, ResolvedAnchor>()
+    /**
+     * Outcome of [ensureAnchor] for a `(chatId, anchorKey)` query. The negative
+     * variant is just as important to cache as the positive one: a channel post
+     * with no linked discussion group always answers `400 Message has no thread`,
+     * and without negative caching every viewport-stable burst (debounced 700 ms)
+     * + every tap-driven [observeThread] re-fired the same RPC — burning RTTs
+     * for a permanently-fixed result and contributing to per-method rate limits
+     * that surface as comments-load latency for *other* threads. Live logcat
+     * confirmed this: same `(chatId, msgId)` queried twice in the same
+     * millisecond by racing prefetch + observe paths, both unaware of each
+     * other's in-flight call.
+     */
+    private sealed interface AnchorResolution {
+        data class Resolved(val anchor: ResolvedAnchor) : AnchorResolution
+        /** Server reported `Message has no thread` (or the album walk found no thread carrier). */
+        data object NoThread : AnchorResolution
+    }
+
+    // Permanent for the lifetime of the repo. ~24 bytes per entry; even with
+    // thousands of unique posts viewed in a session this is negligible. Both
+    // positive (Resolved) and negative (NoThread) outcomes are cached so a
+    // post that genuinely has no comments doesn't keep re-firing
+    // GetMessageProperties + GetMessageThread on every viewport stable.
+    private val resolvedAnchors = ConcurrentHashMap<Pair<Long, Long>, AnchorResolution>()
+
+    /**
+     * In-flight [ensureAnchor] requests. Concurrent callers (e.g. [prefetchThread]
+     * fired by viewport-stable racing [observeThread] from a user tap) used to
+     * both check `resolvedAnchors` (miss), both fire `GetMessageThread`, both
+     * receive the same answer — doubling the per-method rate-limit pressure
+     * for free. The deferred lets the second caller `await` the first caller's
+     * result; the entry is removed once the answer is cached.
+     */
+    private val inflightAnchors = ConcurrentHashMap<Pair<Long, Long>, CompletableDeferred<AnchorResolution?>>()
+
+    // Anchors we already warmed in this session via [prefetchThread]. Without this
+    // dedup the same thread re-runs `GetMessageThreadHistory` every time the
+    // viewport stabilises around the corresponding post (debounced 700 ms); on a
+    // feed where the user dwells, scrolls, returns — the same chat racks up
+    // dozens of identical history requests per minute and Telegram rate-limits
+    // it (live logcat caught a "[429] retry after 31" on prefetchHistory).
+    // Permanent for the lifetime of the repo: history doesn't decay during a
+    // session, and a tap-driven [observeThread] still fetches fresh history if
+    // the prefetched batch doesn't cover the viewport. ~16 bytes per entry, on
+    // par with [resolvedAnchors].
+    private val prefetchedAnchors = ConcurrentHashMap.newKeySet<Pair<Long, Long>>()
 
     // Bounded LRU. accessOrder=true bumps an entry to most-recently-used on every
     // get/put; removeEldestEntry caps the size and lets the JVM GC the dropped
@@ -91,10 +133,22 @@ class CommentsRepository(
      */
     suspend fun prefetchThread(chatId: Long, candidateMessageIds: List<Long>) {
         val anchor = ensureAnchor(chatId, candidateMessageIds) ?: return
+        val anchorKey = anchor.threadChatId to anchor.rootId
+        // Skip if we've already warmed this exact thread in this session.
+        // [Set.add] is atomic — only the first caller proceeds; concurrent
+        // viewport-stable triggers for the same post are no-ops.
+        if (!prefetchedAnchors.add(anchorKey)) return
         ChatPresence.withOpenChat(td, anchor.threadChatId) {
             runCatching {
                 td.send(TdApi.GetMessageThreadHistory(anchor.threadChatId, anchor.rootId, 0, 0, BATCH_SIZE))
             }.warnUnlessCancelled(TAG, "prefetchHistory(${anchor.threadChatId})")
+                // If we hit a transient failure (rate limit, network blip), drop
+                // the dedup mark so a future viewport-stable can try again — the
+                // history payload never landed, the user still benefits from a
+                // retry. Permanent failures (chat deleted, unauthorised) won't
+                // re-succeed either way; we accept the small cost of a single
+                // retry-after-error per affected anchor.
+                .onFailure { prefetchedAnchors.remove(anchorKey) }
         }
     }
 
@@ -205,39 +259,137 @@ class CommentsRepository(
     ): ResolvedAnchor? {
         val anchorKey = candidateMessageIds.minOrNull() ?: return null
         val key = chatId to anchorKey
-        resolvedAnchors[key]?.let { return it }
 
-        // Standalone post (non-album): GetMessageThread succeeds against the
-        // single id directly, so we skip the GetMessageProperties probe — a
-        // free saving of one JNI hop per first-time comments open. The probe
-        // exists exclusively for album disambiguation: Telegram pins the
-        // discussion thread to a single album member (per tdlib/td#2312, the
-        // first/oldest one), and calling GetMessageThread on any other
-        // sibling returns "Message has no thread".
-        val anchorId = if (candidateMessageIds.size == 1) {
-            candidateMessageIds.single()
-        } else {
-            // Album: probe candidates in ascending-id order until we find the
-            // thread carrier. PostFilterStrategy already builds albumMessageIds
-            // sorted ascending, so the first candidate is the oldest member —
-            // which per tdlib/td#2312 is the canonical thread carrier — and
-            // this loop normally exits on the first iteration. The fallback
-            // walk still exists for the rare case where Telegram pins the
-            // thread to a different album member.
-            candidateMessageIds.firstOrNull { id ->
-                runCatching { td.send(TdApi.GetMessageProperties(chatId, id)) }
-                    .warnUnlessCancelled(TAG, "messageProperties($chatId,$id)")
-                    .getOrNull()
-                    ?.canGetMessageThread == true
-            } ?: return null
+        // Cached result — positive or negative.
+        when (val cached = resolvedAnchors[key]) {
+            is AnchorResolution.Resolved -> return cached.anchor
+            is AnchorResolution.NoThread -> return null
+            null -> Unit
         }
 
-        val info = runCatching { td.send(TdApi.GetMessageThread(chatId, anchorId)) }
-            .warnUnlessCancelled(TAG, "messageThread($chatId,$anchorId)")
-            .getOrNull() ?: return null
+        // In-flight dedup. `putIfAbsent` is the atomic "claim or join" primitive:
+        //   • Returns null if we are the first caller — we go fetch and complete
+        //     the deferred for everyone awaiting.
+        //   • Returns the existing deferred if another caller is already
+        //     fetching — we just await its result.
+        // The fetcher always completes the deferred (with the resolution or
+        // null on cancellation/exception) and removes its in-flight entry, so
+        // subsequent callers see the final cached value via [resolvedAnchors].
+        val ours = CompletableDeferred<AnchorResolution?>()
+        val existing = inflightAnchors.putIfAbsent(key, ours)
+        if (existing != null) {
+            return when (val r = existing.await()) {
+                is AnchorResolution.Resolved -> r.anchor
+                AnchorResolution.NoThread, null -> null
+            }
+        }
 
-        val resolved = ResolvedAnchor(info.chatId, info.messageThreadId)
-        return resolvedAnchors.putIfAbsent(key, resolved) ?: resolved
+        try {
+            // Standalone post (non-album): GetMessageThread succeeds against the
+            // single id directly, so we skip the GetMessageProperties probe — a
+            // free saving of one JNI hop per first-time comments open. The probe
+            // exists exclusively for album disambiguation: Telegram pins the
+            // discussion thread to a single album member (per tdlib/td#2312, the
+            // first/oldest one), and calling GetMessageThread on any other
+            // sibling returns "Message has no thread".
+            val anchorId = if (candidateMessageIds.size == 1) {
+                candidateMessageIds.single()
+            } else {
+                // Album: probe candidates in ascending-id order until we find
+                // the thread carrier. PostFilterStrategy already builds
+                // albumMessageIds sorted ascending, so the first candidate is
+                // the oldest member — which per tdlib/td#2312 is the canonical
+                // thread carrier — and this loop normally exits on the first
+                // iteration. The fallback walk still exists for the rare case
+                // where Telegram pins the thread to a different album member.
+                //
+                // [allProbesAuthoritative] tracks whether every probe answered
+                // definitively (success OR a permanent 400). If a transient
+                // failure (network / 429 / 5xx) silenced any probe, we DO NOT
+                // cache NoThread — the album might genuinely have a thread we
+                // just couldn't reach. Caching here would mask comments for
+                // the entire session after a single network blip.
+                var allProbesAuthoritative = true
+                val carrier = candidateMessageIds.firstOrNull { id ->
+                    val probeResult = runCatching { td.send(TdApi.GetMessageProperties(chatId, id)) }
+                        .warnUnlessCancelled(TAG, "messageProperties($chatId,$id)")
+                    probeResult.fold(
+                        onSuccess = { it.canGetMessageThread == true },
+                        onFailure = { err ->
+                            val code = (err as? TdClient.TdException)?.code ?: 0
+                            if (code != 400) allProbesAuthoritative = false
+                            false
+                        },
+                    )
+                }
+                if (carrier == null) {
+                    if (allProbesAuthoritative) {
+                        // Every probe answered: the album really has no thread carrier.
+                        resolvedAnchors[key] = AnchorResolution.NoThread
+                        ours.complete(AnchorResolution.NoThread)
+                    } else {
+                        // At least one probe was transient — leave the cache
+                        // empty so the next observe gets a fresh chance.
+                        ours.complete(null)
+                    }
+                    return null
+                }
+                carrier
+            }
+
+            val result = runCatching { td.send(TdApi.GetMessageThread(chatId, anchorId)) }
+                .warnUnlessCancelled(TAG, "messageThread($chatId,$anchorId)")
+
+            result.fold(
+                onSuccess = { info ->
+                    val resolution = AnchorResolution.Resolved(ResolvedAnchor(info.chatId, info.messageThreadId))
+                    resolvedAnchors[key] = resolution
+                    ours.complete(resolution)
+                    return resolution.anchor
+                },
+                onFailure = { err ->
+                    // Discriminate permanent-NoThread (cache it) from transient
+                    // failures (must NOT poison the cache). The original code
+                    // returned null on every failure without caching, which was
+                    // safe but caused repeat-fires that drove rate limits; my
+                    // first pass cached every null which was the inverse bug —
+                    // a single 429 / network blip would mask the thread for the
+                    // rest of the session.
+                    //
+                    // Decision: cache as NoThread only for code 400 (Bad
+                    // Request). Per Telegram's MTProto error semantics, 400 is
+                    // the caller-error class — it does not transition to OK on
+                    // retry. The canonical answer for a channel without a
+                    // linked discussion group is `[400] Message has no thread`,
+                    // and adjacent permanent 400s ("MSG_ID_INVALID",
+                    // "MESSAGE_ID_INVALID", "CHANNEL_PRIVATE") are equally
+                    // permanent for the message lifetime. Codes 401/403/404
+                    // are *also* permanent but rare on this RPC; conservatively
+                    // we cache only 400 — false-positive caching on a rare
+                    // 401/403 just leaks the same retry budget the old code
+                    // had. 429 / 500-599 / 0 (network) — never cache.
+                    val code = (err as? TdClient.TdException)?.code ?: 0
+                    if (code == 400) {
+                        resolvedAnchors[key] = AnchorResolution.NoThread
+                        ours.complete(AnchorResolution.NoThread)
+                    } else {
+                        // Transient: don't poison the cache. Wake any
+                        // concurrent waiter with null so it bails this call;
+                        // the next call after this one races a fresh fetch.
+                        ours.complete(null)
+                    }
+                    return null
+                },
+            )
+        } catch (t: Throwable) {
+            // Don't poison the cache on cancellation — the next observer
+            // should be free to retry. But complete the deferred so any
+            // already-awaiting caller wakes up cleanly with null.
+            ours.complete(null)
+            throw t
+        } finally {
+            inflightAnchors.remove(key, ours)
+        }
     }
 
     /**

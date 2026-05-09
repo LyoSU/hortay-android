@@ -448,7 +448,20 @@ class TdClient private constructor(
                 }
             }
         } catch (e: TdException) {
-            if (e.code == FLOOD_WAIT_CODE) registerFloodWait(e.message.orEmpty())
+            // TDLib hands us back rate-limit errors under two distinct codes
+            // depending on which protocol layer answered:
+            //   • 420 FLOOD_WAIT_<n>      — legacy MTProto, message text is
+            //                                "FLOOD_WAIT_42".
+            //   • 429 Too Many Requests   — newer translated layer, message text
+            //                                is "Too Many Requests: retry after 42".
+            // The original implementation gated only on 420 — a real bug surfaced
+            // by live logcat: a `prefetchHistory` call hit a 429 with retry-after
+            // 31, the gate was never armed, and every subsequent send (including
+            // the user's interactive comments tap) blew through to TDLib in the
+            // FLOOD window, getting served the same 429 over and over until TG
+            // released the rate-limit. Treating both codes as flood-wait keeps
+            // the gate honest regardless of which layer answered.
+            if (isFloodWaitCode(e.code)) registerFloodWait(e.message.orEmpty())
             throw e
         }
     }
@@ -624,9 +637,11 @@ class TdClient private constructor(
             TdApi.FileTypeVideoNote(),
         )
         private const val DEFAULT_CODE_LENGTH = 5
-        // Telegram's per-method rate-limit error code — same in raw MTProto and via
-        // the TDLib translation layer.
-        const val FLOOD_WAIT_CODE = 420
+        // Telegram's per-method rate-limit error codes. TDLib reports two distinct
+        // codes depending on which protocol layer answered: 420 (legacy MTProto,
+        // "FLOOD_WAIT_42") and 429 (newer translation, "Too Many Requests:
+        // retry after 42"). Both observed in the field — treat as equivalent.
+        fun isFloodWaitCode(code: Int): Boolean = code == 420 || code == 429
         // Safety cap on flood-wait throttling. Telegram very occasionally returns
         // multi-hour or multi-day deadlines (typically after egregious abuse). For an
         // interactive client, sleeping that long is worse than failing visibly, so we

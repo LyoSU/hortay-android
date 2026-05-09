@@ -63,6 +63,22 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- **Comments overlay sometimes hung in Loading until the user backed out**
+  (TDLib mode). Cascading bug: `prefetchThread` re-fired
+  `GetMessageThread` on every viewport-stable burst (debounced 700 ms) for
+  posts with no linked discussion group, and racing `prefetchThread` +
+  `observeThread` callers both saw the same cache miss and both fired the
+  RPC concurrently. With ~200 channels and dwell-driven viewport stables,
+  per-method requests piled up until Telegram returned `[429] retry after
+  31` — and `TdClient.send` only armed its flood-gate on code 420, so the
+  pipe kept hammering 429s for the duration of the ban window. Three fixes
+  converge: `isFloodWaitCode(code)` recognises both 420 (legacy MTProto)
+  and 429 (translated layer), `CommentsRepository.ensureAnchor` negative-
+  caches `[400] Message has no thread` so dead anchors stop re-firing, and
+  in-flight `CompletableDeferred` dedup makes concurrent callers share one
+  RPC instead of racing two. Transient failures (network blip, 429, 5xx)
+  do **not** poison the negative cache — only deterministic `code == 400`
+  responses do.
 - **Auto-download dumped multi-GB into the cache the moment the feed opened**
   (TDLib mode). `MediaAutoDownloader` was subscribed to the merged-feed
   `StateFlow`, re-walking the entire 1000-post head on every emit. New
