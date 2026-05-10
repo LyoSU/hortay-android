@@ -73,16 +73,15 @@ fun PostBody(
 ) {
     val textLimit = if (expanded) Int.MAX_VALUE else 18
     val captionLimit = if (expanded) Int.MAX_VALUE else 12
-    // Wrap the whole post body in a SelectionContainer so a long-press on body
-    // text, captions, poll options or any other Text descendant starts a system
-    // selection handle pair the user can drag → copy. SelectionContainer is
-    // long-press triggered and does not interfere with tap-handlers on
-    // descendants (media `onMediaClick`, WebPreviewCard tap-to-open in Telegram,
-    // expand-toggle for `ExpandableText`) — those receive the original tap
-    // gesture unchanged. Scope is one PostBody → one "selection island"; this
-    // matches the official Telegram client and avoids the surprise of dragging
-    // a selection across an unrelated neighbouring post in the feed.
-    SelectionContainer(modifier = modifier) {
+    // Text selection is gated on [expanded] — only the "full post" surfaces
+    // (comments-thread anchor in CommentsScreen, future detail screens)
+    // enable it. In the feed PostCard owns its own long-press via
+    // `combinedClickable { onLongClick = { sheetOpen = true } }` (post action
+    // sheet); wrapping the feed body in a SelectionContainer would race the
+    // long-press detector and a feed press would alternately raise the action
+    // sheet or the selection handles. Detail surfaces have no long-press card
+    // gesture so selection runs uncontested there.
+    val body: @Composable () -> Unit = {
         Column {
             when (content) {
                 is PostContent.Text -> TextBlock(content, textLimit, translation)
@@ -105,6 +104,11 @@ fun PostBody(
                 is PostContent.Unsupported -> UnsupportedBlock(content)
             }
         }
+    }
+    if (expanded) {
+        SelectionContainer(modifier = modifier) { body() }
+    } else {
+        Box(modifier = modifier) { body() }
     }
 }
 
