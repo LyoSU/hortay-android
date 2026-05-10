@@ -1,6 +1,7 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -72,26 +73,37 @@ fun PostBody(
 ) {
     val textLimit = if (expanded) Int.MAX_VALUE else 18
     val captionLimit = if (expanded) Int.MAX_VALUE else 12
-    Column(modifier = modifier) {
-        when (content) {
-            is PostContent.Text -> TextBlock(content, textLimit, translation)
-            is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick, captionLimit, translation)
-            is PostContent.Video -> VideoBlock(content, onMediaClick, captionLimit, translation)
-            is PostContent.Animation -> AnimationBlock(content, onMediaClick, captionLimit, translation)
-            is PostContent.Document -> DocumentBlock(content, captionLimit, translation)
-            is PostContent.Audio -> AudioBlock(content)
-            is PostContent.VoiceNote -> VoiceNoteBlock(content)
-            is PostContent.VideoNote -> VideoNoteBlock(content)
-            is PostContent.Sticker -> StickerBlock(content)
-            is PostContent.Poll -> PollBlock(content)
-            is PostContent.Location -> LocationBlock(content)
-            is PostContent.Contact -> ContactBlock(content)
-            is PostContent.Dice -> DiceBlock(content)
-            is PostContent.AnimatedEmoji -> AnimatedEmojiBlock(content)
-            is PostContent.Checklist -> ChecklistBlock(content, captionLimit)
-            is PostContent.ExpiredMedia -> ExpiredMediaBlock(content)
-            is PostContent.Service -> ServiceBlock(content)
-            is PostContent.Unsupported -> UnsupportedBlock(content)
+    // Wrap the whole post body in a SelectionContainer so a long-press on body
+    // text, captions, poll options or any other Text descendant starts a system
+    // selection handle pair the user can drag → copy. SelectionContainer is
+    // long-press triggered and does not interfere with tap-handlers on
+    // descendants (media `onMediaClick`, WebPreviewCard tap-to-open in Telegram,
+    // expand-toggle for `ExpandableText`) — those receive the original tap
+    // gesture unchanged. Scope is one PostBody → one "selection island"; this
+    // matches the official Telegram client and avoids the surprise of dragging
+    // a selection across an unrelated neighbouring post in the feed.
+    SelectionContainer(modifier = modifier) {
+        Column {
+            when (content) {
+                is PostContent.Text -> TextBlock(content, textLimit, translation)
+                is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick, captionLimit, translation)
+                is PostContent.Video -> VideoBlock(content, onMediaClick, captionLimit, translation)
+                is PostContent.Animation -> AnimationBlock(content, onMediaClick, captionLimit, translation)
+                is PostContent.Document -> DocumentBlock(content, captionLimit, translation)
+                is PostContent.Audio -> AudioBlock(content)
+                is PostContent.VoiceNote -> VoiceNoteBlock(content)
+                is PostContent.VideoNote -> VideoNoteBlock(content)
+                is PostContent.Sticker -> StickerBlock(content)
+                is PostContent.Poll -> PollBlock(content)
+                is PostContent.Location -> LocationBlock(content)
+                is PostContent.Contact -> ContactBlock(content)
+                is PostContent.Dice -> DiceBlock(content)
+                is PostContent.AnimatedEmoji -> AnimatedEmojiBlock(content)
+                is PostContent.Checklist -> ChecklistBlock(content, captionLimit)
+                is PostContent.ExpiredMedia -> ExpiredMediaBlock(content)
+                is PostContent.Service -> ServiceBlock(content)
+                is PostContent.Unsupported -> UnsupportedBlock(content)
+            }
         }
     }
 }

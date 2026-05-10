@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Added
 
+- **Text selection in posts**. PostBody is now wrapped in a `SelectionContainer`
+  so a long-press on body text, caption, poll option or any Text descendant
+  brings up the system selection handles; the user drags them and copies via
+  the standard Android contextual toolbar. Long-press is the selection
+  trigger — tap-handlers on descendants (media `onMediaClick`, web preview
+  open-in-Telegram, `ExpandableText` "Показати більше" toggle) receive the
+  original tap unchanged. Selection scope is one post (one "selection island")
+  matching the official Telegram client; cross-post drag selection would have
+  been a confusing affordance in an infinite-scroll feed.
 - **Save to gallery / Copy image actions in the fullscreen media viewer**.
   Bottom-right floating stack (navigation-bar padded, 44 dp circular chrome
   in the same `Color.Black.copy(alpha = 0.45f)` vocabulary as the close
