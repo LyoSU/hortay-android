@@ -25,19 +25,27 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.widget.Toast
 import dev.lyo.hortay.R
+import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.DownloadPriority
+import dev.lyo.hortay.data.MediaCache
+import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.VideoQuality
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 /**
@@ -148,21 +156,102 @@ fun FullScreenMediaViewer(
                 Symbol(name = "close", contentDescription = stringResource(R.string.action_close), tint = Color.White)
             }
 
-            // Quality picker for the active page, top-right. Only renders for video items
-            // that ship alternativeVideos — photos and single-quality videos hide it.
+            // Top-right tool column for the active page: QualityChip (videos
+            // with alternativeVideos) over Save / Copy buttons. One vertical
+            // stack avoids the playback chrome conflict the bottom-right
+            // placement had — [VideoPlayerControls] owns the entire bottom
+            // band (scrim, BottomBar slider+mute, navigationBarsPadding) and
+            // any chrome anchored to BottomEnd would land on the slider or
+            // mute toggle. Top-right is uncontested in both photo and video
+            // pages. We keep the chrome chrome-coloured (Black 45 %, 44 dp
+            // CircleShape) so the column reads as one "tools for this item"
+            // affordance with the same vocabulary as the close button.
             val activeItem = items.getOrNull(pagerState.currentPage)
             val activeQualities = (activeItem as? AlbumItem.Video)?.qualities
-            if (activeQualities?.hasOptions == true) {
-                val current = qualityChoices[pagerState.currentPage] ?: activeQualities.defaultPick
-                QualityChip(
-                    current = current,
-                    qualities = activeQualities,
-                    onPick = { qualityChoices[pagerState.currentPage] = it },
+
+            val actionContext = LocalContext.current
+            val saveLabel = stringResource(R.string.action_save_to_gallery)
+            val copyLabel = stringResource(R.string.action_copy_image)
+            val savedPhotoMsg = stringResource(R.string.media_saved_photo)
+            val savedVideoMsg = stringResource(R.string.media_saved_video)
+            val saveFailedMsg = stringResource(R.string.media_save_failed)
+            val copiedMsg = stringResource(R.string.media_copied)
+            val copyFailedMsg = stringResource(R.string.media_copy_failed)
+
+            val activeFileId = activeItem?.viewerFileId(qualityChoices[pagerState.currentPage]?.fileId)
+            val activeState by produceMediaState(cache, activeFileId)
+            val readyPath = (activeState as? MediaState.Ready)?.path
+            val showQuality = activeQualities?.hasOptions == true
+            val persistableItem = activeItem.takeIf { readyPath != null && activeFileId != null }
+
+            if (showQuality || (persistableItem != null && readyPath != null)) {
+                Column(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .statusBarsPadding()
                         .padding(8.dp),
-                )
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    if (showQuality && activeQualities != null) {
+                        val current = qualityChoices[pagerState.currentPage] ?: activeQualities.defaultPick
+                        QualityChip(
+                            current = current,
+                            qualities = activeQualities,
+                            onPick = { qualityChoices[pagerState.currentPage] = it },
+                        )
+                    }
+                    if (persistableItem != null && readyPath != null) {
+                        val activeItem = persistableItem // smart-cast bridge for lambdas
+                        val chromeShape = CircleShape
+                        // Save → every Ready media kind. Toast on success / failure.
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    val res = withContext(Dispatchers.IO) {
+                                        MediaShareActions.saveToGallery(actionContext, activeItem, readyPath)
+                                    }
+                                    val successMsg = if (activeItem is AlbumItem.Photo) savedPhotoMsg else savedVideoMsg
+                                    val toast = when (res) {
+                                        is MediaShareActions.Result.Success -> successMsg
+                                        is MediaShareActions.Result.Failure -> saveFailedMsg.format(res.reason)
+                                    }
+                                    Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(Color.Black.copy(alpha = 0.45f), chromeShape),
+                        ) {
+                            Symbol(name = "download", contentDescription = saveLabel, tint = Color.White)
+                        }
+                        // Copy → photo only. Nearly no Android app meaningfully
+                        // accepts a video clipboard item, and a multi-MB MP4 URI
+                        // on the clipboard is a UX trap (paste into WhatsApp =
+                        // silent re-upload). Hidden for video / animation pages.
+                        if (activeItem is AlbumItem.Photo) {
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        val res = withContext(Dispatchers.IO) {
+                                            MediaShareActions.copyToClipboard(actionContext, activeItem, readyPath)
+                                        }
+                                        val toast = when (res) {
+                                            is MediaShareActions.Result.Success -> copiedMsg
+                                            is MediaShareActions.Result.Failure -> copyFailedMsg.format(res.reason)
+                                        }
+                                        Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .background(Color.Black.copy(alpha = 0.45f), chromeShape),
+                            ) {
+                                Symbol(name = "content_copy", contentDescription = copyLabel, tint = Color.White)
+                            }
+                        }
+                    }
+                }
             }
 
             if (items.size > 1) {
@@ -212,6 +301,7 @@ private fun MediaPage(
                 autoLoop = false,
                 showControls = true,
                 priority = DownloadPriority.Foreground,
+                initialAspect = item.posterAspect(),
                 modifier = Modifier.fillMaxSize(),
             )
             // Touch the picker callback so an unpicked default still registers — keeps
@@ -228,9 +318,26 @@ private fun MediaPage(
             showControls = false,
             muted = true,
             priority = DownloadPriority.Foreground,
+            initialAspect = item.posterAspect(),
             modifier = Modifier.fillMaxSize(),
         )
     }
+}
+
+/**
+ * Pre-seed for [TdVideoPlayer.initialAspect]. Telegram serves a poster sized
+ * to the same aspect ratio as the actual video stream (the poster is just a
+ * down-sampled first frame), so the inline poster geometry is a faithful
+ * predictor of the eventual [VideoSize] ExoPlayer will report. Returning
+ * this lets [AspectRatioFrameLayout] letterbox correctly on first layout
+ * instead of filling the parent and snapping to the right aspect only after
+ * the decoder emits its first frame — closes the *"відкриваєш відео — на
+ * долю секунди розтягується, потім стає нормальне"* glitch.
+ */
+private fun AlbumItem.posterAspect(): Float {
+    val w = media.width
+    val h = media.height
+    return if (w > 0 && h > 0) w.toFloat() / h.toFloat() else 0f
 }
 
 @Composable
@@ -333,6 +440,19 @@ private fun AlbumItem.posterFileId(): Int? = when (this) {
     is AlbumItem.Photo -> fullscreen.fileId
     is AlbumItem.Video -> media.fileId
     is AlbumItem.Animation -> media.fileId
+}
+
+/**
+ * Observes [MediaCache] for the active page's file id and re-keys when the
+ * page (or the picked video quality) changes. Returns [MediaState.Idle] when
+ * [fileId] is null — web-mode posts and unplayable videos take that branch
+ * so the Save / Copy chrome stays hidden. The flow is collected eagerly so
+ * the buttons appear the instant the download lands without an extra recomposition.
+ */
+@Composable
+private fun produceMediaState(cache: MediaCache, fileId: Int?): State<MediaState> {
+    val flow = remember(fileId) { fileId?.let(cache::observe) }
+    return flow?.collectAsState() ?: remember { mutableStateOf<MediaState>(MediaState.Idle) }
 }
 
 private const val MIN_SCALE = 1f

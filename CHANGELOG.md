@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Added
 
+- **Save to gallery / Copy image actions in the fullscreen media viewer**.
+  Bottom-right floating stack (navigation-bar padded, 44 dp circular chrome
+  in the same `Color.Black.copy(alpha = 0.45f)` vocabulary as the close
+  affordance and counter pill) appears once the active page is
+  `MediaState.Ready`. Save handles every media kind, writes through
+  `MediaStore.Images.Media` / `MediaStore.Video.Media` with the Q+ two-phase
+  `IS_PENDING` workflow into `Pictures/Hortay` (photos) and `Movies/Hortay`
+  (videos) — display name `Hortay_yyyyMMdd_HHmmss.<ext>` so the order in
+  Files is sortable. Pre-Q falls back to
+  `Environment.getExternalStoragePublicDirectory(...)` + `MediaScannerConnection`.
+  Copy is photo-only by design (no chat / document editor on Android
+  meaningfully accepts a video clipboard item, and a 200 MB MP4 URI on the
+  clipboard is a UX trap — paste into WhatsApp silently starts a re-upload)
+  — mints a temporary read URI through a new
+  `${applicationId}.fileprovider` `<files-path>` scoped strictly to
+  TDLib's `tdlib-files/` directory and grants `FLAG_GRANT_READ_URI_PERMISSION`
+  so any paste target on Q+ can resolve the bytes. Hidden in web (guest)
+  mode for v1 — no local TDLib file to hand off and an HTTP-fetch path
+  belongs to a separate feature. All I/O on `Dispatchers.IO`; success /
+  failure surfaces via a short `Toast`. New utility `MediaShareActions`
+  centralises both flows; viewer chrome stays one `LaunchedEffect`-free
+  pure-Compose path.
 - **Sticker skeleton overlay: outline → thumb → sticker visual ladder**. While a
   TDLib sticker is in flight the box is no longer a transparent void — a
   silhouette painted from `TdApi.GetStickerOutlineSvgPath` (offline JNI call,

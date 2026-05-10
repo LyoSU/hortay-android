@@ -416,6 +416,14 @@
     <string name="action_close">Close</string>
     <string name="action_clear">Clear</string>
     <string name="action_search">Search</string>
+    <string name="action_save_to_gallery">Save to gallery</string>
+    <string name="action_copy_image">Copy image</string>
+    <!-- Toast banners shown by the fullscreen viewer after a Save / Copy action. -->
+    <string name="media_saved_photo">Photo saved to gallery</string>
+    <string name="media_saved_video">Video saved to gallery</string>
+    <string name="media_save_failed">Could not save: %1$s</string>
+    <string name="media_copied">Image copied</string>
+    <string name="media_copy_failed">Could not copy: %1$s</string>
     <!-- Inline status badges next to a post. -->
     <string name="post_badge_edited">Edited</string>
     <string name="post_badge_pinned">Pinned</string>

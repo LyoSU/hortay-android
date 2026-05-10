@@ -146,6 +146,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
     "gif_box" -> R.drawable.sym_play_circle
     "data_saver_off" -> R.drawable.sym_cloud_off
     "download_for_offline" -> R.drawable.sym_arrow_downward
+    "download" -> R.drawable.sym_arrow_downward
     else -> R.drawable.sym_help
     }
 }

@@ -75,6 +75,17 @@ fun TdVideoPlayer(
      * Composable that TDLib mode uses.
      */
     remoteUrl: String? = null,
+    /**
+     * Pre-seed for [AspectRatioFrameLayout.setAspectRatio]. 0f means "unknown —
+     * fill parent until the decoder reports the real size". A non-zero value
+     * (Telegram's poster width / height, propagated from [AlbumItem.media])
+     * letterboxes the texture correctly on first layout, eliminating the
+     * one-frame "stretch then snap" the fullscreen viewer otherwise showed
+     * between mount and `onVideoSizeChanged`. Once ExoPlayer reports the real
+     * aspect (typically identical to the poster) we adopt that authoritatively;
+     * a mismatched seed only costs one re-layout, not a re-decode.
+     */
+    initialAspect: Float = 0f,
 ) {
     val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -159,10 +170,15 @@ fun TdVideoPlayer(
         exoPlayer.playWhenReady = wasPlaying
     }
 
-    // Tracks the source video's aspect ratio (width / height); 0f means "not yet
-    // known" → AspectRatioFrameLayout falls back to filling the parent. Updated
-    // in onVideoSizeChanged once the decoder has read the format.
-    var videoAspect by remember(fileId, remoteUrl) { mutableStateOf(0f) }
+    // Tracks the source video's aspect ratio (width / height). Seeded from the
+    // caller's [initialAspect] (poster geometry) so the first layout pass already
+    // letterboxes correctly; without the seed the TextureView would fill the
+    // parent on mount and visibly snap to the right aspect only when
+    // [onVideoSizeChanged] fires. Updated in onVideoSizeChanged once the decoder
+    // has read the format — if the decoder disagrees with the poster (rare —
+    // Telegram's poster is a downscaled real frame, identical aspect) the
+    // texture re-letterboxes; cheaper than the visible stretch.
+    var videoAspect by remember(fileId, remoteUrl) { mutableStateOf(initialAspect) }
 
     DisposableEffect(exoPlayer) {
         val lifecycleObserver = LifecycleEventObserver { _, event ->

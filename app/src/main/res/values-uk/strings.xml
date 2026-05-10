@@ -425,6 +425,14 @@
     <string name="action_close">Закрити</string>
     <string name="action_clear">Очистити</string>
     <string name="action_search">Пошук</string>
+    <string name="action_save_to_gallery">Зберегти в галерею</string>
+    <string name="action_copy_image">Копіювати зображення</string>
+    <!-- Тост, що з\'являється після збереження / копіювання в повноекранному перегляді. -->
+    <string name="media_saved_photo">Фото збережено в галерею</string>
+    <string name="media_saved_video">Відео збережено в галерею</string>
+    <string name="media_save_failed">Не вдалося зберегти: %1$s</string>
+    <string name="media_copied">Зображення скопійовано</string>
+    <string name="media_copy_failed">Не вдалося скопіювати: %1$s</string>
     <!-- Інлайн-позначки біля поста. -->
     <string name="post_badge_edited">Відредаговано</string>
     <string name="post_badge_pinned">Закріплено</string>

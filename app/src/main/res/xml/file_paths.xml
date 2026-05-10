@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    FileProvider roots used by MediaShareActions.copyToClipboard.
+
+    TDLib persists downloaded media into filesDir/tdlib-files/... (see
+    TdClient setTdlibParameters). The whole filesDir is opaque to other
+    apps; FileProvider mints content:// URIs scoped to <files-path> so we
+    can grant temporary read access through a ClipData / share intent
+    without exposing the rest of the directory tree.
+
+    Only filesDir is exposed — we do not share databaseDirectory, cacheDir
+    or external-files paths through this provider.
+-->
+<paths>
+    <files-path
+        name="tdlib_media"
+        path="tdlib-files/" />
+</paths>

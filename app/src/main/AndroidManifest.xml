@@ -61,5 +61,21 @@
             </intent-filter>
         </activity>
 
+        <!-- FileProvider for "Copy" / future "Share" actions in the fullscreen media viewer.
+             TDLib stores downloaded media under filesDir/tdlib-files/...; that path is
+             private to the app so we mint a content:// URI through FileProvider whenever
+             the user copies an image to the clipboard, then grant FLAG_GRANT_READ_URI_PERMISSION
+             so the target app (gallery, messenger, etc.) can read it. Authority is
+             "${applicationId}.fileprovider" so the .beta build variant gets its own. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 </manifest>
