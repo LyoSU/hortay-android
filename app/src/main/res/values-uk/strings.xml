@@ -275,6 +275,9 @@
     <string name="settings_section_traffic">Трафік</string>
     <string name="settings_section_storage">Сховище</string>
     <string name="settings_section_account">Акаунт</string>
+    <string name="settings_section_author">Автор</string>
+    <string name="settings_author_channel_title">Канал автора</string>
+    <string name="settings_author_developer_title">Розробник</string>
     <string name="settings_section_about">Про застосунок</string>
     <string name="settings_logout_title">Вийти з акаунту</string>
     <string name="settings_logout_subtitle">Сесія Telegram скинеться, кеш залишиться</string>

@@ -7,7 +7,7 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
-import androidx.compose.animation.core.tween
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -95,7 +95,7 @@ import kotlinx.coroutines.launch
  * sense of going "into" and "out of" a category — Material's recommended pattern
  * for hierarchical depth changes.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AutoDownloadHost(
     store: AutoDownloadStore,
@@ -111,17 +111,19 @@ fun AutoDownloadHost(
 
     BackHandler(enabled = openCategory != null) { openCategory = null }
 
+    // Forward (null → category) slides the new screen in from the right; back
+    // (category → null) slides it out to the right. Same axis, opposite direction —
+    // Material "shared-axis X" recipe. Specs captured here (composable scope) for
+    // the non-composable transitionSpec lambda below.
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     AnimatedContent(
         targetState = openCategory,
         transitionSpec = {
-            // Forward (null → category) slides the new screen in from the right;
-            // back (category → null) slides it out to the right. Same axis, opposite
-            // direction — consistent with the Material "shared-axis X" recipe and
-            // matches what Telegram's hierarchical settings do.
             val forward = initialState == null
             val direction = if (forward) SlideDirection.Left else SlideDirection.Right
-            (slideIntoContainer(direction, tween(220)) + fadeIn(tween(220))) togetherWith
-                (slideOutOfContainer(direction, tween(220)) + fadeOut(tween(220)))
+            (slideIntoContainer(direction, spatialSpec) + fadeIn(effectsSpec)) togetherWith
+                (slideOutOfContainer(direction, spatialSpec) + fadeOut(effectsSpec))
         },
         modifier = Modifier.fillMaxSize(),
         label = "auto-download-nav",

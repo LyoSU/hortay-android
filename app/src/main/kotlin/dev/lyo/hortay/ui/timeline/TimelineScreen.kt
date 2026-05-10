@@ -1156,10 +1156,12 @@ fun TimelineScreen(
             // it lands just below them instead of overlapping.
             val chipsVisible = !showOnlyBookmarked && channelFilter == null
             val pillTopPadding = if (chipsVisible) 64.dp else 8.dp
+            val pillSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+            val pillEffects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
             AnimatedVisibility(
                 visible = pillVisible,
-                enter = slideInVertically { -it } + fadeIn(),
-                exit = slideOutVertically { -it } + fadeOut(),
+                enter = slideInVertically(pillSpatial) { -it } + fadeIn(pillEffects),
+                exit = slideOutVertically(pillSpatial) { -it } + fadeOut(pillEffects),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = pillTopPadding),

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.lyo.hortay.ui.main
 
 import androidx.activity.BackEventCompat
@@ -12,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -203,10 +206,15 @@ fun MainScaffold(graph: AppGraph) {
         },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
+        // Tab swap = pure crossfade. fastEffectsSpec is M3E's correct channel for
+        // non-spatial state changes; on the same spring the FloatingNavBar's
+        // selection container/colour/icon-fill morph runs, so the bottom-nav
+        // morph and the content crossfade land together (no out-of-sync blink).
+        val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
         Box(modifier = Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = selectedTab,
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+            transitionSpec = { fadeIn(tabEffectsSpec) togetherWith fadeOut(tabEffectsSpec) },
             label = "tab-switch",
             modifier = Modifier.fillMaxSize(),
         ) { tab ->

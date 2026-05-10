@@ -26,6 +26,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -232,6 +233,7 @@ fun MigrationProposalSheet(
                             onDismiss()
                         }
                     },
+                    shapes = ButtonDefaults.shapes(),
                     enabled = !inFlight && selected.value.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -250,6 +252,7 @@ fun MigrationProposalSheet(
                             onDismiss()
                         }
                     },
+                    shapes = ButtonDefaults.shapes(),
                     enabled = !inFlight,
                     modifier = Modifier.fillMaxWidth(),
                 ) {

@@ -2,7 +2,6 @@ package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -51,6 +50,7 @@ import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.MorphShape
 import dev.lyo.hortay.ui.theme.asComposeShape
+import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -606,14 +606,12 @@ private fun VerticalSeparator() {
 @Composable
 internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val cornerRadius by androidx.compose.animation.core.animateDpAsState(
-        targetValue = when {
-            isPressed -> 6.dp
-            item.isChosen -> 24.dp
-            else -> 14.dp
-        },
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+    val cornerRadius by rememberPressedSelectedCornerRadius(
+        interactionSource = interactionSource,
+        selected = item.isChosen,
+        rest = 14.dp,
+        pressed = 6.dp,
+        selectedRadius = 24.dp,
         label = "reaction-corner",
     )
     val container by animateColorAsState(

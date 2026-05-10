@@ -21,10 +21,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -64,7 +66,7 @@ import kotlinx.coroutines.launch
  * Unsubscribe affordance: explicit trailing `close` icon button on each row, plus
  * a confirmation dialog. Long-press alone was discoverability-hostile.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun WebChannelsScreen(
     graph: AppGraph,
@@ -87,7 +89,11 @@ fun WebChannelsScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
+            // M3E LargeFlexibleTopAppBar over LargeTopAppBar — same scrollBehavior
+            // contract, but the Flexible variant exposes the optional `subtitle`
+            // slot and the M3E layout system, matching the Settings / AutoDownload /
+            // Comments top bars elsewhere in the app. One vocabulary across destinations.
+            LargeFlexibleTopAppBar(
                 title = {
                     Text(
                         text = stringResource(R.string.web_channels_title),
@@ -207,7 +213,10 @@ private fun EmptyChannelsState(
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.size(20.dp))
-        FilledTonalButton(onClick = onAddChannel) {
+        FilledTonalButton(
+            onClick = onAddChannel,
+            shapes = ButtonDefaults.shapes(),
+        ) {
             Symbol(name = "add", contentDescription = null, size = 18.dp)
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.web_add_channel))

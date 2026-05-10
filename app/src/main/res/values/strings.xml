@@ -269,6 +269,9 @@
     <string name="settings_section_traffic">Traffic</string>
     <string name="settings_section_storage">Storage</string>
     <string name="settings_section_account">Account</string>
+    <string name="settings_section_author">Author</string>
+    <string name="settings_author_channel_title">Author\'s channel</string>
+    <string name="settings_author_developer_title">Developer</string>
     <string name="settings_section_about">About</string>
     <string name="settings_logout_title">Sign out</string>
     <string name="settings_logout_subtitle">Telegram session resets, cache stays</string>

@@ -2,10 +2,10 @@ package dev.lyo.hortay.ui.web
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -55,6 +55,7 @@ import java.util.Locale
  * [WebChannelsScreen] / [AddChannelSheet] (channel-list + smart-paste flow
  * tied to the web subscription store; nothing equivalent exists in TDLib mode).
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun WebModeScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
@@ -166,9 +167,16 @@ fun WebModeScaffold(graph: AppGraph) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize()) {
+            // Tab swap = pure crossfade (no spatial component) — destination
+            // switch, not depth. fastEffectsSpec is M3E's correct channel for
+            // non-spatial state changes. Captured here for the non-composable
+            // transitionSpec lambda.
+            val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
             AnimatedContent(
                 targetState = selectedTab,
-                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                transitionSpec = {
+                    fadeIn(tabEffectsSpec) togetherWith fadeOut(tabEffectsSpec)
+                },
                 label = "web-tab-switch",
                 modifier = Modifier.fillMaxSize(),
             ) { tab ->

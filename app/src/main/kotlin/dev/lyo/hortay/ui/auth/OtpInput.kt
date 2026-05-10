@@ -1,7 +1,8 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.lyo.hortay.ui.auth
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -125,6 +126,10 @@ private fun OtpCell(
     isError: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    // Border + container colour both ride MotionScheme.fastEffectsSpec — colour is
+    // an effects-channel transition (vs spatial), and the cell-state change is fast
+    // (per-keystroke), so the fast variant is the right fit.
+    val effectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<androidx.compose.ui.graphics.Color>()
     val borderColor by animateColorAsState(
         targetValue = when {
             isError -> MaterialTheme.colorScheme.error
@@ -132,7 +137,7 @@ private fun OtpCell(
             char.isNotEmpty() -> MaterialTheme.colorScheme.outline
             else -> MaterialTheme.colorScheme.outlineVariant
         },
-        animationSpec = tween(160),
+        animationSpec = effectsSpec,
         label = "otp-cell-border",
     )
     val containerColor by animateColorAsState(
@@ -141,7 +146,7 @@ private fun OtpCell(
         } else {
             MaterialTheme.colorScheme.surfaceContainerLow
         },
-        animationSpec = tween(160),
+        animationSpec = effectsSpec,
         label = "otp-cell-bg",
     )
 

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.lyo.hortay.ui.main
 
 import androidx.compose.animation.AnimatedVisibility
@@ -20,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ConnectionStatus
@@ -48,10 +51,12 @@ import dev.lyo.hortay.ui.icons.Symbol
  */
 @Composable
 fun ConnectionBanner(status: ConnectionStatus, modifier: Modifier = Modifier) {
+    val spatial = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+    val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     AnimatedVisibility(
         visible = status != ConnectionStatus.Ready,
-        enter = slideInVertically { -it } + fadeIn(),
-        exit = slideOutVertically { -it } + fadeOut(),
+        enter = slideInVertically(spatial) { -it } + fadeIn(effects),
+        exit = slideOutVertically(spatial) { -it } + fadeOut(effects),
         modifier = modifier,
     ) {
         val (symbol, label, container, content) = when (status) {

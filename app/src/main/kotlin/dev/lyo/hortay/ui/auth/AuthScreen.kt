@@ -4,12 +4,12 @@ package dev.lyo.hortay.ui.auth
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -119,11 +119,16 @@ fun AuthScreen(graph: AppGraph, stage: AuthStage) {
 
             Spacer(Modifier.height(36.dp))
 
+            // Auth-stage slide: vertical (sibling forms, not depth navigation).
+            // MotionScheme spec captured in composable scope; transitionSpec is
+            // non-composable so we can't read MaterialTheme inside it.
+            val authSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+            val authEffects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
             AnimatedContent(
                 targetState = stage,
                 transitionSpec = {
-                    (slideInVertically(tween(280)) { it / 6 } + fadeIn(tween(280)))
-                        .togetherWith(slideOutVertically(tween(180)) { -it / 6 } + fadeOut(tween(180)))
+                    (slideInVertically(authSpatial) { it / 6 } + fadeIn(authEffects))
+                        .togetherWith(slideOutVertically(authSpatial) { -it / 6 } + fadeOut(authEffects))
                 },
                 label = "auth-stage",
             ) { current ->
@@ -322,6 +327,7 @@ private fun PhoneForm(graph: AppGraph, errorMessage: String?) {
             onClick = {
                 scope.launch { graph.guestMode.setGuest(true) }
             },
+            shapes = ButtonDefaults.shapes(),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Symbol(name = "visibility", contentDescription = null, size = 18.dp)
@@ -810,10 +816,18 @@ private fun PrimaryActionButton(
     loading: Boolean,
     onClick: () -> Unit,
 ) {
+    // M3 Expressive press-shape morph: pill at rest, squarer (`shapes.medium`,
+    // 18 dp) under thumb. Squish reads as tactile feedback and is the canonical
+    // ButtonGroup vocabulary documented in M3E's interaction-states spec; without
+    // it the primary "Sign in" / "Continue" buttons looked identical pressed vs
+    // resting, hiding the only press-state cue.
     Button(
         onClick = onClick,
+        shapes = ButtonDefaults.shapes(
+            shape = CircleShape,
+            pressedShape = MaterialTheme.shapes.medium,
+        ),
         enabled = enabled,
-        shape = CircleShape,
         contentPadding = PaddingValuesPrimary,
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary,
@@ -855,10 +869,12 @@ private fun LoadingForm() {
 
 @Composable
 private fun AnimatedFieldError(text: String?) {
+    val spatial = MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>()
+    val effects = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
     AnimatedVisibility(
         visible = text != null,
-        enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { -it / 2 },
-        exit = fadeOut(tween(120)),
+        enter = fadeIn(effects) + slideInVertically(spatial) { -it / 2 },
+        exit = fadeOut(effects),
     ) {
         if (text != null) {
             Row(

@@ -1,12 +1,11 @@
 package dev.lyo.hortay.ui.main
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
 
 /**
  * MD3 Expressive floating navigation bar.
@@ -92,15 +92,14 @@ private fun NavTabButton(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
     // Three-state corner-radius morph — canonical M3 Expressive vocabulary.
-    val cornerRadius by animateDpAsState(
-        targetValue = when {
-            isPressed -> 6.dp
-            selected -> 24.dp
-            else -> 14.dp
-        },
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+    // 14 dp rest → 6 dp pressed (squish) → 24 dp selected (pill).
+    val cornerRadius by rememberPressedSelectedCornerRadius(
+        interactionSource = interactionSource,
+        selected = selected,
+        rest = 14.dp,
+        pressed = 6.dp,
+        selectedRadius = 24.dp,
         label = "nav-corner",
     )
     // Spatial vs effects channels: corner radius is spatial (spring), colour is
@@ -138,12 +137,26 @@ private fun NavTabButton(
         // corner-radius morph and tonal container also intensify together.
         // `filled` falls back to the outline when no `_filled` drawable is
         // bundled (see Symbol.kt).
-        Symbol(
-            name = tab.symbol,
-            contentDescription = stringResource(tab.labelRes),
-            tint = content,
-            size = 24.dp,
-            filled = selected,
-        )
+        //
+        // Crossfade wrapping prevents the "blink" when the user taps a tab: the
+        // outline and filled drawables are different vector resources, so without
+        // a crossfade the Icon swaps painters in one frame while the corner +
+        // colour are still animating — out-of-sync motion read as a glitch.
+        // `Crossfade` rides the same `fastEffectsSpec` as the colour animations,
+        // so all three (corner spatial, colour effects, icon-swap effects) land
+        // together.
+        Crossfade(
+            targetState = selected,
+            animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+            label = "nav-icon-fill",
+        ) { isFilled ->
+            Symbol(
+                name = tab.symbol,
+                contentDescription = stringResource(tab.labelRes),
+                tint = content,
+                size = 24.dp,
+                filled = isFilled,
+            )
+        }
     }
 }

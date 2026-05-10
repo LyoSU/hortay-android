@@ -2,6 +2,10 @@
 
 package dev.lyo.hortay.ui.settings
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,21 +16,23 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import coil3.SingletonImageLoader
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.runtime.saveable.rememberSaveable
 import dev.lyo.hortay.BuildConfig
 import dev.lyo.hortay.R
@@ -72,13 +78,20 @@ fun SettingsScreen(
     var showAutoDownload by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = showAutoDownload) { showAutoDownload = false }
 
+    // M3E shared-axis-X via MotionScheme: spatial spring for the slide, effects
+    // spring for the crossfade. Same physics as MaterialTheme reads on every Material
+    // component, so the screen transition feels of-a-piece with chip / card / banner
+    // morphs instead of legacy duration-tween. Captured here (composable scope)
+    // because AnimatedContent.transitionSpec is a non-composable lambda.
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     AnimatedContent(
         targetState = showAutoDownload,
         transitionSpec = {
             val forward = !initialState && targetState
             val direction = if (forward) SlideDirection.Left else SlideDirection.Right
-            (slideIntoContainer(direction, tween(220)) + fadeIn(tween(220))) togetherWith
-                (slideOutOfContainer(direction, tween(220)) + fadeOut(tween(220)))
+            (slideIntoContainer(direction, spatialSpec) + fadeIn(effectsSpec)) togetherWith
+                (slideOutOfContainer(direction, spatialSpec) + fadeOut(effectsSpec))
         },
         label = "settings-nav",
     ) { showSub ->
@@ -212,6 +225,7 @@ private fun SettingsMain(
                         symbol = "download_for_offline",
                         title = stringResource(R.string.autodownload_entry_title),
                         subtitle = stringResource(R.string.autodownload_entry_subtitle),
+                        chevron = true,
                         onClick = onOpenAutoDownload,
                     )
                 }
@@ -267,6 +281,31 @@ private fun SettingsMain(
                 )
             }
 
+            // ---- Author section: brand attribution + tg-handle links -----------------
+            // Visible in both modes (TDLib and guest). Two grouped rows, lower in the
+            // screen so they read as credits rather than competing with traffic / storage
+            // for the user's first glance.
+            Spacer(Modifier.height(8.dp))
+            SectionLabel(stringResource(R.string.settings_section_author))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                SettingsRow(
+                    symbol = "campaign",
+                    title = stringResource(R.string.settings_author_channel_title),
+                    subtitle = "@$AUTHOR_CHANNEL_HANDLE",
+                    chevron = true,
+                    position = RowPosition.Top,
+                    onClick = { openTelegramHandle(context, AUTHOR_CHANNEL_HANDLE) },
+                )
+                SettingsRow(
+                    symbol = "person",
+                    title = stringResource(R.string.settings_author_developer_title),
+                    subtitle = "@$AUTHOR_DEVELOPER_HANDLE",
+                    chevron = true,
+                    position = RowPosition.Bottom,
+                    onClick = { openTelegramHandle(context, AUTHOR_DEVELOPER_HANDLE) },
+                )
+            }
+
             Spacer(Modifier.height(8.dp))
             SectionLabel(stringResource(R.string.settings_section_about))
             SettingsRow(
@@ -297,11 +336,16 @@ private fun SettingsMain(
 
 @Composable
 private fun SectionLabel(text: String) {
+    // M3E grouped-list section header. titleSmall SemiBold reads as a list-section
+    // delimiter rather than a chip-style label; the primary tint keeps the brand
+    // accent the original design leaned on. Padding lifts the label off the row
+    // below so each section reads as its own block.
     Text(
         text = text,
-        style = MaterialTheme.typography.labelLarge,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+        modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
     )
 }
 
@@ -389,9 +433,12 @@ private fun StorageCard(
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = onClearCache,
+            shapes = ButtonDefaults.shapes(
+                shape = MaterialTheme.shapes.large,
+                pressedShape = MaterialTheme.shapes.small,
+            ),
             enabled = !clearing && filesBytes > 0L,
             modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -555,18 +602,41 @@ private fun formatBytes(b: Long, res: android.content.res.Resources): String {
     return res.getString(R.string.size_gb, gb.toFloat())
 }
 
+/**
+ * Grouped-list row position. Sections with multiple adjacent rows ship them as a
+ * visual block: corners rounded only on the outside edges, 2 dp seam between
+ * neighbours. iOS Settings / TG-Android settings use the same idiom — the eye
+ * groups them as one card without the heaviness of an actual nested container.
+ *
+ * Single is the default for one-off rows (sign-in, version, autodownload entry).
+ */
+private enum class RowPosition { Single, Top, Middle, Bottom }
+
+@Composable
+private fun RowPosition.shape(corner: Dp = 18.dp): Shape {
+    val tight = 4.dp
+    return when (this) {
+        RowPosition.Single -> RoundedCornerShape(corner)
+        RowPosition.Top -> RoundedCornerShape(topStart = corner, topEnd = corner, bottomStart = tight, bottomEnd = tight)
+        RowPosition.Middle -> RoundedCornerShape(tight)
+        RowPosition.Bottom -> RoundedCornerShape(topStart = tight, topEnd = tight, bottomStart = corner, bottomEnd = corner)
+    }
+}
+
 @Composable
 private fun SettingsRow(
     symbol: String,
     title: String,
     subtitle: String? = null,
     tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
+    chevron: Boolean = false,
+    position: RowPosition = RowPosition.Single,
     onClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
+            .clip(position.shape())
             .let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(16.dp),
@@ -588,6 +658,39 @@ private fun SettingsRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+        if (chevron) {
+            Spacer(Modifier.width(8.dp))
+            Symbol(
+                name = "chevron_right",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 20.dp,
+            )
+        }
+    }
+}
+
+// ---- Author attribution ------------------------------------------------------
+
+private const val AUTHOR_CHANNEL_HANDLE = "lyblog"
+private const val AUTHOR_DEVELOPER_HANDLE = "lydev"
+
+/**
+ * Open a Telegram handle in the official client; fall back to the public web page
+ * when no Telegram client is installed (e.g. a fresh emulator). Same pattern used by
+ * the timeline's tg-handle text-link router.
+ */
+private fun openTelegramHandle(context: Context, handle: String) {
+    val tgIntent = Intent(Intent.ACTION_VIEW, "tg://resolve?domain=$handle".toUri())
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+        context.startActivity(tgIntent)
+    } catch (_: ActivityNotFoundException) {
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, "https://t.me/$handle".toUri())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
         }
     }
 }

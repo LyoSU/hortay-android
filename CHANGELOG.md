@@ -30,6 +30,76 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Changed
 
+- **Settings — author attribution + grouped-list pass**. New "Автор" section
+  near the bottom (above "Про застосунок") with two link rows: channel
+  (`@lyblog`) and developer (`@lydev`). Taps route through `tg://resolve?domain=`
+  with `https://t.me/<u>` fallback so devices without a Telegram client still
+  open the page. Visible in both modes (TDLib + guest) — brand attribution is
+  not session-scoped. Same pass: `SectionLabel` typography bumped from
+  `labelLarge` to `titleSmall` SemiBold for clearer M3E list-section delimiters;
+  `SettingsRow` now supports a trailing `chevron_right` (added to the
+  auto-download nav row); a `RowPosition.{Single,Top,Middle,Bottom}` shape
+  helper introduces grouped-list corner radii (18 dp / 4 dp seam) with a 2 dp
+  inter-row gap so adjacent rows in a section read as one block — TG-Android
+  Settings idiom.
+- **`FloatingNavBar` icon swap is now a Crossfade** instead of an instant
+  painter swap. The outline → filled transition (e.g. `home` → `home_filled`
+  on tab select) used to flip in one frame while the corner-radius spring +
+  container/content colour springs were still mid-flight — out-of-sync motion
+  read as a glitch ("кнопка глючачо мигає" on tap). Now wraps the `Symbol`
+  in `Crossfade(animationSpec = motionScheme.fastEffectsSpec())` so the icon
+  morph rides the same spring as everything else and all four channels (corner
+  spatial, container effects, content effects, icon effects) land together.
+- **`MainScaffold` and `WebModeScaffold` tab-content swap on `MotionScheme`**.
+  The TDLib-mode `tab-switch` AnimatedContent and the guest-mode `web-tab-switch`
+  AnimatedContent both used `tween(180)` / `tween(120)` for fadeIn/fadeOut.
+  Now ride `motionScheme.fastEffectsSpec<Float>()`, the same spring as the
+  navbar selection animations — so when the user taps a tab, both the navbar
+  morph and the underlying screen crossfade share one physics.
+- **`VideoPlayerControls` Square↔Circle morph + Crossfades on `MotionScheme`**.
+  The play/pause centre button rolled its own `spring(MediumBouncy, MediumLow)`
+  — replaced with `motionScheme.defaultSpatialSpec<Float>()`. The play/pause
+  glyph crossfade and the mute-button glyph crossfade had no `animationSpec`
+  (defaulting to a 300 ms tween) — now `fastEffectsSpec<Float>()`. One physics
+  for the entire video chrome.
+- **`ConnectionBanner` slide+fade and `TimelineScreen` "новi пости" pill
+  AnimatedVisibility on `MotionScheme`**. Both used the default
+  `slideInVertically() + fadeIn()` (no spec) — now ride
+  `defaultSpatialSpec<IntOffset>` + `defaultEffectsSpec<Float>`. Connection
+  toasts and the floating pill now bounce in/out with the same spring as the
+  rest of the chrome.
+- **M3 Expressive press-shape morph applied to standard buttons**. Primary,
+  outlined, tonal and storage-clear `Button` instances now use the M3E
+  `shapes = ButtonDefaults.shapes(...)` overload (material3 1.5+) so the
+  container squishes from its rest shape to a squarer `pressedShape` under
+  thumb — canonical `SplitButtonShapes` direction (rest 8 dp / pressed 6 dp /
+  checked 10 dp in the upstream sample). The `PrimaryActionButton` on
+  `AuthScreen` morphs `CircleShape → MaterialTheme.shapes.medium` (18 dp); the
+  storage-clear `Button` morphs `large → small`. Without this overload, every
+  `Button(shape = ...)` call site has zero press feedback by default —
+  closes the *"кнопки не дають тактильного зворотного зв'язку"* observation.
+- **Screen-level transitions migrated from `tween(...)` to `MotionScheme`**.
+  `Settings ↔ AutoDownload` slide, `AutoDownload ↔ Category` slide, the
+  `AuthScreen` stage swap (phone → code → password), the inline `AnimatedFieldError`
+  enter/exit, the guest-mode tab swap and the `OtpCell` border / container
+  colour now read `MaterialTheme.motionScheme.{default,fast}{Spatial,Effects}Spec()`.
+  Previously `MotionScheme.expressive()` was wired in `Theme.kt` but only
+  consumed by the chip / nav / reaction press-morph helpers — every other
+  transition ran a literal duration-tween, so the "expressive feel" was
+  concentrated in 4 components. Now the spring physics is uniform across the
+  app. (Specs are captured in `@Composable` scope and threaded into
+  non-composable `transitionSpec` lambdas.)
+- **`LargeTopAppBar` → `LargeFlexibleTopAppBar`** in `WebChannelsScreen`. Same
+  scrollBehavior contract, but the Flexible variant exposes the optional
+  `subtitle` slot and the M3E layout system, matching Settings / AutoDownload /
+  Comments. One vocabulary across destinations.
+- **Three-state corner-radius press-morph extracted to a single helper**.
+  `FoldersBar`, `FloatingNavBar` and `ReactionChip` previously each carried
+  their own `interactionSource + collectIsPressedAsState + animateDpAsState`
+  block (~10 lines × 3 = 30 lines of duplicate state-machine code).
+  Replaced with `rememberPressedSelectedCornerRadius(rest, pressed,
+  selectedRadius)` in `theme/Shape.kt`. Any future tweak to the spec
+  (delta, motion spring, additional state) lands in one place.
 - **End-to-end M3 Expressive redesign**. `MaterialExpressiveTheme` +
   `MotionScheme.expressive()`. Container scale bumped to 8/12/18/24/36 dp. Hero
   polygon morphs on selection: reactions (`Cookie9Sided`), folders & nav tabs

@@ -1,10 +1,10 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.lyo.hortay.ui.media
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -282,15 +282,14 @@ private fun CenterPlayPauseButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Drive the Square↔Circle morph off a single 0..1 progress. Tween via the
-    // M3 Expressive default spring: spatial-channel (medium-bouncy) so the
-    // shape change reads as a deliberate state transition, not a flicker.
+    // Drive the Square↔Circle morph off a single 0..1 progress through M3E's
+    // spatial-channel spring. Reads as a deliberate state transition, not a
+    // flicker. Riding `motionScheme.defaultSpatialSpec` keeps the morph in lock
+    // step with every other shape transition in the app (chips, nav, screen
+    // slides) instead of rolling its own bouncy spring.
     val morphProgress by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
+        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
         label = "play-pause-morph",
     )
     // MorphShape allocates a fresh Path on every createOutline; cheap, but we
@@ -308,8 +307,13 @@ private fun CenterPlayPauseButton(
         contentAlignment = Alignment.Center,
     ) {
         // Crossfade the glyph so play_arrow ↔ pause swap reads as a smooth
-        // morph rather than a stutter — pairs naturally with the shape morph.
-        Crossfade(targetState = isPlaying, label = "play-pause-icon") { playing ->
+        // morph rather than a stutter — pairs naturally with the shape morph,
+        // riding the same MotionScheme spring as the rest of the app.
+        Crossfade(
+            targetState = isPlaying,
+            animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+            label = "play-pause-icon",
+        ) { playing ->
             Symbol(
                 name = if (playing) "pause" else "play_arrow",
                 contentDescription = if (playing) "pause" else "play",
@@ -395,7 +399,11 @@ private fun BottomBar(
                     .size(40.dp)
                     .background(Color.Black.copy(alpha = 0.55f), muteShape),
             ) {
-                Crossfade(targetState = muted, label = "mute-icon") { isMuted ->
+                Crossfade(
+                    targetState = muted,
+                    animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                    label = "mute-icon",
+                ) { isMuted ->
                     Symbol(
                         name = if (isMuted) "volume_off" else "volume_up",
                         contentDescription = if (isMuted) "unmute" else "mute",

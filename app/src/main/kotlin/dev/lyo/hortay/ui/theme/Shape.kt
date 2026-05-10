@@ -1,10 +1,17 @@
 package dev.lyo.hortay.ui.theme
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Outline
@@ -12,6 +19,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
@@ -167,3 +175,48 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
 /** Convenience: turn a polygon into a Compose Shape without instantiating a class
  *  literal at every call site. */
 fun RoundedPolygon.asComposeShape(): Shape = PolygonShape(this)
+
+/**
+ * Three-state corner-radius morph — canonical M3 Expressive ButtonGroup / FilterChip
+ * vocabulary. Replaces the duplicated `interactionSource + animateDpAsState(when …)`
+ * blocks across `FoldersBar`, `FloatingNavBar`, `ReactionChip` and any future
+ * stadium-style selectable surface.
+ *
+ *  - **Rest**: soft rounded rectangle (`rest`).
+ *  - **Pressed**: corners squish to `pressed` — the "compressed under thumb" tactile
+ *    cue from M3E's interaction-states spec. Direction is canonical for round-default
+ *    surfaces: pressing morphs *toward the opposite shape*, so a round chip becomes
+ *    squarer, not rounder. (For square-default surfaces invert the deltas at the call
+ *    site — but we don't have any of those today.)
+ *  - **Selected**: corners expand to `selected` — the persistent "this one is active"
+ *    pill cue.
+ *
+ * The animation runs on `MotionScheme.fastSpatialSpec` so the rounding visibly bounces
+ * between states; spatial channel is the right physics for size/geometry transitions
+ * (vs effects, which is for colour/opacity crossfades).
+ *
+ * Press takes priority over selection — if the user presses an already-selected chip,
+ * they see the squish, not the pill, until they release. This matches M3E SplitButton
+ * `pressedShape` behaviour and feels right because press is the more recent signal.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun rememberPressedSelectedCornerRadius(
+    interactionSource: InteractionSource,
+    selected: Boolean,
+    rest: Dp,
+    pressed: Dp,
+    selectedRadius: Dp,
+    label: String = "press-corner",
+): State<Dp> {
+    val isPressed by interactionSource.collectIsPressedAsState()
+    return animateDpAsState(
+        targetValue = when {
+            isPressed -> pressed
+            selected -> selectedRadius
+            else -> rest
+        },
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = label,
+    )
+}

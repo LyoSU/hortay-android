@@ -1,12 +1,10 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
 
 /**
  * Top-level scope a feed item belongs to. Mirrors how Telegram itself splits chats: the
@@ -93,24 +92,15 @@ data class FolderTab(val id: Int, val title: String)
 @Composable
 private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
     // Three-state corner-radius morph — canonical M3 Expressive FilterChip /
-    // ButtonGroup vocabulary documented in material.io's interaction-states spec:
-    //   • Rest: 16 dp — soft tab, default state.
-    //   • Pressed: 8 dp — corners squish smaller, the "compressed under thumb"
-    //     tactile feedback that distinguishes Expressive interaction from a flat
-    //     opacity-only ripple.
-    //   • Selected: 28 dp — fully rounded pill, the persistent selected-state cue.
-    // All three transitions run on the spatial spring spec so the rounding
-    // visibly bounces between states; ButtonGroupDefaults.PressedShape in the
-    // 1.5 source is exactly this 8 dp corner.
+    // ButtonGroup vocabulary. 16 dp rest → 8 dp pressed (squish) → 28 dp selected (pill).
+    // ButtonGroupDefaults.PressedShape in the 1.5 source is exactly this 8 dp corner.
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val cornerRadius by animateDpAsState(
-        targetValue = when {
-            isPressed -> 8.dp
-            selected -> 28.dp
-            else -> 16.dp
-        },
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+    val cornerRadius by rememberPressedSelectedCornerRadius(
+        interactionSource = interactionSource,
+        selected = selected,
+        rest = 16.dp,
+        pressed = 8.dp,
+        selectedRadius = 28.dp,
         label = "folder-corner",
     )
     val container by animateColorAsState(
