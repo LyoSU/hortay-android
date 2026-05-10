@@ -18,19 +18,33 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ConnectionStatus
 import dev.lyo.hortay.ui.icons.Symbol
+import kotlinx.coroutines.delay
 
 /**
- * Slim banner that surfaces TDLib's connection state. Hidden when [status] is
- * [ConnectionStatus.Ready] — we don't want to remind the user that everything is fine.
+ * Slim banner that surfaces TDLib's connection state and, with priority, the
+ * shared FLOOD_WAIT throttle deadline.
+ *
+ * Why FLOOD_WAIT gets its own surface. Telegram's per-method rate limit is
+ * fully recoverable (TDLib backs off, the next call lands), but the gap looks
+ * to the user like a multi-second hang on whatever they last tapped — usually
+ * comments, where our prefetch storm + their tap collide. Saying so out loud
+ * is cheaper than the apparent-freeze: a labelled pause is qualitatively
+ * different from "the app is broken." Pure-throttle banner takes precedence
+ * over [ConnectionStatus] because it's the more specific (and more
+ * actionable) signal — and because during a long throttle TDLib's connection
+ * is still Ready, the existing state would have shown nothing.
  *
  * Visual upgrade (M3 Expressive):
  *   - Container is a stadium chip (`CircleShape` on a wide Row collapses to true
@@ -43,6 +57,8 @@ import dev.lyo.hortay.ui.icons.Symbol
  *     against the status-bar edge. Same idiom as the floating navigation bar.
  *
  * Material 3 colour-mapping:
+ *   - FLOOD_WAIT → tertiaryContainer (it's a wait, not a failure; M3 tertiary
+ *     is the "informational/temporal" slot in Hortay's palette).
  *   - WaitingForNetwork → errorContainer (the freeze is the user's network, surface it).
  *   - Connecting / Updating → secondaryContainer (transient, low-stakes).
  *
@@ -50,16 +66,64 @@ import dev.lyo.hortay.ui.icons.Symbol
  * affordances feel like one vocabulary.
  */
 @Composable
-fun ConnectionBanner(status: ConnectionStatus, modifier: Modifier = Modifier) {
+fun ConnectionBanner(
+    status: ConnectionStatus,
+    floodWaitUntilMs: Long = 0L,
+    modifier: Modifier = Modifier,
+) {
+    // Re-ticks every second while we're inside the window; falls through to 0
+    // (no further recomposition) once the deadline passes. Keyed on the
+    // deadline so a fresh FLOOD_WAIT registration restarts the loop with the
+    // newer value rather than waiting for the old loop to exit. Compose's
+    // produceState gives us cancellation on dispose for free.
+    val floodSecondsRemaining by produceState(0L, floodWaitUntilMs) {
+        if (floodWaitUntilMs <= 0L) {
+            value = 0L
+            return@produceState
+        }
+        while (true) {
+            val now = System.currentTimeMillis()
+            val remaining = ((floodWaitUntilMs - now + 999L) / 1_000L).coerceAtLeast(0L)
+            value = remaining
+            if (remaining <= 0L) break
+            // 1s tick aligns the displayed countdown to wall-clock seconds —
+            // sub-second updates would just churn recomposition without any
+            // user-visible change.
+            delay(1_000L)
+        }
+    }
+    // Surfacing threshold. A FLOOD_WAIT under 5 s feels like a normal "the app
+    // is thinking" pause and doesn't justify a banner that the user might
+    // misread as an error. Anything longer is where the labelled-wait
+    // experience starts to pay off versus an apparent freeze.
+    val showFlood = floodSecondsRemaining >= FLOOD_SURFACE_THRESHOLD_SEC
+    val visible = showFlood || status != ConnectionStatus.Ready
     val spatial = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
     val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     AnimatedVisibility(
-        visible = status != ConnectionStatus.Ready,
+        visible = visible,
         enter = slideInVertically(spatial) { -it } + fadeIn(effects),
         exit = slideOutVertically(spatial) { -it } + fadeOut(effects),
         modifier = modifier,
     ) {
-        val (symbol, label, container, content) = when (status) {
+        // Build the chip content. Branch on the FLOOD case first; only fall
+        // through to the connection-status mapping when the throttle isn't
+        // active. The when-on-status branch still includes Ready as a
+        // defensive return — AnimatedVisibility's exit animation can run
+        // recompositions on the way out where `visible` is false and `status`
+        // has flipped to Ready.
+        val (symbol, label, container, content) = if (showFlood) {
+            Quad(
+                "pause",
+                pluralStringResource(
+                    R.plurals.connection_flood_wait,
+                    floodSecondsRemaining.toInt(),
+                    floodSecondsRemaining.toInt(),
+                ),
+                MaterialTheme.colorScheme.tertiaryContainer,
+                MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+        } else when (status) {
             ConnectionStatus.WaitingForNetwork -> Quad(
                 "wifi_off",
                 stringResource(R.string.connection_waiting),
@@ -109,6 +173,8 @@ fun ConnectionBanner(status: ConnectionStatus, modifier: Modifier = Modifier) {
         }
     }
 }
+
+private const val FLOOD_SURFACE_THRESHOLD_SEC = 5L
 
 private data class Quad(
     val symbol: String,

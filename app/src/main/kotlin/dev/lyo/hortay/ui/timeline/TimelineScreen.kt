@@ -134,6 +134,15 @@ fun TimelineScreen(
      * mode passes null (default) and the slot collapses.
      */
     topBarBadge: (@Composable () -> Unit)? = null,
+    /**
+     * Process-wide cold-start gate, TDLib mode only. While in
+     * [StartupCoordinator.Phase.Booting] the comments-thread prefetch
+     * collector silently skips its work to keep the TDLib RPC pipe clear for
+     * the per-channel `GetChatHistory` fan-out and TDLib's own initial sync.
+     * Guest mode passes null and the collector runs unguarded — it doesn't
+     * make TDLib RPC anyway. See [StartupCoordinator] KDoc.
+     */
+    startupPhase: kotlinx.coroutines.flow.StateFlow<dev.lyo.hortay.data.StartupCoordinator.Phase>? = null,
 ) {
     // viewModel() keys the cached instance by VM class only; the `factory`
     // parameter is consulted *just* on first creation. With both MainScaffold
@@ -580,9 +589,26 @@ fun TimelineScreen(
                     // of the burst. Top-3 visible posts is the **plurality** of
                     // dwell-targets a user is likely to tap into without scrolling
                     // again — covers the warm-up benefit without owning the pipe.
+                    // Cold-start gate: skip the prefetch entirely while we're in
+                    // the post-auth storm window. The same viewport-stable will
+                    // re-emit naturally as scroll / dwell continues, and by then
+                    // the gate has flipped to Active and the prefetch lands without
+                    // contention. See [StartupCoordinator] KDoc.
+                    if (startupPhase?.value == dev.lyo.hortay.data.StartupCoordinator.Phase.Booting) {
+                        return@collect
+                    }
+                    // commentCount > 0 (not just != null): a channel-with-discussion
+                    // post that has zero replies still carries a non-null
+                    // commentCount (TDLib populates replyInfo with `replyCount = 0`),
+                    // and prefetching it costs 2 wasted RPCs (GetMessageProperties +
+                    // GetMessageThread) for a thread guaranteed to be empty. Most
+                    // posts on commenting channels are this case — typical post
+                    // collects a few replies on the first hour and zero forever
+                    // after. The old filter sprayed prefetch across them all and
+                    // was the dominant share of the first-launch RPC volume.
                     indices.flatMap { snapshot.getOrNull(it)?.posts().orEmpty() }
                         .asSequence()
-                        .filter { it.commentCount != null }
+                        .filter { (it.commentCount ?: 0) > 0 }
                         .take(COMMENTS_PREFETCH_LIMIT)
                         .forEach { post ->
                             val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }

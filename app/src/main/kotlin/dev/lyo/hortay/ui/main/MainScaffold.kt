@@ -99,6 +99,7 @@ fun MainScaffold(graph: AppGraph) {
     var homeTapTrigger by remember { mutableLongStateOf(0L) }
     val scope = rememberCoroutineScope()
     val connection by graph.tdClient.connection.collectAsStateWithLifecycle()
+    val floodWaitUntilMs by graph.tdClient.floodWaitUntilMs.collectAsStateWithLifecycle()
 
     // Single SnackbarHost owned by the scaffold so transient errors land on whichever
     // tab the user is currently looking at. Subscribing to the bus only while composed
@@ -236,6 +237,7 @@ fun MainScaffold(graph: AppGraph) {
                     onBrandTap = { homeTapTrigger = System.nanoTime() },
                     scrollToMessage = pendingScrollTarget,
                     onScrollHandled = { pendingScrollTarget = null },
+                    startupPhase = graph.startupCoordinator.phase,
                 )
                 NavTab.Channels -> ChannelsScreen(
                     repo = graph.postsRepository,
@@ -267,6 +269,7 @@ fun MainScaffold(graph: AppGraph) {
                     onOpenComments = openComments,
                     homeTapTrigger = 0L,
                     onBrandTap = {},
+                    startupPhase = graph.startupCoordinator.phase,
                 )
                 NavTab.Profile -> SettingsScreen(
                     settings = graph.settingsStore,
@@ -280,6 +283,7 @@ fun MainScaffold(graph: AppGraph) {
 
         ConnectionBanner(
             status = connection,
+            floodWaitUntilMs = floodWaitUntilMs,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding(),

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Added
 
+- **Process-wide `StartupCoordinator`** (TDLib mode). New
+  `Booting → Active` phase gate that holds speculative subsystems (auto-download,
+  comments-thread prefetch) silent during the post-auth RPC storm. Activates
+  when *either* the feed reaches 20 posts *or* 8 s elapsed since
+  `AuthorizationStateReady`, plus a 1.5 s settle buffer. Resets to `Booting`
+  on every logout / re-auth transition. Visible-media prefetch and interactive
+  RPC (user-tap comments, refresh, ChatPresence) are NOT gated — those are
+  what the user is waiting for. Closes the *"FLOOD_WAIT one minute after first
+  login"* class of symptoms.
+- **FLOOD_WAIT throttle surfaced in `ConnectionBanner`**. `TdClient.floodWaitUntilMs`
+  is now a `StateFlow<Long>`. The banner ticks once per second while inside
+  the window and shows a tertiary-container pill ("Telegram попросив почекати
+  N секунд") for any throttle ≥ 5 s. Replaces the previous silent multi-second
+  sleep that read as a frozen app.
 - **Read-state sync with the official Telegram client** (TDLib mode). 1 s viewport
   dwell acks via `viewMessages(forceRead=true)`, advancing
   `lastReadInboxMessageId`. Comments overlay does the same against the discussion
@@ -133,6 +147,24 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- **First-launch FLOOD_WAIT storm: comments prefetch fired for every visible
+  post including zero-reply ones**. Two converging bugs and one missing gate:
+  (a) the `prefetchThread` viewport-stable collector filtered
+  `commentCount != null` instead of `> 0`, so any post on a discussion-enabled
+  channel — including the typical "0 replies forever" case — paid 2 wasted
+  RPCs (`GetMessageProperties` + `GetMessageThread`) just to discover the
+  thread is empty; on a channel-heavy first launch this was the dominant
+  share of the RPC volume. (b) On the cold-start auth burst, `PostsRepository`
+  was already saturating the TDLib RPC pipe with the per-channel
+  `GetChatHistory` fan-out while TDLib's own internal initial sync
+  (UpdateNewChat × all chats, UpdateSupergroup × all channels) competed for
+  the same per-DC active-slot pool (tdlib/td#786); adding speculative
+  comments prefetch and `MediaAutoDownloader` arrivals on top is what pushed
+  the pipe into 429 territory. Fix has three converging pieces — see the
+  `StartupCoordinator` entry in *Added*, the prefetch filter narrowed to
+  `commentCount > 0`, and `MediaAutoDownloader.dispatchAsync` now skipping
+  while `phase == Booting`. Net effect: zero speculative RPC during the
+  first ~3 s after auth, then a gradual fan-out as the user scrolls.
 - **Comments overlay sometimes hung in Loading until the user backed out**
   (TDLib mode). Cascading bug: `prefetchThread` re-fired
   `GetMessageThread` on every viewport-stable burst (debounced 700 ms) for

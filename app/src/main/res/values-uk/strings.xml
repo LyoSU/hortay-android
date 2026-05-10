@@ -163,6 +163,12 @@
     <string name="connection_waiting">Чекаємо мережу</string>
     <string name="connection_connecting">Зʼєднуємося…</string>
     <string name="connection_updating">Оновлюємо…</string>
+    <plurals name="connection_flood_wait">
+        <item quantity="one">Telegram просить почекати %d секунду</item>
+        <item quantity="few">Telegram просить почекати %d секунди</item>
+        <item quantity="many">Telegram просить почекати %d секунд</item>
+        <item quantity="other">Telegram просить почекати %d секунд</item>
+    </plurals>
 
     <!-- Navigation -->
     <string name="nav_feed">Стрічка</string>

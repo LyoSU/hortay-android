@@ -161,6 +161,10 @@
     <string name="connection_waiting">Waiting for network</string>
     <string name="connection_connecting">Connecting…</string>
     <string name="connection_updating">Updating…</string>
+    <plurals name="connection_flood_wait">
+        <item quantity="one">Telegram asked to pause for %d second</item>
+        <item quantity="other">Telegram asked to pause for %d seconds</item>
+    </plurals>
 
     <!-- Navigation -->
     <string name="nav_feed">Feed</string>

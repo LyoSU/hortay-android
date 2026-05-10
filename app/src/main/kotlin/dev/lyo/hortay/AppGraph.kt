@@ -15,6 +15,7 @@ import dev.lyo.hortay.data.MediaCache
 import dev.lyo.hortay.data.MessageMapper
 import dev.lyo.hortay.data.PostsRepository
 import dev.lyo.hortay.data.SettingsStore
+import dev.lyo.hortay.data.StartupCoordinator
 import dev.lyo.hortay.data.StatsRepository
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdLifecycleBridge
@@ -112,6 +113,20 @@ class AppGraph(context: Context) {
     val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope, res)
 
     /**
+     * Process-wide cold-start gate. Holds the [StartupCoordinator.Phase.Booting] flag
+     * for the first ~3 seconds after [AuthorizationStateReady] (or until the feed
+     * reaches ~20 posts, whichever fires first) plus a 1.5 s settle buffer. Consumed
+     * by [autoDownloader] and the [ui.timeline.TimelineScreen] comments-thread
+     * prefetch collector to skip speculative work during the post-auth RPC storm —
+     * see its KDoc for the full rationale.
+     */
+    val startupCoordinator: StartupCoordinator = StartupCoordinator(
+        authStage = tdClient.authStage,
+        posts = postsRepository.posts,
+        scope = appScope,
+    )
+
+    /**
      * User-configurable per-network auto-download policy (Wi-Fi / mobile / roaming),
      * mirroring Telegram's "Data and Storage" → "Auto-Download Media" UX. Persisted
      * as a single JSON blob in DataStore. Held by the graph because both the
@@ -139,6 +154,7 @@ class AppGraph(context: Context) {
         networkType = lifecycleBridge.networkType,
         connection = tdClient.connection,
         foreground = lifecycleBridge.foreground,
+        startupPhase = startupCoordinator.phase,
         scope = appScope,
     ).also { it.bind() }
 

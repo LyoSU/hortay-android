@@ -16,11 +16,11 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 
 /**
@@ -132,11 +132,16 @@ class TdClient private constructor(
      *
      * One global gate (vs per-method tracking) is intentional for a read-only
      * client: we generate light traffic anyway, and a single suspended sleep is
-     * far simpler than threading per-method state through every callsite. The
-     * gate uses [AtomicLong.updateAndGet] with a `max` so concurrent flood
-     * responses can only push the deadline further, never pull it back.
+     * far simpler than threading per-method state through every callsite.
+     *
+     * Exposed as a [StateFlow] so [ui.main.ConnectionBanner] can surface the
+     * throttle to the user when it stretches long enough to feel like the app
+     * is frozen — silent multi-second sleeps were the worst part of the
+     * previous experience. [update] with a `max` semantics ensures concurrent
+     * flood responses can only push the deadline further, never pull it back.
      */
-    private val floodWaitUntilMs = AtomicLong(0L)
+    private val _floodWaitUntilMs = MutableStateFlow(0L)
+    val floodWaitUntilMs: StateFlow<Long> = _floodWaitUntilMs.asStateFlow()
 
     fun start() {
         if (this::client.isInitialized) return
@@ -467,7 +472,7 @@ class TdClient private constructor(
     }
 
     private suspend fun awaitFloodGate() {
-        val until = floodWaitUntilMs.get()
+        val until = _floodWaitUntilMs.value
         val now = System.currentTimeMillis()
         if (until > now) {
             Log.w(TAG, "FLOOD_WAIT throttle: sleeping ${(until - now) / 1000}s before next send")
@@ -489,7 +494,7 @@ class TdClient private constructor(
         // letting a stuck client recover via app restart in the worst case.
         val capped = seconds.coerceAtMost(FLOOD_WAIT_CAP_SECONDS)
         val deadline = System.currentTimeMillis() + capped * 1000L
-        floodWaitUntilMs.updateAndGet { existing -> maxOf(existing, deadline) }
+        _floodWaitUntilMs.update { existing -> maxOf(existing, deadline) }
         Log.w(TAG, "FLOOD_WAIT registered: $message → throttle for ${capped}s")
     }
 

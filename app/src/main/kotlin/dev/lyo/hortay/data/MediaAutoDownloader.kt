@@ -66,6 +66,18 @@ class MediaAutoDownloader(
     private val networkType: StateFlow<HortayNetworkType>,
     private val connection: StateFlow<ConnectionStatus>,
     private val foreground: StateFlow<Boolean>,
+    /**
+     * Cold-start gate. While [StartupCoordinator.Phase.Booting] the dispatcher
+     * silently drops new arrivals — the TDLib RPC pipe is already saturated by
+     * the per-channel `GetChatHistory` fan-out plus TDLib's own initial sync
+     * chatter, and adding speculative `DownloadFile` traffic on top would
+     * compete with the visible cards the user is actually staring at. Dropped
+     * arrivals are not lost UX-wise: the same files become eligible for
+     * `[DownloadPriority.VisibleMedia]` the moment the user scrolls them into
+     * view (via [TimelineScreen]'s viewport-driven prefetch). See
+     * [StartupCoordinator] KDoc for the activation criteria.
+     */
+    private val startupPhase: StateFlow<StartupCoordinator.Phase>,
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -109,6 +121,14 @@ class MediaAutoDownloader(
     }
 
     private fun dispatchAsync(post: TimelinePost) {
+        // Cold-start gate: skip the speculative path entirely while TDLib is
+        // still in its post-auth storm. See [StartupCoordinator] for why this
+        // is the right shape rather than e.g. a global rate limiter — the
+        // problem isn't "too fast forever," it's "too much at once during the
+        // first ~3 seconds when TDLib is also still syncing." Visible-media
+        // ensure() on viewport entry continues to work and covers anything we
+        // skip here.
+        if (startupPhase.value != StartupCoordinator.Phase.Active) return
         // Hold off entirely while TDLib reports the link as down — issuing
         // DownloadFile here would queue a request that goes nowhere AND inflate
         // [MediaCache.tracks] retry counters when the watchdog ticks. TDLib
