@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- **Sticker skeleton overlay: outline → thumb → sticker visual ladder**. While a
+  TDLib sticker is in flight the box is no longer a transparent void — a
+  silhouette painted from `TdApi.GetStickerOutlineSvgPath` (offline JNI call,
+  parsed once via Compose `PathParser` and memoised in a new
+  `StickerOutlineStore` LRU + negative-cache, drawn anisotropically scaled to
+  the sticker's native pixel space) paints in microseconds, bridging the
+  ~50–500 ms thumb download. When TDLib has no outline (404 / empty SVG / parse
+  failure) or in guest/web mode (no fileId), the overlay falls back to a soft
+  `surfaceContainerHigh` square clipped to `MaterialTheme.shapes.small`. Both
+  variants live on TOP of the sticker content (Telegram-Android-style hand-off,
+  not a permanent underlay that would bleed through transparent edges) and
+  fade via `MotionScheme.defaultEffectsSpec` once the first user-visible file
+  (playback for Webp, thumb for Tgs / Webm) flips to `MediaState.Ready`.
+  Cleared on logout via the `TdClient.loggedOut` fan-out.
+
 ### Changed
 
 - **Universal `HortayTopBar` consolidates every top app bar across the app**.

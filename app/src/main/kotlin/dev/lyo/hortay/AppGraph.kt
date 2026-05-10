@@ -178,6 +178,13 @@ class AppGraph(context: Context) {
     // single TDLib call.
     val customEmoji: CustomEmojiRepository = CustomEmojiRepository(tdClient, appScope)
 
+    // Vector-silhouette cache for the outline → thumb → sticker visual ladder. TDLib's
+    // [TdApi.GetStickerOutlineSvgPath] is offline (microseconds over JNI) but we still
+    // memoise the parsed Compose Path so repeated viewport entries don't re-parse the
+    // same SVG. See [StickerOutlineStore] for the LRU + negative-cache contract.
+    val stickerOutline: dev.lyo.hortay.ui.media.StickerOutlineStore =
+        dev.lyo.hortay.ui.media.StickerOutlineStore(tdClient)
+
     // Shared ExoPlayer pool. Each ExoPlayer instance is heavy (MediaCodec decoders +
     // surface threads + WakeLockManager + AudioMix wakelock), and the per-Composable
     // `Builder().build()` pattern in TdVideoPlayer / WebmStickerPlayer churned 38 of
@@ -377,6 +384,7 @@ class AppGraph(context: Context) {
         runCatching { commentsRepository.clear() }
         runCatching { mediaCache.clear() }
         runCatching { customEmoji.clear() }
+        runCatching { stickerOutline.clear() }
         runCatching { chatFoldersRepository.clear() }
         runCatching { translations.clear() }
         runCatching { migrationStore.reset() }
