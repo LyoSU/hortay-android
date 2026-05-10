@@ -26,7 +26,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -54,14 +53,16 @@ import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.web.ChannelEntry
 import dev.lyo.hortay.data.web.ChannelFetchStatus
+import dev.lyo.hortay.ui.components.HortayTopBar
+import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
 import kotlinx.coroutines.launch
 
 /**
  * Subscribed-channels list for guest mode. Mirrors [dev.lyo.hortay.ui.channels.ChannelsScreen]
- * shape: own [Scaffold] + collapsing [LargeTopAppBar], `surfaceContainerLow` rounded
- * row chips with a 48dp [TdAvatar] and per-channel status indicator.
+ * shape: own [Scaffold] + collapsing [HortayTopBar] (Large), `surfaceContainerLow`
+ * rounded row chips with a 48dp [TdAvatar] and per-channel status indicator.
  *
  * Unsubscribe affordance: explicit trailing `close` icon button on each row, plus
  * a confirmation dialog. Long-press alone was discoverability-hostile.
@@ -89,22 +90,10 @@ fun WebChannelsScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            // M3E LargeFlexibleTopAppBar over LargeTopAppBar — same scrollBehavior
-            // contract, but the Flexible variant exposes the optional `subtitle`
-            // slot and the M3E layout system, matching the Settings / AutoDownload /
-            // Comments top bars elsewhere in the app. One vocabulary across destinations.
-            LargeFlexibleTopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.web_channels_title),
-                        style = MaterialTheme.typography.displaySmall,
-                    )
-                },
+            HortayTopBar(
+                title = stringResource(R.string.web_channels_title),
+                size = HortayTopBarSize.Large,
                 actions = { GuestModeBadge() },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
                 scrollBehavior = scrollBehavior,
             )
         },

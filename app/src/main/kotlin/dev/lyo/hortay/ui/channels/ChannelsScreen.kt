@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.ui.components.HortayTopBar
+import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.media.TdAvatar
 
 /**
@@ -42,12 +44,9 @@ fun ChannelsScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
-                title = { Text(stringResource(R.string.channels_title), style = MaterialTheme.typography.displaySmall) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
+            HortayTopBar(
+                title = stringResource(R.string.channels_title),
+                size = HortayTopBarSize.Large,
                 scrollBehavior = scrollBehavior,
             )
         },

@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+
+- **Universal `HortayTopBar` consolidates every top app bar across the app**.
+  One wrapper around M3 Expressive `LargeFlexibleTopAppBar` /
+  `MediumFlexibleTopAppBar` / `TopAppBar`, exposed as `HortayTopBarSize.{Large,
+  Medium, Compact}`. The wrapper pins three invariants the screens were each
+  restating: container `background` ↔ scrolled `surfaceContainer` colour
+  contract, Material 3 default title typography (no per-screen overrides to
+  `displaySmall`), and a uniform `subtitle: String?` parameter that renders in
+  the canonical bodyMedium / onSurfaceVariant style. Settings, AutoDownload,
+  WebChannels, Channels, Comments and Timeline (Home / Saved destination
+  variants) now route through the helper; tool-stage compact bars in Timeline
+  (channel filter, search inside channel) stay inline because they own
+  screen-specific `BasicTextField` logic. `ChannelsScreen` was still on the
+  legacy `LargeTopAppBar` — the migration also picks up the M3E subtitle slot
+  and motion contract for that destination.
+- **Settings rows migrated to M3 Expressive `SegmentedListItem`**. The custom
+  `SettingsRow` + `RowPosition.{Single, Top, Middle, Bottom}` + manual
+  `RoundedCornerShape(18.dp/4.dp)` recipe is replaced by
+  `SegmentedListItem` with `ListItemDefaults.segmentedShapes(index, count,
+  defaultShapes)` and grouped via
+  `Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap))`.
+  M3 owns the per-segment corner radii (single → fully rounded card; first /
+  middle / last → outer-rounded seam) and the pressed-state shape morph. Same
+  pass: `AutoDownloadScreen` CategoryRow (Wi-Fi / Mobile / Roaming) and
+  ToggleRow (Photos / Videos / Animations) read as proper grouped blocks.
+  Author section in Settings carries channel + developer rows as one M3E
+  segmented pair instead of two near-touching cards.
+- **`FloatingNavBar` outer container wraps M3 1.5's `HorizontalFloatingToolbar`**.
+  Google's official description of the primitive: *"displays navigation and
+  key actions in a Row"* — same primitive, content slot tuned for 4 equal
+  navigation tabs. Inherits the M3E container shape, default tonal / shadow
+  elevations, content padding tokens, and (free) `FloatingToolbarScrollBehavior`
+  hook for future auto-hide-on-scroll. Per-tab affordance stays bespoke (rest
+  14 dp / pressed 6 dp / selected 24 dp three-state morph + outline↔filled
+  crossfade) because those tokens are not Material defaults — they read as
+  one vocabulary with `FolderChip` and `ReactionChip`. Replaces the previous
+  custom `Surface(shape = CircleShape)` + manual `Row(SpaceEvenly)` recipe.
+- **`WebSearchScreen` rebuilt on M3 1.5 `ExpandedFullScreenSearchBar`**. The
+  previous `TopAppBar` + `BasicTextField` + manual decoration-box / IME action
+  / clear-X plumbing is replaced by the official expressive search bar with
+  `SearchBarDefaults.InputField` (TextFieldState overload),
+  `rememberSearchBarState(initialValue = SearchBarValue.Expanded)`, and the
+  built-in leading / trailing icon slots. `rememberTextFieldState` drives the
+  search query through the same `snapshotFlow → debounce(220) → flatMapLatest`
+  pipeline so the search semantics are unchanged. Internally the search bar
+  mounts a Dialog so the existing `Scaffold` and IME insets stay out of the
+  way; back-handler still routes through the `searchOpen` boolean from
+  `WebModeScaffold` (state collapse runs best-effort before the parent
+  unmounts).
+- **End-to-end audit of `Material 3` 1.5.0-alpha19 component coverage**.
+  Confirmed `SegmentedListItem`, `HorizontalFloatingToolbar`,
+  `ExpandedFullScreenSearchBar`, `LargeFlexibleTopAppBar`,
+  `MediumFlexibleTopAppBar` and `ExtendedFloatingActionButton` are all on the
+  current alpha and used correctly. FAB sizing stays at `ExtendedFloatingActionButton`
+  (not the Large variant) — matches Telegram-Android's "primary action" sizing.
+
 ### Added
 
 - **Process-wide `StartupCoordinator`** (TDLib mode). New

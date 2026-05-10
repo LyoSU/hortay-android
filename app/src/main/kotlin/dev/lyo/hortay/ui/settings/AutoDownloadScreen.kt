@@ -30,11 +30,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LargeFlexibleTopAppBar
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -73,6 +72,8 @@ import dev.lyo.hortay.data.AutoDownloadStore
 import dev.lyo.hortay.data.defaultPolicy
 import dev.lyo.hortay.data.policy
 import dev.lyo.hortay.data.withPolicy
+import dev.lyo.hortay.ui.components.HortayTopBar
+import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.launch
 
@@ -89,8 +90,9 @@ import kotlinx.coroutines.launch
  * category is open, and [AutoDownloadHost] returns true so the parent
  * ([SettingsScreen]) can keep its own back-stack management consistent.
  *
- * Uses M3 1.4 [ListItem] for rows (proper density + 56 dp leading icon slot),
- * [Switch] for toggles, and [Slider] with discrete `steps` for the size cap.
+ * Uses M3 1.5 [SegmentedListItem] (Expressive) for rows so first / middle / last
+ * shapes morph through [ListItemDefaults.segmentedShapes]; [Switch] for toggles,
+ * and [Slider] with discrete `steps` for the size cap.
  * Transitions between the two depths are a shared-x slide so the user has a clear
  * sense of going "into" and "out of" a category — Material's recommended pattern
  * for hierarchical depth changes.
@@ -175,24 +177,15 @@ private fun AutoDownloadListScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text(stringResource(R.string.autodownload_screen_title)) },
-                subtitle = {
-                    Text(
-                        stringResource(R.string.settings_subtitle_auto_download),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
+            HortayTopBar(
+                title = stringResource(R.string.autodownload_screen_title),
+                subtitle = stringResource(R.string.settings_subtitle_auto_download),
+                size = HortayTopBarSize.Large,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Symbol(name = "arrow_back", tint = MaterialTheme.colorScheme.onSurface, size = 22.dp)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -216,24 +209,39 @@ private fun AutoDownloadListScreen(
             )
 
             Spacer(Modifier.height(8.dp))
-            CategoryRow(
-                title = stringResource(R.string.autodownload_category_wifi),
-                summary = summarize(settings.onWifi),
-                symbol = "wifi",
-                onClick = { onCategoryClick(AutoDownloadCategory.Wifi) },
-            )
-            CategoryRow(
-                title = stringResource(R.string.autodownload_category_mobile),
-                summary = summarize(settings.onMobile),
-                symbol = "signal_cellular_alt",
-                onClick = { onCategoryClick(AutoDownloadCategory.Mobile) },
-            )
-            CategoryRow(
-                title = stringResource(R.string.autodownload_category_roaming),
-                summary = summarize(settings.onRoaming),
-                symbol = "public",
-                onClick = { onCategoryClick(AutoDownloadCategory.Roaming) },
-            )
+            // Wi-Fi / Mobile / Roaming read as a single grouped block — TG-Android
+            // "Auto-Download Media" pattern. SegmentedListItem + segmentedShapes
+            // handle inter-row seams and outer corners; SegmentedGap is the
+            // M3E-canonical vertical seam (no manual Spacer between rows).
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+            ) {
+                CategoryRow(
+                    title = stringResource(R.string.autodownload_category_wifi),
+                    summary = summarize(settings.onWifi),
+                    symbol = "wifi",
+                    index = 0,
+                    count = 3,
+                    onClick = { onCategoryClick(AutoDownloadCategory.Wifi) },
+                )
+                CategoryRow(
+                    title = stringResource(R.string.autodownload_category_mobile),
+                    summary = summarize(settings.onMobile),
+                    symbol = "signal_cellular_alt",
+                    index = 1,
+                    count = 3,
+                    onClick = { onCategoryClick(AutoDownloadCategory.Mobile) },
+                )
+                CategoryRow(
+                    title = stringResource(R.string.autodownload_category_roaming),
+                    summary = summarize(settings.onRoaming),
+                    symbol = "public",
+                    index = 2,
+                    count = 3,
+                    onClick = { onCategoryClick(AutoDownloadCategory.Roaming) },
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
             TextButton(
@@ -251,54 +259,51 @@ private fun AutoDownloadListScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun CategoryRow(
     title: String,
     summary: String,
     symbol: String,
+    index: Int,
+    count: Int,
     onClick: () -> Unit,
 ) {
-    // M3 ListItem doesn't expose onClick directly, so we wrap it in a clickable
-    // surface — same idiom Material's reference samples use. Padding stays on the
-    // outer Box so the ripple covers the entire row.
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-    ) {
-        ListItem(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            headlineContent = { Text(title, fontWeight = FontWeight.SemiBold) },
-            supportingContent = {
-                Text(
-                    text = summary,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            leadingContent = {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(MaterialTheme.shapes.medium)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Symbol(name = symbol, tint = MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp)
-                }
-            },
-            trailingContent = {
-                Symbol(
-                    name = "chevron_right",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    size = 22.dp,
-                )
-            },
-            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.background),
-        )
-    }
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = index,
+        count = count,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        onClick = onClick,
+        shapes = shapes,
+        leadingContent = {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Symbol(name = symbol, tint = MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp)
+            }
+        },
+        supportingContent = {
+            Text(
+                text = summary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        trailingContent = {
+            Symbol(
+                name = "chevron_right",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 22.dp,
+            )
+        },
+        content = { Text(title, fontWeight = FontWeight.SemiBold) },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -329,24 +334,15 @@ private fun AutoDownloadCategoryScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text(title) },
-                subtitle = {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
+            HortayTopBar(
+                title = title,
+                subtitle = subtitle,
+                size = HortayTopBarSize.Large,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Symbol(name = "arrow_back", tint = MaterialTheme.colorScheme.onSurface, size = 22.dp)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -386,21 +382,33 @@ private fun AutoDownloadCategoryScreen(
                 )
             }
 
-            ToggleRow(
-                title = stringResource(R.string.autodownload_toggle_photos),
-                subtitle = stringResource(R.string.autodownload_toggle_photos_helper),
-                symbol = "image",
-                checked = policy.photos,
-                onCheckedChange = { onPolicyChange(policy.copy(photos = it)) },
-            )
-
-            ToggleRow(
-                title = stringResource(R.string.autodownload_toggle_videos),
-                subtitle = stringResource(R.string.autodownload_toggle_videos_helper),
-                symbol = "play_circle",
-                checked = policy.videos,
-                onCheckedChange = { onPolicyChange(policy.copy(videos = it)) },
-            )
+            // Photos + Videos read as a 2-row grouped block. The Videos row has a
+            // companion `VideoSizeSlider` directly under it; the slider belongs
+            // conceptually to Videos but isn't a SegmentedListItem so it sits
+            // outside the group with a small Spacer above.
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+            ) {
+                ToggleRow(
+                    title = stringResource(R.string.autodownload_toggle_photos),
+                    subtitle = stringResource(R.string.autodownload_toggle_photos_helper),
+                    symbol = "image",
+                    checked = policy.photos,
+                    index = 0,
+                    count = 2,
+                    onCheckedChange = { onPolicyChange(policy.copy(photos = it)) },
+                )
+                ToggleRow(
+                    title = stringResource(R.string.autodownload_toggle_videos),
+                    subtitle = stringResource(R.string.autodownload_toggle_videos_helper),
+                    symbol = "play_circle",
+                    checked = policy.videos,
+                    index = 1,
+                    count = 2,
+                    onCheckedChange = { onPolicyChange(policy.copy(videos = it)) },
+                )
+            }
 
             VideoSizeSlider(
                 enabled = policy.videos,
@@ -408,13 +416,18 @@ private fun AutoDownloadCategoryScreen(
                 onChange = { newBytes -> onPolicyChange(policy.copy(videoMaxBytes = newBytes)) },
             )
 
-            ToggleRow(
-                title = stringResource(R.string.autodownload_toggle_animations),
-                subtitle = stringResource(R.string.autodownload_toggle_animations_helper),
-                symbol = "gif_box",
-                checked = policy.animations,
-                onCheckedChange = { onPolicyChange(policy.copy(animations = it)) },
-            )
+            Spacer(Modifier.height(8.dp))
+            // Animations on its own row — independent from Photos/Videos
+            // semantically (sticker-set traffic, not media autodownload).
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                ToggleRow(
+                    title = stringResource(R.string.autodownload_toggle_animations),
+                    subtitle = stringResource(R.string.autodownload_toggle_animations_helper),
+                    symbol = "gif_box",
+                    checked = policy.animations,
+                    onCheckedChange = { onPolicyChange(policy.copy(animations = it)) },
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
             TextButton(
@@ -432,6 +445,7 @@ private fun AutoDownloadCategoryScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ToggleRow(
     title: String,
@@ -439,19 +453,19 @@ private fun ToggleRow(
     symbol: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    index: Int = 0,
+    count: Int = 1,
 ) {
-    ListItem(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-        headlineContent = { Text(title, fontWeight = FontWeight.SemiBold) },
-        supportingContent = {
-            Text(
-                text = subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        },
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = index,
+        count = count,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        // Tapping anywhere on the row flips the toggle — TG-Android idiom. The
+        // companion `Switch` is the visual cue but isn't the only hit target.
+        onClick = { onCheckedChange(!checked) },
+        shapes = shapes,
         leadingContent = {
             Box(
                 modifier = Modifier
@@ -463,10 +477,17 @@ private fun ToggleRow(
                 Symbol(name = symbol, tint = MaterialTheme.colorScheme.onSurface, size = 22.dp)
             }
         },
+        supportingContent = {
+            Text(
+                text = subtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        },
         trailingContent = {
             Switch(checked = checked, onCheckedChange = onCheckedChange)
         },
-        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.background),
+        content = { Text(title, fontWeight = FontWeight.SemiBold) },
     )
 }
 

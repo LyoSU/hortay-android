@@ -7,10 +7,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,64 +24,53 @@ import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
 /**
  * MD3 Expressive floating navigation bar.
  *
- * A pill-shaped Surface that hovers over the content with horizontal + bottom margin,
- * tonal elevation and a soft shadow. Each tab is a stadium with the canonical M3
- * Expressive **three-state corner-radius morph** — the same vocabulary as the folder
- * filter chips and the reaction chips, so all three "selectable affordance" surfaces
- * speak one motion language:
+ * Outer container is M3 1.5's `HorizontalFloatingToolbar` — Google's documented
+ * description: *"displays navigation and key actions in a Row"*. The same
+ * primitive that powers contextual bottom action bars is also the canonical
+ * floating container for 3–5 navigation destinations; the variation lives in
+ * what you pass into the `content` slot. By delegating the surface to the
+ * toolbar primitive we inherit the M3E container shape, default tonal /
+ * shadow elevations, content padding, and (free) `FloatingToolbarScrollBehavior`
+ * hook for future auto-hide-on-scroll behaviour — without having to maintain
+ * a custom Surface + padding + shadow recipe.
  *
- *   - Rest: 14 dp corners (soft rounded square).
- *   - Pressed: 6 dp corners (compressed-under-thumb tactile cue).
- *   - Selected: 24 dp corners (fully rounded pill).
- *
- * Polygon (Cookie7) morph was tried first but Cookie/Burst polygons are designed for
- * 1:1 elements — at the nav-tab's slight horizontal aspect they almost-fit, but the
- * inconsistency with FolderChip's stadium pattern read as two different idioms for
- * the same "active mode" cue. Stadium with corner morph stays canonical at any
- * aspect and matches the rest of the app.
- *
- * Material's `HorizontalFloatingToolbar` was considered but lays out around a single
- * primary FAB plus secondary actions — wrong primitive for a 4-equal-tab bottom nav.
- * `NavigationBar` was rejected because it docks to the screen edge and breaks the
- * "floating chrome over scroll content" feel that's now Hortay's signature.
+ * Per-tab affordance stays bespoke because the design tokens here are not
+ * Material defaults: each tab is a stadium with the canonical three-state
+ * corner-radius morph (rest 14 dp → pressed 6 dp → selected 24 dp), matching
+ * the folder filter chips and the reaction chips. One "selectable affordance"
+ * vocabulary across the app. The filled-vs-outline icon swap rides the same
+ * `fastEffectsSpec()` spring as the colour transitions so the three motion
+ * channels (corner spatial / colour effects / icon-swap effects) land together.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun FloatingNavBar(
     selected: NavTab,
     onSelect: (NavTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(
+    HorizontalFloatingToolbar(
+        expanded = true,
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            tonalElevation = 2.dp,
-            shadowElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                NavTab.entries.forEach { tab ->
-                    NavTabButton(
-                        tab = tab,
-                        selected = tab == selected,
-                        onClick = { onSelect(tab) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+        // Tight content padding: each NavTabButton already supplies its own
+        // vertical breathing room (10 dp) plus min-height 48 dp for a comfortable
+        // touch target, so the toolbar's default padding would only inflate the
+        // bar. Horizontal 8 dp matches the previous custom Surface inset.
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        content = {
+            NavTab.entries.forEach { tab ->
+                NavTabButton(
+                    tab = tab,
+                    selected = tab == selected,
+                    onClick = { onSelect(tab) },
+                    modifier = Modifier.weight(1f),
+                )
             }
-        }
-    }
+        },
+    )
 }
 
 @Composable

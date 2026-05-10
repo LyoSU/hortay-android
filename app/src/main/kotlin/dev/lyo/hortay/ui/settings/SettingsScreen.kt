@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.net.toUri
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,14 +15,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import coil3.SingletonImageLoader
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.BackHandler
@@ -41,6 +38,8 @@ import dev.lyo.hortay.data.NetworkUsage
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StatsRepository
 import dev.lyo.hortay.data.StorageUsage
+import dev.lyo.hortay.ui.components.HortayTopBar
+import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.launch
 
@@ -148,23 +147,10 @@ private fun SettingsMain(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            // M3 Expressive: LargeFlexibleTopAppBar swaps a fixed two-line layout for
-            // an adaptive title block that can carry a subtitle, multi-row actions and
-            // an optional leading slot — same scrollBehavior contract as LargeTopAppBar
-            // so the existing nestedScroll wiring keeps working unchanged.
-            LargeFlexibleTopAppBar(
-                title = { Text(stringResource(R.string.settings_profile_title), style = MaterialTheme.typography.displaySmall) },
-                subtitle = {
-                    Text(
-                        stringResource(R.string.settings_subtitle_profile),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
+            HortayTopBar(
+                title = stringResource(R.string.settings_profile_title),
+                subtitle = stringResource(R.string.settings_subtitle_profile),
+                size = HortayTopBarSize.Large,
                 scrollBehavior = scrollBehavior,
             )
         },
@@ -287,13 +273,20 @@ private fun SettingsMain(
             // for the user's first glance.
             Spacer(Modifier.height(8.dp))
             SectionLabel(stringResource(R.string.settings_section_author))
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            // SegmentedListItem group — Author section pairs two rows that read as
+            // one card. `ListItemDefaults.SegmentedGap` is the M3E-canonical
+            // inter-row gap (~4 dp); each row's corner radii are computed by
+            // `segmentedShapes(index, count, defaults)` so the first row has its
+            // top corners fully rounded, the last row its bottom corners, and the
+            // pressed-state morph rides M3 Expressive tokens automatically.
+            Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
                 SettingsRow(
                     symbol = "campaign",
                     title = stringResource(R.string.settings_author_channel_title),
                     subtitle = "@$AUTHOR_CHANNEL_HANDLE",
                     chevron = true,
-                    position = RowPosition.Top,
+                    index = 0,
+                    count = 2,
                     onClick = { openTelegramHandle(context, AUTHOR_CHANNEL_HANDLE) },
                 )
                 SettingsRow(
@@ -301,7 +294,8 @@ private fun SettingsMain(
                     title = stringResource(R.string.settings_author_developer_title),
                     subtitle = "@$AUTHOR_DEVELOPER_HANDLE",
                     chevron = true,
-                    position = RowPosition.Bottom,
+                    index = 1,
+                    count = 2,
                     onClick = { openTelegramHandle(context, AUTHOR_DEVELOPER_HANDLE) },
                 )
             }
@@ -603,26 +597,22 @@ private fun formatBytes(b: Long, res: android.content.res.Resources): String {
 }
 
 /**
- * Grouped-list row position. Sections with multiple adjacent rows ship them as a
- * visual block: corners rounded only on the outside edges, 2 dp seam between
- * neighbours. iOS Settings / TG-Android settings use the same idiom — the eye
- * groups them as one card without the heaviness of an actual nested container.
+ * Single Settings row backed by [SegmentedListItem] (M3 Expressive). Position in a
+ * grouped section is communicated through (`index`, `count`) — the M3
+ * `ListItemDefaults.segmentedShapes` factory derives the per-row corner radii
+ * (single → fully rounded; top/middle/bottom → outer-rounded seam) and the
+ * pressed-state morph shape from one source of truth. The previous custom
+ * `RowPosition` enum + manual `RoundedCornerShape` hierarchy traded clarity for
+ * shape-token drift: every adjustment had to be applied in two places (the
+ * shape() builder and the `Arrangement.spacedBy`). The segmented API owns both.
  *
- * Single is the default for one-off rows (sign-in, version, autodownload entry).
+ * Static info rows (no `onClick`) still render through this helper — they pass
+ * an empty click lambda so the visual stays consistent with actionable rows;
+ * the row is just a no-op when tapped. Rationale: a separate non-clickable
+ * code path would diverge over time from the clickable look, and "looks
+ * tappable but does nothing" tests the same as TG-Android's version row.
  */
-private enum class RowPosition { Single, Top, Middle, Bottom }
-
-@Composable
-private fun RowPosition.shape(corner: Dp = 18.dp): Shape {
-    val tight = 4.dp
-    return when (this) {
-        RowPosition.Single -> RoundedCornerShape(corner)
-        RowPosition.Top -> RoundedCornerShape(topStart = corner, topEnd = corner, bottomStart = tight, bottomEnd = tight)
-        RowPosition.Middle -> RoundedCornerShape(tight)
-        RowPosition.Bottom -> RoundedCornerShape(topStart = tight, topEnd = tight, bottomStart = corner, bottomEnd = corner)
-    }
-}
-
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SettingsRow(
     symbol: String,
@@ -630,44 +620,46 @@ private fun SettingsRow(
     subtitle: String? = null,
     tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
     chevron: Boolean = false,
-    position: RowPosition = RowPosition.Single,
+    index: Int = 0,
+    count: Int = 1,
     onClick: (() -> Unit)? = null,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(position.shape())
-            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Symbol(name = symbol, tint = tint, size = 22.dp)
-        Spacer(Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = tint,
-            )
-            subtitle?.let {
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = index,
+        count = count,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        onClick = onClick ?: {},
+        shapes = shapes,
+        leadingContent = { Symbol(name = symbol, tint = tint, size = 22.dp) },
+        supportingContent = subtitle?.let {
+            {
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-        if (chevron) {
-            Spacer(Modifier.width(8.dp))
-            Symbol(
-                name = "chevron_right",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 20.dp,
+        },
+        trailingContent = if (chevron) {
+            {
+                Symbol(
+                    name = "chevron_right",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 20.dp,
+                )
+            }
+        } else null,
+        content = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = tint,
             )
-        }
-    }
+        },
+    )
 }
 
 // ---- Author attribution ------------------------------------------------------

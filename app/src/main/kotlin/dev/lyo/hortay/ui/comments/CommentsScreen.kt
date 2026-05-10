@@ -34,6 +34,8 @@ import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.ThreadRow
 import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.ui.components.HortayTopBar
+import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalMediaViewer
@@ -177,7 +179,7 @@ fun CommentsScreen(
             .nestedScroll(scrollBehavior.nestedScrollConnection)
             .nestedScroll(topBarNestedScroll),
         topBar = {
-            // [MediumFlexibleTopAppBar] reads as "this is a destination, not
+            // [HortayTopBar] (Medium) reads as "this is a destination, not
             // a tool stage" — comments overlay carries its own thread-of-
             // conversation identity that benefits from the larger title
             // typography on first paint, then slides up smoothly off-screen
@@ -220,28 +222,15 @@ fun CommentsScreen(
                         }
                     }
                 ) {
-                    MediumFlexibleTopAppBar(
-                        title = { Text(stringResource(R.string.comments_title)) },
-                        subtitle = subtitleText?.let { text ->
-                            {
-                                Text(
-                                    text = text,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        },
+                    HortayTopBar(
+                        title = stringResource(R.string.comments_title),
+                        subtitle = subtitleText,
+                        size = HortayTopBarSize.Medium,
                         navigationIcon = {
                             IconButton(onClick = onDismiss) {
                                 Symbol(name = "arrow_back", contentDescription = stringResource(R.string.action_back))
                             }
                         },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background,
-                            scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        ),
                         scrollBehavior = scrollBehavior,
                         windowInsets = WindowInsets(0),
                     )

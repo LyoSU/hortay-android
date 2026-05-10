@@ -1,47 +1,40 @@
 package dev.lyo.hortay.ui.web
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ExpandedFullScreenSearchBar
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SearchBarDefaults
+import androidx.compose.material3.SearchBarValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,12 +62,25 @@ import kotlinx.coroutines.launch
  * network. The DB stores everything that has scrolled past the user, so the
  * search corpus matches exactly what they've already seen in the feed.
  *
- * UI shape mirrors `TimelineTopBar`'s in-channel search variant: back arrow,
- * auto-focused single-line text field, optional clear-X. Results render via
- * [PostCard] so a found post looks identical to its row in the feed (long-press
- * action sheet, share/copy/open in Telegram all wired). Debounce sits on the
- * UI side (220 ms) — DB reads are fast but unmounting the SQLDelight subscription
- * on every keystroke would still churn coroutine scopes.
+ * UI uses M3 1.5 Expressive's [ExpandedFullScreenSearchBar] over the older
+ * "TopAppBar + BasicTextField" stack the rest of the app had built up. The
+ * expressive search bar handles the rounded input pill, leading / trailing icon
+ * slots, IME action, and full-screen layout — all of which we used to wire
+ * by hand. Internally it mounts a Dialog at full-screen so our `Scaffold` and
+ * its IME insets stay out of the way.
+ *
+ * State pair:
+ *   - [rememberTextFieldState] is the M3 Compose 1.7+ canonical text input
+ *     state holder; we drive the search query off `textFieldState.text` via
+ *     [snapshotFlow] so the 220 ms debounce + `flatMapLatest` cancellation
+ *     pipeline keeps working unchanged.
+ *   - [rememberSearchBarState] is initialised to `Expanded` because this
+ *     screen is mounted only when the user has already tapped the search
+ *     entry — no "collapsed → expanded" reveal animation needed. The
+ *     `animateToCollapsed` call on dismiss is best-effort: the parent
+ *     unmounts WebSearchScreen synchronously once `onDismiss` fires, so
+ *     the collapse animation tends to run for only a frame or two; the
+ *     IME hide is the user-visible bit.
  *
  * Tap-on-result behaviour: opens the post in the official Telegram client via
  * `tg://` deep link. Guest mode has no native post-detail screen and forcing a
@@ -83,6 +89,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(
     ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
     FlowPreview::class,
     kotlinx.coroutines.ExperimentalCoroutinesApi::class,
 )
@@ -97,22 +104,31 @@ fun WebSearchScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
 
-    // System back dismisses the overlay. Predictive-back animation is
-    // intentionally NOT wired here (unlike CommentsScreen) — this isn't a
-    // stacked screen with its own back-stack entry, it's a modal-like overlay
-    // mounted from WebModeScaffold via a `searchOpen` boolean. Material 3
-    // search-overlay convention: tap-back closes it just like the up-arrow.
-    BackHandler { onDismiss() }
+    val textFieldState = rememberTextFieldState()
+    val searchBarState = rememberSearchBarState(initialValue = SearchBarValue.Expanded)
 
-    var query by rememberSaveable { mutableStateOf("") }
+    // The trimmed query is what we send to the DB; recomputed only when the
+    // TextFieldState's text mutates (snapshot-aware) so unrelated recomposes
+    // don't churn the search flow.
     val trimmedQuery by remember {
-        derivedStateOf { query.trim() }
+        derivedStateOf { textFieldState.text.toString().trim() }
+    }
+
+    // System back closes the overlay. We don't wire predictive-back here
+    // (unlike CommentsScreen) — this is a modal-style overlay mounted from
+    // WebModeScaffold via `searchOpen`. The SearchBar's own collapse runs
+    // briefly before the parent unmount tears down the Dialog.
+    BackHandler {
+        scope.launch {
+            runCatching { searchBarState.animateToCollapsed() }
+            onDismiss()
+        }
     }
 
     // Debounced query → repository.search flow → list. snapshotFlow on the
-    // (recomposition-driven) trimmedQuery debounces local-typing bursts; the
-    // query is also short-circuited on blank so an empty bar doesn't pull every
-    // post in the DB.
+    // (recomposition-driven) trimmedQuery debounces local-typing bursts; an
+    // under-2-char query is short-circuited so an empty bar doesn't pull
+    // every post in the DB.
     val results by remember {
         snapshotFlow { trimmedQuery }
             .distinctUntilChanged()
@@ -141,110 +157,70 @@ fun WebSearchScreen(
         )
     }
 
-    val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        runCatching { focusRequester.requestFocus() }
-    }
-
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = {
-                    BasicTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        singleLine = true,
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        textStyle = MaterialTheme.typography.titleMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurface,
-                        ),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            imeAction = ImeAction.Search,
-                        ),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                            onSearch = { keyboard?.hide() },
-                        ),
-                        decorationBox = { inner ->
-                            Box {
-                                if (query.isEmpty()) {
-                                    Text(
-                                        text = stringResource(R.string.web_search_hint),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                inner()
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester),
+    ExpandedFullScreenSearchBar(
+        state = searchBarState,
+        inputField = {
+            SearchBarDefaults.InputField(
+                textFieldState = textFieldState,
+                searchBarState = searchBarState,
+                onSearch = { keyboard?.hide() },
+                placeholder = {
+                    Text(
+                        text = stringResource(R.string.web_search_hint),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 },
-                navigationIcon = {
-                    IconButton(onClick = onDismiss) {
+                leadingIcon = {
+                    IconButton(onClick = {
+                        scope.launch {
+                            runCatching { searchBarState.animateToCollapsed() }
+                            onDismiss()
+                        }
+                    }) {
                         Symbol(
                             name = "arrow_back",
                             contentDescription = stringResource(R.string.web_cancel),
                         )
                     }
                 },
-                actions = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) {
+                trailingIcon = if (textFieldState.text.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { textFieldState.clearText() }) {
                             Symbol(
                                 name = "close",
                                 contentDescription = stringResource(R.string.web_search_clear),
                             )
                         }
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
+                } else null,
             )
         },
-        containerColor = MaterialTheme.colorScheme.background,
-    ) { padding ->
+    ) {
         WebSearchBody(
             query = trimmedQuery,
             results = results,
             interactions = interactions,
-            innerPadding = padding,
             outerPadding = contentPadding,
         )
     }
 }
 
 @Composable
-private fun WebSearchBody(
+private fun ColumnScope.WebSearchBody(
     query: String,
     results: PersistentList<TimelinePost>,
     interactions: PostInteractions,
-    innerPadding: PaddingValues,
     outerPadding: PaddingValues,
 ) {
     val listState = rememberLazyListState()
-    // derivedStateOf so this read recomputes only when the boolean flips,
-    // not on every scroll-frame's offset delta. AnimatedVisibility reads
-    // this ~60Hz when scrolling otherwise.
-    val isScrolledPastTop by remember(listState) {
-        derivedStateOf {
-            listState.firstVisibleItemIndex > 0 ||
-                listState.firstVisibleItemScrollOffset > 0
-        }
-    }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(top = innerPadding.calculateTopPadding())
             // imePadding so the keyboard doesn't occlude the bottom of the
-            // result list. Lives on the result container, not the Scaffold,
-            // because the TopAppBar text field handles its own focus/keyboard
-            // and we only need to push the body up.
+            // result list. The ExpandedFullScreenSearchBar dialog supplies
+            // window-level insets for the input field itself; we add IME
+            // padding only to the result body.
             .imePadding(),
     ) {
         when {
@@ -266,16 +242,6 @@ private fun WebSearchBody(
                     PostCard(post = post, interactions = interactions)
                 }
             }
-        }
-        // A subtle divider beneath the search bar so it doesn't visually float
-        // on the same surface as the list when content scrolls underneath.
-        AnimatedVisibility(
-            visible = isScrolledPastTop,
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-        ) {
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-            )
         }
     }
 }

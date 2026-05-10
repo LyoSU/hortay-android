@@ -52,6 +52,8 @@ import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.bookmarkKey
 import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.ui.channels.ChannelInfoSheet
+import dev.lyo.hortay.ui.components.HortayTopBar
+import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
 import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
@@ -94,7 +96,7 @@ import kotlinx.coroutines.launch
  *
  * What's always present (works in both modes):
  *   - Pull-to-refresh, scroll gate, prefetch, bookmark, "new posts" pill,
- *     LargeTopAppBar with BrandRow / saved title, empty state.
+ *     HortayTopBar (Medium) with BrandRow / saved title, empty state.
  */
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
@@ -236,7 +238,7 @@ fun TimelineScreen(
     // its visual offset so Scaffold's body padding tracks the same signal,
     // never a competing timeline.
     // Only the destination-style bars (home, bookmarks) participate in the
-    // scroll-hide. Filter / search-inside-filter use a compact `TopAppBar`
+    // scroll-hide. Filter / search-inside-filter use [HortayTopBarSize.Compact]
     // and read as a tool stage with active input — those must stay pinned.
     // The behavior helper reads `enabled` live so toggling it doesn't
     // re-allocate the NestedScrollConnection.
@@ -915,7 +917,7 @@ fun TimelineScreen(
             //      tracks the same signal — no separate animation timeline.
             //
             // Earlier iterations left status-bar handling inside the
-            // MediumFlexibleTopAppBar (default windowInsets) and clipped at
+            // [HortayTopBar] (default windowInsets) and clipped at
             // the layout-shrinker's bounds. That clipped the bar's outline
             // correctly but the bar's INTERNAL coordinate system put title
             // content right after its 24 dp status-bar pad — when offset = -50
@@ -1236,10 +1238,6 @@ private fun TimelineTopBar(
     topBarBadge: (@Composable () -> Unit)?,
     scrollBehavior: TopAppBarScrollBehavior,
 ) {
-    val colors = TopAppBarDefaults.topAppBarColors(
-        containerColor = MaterialTheme.colorScheme.background,
-        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-    )
     // Status-bar insets are owned by the persistent zone-1 strip in the
     // Scaffold's topBar slot — passing [WindowInsets] of 0 here prevents the
     // bar from doubling up on top padding (and keeps its content from
@@ -1247,7 +1245,8 @@ private fun TimelineTopBar(
     // pushes the bar upward on scroll).
     val barInsets = WindowInsets(0)
     when {
-        hasFilter && searchActive -> TopAppBar(
+        hasFilter && searchActive -> HortayTopBar(
+            size = HortayTopBarSize.Compact,
             title = {
                 val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
                 LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
@@ -1288,11 +1287,11 @@ private fun TimelineTopBar(
                     }
                 }
             },
-            colors = colors,
             scrollBehavior = scrollBehavior,
             windowInsets = barInsets,
         )
-        hasFilter -> TopAppBar(
+        hasFilter -> HortayTopBar(
+            size = HortayTopBarSize.Compact,
             title = {
                 Column(modifier = Modifier.clickable(role = Role.Button, onClick = onTitleTap)) {
                     Text(
@@ -1321,33 +1320,31 @@ private fun TimelineTopBar(
                     Symbol(name = "search", contentDescription = stringResource(R.string.action_search))
                 }
             },
-            colors = colors,
             scrollBehavior = scrollBehavior,
             windowInsets = barInsets,
         )
         // Bookmarks and Home both read as top-level destinations (vs filter /
         // search which are tool stages drilled in from Home). M3 Expressive
-        // canon for destinations is `MediumFlexibleTopAppBar`: a larger
-        // title typography on first paint that tells the user "you are
-        // here", auto-collapsing to compact 64dp the moment the feed
-        // scrolls (motion-token-driven via [scrollBehavior]). Cost of the
-        // extra ~48dp on first paint is recovered on the first scroll
-        // gesture; benefit is one less indistinguishable bar on a
+        // canon for destinations is the Medium-size flexible bar via
+        // [HortayTopBar]: a larger title typography on first paint that tells
+        // the user "you are here", auto-collapsing to compact 64 dp the moment
+        // the feed scrolls (motion-token-driven via [scrollBehavior]).
+        // Cost of the extra ~48 dp on first paint is recovered on the first
+        // scroll gesture; benefit is one less indistinguishable bar on a
         // hierarchically flat app.
-        showOnlyBookmarked -> MediumFlexibleTopAppBar(
-            title = {
-                Text(text = stringResource(R.string.timeline_saved_tab))
-            },
-            colors = colors,
+        showOnlyBookmarked -> HortayTopBar(
+            title = stringResource(R.string.timeline_saved_tab),
+            size = HortayTopBarSize.Medium,
             scrollBehavior = scrollBehavior,
             windowInsets = barInsets,
         )
-        else -> MediumFlexibleTopAppBar(
+        else -> HortayTopBar(
             title = {
                 Box(modifier = Modifier.clickable(role = Role.Button, onClick = onBrandTap)) {
                     BrandRow()
                 }
             },
+            size = HortayTopBarSize.Medium,
             actions = {
                 onGlobalSearchClick?.let { handler ->
                     IconButton(onClick = handler) {
@@ -1362,7 +1359,6 @@ private fun TimelineTopBar(
                 // edge of the bar, where users expect status indicators.
                 topBarBadge?.invoke()
             },
-            colors = colors,
             scrollBehavior = scrollBehavior,
             windowInsets = barInsets,
         )
