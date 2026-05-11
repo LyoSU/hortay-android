@@ -116,11 +116,14 @@ class StartupCoordinator(
     private companion object {
         /**
          * Post count at which we consider the cold-start refresh "perceptually
-         * done." 20 posts cover ~3 screens at typical card height; by the time
-         * the user has scrolled past those, the rest of `refreshLocked`'s
-         * concurrency=4 fan-out is well into draining without contention.
+         * done." 8 posts cover ~1.5 screens at typical card height — comfortably
+         * above one screenful (3-4 cards) yet still reachable on a small-
+         * subscription account where each channel contributes exactly one post
+         * via the lastMessage-harvest cold-start path. The previous value (20)
+         * assumed up to 30 posts per channel via GetChatHistory fan-out; that
+         * path was removed in the TDLib cold-start rework (2026-05-11).
          */
-        const val ACTIVATE_POSTS_THRESHOLD = 20
+        const val ACTIVATE_POSTS_THRESHOLD = 8
 
         /**
          * Escape hatch for empty accounts / extreme network conditions where
