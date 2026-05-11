@@ -519,7 +519,12 @@ fun TimelineScreen(
     LaunchedEffect(pendingScrollToMessage) {
         val (chatId, messageId) = pendingScrollToMessage ?: return@LaunchedEffect
         var requestedAroundLoad = false
-        androidx.compose.runtime.snapshotFlow { displayedItems }
+        // snapshotFlow must read State — a plain local `val displayedItems` is captured
+        // by value and never re-evaluated, so subsequent posts-arrived recompositions
+        // would never re-emit. Reading through [displayedItemsState] (a
+        // rememberUpdatedState wrapper) gives us a proper State.value read that the
+        // snapshot system tracks.
+        androidx.compose.runtime.snapshotFlow { displayedItemsState.value }
             .collect { items ->
                 val idx = items.indexOfFirst { item ->
                     item.posts().any { p ->
@@ -527,14 +532,12 @@ fun TimelineScreen(
                     }
                 }
                 if (idx >= 0) {
-                    listState.animateScrollToItem(idx)
-                    // Flag the landed target for a brief surface-tint highlight so the
-                    // user can spot which post the link pointed at — Telegram-iOS does
-                    // this with a ~2 s primary-container glow on the linked-to bubble,
-                    // Telegram-Android with a slow blue flash. We use the post key the
-                    // LazyColumn already uses so PostCard can match without an extra
-                    // lookup table.
+                    // Flag the landed target FIRST so the highlight tint is composed on
+                    // the next frame, then run the scroll animation. Doing it the other
+                    // way around let the animation finish before the alpha-in started,
+                    // delaying the visual cue by ~300ms.
                     highlightedPostKey = chatId to messageId
+                    listState.animateScrollToItem(idx)
                     pendingScrollToMessage = null
                     return@collect
                 }
@@ -891,20 +894,20 @@ fun TimelineScreen(
                     is dev.lyo.hortay.data.ForwardOrigin.Chat -> origin.sourceHandle
                     else -> null
                 }
-                // Already in our subscribed feed → switch the filter so the user lands on
-                // that channel's posts. Otherwise hand off to the Telegram client.
-                val subscribed = postsState.value.any { it.chatId == sourceId }
+                // Always switch the filter when we know the chatId — channel preview
+                // now works for non-subscribed channels (skeleton while TDLib loads
+                // GetChatHistory + GetChat for title). The historical `subscribed`
+                // gate was needed only when an empty filter meant a blank screen;
+                // with the preview path live, dropping it lets "Forwarded from
+                // <Channel>" land inside Hortay regardless of subscription state.
                 when {
-                    sourceId != null && subscribed -> onChannelFilterChangeState.value(sourceId)
+                    sourceId != null -> onChannelFilterChangeState.value(sourceId)
                     !sourceHandle.isNullOrBlank() -> {
-                        // Route through LocalUriHandler so the in-app HortayUriHandler
-                        // resolves the handle first — if the source channel turns out to
-                        // be one we already know about (subscribed, or resolvable via
-                        // SearchPublicChat), the tap lands inside Hortay rather than
-                        // punting to the Telegram client. Falls through to ACTION_VIEW
-                        // for handles we can't resolve.
-                        val handle = sourceHandle.removePrefix("@")
-                        uriHandler.openUri("https://t.me/$handle")
+                        // Username-only origins (TDLib didn't include the resolved id) —
+                        // route through LocalUriHandler so HortayUriHandler resolves
+                        // the handle via SearchPublicChat and lands the same channel
+                        // preview path.
+                        uriHandler.openUri("https://t.me/${sourceHandle.removePrefix("@")}")
                     }
                 }
             },
