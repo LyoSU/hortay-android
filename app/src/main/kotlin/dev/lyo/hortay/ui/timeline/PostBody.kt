@@ -1040,13 +1040,11 @@ private fun ExpandableText(
         mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null)
     }
     var pressedLink by remember(renderable.text) { mutableStateOf<String?>(null) }
-    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
     val linkMod = if (renderable.linkRanges.isNotEmpty()) {
         Modifier.linkLongPress(
             linkRanges = renderable.linkRanges,
             layoutResult = layoutResult,
-            onTap = { range -> runCatching { uriHandler.openUri(range.url) } },
             onLongPress = { range -> pressedLink = range.url },
         )
     } else Modifier

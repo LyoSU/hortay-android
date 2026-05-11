@@ -441,4 +441,8 @@
     <string name="link_action_copy">Скопіювати посилання</string>
     <string name="link_action_share">Поділитися</string>
     <string name="link_copied_toast">Посилання скопійовано</string>
+    <!-- Підтвердження переходу на зовнішнє посилання (як у TG — захист від фішингу). -->
+    <string name="link_confirm_title">Відкрити посилання</string>
+    <string name="link_confirm_body">Відкрити %1$s?</string>
+    <string name="action_cancel">Скасувати</string>
 </resources>
