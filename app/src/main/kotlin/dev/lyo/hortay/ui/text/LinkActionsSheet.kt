@@ -27,12 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
@@ -124,37 +119,6 @@ private fun LinkActionRow(label: String, icon: String, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     )
 }
-
-/**
- * Format a URL for the sheet header: scheme + bold host + plain path/query, truncated
- * past [MAX_PRETTY_LEN] so a 2-line ellipsis row never blows up the sheet on a long
- * query string. Falling back to the raw string on any parse error keeps the user
- * informed even if the URL is malformed (the parse error itself isn't surprising —
- * the OS / browser would have rejected it anyway).
- */
-private fun prettyLinkPreview(raw: String): AnnotatedString {
-    val parsed = runCatching { android.net.Uri.parse(raw) }.getOrNull()
-    val host = parsed?.host?.lowercase()?.removePrefix("www.")
-    if (host.isNullOrBlank()) return AnnotatedString(raw.take(MAX_PRETTY_LEN))
-
-    val scheme = parsed.scheme?.let { "$it://" }.orEmpty()
-    val path = parsed.encodedPath.orEmpty()
-    val query = parsed.encodedQuery?.let { "?$it" }.orEmpty()
-    val fragment = parsed.encodedFragment?.let { "#$it" }.orEmpty()
-    val tail = (path + query + fragment).let {
-        if (scheme.length + host.length + it.length > MAX_PRETTY_LEN) {
-            it.take((MAX_PRETTY_LEN - scheme.length - host.length).coerceAtLeast(0)) + "…"
-        } else it
-    }
-
-    return buildAnnotatedString {
-        append(scheme)
-        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(host) }
-        append(tail)
-    }
-}
-
-private const val MAX_PRETTY_LEN = 96
 
 private fun copyLink(context: Context, url: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return

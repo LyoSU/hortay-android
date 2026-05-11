@@ -434,6 +434,6 @@
     <string name="link_copied_toast">Link copied</string>
     <!-- Anti-phishing dialog when a masked TextUrl span points outside Telegram. -->
     <string name="link_confirm_title">Open link</string>
-    <string name="link_confirm_body">Open %1$s?</string>
+    <string name="link_confirm_body">You\'re about to open:</string>
     <string name="action_cancel">Cancel</string>
 </resources>
