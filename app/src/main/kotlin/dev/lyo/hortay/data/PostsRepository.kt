@@ -12,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -1477,4 +1478,31 @@ sealed interface PublicHandleResult {
 
 /** Kind discriminator carried by [PublicHandleResult.Unsupported]. */
 enum class PublicHandleKind { User, Group, Unknown }
+
+/**
+ * Poll [predicate] every [pollIntervalMs] until it returns true OR [timeoutMs] elapses.
+ * Returns true on success, false on timeout. Predicate is checked once synchronously
+ * before any delay, so a pre-satisfied condition costs zero suspensions.
+ *
+ * Assumes [predicate] is monotonic / one-shot — once it has been observed true, callers
+ * expect that fact to stay true. The function returns at the first observed true and
+ * does not re-poll; a flip-flop predicate would yield a snapshot value that may not
+ * hold by the time the caller acts on it.
+ *
+ * Lives at file scope rather than inside [PostsRepository] so the unit test can call it
+ * without standing up the full repository graph. `internal` (not file-private) because
+ * Kotlin top-level `private` is file-scoped, and the test lives in a separate file in
+ * the same package; `internal` is the minimum visibility that allows that access.
+ */
+internal suspend fun suspendUntilOrTimeout(
+    timeoutMs: Long,
+    pollIntervalMs: Long,
+    predicate: () -> Boolean,
+): Boolean {
+    if (predicate()) return true
+    return withTimeoutOrNull(timeoutMs) {
+        while (!predicate()) delay(pollIntervalMs)
+        true
+    } ?: false
+}
 
