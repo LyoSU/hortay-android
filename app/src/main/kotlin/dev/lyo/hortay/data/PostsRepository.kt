@@ -500,24 +500,34 @@ class PostsRepository(
         val coalesced = coalesceAlbumFragments(chatId, raw)
         val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
 
-        var prevSize = 0
-        var nextSize = 0
+        var prevChannelSize = 0
+        var nextChannelSize = 0
         _posts.update { current ->
-            prevSize = current.size
-            val result = foldRawIntoCurrent(current, mapped, MAX_FEED_SIZE)
-            nextSize = result.size
+            prevChannelSize = current.count { it.chatId == chatId }
+            // Relax the global cap to the post-merge size so the just-fetched older
+            // posts of [chatId] aren't trimmed by `take(MAX_FEED_SIZE)`. The default
+            // cap exists to bound the mixed-feed snapshot — but loadOlder is the user
+            // EXPLICITLY asking for older posts of one channel, which by definition
+            // sort to the back of the date-desc list and would otherwise be the first
+            // items evicted. Without this, pagination ran but every new page got
+            // immediately trimmed away, so the LazyColumn's totalItemsCount never
+            // changed, snapshotFlow.distinctUntilChanged didn't re-emit, and the user
+            // saw "pagination doesn't work" past the very first page. The cap relaxes
+            // for THIS update only — the next ingest of fresh top-of-feed posts falls
+            // back to MAX_FEED_SIZE and trims the deep history naturally as the
+            // session moves on.
+            val effectiveCap = maxOf(MAX_FEED_SIZE, current.size + mapped.size)
+            val result = foldRawIntoCurrent(current, mapped, effectiveCap)
+            nextChannelSize = result.count { it.chatId == chatId }
             result
         }
-        // GetChatHistory(fromMessageId, offset=0, …) is INCLUSIVE on the boundary
-        // message — at end-of-history TDLib still returns the single anchor message
-        // back to us in a non-empty page. Without this guard the scroll listener would
-        // re-fire loadOlder forever once the user reaches the channel's first post,
-        // each time hitting GetChatHistory and getting the same one-message page. Treat
-        // a zero-card batch as the sentinel and stop pinging. Card-count delta (vs
-        // raw-message delta) is the right signal here because the partial-album
-        // protection in foldRawIntoCurrent may legitimately drop raw rows without
-        // shrinking the feed — those aren't end-of-history.
-        val added = (nextSize - prevSize).coerceAtLeast(0)
+        // End-of-history detection: GetChatHistory(fromMessageId, offset=0, …) is
+        // INCLUSIVE on the boundary message — at the channel's first-ever post TDLib
+        // keeps returning that single message in a non-empty page. Treat "no net new
+        // posts of this channel landed" as the sentinel and stop pinging. Counting on
+        // chatId-specific cardinality (not whole-feed delta) keeps unrelated ingest
+        // racing alongside this update from masking the actual end-of-history.
+        val added = (nextChannelSize - prevChannelSize).coerceAtLeast(0)
         if (added == 0) pageEnded += chatId
         return added
     }
