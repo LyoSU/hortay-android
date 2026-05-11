@@ -117,12 +117,20 @@ fun WebModeScaffold(graph: AppGraph) {
                     is DeepLink.External -> {
                         runCatching { systemUriHandler.openUri(link.originalUrl) }
                     }
-                    is DeepLink.UnsupportedFeature -> {
-                        val msg = when (link.feature) {
-                            dev.lyo.hortay.data.UnsupportedFeatureKind.HashtagSearch ->
-                                R.string.link_unsupported_hashtag
+                    is DeepLink.HashtagSearch -> {
+                        // Mirrors MainScaffold: scoped snackbar when a channel scope
+                        // was inferred (from `#tag@channel` text-entity suffix or
+                        // PostBody's scoped LocalHashtagTap), generic otherwise.
+                        val msg = if (link.channelHandle != null) {
+                            context.getString(
+                                R.string.link_hashtag_search_in_channel,
+                                link.tag,
+                                "@${link.channelHandle}",
+                            )
+                        } else {
+                            context.getString(R.string.link_hashtag_search, link.tag)
                         }
-                        snackbarHostState.showSnackbar(context.getString(msg))
+                        snackbarHostState.showSnackbar(msg)
                     }
                 }
             } catch (t: Throwable) {

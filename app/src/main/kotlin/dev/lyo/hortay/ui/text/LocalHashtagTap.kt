@@ -35,3 +35,35 @@ val LocalHashtagTap = staticCompositionLocalOf<(String) -> Unit> { HashtagUnhand
 
 /** Reference-equality sentinel — see [LocalHashtagTap]. */
 val HashtagUnhandled: (String) -> Unit = { /* no-op */ }
+
+/**
+ * Decompose a hashtag-entity text into `(canonicalTag, scopeHandle?)`.
+ *
+ * The `#tag@channel` shape is the **only** canonical channel-scope mechanism
+ * Telegram exposes for hashtags — per TDLib's `TextEntityTypeHashtag` doc:
+ * *"A hashtag text, beginning with `#` and optionally containing a chat username
+ * at the end."*. There is no documented URL form for channel-scoped hashtag
+ * search; the scope lives in the inline text-entity body.
+ *
+ * Returns:
+ *   - First: `"#tag"` — always carries the leading `#`, suffix stripped.
+ *   - Second: `"channel"` (without `@`) or null if no suffix.
+ *
+ * Idempotent: calling twice on the output of itself returns the same pair.
+ * Pure stdlib — no Android types — so the call site stays JVM-testable.
+ */
+fun parseHashtagWithScope(raw: String): Pair<String, String?> {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return trimmed to null
+    val core = trimmed.removePrefix("#")
+    val atIndex = core.indexOf('@')
+    if (atIndex <= 0 || atIndex == core.lastIndex) {
+        // No `@`, or `@` at position 0 (would mean an empty tag body —
+        // `#@channel`, malformed), or `@` is the last char (`#tag@`, no scope).
+        // Treat as plain global hashtag in all three cases.
+        return "#$core" to null
+    }
+    val tag = core.substring(0, atIndex)
+    val scope = core.substring(atIndex + 1)
+    return "#$tag" to scope.takeIf { it.isNotBlank() }
+}

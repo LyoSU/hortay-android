@@ -47,6 +47,9 @@ import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.media.TdMediaImage
+import dev.lyo.hortay.ui.text.LocalHashtagTap
+import dev.lyo.hortay.ui.text.parseHashtagWithScope
+import androidx.compose.runtime.CompositionLocalProvider
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.MorphShape
 import dev.lyo.hortay.ui.theme.asComposeShape
@@ -120,8 +123,21 @@ fun PostCard(
                 onClick = { interactions.onChannelClick(post) },
             )
             Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                HeaderRow(
+            // Scope inline `#tag` taps to the post's channel when this is a channel
+            // post with a known handle (matches Telegram-Android: tap `#foo` inside
+            // channel X → "search #foo in X"). The `#tag@channel` text-entity form
+            // always wins because the entity is self-describing — the wrapper only
+            // injects scope when the tap text has no `@suffix` already.
+            //
+            // Skipped for comments (`parentId != null`) and posts whose senderHandle
+            // is null — both fall through to the scaffold default, where
+            // `parseHashtagWithScope` still splits explicit `#tag@channel` entities,
+            // just without a captured default scope to substitute for unsuffixed
+            // bare-`#tag` taps.
+            val scopeHandle = if (post.parentId == null) post.senderHandle else null
+            HashtagScope(scopeHandle) {
+                Column(modifier = Modifier.weight(1f)) {
+                    HeaderRow(
                     senderName = post.senderName,
                     authorSignature = post.authorSignature,
                     editDate = post.editDate,
@@ -182,6 +198,7 @@ fun PostCard(
                         onReactionTap = { item -> interactions.onReactionToggle(post, item) },
                     )
                 }
+                }
             }
         }
 
@@ -198,6 +215,35 @@ fun PostCard(
             interactions = interactions,
             onDismiss = { sheetOpen = false },
         )
+    }
+}
+
+/**
+ * Override [LocalHashtagTap] for the duration of [content] so unsuffixed `#tag`
+ * taps inside the post body carry a default channel [scopeHandle]. Pass-through
+ * (no override) when [scopeHandle] is null — e.g. comments, posts without a
+ * channel handle. The wrapper composes the scope on top of the scaffold-level
+ * default: `#tag@channel` entities still win (the suffix carried by the entity
+ * is treated as the user's explicit choice; the captured scope only fills in
+ * when the entity has no suffix). Idempotent across [content] recompositions
+ * because the lambda is `remember`-keyed on `(default, scopeHandle)`.
+ */
+@Composable
+private fun HashtagScope(scopeHandle: String?, content: @Composable () -> Unit) {
+    val default = LocalHashtagTap.current
+    if (scopeHandle.isNullOrBlank()) {
+        content()
+        return
+    }
+    val scoped = remember(default, scopeHandle) {
+        { raw: String ->
+            val (tag, suffix) = parseHashtagWithScope(raw)
+            val effective = if (suffix != null) raw else "$tag@${scopeHandle.removePrefix("@")}"
+            default(effective)
+        }
+    }
+    CompositionLocalProvider(LocalHashtagTap provides scoped) {
+        content()
     }
 }
 

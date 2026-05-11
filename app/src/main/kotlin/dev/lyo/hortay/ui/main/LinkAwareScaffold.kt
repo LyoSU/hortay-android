@@ -9,10 +9,10 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.data.DeepLink
-import dev.lyo.hortay.data.UnsupportedFeatureKind
 import dev.lyo.hortay.ui.text.ExternalLinkConfirmDialog
 import dev.lyo.hortay.ui.text.LocalHashtagTap
 import dev.lyo.hortay.ui.text.LocalLinkConfirm
+import dev.lyo.hortay.ui.text.parseHashtagWithScope
 import kotlinx.coroutines.launch
 
 /**
@@ -71,15 +71,25 @@ fun LinkAwareScaffold(graph: AppGraph, content: @Composable () -> Unit) {
         }
     }
     // Hashtag tap → route through the same DeepLinkRouter both scaffolds already
-    // observe, as an UnsupportedFeature(HashtagSearch). Reusing the router means the
-    // existing `link_unsupported_hashtag` snackbar collector handles the surface — no
-    // duplicate string-resource lookup here, no per-scaffold wiring. When in-app
-    // hashtag search ships, swap the [DeepLink] variant once and every consumer
-    // updates without any renderer / scaffold churn.
+    // observe, as a typed [DeepLink.HashtagSearch]. The default lambda here serves
+    // surfaces with no surrounding channel context (Comments, future settings /
+    // about screens). The PostBody composable installs a scoped override via
+    // [CompositionLocalProvider] so feed-card taps carry the post's channel handle.
+    //
+    // We always run the tag through [parseHashtagWithScope] first so the canonical
+    // `#tag@channel` text-entity form (per TDLib's `TextEntityTypeHashtag` docs:
+    // *"optionally containing a chat username at the end"*) decomposes into
+    // (`#tag`, `channel`) — overriding any scope captured by composition, since
+    // the entity is self-describing.
     val hashtagTap = remember(graph) {
         { tag: String ->
+            val (cleanTag, suffixHandle) = parseHashtagWithScope(tag)
             graph.deepLinkRouter.submit(
-                DeepLink.UnsupportedFeature(UnsupportedFeatureKind.HashtagSearch, tag),
+                DeepLink.HashtagSearch(
+                    tag = cleanTag,
+                    channelHandle = suffixHandle,
+                    originalUrl = tag,
+                ),
             )
             Unit
         }

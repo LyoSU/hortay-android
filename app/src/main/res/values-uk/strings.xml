@@ -456,7 +456,8 @@
     <string name="link_unsupported_group">Групи відкриваються в Telegram</string>
     <string name="link_unsupported_other">Це посилання відкриється в Telegram</string>
     <string name="link_not_found">Посилання не знайдено</string>
-    <string name="link_unsupported_hashtag">Пошук за хештегом буде у наступному оновленні</string>
+    <string name="link_hashtag_search">Пошук %1$s буде у наступному оновленні</string>
+    <string name="link_hashtag_search_in_channel">Пошук %1$s у %2$s буде у наступному оновленні</string>
     <!-- Підтвердження приєднання до каналу за інвайт-лінком. -->
     <string name="invite_dialog_title">Приєднатись до каналу</string>
     <string name="invite_dialog_unknown_chat">Канал Telegram</string>

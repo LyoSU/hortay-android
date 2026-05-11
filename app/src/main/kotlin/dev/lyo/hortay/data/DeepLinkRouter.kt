@@ -96,13 +96,39 @@ sealed interface DeepLink {
     data class External(override val originalUrl: String) : DeepLink
 
     /**
-     * Telegram-internal link type we explicitly DON'T want to send to the OS — punting
-     * a `tg://` URL to ACTION_VIEW feels external to the user even though it's a
-     * Telegram-domain URI ("я тиснув на хештег, а воно відкрило іншу програму").
-     * Scaffolds show an in-app snackbar describing the feature instead.
+     * Hashtag (or cashtag) search. Three converging sources:
+     *
+     *   1. **Inline `#foo` tap inside a post body.** The renderer routes through
+     *      [dev.lyo.hortay.ui.text.LocalHashtagTap]; the PostBody composable installs
+     *      a scoped tap that captures the channel handle the post belongs to, so the
+     *      resulting [channelHandle] is the channel the user was reading when they
+     *      tapped — matching Telegram-Android's "tap #foo, search inside this channel".
+     *
+     *   2. **`#tag@channel` text-entity form.** Per TDLib's
+     *      `TextEntityTypeHashtag` docs, a hashtag entity *"optionally [contains] a
+     *      chat username at the end"*. We split the trailing `@channel` off in the
+     *      tap dispatcher: the carrier text becomes [tag] (with leading `#`) and the
+     *      suffix becomes [channelHandle] — overriding any scope captured from
+     *      composition, since the entity is self-describing.
+     *
+     *   3. **External URLs.** [TelegramLinkResolver] surfaces `tg://search?query=%23foo`
+     *      (TDLib `InternalLinkTypeSearch`) and the undocumented but in-the-wild
+     *      `tg://resolve?domain=<channel>&hashtag=<tag>` / `t.me/<channel>?q=%23<tag>`
+     *      shapes as this variant. URLs from non-typed entry points always carry
+     *      [originalUrl] for diagnostic and fall-through-to-OS use.
+     *
+     * Hortay has no hashtag-search UI yet — both scaffold collectors surface a
+     * snackbar describing the scope ("Пошук #foo у @channel" or "Пошук #foo") so
+     * the user understands what was attempted. When in-app search ships, dispatch
+     * here changes once and the renderer + scaffolds don't need to be touched.
+     *
+     * [tag] always carries the leading `#` for consistency with what Telegram-Android
+     * shows to the user; the future search call site strips it before
+     * `searchPublicMessagesByTag` / `searchChatMessages`.
      */
-    data class UnsupportedFeature(
-        val feature: UnsupportedFeatureKind,
+    data class HashtagSearch(
+        val tag: String,
+        val channelHandle: String?,
         override val originalUrl: String,
     ) : DeepLink
 
@@ -117,7 +143,3 @@ sealed interface DeepLink {
      */
     data class ChatInvite(val inviteLink: String, override val originalUrl: String) : DeepLink
 }
-
-/** Kinds of Telegram links we recognise but render in-app as a snackbar instead of
- *  routing them externally — see [DeepLink.UnsupportedFeature]. */
-enum class UnsupportedFeatureKind { HashtagSearch }

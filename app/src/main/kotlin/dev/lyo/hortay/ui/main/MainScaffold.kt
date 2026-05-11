@@ -36,7 +36,6 @@ import dev.lyo.hortay.data.InviteLinkKind
 import dev.lyo.hortay.data.PublicHandleKind
 import dev.lyo.hortay.data.PublicHandleResult
 import dev.lyo.hortay.data.TimelinePost
-import dev.lyo.hortay.data.UnsupportedFeatureKind
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.ui.channels.ChannelsScreen
 import dev.lyo.hortay.ui.comments.CommentsScreen
@@ -249,11 +248,27 @@ fun MainScaffold(graph: AppGraph) {
                         runCatching { systemUriHandler.openUri(link.originalUrl) }
                         return@collect
                     }
-                    is DeepLink.UnsupportedFeature -> {
-                        val msgId = when (link.feature) {
-                            UnsupportedFeatureKind.HashtagSearch -> R.string.link_unsupported_hashtag
+                    is DeepLink.HashtagSearch -> {
+                        // No in-app hashtag-search UI yet — surface a snackbar that
+                        // tells the user what scope was inferred. Scoped form
+                        // ("Пошук #foo у @channel") arrives when:
+                        //   - the user tapped a `#tag@channel` entity (suffix carried
+                        //     the scope), or
+                        //   - PostBody's scoped LocalHashtagTap captured the
+                        //     enclosing channel handle for a bare `#tag`.
+                        // Unscoped form ("Пошук #foo") arrives for global taps —
+                        // Comments thread bodies, settings text, and `tg://search`
+                        // URLs (no channel scope is documented for that shape).
+                        val msg = if (link.channelHandle != null) {
+                            res.getString(
+                                R.string.link_hashtag_search_in_channel,
+                                link.tag,
+                                "@${link.channelHandle}",
+                            )
+                        } else {
+                            res.getString(R.string.link_hashtag_search, link.tag)
                         }
-                        graph.userMessages.post(res.getString(msgId), UserMessageBus.Severity.Info)
+                        graph.userMessages.post(msg, UserMessageBus.Severity.Info)
                         return@collect
                     }
                     is DeepLink.ChatInvite -> {

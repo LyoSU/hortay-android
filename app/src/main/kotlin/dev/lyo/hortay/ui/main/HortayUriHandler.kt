@@ -56,10 +56,11 @@ class HortayUriHandler(
             when (link) {
                 null,
                 is DeepLink.External -> runCatching { delegate.openUri(uri) }
-                // UnsupportedFeature goes through the router (NOT external) — see
-                // DeepLink.UnsupportedFeature KDoc on why we don't punt these to the
-                // OS. Scaffolds collect and surface an in-app snackbar.
-                is DeepLink.UnsupportedFeature,
+                // HashtagSearch is a known Telegram-internal feature we render
+                // in-app; we don't punt `tg://search?query=...` URLs to the OS
+                // because ACTION_VIEW would feel external to a user who just
+                // tapped `#foo`. Scaffolds collect and surface an in-app snackbar.
+                is DeepLink.HashtagSearch,
                 is DeepLink.PublicChannel,
                 is DeepLink.PrivateChannel,
                 is DeepLink.ChatInvite,

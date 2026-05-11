@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Hashtag taps lost channel context end-to-end**. Three converging bugs in
+  one feature surface:
+  - **Inline `#tag` taps inside a channel post produced the same generic
+    snackbar regardless of context**. Telegram-Android's contract for the same
+    gesture is "search for #tag inside THIS channel" — we routed it as a
+    global, scopeless `UnsupportedFeature(HashtagSearch)` carrying just the raw
+    tag string. Replaced with a typed `DeepLink.HashtagSearch(tag,
+    channelHandle?, originalUrl)` variant and a `HashtagScope` Composable
+    inside `PostCard` that overrides `LocalHashtagTap` for the duration of the
+    post body. The scoped tap injects the post's `senderHandle` only when the
+    tap text has no `@suffix` already (so the text-entity form below still
+    wins). Comments and posts without a known channel handle fall through to
+    the scaffold default and dispatch global hashtag search.
+  - **`#tag@channel` text-entity suffix wasn't honoured**. Per TDLib's
+    `TextEntityTypeHashtag` doc: *"A hashtag text, beginning with `#` and
+    optionally containing a chat username at the end"* — the `@channel` suffix
+    is the only canonical channel-scope mechanism Telegram exposes for
+    hashtags (verified against `core.telegram.org/api/links`: no documented
+    URL form carries hashtag scope). A new `parseHashtagWithScope` pure
+    helper splits `#tag@channel` into `("#tag", "channel")` and is invoked at
+    both dispatch sites — the scaffold-level default tap (where the entity is
+    the only source of scope) and the PostCard-level scoped wrapper (where the
+    entity suffix overrides any captured channel context). Pure stdlib — JVM-
+    testable without Robolectric, locked in by 8 unit tests.
+  - **`tg://search?query=…` URLs surfaced an empty snackbar**.
+    `InternalLinkTypeSearch` carries no fields in current TDLib (1.8.x +
+    master verified against `td_api.tl`) — TDLib classifies it as "global
+    search field" but won't tell us the query. We now extract the hashtag
+    from the raw URL's `?query=` / `?q=` parameter and dispatch a typed
+    `HashtagSearch(tag, channelHandle=null)` so the snackbar reads "Search
+    for #foo is coming soon" instead of the generic feature placeholder. Same
+    contract in the cold-launch fallback parser, locked in by 7 new tests
+    covering `?query=`, `?q=` alias, missing param, empty param,
+    whitespace-only, and multi-word free-text rejection.
+
+  Net effect for the user: tapping `#foo` inside `@durov` now reads "Search
+  for #foo in @durov is coming soon"; tapping the explicit `#bar@channel`
+  entity overrides to that channel's scope; global `tg://search?query=%23baz`
+  URLs show the actual tag instead of an empty placeholder. When in-app
+  hashtag search ships (planned: `SearchPublicMessagesByTag` for global and
+  `SearchChatMessages(query="#tag")` for scoped), the dispatch sites stay
+  the same — only the snackbar collector swaps for a screen navigation.
+
 ### Performance
 
 - **Inline custom-emoji TGS playback: parse-failure spam closed, animation
@@ -246,6 +291,39 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Changed
 
+- **Comments overlay reframed as a post-detail screen with M3E empty states**.
+  Three converging fixes for the same UX confusion — "I opened a post, but the
+  screen calls itself *Обговорення* and shows me a tiny purple label saying
+  *0 відповідей*":
+  - Title "Обговорення" → "Допис" / "Discussion" → "Post". Matches Twitter/X's
+    post-detail header — the screen IS the post, with replies as a supporting
+    section below, not a separate discussion view. The previous framing
+    assumed the user arrived to discuss; the dominant entry flow is "tapped a
+    card to read the full thing".
+  - The inline primary-coloured `labelLarge` ("0 коментарів" / "12 відповідей")
+    label above the comment list is gone. Reply count now lives in the top-bar
+    subtitle and surfaces only when there ARE replies (count via
+    `<plurals name="comments_count">` so 1 / 2 / 5 read correctly in
+    Ukrainian instead of the previous flat-string `5 відповідей` regardless of
+    quantity). Loading / empty / Error keep the chrome calm.
+  - Empty / no-discussion branches now render a full M3E empty-state hero
+    (`CommentsEmptyState` — 96 dp `EmptyStateMask` polygon backdrop +
+    `secondaryContainer` tonal fill + 40 dp glyph, `titleMedium` /
+    `bodyLarge` copy below). Same visual recipe as
+    `TimelineScreen.ExpressiveEmptyHero` so an empty comments overlay reads as
+    a sibling of an empty feed. Two variants: `forum` glyph + "Поки немає
+    коментарів" for the no-replies case, `chat_bubble` glyph + "Коментарі
+    вимкнено" for channels without a linked discussion group (previously
+    rendered as a small 48 dp outlined icon that was easy to miss on a
+    pristine `Ready { rows.isEmpty() }` viewport).
+  - Loading branch gated on `rememberDeferredLoading(pending, key)` (the same
+    600 ms grace window media overlays use). A hot LRU hit on a previously-
+    opened thread or a cached-anchor fast resolve goes
+    `Loading → Ready(empty) / Error` inside ~100-300 ms — without the grace
+    window the `LoadingIndicator` painted for one frame and then unmounted as
+    the empty-state hero took over, reading as a flicker on every fast
+    resolve. Now the spinner only surfaces if the load actually stalls past
+    600 ms; the common case lands straight on the empty / disabled hero.
 - **Universal `HortayTopBar` consolidates every top app bar across the app**.
   One wrapper around M3 Expressive `LargeFlexibleTopAppBar` /
   `MediumFlexibleTopAppBar` / `TopAppBar`, exposed as `HortayTopBarSize.{Large,

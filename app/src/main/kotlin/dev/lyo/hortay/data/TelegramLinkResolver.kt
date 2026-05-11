@@ -113,17 +113,25 @@ class TelegramLinkResolver(private val td: TdSender) {
                     originalUrl = rawUrl,
                 )
             }
-            // Hashtag search arriving as an external link (e.g. clipboard paste from
-            // the official client, or a t.me/s/.../?q= URL someone shared). Our own
-            // renderer no longer fabricates a `tg://search?query=...` URL for inline
-            // `#foo` taps — those go through `LocalHashtagTap` directly — but the
-            // resolver still has to recognise this shape because TDLib does classify
-            // it and we don't want to ACTION_VIEW-punt an internal-feature link.
-            // Hortay has no hashtag-search UI yet; route to UnsupportedFeature so the
-            // scaffold collector surfaces the snackbar. When in-app search lands,
-            // introduce a typed [DeepLink.HashtagSearch] variant and dispatch here.
-            is TdApi.InternalLinkTypeSearch ->
-                DeepLink.UnsupportedFeature(UnsupportedFeatureKind.HashtagSearch, rawUrl)
+            // Global hashtag / cashtag search field. TDLib's `InternalLinkTypeSearch`
+            // carries NO fields in current TL (1.8.x and master 2026-05 — verified
+            // against td_api.tl directly). TDLib intentionally doesn't expose the
+            // query — it tells us "this URL opens search", but the actual tag lives
+            // in the URL's `?query=` / `?q=` parameter and is the client's job to
+            // extract. We pull it out so the snackbar can show the user what
+            // they tapped (`Пошук #foo`) instead of a generic "feature soon" line.
+            // The channelHandle is always null on this branch — `tg://search` is
+            // a global form (no channel scope is documented in core.telegram.org's
+            // link spec); channel-scoped hashtag intent only arrives via the inline
+            // text-entity `#tag@channel` form, dispatched through LocalHashtagTap.
+            is TdApi.InternalLinkTypeSearch -> {
+                val tag = parseHashtagFromRawUrl(rawUrl)
+                DeepLink.HashtagSearch(
+                    tag = tag ?: "",
+                    channelHandle = null,
+                    originalUrl = rawUrl,
+                )
+            }
             // Invite links (`t.me/+abc...`). Scaffold calls CheckChatInviteLink for a
             // title + member-count preview, then offers a Join confirmation for
             // channel-type invites and runs JoinChatByInviteLink on accept.
@@ -135,6 +143,24 @@ class TelegramLinkResolver(private val td: TdSender) {
             // to the OS / Telegram client.
             else -> DeepLink.External(rawUrl)
         }
+    }
+
+    /**
+     * Pull a normalised `#tag` token out of a raw URL's `?query=` / `?q=` parameter.
+     * Used by [parseWithTd] when TDLib classifies a URL as [TdApi.InternalLinkTypeSearch]
+     * — TDLib intentionally exposes no fields on that variant, so the actual tag
+     * lives in the URL and we extract it here. Returns null if the URL fails to
+     * parse OR carries no recognisable hashtag query.
+     *
+     * Lives on the instance (not in [Companion]) deliberately: it touches
+     * [android.net.Uri], which is JNI-bound and stubbed-to-throw in pure-JVM tests.
+     * The companion-level [Companion.normaliseHashtagToken] is the pure-string
+     * helper tests exercise directly.
+     */
+    private fun parseHashtagFromRawUrl(rawUrl: String): String? {
+        val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return null
+        val raw = uri.getQueryParameter("query") ?: uri.getQueryParameter("q") ?: return null
+        return normaliseHashtagToken(raw)
     }
 
     /**
@@ -227,6 +253,22 @@ class TelegramLinkResolver(private val td: TdSender) {
                     )
                 }
             }
+            // `tg://search?query=%23foo` — global hashtag/cashtag search. Cold-launch
+            // fallback only; warm path goes through TDLib's `InternalLinkTypeSearch`.
+            // Channel scope is null because no documented Telegram URL shape carries
+            // a channel scope for hashtag search — `#tag@channel` is the only
+            // canonical scope mechanism and it lives in inline text entities.
+            "search" -> {
+                val tag = queryParams["query"]?.let(::normaliseHashtagToken)
+                    ?: queryParams["q"]?.let(::normaliseHashtagToken)
+                tag?.let {
+                    DeepLink.HashtagSearch(
+                        tag = it,
+                        channelHandle = null,
+                        originalUrl = rawUrl,
+                    )
+                }
+            }
             "privatepost" -> {
                 val raw = queryParams["channel"]?.toLongOrNull()
                 val post = queryParams["post"]?.toLongOrNull()
@@ -297,6 +339,23 @@ class TelegramLinkResolver(private val td: TdSender) {
                     originalUrl = rawUrl,
                 )
             }
+        }
+
+        /**
+         * Coerce a query-parameter value into a canonical `#tag` token. Returns null
+         * if the input isn't a hashtag query (plain text search, empty string, just
+         * a `#` with no body). The leading sigil is preserved — `tag` keeps `#` so
+         * the UI doesn't need to re-add it when displaying.
+         */
+        internal fun normaliseHashtagToken(raw: String): String? {
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty()) return null
+            // Accept both `#foo` (decoded) and `foo` (when Telegram-Android emits a
+            // bare token in the `query` param). Drop any leading `@` because that
+            // would be the chat-scope suffix encoded the wrong way round.
+            val core = trimmed.removePrefix("#").removePrefix("@")
+            if (core.isEmpty() || core.any { it.isWhitespace() }) return null
+            return "#$core"
         }
     }
 }

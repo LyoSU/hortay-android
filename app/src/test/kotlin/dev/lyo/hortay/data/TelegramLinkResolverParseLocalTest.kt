@@ -245,4 +245,68 @@ class TelegramLinkResolverParseLocalTest {
     fun `unknown scheme returns null`() {
         assertNull(parse("ftp", "t.me", listOf("durov"), rawUrl = "ftp://t.me/durov"))
     }
+
+    // ---------- tg://search hashtag URLs ----------
+
+    @Test
+    fun `tg search with hashtag query produces HashtagSearch`() {
+        // `tg://search?query=#foo` is the canonical global hashtag-search URL
+        // (`InternalLinkTypeSearch` in the warm path; this fallback covers cold-
+        // launch). Channel scope is always null — no documented Telegram URL form
+        // carries a per-channel hashtag scope.
+        val raw = "tg://search?query=%23foo"
+        assertEquals(
+            DeepLink.HashtagSearch(tag = "#foo", channelHandle = null, originalUrl = raw),
+            parse("tg", "search", query = mapOf("query" to "#foo"), rawUrl = raw),
+        )
+    }
+
+    @Test
+    fun `tg search with bare query (no hash) still recognises as hashtag`() {
+        // Telegram-Android occasionally emits the tag without the leading `#`
+        // inside the `query` param. Treat it as a hashtag — the prefix is
+        // re-added on the way out so the snackbar shows the canonical form.
+        val raw = "tg://search?query=foo"
+        assertEquals(
+            DeepLink.HashtagSearch(tag = "#foo", channelHandle = null, originalUrl = raw),
+            parse("tg", "search", query = mapOf("query" to "foo"), rawUrl = raw),
+        )
+    }
+
+    @Test
+    fun `tg search accepts short q alias`() {
+        // Some share flows emit `?q=` instead of `?query=`. Equivalent intent.
+        val raw = "tg://search?q=%23foo"
+        assertEquals(
+            DeepLink.HashtagSearch(tag = "#foo", channelHandle = null, originalUrl = raw),
+            parse("tg", "search", query = mapOf("q" to "#foo"), rawUrl = raw),
+        )
+    }
+
+    @Test
+    fun `tg search with empty query is rejected`() {
+        assertNull(parse("tg", "search", query = mapOf("query" to ""), rawUrl = "tg://search?query="))
+    }
+
+    @Test
+    fun `tg search without query param is rejected`() {
+        assertNull(parse("tg", "search", query = emptyMap(), rawUrl = "tg://search"))
+    }
+
+    @Test
+    fun `tg search with whitespace-only query is rejected`() {
+        assertNull(parse("tg", "search", query = mapOf("query" to "  "), rawUrl = "tg://search?query=%20"))
+    }
+
+    @Test
+    fun `tg search with multi-word query is rejected as hashtag`() {
+        // `tg://search?query=foo+bar` is a free-text search, not a hashtag.
+        // Whitespace in the decoded body disqualifies the hashtag branch — the
+        // resolver falls through (in fallback, this just returns null; in the
+        // warm path the same URL would produce HashtagSearch with empty tag,
+        // which the snackbar collector renders as the generic form).
+        assertNull(
+            parse("tg", "search", query = mapOf("query" to "foo bar"), rawUrl = "tg://search?query=foo+bar"),
+        )
+    }
 }

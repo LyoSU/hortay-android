@@ -445,7 +445,14 @@
     <string name="link_unsupported_group">Group chats open in Telegram</string>
     <string name="link_unsupported_other">This link opens in Telegram</string>
     <string name="link_not_found">Link not found</string>
-    <string name="link_unsupported_hashtag">Hashtag search is coming soon</string>
+    <!-- Surfaced when a `#tag` link/tap arrives without a channel scope —
+         Comments-thread bodies, `tg://search?query=…` URLs, settings text. %1$s
+         is the tag with its leading `#`. -->
+    <string name="link_hashtag_search">Search for %1$s is coming soon</string>
+    <!-- Surfaced when a `#tag@channel` entity or a scoped PostBody tap resolves
+         to a known channel. %1$s is the tag with `#`, %2$s is the channel
+         handle with `@`. -->
+    <string name="link_hashtag_search_in_channel">Search for %1$s in %2$s is coming soon</string>
     <!-- Confirmation dialog for an invite link (t.me/+abc...). -->
     <string name="invite_dialog_title">Join channel</string>
     <string name="invite_dialog_unknown_chat">Telegram channel</string>
