@@ -88,7 +88,6 @@ private data class ChannelSummary(
     val avatarFileId: Int?,
     val lastPostExcerpt: String,
     val lastPostDate: Long,
-    val postCount: Int,
 )
 
 private fun aggregate(posts: List<TimelinePost>): List<ChannelSummary> = posts
@@ -113,7 +112,6 @@ private fun aggregate(posts: List<TimelinePost>): List<ChannelSummary> = posts
             avatarFileId = fileId,
             lastPostExcerpt = anchor.content.captionPlain.take(120),
             lastPostDate = anchor.date,
-            postCount = list.size,
         )
     }
     .sortedByDescending { it.lastPostDate }
@@ -154,11 +152,6 @@ private fun ChannelRow(channel: ChannelSummary, onClick: () -> Unit) {
                 )
             }
         }
-        Text(
-            text = "${channel.postCount}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
