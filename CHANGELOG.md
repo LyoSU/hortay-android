@@ -54,6 +54,27 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Performance
 
+- **Cold-start RPC budget cut ~30× by harvesting `Chat.lastMessage` instead of
+  fanning out `GetChatHistory` per channel**. On `AuthorizationStateReady` we now
+  drive `LoadChats(ChatListMain)` to make TDLib emit `UpdateNewChat` for every
+  chat (server-side push; zero RPC) and pull each channel's most recent post out
+  of the resulting `chatCache`. Each harvested message is routed through the
+  existing `ingest()` pipeline — channel-filter, album coalesce, dedup, and
+  `_newArrivals` emission are unchanged, so the live-update consumers see the
+  same shape. A new `UpdateChatLastMessage` listener catches late-syncing chats
+  and mid-session last-message swaps. Net cold-start RPC volume for a
+  200-channel account drops from ~480 (`GetChat × 200` + `GetChatHistory × 200`)
+  to ~15 on the critical path; album-coalesce tail RPCs (small
+  `GetChatHistory(offset=-5, limit=10)` for the 20-50% of channels whose newest
+  post is an album member) run deferred at Sem=4 after first paint. Archive is
+  no longer drained on cold-start — the `_archivedChatIds` mirror is now driven
+  entirely by the existing `UpdateChatAddedToList` / `UpdateChatRemovedFromList`
+  listeners, which fire independent of our refresh path. The post-login
+  FLOOD_WAIT class is closed for accounts up to ~1000 channels. Mirrors what
+  the official Telegram-Android client does on its DialogsActivity boot — load
+  the chat list, render each row from `Chat.lastMessage`, defer message-history
+  fetch to the moment the user taps into a chat.
+
 - **Inline custom-emoji TGS playback: parse-failure spam closed, animation
   rasterisation off the UI thread**. Two converging bugs measured on a Galaxy S25
   during scroll through a post with 30+ inline emojis: 28% janky frames, 99th
@@ -290,6 +311,13 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   Cleared on logout via the `TdClient.loggedOut` fan-out.
 
 ### Changed
+
+- **`StartupCoordinator.ACTIVATE_POSTS_THRESHOLD: 20 → 8`**. With one post per
+  channel on cold-start, the old `20` threshold left small-subscription
+  accounts (5-15 channels) timing out the full 8 s `BOOT_TIMEOUT_MS` instead of
+  flipping cleanly to `Active`. `8` covers ~1.5 screens at typical card height —
+  reachable on every realistic account, still well below the 50+ a typical
+  power user produces.
 
 - **Comments overlay reframed as a post-detail screen with M3E empty states**.
   Three converging fixes for the same UX confusion — "I opened a post, but the
