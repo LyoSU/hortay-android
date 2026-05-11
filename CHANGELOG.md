@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- **Deep-link scroll never landed AND `loadOlder` silently stopped surfacing
+  rows when the active folder / archive scope didn't include the linked
+  channel**. Both bugs collapsed onto one root cause: `visiblePosts` applied
+  `scopePredicate` (and the mixed-feed-only `Service` / `ExpiredMedia` drop)
+  even when `channelFilter` was set. So tapping `t.me/<channel>/<post>` for a
+  channel outside the current folder filtered every loaded post out of
+  `displayedItems`, the scroll-to-message `snapshotFlow` collector waited
+  forever for the target row, and `loadOlder` kept hitting TDLib but every
+  fresh page was filtered out before render — reading on the device as
+  "pagination doesn't work in some channels". Fix: scope and service filters
+  apply only when `channelFilter == null`. Once the user has drilled into one
+  channel, the channel view IS the scope — same semantics Telegram-Android
+  ships, where folder filters are a chat-list affordance, not an in-chat one.
+- **Deep-link to an inaccessible old post hung the channel view on a
+  skeleton**. The scroll-to-message effect fired `loadHistoryAround` once
+  per pending target and then waited indefinitely on the snapshot collector;
+  if TDLib returned no rows (chat became inaccessible, network blip,
+  permissions revoked) there was no path to clear `pendingScrollToMessage`.
+  Now the effect clears the pending target when `loadHistoryAround` returns
+  false, mirroring Telegram-Android's "Message is no longer available" exit.
 - **Hashtag taps prompted "Open with another app"; long-press leaked `tg://` URLs**.
   The renderer used to fabricate `tg://search?query=#foo` for inline `#hashtag`
   spans, but `#` is a URI fragment delimiter so the URL parsed as
@@ -33,33 +53,40 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 ### Performance
 
 - **Inline custom-emoji TGS playback rebuilt on a process-wide
-  `CustomEmojiAnimator`** with three layers of sharing keyed on `customEmojiId`:
-  one [LottieDrawable] per (id, fps) pair, one rasterisation `Bitmap` per entry
-  (sized to the largest consumer reporting in via `Handle.reportSize`), and one
-  `MutableFloatState` progress driven by a single process-wide
-  `Choreographer.FrameCallback` master clock. Compose consumers blit the
-  shared bitmap through `Canvas.drawBitmap` inside a `Canvas { ... }` draw scope
-  whose `progress()` read subscribes the scope to draw-only invalidations — never
-  recompositions. Net effect on a post with 30 repeats of the same TGS emoji
-  (the high-end of what Telegram allows in one message): 30 ticker coroutines →
-  1, 30 recomposition fanouts → 0, 30 Lottie layer-tree walks per frame → 1 (the
-  walk that paints the shared bitmap), 30 cheap GPU-texture-friendly blits.
-  Tracks Telegram-Android's `AnimatedEmojiDrawable.globalEmojiCache` +
-  `RLottieDrawable` bitmap-cache strategy. FPS clamped per surface class
-  (`Fps.Inline = 20`, `Fps.Reaction = 24`) so multiple Choreographer ticks at
-  60–120 Hz collapse into a single bitmap re-rasterisation. Pauses globally on
-  ProcessLifecycle STOP (master clock stops posting frame callbacks; battery
+  `CustomEmojiAnimator` with background rasterisation** (mirrors Telegram-Android's
+  `RLottieDrawable` + `lottieCacheGenerateQueue` architecture). The naive Lottie-
+  Compose path ran one `LottieAnimation` per emoji appearance — a post with 30
+  repeats of the same `customEmojiId` paid 30 layer-tree walks per frame on the UI
+  thread, measured at 28% janky frames + 99th-percentile 150 ms on a Galaxy S25
+  during scroll. The new pipeline: one [LottieDrawable] per (id, fps) pair shared
+  across all consumers, one double-buffered [Bitmap] per entry, and a single
+  process-wide [Choreographer.FrameCallback] master clock. UI thread advances
+  progress and schedules render tasks; an offscreen `HandlerThread` rasterises
+  the drawable into the back buffer; on completion the buffers swap on the main
+  thread and Compose consumers blit the new front buffer via
+  `Canvas.drawBitmap` (a GPU texture copy, no layer walk). 12 Hz inline / 18 Hz
+  reaction FPS clamp keeps rasterisation count proportional to surface size
+  (Telegram's `AnimatedEmojiDrawable` cache types use similar targets at
+  equivalent sizes). Coalescing: while a render is in flight for an entry, new
+  advance ticks update a `pendingProgress` field instead of queueing tasks —
+  the completion handler picks up the latest snapshot, so the BG queue depth
+  is bounded by entry count, not frame count. LRU-64 cap on the entry map
+  (each ~150 KB bitmap pair + drawable graph) prevents long sessions from
+  growing the heap unbounded; eviction skips entries with refCount > 0 so
+  mounted consumers never see a recycled bitmap. Net result on the same scroll:
+  9.88% janky frames (-65%), 95th percentile 38 ms (-61%), GC allocation
+  pressure dropped from ~20 MB/sec to ~6 MB/sec, heap peak 240 MB → 99 MB.
+  Pauses globally on ProcessLifecycle STOP (master clock stops posting; battery
   cost = zero); per-consumer host-lifecycle gate releases the refcount when a
-  composable's host drops below STARTED so a backgrounded overlay above the feed
-  doesn't keep the underlying feed's emojis ticking. Monochrome emojis
-  (`needsRepainting = true`) take their tint via `Paint(colorFilter =
-  PorterDuffColorFilter(_, SRC_ATOP))` on the consumer's `drawBitmap` call —
-  per-consumer tint, one bitmap source. Full-size sticker rendering (StickerView
-  → LottieStickerView) is unaffected — typical surface has 1–2 stickers on
-  screen and wants the composition's native frame rate, no sharing benefit. On
-  TDLib logout the animator's entry map is wiped (entries reference TDLib-
-  database-scoped compositions); web (anonymous) mode emojis route through the
-  same animator with [LottieUrlStore]-sourced compositions.
+  composable's host drops below STARTED. Monochrome emojis (`needsRepainting =
+  true`) take their tint via `Paint(colorFilter = PorterDuffColorFilter(_,
+  SRC_ATOP))` on the consumer's `drawBitmap` call — per-consumer tint, one
+  bitmap source. Lottie `enableMergePathsForKitKatAndAbove(true)` so the
+  per-frame fallback path-merge logic (and its allocation churn) is skipped
+  for the common TGS shapes that ship with merge paths. Web (anonymous) mode
+  emojis route through the same animator with [LottieUrlStore]-sourced
+  compositions; on TDLib logout the animator's entry map is wiped because the
+  cached drawables reference TDLib-database-scoped composition state.
 
 ### Added
 

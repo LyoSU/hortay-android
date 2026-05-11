@@ -454,18 +454,22 @@ fun TimelineScreen(
         buildList {
             posts.forEach { p ->
                 if (showOnlyBookmarked && p.bookmarkKey() !in bookmarkedKeys) return@forEach
-                if (channelFilter != null && p.chatId != channelFilter) return@forEach
-
-                // Mixed global feed: hide service / expired-media noise (pin / boost /
-                // giveaway-created / ttl-expired). They're meaningful only in the context
-                // of a single channel, where the per-channel filter view shows them as
-                // the actual record of channel events.
-                if (channelFilter == null) {
+                if (channelFilter != null) {
+                    // Once the user has drilled into one channel, the channel view IS the
+                    // scope. Service rows, expired media, and folder/archive scope all
+                    // exist for browsing the mixed feed; clipping them inside a single-
+                    // channel view silently drops posts the user explicitly asked to see.
+                    // Without this gate, a deep link to a channel outside the active
+                    // folder scope (or to an archived chat while the user is in "Усі")
+                    // never lands in displayedItems, the scroll-to-message snapshotFlow
+                    // waits forever, and `loadOlder` pagination quietly stops surfacing
+                    // new rows because each loaded post is filtered out before render.
+                    if (p.chatId != channelFilter) return@forEach
+                } else {
                     if (p.content is PostContent.Service) return@forEach
                     if (p.content is PostContent.ExpiredMedia) return@forEach
+                    if (!scopePredicate(p)) return@forEach
                 }
-
-                if (!scopePredicate(p)) return@forEach
                 add(p)
             }
         }
@@ -546,7 +550,19 @@ fun TimelineScreen(
                 }
                 if (!requestedAroundLoad) {
                     requestedAroundLoad = true
-                    tdlibRepo?.loadHistoryAround(chatId, messageId)
+                    // TDLib best practice for "open by link to an out-of-cache message":
+                    // GetChatHistory(from = anchor, offset = -limit/2). PostsRepository
+                    // wraps that and returns false when the chat is inaccessible /
+                    // network failed / the channel returned an empty window. In any of
+                    // those cases there's nothing more to wait for — clear the pending
+                    // target so the snapshot collector exits, mirroring Telegram-
+                    // Android's "Message is no longer available" UX instead of leaving
+                    // the user staring at a frozen skeleton.
+                    val landed = tdlibRepo?.loadHistoryAround(chatId, messageId) ?: false
+                    if (!landed) {
+                        pendingScrollToMessage = null
+                        return@collect
+                    }
                 }
             }
     }
