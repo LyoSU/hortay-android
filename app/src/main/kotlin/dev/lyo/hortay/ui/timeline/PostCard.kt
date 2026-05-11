@@ -85,15 +85,14 @@ fun PostCard(
 
     // Highlight tint when this card is the deep-link / quote-tap scroll target. Fades
     // from primaryContainer to transparent so the user can spot the just-landed post
-    // after the auto-scroll, then the card returns to its normal background. The
-    // [LocalIsHighlightedItem] flag goes false → true when scroll lands, true → false
-    // after the TimelineScreen-level delay.
+    // after the auto-scroll, then the card returns to its normal background. Rides
+    // M3 Expressive's [MotionScheme.fastEffectsSpec] — the same spring the navbar /
+    // tab-swap / button-press chains use, so the highlight pop reads as part of the
+    // app's motion vocabulary rather than a one-off tween.
     val isHighlighted = dev.lyo.hortay.ui.media.LocalIsHighlightedItem.current
     val highlightAlpha by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (isHighlighted) 0.35f else 0f,
-        animationSpec = androidx.compose.animation.core.tween(
-            durationMillis = if (isHighlighted) 240 else 900,
-        ),
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "post-highlight",
     )
     val highlightColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = highlightAlpha)

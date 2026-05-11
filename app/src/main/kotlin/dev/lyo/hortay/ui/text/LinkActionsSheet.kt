@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class,
+)
 
 package dev.lyo.hortay.ui.text
 
@@ -8,16 +11,16 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.widget.Toast
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -34,18 +37,23 @@ import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.launch
 
 /**
- * Telegram-style action sheet for a long-pressed link. Three rows:
- *   - Open      → routes through [LocalUriHandler], so internal Telegram URIs land
- *                  inside Hortay via [dev.lyo.hortay.ui.main.HortayUriHandler] and
- *                  generic web URLs fall through to ACTION_VIEW.
- *   - Copy link → system clipboard. On API < 33 we surface a toast (Android 12L+
- *                  shows its own confirmation, so we suppress to avoid a double-toast).
- *   - Share     → ACTION_SEND text chooser, link-scoped (no excerpt — that's
- *                  [dev.lyo.hortay.ui.actions.PostActions.share]'s job).
+ * Telegram-style action sheet for a long-pressed link. Three rows rendered as a single
+ * M3 Expressive segmented group (`SegmentedListItem` + `segmentedShapes`) — same idiom
+ * Settings / AutoDownload use for grouped settings rows, so the visual vocabulary stays
+ * consistent across every list-of-actions surface in the app.
  *
- * The full URL is shown in the sheet header (2-line truncated) as an anti-phishing
- * affordance: the visible link text and the actual target URL can differ for `TextUrl`
- * spans, and surfacing it gives the user a chance to verify before they act.
+ * Actions:
+ *   - Open      → routes through [LocalUriHandler]; internal Telegram URIs land in
+ *                  Hortay via HortayUriHandler, generic URLs fall through to ACTION_VIEW.
+ *   - Copy link → system clipboard. Pre-API-33 surfaces a Toast; from Android 12L on
+ *                  the OS shows its own confirmation chip, so we suppress ours.
+ *   - Share     → ACTION_SEND text chooser, URL-only (no excerpt — that's
+ *                  PostActions.share's job).
+ *
+ * The sheet header renders the full URL via [prettyLinkPreview] (scheme + bold host +
+ * plain tail, truncated past 96 chars). Bolding the host puts the user's attention on
+ * the security-relevant part of the URL — the same anti-phishing affordance the
+ * confirmation dialog uses.
  */
 @Composable
 fun LinkActionsSheet(
@@ -56,6 +64,7 @@ fun LinkActionsSheet(
     val uriHandler = LocalUriHandler.current
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
+    val pretty = remember(url) { prettyLinkPreview(url) }
 
     val dismiss: () -> Unit = {
         scope.launch {
@@ -64,11 +73,7 @@ fun LinkActionsSheet(
         }
     }
 
-    val pretty = remember(url) { prettyLinkPreview(url) }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-    ) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.padding(bottom = 12.dp)) {
             Text(
                 text = pretty,
@@ -81,42 +86,57 @@ fun LinkActionsSheet(
                     .padding(horizontal = 24.dp, vertical = 12.dp),
             )
             Spacer(Modifier.height(4.dp))
-
-            LinkActionRow(
-                label = stringResource(R.string.link_action_open),
-                icon = "open_in_new",
-                onClick = {
-                    uriHandler.openUri(url)
-                    dismiss()
-                },
-            )
-            LinkActionRow(
-                label = stringResource(R.string.link_action_copy),
-                icon = "content_copy",
-                onClick = {
-                    copyLink(context, url)
-                    dismiss()
-                },
-            )
-            LinkActionRow(
-                label = stringResource(R.string.link_action_share),
-                icon = "share",
-                onClick = {
-                    shareLink(context, url)
-                    dismiss()
-                },
-            )
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+            ) {
+                LinkAction(
+                    index = 0,
+                    count = 3,
+                    label = stringResource(R.string.link_action_open),
+                    icon = "open_in_new",
+                    onClick = {
+                        uriHandler.openUri(url)
+                        dismiss()
+                    },
+                )
+                LinkAction(
+                    index = 1,
+                    count = 3,
+                    label = stringResource(R.string.link_action_copy),
+                    icon = "content_copy",
+                    onClick = {
+                        copyLink(context, url)
+                        dismiss()
+                    },
+                )
+                LinkAction(
+                    index = 2,
+                    count = 3,
+                    label = stringResource(R.string.link_action_share),
+                    icon = "share",
+                    onClick = {
+                        shareLink(context, url)
+                        dismiss()
+                    },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun LinkActionRow(label: String, icon: String, onClick: () -> Unit) {
-    ListItem(
-        headlineContent = { Text(label) },
+private fun LinkAction(index: Int, count: Int, label: String, icon: String, onClick: () -> Unit) {
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = index,
+        count = count,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        onClick = onClick,
+        shapes = shapes,
         leadingContent = { Symbol(name = icon) },
-        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        content = { Text(label) },
     )
 }
 
