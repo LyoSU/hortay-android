@@ -2,10 +2,7 @@
 
 package dev.lyo.hortay.ui.settings
 
-import android.content.ActivityNotFoundException
 import android.content.Context
-import android.content.Intent
-import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -129,6 +126,7 @@ private fun SettingsMain(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var confirmLogout by remember { mutableStateOf(false) }
     var network by remember { mutableStateOf<NetworkUsage?>(null) }
@@ -287,7 +285,7 @@ private fun SettingsMain(
                     chevron = true,
                     index = 0,
                     count = 2,
-                    onClick = { openTelegramHandle(context, AUTHOR_CHANNEL_HANDLE) },
+                    onClick = { uriHandler.openUri("https://t.me/$AUTHOR_CHANNEL_HANDLE") },
                 )
                 SettingsRow(
                     symbol = "person",
@@ -296,7 +294,7 @@ private fun SettingsMain(
                     chevron = true,
                     index = 1,
                     count = 2,
-                    onClick = { openTelegramHandle(context, AUTHOR_DEVELOPER_HANDLE) },
+                    onClick = { uriHandler.openUri("https://t.me/$AUTHOR_DEVELOPER_HANDLE") },
                 )
             }
 
@@ -667,22 +665,3 @@ private fun SettingsRow(
 private const val AUTHOR_CHANNEL_HANDLE = "lyblog"
 private const val AUTHOR_DEVELOPER_HANDLE = "lydev"
 
-/**
- * Open a Telegram handle in the official client; fall back to the public web page
- * when no Telegram client is installed (e.g. a fresh emulator). Same pattern used by
- * the timeline's tg-handle text-link router.
- */
-private fun openTelegramHandle(context: Context, handle: String) {
-    val tgIntent = Intent(Intent.ACTION_VIEW, "tg://resolve?domain=$handle".toUri())
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    try {
-        context.startActivity(tgIntent)
-    } catch (_: ActivityNotFoundException) {
-        runCatching {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, "https://t.me/$handle".toUri())
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-        }
-    }
-}

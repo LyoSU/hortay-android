@@ -20,9 +20,11 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.coroutines.cancellation.CancellationException
 import dev.lyo.hortay.AppGraph
@@ -44,6 +46,15 @@ import kotlinx.coroutines.launch
  * Going past 1f on commit keeps the overlay visually "leaving" instead of freezing at peek.
  */
 private const val EXIT_PROGRESS = 2f
+
+/**
+ * TDLib encodes message ids as `serverPostId shl 20` internally (MTProto convention; see
+ * tdlib/td#946). Deep-link variants carrying a server-side post number need this shift
+ * before being handed to TimelineScreen's scroll-to-message dispatcher. [DeepLink.Message]
+ * skips the shift because TDLib's own `GetMessageLinkInfo` returns the id already in
+ * internal form.
+ */
+private const val SERVER_TO_TD_SHIFT = 20
 
 /**
  * Top-level container that owns nav-tab state, the global channel filter and the comments
@@ -113,37 +124,46 @@ fun MainScaffold(graph: AppGraph) {
         }
     }
 
-    // Deep-link dispatcher. tg:// and https://t.me/... arrivals come through the router
-    // as already-parsed [DeepLink] events; we resolve handles to chat ids on demand and
-    // switch the navigation state. Any failure (unresolvable handle, missing subscription)
-    // is silently dropped — better than a crash on a user-tapped wild link.
+    // Deep-link dispatcher. Resolved Telegram links arrive here typed; we map each to
+    // (chatId, optional TDLib-shaped messageId) and switch nav state. [DeepLink.Message]
+    // already carries the TDLib-internal `messageId` (resolved server-side via
+    // `GetMessageLinkInfo`); [PublicChannel]/[PrivateChannel] still carry a server-side
+    // post number which we shift here before handing to TimelineScreen. Any failure
+    // (unresolvable handle, missing subscription) silently drops — better than crashing
+    // on a user-tapped wild link. [External] variants are recognised Telegram URLs we
+    // can't natively surface (chat invites, gifts, bot starts, premium feature pages,
+    // story shares…); the HortayUriHandler in-app interceptor short-circuits those
+    // straight to the OS so they shouldn't reach the router, but we handle them
+    // defensively if they do.
+    val systemUriHandler = LocalUriHandler.current
     LaunchedEffect(Unit) {
         graph.deepLinkRouter.events.collect { link ->
             val targetChat: Long?
-            val serverPostId: Long?
+            val tdMessageId: Long?
             when (link) {
                 is DeepLink.PublicChannel -> {
                     targetChat = graph.postsRepository.resolvePublicChat(link.handle)
-                    serverPostId = link.serverPostId
+                    tdMessageId = link.serverPostId?.let { it shl SERVER_TO_TD_SHIFT }
                 }
                 is DeepLink.PrivateChannel -> {
                     targetChat = link.chatId
-                    serverPostId = link.serverPostId
+                    tdMessageId = link.serverPostId?.let { it shl SERVER_TO_TD_SHIFT }
                 }
                 is DeepLink.Message -> {
                     targetChat = link.chatId
-                    serverPostId = link.serverPostId
+                    tdMessageId = link.messageId
+                }
+                is DeepLink.External -> {
+                    runCatching { systemUriHandler.openUri(link.rawUrl) }
+                    return@collect
                 }
             }
             if (targetChat != null) {
                 channelFilter = targetChat
                 selectedTab = NavTab.Feed
                 openComments(null)
-                if (serverPostId != null) {
-                    // TDLib message ids are server post number << 20. The deep-link parser
-                    // already normalises to the server number, so we shift here once
-                    // before handing the target to TimelineScreen.
-                    pendingScrollTarget = targetChat to (serverPostId shl 20)
+                if (tdMessageId != null) {
+                    pendingScrollTarget = targetChat to tdMessageId
                 }
             }
         }
@@ -185,6 +205,21 @@ fun MainScaffold(graph: AppGraph) {
         selectedTab = NavTab.Feed
     }
 
+    // Wrap the entire content tree with the in-app UriHandler. Every descendant call
+    // — LinkAnnotation.Url taps in post bodies, WebPreviewCard opens, AddChannelSheet
+    // affordances, settings author rows — goes through this handler, which checks each
+    // URL against the Telegram link resolver before falling back to the OS. One
+    // interceptor wired here is cheaper than wrapping every Text call-site individually
+    // and guarantees no path leaks straight to ACTION_VIEW.
+    val hortayUriHandler = remember(graph, systemUriHandler) {
+        HortayUriHandler(
+            delegate = systemUriHandler,
+            resolver = graph.linkResolver,
+            router = graph.deepLinkRouter,
+            scope = graph.appScope,
+        )
+    }
+    CompositionLocalProvider(LocalUriHandler provides hortayUriHandler) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = {
@@ -291,6 +326,7 @@ fun MainScaffold(graph: AppGraph) {
         }
     }
 
+
     commentsForPost?.let { post ->
         CommentsScreen(
             post = post,
@@ -305,5 +341,7 @@ fun MainScaffold(graph: AppGraph) {
             backSwipeEdge = commentsBackEdge,
         )
     }
+    } // CompositionLocalProvider(LocalUriHandler) — wraps Scaffold AND CommentsScreen
+    // so link taps inside the comments overlay also route through HortayUriHandler.
 
 }

@@ -563,6 +563,36 @@ class PostsRepository(
     }
 
     /**
+     * Canonical `https://t.me/...` share URL for a post, minted by TDLib's offline
+     * `GetMessageLink`. TDLib owns the correct format for albums (`?single=…` markers,
+     * forum-topic prefixes, comment-thread suffixes) we'd otherwise re-implement; this
+     * one call defers all of that to the daemon.
+     *
+     * Returns null when:
+     *   - The post belongs to a synthesised guest-mode chat ([chatId] below
+     *     [dev.lyo.hortay.ui.actions.PostActions]'s guest threshold) — there is no
+     *     TDLib chat to query against.
+     *   - TDLib refuses (`messageProperties.canGetLink == false`, restricted source).
+     *   - The native send fails for any other reason.
+     *
+     * Callers fall back to a hand-rolled URL in those cases. The method is suspending
+     * but `GetMessageLink` is offline (microseconds over JNI), so latency is invisible
+     * inside the share / open-in-Telegram flow.
+     *
+     * For album posts we anchor on the first member id with `forAlbum = true`, matching
+     * Telegram-Android's "copy link to album" behaviour.
+     */
+    suspend fun canonicalShareUrl(post: TimelinePost): String? {
+        val anchorId = post.albumMessageIds.firstOrNull() ?: post.id
+        val forAlbum = post.albumMessageIds.size > 1
+        val query = TdApi.GetMessageLink(post.chatId, anchorId, 0, 0, "", forAlbum, false)
+        val response = runCatching { td.send(query) }
+            .warnUnlessCancelled(TAG, "canonicalShareUrl(${post.chatId}, ${post.id})")
+            .getOrNull()
+        return response?.link?.takeIf { it.isNotBlank() }
+    }
+
+    /**
      * Registers that the user has seen the given messages in [chatId]. Bumps the
      * server-side view counter AND advances [TdApi.Chat.lastReadInboxMessageId] —
      * i.e. the channel's unread badge in the official Telegram client clears as the

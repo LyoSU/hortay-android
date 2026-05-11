@@ -17,6 +17,7 @@ import dev.lyo.hortay.data.PostsRepository
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StartupCoordinator
 import dev.lyo.hortay.data.StatsRepository
+import dev.lyo.hortay.data.TelegramLinkResolver
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdLifecycleBridge
 import dev.lyo.hortay.data.TimelineSnapshotStore
@@ -193,12 +194,23 @@ class AppGraph(context: Context) {
     val exoPlayerPool: ExoPlayerPool = ExoPlayerPool(context)
 
     /**
-     * Process-wide router for `tg://` and `https://t.me/...` deep links. MainActivity
-     * submits incoming intents; MainScaffold collects events and dispatches navigation.
-     * Lives on the graph so a single SharedFlow survives configuration changes — re-creating
-     * the router per Activity would lose buffered links arriving during the recreation.
+     * Process-wide delivery channel for resolved Telegram deep links. The parser
+     * ([linkResolver]) submits typed events here; `MainScaffold` / `WebModeScaffold`
+     * collect them and dispatch navigation. Lives on the graph so a single Channel
+     * survives configuration changes — re-creating the router per Activity would lose
+     * buffered links arriving during the recreation.
      */
     val deepLinkRouter: DeepLinkRouter = DeepLinkRouter()
+
+    /**
+     * Canonical Telegram-URL parser. Delegates to TDLib's `GetInternalLinkType` (knows
+     * ~50 link variants, offline, pre-auth-safe) when the daemon is reachable, falls
+     * back to a local regex for the three shapes our UI dispatches. Called from
+     * `MainActivity` (cold-launch intents) and the in-app `HortayUriHandler` (link taps
+     * inside post bodies, web previews, settings author rows, etc.) — single source of
+     * truth for "is this a Telegram URL, and what does it mean".
+     */
+    val linkResolver: TelegramLinkResolver = TelegramLinkResolver(tdClient)
 
     /**
      * Anonymous-mode SQLDelight database. Stores channel metadata, post payloads,

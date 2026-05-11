@@ -24,7 +24,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,6 +35,7 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.data.DeepLink
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.FloatingNavBar
+import dev.lyo.hortay.ui.main.HortayUriHandler
 import dev.lyo.hortay.ui.main.NavTab
 import dev.lyo.hortay.ui.settings.SettingsScreen
 import dev.lyo.hortay.ui.timeline.TimelineScreen
@@ -88,6 +91,7 @@ fun WebModeScaffold(graph: AppGraph) {
     // links require TDLib auth; we surface a snackbar nudging sign-in
     // instead of silently dropping them, which would feel broken when the
     // user clearly tapped a Telegram link.
+    val systemUriHandler = LocalUriHandler.current
     LaunchedEffect(Unit) {
         graph.deepLinkRouter.events.collect { link ->
             when (link) {
@@ -99,6 +103,14 @@ fun WebModeScaffold(graph: AppGraph) {
                 is DeepLink.Message -> {
                     snackbarHostState.showSnackbar(signInRequiredMsg)
                 }
+                is DeepLink.External -> {
+                    // Recognised Telegram URL outside our native surface (invite, gift,
+                    // bot start, premium feature, story share, …). Hand to the OS so
+                    // the official Telegram client takes it — HortayUriHandler routes
+                    // here defensively, but the in-app interceptor normally short-
+                    // circuits Externals straight to the system handler upstream.
+                    runCatching { systemUriHandler.openUri(link.rawUrl) }
+                }
             }
         }
     }
@@ -107,6 +119,15 @@ fun WebModeScaffold(graph: AppGraph) {
         selectedTab = NavTab.Feed
     }
 
+    val hortayUriHandler = remember(graph, systemUriHandler) {
+        HortayUriHandler(
+            delegate = systemUriHandler,
+            resolver = graph.linkResolver,
+            router = graph.deepLinkRouter,
+            scope = graph.appScope,
+        )
+    }
+    CompositionLocalProvider(LocalUriHandler provides hortayUriHandler) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = {
@@ -256,4 +277,7 @@ fun WebModeScaffold(graph: AppGraph) {
             onDismiss = { searchOpen = false },
         )
     }
+    } // CompositionLocalProvider(LocalUriHandler) — covers Scaffold, AddChannelSheet
+    // and the search overlay, so link taps from any guest-mode surface route through
+    // HortayUriHandler.
 }

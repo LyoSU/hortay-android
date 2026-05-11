@@ -164,6 +164,7 @@ fun TimelineScreen(
         },
     )
     val context = LocalContext.current
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
     val posts by vm.posts.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
@@ -807,7 +808,7 @@ fun TimelineScreen(
                 // remoteVideoUrl and ExoPlayer would spin trying to prepare nothing.
                 val items = (post.content as? dev.lyo.hortay.data.PostContent.PhotoAlbum)?.items.orEmpty()
                 if (items.getOrNull(idx)?.isUnplayableVideo == true) {
-                    dev.lyo.hortay.ui.actions.PostActions.openInTelegram(context, post)
+                    scope.launch { dev.lyo.hortay.ui.actions.PostActions.openInTelegram(context, tdlibRepo, post) }
                 } else {
                     viewer.openFor(post.content, idx)
                 }
@@ -831,15 +832,14 @@ fun TimelineScreen(
                 when {
                     sourceId != null && subscribed -> onChannelFilterChangeState.value(sourceId)
                     !sourceHandle.isNullOrBlank() -> {
+                        // Route through LocalUriHandler so the in-app HortayUriHandler
+                        // resolves the handle first — if the source channel turns out to
+                        // be one we already know about (subscribed, or resolvable via
+                        // SearchPublicChat), the tap lands inside Hortay rather than
+                        // punting to the Telegram client. Falls through to ACTION_VIEW
+                        // for handles we can't resolve.
                         val handle = sourceHandle.removePrefix("@")
-                        runCatching {
-                            context.startActivity(
-                                android.content.Intent(
-                                    android.content.Intent.ACTION_VIEW,
-                                    "tg://resolve?domain=$handle".toUri(),
-                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                            )
-                        }
+                        uriHandler.openUri("https://t.me/$handle")
                     }
                 }
             },
@@ -856,11 +856,11 @@ fun TimelineScreen(
                 }
             },
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
-            onShareClick = { post -> PostActions.share(context, post) },
+            onShareClick = { post -> scope.launch { PostActions.share(context, tdlibRepo, post) } },
             onCopyClick = { post -> PostActions.copyText(context, post) },
             onOpenClick = { post ->
                 markPostReadState.value(post)
-                PostActions.openInTelegram(context, post)
+                scope.launch { PostActions.openInTelegram(context, tdlibRepo, post) }
             },
             onTranslateClick = { post ->
                 val t = translations ?: return@PostInteractions

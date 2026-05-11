@@ -143,13 +143,16 @@ fun WebSearchScreen(
         .collectAsStateWithLifecycle(initialValue = emptySet())
 
     val interactions = remember {
-        // Guest mode has no in-app post-detail screen; tap on result opens
-        // the post in the official Telegram client via the t.me deep link.
+        // Guest mode has no in-app post-detail screen; tap on result opens the post in
+        // the official Telegram client via the t.me deep link. PostActions receives a
+        // null PostsRepository here — its share-URL builder skips the TDLib path
+        // (`GetMessageLink` wouldn't have a real chat to query against in guest mode)
+        // and uses the hand-rolled `t.me/<handle>/<msg>` fallback.
         PostInteractions(
-            onPostClick = { post -> PostActions.openInTelegram(context, post) },
-            onShareClick = { post -> PostActions.share(context, post) },
+            onPostClick = { post -> scope.launch { PostActions.openInTelegram(context, null, post) } },
+            onShareClick = { post -> scope.launch { PostActions.share(context, null, post) } },
             onCopyClick = { post -> PostActions.copyText(context, post) },
-            onOpenClick = { post -> PostActions.openInTelegram(context, post) },
+            onOpenClick = { post -> scope.launch { PostActions.openInTelegram(context, null, post) } },
             onBookmarkClick = { post ->
                 scope.launch { bookmarks.toggle(post) }
             },

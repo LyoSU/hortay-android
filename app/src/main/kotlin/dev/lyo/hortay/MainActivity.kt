@@ -24,6 +24,7 @@ import dev.lyo.hortay.ui.media.MediaViewerHost
 import dev.lyo.hortay.ui.theme.HortayTheme
 import dev.lyo.hortay.ui.web.MigrationProposalSheet
 import dev.lyo.hortay.ui.web.WebModeScaffold
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -33,10 +34,16 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val graph = (application as HortayApp).graph
-        // Cold-launch deep link: parse + buffer it into the router *before* setContent so the
-        // router has the event ready by the time MainScaffold subscribes a frame later. Warm
-        // launches into an existing task arrive via [onNewIntent] below.
-        graph.deepLinkRouter.submit(intent?.data)
+        // Cold-launch deep link: resolve + buffer into the router before MainScaffold's
+        // collector subscribes. Resolution is async (TDLib GetInternalLinkType is an
+        // offline JNI call but still a coroutine boundary) — appScope.launch wins the
+        // race in practice because the Channel buffers the resulting event regardless
+        // of subscriber arrival ordering. Warm launches arrive via [onNewIntent] below.
+        intent?.data?.let { uri ->
+            graph.appScope.launch {
+                graph.linkResolver.resolve(uri)?.let { graph.deepLinkRouter.submit(it) }
+            }
+        }
 
         setContent {
             HortayTheme {
@@ -100,6 +107,10 @@ class MainActivity : ComponentActivity() {
         // activity is already alive. The router's Channel.BUFFERED queue holds rapid-fire
         // links during a transition until MainScaffold's collector drains them in order.
         val graph = (application as HortayApp).graph
-        graph.deepLinkRouter.submit(intent.data)
+        intent.data?.let { uri ->
+            graph.appScope.launch {
+                graph.linkResolver.resolve(uri)?.let { graph.deepLinkRouter.submit(it) }
+            }
+        }
     }
 }
