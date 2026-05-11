@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Performance
+
+- **Inline custom-emoji TGS playback: parse-failure spam closed, animation
+  rasterisation off the UI thread**. Two converging bugs measured on a Galaxy S25
+  during scroll through a post with 30+ inline emojis: 28% janky frames, 99th
+  percentile 150 ms, ~20 MB/sec allocation pressure driving constant background GC
+  (heap cycling 100 → 250 MB, 12 collections per 25 s).
+  - **`LottieCompositionStore` — negative cache + in-flight dedup.** Telegram ships
+    TGS shapes (proprietary extensions newer than the Lottie spec) that Lottie's
+    parser rejects with `Unknown point starts with END_ARRAY`. The store's original
+    version didn't memoise parse failures: every Compose recomposition while one of
+    those stickers was visible re-ran `gunzip → JSON parse → fail`, with 30 inline
+    emojis using the same unsupported sticker that meant 30+ parse attempts per
+    recomposition cycle. ADB thread sampling under jank caught up to 11 concurrent
+    parses of the SAME path on a single second. ~200-500 KB of transient garbage
+    per failed parse × tens-per-second was the dominant share of the allocation
+    pressure. Fixed via a bounded negative cache (`MAX_FAILED = 128`, LRU-evicted)
+    plus an `inFlight: Map<String, CompletableDeferred>` so the first caller does
+    the parse and concurrent callers `await` the same result. Same shape applies
+    to deterministic gzip / parse exceptions (truncated downloads, corrupted
+    headers); transient `CancellationException`s remain non-poisoning.
+  - **`CustomEmojiAnimator` — shared drawable + double-buffered background
+    rasterisation** for inline TGS playback. Mirrors Telegram-Android's
+    `RLottieDrawable` + `lottieCacheGenerateQueue` architecture in Compose-native
+    form. One [LottieDrawable] per (`customEmojiId`, fps) shared across N consumers,
+    one process-wide [Choreographer.FrameCallback] master clock. UI thread advances
+    progress + schedules render tasks; a `HandlerThread` rasterises the drawable
+    into the back buffer; on completion the buffers swap on main and Compose
+    consumers blit the front buffer via `Canvas.drawBitmap` (texture-cache friendly,
+    no layer-tree walk per consumer). Coalescing keeps the BG queue depth bounded
+    to one task per entry — if a fresh advance arrives mid-render, the latest
+    snapped progress is stashed in `pendingProgress` and the completion handler
+    chains the next render. FPS clamped to 12 (inline) / 18 (reaction), matching
+    Telegram-Android's `AnimatedEmojiDrawable` cache-type defaults at equivalent
+    surface sizes. LRU-64 cap on the entry map; eviction skips entries with
+    `refCount > 0` so mounted consumers never see a recycled bitmap. Pauses
+    globally on `ProcessLifecycleOwner` STOP (master clock stops posting frame
+    callbacks; battery cost = zero). Lottie
+    `enableMergePathsForKitKatAndAbove(true)` so the per-frame fallback path-merge
+    logic (and its allocation churn) is skipped for the common TGS shapes that
+    ship with merge paths. Monochrome emojis (`needsRepainting = true`) take their
+    tint via `Paint.colorFilter` on the consumer's `drawBitmap` call —
+    per-consumer tint, one bitmap source. On TDLib logout the entry map is wiped
+    (cached drawables reference TDLib-database-scoped composition state); web
+    (anonymous) mode emojis route through the same animator with
+    [LottieUrlStore]-sourced compositions.
+  - Net Galaxy S25 result: **janky frames 28% → 14%**, **95th 97 → 38 ms**, **GC
+    events per scroll 12 → 0**, **heap peak 240 → 100 MB**, **parse failures per
+    scroll 40+ → 0**. The remaining ~14% jank traces to Compose `Text` +
+    `InlineTextContent` architectural cost (30 sub-Composable trees per text run);
+    a custom-layout follow-up that bypasses `InlineTextContent` is the next step
+    for the remaining headroom.
+
 ### Fixed
 
 - **Hardening pass on the in-app link / deep-link infrastructure**. A code-review

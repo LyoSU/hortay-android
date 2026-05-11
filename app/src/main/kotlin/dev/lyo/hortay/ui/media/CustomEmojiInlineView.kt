@@ -48,22 +48,38 @@ fun CustomEmojiInlineView(
     tintColor: Color? = null,
     animateAlways: Boolean = false,
     priority: DownloadPriority = DownloadPriority.Avatar,
+    /**
+     * Optional pre-resolved sticker. When supplied (typical FormattedTextRenderer
+     * call site: one collector + one map lookup at the parent, sticker pushed down
+     * to every inline slot), this composable skips its own
+     * [androidx.compose.runtime.collectAsState] + [androidx.compose.runtime.derivedStateOf]
+     * pair. A 30-inline-emoji post becomes 1 Flow collector instead of 30 — the dominant
+     * source of UI-thread overhead under scroll, measured via thread sampling.
+     *
+     * Callers that don't have a parent-level resolver (reaction chips on a PostCard,
+     * one-off uses elsewhere) leave this null and pay the per-call collector cost; at
+     * 1–3 instances per surface that's fine.
+     */
+    preResolvedSticker: CustomEmojiSticker? = null,
 ) {
     val repo = LocalCustomEmoji.current
 
-    // Hint the repository so the resolver batches us in. Idempotent for already-resolved
-    // ids — no TDLib call is made on a hit.
-    LaunchedEffect(customEmojiId) { repo.request(listOf(customEmojiId)) }
-
-    // Per-id slice via derivedStateOf: the underlying StateFlow churns whenever ANY
-    // emoji resolves, but `derivedStateOf { store[id] }` only propagates when THIS
-    // id's entry actually changes — equality check skips identical re-emits, so a
-    // 30-emoji viewport recomposes 30× total during a burst, not 30 × 30.
-    val storeState = repo.stickers.collectAsStateWithLifecycle()
-    val resolvedState = remember(customEmojiId) {
-        derivedStateOf { storeState.value[customEmojiId] }
+    // Self-resolve path: only mount the Flow collector + derived state when the
+    // caller hasn't already done it for us. Skipping this for the pre-resolved case
+    // is the whole point of [preResolvedSticker] — no fallback "in case the parent
+    // forgot", or we'd negate the savings.
+    val sticker: CustomEmojiSticker? = if (preResolvedSticker != null) {
+        preResolvedSticker
+    } else {
+        // Hint the repository so the resolver batches us in. Idempotent for already-
+        // resolved ids — no TDLib call is made on a hit.
+        LaunchedEffect(customEmojiId) { repo.request(listOf(customEmojiId)) }
+        val storeState = repo.stickers.collectAsStateWithLifecycle()
+        val resolvedState = remember(customEmojiId) {
+            derivedStateOf { storeState.value[customEmojiId] }
+        }
+        resolvedState.value
     }
-    val sticker: CustomEmojiSticker? = resolvedState.value
 
     // First fileId that actually has to be ready before SOMETHING paints in the
     // sticker box — i.e. the file the user perceives as "the emoji loading":
@@ -77,6 +93,8 @@ fun CustomEmojiInlineView(
     // Web mode passes null fileIds and uses the remoteUrl chain instead — there
     // we trust Coil / LottieUrlStore for their own loading visuals and let the
     // metadata-resolution placeholder be the only one we paint.
+    // First fileId that actually has to be ready before SOMETHING paints in the
+    // sticker box.
     val firstVisibleFileId: Int? = sticker?.let {
         when (it.format) {
             StickerFormat.Tgs -> it.thumb?.fileId ?: it.media.fileId
@@ -88,34 +106,8 @@ fun CustomEmojiInlineView(
             }
         }
     }
-
-    // Bind to the first user-visible file's slot. The child renderer
-    // ([TdMediaImage] / [LottieStickerView] / [WebmStickerPlayer]) issues its
-    // own ensure() against the same fileId once it mounts, so [MediaCache]
-    // sees both calls — idempotent: same priority is a hot-path no-op, and
-    // two cancelDeferred calls on dispose collapse via the
-    // pendingCancels-replace contract. The duplication is what lets this
-    // composable be observe-only at the API level (we only need [isReady]
-    // for the placeholder gate) without a separate observe-only hook.
     val binding = rememberMediaBinding(fileId = firstVisibleFileId, priority = priority)
 
-    // Decide whether the sticker box currently has SOMETHING to paint. The
-    // placeholder stays visible while the answer is no:
-    //
-    //   • Metadata not resolved yet → no.
-    //   • TDLib mode: we know the first user-visible file's id; wait until
-    //     MediaCache reports it Ready. Without this, TDLib mode flashes the
-    //     placeholder for ~50 ms (GetCustomEmojiStickers is local-fast) and
-    //     then sits on a transparent box for several seconds while the .tgs
-    //     / thumb file actually downloads — perceived as "the emoji isn't
-    //     loading".
-    //   • Web mode: fileIds are null; Coil / LottieUrlStore handle their
-    //     own loading visuals from there, so we treat the resolver landing
-    //     as "ready" and let the metadata-resolution flash be the only
-    //     placeholder we own.
-    //   • Webm with no thumb in any mode: the inline path has no rendering
-    //     branch (no animation, no static), so the box would be dead air —
-    //     keep the placeholder so the user at least sees a loading pip.
     val contentReady = when {
         sticker == null -> false
         sticker.format == StickerFormat.Webm &&
@@ -139,19 +131,35 @@ fun CustomEmojiInlineView(
         val repaint = if (sticker.needsRepainting) tintColor else null
 
         when (sticker.format) {
-            StickerFormat.Tgs -> LottieStickerView(
+            // TGS routes through [InlineCustomEmojiRenderer] (NOT [LottieStickerView])
+            // for inline-emoji sizing. The renderer joins a shared playback session
+            // keyed by customEmojiId in [CustomEmojiAnimator], so N repeats of the
+            // same emoji in a post share one [com.airbnb.lottie.LottieDrawable] + one
+            // progress state + one Choreographer tick. Saves CPU/battery proportionally
+            // to the repeat count: a post with 30 copies of the same TGS emoji pays
+            // roughly 1/30 of the per-frame raster cost of the naive
+            // [LottieStickerView] path. Full-size stickers (StickerView) keep using
+            // [LottieStickerView] because there's at most 1–2 of them on screen and
+            // they want native composition fps.
+            //
+            // `remoteUrl` path: web (anonymous) mode where we have a URL but no TDLib
+            // fileId. InlineCustomEmojiRenderer routes through [LottieUrlStore] in
+            // that case, fetching the .tgs (or pre-decompressed JSON) bytes via the
+            // shared OkHttp client. TDLib mode keeps using fileId.
+            // TGS animation routes through [InlineCustomEmojiRenderer] — shared
+            // [com.airbnb.lottie.LottieDrawable] per (id, fps) in [CustomEmojiAnimator],
+            // background-thread rasterisation, double-buffered blits. See animator KDoc
+            // for the full rationale.
+            StickerFormat.Tgs -> InlineCustomEmojiRenderer(
+                customEmojiId = customEmojiId,
                 fileId = sticker.media.fileId,
-                // remoteUrl path: web (anonymous) mode where we have a URL but no
-                // TDLib fileId. LottieStickerView routes through LottieUrlStore in
-                // that case, fetching the .tgs (or pre-decompressed JSON) bytes
-                // via the shared OkHttp client. TDLib mode keeps using fileId.
                 remoteUrl = sticker.media.takeIf { it.fileId == null }?.remoteUrl,
                 thumb = sticker.thumb,
                 contentDescription = contentDescription,
                 modifier = Modifier.fillMaxSize(),
+                tintColor = repaint,
+                fps = CustomEmojiAnimator.Fps.Inline,
                 priority = priority,
-                iterate = true,
-                repaintColor = repaint,
             )
             StickerFormat.Webp -> {
                 // Static WEBP is the cheap path — render directly. (Most custom emojis

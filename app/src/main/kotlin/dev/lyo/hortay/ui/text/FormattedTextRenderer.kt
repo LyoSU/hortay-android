@@ -112,6 +112,18 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
         if (customEmojiIds.isNotEmpty()) customEmoji.request(customEmojiIds)
     }
 
+    // Hoisting attempt — making one Flow collector here and passing per-id resolved
+    // stickers down via [CustomEmojiInlineView.preResolvedSticker] — measured worse on
+    // Galaxy S25 (24% janky vs 14% without). Cause: `customEmojiIds.associateWith {
+    // storeState.value[it] }` allocates a new HashMap on every store change AND the
+    // resulting [inlineContent] remember key flips, re-running all 30 InlineTextContent
+    // composables together instead of per-id. Per-instance `derivedStateOf` inside
+    // CustomEmojiInlineView turns out to be the cheaper path here: it only invalidates
+    // when THIS id's resolved sticker changes, not when ANY id in the store does.
+    // The `preResolvedSticker` parameter stays in place as a future opt-in for callers
+    // that have a static, externally-resolved sticker (e.g. reaction-chip rendering
+    // that already resolves stickers for chip layout).
+
     val built = remember(formatted, accent, codeBg, mute, onSurface, revealed, confirmMaskedLink, hashtagTap) {
         buildFromFormatted(
             formatted = formatted,

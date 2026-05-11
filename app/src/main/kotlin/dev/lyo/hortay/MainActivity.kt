@@ -16,6 +16,7 @@ import dev.lyo.hortay.data.AuthStage
 import dev.lyo.hortay.ui.auth.AuthScreen
 import dev.lyo.hortay.ui.main.MainScaffold
 import dev.lyo.hortay.ui.media.LocalCustomEmoji
+import dev.lyo.hortay.ui.media.LocalCustomEmojiAnimator
 import dev.lyo.hortay.ui.media.LocalExoPlayerPool
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalStickerOutline
@@ -50,6 +51,7 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(
                     LocalMediaCache provides graph.mediaCache,
                     LocalCustomEmoji provides graph.customEmoji,
+                    LocalCustomEmojiAnimator provides graph.customEmojiAnimator,
                     LocalStickerOutline provides graph.stickerOutline,
                     LocalExoPlayerPool provides graph.exoPlayerPool,
                     LocalWebHttpClient provides graph.webHttpClient,
