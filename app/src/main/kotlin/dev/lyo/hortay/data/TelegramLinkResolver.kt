@@ -83,6 +83,14 @@ class TelegramLinkResolver(private val td: TdSender) {
                 if (info.chatId == 0L || message == null) DeepLink.External(rawUrl)
                 else DeepLink.Message(chatId = info.chatId, messageId = message.id)
             }
+            // Hashtag taps emit `tg://search?query=#foo` and TDLib classifies them as
+            // InternalLinkTypeSearch — they're a Telegram-internal feature (global
+            // hashtag search) but Hortay doesn't have that UI yet. Routing them to
+            // ACTION_VIEW would punt the user out of the app for what reads as an
+            // internal tap; route to UnsupportedFeature instead so the scaffold can
+            // surface a snackbar that explains why nothing happened.
+            is TdApi.InternalLinkTypeSearch ->
+                DeepLink.UnsupportedFeature(UnsupportedFeatureKind.HashtagSearch, rawUrl)
             // Everything else — chat invites, bot starts, premium features, gifts,
             // story shares, chat folder invites, … — is a Telegram URL we recognise
             // but don't natively handle. Hand the raw string back so the UI delegates

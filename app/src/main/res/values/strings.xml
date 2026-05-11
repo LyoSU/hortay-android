@@ -441,4 +441,5 @@
     <string name="link_unsupported_group">Group chats open in Telegram</string>
     <string name="link_unsupported_other">This link opens in Telegram</string>
     <string name="link_not_found">Link not found</string>
+    <string name="link_unsupported_hashtag">Hashtag search is coming soon</string>
 </resources>

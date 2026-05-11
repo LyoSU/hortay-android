@@ -51,7 +51,13 @@ class HortayUriHandler(
             when (link) {
                 null,
                 is DeepLink.External -> runCatching { delegate.openUri(uri) }
-                else -> router.submit(link)
+                // UnsupportedFeature goes through the router (NOT external) — see
+                // DeepLink.UnsupportedFeature KDoc on why we don't punt these to the
+                // OS. Scaffolds collect and surface an in-app snackbar.
+                is DeepLink.UnsupportedFeature,
+                is DeepLink.PublicChannel,
+                is DeepLink.PrivateChannel,
+                is DeepLink.Message -> router.submit(link)
             }
         }
     }

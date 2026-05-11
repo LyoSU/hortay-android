@@ -73,6 +73,7 @@ fun WebModeScaffold(graph: AppGraph) {
     // works identically in both modes.
     var homeTapTrigger by rememberSaveable { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val locale = remember { Locale.getDefault().language.lowercase() }
     val signInRequiredMsg = stringResource(R.string.web_deeplink_signin_required)
     // Snackbar host lifted into the scaffold so deep-link rejection messages
@@ -109,6 +110,14 @@ fun WebModeScaffold(graph: AppGraph) {
                     // here defensively, but the in-app interceptor normally short-
                     // circuits Externals straight to the system handler upstream.
                     runCatching { systemUriHandler.openUri(link.rawUrl) }
+                }
+                is DeepLink.UnsupportedFeature -> {
+                    // Hashtag search etc — show a snackbar, don't punt to the OS.
+                    val msg = when (link.feature) {
+                        dev.lyo.hortay.data.UnsupportedFeatureKind.HashtagSearch ->
+                            R.string.link_unsupported_hashtag
+                    }
+                    snackbarHostState.showSnackbar(context.getString(msg))
                 }
             }
         }

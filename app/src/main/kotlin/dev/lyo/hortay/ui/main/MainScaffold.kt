@@ -187,6 +187,14 @@ fun MainScaffold(graph: AppGraph) {
                     runCatching { systemUriHandler.openUri(link.rawUrl) }
                     return@collect
                 }
+                is DeepLink.UnsupportedFeature -> {
+                    val msgId = when (link.feature) {
+                        dev.lyo.hortay.data.UnsupportedFeatureKind.HashtagSearch ->
+                            R.string.link_unsupported_hashtag
+                    }
+                    graph.userMessages.post(res.getString(msgId), dev.lyo.hortay.data.UserMessageBus.Severity.Info)
+                    return@collect
+                }
             }
             if (targetChat != null) {
                 channelFilter = targetChat

@@ -1015,18 +1015,14 @@ private fun MediaCaption(caption: FormattedText, maxLines: Int, above: Boolean, 
 }
 
 /**
- * Self-contained Text + "Показати більше" toggle. The collapsed render binds the layout
- * callback to flip [canExpand] when Compose reports overflow at [maxLines]; we deliberately
- * keep the toggle hidden until that signal lands so short posts never see it. Tapping the
+ * Self-contained body Text + "Показати більше" toggle. The collapsed render binds the
+ * layout callback to flip [canExpand] when Compose reports overflow at [maxLines]; the
+ * toggle stays hidden until that signal lands so short posts never see it. Tapping the
  * toggle flips [expanded] and the same Text re-renders without a clamp.
  *
- * Long-press on an inline link surfaces a Telegram-style Open / Copy / Share menu (see
- * [dev.lyo.hortay.ui.text.linkLongPress] + [dev.lyo.hortay.ui.text.LinkActionsSheet] for
- * the gesture-ownership contract that avoids racing the PostCard's parent
- * combinedClickable long-press).
- *
- * State is keyed on the [renderable.text] reference so editing a post or scrolling away
- * and back resets to collapsed — same as the official Telegram client.
+ * The Text itself is a [LinkAwareText] — long-press on a link surfaces the Open / Copy
+ * / Share sheet without us threading any state through this composable. Expand state
+ * is keyed on [renderable] so post edits / scroll-and-return reset to collapsed.
  */
 @Composable
 private fun ExpandableText(
@@ -1034,59 +1030,30 @@ private fun ExpandableText(
     style: TextStyle,
     maxLines: Int,
 ) {
-    var expanded by remember(renderable.text) { mutableStateOf(false) }
-    var canExpand by remember(renderable.text) { mutableStateOf(false) }
-    var layoutResult by remember(renderable.text) {
-        mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null)
-    }
-    var pressedLink by remember(renderable.text) { mutableStateOf<String?>(null) }
-
-    val linkMod = if (renderable.linkRanges.isNotEmpty()) {
-        Modifier.linkLongPress(
-            linkRanges = renderable.linkRanges,
-            layoutResult = layoutResult,
-            onLongPress = { range -> pressedLink = range.url },
-        )
-    } else Modifier
-
     if (maxLines == Int.MAX_VALUE) {
-        // Detail screen path — never collapse, never offer a toggle.
-        Text(
-            text = renderable.text,
-            inlineContent = renderable.inlineContent,
-            style = style,
-            onTextLayout = { layoutResult = it },
-            modifier = linkMod,
-        )
-    } else {
-        Text(
-            text = renderable.text,
-            inlineContent = renderable.inlineContent,
-            style = style,
-            maxLines = if (expanded) Int.MAX_VALUE else maxLines,
-            overflow = TextOverflow.Ellipsis,
-            onTextLayout = { layout ->
-                layoutResult = layout
-                if (!expanded && layout.hasVisualOverflow) canExpand = true
-            },
-            modifier = linkMod,
-        )
-        if (canExpand && !expanded) {
-            Text(
-                text = stringResource(R.string.post_show_more),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .padding(top = 4.dp)
-                    .clickable { expanded = true },
-            )
-        }
+        // Detail surface — never collapse, never offer a toggle.
+        dev.lyo.hortay.ui.text.LinkAwareText(renderable = renderable, style = style)
+        return
     }
-
-    pressedLink?.let { url ->
-        dev.lyo.hortay.ui.text.LinkActionsSheet(
-            url = url,
-            onDismiss = { pressedLink = null },
+    var expanded by remember(renderable) { mutableStateOf(false) }
+    var canExpand by remember(renderable) { mutableStateOf(false) }
+    dev.lyo.hortay.ui.text.LinkAwareText(
+        renderable = renderable,
+        style = style,
+        maxLines = if (expanded) Int.MAX_VALUE else maxLines,
+        overflow = TextOverflow.Ellipsis,
+        onTextLayout = { layout ->
+            if (!expanded && layout.hasVisualOverflow) canExpand = true
+        },
+    )
+    if (canExpand && !expanded) {
+        Text(
+            text = stringResource(R.string.post_show_more),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .clickable { expanded = true },
         )
     }
 }

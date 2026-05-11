@@ -64,4 +64,16 @@ sealed interface DeepLink {
      * dispatch to the official Telegram client.
      */
     data class External(val rawUrl: String) : DeepLink
+
+    /**
+     * Telegram-internal link type we explicitly DON'T want to send to the OS — punting
+     * a `tg://` URL to ACTION_VIEW feels external to the user even though it's a
+     * Telegram-domain URI ("я тиснув на хештег, а воно відкрило іншу програму").
+     * Scaffolds show an in-app snackbar describing the feature instead.
+     */
+    data class UnsupportedFeature(val feature: UnsupportedFeatureKind, val rawUrl: String) : DeepLink
 }
+
+/** Kinds of Telegram links we recognise but render in-app as a snackbar instead of
+ *  routing them externally — see [DeepLink.UnsupportedFeature]. */
+enum class UnsupportedFeatureKind { HashtagSearch }
