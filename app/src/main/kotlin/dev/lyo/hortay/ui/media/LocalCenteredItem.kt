@@ -41,3 +41,15 @@ import androidx.compose.runtime.staticCompositionLocalOf
 val LocalIsCenteredItem = staticCompositionLocalOf<State<Boolean>> { NeverCentered }
 
 private val NeverCentered = mutableStateOf(false)
+
+/**
+ * Per-feed "is this item the deep-link / quote-tap scroll target right now?" flag.
+ * Drives the brief surface-tint highlight on the linked-to PostCard (Telegram-iOS
+ * idiom — a primary-container glow on the bubble the user just jumped to, so they
+ * can locate it after the auto-scroll). Default `false` for any reader outside a
+ * feed that explicitly threads a highlight signal.
+ *
+ * Static is fine for the same reason as [LocalIsCenteredItem] — value changes are
+ * cheap booleans and reader-side recomposition is bounded to the PostCard.
+ */
+val LocalIsHighlightedItem = staticCompositionLocalOf<Boolean> { false }

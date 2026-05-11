@@ -83,7 +83,26 @@ fun PostCard(
     // logic prunes their recompositions. Without this split every interaction-info hit
     // re-runs the whole card.
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    // Highlight tint when this card is the deep-link / quote-tap scroll target. Fades
+    // from primaryContainer to transparent so the user can spot the just-landed post
+    // after the auto-scroll, then the card returns to its normal background. The
+    // [LocalIsHighlightedItem] flag goes false → true when scroll lands, true → false
+    // after the TimelineScreen-level delay.
+    val isHighlighted = dev.lyo.hortay.ui.media.LocalIsHighlightedItem.current
+    val highlightAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isHighlighted) 0.35f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = if (isHighlighted) 240 else 900,
+        ),
+        label = "post-highlight",
+    )
+    val highlightColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = highlightAlpha)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(highlightColor),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()

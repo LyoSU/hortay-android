@@ -3,10 +3,17 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.BasicTextField
@@ -18,6 +25,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -62,6 +71,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.ui.theme.asComposeShape
 import dev.lyo.hortay.ui.media.LocalIsCenteredItem
+import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
@@ -263,6 +273,11 @@ fun TimelineScreen(
     // displayedItems and clears the request on success. Cleared too on filter dismissal
     // (C2 fix) so a stale target from a previous channel doesn't yank the user later.
     var pendingScrollToMessage by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    // (chatId, messageId) of the post we just scrolled to via a deep link / quote tap.
+    // Drives a brief surface-tint highlight on that PostCard so the user can locate it
+    // post-scroll. Auto-clears after [HIGHLIGHT_DURATION_MS]; null when no highlight is
+    // active.
+    var highlightedPostKey by remember { mutableStateOf<Pair<Long, Long>?>(null) }
     LaunchedEffect(scrollToMessage) {
         if (scrollToMessage != null) {
             pendingScrollToMessage = scrollToMessage
@@ -366,11 +381,20 @@ fun TimelineScreen(
     // Tell TDLib the filtered channel is in focus while the user is here, and eagerly pull
     // a deeper slice of history so the filtered list is not just the few entries the global
     // refresh fetched per channel.
+    //
+    // [previewLoading] is true while the very first history fetch is in flight for a freshly
+    // entered channel — used by the empty-state guard below so a non-subscribed channel
+    // doesn't blink "поки тут пусто" during the round-trip before posts arrive.
+    var previewLoading by remember(channelFilter) { mutableStateOf(channelFilter != null) }
     LaunchedEffect(channelFilter) {
-        val id = channelFilter ?: return@LaunchedEffect
-        val r = tdlibRepo ?: return@LaunchedEffect
+        val id = channelFilter ?: run { previewLoading = false; return@LaunchedEffect }
+        val r = tdlibRepo ?: run { previewLoading = false; return@LaunchedEffect }
         r.openChat(id)
-        r.loadChannelHistory(id)
+        try {
+            r.loadChannelHistory(id)
+        } finally {
+            previewLoading = false
+        }
         try {
             kotlinx.coroutines.awaitCancellation()
         } finally {
@@ -504,6 +528,13 @@ fun TimelineScreen(
                 }
                 if (idx >= 0) {
                     listState.animateScrollToItem(idx)
+                    // Flag the landed target for a brief surface-tint highlight so the
+                    // user can spot which post the link pointed at — Telegram-iOS does
+                    // this with a ~2 s primary-container glow on the linked-to bubble,
+                    // Telegram-Android with a slow blue flash. We use the post key the
+                    // LazyColumn already uses so PostCard can match without an extra
+                    // lookup table.
+                    highlightedPostKey = chatId to messageId
                     pendingScrollToMessage = null
                     return@collect
                 }
@@ -512,6 +543,14 @@ fun TimelineScreen(
                     tdlibRepo?.loadHistoryAround(chatId, messageId)
                 }
             }
+    }
+
+    // Auto-clear: the highlight pulses for [HIGHLIGHT_DURATION_MS] then fades away.
+    // Cleared one-shot per landing so the next scroll-to-message can re-trigger.
+    LaunchedEffect(highlightedPostKey) {
+        if (highlightedPostKey == null) return@LaunchedEffect
+        kotlinx.coroutines.delay(HIGHLIGHT_DURATION_MS)
+        highlightedPostKey = null
     }
 
     // Pill state, scoped to the active tab. Counting pending posts the user can't see
@@ -1068,7 +1107,18 @@ fun TimelineScreen(
 
                     val displayed = if (searchActive && channelFilter != null) searchResults else visiblePosts
                     if (displayed.isEmpty() && !refreshing && !(searchActive && searchQuery.isBlank())) {
-                        if (searchActive) SearchEmpty() else EmptyState(showOnlyBookmarked)
+                        when {
+                            searchActive -> SearchEmpty()
+                            // First-load skeleton for channel preview: while
+                            // [previewLoading] is true we're mid-roundtrip on
+                            // GetChatHistory for a freshly entered channel that has
+                            // no posts in the merged feed yet. Show shimmer rows
+                            // matching the eventual PostCard layout — same idiom
+                            // Telegram-Android uses while a public channel preview
+                            // loads — instead of "empty" which is misleading.
+                            previewLoading -> ChannelPreviewSkeleton()
+                            else -> EmptyState(showOnlyBookmarked)
+                        }
                     } else {
                         // Scroll gate: while the LazyColumn is mid-scroll (drag, fling,
                         // animateScrollToItem) media composables defer their ensure() so
@@ -1180,7 +1230,15 @@ fun TimelineScreen(
                                     // whole feed.
                                     val isCentered = remember { mutableStateOf(false) }
                                     isCentered.value = item.key == centeredItemKey
-                                    CompositionLocalProvider(LocalIsCenteredItem provides isCentered) {
+                                    val highlighted = highlightedPostKey?.let { (cid, mid) ->
+                                        item.posts().any { p ->
+                                            p.chatId == cid && (p.id == mid || mid in p.albumMessageIds)
+                                        }
+                                    } == true
+                                    CompositionLocalProvider(
+                                        LocalIsCenteredItem provides isCentered,
+                                        LocalIsHighlightedItem provides highlighted,
+                                    ) {
                                         when (item) {
                                             is FeedItem.Single -> PostCard(
                                                 post = item.post,
@@ -1393,6 +1451,102 @@ private fun TimelineTopBar(
 
 
 
+/**
+ * Loading skeleton for a freshly entered channel preview — three placeholder cards
+ * roughed to the shape of a real [PostCard] (avatar circle, two title bars, a body
+ * paragraph). Matches the "shimmer while content loads" idiom Telegram-Android uses on
+ * the public-channel preview screen, and removes the half-second "empty" flash that
+ * was reading as "this channel has no posts" when really we were still waiting on
+ * `GetChatHistory`'s round-trip.
+ *
+ * Shimmer is a single infinite Animatable driving the surfaceContainerHighest /
+ * surfaceContainerLow alpha sweep — cheap (no allocations per frame, one Animatable
+ * for the whole skeleton). MotionScheme isn't used here because the animation is a
+ * deliberate slow loop (1.2s linear), not a state-change spring.
+ */
+@Composable
+private fun ChannelPreviewSkeleton() {
+    val infinite = rememberInfiniteTransition(label = "preview-skeleton")
+    val shimmer by infinite.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "preview-skeleton-alpha",
+    )
+    val shimmerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = shimmer)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        repeat(3) { SkeletonCard(shimmerColor) }
+    }
+}
+
+@Composable
+private fun SkeletonCard(barColor: Color) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(barColor),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(
+                    modifier = Modifier
+                        .height(12.dp)
+                        .width(140.dp)
+                        .clip(MaterialTheme.shapes.extraSmall)
+                        .background(barColor),
+                )
+                Box(
+                    modifier = Modifier
+                        .height(10.dp)
+                        .width(80.dp)
+                        .clip(MaterialTheme.shapes.extraSmall)
+                        .background(barColor),
+                )
+            }
+        }
+        Spacer(Modifier.height(2.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(12.dp)
+                .clip(MaterialTheme.shapes.extraSmall)
+                .background(barColor),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .height(12.dp)
+                .clip(MaterialTheme.shapes.extraSmall)
+                .background(barColor),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.6f)
+                .height(12.dp)
+                .clip(MaterialTheme.shapes.extraSmall)
+                .background(barColor),
+        )
+    }
+}
+
 @Composable
 private fun SearchEmpty() {
     Column(
@@ -1510,6 +1664,14 @@ private const val READ_DWELL_MS = 1000L
  * messages), so we wait for the dwell to feel deliberate rather than incidental.
  */
 private const val FOCUS_DWELL_MS = 1500L
+
+/**
+ * How long the surface-tint "you just landed here" highlight lingers on the post a
+ * deep link / quote tap scrolled to. Long enough for the eye to find it after the
+ * scroll animation settles (~300ms) but short enough to fade before the user starts
+ * scrolling away. Matches the ~2 s glow Telegram-iOS paints on the linked-to bubble.
+ */
+private const val HIGHLIGHT_DURATION_MS = 2200L
 
 /**
  * How many posts ahead of the first visible item to eagerly prefetch posters for.
