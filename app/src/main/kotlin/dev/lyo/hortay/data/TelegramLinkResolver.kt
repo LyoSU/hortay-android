@@ -139,69 +139,155 @@ class TelegramLinkResolver(private val td: TdSender) {
 
     /**
      * Local regex fallback. Mirrors the historical hand-rolled parser, narrowed to the
-     * three shapes the UI actually dispatches. Triggers when TDLib send is unavailable
+     * shapes the UI dispatches natively. Triggers when TDLib send is unavailable
      * (typically the first ~100 ms of process boot, before the native side is wired).
+     *
+     * Thin Uri → primitives adapter; the actual parsing logic lives in
+     * [parseLocalFromParts] which takes only JVM types so it's unit-testable on the
+     * JVM without Robolectric. The Android [Uri] class is final, JNI-bound, and
+     * stubbed-to-throw in pure-JVM tests — keeping the parser primitive-only is the
+     * one barrier between "tested in isolation" and "needs Robolectric overhead".
      */
-    private fun parseLocal(uri: Uri, rawUrl: String): DeepLink? = when (uri.scheme?.lowercase()) {
-        "tg" -> parseTgLocal(uri, rawUrl)
-        "http", "https" -> {
-            // Critical host gate: without this we'd treat ANY https URL as a Telegram
-            // channel handle — `https://github.com/foo` would become
-            // DeepLink.PublicChannel(handle = "foo"), the router would call
-            // SearchPublicChat("foo"), and the user would land on a (probably empty)
-            // Telegram channel instead of opening GitHub. The TDLib parser path
-            // (GetInternalLinkType) gates this correctly upstream; this fallback only
-            // runs when TDLib isn't reachable (cold-launch race), so we must reproduce
-            // the same gate ourselves.
-            val host = uri.host?.lowercase()?.removePrefix("www.")
-            if (host in TELEGRAM_DOMAINS) parseTMeLocal(uri, rawUrl) else null
+    private fun parseLocal(uri: Uri, rawUrl: String): DeepLink? {
+        val scheme = uri.scheme?.lowercase()
+        val host = uri.host?.lowercase()?.removePrefix("www.")
+        val pathSegments = uri.pathSegments.orEmpty().filter { it.isNotBlank() }
+        // Materialise queryParameters once into a Map — [Uri.getQueryParameter] is a
+        // linear scan of the raw query each call, and the parser reads a couple of
+        // keys per case anyway.
+        val queryParams = uri.queryParameterNames.orEmpty().associateWith {
+            uri.getQueryParameter(it).orEmpty()
         }
-        else -> null
+        return parseLocalFromParts(
+            scheme = scheme,
+            host = host,
+            pathSegments = pathSegments,
+            queryParams = queryParams,
+            rawUrl = rawUrl,
+        )
     }
 
-    private fun parseTgLocal(uri: Uri, rawUrl: String): DeepLink? {
-        val action = uri.host?.lowercase() ?: return null
-        return when (action) {
+    companion object {
+        private const val CACHE_CAPACITY = 256
+        // Path-prefix routes that look like a public handle to a naive parser but in
+        // fact mark non-handle features (legacy invite path, sticker pack, proxy
+        // settings, theme apply). `t.me/joinchat/<hash>` is the legacy invite shape;
+        // newer Telegram emits `t.me/+<hash>` for the same purpose — both gated below.
+        private val BLOCKED_PUBLIC_HOSTS = setOf(
+            "joinchat", "addstickers", "share", "addtheme", "proxy", "socks",
+        )
+        // Canonical Telegram link hosts. `telegram.me` / `telegram.dog` are server-side
+        // aliases for `t.me`; including them in the fallback parser keeps cold-launch
+        // resolution accurate without waiting for TDLib's GetInternalLinkType.
+        private val TELEGRAM_DOMAINS = setOf("t.me", "telegram.me", "telegram.dog")
+
+        /**
+         * Pure parser primitive — given the destructured components of a Telegram URI,
+         * returns the typed [DeepLink] our scaffolds dispatch, or null if the input
+         * doesn't match a known internal shape. JVM-only types in the signature so
+         * unit tests can drive every case without Robolectric.
+         *
+         * Mirrors what TDLib's `GetInternalLinkType` returns for the same input,
+         * narrowed to the four UI surfaces that have a native landing target
+         * (PublicChannel, PrivateChannel, ChatInvite, UnsupportedFeature). Anything
+         * else returns null so the caller can defer to TDLib or the OS handler.
+         *
+         * `t.me/+<hash>` and the legacy `t.me/joinchat/<hash>` now produce a typed
+         * [DeepLink.ChatInvite] in the fallback path too — previously the fallback
+         * returned null for these and the caller punted to OS, while the warm-path
+         * (TDLib) produced ChatInvite. The inconsistency made cold-launched invite
+         * taps skip the in-app preview dialog. Now both paths agree.
+         */
+        internal fun parseLocalFromParts(
+            scheme: String?,
+            host: String?,
+            pathSegments: List<String>,
+            queryParams: Map<String, String>,
+            rawUrl: String,
+        ): DeepLink? = when (scheme) {
+            "tg" -> parseTgScheme(host, queryParams, rawUrl)
+            "http", "https" ->
+                if (host in TELEGRAM_DOMAINS) parseTMePath(pathSegments, rawUrl) else null
+            else -> null
+        }
+
+        private fun parseTgScheme(
+            host: String?,
+            queryParams: Map<String, String>,
+            rawUrl: String,
+        ): DeepLink? = when (host) {
             "resolve" -> {
-                val domain = uri.getQueryParameter("domain")?.takeIf { it.isNotBlank() } ?: return null
-                val post = uri.getQueryParameter("post")?.toLongOrNull()
-                DeepLink.PublicChannel(
-                    handle = domain.removePrefix("@"),
-                    serverPostId = post,
-                    originalUrl = rawUrl,
-                )
+                val domain = queryParams["domain"]?.takeIf { it.isNotBlank() }
+                val post = queryParams["post"]?.toLongOrNull()
+                domain?.let {
+                    DeepLink.PublicChannel(
+                        handle = it.removePrefix("@"),
+                        serverPostId = post,
+                        originalUrl = rawUrl,
+                    )
+                }
             }
             "privatepost" -> {
-                val raw = uri.getQueryParameter("channel")?.toLongOrNull() ?: return null
-                val post = uri.getQueryParameter("post")?.toLongOrNull()
-                DeepLink.PrivateChannel(
-                    chatId = "-100$raw".toLongOrNull() ?: return null,
-                    serverPostId = post,
-                    originalUrl = rawUrl,
-                )
+                val raw = queryParams["channel"]?.toLongOrNull()
+                val post = queryParams["post"]?.toLongOrNull()
+                raw?.let {
+                    val chatId = "-100$it".toLongOrNull() ?: return@let null
+                    DeepLink.PrivateChannel(
+                        chatId = chatId,
+                        serverPostId = post,
+                        originalUrl = rawUrl,
+                    )
+                }
+            }
+            // `tg://join?invite=<hash>` — `tg://` flavour of an invite link. Both
+            // canonical and legacy Android shares emit this format.
+            "join" -> {
+                val invite = queryParams["invite"]?.takeIf { it.isNotBlank() }
+                invite?.let {
+                    DeepLink.ChatInvite(inviteLink = "https://t.me/+$it", originalUrl = rawUrl)
+                }
             }
             else -> null
         }
-    }
 
-    private fun parseTMeLocal(uri: Uri, rawUrl: String): DeepLink? {
-        val segments = uri.pathSegments.filter { it.isNotBlank() }
-        return when {
+        private fun parseTMePath(
+            segments: List<String>,
+            rawUrl: String,
+        ): DeepLink? = when {
             segments.isEmpty() -> null
             segments[0] == "c" && segments.size >= 2 -> {
-                val raw = segments[1].toLongOrNull() ?: return null
-                val msg = segments.getOrNull(2)?.toLongOrNull()
-                DeepLink.PrivateChannel(
-                    chatId = "-100$raw".toLongOrNull() ?: return null,
-                    serverPostId = msg,
-                    originalUrl = rawUrl,
-                )
+                val raw = segments[1].toLongOrNull()
+                if (raw == null) null else {
+                    val chatId = "-100$raw".toLongOrNull()
+                    val msg = segments.getOrNull(2)?.toLongOrNull()
+                    chatId?.let {
+                        DeepLink.PrivateChannel(
+                            chatId = it,
+                            serverPostId = msg,
+                            originalUrl = rawUrl,
+                        )
+                    }
+                }
             }
-            // `t.me/+inviteHash` (and the legacy `t.me/joinchat/<hash>`) carry an
-            // invite token, not a public handle. SearchPublicChat would 404; the OS /
-            // Telegram client owns the join flow. Same logic for share/proxy/addtheme
-            // pages.
-            segments[0].startsWith("+") || segments[0] in BLOCKED_PUBLIC_HOSTS -> null
+            // `t.me/+<hash>` — canonical invite shape. The leading '+' is the invite
+            // sentinel; the rest is the opaque token TDLib's CheckChatInviteLink
+            // accepts. Bare `t.me/+` carries no token and is rejected (TDLib would
+            // 404). We pass the FULL URL through to TDLib (it re-parses server-side).
+            segments[0].startsWith("+") ->
+                if (segments[0].length > 1)
+                    DeepLink.ChatInvite(inviteLink = rawUrl, originalUrl = rawUrl)
+                else null
+            // `t.me/joinchat/<hash>` — legacy invite shape. TDLib still accepts the
+            // canonical form; reconstruct it so the warm path through
+            // CheckChatInviteLink doesn't 404.
+            segments[0] == "joinchat" ->
+                if (segments.size >= 2)
+                    DeepLink.ChatInvite(
+                        inviteLink = "https://t.me/+${segments[1]}",
+                        originalUrl = rawUrl,
+                    )
+                else null
+            segments[0] in BLOCKED_PUBLIC_HOSTS -> null
             else -> {
                 val handle = segments[0]
                 val msg = segments.getOrNull(1)?.toLongOrNull()
@@ -212,14 +298,5 @@ class TelegramLinkResolver(private val td: TdSender) {
                 )
             }
         }
-    }
-
-    private companion object {
-        const val CACHE_CAPACITY = 256
-        val BLOCKED_PUBLIC_HOSTS = setOf("joinchat", "addstickers", "share", "addtheme", "proxy", "socks")
-        // Canonical Telegram link hosts. `telegram.me` / `telegram.dog` are server-side
-        // aliases for `t.me`; including them in the fallback parser keeps cold-launch
-        // resolution accurate without waiting for TDLib's GetInternalLinkType.
-        val TELEGRAM_DOMAINS = setOf("t.me", "telegram.me", "telegram.dog")
     }
 }
