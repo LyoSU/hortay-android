@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- **Cold-start scroll landed on the OLDEST post instead of the top of the feed**.
+  `rememberLazyListState` persists `firstVisibleItemIndex` across process death via
+  Compose's standard `Saver`. The 2026-05-11 cold-start rework shrank the merged
+  feed from up to `MAX_FEED_SIZE=1000` (per-channel `GetChatHistory × N`) to ~1
+  post per channel (`Chat.lastMessage` harvest). A saved index from a previous
+  session was now frequently ≥ the new feed size — Compose silently clamped to
+  the last item, dropping the user at the bottom of the feed (oldest post in
+  view). A one-shot `LaunchedEffect` in `TimelineScreen` now waits for the first
+  non-empty paint and scrolls to `0` if the saved index is out of range. In-
+  session scroll position is otherwise preserved unchanged.
+
+
+
 - **Hashtag taps lost channel context end-to-end**. Three converging bugs in
   one feature surface:
   - **Inline `#tag` taps inside a channel post produced the same generic
@@ -53,6 +66,19 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   the same — only the snackbar collector swaps for a screen navigation.
 
 ### Performance
+
+- **Comments-prefetch storm under fast scroll closed**. Real-device testing of
+  the 2026-05-11 cold-start rework surfaced a residual FLOOD_WAIT class on
+  `OpenChat`: a fast bottom→top scroll with several micro-pauses stacked
+  `prefetchThread × 3 = up to 9 RPC` per pause on top of the album-coalesce tail
+  still running from cold-start, saturating the per-DC active-slot pool. Two
+  tuning knobs land here. `COMMENTS_PREFETCH_LIMIT: 3 → 1` — warm only the top-
+  most visible post per viewport-stable window; neighbouring posts pay a single
+  on-tap cache miss instead of fighting the queue. Viewport-stable debounce
+  `700 ms → 1200 ms` — absorbs micro-pauses during fast scroll so the prefetch
+  fires only when the user has clearly stopped reading, not every time they
+  glance mid-flick. Both are pure tuning of an existing speculative path; the
+  user-driven `observeThread` on a tap is untouched.
 
 - **Cold-start RPC budget cut ~30× by harvesting `Chat.lastMessage` instead of
   fanning out `GetChatHistory` per channel**. On `AuthorizationStateReady` we now

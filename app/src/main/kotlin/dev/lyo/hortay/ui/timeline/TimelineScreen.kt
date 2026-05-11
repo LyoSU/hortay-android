@@ -79,6 +79,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 // FlowPreview opt-in stays: Flow.debounce(Long) is still preview-marked in
@@ -234,6 +235,23 @@ fun TimelineScreen(
         LazyListState()
     }
     val listState = if (channelFilter != null) filterListState else globalListState
+
+    // Cold-start scroll clamp. [globalListState] persists `firstVisibleItemIndex`
+    // across process death via Compose's standard Saver. After the 2026-05-11
+    // cold-start rework the merged feed shrank from up to MAX_FEED_SIZE=1000
+    // (per-channel GetChatHistory × N) to ~1 post per channel (Chat.lastMessage
+    // harvest). A saved index from a previous session can now be ≥ the new feed
+    // size — Compose silently clamps to the last item, landing the user at the
+    // OLDEST post in the feed instead of the top. Detect this on first non-empty
+    // paint and scroll to top; in-session scroll position is otherwise preserved.
+    // Fires once per process via `LaunchedEffect(Unit)`.
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { posts.size }.first { it > 0 }
+        if (globalListState.firstVisibleItemIndex >= posts.size) {
+            globalListState.scrollToItem(0)
+        }
+    }
+
     // Pinned color-only scroll behavior — height transitions are owned by
     // [topBarOffsetPx] below so we don't fight two systems for the same dp.
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
@@ -666,7 +684,7 @@ fun TimelineScreen(
         LaunchedEffect(listState, commentsRepo) {
             androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
                 .distinctUntilChanged()
-                .debounce(700)
+                .debounce(1200)
                 .collect { indices ->
                     // Read latest list via [displayedItemsState] — captures
                     // [feedItems] directly here would freeze on the keys-change
@@ -1732,10 +1750,17 @@ private const val PREFETCH_AHEAD = 2
  * [TdApi.GetMessageProperties] + [TdApi.GetMessageThread] +
  * [TdApi.GetMessageThreadHistory] for each at once on TDLib's single RPC queue —
  * the user's interactive comments tap got stuck behind the burst until it
- * cleared (~hundreds of ms on a slow DC). Three slots covers the dwell-likely
- * set (top of viewport plus immediate neighbours) without owning the pipe.
+ * cleared (~hundreds of ms on a slow DC).
+ *
+ * Tightened 3 → 1 in the post-cold-start follow-up (2026-05-11): real-device
+ * testing showed that a fast bottom→top scroll with several micro-pauses
+ * stacked 3 × 3 = 9 RPCs per pause on top of the cold-start album-coalesce
+ * tail, saturating the per-DC active-slot pool and surfacing FLOOD_WAIT on
+ * subsequent OpenChat calls. With cap=1 we warm only the top-most visible
+ * post per stable window; the user's tap on a neighbouring post pays a
+ * single cache miss instead of fighting the queue.
  */
-private const val COMMENTS_PREFETCH_LIMIT = 3
+private const val COMMENTS_PREFETCH_LIMIT = 1
 
 /**
  * Hard cap on inline-autoplay video duration we're willing to *speculatively* prefetch the
