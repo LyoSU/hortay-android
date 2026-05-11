@@ -37,11 +37,21 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Twitter-style chronological feed merged from every channel chat the user follows.
  *
- * Pull model:
- *   1. [TdApi.LoadChats] hints the daemon to fetch chat list pages.
- *   2. [TdApi.GetChats] returns cached chat IDs (local-only, fast).
- *   3. For each *channel* chat, [TdApi.GetChatHistory] fetches the latest N messages.
+ * Pull model (cold-start):
+ *   1. [TdApi.LoadChats] drains [TdApi.ChatListMain]; TDLib emits [TdApi.UpdateNewChat]
+ *      per chat with `lastMessage` server-side populated.
+ *   2. [TdApi.GetChats] returns the canonical chat-id list (local-only, fast).
+ *   3. Harvest `chatCache[id].lastMessage` for each chat — no per-channel
+ *      `GetChatHistory` fan-out on cold-start. Each harvested message is routed
+ *      through [ingest] which already handles channel-filter, album coalesce
+ *      (the only residual `GetChatHistory` calls, deferred for album-member
+ *      last-messages only), and feed dedup.
  *   4. Raw messages → [MessageMapper] → [PostFilterStrategy] → [posts].
+ *
+ * On-demand paths (NOT touched by refresh):
+ *   • [loadChannelHistory] — when the user opens a single-channel filter.
+ *   • [loadOlder] — when the user scrolls past the head of one channel.
+ *   • [loadHistoryAround] — when a deep link lands on an older post.
  *
  * Concurrency: a single [Mutex] guards refreshes so that pull-to-refresh + incremental
  * updates from TDLib never interleave and produce phantom duplicates.
@@ -51,6 +61,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * a plain `List` makes us copy the whole 1000-entry feed on every event. PersistentList's
  * structural sharing turns the per-event mutation into O(log N) — a few KB of allocation
  * instead of ~50KB.
+ *
+ * Cold-start rework rationale: see
+ * `docs/superpowers/specs/2026-05-11-tdlib-cold-start-lastmessage-only-design.md`.
  */
 class PostsRepository(
     private val td: TdSender,

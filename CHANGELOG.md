@@ -75,6 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   the chat list, render each row from `Chat.lastMessage`, defer message-history
   fetch to the moment the user taps into a chat.
 
+  Known limitation: if a chat's `UpdateNewChat` arrives later than the 2 s
+  cache-fill timeout AND its `lastMessage` is unchanged at the time, neither
+  the harvest nor the `UpdateChatLastMessage` listener picks it up; the
+  chat is recovered on the next pull-to-refresh. Deferred fix: longer
+  timeout or second-pass `GetChats` after burst settles.
+
 - **Inline custom-emoji TGS playback: parse-failure spam closed, animation
   rasterisation off the UI thread**. Two converging bugs measured on a Galaxy S25
   during scroll through a post with 30+ inline emojis: 28% janky frames, 99th
