@@ -21,6 +21,7 @@ import dev.lyo.hortay.data.StatsRepository
 import dev.lyo.hortay.data.TelegramLinkResolver
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdLifecycleBridge
+import dev.lyo.hortay.data.DataStoreTimelineSnapshotStore
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.UserMessageBus
@@ -73,7 +74,7 @@ class AppGraph(context: Context) {
     // Tiny `(chatId, messageId)` snapshot of the top of the feed, persisted across
     // process death so cold start renders real content sub-100ms instead of a blank
     // screen for the multi-second refresh round-trip storm.
-    val timelineSnapshotStore: TimelineSnapshotStore = TimelineSnapshotStore(context)
+    val timelineSnapshotStore: TimelineSnapshotStore = DataStoreTimelineSnapshotStore(context)
 
     val tdClient: TdClient = TdClient.create(context, settingsStore).also { it.start() }
 

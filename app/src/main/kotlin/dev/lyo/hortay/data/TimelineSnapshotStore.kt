@@ -19,25 +19,13 @@ import kotlinx.coroutines.flow.first
  * trade-off isn't worth it when the source of truth (TDLib's local DB) can
  * rebuild for us.
  *
- * Encoding: pipe-separated `chatId,messageId` pairs. JSON would work too but adds
- * an unnecessary parser dependency for two longs; the flat string is human-
- * readable in `adb shell` for debugging and trivially robust to corruption (one
- * bad entry doesn't poison the rest — see [load]'s mapNotNull).
+ * Extracted as an interface so JVM-only unit tests can substitute an in-memory
+ * implementation without standing up an Android [Context] / DataStore. The
+ * production implementation is [DataStoreTimelineSnapshotStore].
  */
-class TimelineSnapshotStore(context: Context) {
-
-    private val dataStore = context.applicationContext.snapshotDataStore
-
-    suspend fun load(): List<Pair<Long, Long>> {
-        val packed = dataStore.data.first()[KEY].orEmpty()
-        if (packed.isEmpty()) return emptyList()
-        return packed.split(SEPARATOR_ENTRY).mapNotNull(::parseEntry)
-    }
-
-    suspend fun save(entries: List<Pair<Long, Long>>) {
-        val packed = entries.joinToString(SEPARATOR_ENTRY.toString()) { (c, m) -> "$c$SEPARATOR_FIELD$m" }
-        dataStore.edit { it[KEY] = packed }
-    }
+interface TimelineSnapshotStore {
+    suspend fun load(): List<Pair<Long, Long>>
+    suspend fun save(entries: List<Pair<Long, Long>>)
 
     /**
      * Drop the persisted snapshot. Called from [AppGraph] on logout so a
@@ -47,7 +35,32 @@ class TimelineSnapshotStore(context: Context) {
      * during the brief restoreFromSnapshot → first-refresh-completes
      * window.
      */
-    suspend fun clear() {
+    suspend fun clear()
+}
+
+/**
+ * Production [TimelineSnapshotStore] backed by Android DataStore. Encoding: pipe-
+ * separated `chatId,messageId` pairs. JSON would work too but adds an unnecessary
+ * parser dependency for two longs; the flat string is human-readable in `adb shell`
+ * for debugging and trivially robust to corruption (one bad entry doesn't poison
+ * the rest — see [load]'s mapNotNull).
+ */
+class DataStoreTimelineSnapshotStore(context: Context) : TimelineSnapshotStore {
+
+    private val dataStore = context.applicationContext.snapshotDataStore
+
+    override suspend fun load(): List<Pair<Long, Long>> {
+        val packed = dataStore.data.first()[KEY].orEmpty()
+        if (packed.isEmpty()) return emptyList()
+        return packed.split(SEPARATOR_ENTRY).mapNotNull(::parseEntry)
+    }
+
+    override suspend fun save(entries: List<Pair<Long, Long>>) {
+        val packed = entries.joinToString(SEPARATOR_ENTRY.toString()) { (c, m) -> "$c$SEPARATOR_FIELD$m" }
+        dataStore.edit { it[KEY] = packed }
+    }
+
+    override suspend fun clear() {
         dataStore.edit { it.remove(KEY) }
     }
 

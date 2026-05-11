@@ -66,6 +66,14 @@ class PostsRepository(
     private val refreshMutex = Mutex()
     private val chatCache = ConcurrentHashMap<Long, TdApi.Chat>()
 
+    /**
+     * Test-only accessor. Exposes the internal chat cache so unit tests can verify that
+     * UpdateNewChat / UpdateChatLastMessage listeners populate it correctly. Not annotated
+     * @VisibleForTesting because that requires an extra androidx dependency on this module;
+     * the `ForTest` suffix is the convention used elsewhere in this codebase.
+     */
+    internal fun chatCacheForTest(chatId: Long): TdApi.Chat? = chatCache[chatId]
+
     // Stamped on successful refreshLocked completion. refreshIfStale uses it to skip
     // re-opening the app from hammering 200+ TDLib calls when the feed is still warm.
     @Volatile
@@ -198,6 +206,32 @@ class PostsRepository(
         // can pull-to-refresh for back-history. Just cache the metadata.
         td.updates.filterIsInstance<TdApi.UpdateNewChat>()
             .onEach { update -> chatCache[update.chat.id] = update.chat }
+            .launchIn(scope)
+
+        // UpdateChatLastMessage fires when TDLib (a) discovers a fresh lastMessage for
+        // a previously-known chat (edit, delete cascade, or a new post on a chat we
+        // haven't OpenChat'd) and (b) initial sync of late-arriving last-message data.
+        //
+        // Routes the message through ingest so the feed picks it up. ingest is
+        // idempotent on (chatId, messageId) — a duplicate arrival via UpdateNewMessage
+        // racing UpdateChatLastMessage cannot dupe a card.
+        //
+        // Early-return if the chat is not yet cached: UpdateChatLastMessage racing
+        // UpdateNewChat on a fresh-login storm would otherwise drive ingest into its
+        // `td.send(GetChat(id))` fallback for every chat, undoing the cold-start
+        // FLOOD_WAIT win. UpdateNewChat will arrive shortly with chat.lastMessage
+        // populated server-side; the next refreshLocked harvest picks it up. We do
+        // NOT mutate the cached Chat's lastMessage field — that would be a write-through
+        // race on a shared mutable object held by both this listener and the
+        // UpdateNewChat handler. A stale cache.lastMessage on the next refresh just
+        // re-routes a known message through ingest (no-op via the (chatId, messageId)
+        // dedup); feed correctness depends on ingest, not on the cache field.
+        td.updates.filterIsInstance<TdApi.UpdateChatLastMessage>()
+            .onEach { update ->
+                val msg = update.lastMessage ?: return@onEach
+                if (chatCache[update.chatId] == null) return@onEach
+                ingest(update.chatId, listOf(msg))
+            }
             .launchIn(scope)
 
         // Keep [archivedChatIds] live: TDLib fires UpdateChatAddedToList /
