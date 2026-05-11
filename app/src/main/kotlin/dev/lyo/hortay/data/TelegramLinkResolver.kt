@@ -83,12 +83,15 @@ class TelegramLinkResolver(private val td: TdSender) {
                 if (info.chatId == 0L || message == null) DeepLink.External(rawUrl)
                 else DeepLink.Message(chatId = info.chatId, messageId = message.id)
             }
-            // Hashtag taps emit `tg://search?query=#foo` and TDLib classifies them as
-            // InternalLinkTypeSearch — they're a Telegram-internal feature (global
-            // hashtag search) but Hortay doesn't have that UI yet. Routing them to
-            // ACTION_VIEW would punt the user out of the app for what reads as an
-            // internal tap; route to UnsupportedFeature instead so the scaffold can
-            // surface a snackbar that explains why nothing happened.
+            // Hashtag search arriving as an external link (e.g. clipboard paste from
+            // the official client, or a t.me/s/.../?q= URL someone shared). Our own
+            // renderer no longer fabricates a `tg://search?query=...` URL for inline
+            // `#foo` taps — those go through `LocalHashtagTap` directly — but the
+            // resolver still has to recognise this shape because TDLib does classify
+            // it and we don't want to ACTION_VIEW-punt an internal-feature link.
+            // Hortay has no hashtag-search UI yet; route to UnsupportedFeature so the
+            // scaffold collector surfaces the snackbar. When in-app search lands,
+            // introduce a typed [DeepLink.HashtagSearch] variant and dispatch here.
             is TdApi.InternalLinkTypeSearch ->
                 DeepLink.UnsupportedFeature(UnsupportedFeatureKind.HashtagSearch, rawUrl)
             // Invite links (`t.me/+abc...`). Scaffold calls CheckChatInviteLink for a

@@ -92,6 +92,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val uriHandler = LocalUriHandler.current
     val confirmMaskedLink = LocalLinkConfirm.current
+    val hashtagTap = LocalHashtagTap.current
     val customEmoji = LocalCustomEmoji.current
 
     // Reveal state lives in a State so flipping it from the link listener triggers a
@@ -111,7 +112,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
         if (customEmojiIds.isNotEmpty()) customEmoji.request(customEmojiIds)
     }
 
-    val built = remember(formatted, accent, codeBg, mute, onSurface, revealed, confirmMaskedLink) {
+    val built = remember(formatted, accent, codeBg, mute, onSurface, revealed, confirmMaskedLink, hashtagTap) {
         buildFromFormatted(
             formatted = formatted,
             accent = accent,
@@ -120,6 +121,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
             onSurface = onSurface,
             uriHandler = uriHandler,
             confirmMaskedLink = confirmMaskedLink,
+            hashtagTap = hashtagTap,
             revealedSpoilers = revealed,
             onSpoilerTap = { idx -> revealed = revealed + idx },
         )
@@ -169,6 +171,7 @@ private fun buildFromFormatted(
     onSurface: Color,
     uriHandler: UriHandler,
     confirmMaskedLink: (String) -> Unit,
+    hashtagTap: (String) -> Unit,
     revealedSpoilers: Set<Int>,
     onSpoilerTap: (Int) -> Unit,
 ): BuiltAnnotated {
@@ -270,20 +273,37 @@ private fun buildFromFormatted(
                 linkRanges += LinkRange(start, end, url)
             }
             FormattedText.Style.Mention -> {
-                // @username — resolve via tg:// so the official client opens the profile.
+                // @username — encode as the canonical public `https://t.me/<handle>` URL.
+                // HortayUriHandler's resolver (TDLib GetInternalLinkType) classifies it
+                // as InternalLinkTypePublicChat and the router opens the channel in-app.
+                // Choosing the https:// form over `tg://resolve?domain=...` keeps the
+                // long-press preview / Copy / Share payload human-readable: t.me/durov
+                // vs. a service-looking `tg://resolve?...`, identical routing either way.
                 val handle = srcText.substring(srcStart, srcEnd).trimStart('@')
                 if (handle.isNotEmpty()) {
-                    val url = "tg://resolve?domain=$handle"
+                    val url = "https://t.me/$handle"
                     addLink(LinkAnnotation.Url(url, mentionStyle, safeOpen), start, end)
                     linkRanges += LinkRange(start, end, url)
                 }
             }
             FormattedText.Style.Hashtag -> {
-                // tg://search opens Telegram's global search with the tag preselected.
+                // Clickable, NOT a Url annotation. See [LocalHashtagTap] for the full
+                // rationale — TL;DR `#` in a tg://search?query=#foo URL is a fragment
+                // delimiter so the resolver couldn't classify it, AND any URL form
+                // leaks to clipboard / share / long-press preview which Telegram-
+                // Android avoids by treating hashtags as an in-app feature with no
+                // shareable URL. Deliberately omitted from `linkRanges` so the long-
+                // press hit-tester skips the span entirely.
                 val tag = srcText.substring(srcStart, srcEnd)
-                val url = "tg://search?query=$tag"
-                addLink(LinkAnnotation.Url(url, mentionStyle, safeOpen), start, end)
-                linkRanges += LinkRange(start, end, url)
+                addLink(
+                    LinkAnnotation.Clickable(
+                        tag = "hashtag-$idx",
+                        styles = mentionStyle,
+                        linkInteractionListener = LinkInteractionListener { hashtagTap(tag) },
+                    ),
+                    start,
+                    end,
+                )
             }
             FormattedText.Style.Spoiler -> {
                 if (idx in revealedSpoilers) {

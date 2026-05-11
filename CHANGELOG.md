@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Hashtag taps prompted "Open with another app"; long-press leaked `tg://` URLs**.
+  The renderer used to fabricate `tg://search?query=#foo` for inline `#hashtag`
+  spans, but `#` is a URI fragment delimiter so the URL parsed as
+  `tg://search?query=` with fragment `foo` — TDLib `GetInternalLinkType` couldn't
+  classify the shape, the resolver fell through to `DeepLink.External`, and
+  `HortayUriHandler` punted to ACTION_VIEW. Same fabrication leaked the raw
+  service URL to the long-press action sheet preview, Copy link, and Share
+  intent — confusing for a user who tapped a normal-looking `#hashtag` and saw
+  `tg://` chrome. Fix: hashtag spans now emit `LinkAnnotation.Clickable` (not
+  `Url`) routed through a new `LocalHashtagTap` CompositionLocal that the
+  scaffold wires to `DeepLinkRouter.submit(UnsupportedFeature(HashtagSearch))` —
+  reusing the existing snackbar collector. Hashtag spans are deliberately
+  omitted from `RenderableText.linkRanges` so the long-press hit-tester skips
+  them (Telegram-Android also has no copy menu for hashtags — they're an
+  in-app feature, not a shareable link).
+- **Long-press on `@mention` leaked `tg://resolve?domain=…`** to the action
+  sheet preview / Copy link / Share payload. Renderer now encodes mentions as
+  `https://t.me/<handle>` — identical routing through `HortayUriHandler`
+  (TDLib `GetInternalLinkType` returns `InternalLinkTypePublicChat` for both
+  forms) but the user-visible URL is the canonical public one.
+
+### Performance
+
+- **Inline custom-emoji TGS playback rebuilt on a process-wide
+  `CustomEmojiAnimator`** with three layers of sharing keyed on `customEmojiId`:
+  one [LottieDrawable] per (id, fps) pair, one rasterisation `Bitmap` per entry
+  (sized to the largest consumer reporting in via `Handle.reportSize`), and one
+  `MutableFloatState` progress driven by a single process-wide
+  `Choreographer.FrameCallback` master clock. Compose consumers blit the
+  shared bitmap through `Canvas.drawBitmap` inside a `Canvas { ... }` draw scope
+  whose `progress()` read subscribes the scope to draw-only invalidations — never
+  recompositions. Net effect on a post with 30 repeats of the same TGS emoji
+  (the high-end of what Telegram allows in one message): 30 ticker coroutines →
+  1, 30 recomposition fanouts → 0, 30 Lottie layer-tree walks per frame → 1 (the
+  walk that paints the shared bitmap), 30 cheap GPU-texture-friendly blits.
+  Tracks Telegram-Android's `AnimatedEmojiDrawable.globalEmojiCache` +
+  `RLottieDrawable` bitmap-cache strategy. FPS clamped per surface class
+  (`Fps.Inline = 20`, `Fps.Reaction = 24`) so multiple Choreographer ticks at
+  60–120 Hz collapse into a single bitmap re-rasterisation. Pauses globally on
+  ProcessLifecycle STOP (master clock stops posting frame callbacks; battery
+  cost = zero); per-consumer host-lifecycle gate releases the refcount when a
+  composable's host drops below STARTED so a backgrounded overlay above the feed
+  doesn't keep the underlying feed's emojis ticking. Monochrome emojis
+  (`needsRepainting = true`) take their tint via `Paint(colorFilter =
+  PorterDuffColorFilter(_, SRC_ATOP))` on the consumer's `drawBitmap` call —
+  per-consumer tint, one bitmap source. Full-size sticker rendering (StickerView
+  → LottieStickerView) is unaffected — typical surface has 1–2 stickers on
+  screen and wants the composition's native frame rate, no sharing benefit. On
+  TDLib logout the animator's entry map is wiped (entries reference TDLib-
+  database-scoped compositions); web (anonymous) mode emojis route through the
+  same animator with [LottieUrlStore]-sourced compositions.
+
 ### Added
 
 - **Text selection on "full post" surfaces** (comments-thread anchor in
