@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+
+- **Feed `chat_bubble` pill hidden on posts with zero replies**. Previously
+  the action row painted a `0`-text pill whenever `commentCount` was not null
+  (channel had a linked discussion group), so a channel with no engagement
+  read as a wall of mute "0 comments" affordances. The pill now requires
+  `commentCount > 0` — `null` (no linked group) and `0` (linked but empty)
+  collapse onto one "nothing to show" branch. Mirrors the empty-state
+  contract on `CommentsScreen` where the "0 відповідей" subtitle was also
+  recently dropped.
+
 ### Fixed
 
 - **Cold-start scroll landed on the OLDEST post instead of the top of the feed**.

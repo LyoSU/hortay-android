@@ -188,7 +188,7 @@ fun PostCard(
                     translation = translation,
                 )
 
-                if (post.views > 0 || post.commentCount != null || post.reactions.items.isNotEmpty()) {
+                if (post.views > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     ActionRow(
                         views = post.views,
@@ -614,16 +614,22 @@ private fun ActionRow(
         if (views > 0) {
             StatPill("visibility", formatViews(views))
         }
-        commentCount?.let { count ->
+        // `commentCount == null` = channel has no linked discussion group (comments
+        // fundamentally disabled). `commentCount == 0` = group exists but no replies
+        // yet. Both read as "nothing to see" to the user, so we collapse them into
+        // one branch and only surface the pill when the count is meaningfully > 0 —
+        // mirrors the empty-state contract on CommentsScreen (no "0 replies" subtitle).
+        val hasComments = (commentCount ?: 0) > 0
+        if (hasComments) {
             if (views > 0) Spacer(Modifier.width(14.dp))
             StatPill(
                 symbol = "chat_bubble",
-                text = if (count > 0) formatViews(count) else "0",
+                text = formatViews(commentCount!!),
                 onClick = onCommentsClick,
             )
         }
         if (reactions.items.isNotEmpty()) {
-            if (views > 0 || commentCount != null) {
+            if (views > 0 || hasComments) {
                 Spacer(Modifier.width(14.dp))
                 VerticalSeparator()
                 Spacer(Modifier.width(14.dp))
