@@ -236,7 +236,10 @@ private fun buildFromFormatted(
     }
     positionMap[srcLen] = dst
 
-    val linkStyle = TextLinkStyles(SpanStyle(color = accent, textDecoration = TextDecoration.Underline))
+    // Telegram-Android paints links in accent with NO underline — underline is reserved
+    // for the explicit `<u>` entity (Style.Underline below). Matching that vocabulary so
+    // a body of mixed mentions / hashtags / URLs reads as one calm accent layer.
+    val linkStyle = TextLinkStyles(SpanStyle(color = accent))
     val mentionStyle = TextLinkStyles(SpanStyle(color = accent))
     // tg://… URIs throw ActivityNotFoundException when no Telegram client is installed.
     // openUri propagates that synchronously from inside the gesture handler — we'd crash.

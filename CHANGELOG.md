@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Changed
 
+- **Underlines removed from inline links in post bodies**. Telegram-Android
+  paints `Url` / `TextUrl` / `Mention` / `Hashtag` in accent with no
+  decoration; only the explicit `<u>` entity (TDLib `TextEntityTypeUnderline`,
+  `FormattedText.Style.Underline`) gets a literal underline. Our renderer was
+  bundling `TextDecoration.Underline` into the link `SpanStyle`, which lit up
+  every URL / masked link in a post body and read as visual noise against the
+  accent colour. `linkStyle` now matches the existing `mentionStyle` (accent
+  only); the `Style.Underline` formatting branch is untouched so authored
+  underline spans still render.
+
 - **Feed `chat_bubble` pill hidden on posts with zero replies**. Previously
   the action row painted a `0`-text pill whenever `commentCount` was not null
   (channel had a linked discussion group), so a channel with no engagement
