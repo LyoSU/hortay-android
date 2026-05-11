@@ -91,6 +91,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
     val mute = MaterialTheme.colorScheme.onSurfaceVariant
     val onSurface = MaterialTheme.colorScheme.onSurface
     val uriHandler = LocalUriHandler.current
+    val confirmMaskedLink = LocalLinkConfirm.current
     val customEmoji = LocalCustomEmoji.current
 
     // Reveal state lives in a State so flipping it from the link listener triggers a
@@ -110,7 +111,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
         if (customEmojiIds.isNotEmpty()) customEmoji.request(customEmojiIds)
     }
 
-    val built = remember(formatted, accent, codeBg, mute, onSurface, revealed) {
+    val built = remember(formatted, accent, codeBg, mute, onSurface, revealed, confirmMaskedLink) {
         buildFromFormatted(
             formatted = formatted,
             accent = accent,
@@ -118,6 +119,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
             mute = mute,
             onSurface = onSurface,
             uriHandler = uriHandler,
+            confirmMaskedLink = confirmMaskedLink,
             revealedSpoilers = revealed,
             onSpoilerTap = { idx -> revealed = revealed + idx },
         )
@@ -166,6 +168,7 @@ private fun buildFromFormatted(
     mute: Color,
     onSurface: Color,
     uriHandler: UriHandler,
+    confirmMaskedLink: (String) -> Unit,
     revealedSpoilers: Set<Int>,
     onSpoilerTap: (Int) -> Unit,
 ): BuiltAnnotated {
@@ -226,6 +229,20 @@ private fun buildFromFormatted(
     val safeOpen = LinkInteractionListener { link ->
         if (link is LinkAnnotation.Url) runCatching { uriHandler.openUri(link.url) }
     }
+    // Tap listener for **masked** links (TDLib `Style.TextUrl`) — the
+    // `[visible text](url)` shape where display and destination can differ. Anti-phishing
+    // pattern from Telegram-Android: route through [LocalLinkConfirm] to surface the
+    // destination domain before opening. When no scaffold installed an override (the
+    // sentinel [Unhandled] is in effect), fall back to direct openUri so a bare-renderer
+    // caller — e.g. tests — still gets working clicks.
+    val maskedOpen = LinkInteractionListener { link ->
+        if (link !is LinkAnnotation.Url) return@LinkInteractionListener
+        if (confirmMaskedLink === Unhandled) {
+            runCatching { uriHandler.openUri(link.url) }
+        } else {
+            confirmMaskedLink(link.url)
+        }
+    }
 
     formatted.spans.forEachIndexed { idx, span ->
         // CustomEmoji ranges have already been collapsed into inline-content placeholders
@@ -242,7 +259,7 @@ private fun buildFromFormatted(
         if (end == start) return@forEachIndexed
         when (val s = span.style) {
             is FormattedText.Style.TextUrl -> {
-                addLink(LinkAnnotation.Url(s.url, linkStyle, safeOpen), start, end)
+                addLink(LinkAnnotation.Url(s.url, linkStyle, maskedOpen), start, end)
                 linkRanges += LinkRange(start, end, s.url)
             }
             FormattedText.Style.Url -> {
