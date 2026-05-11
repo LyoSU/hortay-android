@@ -98,7 +98,18 @@ class TelegramLinkResolver(private val td: TdSender) {
      */
     private fun parseLocal(uri: Uri): DeepLink? = when (uri.scheme?.lowercase()) {
         "tg" -> parseTgLocal(uri)
-        "http", "https" -> parseTMeLocal(uri)
+        "http", "https" -> {
+            // Critical host gate: without this we'd treat ANY https URL as a Telegram
+            // channel handle — `https://github.com/foo` would become
+            // DeepLink.PublicChannel(handle = "foo"), the router would call
+            // SearchPublicChat("foo"), and the user would land on a (probably empty)
+            // Telegram channel instead of opening GitHub. The TDLib parser path
+            // (GetInternalLinkType) gates this correctly upstream; this fallback only
+            // runs when TDLib isn't reachable (cold-launch race), so we must reproduce
+            // the same gate ourselves.
+            val host = uri.host?.lowercase()?.removePrefix("www.")
+            if (host in TELEGRAM_DOMAINS) parseTMeLocal(uri) else null
+        }
         else -> null
     }
 
@@ -153,5 +164,9 @@ class TelegramLinkResolver(private val td: TdSender) {
     private companion object {
         const val CACHE_CAPACITY = 256
         val BLOCKED_PUBLIC_HOSTS = setOf("joinchat", "addstickers", "share", "addtheme", "proxy", "socks")
+        // Canonical Telegram link hosts. `telegram.me` / `telegram.dog` are server-side
+        // aliases for `t.me`; including them in the fallback parser keeps cold-launch
+        // resolution accurate without waiting for TDLib's GetInternalLinkType.
+        val TELEGRAM_DOMAINS = setOf("t.me", "telegram.me", "telegram.dog")
     }
 }
