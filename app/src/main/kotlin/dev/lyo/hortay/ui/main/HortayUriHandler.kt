@@ -57,6 +57,7 @@ class HortayUriHandler(
                 is DeepLink.UnsupportedFeature,
                 is DeepLink.PublicChannel,
                 is DeepLink.PrivateChannel,
+                is DeepLink.ChatInvite,
                 is DeepLink.Message -> router.submit(link)
             }
         }

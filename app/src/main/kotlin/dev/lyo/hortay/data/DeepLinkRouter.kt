@@ -72,6 +72,17 @@ sealed interface DeepLink {
      * Scaffolds show an in-app snackbar describing the feature instead.
      */
     data class UnsupportedFeature(val feature: UnsupportedFeatureKind, val rawUrl: String) : DeepLink
+
+    /**
+     * Telegram chat invite link (`t.me/+abc...`, legacy `t.me/joinchat/xyz`,
+     * `tg://join?invite=…`). The scaffold collects this, calls
+     * [dev.lyo.hortay.data.ChannelActionsRepository.previewChatInvite] to read title
+     * / member count / chat kind via TDLib's `CheckChatInviteLink` (no network if the
+     * invite is already cached), and renders a Join confirmation dialog for channels.
+     * Non-channel invites surface a snackbar and hand off to the official client —
+     * Hortay has no group / direct-chat surface.
+     */
+    data class ChatInvite(val inviteLink: String) : DeepLink
 }
 
 /** Kinds of Telegram links we recognise but render in-app as a snackbar instead of

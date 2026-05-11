@@ -91,7 +91,12 @@ class TelegramLinkResolver(private val td: TdSender) {
             // surface a snackbar that explains why nothing happened.
             is TdApi.InternalLinkTypeSearch ->
                 DeepLink.UnsupportedFeature(UnsupportedFeatureKind.HashtagSearch, rawUrl)
-            // Everything else — chat invites, bot starts, premium features, gifts,
+            // Invite links (`t.me/+abc...`). Scaffold calls CheckChatInviteLink for a
+            // title + member-count preview, then offers a Join confirmation for
+            // channel-type invites and runs JoinChatByInviteLink on accept.
+            is TdApi.InternalLinkTypeChatInvite ->
+                DeepLink.ChatInvite(inviteLink = type.inviteLink)
+            // Everything else — bot starts, premium features, gifts,
             // story shares, chat folder invites, … — is a Telegram URL we recognise
             // but don't natively handle. Hand the raw string back so the UI delegates
             // to the OS / Telegram client.

@@ -100,7 +100,11 @@ fun WebModeScaffold(graph: AppGraph) {
                     addSheetOpen = true
                 }
                 is DeepLink.PrivateChannel,
-                is DeepLink.Message -> {
+                is DeepLink.Message,
+                is DeepLink.ChatInvite -> {
+                    // ChatInvite join requires TDLib auth (CheckChatInviteLink +
+                    // JoinChatByInviteLink). Guest mode can't honour it — surface the
+                    // same sign-in prompt we use for other auth-only deep links.
                     snackbarHostState.showSnackbar(signInRequiredMsg)
                 }
                 is DeepLink.External -> {

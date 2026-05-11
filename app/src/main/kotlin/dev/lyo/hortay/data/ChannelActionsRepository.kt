@@ -152,6 +152,47 @@ class ChannelActionsRepository(
         )
     }
 
+    /**
+     * Preview a chat invite link via TDLib's `CheckChatInviteLink`. Returns a
+     * snapshot — title, member count, chat kind — that the UI surfaces in a
+     * confirmation dialog before joining. Telegram's own clients call this exact
+     * method on every invite tap; we mirror the flow. Returns null on a malformed
+     * or expired invite (TDLib answers 4xx) — caller treats as silent miss.
+     */
+    suspend fun previewChatInvite(inviteLink: String): ChatInvitePreview? {
+        val info: TdApi.ChatInviteLinkInfo = runCatching {
+            td.send(TdApi.CheckChatInviteLink(inviteLink))
+        }
+            .warnUnlessCancelled(TAG, "previewChatInvite")
+            .getOrNull() ?: return null
+        return ChatInvitePreview(
+            inviteLink = inviteLink,
+            chatId = info.chatId.takeIf { it != 0L },
+            title = info.title.orEmpty(),
+            memberCount = info.memberCount,
+            kind = when (info.type) {
+                is TdApi.InviteLinkChatTypeChannel -> InviteLinkKind.Channel
+                else -> InviteLinkKind.Group
+            },
+        )
+    }
+
+    /**
+     * Join a chat via its invite link. Returns the resulting chat id on success or
+     * null on failure (already a member, banned, expired, FLOOD_WAIT…). The TDLib
+     * call propagates a user-facing error through [UserMessageBus] on its own so
+     * callers don't need to surface anything beyond the success-side navigation.
+     */
+    suspend fun joinByInvite(inviteLink: String): Long? {
+        val chat: TdApi.Chat = runCatching {
+            td.send(TdApi.JoinChatByInviteLink(inviteLink))
+        }
+            .warnUnlessCancelled(TAG, "joinByInvite")
+            .onFailure { it.surfaceTo(userMessages, res, R.string.op_join_channel, connection.value) }
+            .getOrNull() ?: return null
+        return chat.id
+    }
+
     private companion object {
         const val TAG = "ChannelActionsRepository"
         // 365 days. TDLib treats very-large positive muteFor as "muted indefinitely"; this
@@ -159,6 +200,20 @@ class ChannelActionsRepository(
         const val MUTE_FOREVER_SECONDS = 365 * 24 * 60 * 60
     }
 }
+
+/** Preview snapshot returned by [ChannelActionsRepository.previewChatInvite]. */
+data class ChatInvitePreview(
+    val inviteLink: String,
+    /** Resolved chat id if the user already has access (already a member); null otherwise. */
+    val chatId: Long?,
+    val title: String,
+    val memberCount: Int,
+    val kind: InviteLinkKind,
+)
+
+/** Discriminator on [ChatInvitePreview.kind]. Hortay only joins channels natively;
+ *  group invites surface a snackbar and hand off to Telegram. */
+enum class InviteLinkKind { Channel, Group }
 
 /** Data bundle backing the channel info bottom sheet. */
 data class ChannelInfo(

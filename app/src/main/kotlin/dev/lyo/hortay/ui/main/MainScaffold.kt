@@ -108,6 +108,13 @@ fun MainScaffold(graph: AppGraph) {
     // (chatId, TDLib-shifted messageId). TimelineScreen consumes via [onScrollHandled]
     // so the request fires exactly once even if MainScaffold recomposes.
     var pendingScrollTarget by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    // Pending invite-link confirmation. When set, the scaffold renders
+    // [ChatInvitePreviewDialog] with the title + member count TDLib gave us via
+    // CheckChatInviteLink. Cleared on dismiss / on the user pressing Join (after which
+    // we fire JoinChatByInviteLink and route to the new chat).
+    var pendingInvitePreview by remember {
+        mutableStateOf<dev.lyo.hortay.data.ChatInvitePreview?>(null)
+    }
     // Monotonic counter: each re-tap on Home (or brand) bumps it once. The Feed observes the
     // value and decides scroll-to-top vs refresh based on its own scroll position.
     var homeTapTrigger by remember { mutableLongStateOf(0L) }
@@ -193,6 +200,35 @@ fun MainScaffold(graph: AppGraph) {
                             R.string.link_unsupported_hashtag
                     }
                     graph.userMessages.post(res.getString(msgId), dev.lyo.hortay.data.UserMessageBus.Severity.Info)
+                    return@collect
+                }
+                is DeepLink.ChatInvite -> {
+                    val preview = graph.channelActions.previewChatInvite(link.inviteLink)
+                    when {
+                        preview == null -> {
+                            graph.userMessages.post(res.getString(R.string.link_not_found))
+                        }
+                        preview.chatId != null -> {
+                            // Already a member — TDLib resolved the chat id directly,
+                            // no Join needed. Jump straight to the feed filter.
+                            channelFilter = preview.chatId
+                            selectedTab = NavTab.Feed
+                            openComments(null)
+                        }
+                        preview.kind == dev.lyo.hortay.data.InviteLinkKind.Channel -> {
+                            // Channel invite, not yet a member — show preview dialog.
+                            pendingInvitePreview = preview
+                        }
+                        else -> {
+                            // Group / supergroup invite — Hortay has no group surface,
+                            // surface a snackbar + hand off to Telegram.
+                            graph.userMessages.post(
+                                res.getString(R.string.link_unsupported_group),
+                                dev.lyo.hortay.data.UserMessageBus.Severity.Info,
+                            )
+                            runCatching { systemUriHandler.openUri(link.inviteLink) }
+                        }
+                    }
                     return@collect
                 }
             }
@@ -369,6 +405,23 @@ fun MainScaffold(graph: AppGraph) {
             },
             backProgress = commentsBackProgress.value,
             backSwipeEdge = commentsBackEdge,
+        )
+    }
+    pendingInvitePreview?.let { preview ->
+        dev.lyo.hortay.ui.text.ChatInvitePreviewDialog(
+            preview = preview,
+            onConfirm = {
+                pendingInvitePreview = null
+                scope.launch {
+                    val joinedId = graph.channelActions.joinByInvite(preview.inviteLink)
+                    if (joinedId != null) {
+                        channelFilter = joinedId
+                        selectedTab = NavTab.Feed
+                        openComments(null)
+                    }
+                }
+            },
+            onDismiss = { pendingInvitePreview = null },
         )
     }
     }

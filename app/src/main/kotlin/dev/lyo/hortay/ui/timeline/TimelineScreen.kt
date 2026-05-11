@@ -532,12 +532,15 @@ fun TimelineScreen(
                     }
                 }
                 if (idx >= 0) {
-                    // Flag the landed target FIRST so the highlight tint is composed on
-                    // the next frame, then run the scroll animation. Doing it the other
-                    // way around let the animation finish before the alpha-in started,
-                    // delaying the visual cue by ~300ms.
+                    // Jump instantly via [scrollToItem] rather than animateScrollToItem.
+                    // For a deep-linked old post the target row can be 200+ items down;
+                    // animating through every intermediate row took seconds and made the
+                    // app feel like it was searching for the post. Telegram-Android also
+                    // hard-jumps on a link click. The highlight tint (set BEFORE the jump
+                    // so it's composed by the time the user sees the new viewport) is
+                    // what tells the eye where to look on arrival.
                     highlightedPostKey = chatId to messageId
-                    listState.animateScrollToItem(idx)
+                    listState.scrollToItem(idx)
                     pendingScrollToMessage = null
                     return@collect
                 }

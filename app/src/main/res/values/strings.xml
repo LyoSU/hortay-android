@@ -220,6 +220,10 @@
         <item quantity="one">Channel received %d boost</item>
         <item quantity="other">Channel received %d boosts</item>
     </plurals>
+    <plurals name="invite_dialog_subscribers">
+        <item quantity="one">%d subscriber</item>
+        <item quantity="other">%d subscribers</item>
+    </plurals>
     <string name="service_giveaway_started">Giveaway started</string>
     <string name="service_screenshot">Screenshot</string>
     <string name="service_video_chat_started">Group call started</string>
@@ -442,4 +446,8 @@
     <string name="link_unsupported_other">This link opens in Telegram</string>
     <string name="link_not_found">Link not found</string>
     <string name="link_unsupported_hashtag">Hashtag search is coming soon</string>
+    <!-- Confirmation dialog for an invite link (t.me/+abc...). -->
+    <string name="invite_dialog_title">Join channel</string>
+    <string name="invite_dialog_unknown_chat">Telegram channel</string>
+    <string name="invite_dialog_join">Join</string>
 </resources>
