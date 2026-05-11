@@ -114,39 +114,44 @@ fun PostBody(
 
 @Composable
 private fun AnimatedEmojiBlock(content: PostContent.AnimatedEmoji) {
-    // Telegram renders single-emoji messages centered and oversized. When TDLib has
-    // resolved an animated sticker variant (premium animated set / lottie / webm), we
-    // play it through StickerView. The unicode emoji stays as a fallback for the brief
-    // window where TDLib is still resolving the sticker — and as the permanent path
-    // when no animated variant exists for that codepoint.
+    // Single-emoji posts render as a small sticker pinned to the leading edge of the
+    // post body — same vocabulary as [StickerBlock] (no fillMaxWidth wrapper, sits on
+    // the Column's natural start axis). An earlier iteration wrapped this in a
+    // `Box(fillMaxWidth, contentAlignment = Center)` to mimic the "huge centred emoji"
+    // pattern from chat clients, but in a Twitter-style feed where the post body is
+    // already a full-width card the centred emoji read as floating in dead space.
+    // Left-alignment matches the rest of the body (text, captions, media all start at
+    // the same x), and the sticker sizing keeps the visual hierarchy
+    // single-emoji < full-sticker (ANIMATED_EMOJI_MAX_SIDE < STICKER_MAX_SIDE).
+    //
+    // When TDLib has resolved an animated sticker variant (premium animated set /
+    // lottie / webm) we play it through StickerView; the unicode emoji stays as a
+    // fallback for the brief window where TDLib is still resolving the sticker, and
+    // as the permanent path when no animated variant exists for that codepoint. The
+    // fallback uses a tighter type style so it doesn't dwarf the eventual sticker.
     val sticker = content.sticker
-    Box(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (sticker != null && sticker.fileId != null) {
-            StickerView(
-                media = sticker,
-                thumb = content.thumb,
-                format = content.format,
-                contentDescription = content.emoji,
-                modifier = stickerBoxModifier(
-                    width = sticker.width,
-                    height = sticker.height,
-                    maxSide = ANIMATED_EMOJI_MAX_SIDE,
-                ),
-            )
-        } else {
-            Text(
-                text = content.emoji,
-                style = MaterialTheme.typography.displayLarge,
-            )
-        }
+    if (sticker != null && sticker.fileId != null) {
+        StickerView(
+            media = sticker,
+            thumb = content.thumb,
+            format = content.format,
+            contentDescription = content.emoji,
+            modifier = stickerBoxModifier(
+                width = sticker.width,
+                height = sticker.height,
+                maxSide = ANIMATED_EMOJI_MAX_SIDE,
+            ),
+        )
+    } else {
+        Text(
+            text = content.emoji,
+            style = MaterialTheme.typography.displayMedium,
+        )
     }
 }
 
 private val STICKER_MAX_SIDE = 168.dp
-private val ANIMATED_EMOJI_MAX_SIDE = 140.dp
+private val ANIMATED_EMOJI_MAX_SIDE = 96.dp
 private val SPOILER_BLUR_RADIUS = 28.dp
 private val UNPLAYABLE_VIDEO_BLUR_RADIUS = 8.dp
 
