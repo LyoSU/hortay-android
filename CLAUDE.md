@@ -45,6 +45,7 @@ DI-граф створюється в `HortayApp.onCreate` як `graph: AppGraph
 | MediaCache single-coroutine reducer | `data/MediaCache.kt:125-138` | `fileEvents` Channel = один writer для slot state. Інший writer = silent dropped Ready emit. |
 | MediaCache stall watchdog | `data/MediaCache.kt:149-178` | 3 регіми (background suspend / idle 5s / active 2s) + skip під `WaitingForNetwork`. |
 | PostsRepository concurrency | `data/PostsRepository.kt:32-49` | `refreshMutex` + `PersistentList` + album coalescing per `(chatId, mediaAlbumId)`. |
+| PostsRepository cold-start contract | `data/PostsRepository.kt:refreshLocked` | Harvests `Chat.lastMessage` from `chatCache` (populated by `UpdateNewChat` / `UpdateChatLastMessage`). **Do NOT re-introduce `GetChat × N` or `GetChatHistory × N` fan-out on cold-start** — the ~30× FLOOD_WAIT regression class lives there. Spec: `docs/superpowers/specs/2026-05-11-tdlib-cold-start-lastmessage-only-design.md`. |
 | Compose stability chain | `data/PostContent.kt`, `TimelinePost.kt` | `@Immutable` end-to-end від `TimelinePost`. Будь-який `var`/`MutableList`/`Any?` у графі = тихий regress skippability. |
 | Cold start снапшот | `data/TimelineSnapshotStore.kt` + `TimelineViewModel:59-66` | Restore → паралельний refreshIfStale. Race-safe через `_posts.update` reducer. |
 | FLOOD_WAIT global gate | `data/TdClient.kt:100-113` | Один глобальний `AtomicLong` deadline. Per-method tracking — overkill для read-only. |
@@ -73,6 +74,10 @@ DI-граф створюється в `HortayApp.onCreate` як `graph: AppGraph
 - ❌ FCM / push через Firebase — TDLib `RegisterDevice` + `UpdateNotification` коли треба буде.
 - ❌ ViewBinding / Fragment-based screens — Compose-only, single-Activity.
 - ❌ Compose Navigation typed routes — string-based + `MainScaffold` switch достатньо.
+- ❌ `GetChat × N` / `GetChatHistory × N` per-channel fan-out on cold-start.
+  Killed in the lastMessage-harvest rework (2026-05-11) — caused FLOOD_WAIT for
+  power-user accounts. On-demand per-channel paths (`loadChannelHistory`,
+  `loadOlder`, `loadHistoryAround`) stay.
 
 ## Команди
 
