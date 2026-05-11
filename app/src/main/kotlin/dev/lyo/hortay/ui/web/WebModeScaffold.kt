@@ -127,7 +127,12 @@ fun WebModeScaffold(graph: AppGraph) {
             scope = graph.appScope,
         )
     }
-    CompositionLocalProvider(LocalUriHandler provides hortayUriHandler) {
+    var pendingMaskedLink by rememberSaveable { mutableStateOf<String?>(null) }
+    val confirmMaskedLink = remember { { url: String -> pendingMaskedLink = url } }
+    CompositionLocalProvider(
+        LocalUriHandler provides hortayUriHandler,
+        dev.lyo.hortay.ui.text.LocalLinkConfirm provides confirmMaskedLink,
+    ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = {
@@ -277,7 +282,13 @@ fun WebModeScaffold(graph: AppGraph) {
             onDismiss = { searchOpen = false },
         )
     }
-    } // CompositionLocalProvider(LocalUriHandler) — covers Scaffold, AddChannelSheet
-    // and the search overlay, so link taps from any guest-mode surface route through
-    // HortayUriHandler.
+    pendingMaskedLink?.let { url ->
+        dev.lyo.hortay.ui.text.ExternalLinkConfirmDialog(
+            url = url,
+            onDismiss = { pendingMaskedLink = null },
+        )
+    }
+    } // CompositionLocalProvider — Scaffold, AddChannelSheet, search overlay and the
+    // masked-link confirmation dialog all inherit the in-app UriHandler + anti-phishing
+    // hook.
 }

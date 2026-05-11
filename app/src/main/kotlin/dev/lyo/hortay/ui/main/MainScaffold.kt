@@ -219,7 +219,17 @@ fun MainScaffold(graph: AppGraph) {
             scope = graph.appScope,
         )
     }
-    CompositionLocalProvider(LocalUriHandler provides hortayUriHandler) {
+    // Anti-phishing confirmation for masked link spans (TDLib `Style.TextUrl`). When
+    // the user taps `[click here](https://evil.com)`, the renderer routes through this
+    // setter instead of opening directly; we render an AlertDialog showing the
+    // destination domain, the user confirms / cancels. Inline auto-detected URL spans
+    // (where display text IS the URL) skip this — handled at the renderer.
+    var pendingMaskedLink by rememberSaveable { mutableStateOf<String?>(null) }
+    val confirmMaskedLink = remember { { url: String -> pendingMaskedLink = url } }
+    CompositionLocalProvider(
+        LocalUriHandler provides hortayUriHandler,
+        dev.lyo.hortay.ui.text.LocalLinkConfirm provides confirmMaskedLink,
+    ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = {
@@ -341,7 +351,14 @@ fun MainScaffold(graph: AppGraph) {
             backSwipeEdge = commentsBackEdge,
         )
     }
-    } // CompositionLocalProvider(LocalUriHandler) — wraps Scaffold AND CommentsScreen
-    // so link taps inside the comments overlay also route through HortayUriHandler.
+    pendingMaskedLink?.let { url ->
+        dev.lyo.hortay.ui.text.ExternalLinkConfirmDialog(
+            url = url,
+            onDismiss = { pendingMaskedLink = null },
+        )
+    }
+    } // CompositionLocalProvider — wraps Scaffold AND CommentsScreen AND the masked-
+    // link confirmation dialog so link taps anywhere in the auth-mode UI route through
+    // both HortayUriHandler (internal navigation) and LocalLinkConfirm (anti-phishing).
 
 }
