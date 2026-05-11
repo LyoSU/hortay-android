@@ -404,6 +404,45 @@ class PostsRepository(
         return true
     }
 
+    /**
+     * Load a window of history centered on [anchorMessageId]. Used when the user follows
+     * a deep link to a specific old message — that message lives below the
+     * [loadChannelHistory] head load, so we have to ask TDLib for the context around the
+     * anchor explicitly.
+     *
+     * Canonical TDLib pattern (per docs on `GetChatHistory`):
+     *   - `fromMessageId = anchorMessageId` — pivot.
+     *   - `offset = -limit / 2` — fetch `limit/2` messages newer than the anchor and
+     *     `limit/2` older. Negative offset is TDLib's "go forward in time" operator.
+     *   - `onlyLocal = false` — allow a server round-trip; the whole point is to load
+     *     messages that aren't in our local cache.
+     *
+     * Returns true if at least one mapped post landed, mirroring [loadChannelHistory]'s
+     * contract (so callers can branch on emptiness — chat became inaccessible,
+     * permission revoked, etc.).
+     */
+    suspend fun loadHistoryAround(chatId: Long, anchorMessageId: Long, limit: Int = 80): Boolean {
+        val chat = chatCache[chatId]
+            ?: runCatching { td.send(TdApi.GetChat(chatId)) }
+                .warnUnlessCancelled(TAG, "loadHistoryAround/getChat")
+                .getOrNull()
+                ?.also { chatCache[chatId] = it }
+            ?: return false
+        if (!chat.isChannel()) return false
+
+        val history = runCatching {
+            td.send(TdApi.GetChatHistory(chatId, anchorMessageId, -(limit / 2), limit, false))
+        }
+            .warnUnlessCancelled(TAG, "loadHistoryAround($chatId, $anchorMessageId)")
+            .getOrNull() ?: return false
+        val raw = coalesceAlbumFragments(chatId, history.messages.orEmpty().toList())
+        val mapped = raw.map { mapper.toChannelPost(it, chat) }
+        if (mapped.isEmpty()) return false
+
+        _posts.update { current -> foldRawIntoCurrent(current, mapped, MAX_FEED_SIZE) }
+        return true
+    }
+
     suspend fun closeChat(chatId: Long) = ChatPresence.closeChat(td, chatId)
 
     /** Per-channel "we already paginated to the bottom of TDLib's local store" sentinel. */

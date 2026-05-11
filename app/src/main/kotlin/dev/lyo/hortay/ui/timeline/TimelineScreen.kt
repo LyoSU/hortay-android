@@ -484,8 +484,17 @@ fun TimelineScreen(
     // canonical id AND any of its album member ids — TimelinePost collapses an album
     // into a single row keyed on the oldest member, but a quote card may point at any
     // member.
+    //
+    // Old-message handling: when the target is below the head load that
+    // [loadChannelHistory] fetched (deep-linked old post, quote-reply to an old anchor)
+    // it won't appear in displayedItems no matter how long we wait. Per TDLib docs we
+    // ask for a window CENTERED on the anchor — see [PostsRepository.loadHistoryAround]
+    // — exactly once per pending target. The follow-up snapshot tick then lands the
+    // scroll. Single-shot guard ([requestedAroundLoad]) keeps a busy feed from re-firing
+    // the RPC on every list mutation.
     LaunchedEffect(pendingScrollToMessage) {
         val (chatId, messageId) = pendingScrollToMessage ?: return@LaunchedEffect
+        var requestedAroundLoad = false
         androidx.compose.runtime.snapshotFlow { displayedItems }
             .collect { items ->
                 val idx = items.indexOfFirst { item ->
@@ -497,6 +506,10 @@ fun TimelineScreen(
                     listState.animateScrollToItem(idx)
                     pendingScrollToMessage = null
                     return@collect
+                }
+                if (!requestedAroundLoad) {
+                    requestedAroundLoad = true
+                    tdlibRepo?.loadHistoryAround(chatId, messageId)
                 }
             }
     }
