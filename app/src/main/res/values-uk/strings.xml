@@ -445,4 +445,9 @@
     <string name="link_confirm_title">Відкрити посилання</string>
     <string name="link_confirm_body">Ви збираєтесь відкрити:</string>
     <string name="action_cancel">Скасувати</string>
+    <!-- Тости для t.me/<handle> що резолвиться у щось не-канальне. -->
+    <string name="link_unsupported_user">Профілі відкриваються в Telegram</string>
+    <string name="link_unsupported_group">Групи відкриваються в Telegram</string>
+    <string name="link_unsupported_other">Це посилання відкриється в Telegram</string>
+    <string name="link_not_found">Посилання не знайдено</string>
 </resources>

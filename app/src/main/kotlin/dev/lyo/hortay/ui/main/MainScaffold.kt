@@ -20,15 +20,18 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.coroutines.cancellation.CancellationException
 import dev.lyo.hortay.AppGraph
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.DeepLink
+import dev.lyo.hortay.data.PublicHandleKind
+import dev.lyo.hortay.data.PublicHandleResult
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.ui.channels.ChannelsScreen
 import dev.lyo.hortay.ui.comments.CommentsScreen
@@ -136,14 +139,41 @@ fun MainScaffold(graph: AppGraph) {
     // straight to the OS so they shouldn't reach the router, but we handle them
     // defensively if they do.
     val systemUriHandler = LocalUriHandler.current
+    val res = LocalContext.current.resources
     LaunchedEffect(Unit) {
         graph.deepLinkRouter.events.collect { link ->
             val targetChat: Long?
             val tdMessageId: Long?
             when (link) {
                 is DeepLink.PublicChannel -> {
-                    targetChat = graph.postsRepository.resolvePublicChat(link.handle)
-                    tdMessageId = link.serverPostId?.let { it shl SERVER_TO_TD_SHIFT }
+                    when (val resolved = graph.postsRepository.resolvePublicHandle(link.handle)) {
+                        is PublicHandleResult.Channel -> {
+                            targetChat = resolved.chatId
+                            tdMessageId = link.serverPostId?.let { it shl SERVER_TO_TD_SHIFT }
+                        }
+                        is PublicHandleResult.Unsupported -> {
+                            // Hortay's UX is read-only channel feed today. A handle
+                            // that resolves to a 1:1 user (`@some_account`), a bot, or
+                            // a non-channel supergroup / basic group lands here —
+                            // surface a snackbar naming the kind so the user
+                            // understands *why* nothing opened, then hand the original
+                            // URL off to the OS so they can continue in Telegram.
+                            val msgId = when (resolved.kind) {
+                                PublicHandleKind.User -> R.string.link_unsupported_user
+                                PublicHandleKind.Group -> R.string.link_unsupported_group
+                                PublicHandleKind.Unknown -> R.string.link_unsupported_other
+                            }
+                            graph.userMessages.post(res.getString(msgId), dev.lyo.hortay.data.UserMessageBus.Severity.Info)
+                            runCatching {
+                                systemUriHandler.openUri("https://t.me/${link.handle}")
+                            }
+                            return@collect
+                        }
+                        is PublicHandleResult.NotFound -> {
+                            graph.userMessages.post(res.getString(R.string.link_not_found))
+                            return@collect
+                        }
+                    }
                 }
                 is DeepLink.PrivateChannel -> {
                     targetChat = link.chatId
@@ -211,41 +241,7 @@ fun MainScaffold(graph: AppGraph) {
     // URL against the Telegram link resolver before falling back to the OS. One
     // interceptor wired here is cheaper than wrapping every Text call-site individually
     // and guarantees no path leaks straight to ACTION_VIEW.
-    val hortayUriHandler = remember(graph, systemUriHandler) {
-        HortayUriHandler(
-            delegate = systemUriHandler,
-            resolver = graph.linkResolver,
-            router = graph.deepLinkRouter,
-            scope = graph.appScope,
-        )
-    }
-    // Anti-phishing confirmation for masked link spans (TDLib `Style.TextUrl`). The
-    // callback resolves the URL through TelegramLinkResolver first: if it's a
-    // Telegram-internal link (`t.me/foo`, `tg://resolve?...`, etc) we route directly
-    // through the deep-link router — confirmation is anti-phishing UX, not anti-
-    // navigation, and an internal jump never leaves the app. Only genuine external
-    // destinations (https://example.com, https://evil.com behind `[click here]`)
-    // trigger the AlertDialog showing the destination domain. Inline auto-detected URL
-    // spans (Style.Url, where display text IS the URL) skip this entirely — handled
-    // at the renderer with a different listener.
-    var pendingMaskedLink by rememberSaveable { mutableStateOf<String?>(null) }
-    val confirmMaskedLink = remember(graph) {
-        { url: String ->
-            graph.appScope.launch {
-                val parsed = runCatching { android.net.Uri.parse(url) }.getOrNull()
-                val link = parsed?.let { graph.linkResolver.resolve(it) }
-                when (link) {
-                    null, is DeepLink.External -> pendingMaskedLink = url
-                    else -> graph.deepLinkRouter.submit(link)
-                }
-            }
-            Unit
-        }
-    }
-    CompositionLocalProvider(
-        LocalUriHandler provides hortayUriHandler,
-        dev.lyo.hortay.ui.text.LocalLinkConfirm provides confirmMaskedLink,
-    ) {
+    LinkAwareScaffold(graph) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = {
@@ -367,14 +363,5 @@ fun MainScaffold(graph: AppGraph) {
             backSwipeEdge = commentsBackEdge,
         )
     }
-    pendingMaskedLink?.let { url ->
-        dev.lyo.hortay.ui.text.ExternalLinkConfirmDialog(
-            url = url,
-            onDismiss = { pendingMaskedLink = null },
-        )
     }
-    } // CompositionLocalProvider — wraps Scaffold AND CommentsScreen AND the masked-
-    // link confirmation dialog so link taps anywhere in the auth-mode UI route through
-    // both HortayUriHandler (internal navigation) and LocalLinkConfirm (anti-phishing).
-
 }

@@ -436,4 +436,9 @@
     <string name="link_confirm_title">Open link</string>
     <string name="link_confirm_body">You\'re about to open:</string>
     <string name="action_cancel">Cancel</string>
+    <!-- Snackbar messages when a t.me handle resolves to something Hortay doesn\'t render. -->
+    <string name="link_unsupported_user">Profile links open in Telegram</string>
+    <string name="link_unsupported_group">Group chats open in Telegram</string>
+    <string name="link_unsupported_other">This link opens in Telegram</string>
+    <string name="link_not_found">Link not found</string>
 </resources>

@@ -618,6 +618,43 @@ class PostsRepository(
     }
 
     /**
+     * Typed variant of [resolvePublicChat] used by the deep-link dispatcher. Returns:
+     *
+     *   - [PublicHandleResult.Channel] — the handle resolves to a broadcast channel
+     *     (`ChatTypeSupergroup` with `isChannel = true`). Caller switches the feed
+     *     filter to [chatId].
+     *
+     *   - [PublicHandleResult.Unsupported] — the handle is a real Telegram entity but
+     *     not something Hortay can render today (1:1 user, bot, basic group,
+     *     supergroup that isn't a channel). Caller surfaces a user-facing message
+     *     ("profile / bot / group links open in Telegram") and offers to hand off via
+     *     the OS chooser.
+     *
+     *   - [PublicHandleResult.NotFound] — TDLib couldn't resolve the handle at all
+     *     (`SearchPublicChat` 4xx / network failure). Caller treats as silent miss.
+     *
+     * Hortay's UX scope is read-only channel-feed today; users, bots and groups need a
+     * full chat surface we don't have. Differentiating here lets the deep-link
+     * collector tell the user *why* a tap on `@durov` (a user) doesn't open the feed
+     * filter, instead of leaving them on a blank skeleton-then-empty screen.
+     */
+    suspend fun resolvePublicHandle(handle: String): PublicHandleResult {
+        val cleaned = handle.removePrefix("@").trim()
+        if (cleaned.isBlank()) return PublicHandleResult.NotFound
+        val chat = runCatching { td.send(TdApi.SearchPublicChat(cleaned)) }
+            .warnUnlessCancelled(TAG, "resolvePublicHandle($cleaned)")
+            .getOrNull() ?: return PublicHandleResult.NotFound
+        chatCache.putIfAbsent(chat.id, chat)
+        return when {
+            chat.isChannel() -> PublicHandleResult.Channel(chat.id)
+            chat.type is TdApi.ChatTypePrivate -> PublicHandleResult.Unsupported(PublicHandleKind.User)
+            chat.type is TdApi.ChatTypeBasicGroup -> PublicHandleResult.Unsupported(PublicHandleKind.Group)
+            chat.type is TdApi.ChatTypeSupergroup -> PublicHandleResult.Unsupported(PublicHandleKind.Group)
+            else -> PublicHandleResult.Unsupported(PublicHandleKind.Unknown)
+        }
+    }
+
+    /**
      * Canonical `https://t.me/...` share URL for a post, minted by TDLib's offline
      * `GetMessageLink`. TDLib owns the correct format for albums (`?single=…` markers,
      * forum-topic prefixes, comment-thread suffixes) we'd otherwise re-implement; this
@@ -1396,3 +1433,14 @@ internal fun foldRawIntoCurrent(
     }
     return PostFilterStrategy.apply(rawSafe + keptOld).take(maxFeedSize).toPersistentList()
 }
+
+/** Result of [PostsRepository.resolvePublicHandle]. See its KDoc for semantics. */
+sealed interface PublicHandleResult {
+    data class Channel(val chatId: Long) : PublicHandleResult
+    data class Unsupported(val kind: PublicHandleKind) : PublicHandleResult
+    data object NotFound : PublicHandleResult
+}
+
+/** Kind discriminator carried by [PublicHandleResult.Unsupported]. */
+enum class PublicHandleKind { User, Group, Unknown }
+
