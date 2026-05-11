@@ -40,12 +40,11 @@ fun RichText(
     formatted: FormattedText,
     style: TextStyle,
     maxLines: Int,
-    renderer: (@Composable (AnnotatedString, Map<String, InlineTextContent>, TextStyle, Int) -> Unit),
+    renderer: (@Composable (dev.lyo.hortay.ui.text.RenderableText, TextStyle, Int) -> Unit),
 ) {
     val quoteRanges = remember(formatted) { formatted.blockQuoteRanges() }
     if (quoteRanges.isEmpty()) {
-        val rt = rememberRenderableText(formatted)
-        renderer(rt.text, rt.inlineContent, style, maxLines)
+        renderer(rememberRenderableText(formatted), style, maxLines)
         return
     }
 
@@ -75,7 +74,7 @@ fun RichText(
             }
             val rt = rememberRenderableText(segment.text)
             if (segment.isQuote) QuoteRow(rt.text, rt.inlineContent, style)
-            else renderer(rt.text, rt.inlineContent, style, Int.MAX_VALUE)
+            else renderer(rt, style, Int.MAX_VALUE)
         }
     }
 }

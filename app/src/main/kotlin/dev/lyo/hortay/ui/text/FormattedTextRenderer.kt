@@ -35,17 +35,29 @@ import dev.lyo.hortay.ui.media.LocalCustomEmoji
 /**
  * Renderable view of a [FormattedText]: the [AnnotatedString] to hand to a `Text` plus
  * the [InlineTextContent] map that supplies composables for any custom-emoji
- * placeholders embedded in the string. Always pass both together.
+ * placeholders embedded in the string, plus the dst-coordinate URL ranges so a long-
+ * press handler can hit-test the user's touch position against link characters and
+ * surface a Copy / Open menu (Telegram-style). Always pass both together.
  */
 @Immutable
 data class RenderableText(
     val text: AnnotatedString,
     val inlineContent: Map<String, InlineTextContent>,
+    val linkRanges: List<LinkRange> = emptyList(),
 ) {
     companion object {
         val Empty = RenderableText(AnnotatedString(""), emptyMap())
     }
 }
+
+/**
+ * Dst-coordinate URL range for hit-testing long-press gestures. [start] and [end] are
+ * character offsets into [RenderableText.text] (post-rebuild, after inline-content
+ * placeholders collapsed the source range). [url] is the resolved URL (`tg://` or
+ * `https://t.me/...` for mentions/hashtags, the raw href for explicit / inline URLs).
+ */
+@Immutable
+data class LinkRange(val start: Int, val end: Int, val url: String)
 
 /**
  * Compose [FormattedText] into a renderable view. Returns the legacy [AnnotatedString]-only
@@ -98,7 +110,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
         if (customEmojiIds.isNotEmpty()) customEmoji.request(customEmojiIds)
     }
 
-    val annotated = remember(formatted, accent, codeBg, mute, onSurface, revealed) {
+    val built = remember(formatted, accent, codeBg, mute, onSurface, revealed) {
         buildFromFormatted(
             formatted = formatted,
             accent = accent,
@@ -110,6 +122,8 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
             onSpoilerTap = { idx -> revealed = revealed + idx },
         )
     }
+    val annotated = built.text
+    val linkRanges = built.linkRanges
 
     val inlineContent = remember(customEmojiIds, onSurface) {
         if (customEmojiIds.isEmpty()) emptyMap()
@@ -131,8 +145,15 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
         }
     }
 
-    return RenderableText(annotated, inlineContent)
+    return RenderableText(annotated, inlineContent, linkRanges)
 }
+
+/** Internal carrier so [buildFromFormatted] can return both the string AND the
+ *  link-range index in one allocation. */
+private data class BuiltAnnotated(
+    val text: AnnotatedString,
+    val linkRanges: List<LinkRange>,
+)
 
 private fun customEmojiTag(id: Long): String = "ce-$id"
 
@@ -147,7 +168,9 @@ private fun buildFromFormatted(
     uriHandler: UriHandler,
     revealedSpoilers: Set<Int>,
     onSpoilerTap: (Int) -> Unit,
-): AnnotatedString = buildAnnotatedString {
+): BuiltAnnotated {
+    val linkRanges = mutableListOf<LinkRange>()
+    val annotated = buildAnnotatedString {
     val srcText = formatted.text
     val srcLen = srcText.length
 
@@ -218,24 +241,32 @@ private fun buildFromFormatted(
         val end = positionMap[srcEnd]
         if (end == start) return@forEachIndexed
         when (val s = span.style) {
-            is FormattedText.Style.TextUrl -> addLink(LinkAnnotation.Url(s.url, linkStyle, safeOpen), start, end)
+            is FormattedText.Style.TextUrl -> {
+                addLink(LinkAnnotation.Url(s.url, linkStyle, safeOpen), start, end)
+                linkRanges += LinkRange(start, end, s.url)
+            }
             FormattedText.Style.Url -> {
                 // Inline URL — read the URL from the SOURCE text (placeholders aren't part
                 // of the URL even when the span happens to wrap one).
-                val url = srcText.substring(srcStart, srcEnd)
-                addLink(LinkAnnotation.Url(normalizeUrl(url), linkStyle, safeOpen), start, end)
+                val url = normalizeUrl(srcText.substring(srcStart, srcEnd))
+                addLink(LinkAnnotation.Url(url, linkStyle, safeOpen), start, end)
+                linkRanges += LinkRange(start, end, url)
             }
             FormattedText.Style.Mention -> {
                 // @username — resolve via tg:// so the official client opens the profile.
                 val handle = srcText.substring(srcStart, srcEnd).trimStart('@')
                 if (handle.isNotEmpty()) {
-                    addLink(LinkAnnotation.Url("tg://resolve?domain=$handle", mentionStyle, safeOpen), start, end)
+                    val url = "tg://resolve?domain=$handle"
+                    addLink(LinkAnnotation.Url(url, mentionStyle, safeOpen), start, end)
+                    linkRanges += LinkRange(start, end, url)
                 }
             }
             FormattedText.Style.Hashtag -> {
                 // tg://search opens Telegram's global search with the tag preselected.
                 val tag = srcText.substring(srcStart, srcEnd)
-                addLink(LinkAnnotation.Url("tg://search?query=$tag", mentionStyle, safeOpen), start, end)
+                val url = "tg://search?query=$tag"
+                addLink(LinkAnnotation.Url(url, mentionStyle, safeOpen), start, end)
+                linkRanges += LinkRange(start, end, url)
             }
             FormattedText.Style.Spoiler -> {
                 if (idx in revealedSpoilers) {
@@ -260,6 +291,8 @@ private fun buildFromFormatted(
                 ?.let { style -> addStyle(style, start, end) }
         }
     }
+    }
+    return BuiltAnnotated(annotated, linkRanges.toList())
 }
 
 private fun FormattedText.Style.toSpanStyle(

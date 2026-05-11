@@ -427,4 +427,9 @@
     <!-- Inline status badges next to a post. -->
     <string name="post_badge_edited">Edited</string>
     <string name="post_badge_pinned">Pinned</string>
+    <!-- Long-press menu on an inline link inside a post body. -->
+    <string name="link_action_open">Open</string>
+    <string name="link_action_copy">Copy link</string>
+    <string name="link_action_share">Share</string>
+    <string name="link_copied_toast">Link copied</string>
 </resources>

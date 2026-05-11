@@ -51,6 +51,7 @@ import dev.lyo.hortay.ui.media.StickerView
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.TdVideoPlayer
 import dev.lyo.hortay.ui.text.RichText
+import dev.lyo.hortay.ui.text.linkLongPress
 import dev.lyo.hortay.ui.text.rememberAnnotatedString
 
 /**
@@ -296,9 +297,7 @@ private fun TextBlock(content: PostContent.Text, maxLines: Int, translation: For
             formatted = rendered,
             style = MaterialTheme.typography.bodyLarge,
             maxLines = maxLines,
-            renderer = { annotated, inline, style, lines ->
-                ExpandableText(annotated, inline, style, lines)
-            },
+            renderer = { rt, style, lines -> ExpandableText(rt, style, lines) },
         )
     }
     content.webPreview?.let {
@@ -1010,9 +1009,7 @@ private fun MediaCaption(caption: FormattedText, maxLines: Int, above: Boolean, 
         formatted = caption,
         style = MaterialTheme.typography.bodyLarge,
         maxLines = maxLines,
-        renderer = { annotated, inline, style, lines ->
-            ExpandableText(annotated, inline, style, lines)
-        },
+        renderer = { rt, style, lines -> ExpandableText(rt, style, lines) },
     )
     if (above) Spacer(Modifier.height(12.dp))
 }
@@ -1023,42 +1020,75 @@ private fun MediaCaption(caption: FormattedText, maxLines: Int, above: Boolean, 
  * keep the toggle hidden until that signal lands so short posts never see it. Tapping the
  * toggle flips [expanded] and the same Text re-renders without a clamp.
  *
- * State is keyed on the [text] reference so editing a post or scrolling away and back
- * resets to collapsed — same as the official Telegram client.
+ * Long-press on an inline link surfaces a Telegram-style Open / Copy / Share menu (see
+ * [dev.lyo.hortay.ui.text.linkLongPress] + [dev.lyo.hortay.ui.text.LinkActionsSheet] for
+ * the gesture-ownership contract that avoids racing the PostCard's parent
+ * combinedClickable long-press).
+ *
+ * State is keyed on the [renderable.text] reference so editing a post or scrolling away
+ * and back resets to collapsed — same as the official Telegram client.
  */
 @Composable
 private fun ExpandableText(
-    text: AnnotatedString,
-    inlineContent: Map<String, androidx.compose.foundation.text.InlineTextContent>,
+    renderable: dev.lyo.hortay.ui.text.RenderableText,
     style: TextStyle,
     maxLines: Int,
 ) {
+    var expanded by remember(renderable.text) { mutableStateOf(false) }
+    var canExpand by remember(renderable.text) { mutableStateOf(false) }
+    var layoutResult by remember(renderable.text) {
+        mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null)
+    }
+    var pressedLink by remember(renderable.text) { mutableStateOf<String?>(null) }
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+
+    val linkMod = if (renderable.linkRanges.isNotEmpty()) {
+        Modifier.linkLongPress(
+            linkRanges = renderable.linkRanges,
+            layoutResult = layoutResult,
+            onTap = { range -> runCatching { uriHandler.openUri(range.url) } },
+            onLongPress = { range -> pressedLink = range.url },
+        )
+    } else Modifier
+
     if (maxLines == Int.MAX_VALUE) {
         // Detail screen path — never collapse, never offer a toggle.
-        Text(text = text, inlineContent = inlineContent, style = style)
-        return
-    }
-    var expanded by remember(text) { mutableStateOf(false) }
-    var canExpand by remember(text) { mutableStateOf(false) }
-
-    Text(
-        text = text,
-        inlineContent = inlineContent,
-        style = style,
-        maxLines = if (expanded) Int.MAX_VALUE else maxLines,
-        overflow = TextOverflow.Ellipsis,
-        onTextLayout = { layout ->
-            if (!expanded && layout.hasVisualOverflow) canExpand = true
-        },
-    )
-    if (canExpand && !expanded) {
         Text(
-            text = stringResource(R.string.post_show_more),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .padding(top = 4.dp)
-                .clickable { expanded = true },
+            text = renderable.text,
+            inlineContent = renderable.inlineContent,
+            style = style,
+            onTextLayout = { layoutResult = it },
+            modifier = linkMod,
+        )
+    } else {
+        Text(
+            text = renderable.text,
+            inlineContent = renderable.inlineContent,
+            style = style,
+            maxLines = if (expanded) Int.MAX_VALUE else maxLines,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { layout ->
+                layoutResult = layout
+                if (!expanded && layout.hasVisualOverflow) canExpand = true
+            },
+            modifier = linkMod,
+        )
+        if (canExpand && !expanded) {
+            Text(
+                text = stringResource(R.string.post_show_more),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .clickable { expanded = true },
+            )
+        }
+    }
+
+    pressedLink?.let { url ->
+        dev.lyo.hortay.ui.text.LinkActionsSheet(
+            url = url,
+            onDismiss = { pressedLink = null },
         )
     }
 }

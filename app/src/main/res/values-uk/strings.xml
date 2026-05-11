@@ -436,4 +436,9 @@
     <!-- Інлайн-позначки біля поста. -->
     <string name="post_badge_edited">Відредаговано</string>
     <string name="post_badge_pinned">Закріплено</string>
+    <!-- Меню при довгому натисканні на лінк у тексті поста. -->
+    <string name="link_action_open">Відкрити</string>
+    <string name="link_action_copy">Скопіювати посилання</string>
+    <string name="link_action_share">Поділитися</string>
+    <string name="link_copied_toast">Посилання скопійовано</string>
 </resources>
