@@ -542,15 +542,28 @@ fun TimelineScreen(
         }
     }
 
-    val activeChannelTitle = remember(channelFilter, posts) {
+    // TDLib-resolved title for the active filter. Populated even when the merged feed
+    // doesn't yet carry a post from this chat — e.g. the user tapped a t.me link to a
+    // non-subscribed public channel, the deep-link dispatcher resolved chatId via
+    // SearchPublicChat, and we're waiting for the first GetChatHistory batch. Without
+    // this fallback the top bar reads blank until the first post lands, which makes the
+    // 1–2 s preview window feel broken. Telegram-Android paints title + subscriber
+    // count immediately on chat open; this matches.
+    var tdResolvedTitle by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(channelFilter) {
+        tdResolvedTitle = channelFilter?.let { tdlibRepo?.chatTitle(it) }
+    }
+    val activeChannelTitle = remember(channelFilter, posts, tdResolvedTitle) {
         channelFilter?.let { id ->
             // Same canonical-channel-identity rule as the channels list / pendingChannels:
             // if any post for this filter has a channelContext (personal-author mode), use
             // its name; otherwise fall back to the post's own senderName which IS the
-            // channel name in standard channel-as-sender mode.
+            // channel name in standard channel-as-sender mode. Final fallback to TDLib's
+            // own chat title for non-subscribed channels with no posts yet.
             val matches = posts.filter { it.chatId == id }
             matches.firstNotNullOfOrNull { it.channelContext?.name }
                 ?: matches.firstOrNull()?.senderName
+                ?: tdResolvedTitle
         }
     }
     var activeChannelSubscribers by remember { mutableStateOf<Int?>(null) }

@@ -544,6 +544,22 @@ class PostsRepository(
     }
 
     /**
+     * Chat title as TDLib knows it. Cheap: TDLib serves [TdApi.GetChat] from its local
+     * cache after the first resolve (SearchPublicChat, JoinChat, or any other chat
+     * touch). Used by the channel-filter top bar to show a non-subscribed channel's
+     * name before [loadChannelHistory] populates the merged feed — same UX
+     * Telegram-Android offers when you open a public channel preview.
+     */
+    suspend fun chatTitle(chatId: Long): String? {
+        val chat = chatCache[chatId]
+            ?: runCatching { td.send(TdApi.GetChat(chatId)) }
+                .warnUnlessCancelled(TAG, "chatTitle")
+                .getOrNull()
+                ?.also { chatCache[chatId] = it }
+        return chat?.title?.takeIf { it.isNotBlank() }
+    }
+
+    /**
      * Resolve a Telegram public `@handle` (without the leading `@`) to a TDLib chat id.
      * Used by the deep-link dispatcher (`tg://resolve` / `https://t.me/<handle>`) so a
      * tap on a shared link inside Hortay routes the user to the channel filter — no
