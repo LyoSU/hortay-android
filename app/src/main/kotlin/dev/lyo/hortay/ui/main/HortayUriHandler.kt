@@ -42,10 +42,15 @@ class HortayUriHandler(
 ) : UriHandler {
     override fun openUri(uri: String) {
         val parsed = runCatching { Uri.parse(uri) }.getOrNull()
-        if (parsed == null) {
-            runCatching { delegate.openUri(uri) }
-            return
-        }
+        if (parsed == null) return
+        val scheme = parsed.scheme?.lowercase()
+        // Scheme allowlist before EITHER resolver consultation OR delegate punt.
+        // A masked-link span in post text can carry any string the publisher
+        // wrote — including `file:///`, `content://`, `javascript:`, `intent://`,
+        // and similar. Telegram-Android's own link handler enforces an explicit
+        // allowlist for the same reason. Without this gate, a malicious post
+        // could hand `file:///sdcard/...` to ACTION_VIEW via our delegate.
+        if (scheme !in ALLOWED_SCHEMES) return
         scope.launch {
             val link = resolver.resolve(parsed)
             when (link) {
@@ -61,5 +66,14 @@ class HortayUriHandler(
                 is DeepLink.Message -> router.submit(link)
             }
         }
+    }
+
+    private companion object {
+        // Explicit allowlist: HTTP(S) for real web links, Telegram's own scheme for
+        // `tg://resolve` / `tg://join` etc., and the two non-web schemes inline post
+        // text legitimately carries (`mailto:` press contacts, `tel:` for phone
+        // numbers in service messages). Anything else is rejected before it can
+        // reach ACTION_VIEW. Mirrors Telegram-Android's BrowserLink allowlist.
+        val ALLOWED_SCHEMES = setOf("http", "https", "tg", "mailto", "tel")
     }
 }

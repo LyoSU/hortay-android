@@ -2,6 +2,9 @@ package dev.lyo.hortay.data
 
 import android.net.Uri
 import android.util.LruCache
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
 
 /**
@@ -41,6 +44,21 @@ class TelegramLinkResolver(private val td: TdSender) {
 
     private val cache = LruCache<String, DeepLink>(CACHE_CAPACITY)
 
+    /**
+     * Subscribe the resolver to a logout fan-out flow. The cache holds typed [DeepLink]
+     * entries that reference TDLib chat ids; those ids belong to the active session and
+     * shift on the next login. Wiring this in [AppGraph] guarantees the cache is wiped
+     * before the new session's chats start arriving — without it, a re-tapped URL would
+     * return a [DeepLink.Message] / [DeepLink.PublicChannel] pointing at the previous
+     * account's chat, which is both a privacy regression (referrer-style identifier
+     * leak across accounts) and a correctness one (silent miss / wrong-chat open).
+     */
+    fun bindLogoutClear(loggedOut: SharedFlow<Unit>, scope: CoroutineScope) {
+        scope.launch {
+            loggedOut.collect { cache.evictAll() }
+        }
+    }
+
     suspend fun resolve(uri: Uri): DeepLink? {
         val raw = uri.toString()
         cache[raw]?.let { return it }
@@ -50,11 +68,15 @@ class TelegramLinkResolver(private val td: TdSender) {
         // that isn't internal, and the round-trip is offline JNI (microseconds). Doing
         // our own allow-list ahead of that misses canonical aliases (`telegram.me`,
         // `telegram.dog`, future-domains-the-server-issues-as-config) AND bakes in
-        // assumptions about which schemes carry Telegram payloads. The LRU cache
-        // upstairs makes the cost of "call TDLib for every link including duds"
-        // effectively zero on the warm path.
-        val result = parseWithTd(raw) ?: parseLocal(uri)
-        if (result != null) cache.put(raw, result)
+        // assumptions about which schemes carry Telegram payloads.
+        val result = parseWithTd(raw) ?: parseLocal(uri, raw)
+        // Cache only the typed results that translate to a stable in-app destination.
+        // [DeepLink.External] means "TDLib didn't recognise this as an internal link
+        // right now" — which can also be the cold-launch race ("TDLib not yet wired,
+        // SearchPublicChat for a public handle would have worked once the daemon
+        // boots"). Caching External would freeze the wrong answer for the rest of the
+        // session; re-resolving from scratch costs one microseconds-scale JNI call.
+        if (result != null && result !is DeepLink.External) cache.put(raw, result)
         return result
     }
 
@@ -74,14 +96,22 @@ class TelegramLinkResolver(private val td: TdSender) {
 
         return when (type) {
             is TdApi.InternalLinkTypePublicChat ->
-                DeepLink.PublicChannel(handle = type.chatUsername, serverPostId = null)
+                DeepLink.PublicChannel(
+                    handle = type.chatUsername,
+                    serverPostId = null,
+                    originalUrl = rawUrl,
+                )
             is TdApi.InternalLinkTypeMessage -> {
                 val info = runCatching {
                     td.send(TdApi.GetMessageLinkInfo(type.url))
                 }.getOrNull() ?: return DeepLink.External(rawUrl)
                 val message = info.message
                 if (info.chatId == 0L || message == null) DeepLink.External(rawUrl)
-                else DeepLink.Message(chatId = info.chatId, messageId = message.id)
+                else DeepLink.Message(
+                    chatId = info.chatId,
+                    messageId = message.id,
+                    originalUrl = rawUrl,
+                )
             }
             // Hashtag search arriving as an external link (e.g. clipboard paste from
             // the official client, or a t.me/s/.../?q= URL someone shared). Our own
@@ -98,7 +128,7 @@ class TelegramLinkResolver(private val td: TdSender) {
             // title + member-count preview, then offers a Join confirmation for
             // channel-type invites and runs JoinChatByInviteLink on accept.
             is TdApi.InternalLinkTypeChatInvite ->
-                DeepLink.ChatInvite(inviteLink = type.inviteLink)
+                DeepLink.ChatInvite(inviteLink = type.inviteLink, originalUrl = rawUrl)
             // Everything else — bot starts, premium features, gifts,
             // story shares, chat folder invites, … — is a Telegram URL we recognise
             // but don't natively handle. Hand the raw string back so the UI delegates
@@ -112,8 +142,8 @@ class TelegramLinkResolver(private val td: TdSender) {
      * three shapes the UI actually dispatches. Triggers when TDLib send is unavailable
      * (typically the first ~100 ms of process boot, before the native side is wired).
      */
-    private fun parseLocal(uri: Uri): DeepLink? = when (uri.scheme?.lowercase()) {
-        "tg" -> parseTgLocal(uri)
+    private fun parseLocal(uri: Uri, rawUrl: String): DeepLink? = when (uri.scheme?.lowercase()) {
+        "tg" -> parseTgLocal(uri, rawUrl)
         "http", "https" -> {
             // Critical host gate: without this we'd treat ANY https URL as a Telegram
             // channel handle — `https://github.com/foo` would become
@@ -124,18 +154,22 @@ class TelegramLinkResolver(private val td: TdSender) {
             // runs when TDLib isn't reachable (cold-launch race), so we must reproduce
             // the same gate ourselves.
             val host = uri.host?.lowercase()?.removePrefix("www.")
-            if (host in TELEGRAM_DOMAINS) parseTMeLocal(uri) else null
+            if (host in TELEGRAM_DOMAINS) parseTMeLocal(uri, rawUrl) else null
         }
         else -> null
     }
 
-    private fun parseTgLocal(uri: Uri): DeepLink? {
+    private fun parseTgLocal(uri: Uri, rawUrl: String): DeepLink? {
         val action = uri.host?.lowercase() ?: return null
         return when (action) {
             "resolve" -> {
                 val domain = uri.getQueryParameter("domain")?.takeIf { it.isNotBlank() } ?: return null
                 val post = uri.getQueryParameter("post")?.toLongOrNull()
-                DeepLink.PublicChannel(handle = domain.removePrefix("@"), serverPostId = post)
+                DeepLink.PublicChannel(
+                    handle = domain.removePrefix("@"),
+                    serverPostId = post,
+                    originalUrl = rawUrl,
+                )
             }
             "privatepost" -> {
                 val raw = uri.getQueryParameter("channel")?.toLongOrNull() ?: return null
@@ -143,13 +177,14 @@ class TelegramLinkResolver(private val td: TdSender) {
                 DeepLink.PrivateChannel(
                     chatId = "-100$raw".toLongOrNull() ?: return null,
                     serverPostId = post,
+                    originalUrl = rawUrl,
                 )
             }
             else -> null
         }
     }
 
-    private fun parseTMeLocal(uri: Uri): DeepLink? {
+    private fun parseTMeLocal(uri: Uri, rawUrl: String): DeepLink? {
         val segments = uri.pathSegments.filter { it.isNotBlank() }
         return when {
             segments.isEmpty() -> null
@@ -159,6 +194,7 @@ class TelegramLinkResolver(private val td: TdSender) {
                 DeepLink.PrivateChannel(
                     chatId = "-100$raw".toLongOrNull() ?: return null,
                     serverPostId = msg,
+                    originalUrl = rawUrl,
                 )
             }
             // `t.me/+inviteHash` (and the legacy `t.me/joinchat/<hash>`) carry an
@@ -172,6 +208,7 @@ class TelegramLinkResolver(private val td: TdSender) {
                 DeepLink.PublicChannel(
                     handle = handle.removePrefix("@"),
                     serverPostId = msg,
+                    originalUrl = rawUrl,
                 )
             }
         }

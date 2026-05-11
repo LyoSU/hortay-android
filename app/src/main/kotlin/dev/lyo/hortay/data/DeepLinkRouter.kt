@@ -22,11 +22,20 @@ import kotlinx.coroutines.flow.receiveAsFlow
  */
 class DeepLinkRouter {
 
-    private val _events = Channel<DeepLink>(capacity = Channel.BUFFERED)
+    // UNLIMITED rather than BUFFERED: every value in this channel represents a discrete
+    // user-initiated action (a tap on a link, an Intent arriving via singleTop). The
+    // BUFFERED default's ~64-slot capacity silently dropped events on the floor when
+    // the collector was momentarily paused (predictive-back animation, comments
+    // overlay transition). For one-shot UX events the right backpressure is "buffer
+    // everything, drain as fast as we can compose" — losing a tap is worse than
+    // briefly holding an extra Pair in memory.
+    private val _events = Channel<DeepLink>(capacity = Channel.UNLIMITED)
     val events: Flow<DeepLink> = _events.receiveAsFlow()
 
-    /** Hand a pre-resolved link off to the UI collector. Returns true on successful enqueue. */
-    fun submit(link: DeepLink): Boolean = _events.trySend(link).isSuccess
+    /** Hand a pre-resolved link off to the UI collector. */
+    fun submit(link: DeepLink) {
+        _events.trySend(link)
+    }
 }
 
 /**
@@ -46,24 +55,45 @@ class DeepLinkRouter {
  * — no extra shift needed by the caller.
  */
 sealed interface DeepLink {
+    /**
+     * The original URL string the user (or sharing app) tapped. Carried on every
+     * variant so the deep-link collector can fall back to ACTION_VIEW when the typed
+     * route turns out to be unsupported — e.g. a `t.me/c/...` message link that
+     * resolves to a basic group rather than a channel — without needing to
+     * synthesise a URL after the fact.
+     */
+    val originalUrl: String
+
     /** A public channel/user/bot reachable by [handle] (without `@`). */
-    data class PublicChannel(val handle: String, val serverPostId: Long?) : DeepLink
+    data class PublicChannel(
+        val handle: String,
+        val serverPostId: Long?,
+        override val originalUrl: String,
+    ) : DeepLink
 
     /** A private channel referenced by its TDLib chat id (`-100<raw>`). */
-    data class PrivateChannel(val chatId: Long, val serverPostId: Long?) : DeepLink
+    data class PrivateChannel(
+        val chatId: Long,
+        val serverPostId: Long?,
+        override val originalUrl: String,
+    ) : DeepLink
 
     /**
      * A specific chat+message pair resolved by TDLib's `GetMessageLinkInfo`. The
      * [messageId] is already in TDLib's internal `(serverId shl 20)` form.
      */
-    data class Message(val chatId: Long, val messageId: Long) : DeepLink
+    data class Message(
+        val chatId: Long,
+        val messageId: Long,
+        override val originalUrl: String,
+    ) : DeepLink
 
     /**
      * Recognised Telegram URL we don't natively support (invites, gifts, bot-start, …).
      * Carries the verbatim original URL so the collector can hand it to the OS for
      * dispatch to the official Telegram client.
      */
-    data class External(val rawUrl: String) : DeepLink
+    data class External(override val originalUrl: String) : DeepLink
 
     /**
      * Telegram-internal link type we explicitly DON'T want to send to the OS — punting
@@ -71,7 +101,10 @@ sealed interface DeepLink {
      * Telegram-domain URI ("я тиснув на хештег, а воно відкрило іншу програму").
      * Scaffolds show an in-app snackbar describing the feature instead.
      */
-    data class UnsupportedFeature(val feature: UnsupportedFeatureKind, val rawUrl: String) : DeepLink
+    data class UnsupportedFeature(
+        val feature: UnsupportedFeatureKind,
+        override val originalUrl: String,
+    ) : DeepLink
 
     /**
      * Telegram chat invite link (`t.me/+abc...`, legacy `t.me/joinchat/xyz`,
@@ -82,7 +115,7 @@ sealed interface DeepLink {
      * Non-channel invites surface a snackbar and hand off to the official client —
      * Hortay has no group / direct-chat surface.
      */
-    data class ChatInvite(val inviteLink: String) : DeepLink
+    data class ChatInvite(val inviteLink: String, override val originalUrl: String) : DeepLink
 }
 
 /** Kinds of Telegram links we recognise but render in-app as a snackbar instead of

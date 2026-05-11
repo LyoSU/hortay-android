@@ -61,12 +61,17 @@ import java.util.Locale
 @Composable
 fun WebModeScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
-    var addSheetOpen by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
-    // Username carried over from a deep-link arrival into the AddChannelSheet.
-    // Null in the manual-open case (clipboard auto-paste runs); set to a bare
-    // handle by the deep-link collector below to skip the paste step entirely.
-    var deepLinkPrefill by rememberSaveable { mutableStateOf<String?>(null) }
+    // [addSheetOpen] + [deepLinkPrefill] are deliberately NOT `rememberSaveable`.
+    // The pair is set together by the deep-link collector when a guest-mode user
+    // taps `t.me/<handle>`. If the user dismissed the sheet pre-process-death we
+    // wouldn't want to re-open it on cold-launch; if the user was mid-decision
+    // when the process was killed they almost certainly abandoned the action.
+    // The deep-link router buffers the inbound event itself (UNLIMITED channel
+    // on the graph), so a re-entry that genuinely needs the sheet will re-arrive
+    // through the collector path naturally.
+    var addSheetOpen by remember { mutableStateOf(false) }
+    var deepLinkPrefill by remember { mutableStateOf<String?>(null) }
     // Monotonic counter incremented on each "Home" re-tap — TimelineScreen
     // observes it and scrolls the feed to top (or refreshes when already at
     // top). Same mechanism as MainScaffold so the home-tap-to-scroll gesture
@@ -94,35 +99,35 @@ fun WebModeScaffold(graph: AppGraph) {
     val systemUriHandler = LocalUriHandler.current
     LaunchedEffect(Unit) {
         graph.deepLinkRouter.events.collect { link ->
-            when (link) {
-                is DeepLink.PublicChannel -> {
-                    deepLinkPrefill = link.handle
-                    addSheetOpen = true
-                }
-                is DeepLink.PrivateChannel,
-                is DeepLink.Message,
-                is DeepLink.ChatInvite -> {
-                    // ChatInvite join requires TDLib auth (CheckChatInviteLink +
-                    // JoinChatByInviteLink). Guest mode can't honour it — surface the
-                    // same sign-in prompt we use for other auth-only deep links.
-                    snackbarHostState.showSnackbar(signInRequiredMsg)
-                }
-                is DeepLink.External -> {
-                    // Recognised Telegram URL outside our native surface (invite, gift,
-                    // bot start, premium feature, story share, …). Hand to the OS so
-                    // the official Telegram client takes it — HortayUriHandler routes
-                    // here defensively, but the in-app interceptor normally short-
-                    // circuits Externals straight to the system handler upstream.
-                    runCatching { systemUriHandler.openUri(link.rawUrl) }
-                }
-                is DeepLink.UnsupportedFeature -> {
-                    // Hashtag search etc — show a snackbar, don't punt to the OS.
-                    val msg = when (link.feature) {
-                        dev.lyo.hortay.data.UnsupportedFeatureKind.HashtagSearch ->
-                            R.string.link_unsupported_hashtag
+            // Per-link runCatching so a snackbar suspend cancellation or an unexpected
+            // throw in one handler doesn't permanently silence the collector for the
+            // rest of the process — matches the failure isolation MainScaffold uses.
+            try {
+                when (link) {
+                    is DeepLink.PublicChannel -> {
+                        deepLinkPrefill = link.handle
+                        addSheetOpen = true
                     }
-                    snackbarHostState.showSnackbar(context.getString(msg))
+                    is DeepLink.PrivateChannel,
+                    is DeepLink.Message,
+                    is DeepLink.ChatInvite -> {
+                        // Auth-only surfaces: nudge sign-in instead of silently dropping.
+                        snackbarHostState.showSnackbar(signInRequiredMsg)
+                    }
+                    is DeepLink.External -> {
+                        runCatching { systemUriHandler.openUri(link.originalUrl) }
+                    }
+                    is DeepLink.UnsupportedFeature -> {
+                        val msg = when (link.feature) {
+                            dev.lyo.hortay.data.UnsupportedFeatureKind.HashtagSearch ->
+                                R.string.link_unsupported_hashtag
+                        }
+                        snackbarHostState.showSnackbar(context.getString(msg))
+                    }
                 }
+            } catch (t: Throwable) {
+                if (t is kotlin.coroutines.cancellation.CancellationException) throw t
+                android.util.Log.w("WebModeScaffold", "deep-link dispatch failed for $link", t)
             }
         }
     }

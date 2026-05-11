@@ -82,17 +82,30 @@ private suspend fun PointerInputScope.watchLinkLongPress(
             @Suppress("UNREACHABLE_CODE") false
         }
         if (released == null) {
-            currentEvent.changes.forEach { it.consume() }
+            // Consume only the change belonging to OUR pointer. A second finger or
+            // a parent-claimed pointer (LazyColumn scroll grab) must not be marked
+            // as consumed by us — that would block the parent's scroll, the multi-
+            // touch detector, or both.
+            currentEvent.changes.firstOrNull { it.id == pointerId }?.consume()
             onLongPress(range)
-            // Drain the rest of the gesture — consume every change until the finger
-            // lifts. Without this, the user's eventual release reaches LinkAnnotation's
-            // tap detector and fires onClick, opening the link a beat after our menu
-            // already showed ("і посилання саме одразу за контекстним меню").
-            // Consuming through to up marks the whole gesture as ours.
+            // Drain the REST of the original gesture so the eventual release of
+            // the same pointer doesn't reach LinkAnnotation's tap detector and
+            // fire onClick a beat after our menu showed. Filter strictly on
+            // [pointerId] — other pointers (multi-touch, OS cancel events for
+            // outer scroll) carry their own ids and must NOT be consumed by us,
+            // otherwise a second finger pinned in place during the drain would
+            // keep the loop alive indefinitely. Exit on the first event where
+            // our pointer is no longer pressed (up OR cancel).
             while (true) {
                 val event = awaitPointerEvent()
-                event.changes.forEach { it.consume() }
-                if (event.changes.none { it.pressed }) break
+                val ours = event.changes.firstOrNull { it.id == pointerId }
+                if (ours == null) {
+                    // The original pointer was lifted on the previous frame and
+                    // is no longer reported. Gesture is over from our perspective.
+                    break
+                }
+                ours.consume()
+                if (!ours.pressed) break
             }
         }
     }

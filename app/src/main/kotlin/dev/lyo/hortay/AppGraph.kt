@@ -3,6 +3,7 @@ package dev.lyo.hortay
 import android.content.Context
 import dev.lyo.hortay.data.AutoDownloadStore
 import dev.lyo.hortay.data.BookmarkStore
+import dev.lyo.hortay.data.LinkDialogState
 import dev.lyo.hortay.data.toStringResolver
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
@@ -36,10 +37,14 @@ import dev.lyo.hortay.data.web.WebTelegramClient
 import dev.lyo.hortay.data.web.db.WebDatabase
 import dev.lyo.hortay.data.web.db.WebDatabaseProvider
 import java.io.File
+import androidx.lifecycle.ProcessLifecycleOwner
+import dev.lyo.hortay.ui.media.CustomEmojiAnimator
 import dev.lyo.hortay.ui.media.ExoPlayerPool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -179,6 +184,20 @@ class AppGraph(context: Context) {
     // single TDLib call.
     val customEmoji: CustomEmojiRepository = CustomEmojiRepository(tdClient, appScope)
 
+    /**
+     * Process-wide frame driver for inline custom-emoji TGS playback. One
+     * [com.airbnb.lottie.LottieDrawable] + one shared progress state per `customEmojiId`,
+     * driven by a single [android.view.Choreographer.FrameCallback] master clock. Inline
+     * emoji repeats (the same `customEmojiId` mounted N times in a post) share one
+     * playback session — see [CustomEmojiAnimator] KDoc for the full rationale.
+     *
+     * Wired with [ProcessLifecycleOwner] so background pauses are honoured globally —
+     * when the app moves below STARTED the master clock stops posting frame callbacks.
+     */
+    val customEmojiAnimator: CustomEmojiAnimator = CustomEmojiAnimator(
+        processLifecycle = ProcessLifecycleOwner.get().lifecycle,
+    )
+
     // Vector-silhouette cache for the outline → thumb → sticker visual ladder. TDLib's
     // [TdApi.GetStickerOutlineSvgPath] is offline (microseconds over JNI) but we still
     // memoise the parsed Compose Path so repeated viewport entries don't re-parse the
@@ -211,6 +230,24 @@ class AppGraph(context: Context) {
      * truth for "is this a Telegram URL, and what does it mean".
      */
     val linkResolver: TelegramLinkResolver = TelegramLinkResolver(tdClient)
+        .also { it.bindLogoutClear(tdClient.loggedOut, appScope) }
+
+    /**
+     * Process-wide dialog state for link-confirmation flows. Hoisted off the scaffolds
+     * because they live on the AppGraph: each is set by an in-flight suspending call
+     * (`HortayUriHandler.openUri` for masked links, the deep-link collector for invite
+     * previews) that can outlive a rotation. Storing the pending value in a saveable
+     * inside the scaffold was a real bug — the writeback happened AFTER the saveable
+     * bag was packed, so the rotated composition started fresh and the dialog never
+     * appeared. A MutableStateFlow on the graph survives configuration changes
+     * naturally (graph is process-lifetime) without needing Parcelize on
+     * [ChatInvitePreview].
+     *
+     * Trade-off: state is NOT persisted across process death. For a "user just tapped
+     * a link" dialog that's correct — a killed process represents user abandonment,
+     * not pending intent. Telegram-Android has the same boundary.
+     */
+    val linkDialogs: LinkDialogState = LinkDialogState()
 
     /**
      * Anonymous-mode SQLDelight database. Stores channel metadata, post payloads,
@@ -396,6 +433,7 @@ class AppGraph(context: Context) {
         runCatching { commentsRepository.clear() }
         runCatching { mediaCache.clear() }
         runCatching { customEmoji.clear() }
+        runCatching { customEmojiAnimator.clear() }
         runCatching { stickerOutline.clear() }
         runCatching { chatFoldersRepository.clear() }
         runCatching { translations.clear() }

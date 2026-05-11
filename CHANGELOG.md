@@ -9,6 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- **Hardening pass on the in-app link / deep-link infrastructure**. A code-review
+  audit surfaced eleven concrete failure modes in the recent link-handling
+  refactor; all closed in one pass:
+  - Deep-link collectors in `MainScaffold` / `WebModeScaffold` wrapped in per-link
+    `try/catch` so one TDLib exception (FLOOD_WAIT in `resolvePublicHandle`,
+    transient SearchPublicChat error, etc.) no longer permanently silences every
+    subsequent deep-link tap for the rest of the process.
+  - `DeepLink.Message` and `DeepLink.PrivateChannel` now gate on a new
+    `PostsRepository.resolveChatKind(chatId)` so a `t.me/c/.../<msg>` link to a
+    basic group / supergroup-chat / 1:1 DM surfaces an "opens in Telegram"
+    snackbar and hands off to the OS instead of landing the user on an empty
+    channel filter `loadChannelHistory` will refuse to populate.
+  - `TelegramLinkResolver` LRU cache wired to `TdClient.loggedOut` so chat ids
+    from a previous account don't survive an account switch (privacy + correctness
+    regression on logout). `DeepLink.External` is no longer cached at all — that
+    variant means "TDLib didn't classify this right now", which can be the
+    cold-launch race; freezing it in the cache made post-warmup re-resolves
+    return stale Externals.
+  - `LinkLongPress` drain loop now filters strictly on the originating
+    `pointerId`. A second finger or an OS-cancel event for an outer scroll no
+    longer extends the drain indefinitely (would have blocked the parent's
+    scroll until the user lifted both pointers).
+  - `HortayUriHandler` enforces an explicit scheme allowlist
+    (`http/https/tg/mailto/tel`) before either resolver consultation or OS
+    delegate punt. Closes the masked-link attack surface that would have let a
+    post body span hand `file://` / `javascript:` / `content://` to
+    `ACTION_VIEW` (mirrors Telegram-Android's `BrowserLink` allowlist).
+  - `DeepLinkRouter` switched from `Channel.BUFFERED` (~64 slots) to
+    `Channel.UNLIMITED` for one-shot UX events. A momentary collector pause
+    (predictive-back animation, comments overlay transition) no longer silently
+    drops user-initiated taps.
+  - `TimelineScreen.onScrollMissed` callback fires when `loadHistoryAround`
+    returns false; `MainScaffold` wires it to the user-message bus so a dead
+    deep link now surfaces "Посилання не знайдено" instead of leaving the user
+    on a frozen channel preview skeleton.
+  - Masked-link confirmation and chat-invite preview dialogs hoisted off
+    `rememberSaveable` in the scaffolds to a process-wide
+    `LinkDialogState` on `AppGraph` (a pair of `MutableStateFlow`s). The
+    suspending resolver / `CheckChatInviteLink` calls outlive any single
+    composition, so the old in-scaffold `saveable` was packed up at rotation
+    BEFORE the writeback arrived — the dialog never re-appeared. Graph-level
+    state survives configuration changes naturally; process death is still
+    boundary by design (in-flight link confirmation across a kill is user
+    abandonment).
+  - `WebModeScaffold.deepLinkPrefill` + `addSheetOpen` switched from
+    `rememberSaveable` to plain `remember`. The pair used to re-open the
+    `AddChannelSheet` with a stale handle on cold-launch after a process
+    kill; now the deep-link router's UNLIMITED channel re-delivers the
+    inbound event through the collector if it's still pending.
+  - Every `DeepLink` variant now carries a common `originalUrl: String` field
+    via a sealed-interface property, so the Unsupported branches can hand the
+    user's verbatim tapped URL back to the OS instead of synthesising one
+    after the fact (the synthesised URL drifted from the source form on
+    `tg://privatepost?...` and `t.me/c/...` shapes).
 - **Deep-link scroll never landed AND `loadOlder` silently stopped surfacing
   rows when the active folder / archive scope didn't include the linked
   channel**. Both bugs collapsed onto one root cause: `visiblePosts` applied

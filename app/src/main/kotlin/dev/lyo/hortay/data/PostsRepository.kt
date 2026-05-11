@@ -645,13 +645,37 @@ class PostsRepository(
             .warnUnlessCancelled(TAG, "resolvePublicHandle($cleaned)")
             .getOrNull() ?: return PublicHandleResult.NotFound
         chatCache.putIfAbsent(chat.id, chat)
-        return when {
-            chat.isChannel() -> PublicHandleResult.Channel(chat.id)
-            chat.type is TdApi.ChatTypePrivate -> PublicHandleResult.Unsupported(PublicHandleKind.User)
-            chat.type is TdApi.ChatTypeBasicGroup -> PublicHandleResult.Unsupported(PublicHandleKind.Group)
-            chat.type is TdApi.ChatTypeSupergroup -> PublicHandleResult.Unsupported(PublicHandleKind.Group)
-            else -> PublicHandleResult.Unsupported(PublicHandleKind.Unknown)
-        }
+        return chat.toPublicHandleResult()
+    }
+
+    /**
+     * Twin of [resolvePublicHandle] keyed on a TDLib chat id rather than a public handle.
+     * Used by deep-link variants that already carry an id (`DeepLink.Message`,
+     * `DeepLink.PrivateChannel`) so the dispatcher can verify the target IS a channel
+     * before flipping `channelFilter`. Without the check, a `t.me/c/.../<msg>` link
+     * that points at a basic group / supergroup-chat / user DM would land the user on
+     * a channel filter that never paginates (loadChannelHistory short-circuits on
+     * `!chat.isChannel()`), reading as a frozen empty view.
+     *
+     * Returns [PublicHandleResult.NotFound] when TDLib has no record of the chat
+     * (private chat the user lost access to, transient network failure on GetChat).
+     */
+    suspend fun resolveChatKind(chatId: Long): PublicHandleResult {
+        val chat = chatCache[chatId]
+            ?: runCatching { td.send(TdApi.GetChat(chatId)) }
+                .warnUnlessCancelled(TAG, "resolveChatKind($chatId)")
+                .getOrNull()
+                ?.also { chatCache[chatId] = it }
+            ?: return PublicHandleResult.NotFound
+        return chat.toPublicHandleResult()
+    }
+
+    private fun TdApi.Chat.toPublicHandleResult(): PublicHandleResult = when {
+        isChannel() -> PublicHandleResult.Channel(id)
+        type is TdApi.ChatTypePrivate -> PublicHandleResult.Unsupported(PublicHandleKind.User)
+        type is TdApi.ChatTypeBasicGroup -> PublicHandleResult.Unsupported(PublicHandleKind.Group)
+        type is TdApi.ChatTypeSupergroup -> PublicHandleResult.Unsupported(PublicHandleKind.Group)
+        else -> PublicHandleResult.Unsupported(PublicHandleKind.Unknown)
     }
 
     /**

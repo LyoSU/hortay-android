@@ -132,6 +132,16 @@ fun TimelineScreen(
     scrollToMessage: Pair<Long, Long>? = null,
     onScrollHandled: () -> Unit = {},
     /**
+     * Fired exactly once when a deep-link scroll request resolves dead — TDLib's
+     * `GetChatHistory` returned an empty window around the anchor (chat became
+     * inaccessible / message deleted / FLOOD_WAIT exhausted the retry budget /
+     * permission revoked between link share and tap). Scaffold wires it to a
+     * snackbar ("Пост недоступний") so the user gets the same feedback
+     * Telegram-Android offers via its "Message is no longer available" toast,
+     * instead of staring at a frozen preview skeleton.
+     */
+    onScrollMissed: () -> Unit = {},
+    /**
      * When non-null, a search action is shown in the default top bar (no filter,
      * not bookmarked-only) and tapping it invokes this callback. Guest mode wires
      * it to a cross-channel local search overlay; TDLib mode already has its own
@@ -561,6 +571,7 @@ fun TimelineScreen(
                     val landed = tdlibRepo?.loadHistoryAround(chatId, messageId) ?: false
                     if (!landed) {
                         pendingScrollToMessage = null
+                        onScrollMissed()
                         return@collect
                     }
                 }

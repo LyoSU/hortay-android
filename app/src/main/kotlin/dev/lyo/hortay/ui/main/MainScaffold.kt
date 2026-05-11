@@ -27,15 +27,21 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.coroutines.cancellation.CancellationException
+import android.util.Log
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.ChatInvitePreview
 import dev.lyo.hortay.data.DeepLink
+import dev.lyo.hortay.data.InviteLinkKind
 import dev.lyo.hortay.data.PublicHandleKind
 import dev.lyo.hortay.data.PublicHandleResult
 import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.data.UnsupportedFeatureKind
+import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.ui.channels.ChannelsScreen
 import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.settings.SettingsScreen
+import dev.lyo.hortay.ui.text.ChatInvitePreviewDialog
 import dev.lyo.hortay.ui.timeline.TimelineScreen
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -108,13 +114,12 @@ fun MainScaffold(graph: AppGraph) {
     // (chatId, TDLib-shifted messageId). TimelineScreen consumes via [onScrollHandled]
     // so the request fires exactly once even if MainScaffold recomposes.
     var pendingScrollTarget by remember { mutableStateOf<Pair<Long, Long>?>(null) }
-    // Pending invite-link confirmation. When set, the scaffold renders
-    // [ChatInvitePreviewDialog] with the title + member count TDLib gave us via
-    // CheckChatInviteLink. Cleared on dismiss / on the user pressing Join (after which
-    // we fire JoinChatByInviteLink and route to the new chat).
-    var pendingInvitePreview by remember {
-        mutableStateOf<dev.lyo.hortay.data.ChatInvitePreview?>(null)
-    }
+    // Pending invite-link confirmation. Stored on the graph rather than in a local
+    // [rememberSaveable] because TDLib's `CheckChatInviteLink` is suspending and runs
+    // on the app scope — a rotation between the user tapping the link and the
+    // preview arriving would otherwise drop the dialog on the floor. See
+    // [dev.lyo.hortay.data.LinkDialogState] for the lifecycle contract.
+    val pendingInvitePreview by graph.linkDialogs.invitePreview.collectAsStateWithLifecycle()
     // Monotonic counter: each re-tap on Home (or brand) bumps it once. The Feed observes the
     // value and decides scroll-to-top vs refresh based on its own scroll position.
     var homeTapTrigger by remember { mutableLongStateOf(0L) }
@@ -137,108 +142,155 @@ fun MainScaffold(graph: AppGraph) {
     // Deep-link dispatcher. Resolved Telegram links arrive here typed; we map each to
     // (chatId, optional TDLib-shaped messageId) and switch nav state. [DeepLink.Message]
     // already carries the TDLib-internal `messageId` (resolved server-side via
-    // `GetMessageLinkInfo`); [PublicChannel]/[PrivateChannel] still carry a server-side
-    // post number which we shift here before handing to TimelineScreen. Any failure
-    // (unresolvable handle, missing subscription) silently drops — better than crashing
-    // on a user-tapped wild link. [External] variants are recognised Telegram URLs we
-    // can't natively surface (chat invites, gifts, bot starts, premium feature pages,
-    // story shares…); the HortayUriHandler in-app interceptor short-circuits those
-    // straight to the OS so they shouldn't reach the router, but we handle them
-    // defensively if they do.
+    // `GetMessageLinkInfo`); the public/private channel variants still carry a server-
+    // side post number which we shift here before handing to TimelineScreen.
+    //
+    // Failure isolation: every link is dispatched inside a `runCatching` so one bad
+    // input (TDLib throw on a malformed handle, transient FLOOD_WAIT inside
+    // resolvePublicHandle, etc.) cannot kill the entire collector — without this
+    // wrapper a single uncaught throw inside `collect { }` permanently silences every
+    // future deep-link tap until the process restarts. `CancellationException` is
+    // re-thrown so the LaunchedEffect can be cancelled cleanly when the scaffold
+    // leaves composition.
     val systemUriHandler = LocalUriHandler.current
     val res = LocalContext.current.resources
+
+    fun unsupportedHandleMessageId(kind: PublicHandleKind): Int = when (kind) {
+        PublicHandleKind.User -> R.string.link_unsupported_user
+        PublicHandleKind.Group -> R.string.link_unsupported_group
+        PublicHandleKind.Unknown -> R.string.link_unsupported_other
+    }
+
     LaunchedEffect(Unit) {
         graph.deepLinkRouter.events.collect { link ->
-            val targetChat: Long?
-            val tdMessageId: Long?
-            when (link) {
-                is DeepLink.PublicChannel -> {
-                    when (val resolved = graph.postsRepository.resolvePublicHandle(link.handle)) {
-                        is PublicHandleResult.Channel -> {
-                            targetChat = resolved.chatId
-                            tdMessageId = link.serverPostId?.let { it shl SERVER_TO_TD_SHIFT }
-                        }
-                        is PublicHandleResult.Unsupported -> {
-                            // Hortay's UX is read-only channel feed today. A handle
-                            // that resolves to a 1:1 user (`@some_account`), a bot, or
-                            // a non-channel supergroup / basic group lands here —
-                            // surface a snackbar naming the kind so the user
-                            // understands *why* nothing opened, then hand the original
-                            // URL off to the OS so they can continue in Telegram.
-                            val msgId = when (resolved.kind) {
-                                PublicHandleKind.User -> R.string.link_unsupported_user
-                                PublicHandleKind.Group -> R.string.link_unsupported_group
-                                PublicHandleKind.Unknown -> R.string.link_unsupported_other
+            try {
+                // Filled in by the channel-routed branches below; all other branches
+                // (External, UnsupportedFeature, ChatInvite, Unsupported handle, NotFound)
+                // hit `return@collect` before reaching the post-when block, so by the
+                // time we test `targetChat != null` it is in fact always set in the
+                // taken path. Compiler tracks this via DFA but we keep the explicit
+                // null-check for readability — it documents "this is the only path
+                // that flips channelFilter".
+                val targetChat: Long
+                val tdMessageId: Long?
+                when (link) {
+                    is DeepLink.PublicChannel -> {
+                        when (val resolved = graph.postsRepository.resolvePublicHandle(link.handle)) {
+                            is PublicHandleResult.Channel -> {
+                                targetChat = resolved.chatId
+                                tdMessageId = link.serverPostId?.let { it shl SERVER_TO_TD_SHIFT }
                             }
-                            graph.userMessages.post(res.getString(msgId), dev.lyo.hortay.data.UserMessageBus.Severity.Info)
-                            runCatching {
-                                systemUriHandler.openUri("https://t.me/${link.handle}")
+                            is PublicHandleResult.Unsupported -> {
+                                graph.userMessages.post(
+                                    res.getString(unsupportedHandleMessageId(resolved.kind)),
+                                    UserMessageBus.Severity.Info,
+                                )
+                                runCatching { systemUriHandler.openUri(link.originalUrl) }
+                                return@collect
                             }
-                            return@collect
-                        }
-                        is PublicHandleResult.NotFound -> {
-                            graph.userMessages.post(res.getString(R.string.link_not_found))
-                            return@collect
-                        }
-                    }
-                }
-                is DeepLink.PrivateChannel -> {
-                    targetChat = link.chatId
-                    tdMessageId = link.serverPostId?.let { it shl SERVER_TO_TD_SHIFT }
-                }
-                is DeepLink.Message -> {
-                    targetChat = link.chatId
-                    tdMessageId = link.messageId
-                }
-                is DeepLink.External -> {
-                    runCatching { systemUriHandler.openUri(link.rawUrl) }
-                    return@collect
-                }
-                is DeepLink.UnsupportedFeature -> {
-                    val msgId = when (link.feature) {
-                        dev.lyo.hortay.data.UnsupportedFeatureKind.HashtagSearch ->
-                            R.string.link_unsupported_hashtag
-                    }
-                    graph.userMessages.post(res.getString(msgId), dev.lyo.hortay.data.UserMessageBus.Severity.Info)
-                    return@collect
-                }
-                is DeepLink.ChatInvite -> {
-                    val preview = graph.channelActions.previewChatInvite(link.inviteLink)
-                    when {
-                        preview == null -> {
-                            graph.userMessages.post(res.getString(R.string.link_not_found))
-                        }
-                        preview.chatId != null -> {
-                            // Already a member — TDLib resolved the chat id directly,
-                            // no Join needed. Jump straight to the feed filter.
-                            channelFilter = preview.chatId
-                            selectedTab = NavTab.Feed
-                            openComments(null)
-                        }
-                        preview.kind == dev.lyo.hortay.data.InviteLinkKind.Channel -> {
-                            // Channel invite, not yet a member — show preview dialog.
-                            pendingInvitePreview = preview
-                        }
-                        else -> {
-                            // Group / supergroup invite — Hortay has no group surface,
-                            // surface a snackbar + hand off to Telegram.
-                            graph.userMessages.post(
-                                res.getString(R.string.link_unsupported_group),
-                                dev.lyo.hortay.data.UserMessageBus.Severity.Info,
-                            )
-                            runCatching { systemUriHandler.openUri(link.inviteLink) }
+                            is PublicHandleResult.NotFound -> {
+                                graph.userMessages.post(res.getString(R.string.link_not_found))
+                                return@collect
+                            }
                         }
                     }
-                    return@collect
+                    is DeepLink.PrivateChannel -> {
+                        // Same kind-gate as Message — `t.me/c/<rawId>/...` *should* point
+                        // at a channel but TDLib can have the chat cached as a private
+                        // supergroup-chat (the user is in the group but it's not a
+                        // broadcast channel). Without the gate, channelFilter flips to a
+                        // chatId that loadChannelHistory short-circuits on, leaving an
+                        // empty skeleton with no error path.
+                        when (val resolved = graph.postsRepository.resolveChatKind(link.chatId)) {
+                            is PublicHandleResult.Channel -> {
+                                targetChat = resolved.chatId
+                                tdMessageId = link.serverPostId?.let { it shl SERVER_TO_TD_SHIFT }
+                            }
+                            is PublicHandleResult.Unsupported -> {
+                                graph.userMessages.post(
+                                    res.getString(unsupportedHandleMessageId(resolved.kind)),
+                                    UserMessageBus.Severity.Info,
+                                )
+                                runCatching { systemUriHandler.openUri(link.originalUrl) }
+                                return@collect
+                            }
+                            is PublicHandleResult.NotFound -> {
+                                graph.userMessages.post(res.getString(R.string.link_not_found))
+                                return@collect
+                            }
+                        }
+                    }
+                    is DeepLink.Message -> {
+                        // Same kind-gate. `GetMessageLinkInfo` happily returned a
+                        // (chatId, message) pair, but the chat could be a basic group
+                        // or 1:1 DM the user is in — neither has a feed surface in
+                        // Hortay. Without the gate, channelFilter would land on a chat
+                        // whose loadChannelHistory returns false, freezing the user.
+                        when (val resolved = graph.postsRepository.resolveChatKind(link.chatId)) {
+                            is PublicHandleResult.Channel -> {
+                                targetChat = resolved.chatId
+                                tdMessageId = link.messageId
+                            }
+                            is PublicHandleResult.Unsupported -> {
+                                graph.userMessages.post(
+                                    res.getString(unsupportedHandleMessageId(resolved.kind)),
+                                    UserMessageBus.Severity.Info,
+                                )
+                                runCatching { systemUriHandler.openUri(link.originalUrl) }
+                                return@collect
+                            }
+                            is PublicHandleResult.NotFound -> {
+                                graph.userMessages.post(res.getString(R.string.link_not_found))
+                                return@collect
+                            }
+                        }
+                    }
+                    is DeepLink.External -> {
+                        runCatching { systemUriHandler.openUri(link.originalUrl) }
+                        return@collect
+                    }
+                    is DeepLink.UnsupportedFeature -> {
+                        val msgId = when (link.feature) {
+                            UnsupportedFeatureKind.HashtagSearch -> R.string.link_unsupported_hashtag
+                        }
+                        graph.userMessages.post(res.getString(msgId), UserMessageBus.Severity.Info)
+                        return@collect
+                    }
+                    is DeepLink.ChatInvite -> {
+                        val preview = graph.channelActions.previewChatInvite(link.inviteLink)
+                        when {
+                            preview == null -> {
+                                graph.userMessages.post(res.getString(R.string.link_not_found))
+                            }
+                            preview.chatId != null -> {
+                                // Already a member — jump straight to the channel filter.
+                                channelFilter = preview.chatId
+                                selectedTab = NavTab.Feed
+                                openComments(null)
+                            }
+                            preview.kind == InviteLinkKind.Channel -> {
+                                graph.linkDialogs.showInvitePreview(preview)
+                            }
+                            else -> {
+                                graph.userMessages.post(
+                                    res.getString(R.string.link_unsupported_group),
+                                    UserMessageBus.Severity.Info,
+                                )
+                                runCatching { systemUriHandler.openUri(link.originalUrl) }
+                            }
+                        }
+                        return@collect
+                    }
                 }
-            }
-            if (targetChat != null) {
                 channelFilter = targetChat
                 selectedTab = NavTab.Feed
                 openComments(null)
                 if (tdMessageId != null) {
                     pendingScrollTarget = targetChat to tdMessageId
                 }
+            } catch (t: Throwable) {
+                if (t is kotlin.coroutines.cancellation.CancellationException) throw t
+                Log.w("MainScaffold", "deep-link dispatch failed for $link", t)
             }
         }
     }
@@ -338,6 +390,12 @@ fun MainScaffold(graph: AppGraph) {
                     onBrandTap = { homeTapTrigger = System.nanoTime() },
                     scrollToMessage = pendingScrollTarget,
                     onScrollHandled = { pendingScrollTarget = null },
+                    onScrollMissed = {
+                        graph.userMessages.post(
+                            res.getString(R.string.link_not_found),
+                            UserMessageBus.Severity.Info,
+                        )
+                    },
                     startupPhase = graph.startupCoordinator.phase,
                 )
                 NavTab.Channels -> ChannelsScreen(
@@ -408,10 +466,10 @@ fun MainScaffold(graph: AppGraph) {
         )
     }
     pendingInvitePreview?.let { preview ->
-        dev.lyo.hortay.ui.text.ChatInvitePreviewDialog(
+        ChatInvitePreviewDialog(
             preview = preview,
             onConfirm = {
-                pendingInvitePreview = null
+                graph.linkDialogs.dismissInvitePreview()
                 scope.launch {
                     val joinedId = graph.channelActions.joinByInvite(preview.inviteLink)
                     if (joinedId != null) {
@@ -421,7 +479,7 @@ fun MainScaffold(graph: AppGraph) {
                     }
                 }
             },
-            onDismiss = { pendingInvitePreview = null },
+            onDismiss = { graph.linkDialogs.dismissInvitePreview() },
         )
     }
     }

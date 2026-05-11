@@ -4,11 +4,9 @@ import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.data.DeepLink
 import dev.lyo.hortay.data.UnsupportedFeatureKind
@@ -31,9 +29,9 @@ import kotlinx.coroutines.launch
  *     destinations surface the [ExternalLinkConfirmDialog] showing the bolded
  *     host for anti-phishing review.
  *
- *   - The confirmation dialog itself, hosted as a sibling of [content] so it
- *     overlays whatever screen is in front. State is `rememberSaveable` so a
- *     mid-decision config change doesn't dismiss the prompt.
+ *   - The confirmation dialog itself, rendered from [AppGraph.linkDialogs]'s
+ *     process-wide state so a rotation mid-decision doesn't drop the prompt.
+ *     See [dev.lyo.hortay.data.LinkDialogState] for the lifecycle rationale.
  *
  * Both [MainScaffold] (TDLib mode) and [WebModeScaffold] (guest mode) used to
  * duplicate ~25 lines of this plumbing — extracting it here keeps the contract
@@ -52,14 +50,20 @@ fun LinkAwareScaffold(graph: AppGraph, content: @Composable () -> Unit) {
             scope = graph.appScope,
         )
     }
-    var pendingMaskedLink by rememberSaveable { mutableStateOf<String?>(null) }
+    // Confirmation callback for masked-link spans (TDLib `Style.TextUrl`). Suspending
+    // resolution happens on the long-lived [AppGraph.appScope] — composition lifecycle
+    // is decoupled from the call so a mid-resolve rotation doesn't lose the dialog.
+    // The result is written to [AppGraph.linkDialogs.maskedLink], a MutableStateFlow,
+    // which survives configuration changes. Previously the result was written to a
+    // `rememberSaveable` inside this composable — the saveable bag was packed up
+    // before the suspending call returned on rotation and the dialog disappeared.
     val confirmMaskedLink = remember(graph) {
         { url: String ->
             graph.appScope.launch {
                 val parsed = runCatching { Uri.parse(url) }.getOrNull()
                 val link = parsed?.let { graph.linkResolver.resolve(it) }
                 when (link) {
-                    null, is DeepLink.External -> pendingMaskedLink = url
+                    null, is DeepLink.External -> graph.linkDialogs.showMaskedLink(url)
                     else -> graph.deepLinkRouter.submit(link)
                 }
             }
@@ -80,6 +84,7 @@ fun LinkAwareScaffold(graph: AppGraph, content: @Composable () -> Unit) {
             Unit
         }
     }
+    val pendingMaskedLink by graph.linkDialogs.maskedLink.collectAsStateWithLifecycle()
     CompositionLocalProvider(
         LocalUriHandler provides hortayUriHandler,
         LocalLinkConfirm provides confirmMaskedLink,
@@ -87,7 +92,10 @@ fun LinkAwareScaffold(graph: AppGraph, content: @Composable () -> Unit) {
     ) {
         content()
         pendingMaskedLink?.let { url ->
-            ExternalLinkConfirmDialog(url = url, onDismiss = { pendingMaskedLink = null })
+            ExternalLinkConfirmDialog(
+                url = url,
+                onDismiss = { graph.linkDialogs.dismissMaskedLink() },
+            )
         }
     }
 }
