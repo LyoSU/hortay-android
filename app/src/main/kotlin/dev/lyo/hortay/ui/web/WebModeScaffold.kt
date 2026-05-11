@@ -128,7 +128,23 @@ fun WebModeScaffold(graph: AppGraph) {
         )
     }
     var pendingMaskedLink by rememberSaveable { mutableStateOf<String?>(null) }
-    val confirmMaskedLink = remember { { url: String -> pendingMaskedLink = url } }
+    // Mirror MainScaffold: resolve through TelegramLinkResolver first so masked links
+    // pointing INSIDE Telegram (`[click](t.me/foo)`) route via the deep-link path and
+    // don't trigger the external-confirmation dialog. Only genuine external URLs
+    // surface the anti-phishing prompt.
+    val confirmMaskedLink = remember(graph) {
+        { url: String ->
+            graph.appScope.launch {
+                val parsed = runCatching { android.net.Uri.parse(url) }.getOrNull()
+                val link = parsed?.let { graph.linkResolver.resolve(it) }
+                when (link) {
+                    null, is DeepLink.External -> pendingMaskedLink = url
+                    else -> graph.deepLinkRouter.submit(link)
+                }
+            }
+            Unit
+        }
+    }
     CompositionLocalProvider(
         LocalUriHandler provides hortayUriHandler,
         dev.lyo.hortay.ui.text.LocalLinkConfirm provides confirmMaskedLink,

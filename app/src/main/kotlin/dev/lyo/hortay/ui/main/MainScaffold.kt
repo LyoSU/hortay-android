@@ -219,13 +219,29 @@ fun MainScaffold(graph: AppGraph) {
             scope = graph.appScope,
         )
     }
-    // Anti-phishing confirmation for masked link spans (TDLib `Style.TextUrl`). When
-    // the user taps `[click here](https://evil.com)`, the renderer routes through this
-    // setter instead of opening directly; we render an AlertDialog showing the
-    // destination domain, the user confirms / cancels. Inline auto-detected URL spans
-    // (where display text IS the URL) skip this — handled at the renderer.
+    // Anti-phishing confirmation for masked link spans (TDLib `Style.TextUrl`). The
+    // callback resolves the URL through TelegramLinkResolver first: if it's a
+    // Telegram-internal link (`t.me/foo`, `tg://resolve?...`, etc) we route directly
+    // through the deep-link router — confirmation is anti-phishing UX, not anti-
+    // navigation, and an internal jump never leaves the app. Only genuine external
+    // destinations (https://example.com, https://evil.com behind `[click here]`)
+    // trigger the AlertDialog showing the destination domain. Inline auto-detected URL
+    // spans (Style.Url, where display text IS the URL) skip this entirely — handled
+    // at the renderer with a different listener.
     var pendingMaskedLink by rememberSaveable { mutableStateOf<String?>(null) }
-    val confirmMaskedLink = remember { { url: String -> pendingMaskedLink = url } }
+    val confirmMaskedLink = remember(graph) {
+        { url: String ->
+            graph.appScope.launch {
+                val parsed = runCatching { android.net.Uri.parse(url) }.getOrNull()
+                val link = parsed?.let { graph.linkResolver.resolve(it) }
+                when (link) {
+                    null, is DeepLink.External -> pendingMaskedLink = url
+                    else -> graph.deepLinkRouter.submit(link)
+                }
+            }
+            Unit
+        }
+    }
     CompositionLocalProvider(
         LocalUriHandler provides hortayUriHandler,
         dev.lyo.hortay.ui.text.LocalLinkConfirm provides confirmMaskedLink,

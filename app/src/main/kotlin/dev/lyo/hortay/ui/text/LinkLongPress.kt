@@ -84,6 +84,16 @@ private suspend fun PointerInputScope.watchLinkLongPress(
         if (released == null) {
             currentEvent.changes.forEach { it.consume() }
             onLongPress(range)
+            // Drain the rest of the gesture — consume every change until the finger
+            // lifts. Without this, the user's eventual release reaches LinkAnnotation's
+            // tap detector and fires onClick, opening the link a beat after our menu
+            // already showed ("і посилання саме одразу за контекстним меню").
+            // Consuming through to up marks the whole gesture as ours.
+            while (true) {
+                val event = awaitPointerEvent()
+                event.changes.forEach { it.consume() }
+                if (event.changes.none { it.pressed }) break
+            }
         }
     }
 }
