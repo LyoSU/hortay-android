@@ -359,7 +359,7 @@ class PostsRepository(
     // a 5-photo album consumes 5 of the 30 slots.
     override suspend fun refresh() {
         refreshMutex.withLock {
-            runCatching { refreshLocked(REFRESH_DEFAULT_LIMIT) }
+            runCatching { refreshLocked() }
                 .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
                 .warnUnlessCancelled("refresh")
                 .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_refresh_feed, connection.value) }
@@ -373,7 +373,7 @@ class PostsRepository(
     override suspend fun refreshIfStale() {
         refreshMutex.withLock {
             if (System.currentTimeMillis() - lastRefreshAtMs <= REFRESH_STALE_MS) return@withLock
-            runCatching { refreshLocked(REFRESH_DEFAULT_LIMIT) }
+            runCatching { refreshLocked() }
                 .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
                 .warnUnlessCancelled("refreshIfStale")
                 .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_refresh_feed, connection.value) }
@@ -1201,124 +1201,53 @@ class PostsRepository(
     private val _archivedChatIds = MutableStateFlow<Set<Long>>(emptySet())
     val archivedChatIds: StateFlow<Set<Long>> = _archivedChatIds.asStateFlow()
 
-    private suspend fun refreshLocked(limitPerChannel: Int) {
-        // Prime BOTH the main list and the archive — TDLib serves "have we seen these
-        // chatIds yet" per ChatList, and a chat archived in Telegram is invisible to
-        // GetChats(ChatListMain). Loading archive separately is what surfaces it for the
-        // "Архів" tab.
+    private suspend fun refreshLocked() {
+        // Cold-start strategy (mirrors Telegram-Android): drive `LoadChats(ChatListMain)`
+        // so TDLib emits UpdateNewChat for every chat. Each chat carries `lastMessage`
+        // server-side, so the feed can be reconstructed from chatCache without a
+        // per-channel GetChatHistory fan-out. Previously this method issued
+        // GetChat × N (Sem=16) + GetChatHistory × N (Sem=4); on a 200-channel account
+        // that was ~400 RPCs on the critical path and the dominant trigger for the
+        // post-login FLOOD_WAIT class. See
+        // `docs/superpowers/specs/2026-05-11-tdlib-cold-start-lastmessage-only-design.md`.
         //
-        // Drain LoadChats until TDLib reports no more pages for each list. The previous
-        // implementation called LoadChats once and went straight to GetChats — on a cold
-        // start (where TDLib's local DB is still hydrating) that returned an empty/short
-        // list and the user saw a blank feed for a couple of seconds until UpdateNewChat
-        // events caught up. Looping until LoadChats fails (TDLib signals "no more chats"
-        // with [400] Chat list is empty) is the canonical way per TDLib docs.
-        //
-        // Run Main + Archive concurrently. Each list drains independently — TDLib serves
-        // them from separate cursors and the JNI bridge handles parallel calls fine.
-        // Serial drain on a first-auth cold start (TDLib's local DB empty, every
-        // LoadChats round-trips to the server) was costing ~1-2 s of straight wait
-        // before per-channel history fetch could even start.
-        coroutineScope {
-            launch { drainChatList(TdApi.ChatListMain()) }
-            launch { drainChatList(TdApi.ChatListArchive()) }
+        // Archive is NOT drained here — archived chats are out of scope for v1 of this
+        // change. The existing UpdateChatAddedToList / UpdateChatRemovedFromList
+        // listeners still keep `_archivedChatIds` live so the UI scope predicate works.
+        drainChatList(TdApi.ChatListMain())
+
+        // GetChats returns chat ids already loaded into TDLib's local memory by the
+        // drainChatList pass above. Int.MAX_VALUE because the page count is the real
+        // ceiling on response size.
+        val chatIds = td.send(TdApi.GetChats(TdApi.ChatListMain(), Int.MAX_VALUE))
+            .chatIds.toList()
+
+        // LoadChats triggers UpdateNewChat per chat, but the emission may arrive on
+        // the td.updates flow AFTER GetChats has already returned the id list — TDLib's
+        // bridge does not guarantee that the update queue is fully drained before the
+        // response. Wait up to 2 s for chatCache to catch up; on timeout we proceed with
+        // whatever's cached (the UpdateChatLastMessage listener will catch the rest
+        // via live ingest as those updates arrive).
+        suspendUntilOrTimeout(WAIT_NEW_CHAT_TIMEOUT_MS, WAIT_NEW_CHAT_POLL_MS) {
+            chatIds.all { chatCache.containsKey(it) }
         }
 
-        // Int.MAX_VALUE: TDLib's GetChats only returns chat ids already loaded
-        // into local memory by drainChatList above, so the "limit" is purely a
-        // ceiling on the response size. Hard-coding 500 silently clipped power
-        // users with >500 channels — the only effective protection is the
-        // bounded `drainChatList` page count, which itself caps at 2000.
-        val mainIds = td.send(TdApi.GetChats(TdApi.ChatListMain(), Int.MAX_VALUE)).chatIds
-        val archiveIds = runCatching {
-            td.send(TdApi.GetChats(TdApi.ChatListArchive(), Int.MAX_VALUE)).chatIds.toList()
-        }.getOrElse { emptyList() }
-        // CAS-update instead of `.value = …`: a parallel UpdateChatAddedToList /
-        // UpdateChatRemovedFromList handler also writes through `_archivedChatIds.update {}`
-        // and a direct assignment here would silently clobber any add/remove that
-        // landed during the seconds-long drainChatList + N×GetChat block above.
-        // Take the snapshot result as the new ground truth, then re-apply any
-        // membership changes the handler observed in the meantime: the union of
-        // (a) ids the handler had added that weren't reflected in the snapshot
-        // (b) the snapshot itself, minus ids the handler subsequently removed.
-        // Simplest correct form: snapshot + (currently-tracked - mainIdsSet).
-        val mainIdSet = mainIds.toSet()
-        val freshArchive = archiveIds.toSet()
-        _archivedChatIds.update { existing ->
-            freshArchive + existing.filterNot { it in mainIdSet }
-        }
-
-        // Single channel set — duplicates collapse via toSet, then we go back to a List so
-        // we can preserve ordering for the per-chat fetch.
-        val chatIds = (mainIds.toList() + archiveIds).distinct().toLongArray()
-
-        // Resolve every chat object FIRST in parallel (cheap local-cache reads against
-        // TDLib) so we can hand the channel-only subset to the mapper for handle/
-        // verification pre-warming. Without this, every per-channel mapping path below
-        // would fall through to a serialised GetSupergroup at refresh time and stack
-        // hundreds of milliseconds onto the user-perceived "feed is fully resolved".
-        val chatLookupSemaphore = Semaphore(REFRESH_CONCURRENCY * 4)
-        val chats = coroutineScope {
-            chatIds.toList().map { chatId ->
-                async {
-                    chatLookupSemaphore.withPermit {
-                        runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
-                            ?.also { chatCache[chatId] = it }
-                    }
-                }
-            }.awaitAll().filterNotNull()
-        }
-        // Sort channels by recency BEFORE per-channel history fetch. The semaphore-bounded
-        // fan-out below ships per-channel results to [_posts] as they land (streaming
-        // emit), and async{} order is FIFO into the semaphore — so whatever comes first in
-        // this list wins the first slot, lands first in the merged feed, and is what the
-        // user sees while the rest stream in. Sort key is the last message date from the
-        // already-resolved [TdApi.Chat] (no extra RPC). Power-user with 200 subscriptions
-        // typically actively reads ~20; recency-sort means those get history fetched in
-        // the first ~5 RPC instead of being shuffled mid-list. Channels with no last
-        // message (just-joined / dead) sink to the end. Stable sort preserves TDLib's
-        // own list order for ties.
-        val channels = chats
-            .filter { it.isChannel() }
-            .sortedByDescending { it.lastMessage?.date ?: 0 }
-        mapper.prewarmChannels(channels)
-
-        // Per-channel fetch was serial — for a user with 200 channels, ~50ms per round-trip
-        // adds up to ~10s pull-to-refresh. Bound concurrency at 4 (TDLib's typical
-        // simultaneous-download cap) so we don't push the daemon into FLOOD_WAIT while
-        // still saturating the network.
-        //
-        // Streaming emit (instead of awaitAll → single fold): each per-channel result
-        // folds into _posts the moment it lands. On a 200-channel cold start with
-        // ~50ms RTT and concurrency=4, the first ~10 posts appear within ~100ms instead
-        // of after the full ~3-5s drain — which is what the user perceives as "the feed
-        // loaded". CPU cost is dominated by foldRawIntoCurrent → PostFilterStrategy.apply,
-        // which is O(N log N) on N up-to-MAX_FEED_SIZE posts; 200 sorts of growing-to-1000
-        // arrays adds <50ms total, dwarfed by the network wait.
-        //
-        // The merge stays atomic. Each per-channel update interleaves cleanly with
-        // concurrent TD update handlers (UpdateNewMessage, UpdateMessageInteractionInfo,
-        // UpdateMessageEdited, UpdateMessageContent, UpdateDeleteMessages) — they all use
-        // `_posts.update { ... }`, which is a CAS loop, so a fresh-post handler firing
-        // mid-refresh can't be clobbered. foldRawIntoCurrent's partial-album protection
-        // also remains intact: a per-channel batch that contains an incomplete album is
-        // skipped against an existing merged anchor exactly as it would be in the
-        // single-shot version.
+        // Harvest lastMessage for each known chat and route through ingest. ingest()
+        // already:
+        //   - filters non-channel chats (basic groups / DM / supergroup-chats)
+        //   - runs coalesceAlbumFragments for album-member lastMessages
+        //   - applies PostFilterStrategy (service / expired media drops)
+        //   - emits on _newArrivals for the live-update consumers
+        //   - dedups against the existing feed
+        // Sem = REFRESH_CONCURRENCY (4) bounds the concurrent album-coalesce probes;
+        // for non-album chats ingest is pure in-memory and never blocks.
         val semaphore = Semaphore(REFRESH_CONCURRENCY)
         coroutineScope {
-            channels.map { chat ->
+            chatIds.map { chatId ->
                 async {
                     semaphore.withPermit {
-                        val history = runCatching {
-                            td.send(TdApi.GetChatHistory(chat.id, /* fromMessageId */ 0, 0, limitPerChannel, false))
-                        }.getOrNull() ?: return@withPermit
-
-                        val raw = history.messages.orEmpty().toList()
-                        // Plug album fragments left by the window boundary (e.g. a 6-photo
-                        // album whose first 5 members fell outside the latest-N slice).
-                        val mapped = coalesceAlbumFragments(chat.id, raw).map { mapper.toChannelPost(it, chat) }
-                        if (mapped.isEmpty()) return@withPermit
-                        _posts.update { current -> foldRawIntoCurrent(current, mapped, MAX_FEED_SIZE) }
+                        val msg = chatCache[chatId]?.lastMessage ?: return@withPermit
+                        ingest(chatId, listOf(msg))
                     }
                 }
             }.awaitAll()
@@ -1398,6 +1327,29 @@ class PostsRepository(
         // Aligns with TDLib's default ~4 simultaneous downloads — same shape, same back-
         // pressure profile.
         const val REFRESH_CONCURRENCY = 4
+
+        /**
+         * How long [refreshLocked] waits for late-arriving `UpdateNewChat` emissions to
+         * fill [chatCache] after `GetChats` returns. Empirically TDLib's update queue
+         * drains within a few hundred ms on warm runs; on a true cold start it can take
+         * 1-2 s, which is the upper bound this constant captures.
+         *
+         * Known limitation. Past the timeout we proceed with whatever is cached. The
+         * [TdApi.UpdateChatLastMessage] listener catches chats that emit a fresh
+         * last-message after the window closes — but if a chat's last-message is
+         * UNCHANGED at the time its late [TdApi.UpdateNewChat] arrives (already-read
+         * channel, no new posts during the boot window), neither listener fires for
+         * it and the chat is absent from the feed until the next pull-to-refresh.
+         * Mitigation in practice: the next user-driven refresh runs `refreshLocked`
+         * again and the cache is warm by then, so the miss is recovered on the first
+         * scroll-down or PTR gesture. Permanent fix would require either a longer
+         * timeout (trades cold-start latency for completeness) or a second-pass
+         * GetChats after the burst settles. Deferred.
+         */
+        const val WAIT_NEW_CHAT_TIMEOUT_MS = 2_000L
+
+        /** Poll interval for [WAIT_NEW_CHAT_TIMEOUT_MS]. */
+        const val WAIT_NEW_CHAT_POLL_MS = 50L
         // 60s is long enough that quick back-and-forth between channels reuses the cached
         // history, short enough that a deliberate "refresh by re-entering" still works
         // within a normal browsing session.
