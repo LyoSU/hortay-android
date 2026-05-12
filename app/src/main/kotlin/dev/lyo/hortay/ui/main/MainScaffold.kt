@@ -444,14 +444,30 @@ fun MainScaffold(graph: AppGraph) {
             FloatingNavBar(
                 selected = selectedTab,
                 onSelect = { tab ->
-                    val reselectingFeed = tab == selectedTab && tab == NavTab.Feed
-                    if (reselectingFeed) {
-                        // Re-tap on the active Home tab: clear any channel drill, bump
-                        // the home-tap trigger so TimelineScreen scrolls to top (or
-                        // refreshes when already there). clearChannelStack resets
-                        // channelStackEntryTab too so the next drill starts fresh.
-                        clearChannelStack()
-                        homeTapTrigger = System.nanoTime()
+                    // Three distinct cases when the user taps the Home pill while
+                    // selectedTab is already Feed. Telegram-Android / Twitter / X all
+                    // settle on the same rule, surfaced explicitly here:
+                    //
+                    //  (a) User is drilled into a channel (channelStack non-empty).
+                    //      Tap Home = "exit this channel back to the all-feed", do
+                    //      NOT scroll the feed to the top — preserve where they were
+                    //      before drilling in. Clear the stack; no homeTapTrigger bump.
+                    //
+                    //  (b) User is on the all-feed (channelStack empty) AND re-tapping
+                    //      the active Home tab. This is the canonical "tap home twice"
+                    //      gesture: bump homeTapTrigger so TimelineScreen scrolls to
+                    //      top (or refreshes if already there).
+                    //
+                    //  (c) User is on a different tab (Channels / Saved / Profile) and
+                    //      taps Home. Just switch tabs — no scroll-to-top, no stack
+                    //      change (it's already empty by definition).
+                    val tappingHomeWhileInChannel =
+                        tab == NavTab.Feed && channelStack.isNotEmpty()
+                    val reselectingActiveFeed =
+                        tab == NavTab.Feed && tab == selectedTab && channelStack.isEmpty()
+                    when {
+                        tappingHomeWhileInChannel -> clearChannelStack()
+                        reselectingActiveFeed -> homeTapTrigger = System.nanoTime()
                     }
                     selectedTab = tab
                 },
