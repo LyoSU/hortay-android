@@ -179,6 +179,8 @@
     <string name="timeline_empty_saved_title">Nothing saved yet</string>
     <string name="timeline_empty_saved_helper">Tap the bookmark next to a post to save it for later</string>
     <string name="timeline_empty_default_title">It\'s quiet here</string>
+    <string name="timeline_empty_caught_up_title">All caught up</string>
+    <string name="timeline_empty_caught_up_helper">You\'ve read every post in your feed. Pull to refresh for new arrivals.</string>
     <string name="timeline_search_in_channel">Search in channel</string>
     <string name="timeline_search_empty">Nothing found</string>
     <string name="timeline_subscribers">%1$s subscribers</string>
@@ -282,6 +284,15 @@
     <string name="settings_subtitle_auto_download_category_roaming">When roaming</string>
     <string name="timeline_subtitle_feed">%1$d channels</string>
     <string name="timeline_subtitle_saved">Bookmarked posts</string>
+    <string name="settings_section_feed">Feed</string>
+    <string name="settings_feed_order_newest_title">Newest first</string>
+    <string name="settings_feed_order_newest_subtitle">Latest posts at the top</string>
+    <string name="settings_feed_order_oldest_title">Oldest unread first</string>
+    <string name="settings_feed_order_oldest_subtitle">Read forward in time, then catch up on what you\'ve seen</string>
+    <string name="settings_feed_order_snackbar">Feed reordered</string>
+    <string name="settings_snap_scroll_title">Snap scroll</string>
+    <string name="settings_snap_scroll_subtitle">Each post clicks into place when you fling — TikTok/Reels feel</string>
+    <string name="timeline_unread_boundary">Unread</string>
     <string name="settings_section_traffic">Traffic</string>
     <string name="settings_section_storage">Storage</string>
     <string name="settings_section_account">Account</string>

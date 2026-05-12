@@ -43,6 +43,9 @@ import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.data.isUnreadIn
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.TdAvatar
@@ -100,10 +103,46 @@ fun PostCard(
     )
     val highlightColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = highlightAlpha)
 
+    // Unread accent strip on the left edge. A 3 dp vertical bar in
+    // [MaterialTheme.colorScheme.primary] painted via [Modifier.drawBehind] (no
+    // extra layout pass) when the post's message id sits above the chat's read
+    // cursor. Mirrors Reeder / Gmail's pattern — a glance-level "this is new" cue
+    // that takes zero horizontal space. Hidden on expanded surfaces
+    // (CommentsScreen anchor — you're reading it now) and on discussion-thread
+    // replies (their per-thread read state isn't tracked through this cursor).
+    //
+    // Animation rides [MotionScheme.fastEffectsSpec] so a dwell-driven ack —
+    // [ChatPresence.viewMessages] flips this card's strip from full alpha to
+    // zero on the same spring the navbar selection / button press / connection
+    // banner use. One motion vocabulary across the app.
+    val cursors = LocalReadCursors.current
+    val isUnread = !expanded && post.parentId == null && post.isUnreadIn(cursors)
+    val unreadAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isUnread) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "post-unread-strip",
+    )
+    val unreadStripColor = MaterialTheme.colorScheme.primary
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(highlightColor),
+            .background(highlightColor)
+            .drawBehind {
+                if (unreadAlpha <= 0f) return@drawBehind
+                val stripWidth = 3.dp.toPx()
+                val verticalInset = 14.dp.toPx()
+                val cornerRadius = 2.dp.toPx()
+                val stripHeight = (size.height - verticalInset * 2f).coerceAtLeast(0f)
+                if (stripHeight <= 0f) return@drawBehind
+                drawRoundRect(
+                    color = unreadStripColor,
+                    topLeft = Offset(0f, verticalInset),
+                    size = Size(stripWidth, stripHeight),
+                    cornerRadius = CornerRadius(cornerRadius, cornerRadius),
+                    alpha = unreadAlpha,
+                )
+            },
     ) {
         Row(
             modifier = Modifier

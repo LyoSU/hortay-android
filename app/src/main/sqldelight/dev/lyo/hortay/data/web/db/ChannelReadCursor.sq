@@ -1,0 +1,48 @@
+-- Per-channel read-state cursor for guest (anonymous) mode.
+--
+-- TDLib mode tracks "last read message id" server-side (`Chat.lastReadInboxMessageId`)
+-- and we mirror it in [PostsRepository.chatReadCursors]. Guest mode has no Telegram
+-- server context, so we record the same boundary locally: the highest [Post.seq]
+-- the user has dwelt on for any given channel. A post with seq above this cursor
+-- renders with the UnreadStrip; dwelling on a post advances the cursor.
+--
+-- Stored in a sidecar table (not as a column on [Channel]) so the existing
+-- `SELECT *` projection of channel rows — wired through SQLDelight-generated
+-- mappers in [WebRepository] — stays intact. Logout / cache-clear flows can
+-- target this table independently of channel metadata.
+--
+-- FOREIGN KEY ... ON DELETE CASCADE: when a channel is hard-deleted (via
+-- `clear cache` or `deleteAll`) its cursor goes with it. Soft-unsubscribe
+-- (is_subscribed=0) preserves the cursor so a re-subscribe in the same session
+-- doesn't show a wall of "unread" rows the user already read.
+
+CREATE TABLE channel_read_cursor (
+    username TEXT NOT NULL PRIMARY KEY,
+    last_seen_post_seq INTEGER NOT NULL,
+    FOREIGN KEY(username) REFERENCES channel(username) ON DELETE CASCADE
+);
+
+-- Monotonic upsert. Two-step (INSERT OR IGNORE + UPDATE clamped to MAX) for the
+-- same Android SQLite < 3.24 portability reason documented at the top of
+-- [Channel.sq]. UPDATE clamps with MAX so a stale viewport that emits a smaller
+-- id late (e.g. user scrolled back and re-dwelt on an older post) cannot rewind
+-- the cursor under us.
+
+markReadInsert:
+INSERT OR IGNORE INTO channel_read_cursor(username, last_seen_post_seq)
+VALUES (:username, :postSeq);
+
+markReadUpdate:
+UPDATE channel_read_cursor
+SET last_seen_post_seq = MAX(last_seen_post_seq, :postSeq)
+WHERE username = :username;
+
+-- Full snapshot used by the read-cursor StateFlow that drives UnreadStrip
+-- composition. Joins through to [Channel] is unnecessary — the consumer only
+-- needs `(username, seq)` pairs to derive the in-memory `ReadCursors` map.
+
+selectAll:
+SELECT username, last_seen_post_seq FROM channel_read_cursor;
+
+deleteAll:
+DELETE FROM channel_read_cursor;

@@ -99,6 +99,19 @@ class WebFeedSource(
         repository.observeAllChannels()
             .stateIn(scope, SharingStarted.WhileSubscribed(5_000), kotlinx.collections.immutable.persistentListOf())
 
+    /**
+     * Per-channel read cursors mirrored from the local `channel_read_cursor`
+     * table. Direct parallel to [dev.lyo.hortay.data.PostsRepository.chatReadCursors]
+     * — drives the [dev.lyo.hortay.ui.timeline.UnreadStrip] on PostCard in guest
+     * mode by feeding [dev.lyo.hortay.ui.timeline.LocalReadCursors]. Cursors are
+     * advanced through [WebRepository.markChannelRead] from the same 1-second
+     * dwell collector that TDLib mode uses, so the two modes feel identical at
+     * the read-state layer.
+     */
+    val chatReadCursors: StateFlow<dev.lyo.hortay.data.ReadCursors> =
+        repository.observeReadCursors()
+            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), dev.lyo.hortay.data.EmptyReadCursors)
+
     private val _refreshState = MutableStateFlow<RefreshState>(RefreshState.Idle)
     val refreshState: StateFlow<RefreshState> = _refreshState.asStateFlow()
 

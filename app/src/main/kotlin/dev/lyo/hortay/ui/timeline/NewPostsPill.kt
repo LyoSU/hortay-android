@@ -51,6 +51,13 @@ fun NewPostsPill(
     pendingCount: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Direction-of-action glyph next to the count. `arrow_upward` (default)
+     * fits Newest mode's top-anchored placement — "tap to bring me to fresh
+     * content above". `arrow_downward` mirrors that for OldestUnreadFirst's
+     * bottom-anchored pill — "tap to bring me to fresh content below".
+     */
+    arrowGlyph: String = "arrow_upward",
 ) {
     var hasAppeared by remember { mutableStateOf(false) }
     LaunchedEffect(pendingCount > 0) {
@@ -85,7 +92,7 @@ fun NewPostsPill(
                 AvatarStack(channels = channels)
                 Spacer(Modifier.width(10.dp))
             }
-            Symbol(name = "arrow_upward", size = 18.dp)
+            Symbol(name = arrowGlyph, size = 18.dp)
             Spacer(Modifier.width(6.dp))
             val ctx = LocalContext.current
             Text(

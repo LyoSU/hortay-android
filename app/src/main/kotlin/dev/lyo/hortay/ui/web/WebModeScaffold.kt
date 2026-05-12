@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -26,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -40,7 +42,10 @@ import dev.lyo.hortay.ui.main.NavTab
 import dev.lyo.hortay.ui.settings.SettingsScreen
 import dev.lyo.hortay.ui.report.GuestReportDelegator
 import dev.lyo.hortay.ui.report.ReportInstructionDialog
+import dev.lyo.hortay.ui.timeline.LocalReadCursors
 import dev.lyo.hortay.ui.timeline.TimelineScreen
+import androidx.compose.runtime.CompositionLocalProvider
+import dev.lyo.hortay.data.TimelinePost
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -175,16 +180,57 @@ fun WebModeScaffold(graph: AppGraph) {
         }
     }
 
-    // Back-priority chain mirrors MainScaffold's TDLib chain — channel-stack pops
-    // first, tab swaps back to Feed second, system close last. The leaf-most
-    // enabled BackHandler in the composition tree wins, so the channel stack
-    // takes precedence whenever the user is drilled into a channel.
-    BackHandler(enabled = channelStack.isNotEmpty()) { popWebChannel() }
+    // Predictive back for the web channel overlay. Mirror of MainScaffold's
+    // channelBackProgress chain. PredictiveBackHandler degrades to a regular
+    // back on pre-Android-13 devices, so this primitive covers the full
+    // supported range.
+    val channelBackProgress = remember { androidx.compose.animation.core.Animatable(0f) }
+    var channelBackEdge by remember { mutableIntStateOf(androidx.activity.BackEventCompat.EDGE_LEFT) }
+    androidx.activity.compose.PredictiveBackHandler(enabled = channelStack.isNotEmpty()) { progress ->
+        try {
+            progress.collect { event ->
+                channelBackEdge = event.swipeEdge
+                channelBackProgress.snapTo(event.progress)
+            }
+            channelBackProgress.animateTo(
+                2f,
+                androidx.compose.animation.core.tween(220, easing = androidx.compose.animation.core.FastOutLinearInEasing),
+            )
+            popWebChannel()
+            channelBackProgress.snapTo(0f)
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            channelBackProgress.animateTo(
+                0f,
+                androidx.compose.animation.core.tween(160, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            )
+        }
+    }
     BackHandler(enabled = channelStack.isEmpty() && selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
     }
 
+    val readCursors by graph.webFeedSource.chatReadCursors.collectAsStateWithLifecycle()
+    val feedOrder by graph.settingsStore.feedOrder.collectAsStateWithLifecycle(
+        initialValue = dev.lyo.hortay.data.FeedOrder.Newest,
+    )
+    val snapScroll by graph.settingsStore.snapScroll.collectAsStateWithLifecycle(
+        initialValue = false,
+    )
+    // Guest-mode dwell-ack wrapper. Groups the viewport batch by channel
+    // (recovered from `senderHandle` since web posts have no real chatId) and
+    // advances each channel's local cursor to the highest seq in the batch.
+    // Result mirrors TDLib's "lastReadInboxMessageId moved up to message X":
+    // the channel_read_cursor row gets MAX-clamped to the freshest seen post.
+    val webMarkAsRead: suspend (List<TimelinePost>) -> Unit = { batch ->
+        batch.groupBy { it.senderHandle?.removePrefix("@")?.lowercase() ?: "" }
+            .forEach { (username, group) ->
+                if (username.isNotEmpty()) {
+                    graph.webRepository.markChannelRead(username, group.maxOf { it.id })
+                }
+            }
+    }
     LinkAwareScaffold(graph) {
+    CompositionLocalProvider(LocalReadCursors provides readCursors) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = {
@@ -285,45 +331,40 @@ fun WebModeScaffold(graph: AppGraph) {
                 tabStateHolder.SaveableStateProvider(key = tab.name) {
                 when (tab) {
                     NavTab.Feed -> {
-                        // Routing parallel to MainScaffold: empty channel stack →
-                        // all-feed TimelineScreen; non-empty → WebChannelScreen
-                        // for the top username. Each entry gets its own nested
-                        // SaveableStateProvider so per-channel scroll position is
-                        // preserved while navigating in and out of the stack.
-                        val currentChannel = channelStack.lastOrNull()
-                        val saveableKey = currentChannel ?: "__all__"
-                        tabStateHolder.SaveableStateProvider(key = "web-feed:$saveableKey") {
-                            if (currentChannel == null) {
-                                TimelineScreen(
-                                    feed = graph.webFeedSource,
-                                    bookmarks = graph.bookmarkStore,
-                                    contentPadding = padding,
-                                    showOnlyBookmarked = false,
-                                    onChannelOpen = { /* no per-channel drill from feed bodies in guest mode */ },
-                                    homeTapTrigger = homeTapTrigger,
-                                    onBrandTap = { homeTapTrigger = System.nanoTime() },
-                                    onSearchClick = { searchOpen = true },
-                                    topBarBadge = { GuestModeBadge() },
-                                    onReportClick = { post ->
-                                        val outcome = graph.guestReportDelegator.report(
-                                            channelUsername = post.senderHandle?.removePrefix("@") ?: post.senderName,
-                                            postId = if (post.id != 0L) post.id else null,
-                                        )
-                                        if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
-                                            outcome == GuestReportDelegator.Outcome.OpenedWeb) {
-                                            showReportInstruction = true
-                                        }
-                                    },
-                                    canReport = { true },
-                                )
-                            } else {
-                                WebChannelScreen(
-                                    username = currentChannel,
-                                    graph = graph,
-                                    contentPadding = padding,
-                                    onBack = { popWebChannel() },
-                                )
-                            }
+                        // Overlay pattern (mirror MainScaffold): TimelineScreen is
+                        // ALWAYS mounted in the Feed tab; WebChannelScreen renders
+                        // as a slide-in overlay outside this tab branch (search the
+                        // file for `channelStack.lastOrNull()?.let { topUsername ->`).
+                        // Keeping the feed mounted preserves scroll position across
+                        // channel drills without the SaveableStateProvider serialise/
+                        // restore cycle that would otherwise mis-anchor the user
+                        // when the underlying post list mutates while they're away.
+                        tabStateHolder.SaveableStateProvider(key = "web-feed:__all__") {
+                            TimelineScreen(
+                                feed = graph.webFeedSource,
+                                bookmarks = graph.bookmarkStore,
+                                contentPadding = padding,
+                                showOnlyBookmarked = false,
+                                onChannelOpen = { /* no per-channel drill from feed bodies in guest mode */ },
+                                homeTapTrigger = homeTapTrigger,
+                                onBrandTap = { homeTapTrigger = System.nanoTime() },
+                                onSearchClick = { searchOpen = true },
+                                topBarBadge = { GuestModeBadge() },
+                                onReportClick = { post ->
+                                    val outcome = graph.guestReportDelegator.report(
+                                        channelUsername = post.senderHandle?.removePrefix("@") ?: post.senderName,
+                                        postId = if (post.id != 0L) post.id else null,
+                                    )
+                                    if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
+                                        outcome == GuestReportDelegator.Outcome.OpenedWeb) {
+                                        showReportInstruction = true
+                                    }
+                                },
+                                canReport = { true },
+                                markAsRead = webMarkAsRead,
+                                feedOrder = feedOrder,
+                                snapScroll = snapScroll,
+                            )
                         }
                     }
 
@@ -353,6 +394,9 @@ fun WebModeScaffold(graph: AppGraph) {
                             }
                         },
                         canReport = { true },
+                        markAsRead = webMarkAsRead,
+                        feedOrder = feedOrder,
+                        snapScroll = snapScroll,
                     )
 
                     NavTab.Profile -> SettingsScreen(
@@ -367,6 +411,49 @@ fun WebModeScaffold(graph: AppGraph) {
                         onClearWebCache = { graph.webFeedSource.clearCacheAndRefresh() },
                     )
                 }
+                }
+            }
+
+            // Guest-mode channel overlay — slides in over the always-mounted
+            // feed tab. Same rationale as MainScaffold: keeping TimelineScreen
+            // mounted means its scroll position survives drill-ins without
+            // anchor drift from shared `_posts` mutations the user didn't see.
+            val topWebChannel = channelStack.lastOrNull()
+            androidx.compose.animation.AnimatedVisibility(
+                visible = topWebChannel != null,
+                enter = androidx.compose.animation.slideInHorizontally(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                    initialOffsetX = { it },
+                ) + androidx.compose.animation.fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
+                exit = androidx.compose.animation.slideOutHorizontally(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                    targetOffsetX = { it },
+                ) + androidx.compose.animation.fadeOut(MaterialTheme.motionScheme.defaultEffectsSpec()),
+            ) {
+                val username = topWebChannel ?: return@AnimatedVisibility
+                tabStateHolder.SaveableStateProvider(key = "web-channel:$username") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val p = channelBackProgress.value.coerceIn(0f, 2f)
+                                val signed = when (channelBackEdge) {
+                                    androidx.activity.BackEventCompat.EDGE_RIGHT -> -p
+                                    else -> p
+                                }
+                                translationX = signed * size.width * 0.25f
+                                val s = 1f - p.coerceAtMost(1f) * 0.05f
+                                scaleX = s; scaleY = s
+                                alpha = (1f - p.coerceAtMost(1f) * 0.9f).coerceAtLeast(0f)
+                            },
+                    ) {
+                        WebChannelScreen(
+                            username = username,
+                            graph = graph,
+                            contentPadding = padding,
+                            onBack = { popWebChannel() },
+                        )
+                    }
                 }
             }
         }
@@ -407,6 +494,7 @@ fun WebModeScaffold(graph: AppGraph) {
     // web tab. Tells the user how to complete the report in the external surface.
     if (showReportInstruction) {
         ReportInstructionDialog(onDismiss = { showReportInstruction = false })
+    }
     }
     }
 }

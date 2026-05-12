@@ -183,6 +183,8 @@
     <string name="timeline_empty_saved_title">Нічого не збережено</string>
     <string name="timeline_empty_saved_helper">Тицьніть закладку біля поста, щоб зберегти його на потім</string>
     <string name="timeline_empty_default_title">Поки тут пусто</string>
+    <string name="timeline_empty_caught_up_title">Все прочитано</string>
+    <string name="timeline_empty_caught_up_helper">Ти переглянув кожен пост у стрічці. Потягни вниз — підвантажу нові.</string>
     <string name="timeline_search_in_channel">Пошук у каналі</string>
     <string name="timeline_search_empty">Нічого не знайдено</string>
     <string name="timeline_subscribers">%1$s підписників</string>
@@ -294,6 +296,15 @@
     <string name="settings_subtitle_auto_download_category_roaming">У роумінгу</string>
     <string name="timeline_subtitle_feed">%1$d каналів</string>
     <string name="timeline_subtitle_saved">Збережені пости</string>
+    <string name="settings_section_feed">Стрічка</string>
+    <string name="settings_feed_order_newest_title">Найновіші зверху</string>
+    <string name="settings_feed_order_newest_subtitle">Свіжі пости — на самому верху</string>
+    <string name="settings_feed_order_oldest_title">Старі непрочитані спочатку</string>
+    <string name="settings_feed_order_oldest_subtitle">Спершу читаєш все нове по порядку, потім — те, що вже бачив</string>
+    <string name="settings_feed_order_snackbar">Стрічку переупорядковано</string>
+    <string name="settings_snap_scroll_title">Прилипання при гортанні</string>
+    <string name="settings_snap_scroll_subtitle">Кожен пост клацає на місце при змахуванні — як у TikTok/Reels</string>
+    <string name="timeline_unread_boundary">Непрочитане</string>
     <string name="settings_section_traffic">Трафік</string>
     <string name="settings_section_storage">Сховище</string>
     <string name="settings_section_account">Акаунт</string>

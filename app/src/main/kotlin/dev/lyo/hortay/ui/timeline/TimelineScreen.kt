@@ -41,6 +41,9 @@ import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.isUnplayableVideo
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
+import androidx.compose.ui.text.font.FontWeight
+import dev.lyo.hortay.data.isUnreadIn
+import dev.lyo.hortay.data.orderedFor
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.TranslationsStore
@@ -64,9 +67,11 @@ import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
 import kotlinx.coroutines.FlowPreview
+import androidx.compose.foundation.gestures.ScrollableDefaults
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
@@ -168,6 +173,35 @@ fun TimelineScreen(
      */
     canReport: (TimelinePost) -> Boolean = { false },
     /**
+     * Mode-agnostic read-state ack. Fires once per posts batch the viewport
+     * dwell collector promotes from "in view" to "read". TDLib mode bridges to
+     * [dev.lyo.hortay.data.PostsRepository.viewMessages] (advances
+     * `lastReadInboxMessageId` server-side and bumps view counters); guest
+     * mode bridges to [dev.lyo.hortay.data.web.WebRepository.markChannelRead]
+     * (advances the local `channel_read_cursor` row). Null disables the ack —
+     * the auth screen and other surfaces that mount TimelineScreen without a
+     * connected backend pass null so the dwell collector stays inert.
+     */
+    markAsRead: (suspend (List<TimelinePost>) -> Unit)? = null,
+    /**
+     * User-chosen feed ordering (defaults to [dev.lyo.hortay.data.FeedOrder.Newest] —
+     * the canonical newest-first chronology). Scaffolds collect from
+     * [dev.lyo.hortay.data.SettingsStore.feedOrder] and pass in; the sort runs in a
+     * keyed `remember` over [visiblePosts] + [LocalReadCursors] so switching the
+     * setting at runtime reshuffles the feed without any extra wiring. Per UX
+     * guard: a runtime switch also auto-scrolls the LazyColumn back to the top
+     * so the new order has a clear starting point.
+     */
+    feedOrder: dev.lyo.hortay.data.FeedOrder = dev.lyo.hortay.data.FeedOrder.Newest,
+    /**
+     * Snap-fling toggle from [dev.lyo.hortay.data.SettingsStore.snapScroll].
+     * When true, the LazyColumn fling settles on the nearest item boundary
+     * — each post "clicks into place" at the viewport start. Drag scrolling
+     * stays free; only the inertia animation snaps. Applies regardless of
+     * [feedOrder] (presentation mode independent of ordering).
+     */
+    snapScroll: Boolean = false,
+    /**
      * Process-wide cold-start gate, TDLib mode only. While in
      * [StartupCoordinator.Phase.Booting] the comments-thread prefetch
      * collector silently skips its work to keep the TDLib RPC pipe clear for
@@ -176,6 +210,16 @@ fun TimelineScreen(
      */
     startupPhase: kotlinx.coroutines.flow.StateFlow<dev.lyo.hortay.data.StartupCoordinator.Phase>? = null,
 ) {
+    // Forward-declared scroll target for every "go home" callsite (cold-start
+    // pin, folder switch, NewPostsPill click, NavBar Home tap). Populated
+    // lazily later in the body once [visiblePosts] / [sortCursors] are
+    // computed — declared here so the effects above can reference it without
+    // forward-reference errors. Default `0` is the right fallback for the
+    // very first composition pass when downstream state hasn't landed.
+    val homeScrollIndexState = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableIntStateOf(0)
+    }
+
     // viewModel() keys the cached instance by VM class only; the `factory`
     // parameter is consulted *just* on first creation. With both MainScaffold
     // (feed = postsRepository) and WebModeScaffold (feed = webFeedSource)
@@ -261,14 +305,44 @@ fun TimelineScreen(
     LaunchedEffect(Unit) {
         val surfaceKey = if (showOnlyBookmarked) "saved" else "home"
         if (!coldStartScrolledSurfaces.add(surfaceKey)) return@LaunchedEffect
-        androidx.compose.runtime.snapshotFlow { posts.size }
-            .takeWhile { !listState.isScrollInProgress }
-            .collect { size ->
+        // Respect a saveable-restored scroll position. If the LazyListState
+        // came back from a SaveableStateHolder restore (user drilled into a
+        // channel and popped back — `rememberLazyListState()` rehydrated to
+        // their last position), we'd be fighting that restore by pinning to
+        // index 0 / homeScrollIndex. Bail out the moment we detect the user
+        // already has a non-default scroll position. New cold-launch path
+        // still works: initial firstVisibleItemIndex/offset are both 0, so
+        // the pin proceeds normally.
+        if (listState.firstVisibleItemIndex != 0 ||
+            listState.firstVisibleItemScrollOffset != 0
+        ) {
+            return@LaunchedEffect
+        }
+        androidx.compose.runtime.snapshotFlow { posts.size to refreshing }
+            // Pin only while the cold-start refresh storm is in flight. Once
+            // [TimelineViewModel.refreshIfStale] settles (refreshing flips
+            // true → false), exit the flow — subsequent `posts.size` growth
+            // from live arrivals (UpdateNewMessage in TDLib mode, web sweep
+            // ingestion in guest mode) must NOT yank the user back to the
+            // home target. Previously, the auto-accept in OldestUnreadFirst
+            // mode let each new arrival bump posts.size, which re-triggered
+            // this collector and scrolled the reader to the unread boundary
+            // mid-session — exactly the "коли новий пост зявляється мене
+            // скроллить" symptom.
+            .takeWhile { (_, isRefreshing) ->
+                !listState.isScrollInProgress && isRefreshing
+            }
+            .collect { (size, _) ->
+                // Read [homeScrollIndexState] inside the collect block —
+                // point-in-time value, no subscription — so cursor changes
+                // update the target for future emissions without re-triggering
+                // this collector on every dwell-ack.
+                val target = homeScrollIndexState.intValue
                 if (size > 0 &&
-                    (listState.firstVisibleItemIndex != 0 ||
+                    (listState.firstVisibleItemIndex != target ||
                         listState.firstVisibleItemScrollOffset != 0)
                 ) {
-                    listState.scrollToItem(0)
+                    listState.scrollToItem(target)
                 }
             }
     }
@@ -403,6 +477,23 @@ fun TimelineScreen(
         }
     }
 
+    // Mirror of [atTop] for OldestUnreadFirst, where freshness lives at the
+    // bottom (tail of the unread block, sorted asc by date). True when the
+    // last visible item is the actual last item in the list AND its trailing
+    // edge is within the viewport — guard against "last item peeking 1 px
+    // above the fold" false positives that would auto-accept arrivals while
+    // the user still has unread cards below.
+    val atBottom by remember(listState) {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            val totalItems = info.totalItemsCount
+            if (totalItems == 0) return@derivedStateOf false
+            last.index >= totalItems - 1 &&
+                last.offset + last.size <= info.viewportEndOffset + 8
+        }
+    }
+
     // Twitter-style "tap home twice": first tap scrolls to top, second one (already at top)
     // refreshes. The trigger is a monotonic timestamp from the parent, so a single bump
     // produces a single reaction.
@@ -421,8 +512,16 @@ fun TimelineScreen(
         if (homeTapTrigger == 0L) return@LaunchedEffect
         if (homeTapTrigger == lastHandledHomeTap) return@LaunchedEffect
         lastHandledHomeTap = homeTapTrigger
-        val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
-        if (atTop) vm.refresh() else listState.animateScrollToItem(0)
+        // Mode-aware "Home" target via [homeScrollIndexState]:
+        //   - Newest: index 0 (newest content — "show me what's fresh").
+        //   - OldestUnreadFirst: first-unread boundary — "take me to where I
+        //     should be reading". Top of the list is the oldest read post,
+        //     not what the user expects from a Home tap.
+        // Re-tap when already at the target = refresh (Twitter / TG idiom).
+        val target = homeScrollIndexState.intValue
+        val atTarget = listState.firstVisibleItemIndex == target &&
+            listState.firstVisibleItemScrollOffset == 0
+        if (atTarget) vm.refresh() else listState.animateScrollToItem(target)
     }
 
     // Switching folders jumps to the top of the feed — "show me the top of this
@@ -448,7 +547,10 @@ fun TimelineScreen(
         val previous = lastScopeKey
         lastScopeKey = scopeKey
         if (previous != null && previous != scopeKey) {
-            listState.scrollToItem(0)
+            // Mode-aware "home" — same target as the NavBar Home tap. In
+            // OldestUnreadFirst this lands at the first-unread boundary, not
+            // the oldest read post.
+            listState.scrollToItem(homeScrollIndexState.intValue)
         }
     }
 
@@ -476,7 +578,7 @@ fun TimelineScreen(
         }
     }
 
-    val visiblePosts = remember(posts, scopePredicate, bookmarkedKeys, showOnlyBookmarked) {
+    val filteredPosts = remember(posts, scopePredicate, bookmarkedKeys, showOnlyBookmarked) {
         buildList {
             posts.forEach { p ->
                 if (showOnlyBookmarked && p.bookmarkKey() !in bookmarkedKeys) return@forEach
@@ -485,6 +587,142 @@ fun TimelineScreen(
                 if (!scopePredicate(p)) return@forEach
                 add(p)
             }
+        }
+    }
+
+    // Live cursor map from LocalReadCursors — used by UnreadStrip fade for visual
+    // per-post progress, and as the live source for the Newest mode (where sort
+    // doesn't depend on cursor at all).
+    val readCursors = LocalReadCursors.current
+
+    // Frozen cursor snapshot for OldestUnreadFirst FILTER (which posts qualify
+    // for the to-read queue). Captured at refresh boundaries:
+    //   1. First time `readCursors` becomes non-empty after mount / feedOrder
+    //      change (cold-start race: chatCache populates asynchronously via
+    //      UpdateNewChat after AuthorizationStateReady).
+    //   2. Each pull-to-refresh completion (`refreshing` true → false).
+    //
+    // Mid-session dwell-acks DO advance the real cursor (so the official Telegram
+    // client sees the read) but DO NOT update this snapshot — Reeder/Feedly idiom.
+    // The user's just-read post stays in the visible queue with its UnreadStrip
+    // fading out, giving progress feedback without yanking the post out from
+    // under the scroll. Pull-to-refresh re-snapshots and the acked posts vanish
+    // together.
+    //
+    // TDLib cascade respected: when the cursor jumps past several older posts at
+    // once (user opens a newer post → `lastReadInboxMessageId` advances → older
+    // posts in the same chat are automatically read per the monotonic cursor
+    // invariant), all their strips fade synchronously while their slots in the
+    // queue remain stable until refresh. Honest to TDLib semantics, no
+    // client-side read-set divergence from the official client.
+    val snapshotCursors = remember(feedOrder) { mutableStateOf<dev.lyo.hortay.data.ReadCursors>(dev.lyo.hortay.data.EmptyReadCursors) }
+    val cursorsState = rememberUpdatedState(readCursors)
+    LaunchedEffect(feedOrder) {
+        if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) return@LaunchedEffect
+        // Wait for first non-empty cursor map after the feed mounts. The
+        // chatCache populates asynchronously, so the very first composition
+        // typically has `readCursors == EmptyReadCursors` and an immediate
+        // snapshot would freeze an empty filter → empty queue.
+        androidx.compose.runtime.snapshotFlow { cursorsState.value }
+            .filter { it.isNotEmpty() }
+            .first()
+            .let { snapshotCursors.value = it }
+    }
+    val prevRefreshing = remember { mutableStateOf(refreshing) }
+    LaunchedEffect(refreshing) {
+        if (prevRefreshing.value && !refreshing &&
+            feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst
+        ) {
+            // refresh true → false: pull-to-refresh just finished, re-snapshot.
+            snapshotCursors.value = cursorsState.value
+        }
+        prevRefreshing.value = refreshing
+    }
+
+    // Filter / sort: Newest uses live cursors (no-op), OldestUnreadFirst uses
+    // the frozen snapshot above OVERLAID with live cursors for chats that
+    // didn't exist at snapshot time.
+    //
+    // Why overlay: the bare snapshot freezes the cursor map *as it was* at
+    // refresh. Chats that materialise later — fresh subscription, a chat whose
+    // [UpdateNewChat] arrived after the snapshot, or any chat the user hadn't
+    // dwelled on at the time — are absent from the map. With `cursors[chatId]
+    // == null`, [isUnreadIn] returns `false`, and the new chat's posts sort
+    // into the READ block. Symptom on a busy timeline: a freshly-arrived
+    // 1-min-old post from a new channel slots at the tail of the read block
+    // (asc by date, end of read = newest read), landing visually ABOVE an
+    // older 3-min unread post just under the boundary. The user reads "newer
+    // post is above older post" — looks like the sort is backwards.
+    //
+    // Overlay rule: snapshot wins for chats it knows about (freeze intact);
+    // for chats only the LIVE map knows about, use the live cursor. That
+    // preserves the Reeder "don't yank just-read posts out from under the
+    // scroll" semantic for known chats, while letting brand-new chats classify
+    // correctly. Once the next pull-to-refresh re-snapshots, the new chats are
+    // baked in and the overlay becomes a no-op for them.
+    val sortCursors = if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
+        remember(snapshotCursors.value, readCursors) {
+            val snap = snapshotCursors.value
+            val missing = readCursors.entries.filter { it.key !in snap }
+            if (missing.isEmpty()) snap
+            else snap.putAll(missing.associate { it.key to it.value })
+        }
+    } else readCursors
+    val visiblePosts = remember(filteredPosts, feedOrder, sortCursors) {
+        filteredPosts.orderedFor(feedOrder, sortCursors)
+    }
+
+    // Populate the forward-declared [homeScrollIndexState] now that
+    // [visiblePosts] / [sortCursors] are in scope. Writing during composition
+    // is fine — Compose only schedules another recomposition if the int
+    // actually changes, and the value is deterministic in inputs so it
+    // stabilises after one pass.
+    //
+    // OldestUnreadFirst target picker has three cases:
+    //   - Has unread → first-unread boundary (where to resume reading).
+    //   - All caught up (no unread) → LAST index = newest read post. Top of
+    //     the list is the oldest read item (potentially 2017-era), which the
+    //     user has already moved past; landing there on a Home tap reads as
+    //     "the app threw me into ancient history". Newest-on-the-bottom is
+    //     where they most likely want to be when everything's done — same
+    //     contract as Twitter's "you're caught up, here's the latest". Home
+    //     tap at this position (atTarget) then triggers refresh — canonical
+    //     two-tap pattern.
+    //   - Empty list → 0.
+    homeScrollIndexState.intValue = when (feedOrder) {
+        dev.lyo.hortay.data.FeedOrder.Newest -> 0
+        dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> {
+            val fu = dev.lyo.hortay.data.continueReadingIndex(
+                feedOrder, visiblePosts, sortCursors,
+            )
+            when {
+                fu >= 0 -> fu
+                visiblePosts.isEmpty() -> 0
+                else -> visiblePosts.lastIndex
+            }
+        }
+    }
+
+    // Reset scroll on FeedOrder flip — but ONLY on an actual user-driven change
+    // of the setting, not on every remount of this Composable.
+    //
+    // Without the saveable-key guard below, `LaunchedEffect(feedOrder)` re-fires
+    // every time TimelineScreen re-enters composition: tab switch away and back
+    // (NavTab.Channels → NavTab.Feed), drilling into a channel and popping out,
+    // even rotation under the same tab — all yank the user back to the home
+    // target. Saveable lastFeedOrderKey is the same pattern the scope-switch
+    // effect below uses: scroll only when the *previously observed* feedOrder
+    // existed AND differs from the current one. First mount sees `previous ==
+    // null` and skips the scroll, leaving cold-start positioning to its own
+    // LaunchedEffect.
+    var lastFeedOrderKey by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(feedOrder) {
+        val previous = lastFeedOrderKey
+        lastFeedOrderKey = feedOrder.name
+        if (previous != null && previous != feedOrder.name &&
+            !listState.isScrollInProgress
+        ) {
+            listState.scrollToItem(homeScrollIndexState.intValue)
         }
     }
 
@@ -616,12 +854,25 @@ fun TimelineScreen(
             .take(MAX_PILL_BADGES)
     }
 
-    // While the user is at the top, fold pending live updates straight into the visible
-    // feed. Keyed on the scoped pending list so we only ack what's actually visible in
-    // the current tab — pending in other scopes (archive, other folders) stays unread
-    // until the user navigates there.
-    LaunchedEffect(atTop, scopedPendingNew) {
-        if (atTop && scopedPendingNew.isNotEmpty()) {
+    // While the user is at the "freshness edge", fold pending live updates straight
+    // into the visible feed. Edge is mode-dependent because the two orderings put
+    // freshness on opposite ends:
+    //   - Newest (top = newest): edge is index 0 → use [atTop].
+    //   - OldestUnreadFirst (bottom = newest unread): edge is last index → use
+    //     [atBottom]. When the user is parked at the tail watching for fresh
+    //     content, auto-accept slots arrivals in immediately; otherwise arrivals
+    //     stay in [pendingNew] and surface via the bottom-anchored
+    //     [NewArrivalsBottomPill] so the user can opt in with a tap.
+    //
+    // Scoped pending only: archive / other-folder pending stays unread for those
+    // tabs until the user navigates to them.
+    LaunchedEffect(atTop, atBottom, scopedPendingNew, feedOrder) {
+        if (scopedPendingNew.isEmpty()) return@LaunchedEffect
+        val atFreshnessEdge = when (feedOrder) {
+            dev.lyo.hortay.data.FeedOrder.Newest -> atTop
+            dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> atBottom
+        }
+        if (atFreshnessEdge) {
             vm.acceptIds(scopedPendingNew.map { it.chatId to it.id })
         }
     }
@@ -707,9 +958,9 @@ fun TimelineScreen(
     // every viewport mutation. TDLib filters re-acks server-side anyway (issue #136),
     // but skipping the round-trip altogether is cheaper. Cap is implicit: feed size
     // is bounded by MAX_FEED_SIZE (~1000), so the set stays small.
-    val ackedRead = remember(tdlibRepo) { HashSet<Pair<Long, Long>>() }
-    if (tdlibRepo != null) {
-        LaunchedEffect(listState, tdlibRepo) {
+    val ackedRead = remember(markAsRead) { HashSet<Pair<Long, Long>>() }
+    if (markAsRead != null) {
+        LaunchedEffect(listState, markAsRead) {
             androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
                 .distinctUntilChanged()
                 .collectLatest { indices ->
@@ -725,17 +976,12 @@ fun TimelineScreen(
                     // Populate ackedRead BEFORE dispatching the suspending ack. If the
                     // dispatch coroutine is cancelled mid-batch we must not leave half
                     // the chats acked locally and the others not — that produces
-                    // inconsistent re-issue behaviour on the next dwell. The TDLib call
-                    // itself is detached into [scope] so a viewport change a frame
-                    // later doesn't kill the in-flight ack: collectLatest cancel only
-                    // affects this body, not coroutines launched from the outer scope.
+                    // inconsistent re-issue behaviour on the next dwell. The mode-
+                    // specific call is detached into [scope] so a viewport change a
+                    // frame later doesn't kill the in-flight ack: collectLatest cancel
+                    // only affects this body, not coroutines launched from outer scope.
                     fresh.forEach { ackedRead.add(it.chatId to it.id) }
-                    val grouped = fresh.groupBy { it.chatId }
-                    scope.launch {
-                        grouped.forEach { (chatId, group) ->
-                            tdlibRepo.viewMessages(chatId, group.map { it.id })
-                        }
-                    }
+                    scope.launch { markAsRead(fresh) }
                 }
         }
     }
@@ -818,13 +1064,22 @@ fun TimelineScreen(
     // across recomposition, but this keeps the wiring uniform with the rest of the
     // captured-state pattern in this composable).
     val markPostReadState = rememberUpdatedState({ post: TimelinePost ->
-        val repo = tdlibRepo
-        if (repo != null) {
+        val mark = markAsRead
+        if (mark != null) {
             val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
             val unacked = ids.filter { (post.chatId to it) !in ackedRead }
             if (unacked.isNotEmpty()) {
                 unacked.forEach { ackedRead.add(post.chatId to it) }
-                scope.launch { repo.viewMessages(post.chatId, unacked) }
+                // Synthesise a one-element batch carrying the resolved album ids
+                // so the mode-specific wrapper sees the same shape it gets from
+                // the dwell collector. TDLib mode flattens to viewMessages(chatId,
+                // [albumIds]); guest mode picks the max seq and advances the
+                // channel cursor. Either way, an explicit tap clears the unread
+                // strip on every member of the album, not just the anchor.
+                val ackPosts = unacked.map { id ->
+                    if (id == post.id) post else post.copy(id = id, albumMessageIds = emptyList())
+                }
+                scope.launch { mark(ackPosts) }
             }
         }
     })
@@ -1083,7 +1338,18 @@ fun TimelineScreen(
                     }
 
                     if (visiblePosts.isEmpty() && !refreshing) {
-                        EmptyState(showOnlyBookmarked)
+                        // Three empty-state variants:
+                        //   - showOnlyBookmarked: Saved tab is empty
+                        //   - OldestUnreadFirst with non-empty filteredPosts:
+                        //     queue is depleted (everything read) → "all caught up"
+                        //   - default: no posts loaded yet / no channels followed
+                        val emptyKind = when {
+                            showOnlyBookmarked -> EmptyKind.Saved
+                            feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst &&
+                                filteredPosts.isNotEmpty() -> EmptyKind.CaughtUp
+                            else -> EmptyKind.Default
+                        }
+                        EmptyState(emptyKind)
                     } else {
                         // Scroll gate: while the LazyColumn is mid-scroll (drag, fling,
                         // animateScrollToItem) media composables defer their ensure() so
@@ -1179,9 +1445,43 @@ fun TimelineScreen(
                             }
                         }
 
+                        // Snap-fling: when [snapScroll] is enabled, fling gestures settle
+                        // on the nearest item start (`SnapPosition.Start`) — Reels-style
+                        // "click into place" without forking LazyColumn into a Pager. Drag
+                        // scrolling stays free; only fling inertia is snapped.
+                        val flingBehavior = if (snapScroll) {
+                            androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(
+                                lazyListState = listState,
+                                snapPosition = androidx.compose.foundation.gestures.snapping.SnapPosition.Start,
+                            )
+                        } else {
+                            ScrollableDefaults.flingBehavior()
+                        }
+
+                        // In OldestUnreadFirst, locate the boundary between the
+                        // read-history block (asc by date, on top) and the unread
+                        // queue (asc by date, below) so we can paint a
+                        // [UnreadBoundaryRow] divider between them. Telegram-Android
+                        // does the same in chat history — a "New messages" rule
+                        // across the bubble column. Computed via derivedStateOf so
+                        // changes only fire when the boundary key actually flips.
+                        val unreadBoundaryKey by remember(
+                            displayedItems, sortCursors, feedOrder,
+                        ) {
+                            derivedStateOf {
+                                if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
+                                    return@derivedStateOf null
+                                }
+                                displayedItems.firstOrNull { feedItem ->
+                                    feedItem.posts().any { it.isUnreadIn(sortCursors) }
+                                }?.key
+                            }
+                        }
+
                         CompositionLocalProvider(LocalScrollGate provides scrollGate) {
                             LazyColumn(
                                 state = listState,
+                                flingBehavior = flingBehavior,
                                 contentPadding = PaddingValues(
                                     top = 8.dp,
                                     bottom = contentPadding.calculateBottomPadding(),
@@ -1189,6 +1489,15 @@ fun TimelineScreen(
                                 modifier = Modifier.fillMaxSize(),
                             ) {
                                 items(items = displayedItems, key = { it.key }) { item ->
+                                    // "Unread starts here" divider rendered above the first
+                                    // item that contains an unread post (OldestUnreadFirst
+                                    // only). Composed at the start of the item lambda so it
+                                    // sticks to the same FeedItem in LazyColumn — pull-to-
+                                    // refresh updates the boundary by reassigning [sortCursors]
+                                    // and the rule moves naturally with the new snapshot.
+                                    if (item.key == unreadBoundaryKey) {
+                                        UnreadBoundaryRow()
+                                    }
                                     // Per-item State so a centre flip recomposes
                                     // only the two affected items (old centre →
                                     // false, new centre → true) instead of the
@@ -1223,36 +1532,84 @@ fun TimelineScreen(
                 }
             }
 
-            // Floating "X нових постів" pill. Hidden in the Saved tab, while a
-            // refresh is in flight (transient delta), and while the user is already
-            // at the top of the feed (we auto-accept pending in that case).
+            // Floating "X нових постів" pill. Hidden in:
+            //   - Saved tab (no concept of "new" in bookmarks)
+            //   - Refresh in flight (transient delta)
+            //   - User already at the freshness edge (atTop in Newest, atBottom
+            //     in OldestUnreadFirst — auto-accept handles those positions).
+            //
+            // Mode-dependent placement / direction (single pill, two anchors):
+            //   - Newest: TopCenter, ↑ glyph — "fresh content lives above, tap
+            //     to scroll up".
+            //   - OldestUnreadFirst: BottomCenter, ↓ glyph — fresh content sits
+            //     at the END of the unread queue (asc by date). A top-anchored
+            //     pill would be misleading; bottom-anchored mirrors the natural
+            //     reading direction, the user opts in to see arrivals just as
+            //     they would in Newest.
+            val atFreshnessEdge = when (feedOrder) {
+                dev.lyo.hortay.data.FeedOrder.Newest -> atTop
+                dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> atBottom
+            }
             val pillVisible = !showOnlyBookmarked &&
-                !refreshing && !atTop && scopedPendingChannels.isNotEmpty()
+                !refreshing && !atFreshnessEdge && scopedPendingChannels.isNotEmpty()
+            val pillAtTop = feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst
             // Folder chips occupy the top ~56dp inside the same Box; offset the pill
             // so it lands just below them instead of overlapping.
             val chipsVisible = !showOnlyBookmarked
             val pillTopPadding = if (chipsVisible) 64.dp else 8.dp
+            val pillBottomPadding = contentPadding.calculateBottomPadding() + 16.dp
             val pillSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
             val pillEffects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
             AnimatedVisibility(
                 visible = pillVisible,
-                enter = slideInVertically(pillSpatial) { -it } + fadeIn(pillEffects),
-                exit = slideOutVertically(pillSpatial) { -it } + fadeOut(pillEffects),
+                // Slide from the same edge the pill is anchored to — top-pill
+                // slides DOWN from above (-it), bottom-pill slides UP from
+                // below (+it). Mirrors the M3 enter-from-anchor vocabulary.
+                enter = (if (pillAtTop) {
+                    slideInVertically(pillSpatial) { -it }
+                } else {
+                    slideInVertically(pillSpatial) { it }
+                }) + fadeIn(pillEffects),
+                exit = (if (pillAtTop) {
+                    slideOutVertically(pillSpatial) { -it }
+                } else {
+                    slideOutVertically(pillSpatial) { it }
+                }) + fadeOut(pillEffects),
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = pillTopPadding),
+                    .align(if (pillAtTop) Alignment.TopCenter else Alignment.BottomCenter)
+                    .padding(
+                        top = if (pillAtTop) pillTopPadding else 0.dp,
+                        bottom = if (pillAtTop) 0.dp else pillBottomPadding,
+                    ),
             ) {
                 NewPostsPill(
                     channels = scopedPendingChannels,
                     pendingCount = scopedPendingNew.size,
+                    arrowGlyph = if (pillAtTop) "arrow_upward" else "arrow_downward",
                     onClick = {
                         // Ack only scope-visible pending; archive / other-folder pending
                         // stays unread for those tabs.
                         vm.acceptIds(scopedPendingNew.map { it.chatId to it.id })
-                        scope.launch { listState.animateScrollToItem(0) }
+                        // Scroll target mirrors the pill anchor:
+                        //   - Newest pill (top): home target = index 0
+                        //     (freshest, top of feed).
+                        //   - OldestUnreadFirst pill (bottom): tail of list =
+                        //     the just-arrived posts user opted to see, which
+                        //     sort to the very end (asc by date). After ack,
+                        //     [visiblePosts] grows, so request the new
+                        //     lastIndex via a snapshot read at dispatch time.
+                        scope.launch {
+                            val target = if (pillAtTop) {
+                                homeScrollIndexState.intValue
+                            } else {
+                                (visiblePosts.lastIndex).coerceAtLeast(0)
+                            }
+                            listState.animateScrollToItem(target)
+                        }
                     },
                 )
             }
+
         }
     }
 
@@ -1312,8 +1669,52 @@ private fun TimelineTopBar(
     }
 }
 
+/**
+ * Distinct empty-state variants surfaced inside the timeline. Each carries its
+ * own M3E hero (polygon + glyph) and copy so the UI reads the moment as either
+ * "you haven't followed anyone yet" (Default), "you haven't saved anything yet"
+ * (Saved), or "you're all caught up on unread" (CaughtUp).
+ */
+internal enum class EmptyKind { Default, Saved, CaughtUp }
+
+/**
+ * Telegram-Android-style "New messages" rule — a horizontal divider with a
+ * centered tonal label, drawn above the first unread post in
+ * [dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst]. Structural separation reads
+ * stronger than opacity: the read-history block above is visibly closed off
+ * from the unread queue below, so the user navigating up into history doesn't
+ * confuse what's been seen with what hasn't.
+ *
+ * Style: 36 dp tall, two `primary`-tinted divider lines flanking a
+ * `labelMedium` "Непрочитане" pill in `primary` color. No background fill —
+ * the rule reads as a typographic boundary inside the feed, not as a heavy
+ * separator card. Padding matches PostCard horizontal padding so the lines
+ * extend edge-to-edge of the column.
+ */
 @Composable
-private fun EmptyState(showingSaved: Boolean) {
+private fun UnreadBoundaryRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+        HorizontalDivider(modifier = Modifier.weight(1f), color = tint)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = stringResource(R.string.timeline_unread_boundary),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.width(12.dp))
+        HorizontalDivider(modifier = Modifier.weight(1f), color = tint)
+    }
+}
+
+@Composable
+private fun EmptyState(kind: EmptyKind) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1322,21 +1723,33 @@ private fun EmptyState(showingSaved: Boolean) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Bookmark hero uses the Heart polygon (matches the bookmark-active morph token);
-        // empty-feed hero uses Flower for a friendly "nothing here yet, but pleasantly".
-        ExpressiveEmptyHero(
-            symbol = if (showingSaved) "bookmark" else "forum",
-            shape = if (showingSaved) dev.lyo.hortay.ui.theme.HortayExpressive.BookmarkSelected
-                    else dev.lyo.hortay.ui.theme.HortayExpressive.EmptyStateMask,
-        )
+        // empty-feed hero uses Flower for a friendly "nothing here yet, but pleasantly";
+        // caught-up hero reuses the Flower for a celebratory "all done, take a break".
+        val (symbol, shape) = when (kind) {
+            EmptyKind.Saved -> "bookmark" to dev.lyo.hortay.ui.theme.HortayExpressive.BookmarkSelected
+            EmptyKind.CaughtUp -> "check_box" to dev.lyo.hortay.ui.theme.HortayExpressive.EmptyStateMask
+            EmptyKind.Default -> "forum" to dev.lyo.hortay.ui.theme.HortayExpressive.EmptyStateMask
+        }
+        ExpressiveEmptyHero(symbol = symbol, shape = shape)
         Spacer(Modifier.height(20.dp))
+        val titleRes = when (kind) {
+            EmptyKind.Saved -> R.string.timeline_empty_saved_title
+            EmptyKind.CaughtUp -> R.string.timeline_empty_caught_up_title
+            EmptyKind.Default -> R.string.timeline_empty_default_title
+        }
+        val helperRes = when (kind) {
+            EmptyKind.Saved -> R.string.timeline_empty_saved_helper
+            EmptyKind.CaughtUp -> R.string.timeline_empty_caught_up_helper
+            EmptyKind.Default -> R.string.timeline_empty_default_helper
+        }
         Text(
-            text = stringResource(if (showingSaved) R.string.timeline_empty_saved_title else R.string.timeline_empty_default_title),
+            text = stringResource(titleRes),
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = stringResource(if (showingSaved) R.string.timeline_empty_saved_helper else R.string.timeline_empty_default_helper),
+            text = stringResource(helperRes),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

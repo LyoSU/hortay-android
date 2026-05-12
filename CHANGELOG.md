@@ -5,6 +5,123 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com),
 and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Added
+
+- **Unread state model end-to-end**. New `ReadCursors` data layer
+  (`data/ReadCursors.kt`) is a process-wide `PersistentMap<chatId, cursor>`
+  populated from TDLib's `UpdateChatReadInbox` stream and the
+  `Chat.lastReadInboxMessageId` seed in `UpdateNewChat`. Guest mode mirrors the
+  same shape via a new SQLDelight sidecar table `channel_read_cursor`
+  (migration `3.sqm`, schema v3 → v4) advanced on dwell-ack through
+  `WebRepository.markChannelRead`. The map is exposed to UI through
+  `LocalReadCursors` CompositionLocal, so per-post recomposition fires only
+  when the cursor for that post's chat advances (`PersistentMap` structural
+  sharing keeps the cost O(log N) per advance instead of O(N) copy).
+  `PostCard` reads the live cursors to paint an **UnreadStrip** — a 3 dp
+  primary-tint left edge with rounded right corner and a fade-out on
+  cursor-pass-through, animated via `MotionScheme.fastEffectsSpec`.
+- **Reverse-feed mode (`OldestUnreadFirst`)**. Settings → Feed → "Oldest
+  unread first" toggles a sort that mirrors Reeder / Feedly:
+  `compareBy({ isUnreadIn(cursors) }, { date })` puts read posts on top (asc
+  by date), unread below (asc by date). On entry the feed auto-lands at the
+  read/unread boundary so the user resumes reading where they should. Sort
+  freezes the cursor map at refresh boundaries (cold-start first non-empty
+  cursor land, pull-to-refresh completion) so mid-scroll dwell-acks don't
+  reshuffle posts under the user's eyes — the canonical Reeder semantic.
+  Acked posts migrate from unread to read block as a single visible
+  reordering on the next PTR.
+  - **Overlay snapshot** to handle chats added post-bootstrap (fresh
+    subscriptions, late-syncing channels): snapshot wins for chats it knows
+    about, but a chat *only* in live `readCursors` falls back to its live
+    cursor. Without the overlay, brand-new chats' arrivals would silently
+    sort into the read block (cursor == null → `isUnreadIn` returns false)
+    and creep above the user's anchor.
+  - **Bottom pill mirror** of the top "X new posts" pill, for
+    `OldestUnreadFirst`. Anchored `BottomCenter` with `↓` glyph; tap accepts
+    pending arrivals and scrolls to the tail. `atBottom` (last visible
+    index is the last item, fully on-screen) is the freshness-edge gate that
+    auto-accepts arrivals without a tap — mirror of `atTop`'s role in
+    Newest mode.
+  - **Unread boundary divider** rendered above the first unread row in
+    `OldestUnreadFirst` so the read↔unread transition is visually explicit;
+    drops when there's no unread or when the boundary scrolls out of view.
+- **Snap-scroll mode** (Settings → Feed → "Snap scroll"). Each post clicks
+  into place on fling — `rememberSnapFlingBehavior(SnapPosition.Start)`
+  applied to the feed `LazyListState`. Independent of `FeedOrder`; works in
+  both Newest and OldestUnreadFirst.
+
+### Changed
+
+- **Channel-drill switched from route-swap to overlay**. Previously
+  `MainScaffold` / `WebModeScaffold` toggled between `TimelineScreen` (all-
+  feed) and `ChannelScreen` via `if (currentChatId != null) ... else ...`
+  inside the same `SaveableStateProvider` scope. This unmounted the feed on
+  every drill, serialising `rememberLazyListState`'s saveable index — and
+  when shared `_posts` mutated while the user was in the channel (background
+  arrivals, the `loadChannelHistory(80)` deep-history backfill the channel
+  itself triggers), the restored index pointed at a different post. The
+  user-visible symptom was scroll position "creeping" by one or two posts
+  per drill-back cycle, often surfacing as "the app threw me onto a random
+  post". Now `TimelineScreen` is **always mounted** under the Feed tab;
+  `ChannelScreen` (TDLib) / `WebChannelScreen` (guest) render as a slide-in
+  `AnimatedVisibility` overlay with a per-channel
+  `SaveableStateProvider(key = "channel:$id")`. The feed's `LazyListState`
+  is never serialised — it stays in composition through the entire drill,
+  so the underlying `_posts` can mutate freely without disturbing the
+  user's scroll. Mirrors Telegram-Android `DialogsActivity` →
+  `ChatActivity` slide-over, Twitter timeline → tweet detail, Instagram
+  feed → post detail. Predictive back is hooked through a dedicated
+  `channelBackProgress` Animatable + `graphicsLayer` transform (translateX
+  + scale + alpha) so the gesture feels of a piece with the comments
+  overlay, which uses the same recipe one z-layer higher.
+- **`PostsRepository.ingest()` filters by `Chat.positions`**. TDLib pushes
+  `UpdateNewMessage` for any chat the client has ever resolved — including
+  side-effect channels TDLib synced because the user opened a deep-link
+  preview, looked up a public username, or fetched a linked discussion
+  group's parent. Those channels are NOT in the user's `ChatListMain` /
+  `ChatListArchive`, but the old `isChannel()`-only filter still let them
+  into the feed. Symptom: each drill into a channel inserted 1-2 posts
+  from such side-channels above the user's scroll, polluting the "new
+  posts" pill and shifting `firstVisibleItemIndex`. The new filter mirrors
+  Telegram-Android `MessagesController.getDialogsArray` policy:
+  `chat.positions.any { it.order != 0 && (it.list is ChatListMain || it.list
+  is ChatListArchive) }`. A new `UpdateChatPosition` listener keeps the
+  cached `positions` array live across the session (user joins / leaves /
+  archives during the run) so the filter stays correct without app restart.
+
+### Fixed
+
+- **New posts now reach the visible feed in `OldestUnreadFirst` without an
+  app restart**. Previously they piled up in `pendingNew` indefinitely
+  because the auto-accept gate keyed on `atTop` — meaningless when the
+  user is reading bottom-up through their queue. Auto-accept is now
+  mode-aware (`atTop` for Newest, `atBottom` for OldestUnreadFirst) and a
+  bottom-anchored pill surfaces arrivals the user hasn't reached yet.
+- **Cold-start scroll-pin no longer fires on mid-session arrivals**. The
+  pin used to re-fire `scrollToItem(homeTarget)` on every `posts.size`
+  growth, which was harmless when arrivals went to `pendingNew` (no
+  growth) but yanked the user to the home target once auto-accept landed
+  them in `posts`. Now gated on `refreshing == true` so it terminates the
+  moment the post-auth refresh storm settles.
+
+### Architecture
+
+- **Single TDLib lifecycle owner for the feed `LazyListState`**.
+  Side-effect of the overlay rework: `rememberLazyListState` lives for the
+  entire Feed-tab session and the chain of cold-start, scope-switch and
+  feedOrder-switch effects is now governed by `rememberSaveable`-tracked
+  "last value" keys that suppress yank-on-remount classes by construction.
+  Any future list-anchored affordance (jump-to-date, jump-to-mentions)
+  can hook the same `listState` without composing through a route boundary.
+- **`LocalReadCursors` CompositionLocal** decouples the cursor map's
+  reactive identity from the feed's `TimelinePost` data class graph. Folding
+  cursor advances into per-post fields would re-emit the entire
+  `PersistentList<TimelinePost>` on every dwell-ack (~1 Hz under scroll);
+  side-channeling them keeps `TimelinePost`'s `@Immutable` skippability
+  intact and limits recomposition to the post(s) whose chat actually moved.
+
 ## [0.3.0] — 2026-05-12
 
 ### Added
