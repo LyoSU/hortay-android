@@ -66,32 +66,13 @@ fun SettingsScreen(
     onSignIn: (() -> Unit)? = null,
     onClearWebCache: (suspend () -> Unit)? = null,
     autoDownload: AutoDownloadStore? = null,
-    /**
-     * Wired by the scaffold when in auth mode. Called when the user presses Continue on
-     * ReportContentScreen, carrying the resolved handle and optional postId so the scaffold
-     * can run SearchPublicChat → chatId and open ReportFlowSheet. Null hides the Safety section
-     * (guest mode wires onGuestReport instead; passing null here + non-null guestReport is the
-     * guest path).
-     */
-    onReportContent: ((handle: String, postId: Long?) -> Unit)? = null,
-    /**
-     * Wired by the scaffold when in guest mode. Called when the user presses Continue on
-     * ReportContentScreen; the scaffold dispatches [GuestReportDelegator.report] and shows
-     * the instruction dialog if delegation succeeded. Null when in auth mode (onReportContent
-     * handles that path instead). Both null = Safety section hidden.
-     */
-    onGuestReport: ((handle: String, postId: Long?) -> Unit)? = null,
 ) {
     // Sub-screen nav lives inside Settings — the auto-download list and category
     // screens are conceptually "deeper" pages of the same tab. Using AnimatedContent
     // keeps the bottom navigation visible (TG-style) and Material's shared-x slide
     // gives the user a clear sense of depth.
     var showAutoDownload by rememberSaveable { mutableStateOf(false) }
-    var showReportContent by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = showAutoDownload || showReportContent) {
-        if (showAutoDownload) showAutoDownload = false
-        else showReportContent = false
-    }
+    BackHandler(enabled = showAutoDownload) { showAutoDownload = false }
 
     // M3E shared-axis-X via MotionScheme: spatial spring for the slide, effects
     // spring for the crossfade. Same physics as MaterialTheme reads on every Material
@@ -100,48 +81,24 @@ fun SettingsScreen(
     // because AnimatedContent.transitionSpec is a non-composable lambda.
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
     val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-    // Three possible sub-screens: Main (index 0), AutoDownload (1), ReportContent (2).
-    // Using an Int key so AnimatedContent can determine slide direction without a sealed type.
-    val subScreen = when {
-        showAutoDownload -> 1
-        showReportContent -> 2
-        else -> 0
-    }
     AnimatedContent(
-        targetState = subScreen,
+        targetState = showAutoDownload,
         transitionSpec = {
-            val forward = targetState > initialState
+            val forward = targetState && !initialState
             val direction = if (forward) SlideDirection.Left else SlideDirection.Right
             (slideIntoContainer(direction, spatialSpec) + fadeIn(effectsSpec)) togetherWith
                 (slideOutOfContainer(direction, spatialSpec) + fadeOut(effectsSpec))
         },
         label = "settings-nav",
-    ) { screen ->
-        when (screen) {
-            1 -> if (autoDownload != null) {
-                AutoDownloadHost(
-                    store = autoDownload,
-                    contentPadding = contentPadding,
-                    onBack = { showAutoDownload = false },
-                )
-            }
-            2 -> dev.lyo.hortay.ui.report.ReportContentScreen(
+    ) { autoDownloadShown ->
+        if (autoDownloadShown && autoDownload != null) {
+            AutoDownloadHost(
+                store = autoDownload,
                 contentPadding = contentPadding,
-                onBack = { showReportContent = false },
-                onResolveHandle = onReportContent?.let { cb ->
-                    { handle, postId ->
-                        cb(handle, postId)
-                        showReportContent = false
-                    }
-                },
-                onGuestReport = onGuestReport?.let { cb ->
-                    { handle, postId ->
-                        cb(handle, postId)
-                        showReportContent = false
-                    }
-                },
+                onBack = { showAutoDownload = false },
             )
-            else -> SettingsMain(
+        } else {
+            SettingsMain(
                 settings = settings,
                 stats = stats,
                 contentPadding = contentPadding,
@@ -150,7 +107,6 @@ fun SettingsScreen(
                 onClearWebCache = onClearWebCache,
                 autoDownloadAvailable = autoDownload != null,
                 onOpenAutoDownload = { showAutoDownload = true },
-                onOpenReportContent = { showReportContent = true },
             )
         }
     }
@@ -167,7 +123,6 @@ private fun SettingsMain(
     onClearWebCache: (suspend () -> Unit)?,
     autoDownloadAvailable: Boolean,
     onOpenAutoDownload: () -> Unit,
-    onOpenReportContent: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -310,30 +265,23 @@ private fun SettingsMain(
                 )
             }
 
-            // ---- Safety section: child safety reporting (CSAE-compliance) ------------
-            // Visible in both modes. Three grouped rows: report content (in-app flow /
-            // delegation chain), child safety policy (external link via CustomTabsIntent
-            // so we don't need a WebView), privacy policy (same). Always rendered — the
-            // Play Store review team checks for a discoverable in-app reporting path.
+            // ---- Safety section: policy links (CSAE-compliance) ----------------------
+            // Reporting itself lives on the long-press post action sheet and the
+            // ChannelInfoSheet — there is no per-post entry point from Settings because
+            // the user has no realistic way to know a Telegram message id ahead of
+            // time. Settings keeps just the two policy-page links (Child Safety,
+            // Privacy), opened via CustomTabsIntent so the user never leaves the app
+            // chrome. Play Store review checks for discoverable policy links here.
             Spacer(Modifier.height(8.dp))
             SectionLabel(stringResource(R.string.settings_section_safety))
             Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
-                SettingsRow(
-                    symbol = "flag",
-                    title = stringResource(R.string.settings_safety_report_title),
-                    subtitle = stringResource(R.string.settings_safety_report_subtitle),
-                    chevron = true,
-                    index = 0,
-                    count = 3,
-                    onClick = onOpenReportContent,
-                )
                 SettingsRow(
                     symbol = "child_care",
                     title = stringResource(R.string.settings_safety_child_policy_title),
                     subtitle = stringResource(R.string.settings_safety_child_policy_subtitle),
                     chevron = true,
-                    index = 1,
-                    count = 3,
+                    index = 0,
+                    count = 2,
                     onClick = {
                         try {
                             androidx.browser.customtabs.CustomTabsIntent.Builder()
@@ -352,8 +300,8 @@ private fun SettingsMain(
                     title = stringResource(R.string.settings_safety_privacy_title),
                     subtitle = stringResource(R.string.settings_safety_privacy_subtitle),
                     chevron = true,
-                    index = 2,
-                    count = 3,
+                    index = 1,
+                    count = 2,
                     onClick = {
                         try {
                             androidx.browser.customtabs.CustomTabsIntent.Builder()

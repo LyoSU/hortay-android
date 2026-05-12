@@ -128,6 +128,13 @@ fun ChannelScreen(
     onScrollMissed: () -> Unit = {},
     onReportClick: (TimelinePost) -> Unit = {},
     canReport: (TimelinePost) -> Boolean = { false },
+    /**
+     * Channel-level Report entry point — invoked when the user taps the Report row
+     * inside [ChannelInfoSheet]. The scaffold routes it to the same ReportFlowSheet
+     * the long-press path uses, with `messageId = null` (TDLib's reportChat flow
+     * accepts a channel-level report against the whole chat). Null hides the row.
+     */
+    onReportChannel: (() -> Unit)? = null,
 ) {
     // Per-channel VM. viewModel() keys the instance by (class, key), so each chatId
     // gets its own VM rather than sharing the all-feed TimelineViewModel. The factory is
@@ -610,6 +617,7 @@ fun ChannelScreen(
             chatId = chatId,
             actions = channelActions,
             onDismiss = { infoSheetVisible = false },
+            onReport = onReportChannel,
         )
     }
 }

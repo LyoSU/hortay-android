@@ -58,6 +58,13 @@ fun ChannelInfoSheet(
     chatId: Long,
     actions: ChannelActionsRepository,
     onDismiss: () -> Unit,
+    /**
+     * Tapping the Report row opens the TDLib reportChat flow at the channel level
+     * (no message id) — same flow the per-post action sheet uses with a message id.
+     * Null hides the row (guest mode currently passes null; the row is auth-only
+     * because the dynamic option flow requires TDLib).
+     */
+    onReport: (() -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -145,6 +152,20 @@ fun ChannelInfoSheet(
                     onClick = {
                         info = current.copy(isMember = true)
                         scope.launch { actions.joinChat(chatId) }
+                    },
+                )
+            }
+            // Report (CSAE-compliance): channel-level entry point into the same
+            // TDLib reportChat dynamic flow the long-press post sheet uses. Hidden
+            // in guest mode (caller passes onReport=null) — guest mode has no
+            // TDLib bridge for the dynamic option flow.
+            if (onReport != null) {
+                ActionRow(
+                    symbol = "flag",
+                    label = stringResource(R.string.report_action),
+                    onClick = {
+                        onReport()
+                        onDismiss()
                     },
                 )
             }

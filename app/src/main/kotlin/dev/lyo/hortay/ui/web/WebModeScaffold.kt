@@ -365,16 +365,6 @@ fun WebModeScaffold(graph: AppGraph) {
                         // content immediately, not an empty feed waiting for
                         // the next tier-2 sweep. Subscriptions survive.
                         onClearWebCache = { graph.webFeedSource.clearCacheAndRefresh() },
-                        onGuestReport = { handle, postId ->
-                            val outcome = graph.guestReportDelegator.report(
-                                channelUsername = handle,
-                                postId = postId,
-                            )
-                            if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
-                                outcome == GuestReportDelegator.Outcome.OpenedWeb) {
-                                showReportInstruction = true
-                            }
-                        },
                     )
                 }
                 }

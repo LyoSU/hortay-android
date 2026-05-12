@@ -136,6 +136,13 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
             isPinned = message.isPinned,
             verification = resolveChannelVerification(chat),
             channelContext = channelContext,
+            // Per-chat report eligibility from TDLib (TdApi.Chat.canBeReported).
+            // Cheaper than [TdApi.GetMessageProperties] per post — TDLib already
+            // populated this field on the Chat object via chatCache updates, and
+            // for the long-press action sheet's "Report" row gate, chat-level
+            // truth is sufficient. Telegram-Android uses the same gate on its
+            // own post overflow menu.
+            canReportChat = chat.canBeReported,
         )
     }
 

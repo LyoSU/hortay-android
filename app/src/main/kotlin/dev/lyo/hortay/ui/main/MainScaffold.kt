@@ -546,6 +546,11 @@ fun MainScaffold(graph: AppGraph) {
                                     pendingReport = post.chatId to if (post.id != 0L) post.id else null
                                 },
                                 canReport = { post -> post.canReportChat },
+                                // Channel-level Report row inside the info sheet:
+                                // route to ReportFlowSheet with messageId=null so
+                                // TDLib treats the report as scoped to the whole
+                                // chat instead of a specific message.
+                                onReportChannel = { pendingReport = currentChatId to null },
                             )
                         } else {
                             // All-feed view: TimelineScreen with no channel filter.
@@ -618,28 +623,6 @@ fun MainScaffold(graph: AppGraph) {
                     contentPadding = padding,
                     onLogout = { scope.launch { graph.tdClient.logOut() } },
                     autoDownload = graph.autoDownloadStore,
-                    onReportContent = { handle, postId ->
-                        // Resolve handle → chatId on the TDLib thread, then flip
-                        // pendingReport to open ReportFlowSheet. An Unsupported /
-                        // NotFound result surfaces via the user-message bus exactly
-                        // like the deep-link path, so the UX is consistent.
-                        scope.launch {
-                            when (val r = graph.postsRepository.resolvePublicHandle(handle)) {
-                                is PublicHandleResult.Channel ->
-                                    pendingReport = r.chatId to postId
-                                is PublicHandleResult.Unsupported -> {
-                                    val strId = when (r.kind) {
-                                        PublicHandleKind.User -> R.string.link_unsupported_user
-                                        PublicHandleKind.Group -> R.string.link_unsupported_group
-                                        PublicHandleKind.Unknown -> R.string.link_unsupported_other
-                                    }
-                                    graph.userMessages.post(res.getString(strId))
-                                }
-                                PublicHandleResult.NotFound ->
-                                    graph.userMessages.post(res.getString(R.string.link_not_found))
-                            }
-                        }
-                    },
                 )
             }
             }
