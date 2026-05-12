@@ -657,6 +657,25 @@ class PostsRepository(
     }
 
     /**
+     * Channel avatar source for the [ChannelScreen] header. Returns
+     * (smallFileId, minithumbBytes) — both nullable, both fed into [TdAvatar]
+     * which paints the 3-tier ladder (minithumb → file → initial letter). Same
+     * `chatCache → GetChat` lookup pattern as [chatTitle] / [channelSubscribers]:
+     * served from TDLib's local cache after the first touch, no network in
+     * steady state. Either field may be null for channels whose [TdApi.Chat.photo]
+     * is itself null (rare — channel without a profile photo).
+     */
+    suspend fun chatAvatar(chatId: Long): Pair<Int?, ByteArray?>? {
+        val chat = chatCache[chatId]
+            ?: runCatching { td.send(TdApi.GetChat(chatId)) }
+                .warnUnlessCancelled(TAG, "chatAvatar")
+                .getOrNull()
+                ?.also { chatCache[chatId] = it }
+            ?: return null
+        return chat.photo?.small?.id to chat.photo?.minithumbnail?.data
+    }
+
+    /**
      * Resolve a Telegram public `@handle` (without the leading `@`) to a TDLib chat id.
      * Used by the deep-link dispatcher (`tg://resolve` / `https://t.me/<handle>`) so a
      * tap on a shared link inside Hortay routes the user to the channel filter — no

@@ -2,7 +2,13 @@
 
 package dev.lyo.hortay.ui.timeline
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -35,6 +41,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -134,6 +141,8 @@ fun ChannelScreen(
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val channelTitle by vm.channelTitle.collectAsStateWithLifecycle()
     val channelSubscribers by vm.channelSubscribers.collectAsStateWithLifecycle()
+    val channelAvatarFileId by vm.channelAvatarFileId.collectAsStateWithLifecycle()
+    val channelAvatarThumb by vm.channelAvatarThumb.collectAsStateWithLifecycle()
     val bookmarkedKeys by vm.bookmarkedKeys.collectAsStateWithLifecycle()
     val searchActive by vm.searchActive.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
@@ -146,6 +155,15 @@ fun ChannelScreen(
 
     // Info sheet: hoisted local state, dismissed by setting false.
     var infoSheetVisible by remember { mutableStateOf(false) }
+
+    // Search-mode back-handler. When search is active, system back / predictive-back
+    // should collapse the search overlay back to the channel's normal Medium top bar
+    // — NOT pop the channel itself off the back-stack. Without this BackHandler, the
+    // gesture bubbles up to MainScaffold's channelStack.popChannel() and yanks the
+    // user out to the originating tab (typically Channels), losing both the search
+    // and the channel context. Composable-local BackHandler near the leaf takes
+    // priority over parent BackHandlers, which is exactly the dispatch rule we need.
+    BackHandler(enabled = searchActive) { vm.setSearchActive(false) }
 
     // Scroll state. Each ChannelScreen instance gets its own rememberLazyListState()
     // scoped by the parent SaveableStateProvider(key = "feed-channel:<chatId>") in
@@ -440,6 +458,8 @@ fun ChannelScreen(
                     ChannelTopBar(
                         channelTitle = channelTitle,
                         channelSubscribers = channelSubscribers,
+                        channelAvatarFileId = channelAvatarFileId,
+                        channelAvatarThumb = channelAvatarThumb,
                         searchActive = searchActive,
                         searchQuery = searchQuery,
                         onBack = onBack,
@@ -613,6 +633,8 @@ fun ChannelScreen(
 private fun ChannelTopBar(
     channelTitle: String?,
     channelSubscribers: Int?,
+    channelAvatarFileId: Int?,
+    channelAvatarThumb: ByteArray?,
     searchActive: Boolean,
     searchQuery: String,
     onBack: () -> Unit,
@@ -622,7 +644,22 @@ private fun ChannelTopBar(
     scrollBehavior: TopAppBarScrollBehavior,
 ) {
     val barInsets = WindowInsets(0)
-    if (searchActive) {
+    // M3E motion: search-mode swap rides MotionScheme spring instead of a hard
+    // instant snap. defaultSpatial drives the height delta (Medium ≈ 112 dp ↔
+    // Compact ≈ 64 dp) and fastEffects drives the cross-fade — same physics the
+    // FloatingNavBar tabs and ConnectionBanner use, so the whole app shares one
+    // motion vocabulary on state changes.
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntSize>()
+    val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    AnimatedContent(
+        targetState = searchActive,
+        transitionSpec = {
+            (fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec))
+                .using(SizeTransform(clip = false) { _, _ -> spatialSpec })
+        },
+        label = "channel-bar-search-swap",
+    ) { isSearch ->
+    if (isSearch) {
         HortayTopBar(
             size = HortayTopBarSize.Compact,
             title = {
@@ -697,17 +734,17 @@ private fun ChannelTopBar(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    // Avatar sourced from the VM's resolved channel title for the
-                    // initial-letter. The full 3-tier TdAvatar pyramid (minithumb
-                    // → file) would require the chatCache's avatar file id — a
-                    // future improvement would fetch that from PostsRepository and
-                    // thread it through ChannelViewModel.channelInfo. For now the
-                    // initial-letter fallback on a primaryContainer disc is consistent
-                    // with how channels without a loaded avatar look in ChannelsScreen.
+                    // Full 3-tier TdAvatar (minithumb → file → initial letter) sourced
+                    // from [ChannelViewModel.channelAvatar{FileId,Thumb}]. The VM
+                    // resolves these reactively from the post stream (channel posts
+                    // carry the channel's identity as sender), with a one-shot
+                    // [PostsRepository.chatAvatar] fallback for cold deep-links into
+                    // channels not yet in the merged feed. Same data shape as the
+                    // ChannelsScreen row avatar — visual consistency across surfaces.
                     TdAvatar(
                         name = channelTitle ?: "?",
-                        thumb = null,
-                        fileId = null,
+                        thumb = channelAvatarThumb,
+                        fileId = channelAvatarFileId,
                         size = 32.dp,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -748,6 +785,7 @@ private fun ChannelTopBar(
             scrollBehavior = scrollBehavior,
             windowInsets = barInsets,
         )
+    }
     }
 }
 

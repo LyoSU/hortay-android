@@ -99,6 +99,18 @@ class ChannelViewModel(
     private val _channelSubscribers = MutableStateFlow<Int?>(null)
     val channelSubscribers: StateFlow<Int?> = _channelSubscribers.asStateFlow()
 
+    // Channel avatar source for the top-bar TdAvatar — same minithumb / fileId pair
+    // ChannelsScreen rows use. Resolved reactively from the post stream (every
+    // channel post carries the channel's identity in its sender fields) with a
+    // one-shot [PostsRepository.chatAvatar] fallback for channels not yet in the
+    // merged feed. Until both resolve, [TdAvatar] paints the initial-letter
+    // placeholder on its primaryContainer disc.
+    private val _channelAvatarFileId = MutableStateFlow<Int?>(null)
+    val channelAvatarFileId: StateFlow<Int?> = _channelAvatarFileId.asStateFlow()
+
+    private val _channelAvatarThumb = MutableStateFlow<ByteArray?>(null)
+    val channelAvatarThumb: StateFlow<ByteArray?> = _channelAvatarThumb.asStateFlow()
+
     // Bookmark set forwarded from the shared [BookmarkStore].
     val bookmarkedKeys: StateFlow<Set<String>> = bookmarks.bookmarks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())
@@ -147,31 +159,47 @@ class ChannelViewModel(
         // constructor for a TDLib round-trip.
         viewModelScope.launch {
             // Fast synchronous path from the already-populated post stream.
-            val fromPosts = repo.posts.value
-                .filter { it.chatId == chatId }
-                .let { matches ->
-                    matches.firstNotNullOfOrNull { it.channelContext?.name }
-                        ?: matches.firstOrNull()?.senderName
-                }
-            if (fromPosts != null) {
-                _channelTitle.value = fromPosts
+            val anchor = repo.posts.value.firstOrNull { it.chatId == chatId }
+            val titleFromPosts = anchor?.let { it.channelContext?.name ?: it.senderName }
+            if (titleFromPosts != null) {
+                _channelTitle.value = titleFromPosts
             } else {
                 // Suspension fallback: TDLib serves this from its local chat cache,
                 // which is warm after UpdateNewChat has fired for this chat.
                 _channelTitle.value = repo.chatTitle(chatId)
             }
+            // Avatar minithumb/fileId from the same anchor when present. TimelinePost
+            // already carries them (populated by the channel-info hook at ingest); a
+            // channel post's sender IS the channel, so these are the channel's own
+            // avatar. Falls back to a [chatAvatar] one-shot for the cold-link case
+            // where loadChannelHistory hasn't materialised the first post yet.
+            val avatarFromPosts = anchor?.let { it.avatarFileId to it.avatarThumb }
+            if (avatarFromPosts != null && (avatarFromPosts.first != null || avatarFromPosts.second != null)) {
+                _channelAvatarFileId.value = avatarFromPosts.first
+                _channelAvatarThumb.value = avatarFromPosts.second
+            } else {
+                val cached = repo.chatAvatar(chatId)
+                if (cached != null) {
+                    _channelAvatarFileId.value = cached.first
+                    _channelAvatarThumb.value = cached.second
+                }
+            }
         }
         viewModelScope.launch {
-            // Also keep the title up-to-date as posts arrive (e.g. non-subscribed
-            // channel whose firstpost lands after loadChannelHistory completes).
+            // Keep title AND avatar up-to-date as posts arrive (e.g. non-subscribed
+            // channel whose first post lands after loadChannelHistory completes,
+            // or a profile-photo change pushed via UpdateChatPhoto downstream).
             posts.collect { channelPosts ->
-                val resolved = channelPosts
-                    .let { list ->
-                        list.firstNotNullOfOrNull { it.channelContext?.name }
-                            ?: list.firstOrNull()?.senderName
-                    }
-                if (resolved != null && resolved != _channelTitle.value) {
-                    _channelTitle.value = resolved
+                val anchor = channelPosts.firstOrNull() ?: return@collect
+                val resolvedName = anchor.channelContext?.name ?: anchor.senderName
+                if (resolvedName != _channelTitle.value) {
+                    _channelTitle.value = resolvedName
+                }
+                if (anchor.avatarFileId != _channelAvatarFileId.value) {
+                    _channelAvatarFileId.value = anchor.avatarFileId
+                }
+                if (anchor.avatarThumb !== _channelAvatarThumb.value) {
+                    _channelAvatarThumb.value = anchor.avatarThumb
                 }
             }
         }
