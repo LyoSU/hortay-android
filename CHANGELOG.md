@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com),
 and this project adheres to [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [0.3.0] — 2026-05-12
 
 ### Added
 
@@ -91,18 +91,51 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
-- **Cold-start scroll landed on the OLDEST post instead of the top of the feed**.
-  `rememberLazyListState` persists `firstVisibleItemIndex` across process death via
-  Compose's standard `Saver`. The 2026-05-11 cold-start rework shrank the merged
-  feed from up to `MAX_FEED_SIZE=1000` (per-channel `GetChatHistory × N`) to ~1
-  post per channel (`Chat.lastMessage` harvest). A saved index from a previous
-  session was now frequently ≥ the new feed size — Compose silently clamped to
-  the last item, dropping the user at the bottom of the feed (oldest post in
-  view). A one-shot `LaunchedEffect` in `TimelineScreen` now waits for the first
-  non-empty paint and scrolls to `0` if the saved index is out of range. In-
-  session scroll position is otherwise preserved unchanged.
-
-
+- **Cold launch restored stale UI state across the board**. Closing the app
+  on the **Saved** tab and reopening landed the user on Saved, scrolled
+  mid-list to whatever bookmarked post they were last on — instead of the
+  canonical Home top-of-feed. Closing in a drilled-in channel reopened
+  mid-channel. Closing scrolled mid-Home reopened mid-feed on a random
+  post (the 2026-05-11 lastMessage-harvest rework surfaced a second-order
+  variant: shrunken feed often had fewer posts than the saved index, so
+  Compose silently clamped to the LAST item and dropped the user on the
+  OLDEST post). Root cause: `selectedTab`, `channelStack`,
+  `channelStackEntryTab` and every `rememberLazyListState()` inside the
+  `SaveableStateProvider` chain were `rememberSaveable`, so
+  `SavedStateRegistry` rehydrated each one from disk on
+  `MainActivity.onCreate`. Twitter / Telegram / Instagram all reset to the
+  top of the feed on a fresh cold launch — restoring multi-hour-old state
+  reads as the app teleporting the user somewhere stale. Two converging
+  fixes:
+  - **Top-level navigation moved from `rememberSaveable` → `remember`** in
+    `MainScaffold` for `selectedTab`, `channelStack` and
+    `channelStackEntryTab`. Cold launch (or any Activity recreation)
+    always lands on `NavTab.Feed` with an empty channel back-stack — the
+    user always opens onto the main feed, never a deep-link / drilled-in
+    state. Trade-off: rotation also resets navigation. Hortay is
+    portrait-default with no landscape layout, so the practical cost is
+    near-zero; scroll positions inside individual screens stay saveable
+    so configuration changes and memory-pressure recoveries within a
+    session preserve in-screen state.
+  - **`TimelineScreen` pins the user to the top through the cold-start
+    refresh storm.** The saveable `LazyListState` still restores from the
+    bundle, but a `LaunchedEffect` replays `scrollToItem(0)` on every
+    `posts.size` mutation through the cold-start window. The replay is
+    required because Compose's keyed `LazyColumn` —
+    `items(key = { it.key })` — anchors scroll position to the visible
+    item's KEY, not its index: when the streaming refresh inserts fresh
+    posts above the head, Compose preserves the visual position of
+    whatever post was at the snapshot-restored top and tucks the new
+    arrivals INVISIBLY above the viewport. The user-visible symptom was
+    closing the app on a post and reopening to see that same post still
+    at the top instead of the freshest content (the exact "scroll lands
+    on a different post" complaint). Replay bails the moment the user
+    manually scrolls (`isScrollInProgress`) — once they've reached for
+    the list, we respect their intent. Per-surface one-shot gate
+    (`ConcurrentHashMap.newKeySet()`, keys `"home"` / `"saved"`) so
+    in-process remounts (drilling into a channel and popping back, tab
+    swaps, Saved ↔ Home toggles) skip the pin entirely and honour the
+    saveable index for in-session position preservation.
 
 - **Hashtag taps lost channel context end-to-end**. Three converging bugs in
   one feature surface:

@@ -73,24 +73,33 @@ private const val SERVER_TO_TD_SHIFT = 20
  */
 @Composable
 fun MainScaffold(graph: AppGraph) {
-    var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
-
-    // Channel back-stack. Both are saveable across process death — Long list and
-    // nullable enum are primitive / Serializable, no custom Saver needed.
+    // Navigation state — plain `remember`, deliberately NOT `rememberSaveable`. Tab
+    // selection and the channel back-stack reset to defaults on every fresh Activity
+    // create (cold launch, swipe-from-recents, memory-pressure restart), so opening
+    // the app always lands on the Feed top. The previous saveable form caused a
+    // recurring UX complaint: closing on the Saved tab (or several channels deep)
+    // reopened the app exactly there, even after an overnight gap. Twitter / Telegram
+    // / Instagram all reset their top-level navigation on cold launch — restoring
+    // multi-hour-old navigation reads as the app teleporting the user somewhere
+    // stale.
+    //
+    // Trade-off: rotation also resets navigation. Hortay is portrait-default with
+    // no landscape-specific layout, so the practical cost is near-zero. Scroll
+    // positions inside individual screens stay `rememberSaveable` (via the parent
+    // `SaveableStateProvider` chain) so configuration changes and memory-pressure
+    // recoveries within a session preserve in-screen state — only the top-level
+    // route resets.
     //
     // channelStack is the full history of channel-filter entries since the user
     // last drilled in from a top-level tab. The last element is the currently
     // visible channel filter; an empty stack means "all-feed / no filter".
-    //
-    // channelStackEntryTab records which top-level tab initiated the drill —
-    // popping back to an empty stack restores that tab so the user lands where
-    // they started rather than always falling back to Feed.
-    //
-    // Pop-to-existing dedup (see enterChannel): if the user taps a link to a
-    // channel already in the stack (e.g. a tg:// cycle: Feed → A → B → back to
-    // A via a link) we truncate to that depth instead of pushing a duplicate.
-    var channelStack by rememberSaveable { mutableStateOf<List<Long>>(emptyList()) }
-    var channelStackEntryTab by rememberSaveable { mutableStateOf<NavTab?>(null) }
+    // channelStackEntryTab records which top-level tab initiated the drill — popping
+    // back to an empty stack restores that tab so the user lands where they started.
+    // Pop-to-existing dedup (see enterChannel): if the user taps a link to a channel
+    // already in the stack we truncate to that depth instead of pushing a duplicate.
+    var selectedTab by remember { mutableStateOf(NavTab.Feed) }
+    var channelStack by remember { mutableStateOf<List<Long>>(emptyList()) }
+    var channelStackEntryTab by remember { mutableStateOf<NavTab?>(null) }
     val channelFilter = channelStack.lastOrNull()
 
     // Two-state pair for the comments overlay so it survives a process kill:

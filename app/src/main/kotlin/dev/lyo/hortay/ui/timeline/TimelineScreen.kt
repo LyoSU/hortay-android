@@ -68,6 +68,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
 
 // FlowPreview opt-in stays: Flow.debounce(Long) is still preview-marked in
@@ -229,31 +230,47 @@ fun TimelineScreen(
     // state is preserved across tab switches.
     val listState = rememberLazyListState()
 
-    // Cold-start scroll clamp. [listState] persists `firstVisibleItemIndex` across
-    // process death via Compose's standard Saver (honoured by the parent's
-    // SaveableStateProvider). After the 2026-05-11 cold-start rework the merged feed
-    // shrank from up to MAX_FEED_SIZE=1000 (per-channel GetChatHistory × N) to ~1 post
-    // per channel (Chat.lastMessage harvest). A saved index from a previous session can
-    // now be ≥ the new feed size — Compose silently clamps to the last item, landing
-    // the user at the OLDEST post in the feed instead of the top. Detect this on the
-    // very first non-empty paint AFTER process start and scroll to top.
+    // Cold-launch scroll reset that survives the streaming refresh storm.
     //
-    // Gating: a process-level [coldStartClampDone] flag (file-private below). Saveable
-    // composition flags would be wrong here: rememberSaveable would survive process
-    // death and skip the clamp on the very situation it's meant to handle, while plain
-    // remember would re-arm on every TimelineScreen REMOUNT — including the in-process
-    // drill-into-channel → pop-back case, where the feed is fresh in memory and the
-    // user's restored scroll position is intentional. Process-level scope is the only
-    // correct lifetime. Reset on logout via [TdClient.loggedOut] in the file footer
-    // is unnecessary — a logout already wipes the feed and the next session starts
-    // with a fresh process anyway (TDLib re-init).
+    // Three pile-on bugs converge here:
+    //  1. [LazyListState.Saver] persists `firstVisibleItemIndex` across process death
+    //     via Compose's standard saveable plumbing — closing on a mid-feed scroll
+    //     position would otherwise reopen there instead of the canonical feed-top.
+    //  2. The cold-start refresh streams new posts in above the head ([PostsRepository.
+    //     refreshLocked] writes incrementally per channel, and any [UpdateNewMessage]
+    //     events landing during the refresh window add even more). So even after
+    //     `scrollToItem(0)` lands us at the snapshot-restored top, the LazyColumn's
+    //     keyed-stability — `items(key = { it.key })` ties scroll-anchor to the
+    //     visible item's key, not its index — preserves the visual position of
+    //     whatever post was originally at index 0 while fresh content gets tucked
+    //     invisibly above the viewport. User-visible symptom: opens the app and
+    //     sees yesterday's top post instead of the freshest one streaming in.
+    //  3. Telegram-Android, Twitter and most social feeds use a non-keyed
+    //     `LinearLayoutManager` (or equivalent index-anchored behaviour) — Compose's
+    //     key-anchored stability is great for in-session feed mutations (a reaction
+    //     count update doesn't yank the user's scroll) but works against the
+    //     cold-start "land on freshest" expectation.
+    //
+    // Fix: replay `scrollToItem(0)` on every `posts.size` mutation through the
+    // cold-start refresh window. Bail the moment the user manually scrolls
+    // (`isScrollInProgress`) so we respect their intent — once they've reached for
+    // the list, we're done pinning. Per-surface ([coldStartScrolledSurfaces])
+    // one-shot guard so in-process remounts — drilling into a channel and popping
+    // back, tab swaps, Saved ↔ Home toggles — preserve the user's intentional
+    // scroll position via the saveable index.
     LaunchedEffect(Unit) {
-        if (coldStartClampDone) return@LaunchedEffect
-        androidx.compose.runtime.snapshotFlow { posts.size }.first { it > 0 }
-        if (listState.firstVisibleItemIndex >= posts.size) {
-            listState.scrollToItem(0)
-        }
-        coldStartClampDone = true
+        val surfaceKey = if (showOnlyBookmarked) "saved" else "home"
+        if (!coldStartScrolledSurfaces.add(surfaceKey)) return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { posts.size }
+            .takeWhile { !listState.isScrollInProgress }
+            .collect { size ->
+                if (size > 0 &&
+                    (listState.firstVisibleItemIndex != 0 ||
+                        listState.firstVisibleItemScrollOffset != 0)
+                ) {
+                    listState.scrollToItem(0)
+                }
+            }
     }
 
     // Pinned color-only scroll behavior — height transitions are owned by
@@ -1652,15 +1669,17 @@ internal fun groupReplies(
 private const val THREAD_FRESH_WINDOW_MS = 60L * 60L * 1000L
 
 /**
- * Process-level "cold-start clamp already ran" flag. See the [LaunchedEffect(Unit)]
- * usage near line ~230 for the full rationale. JVM-volatile so a concurrent flip from
- * another TimelineScreen instance (Feed + Saved tabs both mount this Composable) is
- * visible without locking. Reset only by process death — the correct scope, because
- * the clamp's purpose is "saved index might be stale from a previous session"; that
- * concern only exists at process boot, never on in-process drill/pop or tab swap.
+ * Process-level set of TimelineScreen surfaces that have already been scrolled to the
+ * top once this process. Keys: `"home"` (all-feed, `showOnlyBookmarked = false`) and
+ * `"saved"` (`showOnlyBookmarked = true`). Backed by [ConcurrentHashMap.newKeySet] so
+ * the Feed and Saved tabs (both mount [TimelineScreen]) can flip their flags
+ * concurrently without locking. Reset only by process death — the correct scope,
+ * because the cold-start reset's purpose is "give the user the top of the feed on
+ * launch"; subsequent in-process drill / pop / tab swap should preserve the user's
+ * intentional scroll position via Compose's saveable `firstVisibleItemIndex`.
  */
-@Volatile
-private var coldStartClampDone: Boolean = false
+private val coldStartScrolledSurfaces: MutableSet<String> =
+    java.util.concurrent.ConcurrentHashMap.newKeySet()
 
 internal fun formatSubscribers(count: Int): String {
     fun compact(value: Double, suffix: String): String {
