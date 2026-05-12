@@ -297,44 +297,21 @@ class PostsRepository(
         // the next pull-to-refresh.
         td.updates.filterIsInstance<TdApi.UpdateChatAddedToList>()
             .onEach { update ->
-                if (update.chatList is TdApi.ChatListArchive) {
-                    _archivedChatIds.update { it + update.chatId }
+                when (update.chatList) {
+                    is TdApi.ChatListArchive -> _archivedChatIds.update { it + update.chatId }
+                    is TdApi.ChatListMain -> _mainChatIds.update { it + update.chatId }
+                    else -> {}
                 }
             }
             .launchIn(scope)
 
         td.updates.filterIsInstance<TdApi.UpdateChatRemovedFromList>()
             .onEach { update ->
-                if (update.chatList is TdApi.ChatListArchive) {
-                    _archivedChatIds.update { it - update.chatId }
+                when (update.chatList) {
+                    is TdApi.ChatListArchive -> _archivedChatIds.update { it - update.chatId }
+                    is TdApi.ChatListMain -> _mainChatIds.update { it - update.chatId }
+                    else -> {}
                 }
-            }
-            .launchIn(scope)
-
-        // Keep cached `Chat.positions` live. UpdateNewChat snapshots positions at
-        // first-sighting time, but a chat's list membership changes over the
-        // session: user joins a channel (zero-order → non-zero in ChatListMain),
-        // leaves it (non-zero → zero), or archives it (Main order → 0, Archive
-        // order → non-zero). The [ingest] filter below uses positions to decide
-        // whether to surface a chat's UpdateNewMessage in the feed, so a stale
-        // snapshot would either (a) hide a freshly-joined channel until app
-        // restart, or (b) leak posts from a channel the user just left.
-        //
-        // TdApi.Chat is a mutable Java POJO; rewriting the positions array
-        // in-place is safe because every read site is on the TDLib update
-        // dispatcher thread (which serialises events, see TdClient SharedFlow
-        // contract). order=0 means "remove from this list"; per TDLib docs the
-        // event always carries a single list/order pair.
-        td.updates.filterIsInstance<TdApi.UpdateChatPosition>()
-            .onEach { update ->
-                val chat = chatCache[update.chatId] ?: return@onEach
-                val listClass = update.position.list::class
-                val existing = chat.positions.toMutableList()
-                existing.removeAll { it.list::class == listClass }
-                if (update.position.order != 0L) {
-                    existing += update.position
-                }
-                chat.positions = existing.toTypedArray()
             }
             .launchIn(scope)
 
@@ -930,28 +907,28 @@ class PostsRepository(
             ?.also { chatCache[it.id] = it }
             ?: return
         if (!chat.isChannel()) return
-        // Per TDLib: UpdateNewMessage fires for ANY chat the client has ever
-        // resolved, including channels TDLib synced as a side-effect of the
-        // user opening a related chat (linked discussion group's parent
-        // channel, deep-link previews, public-username resolutions). Those
-        // channels are NOT in the user's ChatListMain / ChatListArchive, so
-        // they shouldn't surface in the feed. The user-visible symptom on
-        // OldestUnreadFirst was unread anchor "creep": each channel drill-
-        // back inserted 1-2 posts from such side-channels above the user's
-        // scroll position, shifting `firstVisibleItemIndex` and reading as
-        // "the app threw me to a random post". Same root cause for the pill
-        // surfacing posts the user can't trace back to their subscriptions.
+        // Filter live arrivals to chats actually in the user's subscriptions
+        // (Main or Archive list). TDLib emits UpdateNewMessage for any chat
+        // it has resolved — deep-link previews, public-username lookups,
+        // linked discussion-group parents — so without this gate the feed
+        // leaked posts from channels the user never subscribed to. The
+        // `_mainChatIds` set is the authoritative ChatListMain membership
+        // populated by [refreshLocked] from `GetChats` (and kept live by
+        // the UpdateChatAddedToList / UpdateChatRemovedFromList listeners
+        // above), which sidesteps the `Chat.positions` cold-start race that
+        // an earlier attempt at this filter ran into.
         //
-        // Telegram-Android filter: `chat.positions.any { it.list is ChatListMain
-        // && it.order != 0L }` (mirrored from `DialogObject.getInternalIdFromDialogId`
-        // + `MessagesController.getDialogsArray` policy — a chat lives in a
-        // user's "feed" only when it has a non-zero order in that chat list).
-        // We honour both Main and Archive here; the feed-scope (All / Archive /
-        // Folder) filter in TimelineScreen does the secondary partition.
-        val inUserList = chat.positions.any { pos ->
-            pos.order != 0L && (pos.list is TdApi.ChatListMain || pos.list is TdApi.ChatListArchive)
+        // Empty `_mainChatIds` means we haven't completed cold-start
+        // refresh yet (or the user is signed out). Don't filter then —
+        // refreshLocked itself calls ingest for the harvest, and we don't
+        // want the cold-start ingest to be a no-op. Once refreshLocked's
+        // [_mainChatIds] population completes, subsequent live arrivals are
+        // gated normally.
+        val mainIds = _mainChatIds.value
+        if (mainIds.isNotEmpty()) {
+            val subscribed = chatId in mainIds || chatId in _archivedChatIds.value
+            if (!subscribed) return
         }
-        if (!inUserList) return
 
         // If a real-time burst still left an album fragmented (e.g. members spread across
         // >600 ms by upstream), probe the chat for the missing siblings before mapping.
@@ -1326,6 +1303,13 @@ class PostsRepository(
     private val _archivedChatIds = MutableStateFlow<Set<Long>>(emptySet())
     val archivedChatIds: StateFlow<Set<Long>> = _archivedChatIds.asStateFlow()
 
+    // Set of chatIds in the user's main chat list. See [refreshLocked] for why
+    // we maintain this as an authoritative set (filled from GetChats response)
+    // rather than reading it off `Chat.positions` (which has a cold-start
+    // race). Filter source for [ingest] — live UpdateNewMessage from a chat
+    // not in this set OR [archivedChatIds] is dropped.
+    private val _mainChatIds = MutableStateFlow<Set<Long>>(emptySet())
+
     private suspend fun refreshLocked() {
         // Cold-start strategy (mirrors Telegram-Android): drive `LoadChats(ChatListMain)`
         // so TDLib emits UpdateNewChat for every chat. Each chat carries `lastMessage`
@@ -1346,6 +1330,27 @@ class PostsRepository(
         // ceiling on response size.
         val chatIds = td.send(TdApi.GetChats(TdApi.ChatListMain(), Int.MAX_VALUE))
             .chatIds.toList()
+
+        // Authoritative subscription set used by [ingest] to gate live
+        // [UpdateNewMessage] arrivals. TDLib pushes UpdateNewMessage for any
+        // chat it has ever resolved (deep-link previews, public-username
+        // lookups, linked discussion-group parents); without this gate those
+        // side-resolved channels' posts would land in the all-feed, which
+        // surfaced as "I see channels in the feed I'm not subscribed to" and
+        // as scroll-anchor creep when drilling into channels (their posts
+        // got slotted above the user's anchor). Maintained live by the
+        // UpdateChatAddedToList / UpdateChatRemovedFromList listeners above,
+        // so a freshly-joined channel becomes visible without app restart.
+        //
+        // Why this set + not `Chat.positions.any { ChatListMain && order != 0 }`:
+        // positions has a cold-start race where UpdateNewChat arrives before
+        // TDLib has filled in the positions array, and harvesting via the
+        // chat's `lastMessage` would then reject every chat — the resulting
+        // bug was an empty feed on restart with only post-warmup live
+        // arrivals visible. The GetChats response is, by contrast, the
+        // direct authoritative answer to "what's in ChatListMain right now",
+        // populated before harvest fires.
+        _mainChatIds.value = _mainChatIds.value + chatIds.toSet()
 
         // LoadChats triggers UpdateNewChat per chat, but the emission may arrive on
         // the td.updates flow AFTER GetChats has already returned the id list — TDLib's
@@ -1409,6 +1414,7 @@ class PostsRepository(
             pageJobs.clear()
             lastRefreshAtMs = 0L
             _archivedChatIds.value = emptySet()
+            _mainChatIds.value = emptySet()
         }
         runCatching { snapshotStore.clear() }
             .warnUnlessCancelled(TAG, "snapshotStore.clear")
