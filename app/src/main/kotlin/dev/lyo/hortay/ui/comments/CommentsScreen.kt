@@ -19,10 +19,14 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.ui.theme.HortayExpressive
+import dev.lyo.hortay.ui.theme.asComposeShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
@@ -41,6 +45,7 @@ import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.media.TdMediaImage
+import dev.lyo.hortay.ui.media.rememberDeferredLoading
 import dev.lyo.hortay.ui.media.toAlbumItems
 import dev.lyo.hortay.ui.timeline.PostBody
 import dev.lyo.hortay.ui.timeline.PostCard
@@ -103,6 +108,12 @@ fun CommentsScreen(
     // connection below. Mirrors the [TimelineScreen] pattern so both
     // destination-style bars feel identical to the user.
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
+    // Scroll state preservation is parent-owned: MainScaffold wraps each
+    // CommentsScreen mount in
+    //   commentsStateHolder.SaveableStateProvider(key = "post:<chatId>:<postId>")
+    // so reopening the same post restores the user's scroll position in the thread
+    // without any explicit keying here. The rememberLazyListState() participates in
+    // that scope automatically via Compose's standard Saver.
     val listState = rememberLazyListState()
 
     // Twitter / Instagram floating-bar pattern — see [TimelineScreen]'s
@@ -161,6 +172,22 @@ fun CommentsScreen(
     //     screen would freeze at peek and then snap away.
     val backDirection = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
     val backOriginX = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 0f else 1f
+
+    // A hot LRU hit on a previously-opened thread or a fast cold-path resolve
+    // (cached anchor + small / empty thread) lands Ready inside ~100-300 ms.
+    // Without a grace window the LoadingIndicator paints for one frame, then
+    // unmounts as the empty-state hero takes over — reads as a flicker even
+    // though both states are correct. [rememberDeferredLoading] short-circuits
+    // the first half of that race: stays false until the loading state has
+    // persisted past [LOADING_OVERLAY_GRACE_MS] (600 ms — same threshold the
+    // media overlays use, so the whole app shares one "slow enough to surface"
+    // contract). Keyed on (chatId, anchorKey) so navigating to a different
+    // post starts a fresh grace window.
+    val showLoadingOverlay = rememberDeferredLoading(
+        pending = state is CommentsRepository.ThreadState.Loading,
+        key = post.chatId to (candidateIds.minOrNull() ?: post.id),
+    )
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -179,23 +206,18 @@ fun CommentsScreen(
             .nestedScroll(scrollBehavior.nestedScrollConnection)
             .nestedScroll(topBarNestedScroll),
         topBar = {
-            // [HortayTopBar] (Medium) reads as "this is a destination, not
-            // a tool stage" — comments overlay carries its own thread-of-
-            // conversation identity that benefits from the larger title
-            // typography on first paint, then slides up smoothly off-screen
-            // as the user scrolls into the thread (driven by scroll delta,
-            // not a timed animation — see [topBarNestedScroll]). The subtitle
-            // slot tracks the live thread state so the user reads the count
-            // at the same moment they read the title — replaces the
-            // standalone "X відповідей" label that used to sit above the list.
-            val subtitleText = when (val s = state) {
-                CommentsRepository.ThreadState.Loading -> stringResource(R.string.comments_loading)
-                is CommentsRepository.ThreadState.Ready -> if (s.rows.isEmpty()) {
-                    stringResource(R.string.comments_no_comments)
-                } else {
-                    stringResource(R.string.comments_replies, s.rows.size)
-                }
-                is CommentsRepository.ThreadState.Error -> null
+            // Title is the constant "Допис" / "Post" — Twitter/X pattern for a
+            // post-detail screen. The previous "Обговорення" framing assumed the
+            // user arrived to discuss, but the dominant entry flow is "tapped a
+            // card to read the full thing", with replies as a supporting section
+            // below. Subtitle surfaces only when there ARE replies (count via
+            // pluralStringResource); Loading / empty / Error keep the chrome
+            // calm and let the body's empty-state hero communicate the situation.
+            val replyCount = (state as? CommentsRepository.ThreadState.Ready)?.rows?.size ?: 0
+            val subtitleText = if (replyCount > 0) {
+                pluralStringResource(R.plurals.comments_count, replyCount, replyCount)
+            } else {
+                null
             }
             // Same two-zone pattern as TimelineScreen — see that screen's
             // topBar comment for the reasoning. Persistent zone-1 strip
@@ -251,69 +273,107 @@ fun CommentsScreen(
                 PostCard(post = post, interactions = pinnedPostInteractions, clickable = false, expanded = true)
             }
 
-            // Loading / counter / error label live above the list. For Error we still
-            // render a friendlier hero block below — the small primary-coloured label was
-            // easy to miss on channels without a linked discussion group.
-            item(key = "label") {
-                val label = when (val s = state) {
-                    CommentsRepository.ThreadState.Loading -> stringResource(R.string.comments_loading)
-                    is CommentsRepository.ThreadState.Ready -> if (s.rows.isEmpty()) stringResource(R.string.comments_no_comments)
-                    else stringResource(R.string.comments_replies, s.rows.size)
-                    is CommentsRepository.ThreadState.Error -> null
-                }
-                if (label != null) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    )
-                }
-            }
-
+            // The previous inline "X replies" / "no comments yet" label has been
+            // hoisted: the count travels into the top-bar subtitle (visible only when
+            // there ARE replies), and the empty / error branches render a full M3E
+            // empty-state hero so a channel without discussion no longer reads as
+            // "missing list, no explanation" — same visual idiom as
+            // [TimelineScreen.EmptyState], so the two screens speak one vocabulary.
+            //
+            // Loading branch is gated on [rememberDeferredLoading] so a cached
+            // anchor + cached empty rows (or a hot LRU hit on a previously-opened
+            // thread) goes Loading → Ready in microseconds without ever flashing
+            // the spinner — the empty-state hero just appears under the post. The
+            // grace window matches [LOADING_OVERLAY_GRACE_MS] used by media
+            // overlays, so the entire app shares one "what counts as a slow load
+            // worth surfacing?" threshold.
             when (val s = state) {
-                CommentsRepository.ThreadState.Loading -> item(key = "loading") {
-                    Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        LoadingIndicator()
+                CommentsRepository.ThreadState.Loading -> if (showLoadingOverlay) {
+                    item(key = "loading") {
+                        Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            LoadingIndicator()
+                        }
                     }
                 }
-                is CommentsRepository.ThreadState.Ready -> items(items = s.rows, key = { it.message.id }) { row ->
-                    CommentNode(row, onMediaClick = { items, idx -> viewer.open(items, idx) })
+                is CommentsRepository.ThreadState.Ready -> if (s.rows.isEmpty()) {
+                    item(key = "empty") {
+                        CommentsEmptyState(
+                            symbol = "forum",
+                            title = stringResource(R.string.comments_empty_title),
+                            body = stringResource(R.string.comments_empty_body),
+                        )
+                    }
+                } else {
+                    items(items = s.rows, key = { it.message.id }) { row ->
+                        CommentNode(row, onMediaClick = { items, idx -> viewer.open(items, idx) })
+                    }
                 }
-                is CommentsRepository.ThreadState.Error -> item(key = "error") {
-                    NoDiscussionState(message = s.message)
+                is CommentsRepository.ThreadState.Error -> item(key = "disabled") {
+                    CommentsEmptyState(
+                        symbol = "chat_bubble",
+                        title = stringResource(R.string.comments_disabled_title),
+                        body = stringResource(R.string.comments_disabled_body),
+                    )
                 }
             }
         }
     }
 }
 
+/**
+ * Shared empty-state hero for the two terminal branches of [CommentsScreen]:
+ * `Ready { rows.isEmpty() }` (discussion is wired but nobody posted yet) and
+ * `Error` (channel has no linked discussion group). One composable for both
+ * cases — they're the same UX shape, different copy — keeps the visual
+ * vocabulary tight: same Flower polygon backdrop as [TimelineScreen.EmptyState]
+ * so an empty comments overlay reads as a sibling of an empty feed rather
+ * than an unrelated dialog.
+ *
+ * Sits BELOW the pinned post card in the LazyColumn rather than centring the
+ * viewport — the user opened a post first; the post stays the visual anchor
+ * and the empty state explains the situation right where comments would have
+ * appeared. Generous top/bottom padding makes the hero dominate the empty
+ * area below the post without fighting it for attention.
+ */
 @Composable
-private fun NoDiscussionState(message: String) {
+private fun CommentsEmptyState(symbol: String, title: String, body: String) {
+    val composeShape = HortayExpressive.EmptyStateMask.asComposeShape()
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 32.dp, bottom = 32.dp),
+            .padding(top = 56.dp, bottom = 64.dp, start = 32.dp, end = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Symbol(
-            name = "chat_bubble",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            size = 48.dp,
-        )
-        Spacer(Modifier.height(14.dp))
+        // 96 dp polygon-masked tile + 40 dp glyph — single largest expressive
+        // form on screen at this moment. Matches [TimelineScreen.ExpressiveEmptyHero]'s
+        // recipe; kept inline (rather than extracted to a shared composable) so
+        // the two screens evolve independently if comments empty state grows
+        // its own affordances (e.g. retry on transient error) later.
+        Box(
+            modifier = Modifier
+                .size(96.dp)
+                .background(MaterialTheme.colorScheme.secondaryContainer, composeShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Symbol(
+                name = symbol,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                size = 40.dp,
+            )
+        }
+        Spacer(Modifier.height(20.dp))
         Text(
-            text = stringResource(R.string.comments_no_thread),
+            text = title,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
-            text = message,
-            style = MaterialTheme.typography.bodyMedium,
+            text = body,
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 24.dp),
+            textAlign = TextAlign.Center,
         )
     }
 }

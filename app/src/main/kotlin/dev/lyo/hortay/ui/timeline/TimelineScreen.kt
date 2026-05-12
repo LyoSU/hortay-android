@@ -21,7 +21,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -205,8 +204,14 @@ fun TimelineScreen(
     // Search state: only meaningful inside a channel filter. searchActive flips the top
     // bar into a TextField; query drives a debounced SearchChatMessages call; results
     // replace the normal feed in the list while the bar is in search mode.
-    var searchActive by rememberSaveable(channelFilter) { mutableStateOf(false) }
-    var searchQuery by rememberSaveable(channelFilter) { mutableStateOf("") }
+    //
+    // rememberSaveable with no key: scroll and search state preservation is now
+    // parent-owned via SaveableStateProvider(key = "feed-channel:<id>") in
+    // MainScaffold. Each channel context (and the all-feed __all__ context) gets its
+    // own saveable scope, so these values naturally reset when the key changes
+    // (i.e. the user enters a different channel) and are preserved within a context.
+    var searchActive by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     var searchResults by remember(channelFilter) { mutableStateOf<List<TimelinePost>>(emptyList()) }
     if (channelFilter != null && tdlibRepo != null) {
         LaunchedEffect(searchActive, searchQuery, channelFilter) {
@@ -224,31 +229,34 @@ fun TimelineScreen(
     // Without this guard the pill flashes a misleading huge count for ~1 frame.
 
     val scope = rememberCoroutineScope()
-    // Two scroll-position holders so a channel-filter detour doesn't blow away where the
-    // user was reading the global feed. The global state is rememberLazyListState (already
-    // saveable across config changes); the filter state is keyed on [channelFilter] so
-    // entering a new channel starts at the top, while the user is in that channel rotations
-    // preserve their position. Returning to the global feed (channelFilter = null) lands
-    // them exactly where they left off.
-    val globalListState = rememberLazyListState()
-    val filterListState = rememberSaveable(channelFilter, saver = LazyListState.Saver) {
-        LazyListState()
-    }
-    val listState = if (channelFilter != null) filterListState else globalListState
+    // Single scroll-position holder. Scroll state preservation is now parent-owned:
+    // MainScaffold wraps each TimelineScreen mount in a
+    //   SaveableStateProvider(key = "feed-channel:<chatId>")   for per-channel views
+    //   SaveableStateProvider(key = "feed-channel:__all__")    for the all-feed view
+    // so this rememberLazyListState() automatically participates in the correct scope.
+    // Each channel (and the all-feed) therefore gets its own independent list state —
+    // the dual-state-with-key dance (globalListState / filterListState) is no longer
+    // needed and was incorrect (it tried to do at the screen level what must happen at
+    // the route level to be process-death-safe and tab-switch-safe).
+    //
+    // Guest / web mode mounts TimelineScreen without a per-channel provider but with a
+    // top-level tab provider from WebModeScaffold, which is equivalent: the all-feed
+    // state is preserved across tab switches.
+    val listState = rememberLazyListState()
 
-    // Cold-start scroll clamp. [globalListState] persists `firstVisibleItemIndex`
-    // across process death via Compose's standard Saver. After the 2026-05-11
-    // cold-start rework the merged feed shrank from up to MAX_FEED_SIZE=1000
-    // (per-channel GetChatHistory × N) to ~1 post per channel (Chat.lastMessage
-    // harvest). A saved index from a previous session can now be ≥ the new feed
-    // size — Compose silently clamps to the last item, landing the user at the
-    // OLDEST post in the feed instead of the top. Detect this on first non-empty
-    // paint and scroll to top; in-session scroll position is otherwise preserved.
-    // Fires once per process via `LaunchedEffect(Unit)`.
+    // Cold-start scroll clamp. [listState] persists `firstVisibleItemIndex` across
+    // process death via Compose's standard Saver (honoured by the parent's
+    // SaveableStateProvider). After the 2026-05-11 cold-start rework the merged feed
+    // shrank from up to MAX_FEED_SIZE=1000 (per-channel GetChatHistory × N) to ~1 post
+    // per channel (Chat.lastMessage harvest). A saved index from a previous session can
+    // now be ≥ the new feed size — Compose silently clamps to the last item, landing
+    // the user at the OLDEST post in the feed instead of the top. Detect this on first
+    // non-empty paint and scroll to top; in-session scroll position is otherwise
+    // preserved. Fires once per saveable scope via `LaunchedEffect(Unit)`.
     LaunchedEffect(Unit) {
         androidx.compose.runtime.snapshotFlow { posts.size }.first { it > 0 }
-        if (globalListState.firstVisibleItemIndex >= posts.size) {
-            globalListState.scrollToItem(0)
+        if (listState.firstVisibleItemIndex >= posts.size) {
+            listState.scrollToItem(0)
         }
     }
 
@@ -395,14 +403,15 @@ fun TimelineScreen(
         if (atTop) vm.refresh() else listState.animateScrollToItem(0)
     }
 
-    // Switching folders within the global feed jumps to the top — "show me the top of
-    // this folder" is the expected behaviour. Channel-filter visits don't need an explicit
-    // scroll: filterListState above is freshly remembered per channelFilter, so it starts
-    // at the top by construction. Going back to the global feed (channelFilter = null)
-    // restores globalListState, which was preserved while the user was off in the filter.
+    // Switching folders within the all-feed (no channelFilter) jumps to the top —
+    // "show me the top of this folder" is the expected behaviour. Channel-filter
+    // visits don't need an explicit scroll: they run inside their own
+    // SaveableStateProvider scope (keyed on the chatId), so each channel starts at
+    // the top the first time it is visited; subsequent visits restore the saved
+    // position automatically.
     LaunchedEffect(scope_filter) {
         if (channelFilter == null) {
-            globalListState.scrollToItem(0)
+            listState.scrollToItem(0)
         }
     }
 

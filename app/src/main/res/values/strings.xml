@@ -243,11 +243,16 @@
     <string name="content_paid">⭐ Paid content</string>
 
     <!-- Comments -->
-    <string name="comments_title">Discussion</string>
+    <string name="comments_title">Post</string>
     <string name="comments_loading">Loading…</string>
-    <string name="comments_no_comments">No comments yet</string>
-    <string name="comments_replies">%1$d replies</string>
-    <string name="comments_no_thread">No discussion</string>
+    <plurals name="comments_count">
+        <item quantity="one">%d comment</item>
+        <item quantity="other">%d comments</item>
+    </plurals>
+    <string name="comments_empty_title">No comments yet</string>
+    <string name="comments_empty_body">New replies will appear here as they arrive</string>
+    <string name="comments_disabled_title">Comments are off</string>
+    <string name="comments_disabled_body">This channel doesn\'t have a linked discussion group</string>
     <string name="comments_unavailable">Discussion unavailable</string>
 
     <!-- Channels -->

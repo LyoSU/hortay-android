@@ -253,11 +253,18 @@
     <string name="content_paid">⭐ Платний контент</string>
 
     <!-- Comments -->
-    <string name="comments_title">Обговорення</string>
+    <string name="comments_title">Допис</string>
     <string name="comments_loading">Завантажуємо…</string>
-    <string name="comments_no_comments">Поки немає коментарів</string>
-    <string name="comments_replies">%1$d відповідей</string>
-    <string name="comments_no_thread">Без обговорення</string>
+    <plurals name="comments_count">
+        <item quantity="one">%d коментар</item>
+        <item quantity="few">%d коментарі</item>
+        <item quantity="many">%d коментарів</item>
+        <item quantity="other">%d коментаря</item>
+    </plurals>
+    <string name="comments_empty_title">Поки немає коментарів</string>
+    <string name="comments_empty_body">Нові з\'являться тут одразу, як надійдуть</string>
+    <string name="comments_disabled_title">Коментарі вимкнено</string>
+    <string name="comments_disabled_body">Автор каналу не під\'єднав групу для обговорень</string>
     <string name="comments_unavailable">Обговорення недоступне</string>
 
     <!-- Channels -->

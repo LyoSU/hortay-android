@@ -21,6 +21,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -71,7 +72,25 @@ private const val SERVER_TO_TD_SHIFT = 20
 @Composable
 fun MainScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
-    var channelFilter by rememberSaveable { mutableStateOf<Long?>(null) }
+
+    // Channel back-stack. Both are saveable across process death — Long list and
+    // nullable enum are primitive / Serializable, no custom Saver needed.
+    //
+    // channelStack is the full history of channel-filter entries since the user
+    // last drilled in from a top-level tab. The last element is the currently
+    // visible channel filter; an empty stack means "all-feed / no filter".
+    //
+    // channelStackEntryTab records which top-level tab initiated the drill —
+    // popping back to an empty stack restores that tab so the user lands where
+    // they started rather than always falling back to Feed.
+    //
+    // Pop-to-existing dedup (see enterChannel): if the user taps a link to a
+    // channel already in the stack (e.g. a tg:// cycle: Feed → A → B → back to
+    // A via a link) we truncate to that depth instead of pushing a duplicate.
+    var channelStack by rememberSaveable { mutableStateOf<List<Long>>(emptyList()) }
+    var channelStackEntryTab by rememberSaveable { mutableStateOf<NavTab?>(null) }
+    val channelFilter = channelStack.lastOrNull()
+
     // Two-state pair for the comments overlay so it survives a process kill:
     //   • pendingCommentsKey — (chatId, post.id), saveable across process death
     //     because TimelinePost itself is not Parcelable (deep @Immutable graph
@@ -89,6 +108,45 @@ fun MainScaffold(graph: AppGraph) {
         commentsForPost = post
         pendingCommentsKey = post?.let { it.chatId to it.id }
     }
+
+    // Channel back-stack navigation helpers, defined after [openComments] so
+    // enterChannel can call openComments(null) when drilling clears any open thread.
+    //
+    // enterChannel: push chatId onto the stack (or truncate to an existing depth).
+    //   Pop-to-existing dedup prevents stack bloat on tg:// cycles where a link
+    //   brings the user back to a channel they were already viewing.
+    //
+    // popChannel: pop one level. On empty stack, restore the tab the user was on
+    //   when they first drilled in (channelStackEntryTab), then reset that record.
+    //
+    // clearChannelStack: used when the user re-taps Home — go back to the
+    //   all-feed state on the Feed tab, discarding the entire drill history.
+    fun enterChannel(chatId: Long, fromTab: NavTab) {
+        if (channelStack.isEmpty()) channelStackEntryTab = fromTab
+        val existingIdx = channelStack.indexOf(chatId)
+        channelStack = if (existingIdx >= 0) {
+            channelStack.subList(0, existingIdx + 1).toList()
+        } else {
+            channelStack + chatId
+        }
+        selectedTab = NavTab.Feed
+        openComments(null)
+    }
+
+    fun popChannel() {
+        if (channelStack.isEmpty()) return
+        channelStack = channelStack.dropLast(1)
+        if (channelStack.isEmpty()) {
+            selectedTab = channelStackEntryTab ?: NavTab.Feed
+            channelStackEntryTab = null
+        }
+    }
+
+    fun clearChannelStack() {
+        channelStack = emptyList()
+        channelStackEntryTab = null
+    }
+
     // Restoration: after process kill, commentsForPost is null but pendingCommentsKey
     // survives. Watch the live feed and re-derive the post once it loads — match
     // either by anchor id or by any album member id (the user could have been
@@ -278,10 +336,10 @@ fun MainScaffold(graph: AppGraph) {
                                 graph.userMessages.post(res.getString(R.string.link_not_found))
                             }
                             preview.chatId != null -> {
-                                // Already a member — jump straight to the channel filter.
-                                channelFilter = preview.chatId
-                                selectedTab = NavTab.Feed
-                                openComments(null)
+                                // Already a member — drill into the channel via the back-stack
+                                // so Back returns the user to where they came from rather than
+                                // clearing the filter to all-feed.
+                                enterChannel(preview.chatId, fromTab = NavTab.Feed)
                             }
                             preview.kind == InviteLinkKind.Channel -> {
                                 graph.linkDialogs.showInvitePreview(preview)
@@ -297,9 +355,12 @@ fun MainScaffold(graph: AppGraph) {
                         return@collect
                     }
                 }
-                channelFilter = targetChat
-                selectedTab = NavTab.Feed
-                openComments(null)
+                // Deep-link to a specific channel: push onto the back-stack so Back
+                // returns the user to where they were before the tap, rather than
+                // always resetting to the all-feed view. fromTab = Feed is the
+                // canonical entry point for external links — the user was not inside
+                // a named tab when the link arrived.
+                enterChannel(targetChat, fromTab = NavTab.Feed)
                 if (tdMessageId != null) {
                     pendingScrollTarget = targetChat to tdMessageId
                 }
@@ -337,14 +398,32 @@ fun MainScaffold(graph: AppGraph) {
             commentsBackProgress.animateTo(0f, tween(160, easing = FastOutSlowInEasing))
         }
     }
-    // Back priority: clear channel filter → return to Feed → system close. These are
-    // intra-surface state changes (no z-stacked screen above), so a non-progress
-    // BackHandler is the correct primitive — a PredictiveBackHandler here would just
-    // throw away the progress and add noise.
-    BackHandler(enabled = commentsForPost == null && channelFilter != null) { channelFilter = null }
-    BackHandler(enabled = commentsForPost == null && channelFilter == null && selectedTab != NavTab.Feed) {
+    // Back priority: pop channel stack → return to Feed tab → system close.
+    // These are intra-surface state changes (no z-stacked screen above), so a
+    // non-progress BackHandler is the correct primitive — PredictiveBackHandler
+    // would just throw away gesture progress and add noise.
+    //
+    // Stack non-empty: pop one level (may restore channelStackEntryTab on
+    //   last pop — see popChannel). The comments overlay is not open at this
+    //   point because PredictiveBackHandler(enabled = commentsForPost != null)
+    //   takes priority higher up in the composition.
+    //
+    // Stack empty + not on Feed: return to Feed tab.
+    BackHandler(enabled = commentsForPost == null && channelStack.isNotEmpty()) { popChannel() }
+    BackHandler(enabled = commentsForPost == null && channelStack.isEmpty() && selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
     }
+
+    // SaveableStateHolders must live in MainScaffold's @Composable body, NOT inside
+    // the Scaffold content lambda. The Scaffold body owns the tab AnimatedContent;
+    // the commentsForPost overlay sits OUTSIDE that lambda (above the tab chrome and
+    // FloatingNavBar — see the let-block below the Scaffold). Declaring the holder
+    // inside the Scaffold lambda would put it out of scope for the overlay's
+    // SaveableStateProvider call. One declaration at this level lets both call-sites
+    // capture the same reference. Both holders are `remember`-backed under the hood,
+    // so they survive recomposition and configuration changes.
+    val tabStateHolder = rememberSaveableStateHolder()
+    val commentsStateHolder = rememberSaveableStateHolder()
 
     // Wrap the entire content tree with the in-app UriHandler. Every descendant call
     // — LinkAnnotation.Url taps in post bodies, WebPreviewCard opens, AddChannelSheet
@@ -366,7 +445,11 @@ fun MainScaffold(graph: AppGraph) {
                 onSelect = { tab ->
                     val reselectingFeed = tab == selectedTab && tab == NavTab.Feed
                     if (reselectingFeed) {
-                        channelFilter = null
+                        // Re-tap on the active Home tab: clear any channel drill, bump
+                        // the home-tap trigger so TimelineScreen scrolls to top (or
+                        // refreshes when already there). clearChannelStack resets
+                        // channelStackEntryTab too so the next drill starts fresh.
+                        clearChannelStack()
                         homeTapTrigger = System.nanoTime()
                     }
                     selectedTab = tab
@@ -379,7 +462,20 @@ fun MainScaffold(graph: AppGraph) {
         // non-spatial state changes; on the same spring the FloatingNavBar's
         // selection container/colour/icon-fill morph runs, so the bottom-nav
         // morph and the content crossfade land together (no out-of-sync blink).
+        //
+        // [tabStateHolder] (declared at MainScaffold scope above) gives each tab its
+        // own independent saveable scope via SaveableStateProvider(key = tab.name),
+        // so rememberSaveable / rememberLazyListState / rememberScrollState inside
+        // each tab survive AnimatedContent's mount/unmount lifecycle — the user's
+        // scroll position on Channels, Saved, Profile, and the Feed all-chats view
+        // is preserved across tab switches without any in-screen dual-state tricks.
+        //
+        // For NavTab.Feed a NESTED per-channel provider wraps TimelineScreen so
+        // every visited channel (and the all-feed "no filter" view) gets its own
+        // independent scroll/search state. Returning to a previously-visited channel
+        // in the back-stack restores that channel's exact scroll position.
         val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+
         Box(modifier = Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = selectedTab,
@@ -387,38 +483,52 @@ fun MainScaffold(graph: AppGraph) {
             label = "tab-switch",
             modifier = Modifier.fillMaxSize(),
         ) { tab ->
+            tabStateHolder.SaveableStateProvider(key = tab.name) {
             when (tab) {
-                NavTab.Feed -> TimelineScreen(
-                    feed = graph.postsRepository,
-                    tdlibRepo = graph.postsRepository,
-                    commentsRepo = graph.commentsRepository,
-                    folders = graph.chatFoldersRepository,
-                    translations = graph.translations,
-                    channelActions = graph.channelActions,
-                    bookmarks = graph.bookmarkStore,
-                    contentPadding = padding,
-                    showOnlyBookmarked = false,
-                    channelFilter = channelFilter,
-                    onChannelFilterChange = { channelFilter = it },
-                    onOpenComments = openComments,
-                    homeTapTrigger = homeTapTrigger,
-                    onBrandTap = { homeTapTrigger = System.nanoTime() },
-                    scrollToMessage = pendingScrollTarget,
-                    onScrollHandled = { pendingScrollTarget = null },
-                    onScrollMissed = {
-                        graph.userMessages.post(
-                            res.getString(R.string.link_not_found),
-                            UserMessageBus.Severity.Info,
+                NavTab.Feed -> {
+                    // Per-channel scope: each channel (and the __all__ all-feed view)
+                    // gets its own independent saveable scope so scroll position, search
+                    // state, and any other rememberSaveable inside TimelineScreen is
+                    // preserved per context. The stack key is stable as long as the
+                    // user is on that channel; navigating away and back (via the stack)
+                    // restores the exact state for that channel.
+                    val channelKey = channelStack.lastOrNull()?.toString() ?: "__all__"
+                    tabStateHolder.SaveableStateProvider(key = "feed-channel:$channelKey") {
+                        TimelineScreen(
+                            feed = graph.postsRepository,
+                            tdlibRepo = graph.postsRepository,
+                            commentsRepo = graph.commentsRepository,
+                            folders = graph.chatFoldersRepository,
+                            translations = graph.translations,
+                            channelActions = graph.channelActions,
+                            bookmarks = graph.bookmarkStore,
+                            contentPadding = padding,
+                            showOnlyBookmarked = false,
+                            channelFilter = channelFilter,
+                            onChannelFilterChange = { id ->
+                                if (id == null) clearChannelStack()
+                                else enterChannel(id, fromTab = NavTab.Feed)
+                            },
+                            onOpenComments = openComments,
+                            homeTapTrigger = homeTapTrigger,
+                            onBrandTap = { homeTapTrigger = System.nanoTime() },
+                            scrollToMessage = pendingScrollTarget,
+                            onScrollHandled = { pendingScrollTarget = null },
+                            onScrollMissed = {
+                                graph.userMessages.post(
+                                    res.getString(R.string.link_not_found),
+                                    UserMessageBus.Severity.Info,
+                                )
+                            },
+                            startupPhase = graph.startupCoordinator.phase,
                         )
-                    },
-                    startupPhase = graph.startupCoordinator.phase,
-                )
+                    }
+                }
                 NavTab.Channels -> ChannelsScreen(
                     repo = graph.postsRepository,
                     contentPadding = padding,
                     onChannelClick = { chatId ->
-                        channelFilter = chatId
-                        selectedTab = NavTab.Feed
+                        enterChannel(chatId, fromTab = NavTab.Channels)
                     },
                 )
                 NavTab.Saved -> TimelineScreen(
@@ -433,12 +543,11 @@ fun MainScaffold(graph: AppGraph) {
                     showOnlyBookmarked = true,
                     channelFilter = null,
                     onChannelFilterChange = {
-                        // Tapping a channel from Saved jumps the user back to the live feed
+                        // Tapping a channel from Saved jumps the user to the live feed
                         // pre-filtered to that channel — same UX as ChannelsScreen.
-                        if (it != null) {
-                            channelFilter = it
-                            selectedTab = NavTab.Feed
-                        }
+                        // enterChannel pushes onto the back-stack so Back returns the
+                        // user to Saved instead of always resetting to all-feed.
+                        if (it != null) enterChannel(it, fromTab = NavTab.Saved)
                     },
                     onOpenComments = openComments,
                     homeTapTrigger = 0L,
@@ -452,6 +561,7 @@ fun MainScaffold(graph: AppGraph) {
                     onLogout = { scope.launch { graph.tdClient.logOut() } },
                     autoDownload = graph.autoDownloadStore,
                 )
+            }
             }
         }
 
@@ -467,18 +577,23 @@ fun MainScaffold(graph: AppGraph) {
 
 
     commentsForPost?.let { post ->
+        // commentsStateHolder keys each overlay on (chatId, post.id) so that
+        // reopening the same post restores the thread's exact scroll position.
+        // State preservation is parent-owned via SaveableStateProvider here —
+        // CommentsScreen's own rememberLazyListState() at line 111 does not need
+        // any custom keying; it benefits automatically from this scope.
+        commentsStateHolder.SaveableStateProvider(key = "post:${post.chatId}:${post.id}") {
         CommentsScreen(
             post = post,
             repo = graph.commentsRepository,
             onDismiss = { openComments(null) },
             onChannelClick = { p ->
-                channelFilter = p.chatId
-                selectedTab = NavTab.Feed
-                openComments(null)
+                enterChannel(p.chatId, fromTab = NavTab.Feed)
             },
             backProgress = commentsBackProgress.value,
             backSwipeEdge = commentsBackEdge,
         )
+        }
     }
     pendingInvitePreview?.let { preview ->
         ChatInvitePreviewDialog(
@@ -488,9 +603,7 @@ fun MainScaffold(graph: AppGraph) {
                 scope.launch {
                     val joinedId = graph.channelActions.joinByInvite(preview.inviteLink)
                     if (joinedId != null) {
-                        channelFilter = joinedId
-                        selectedTab = NavTab.Feed
-                        openComments(null)
+                        enterChannel(joinedId, fromTab = NavTab.Feed)
                     }
                 }
             },

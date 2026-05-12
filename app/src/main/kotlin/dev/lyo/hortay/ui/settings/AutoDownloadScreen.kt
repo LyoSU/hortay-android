@@ -51,6 +51,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -119,6 +120,12 @@ fun AutoDownloadHost(
     // the non-composable transitionSpec lambda below.
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
     val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    // SaveableStateHolder preserves scroll and toggle state across the
+    // list ↔ category slide. Each branch gets its own saveable scope so a
+    // config change (rotation) or process death doesn't reset the user's
+    // slider position in a category they were editing mid-session.
+    val subStateHolder = rememberSaveableStateHolder()
+
     AnimatedContent(
         targetState = openCategory,
         transitionSpec = {
@@ -131,6 +138,7 @@ fun AutoDownloadHost(
         label = "auto-download-nav",
     ) { current ->
         if (current == null) {
+            subStateHolder.SaveableStateProvider(key = "list") {
             AutoDownloadListScreen(
                 settings = settings,
                 snackbarHostState = snackbarHostState,
@@ -144,7 +152,9 @@ fun AutoDownloadHost(
                     }
                 },
             )
+            }
         } else {
+            subStateHolder.SaveableStateProvider(key = "category:${current.name}") {
             AutoDownloadCategoryScreen(
                 category = current,
                 policy = settings.policy(current),
@@ -157,6 +167,7 @@ fun AutoDownloadHost(
                     scope.launch { store.update { it.withPolicy(current, current.defaultPolicy()) } }
                 },
             )
+            }
         }
     }
 }

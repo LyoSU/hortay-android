@@ -23,6 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
@@ -210,6 +211,16 @@ fun WebModeScaffold(graph: AppGraph) {
             // non-spatial state changes. Captured here for the non-composable
             // transitionSpec lambda.
             val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+
+            // SaveableStateHolder for tab-level state preservation. Each tab gets
+            // its own independent saveable scope via SaveableStateProvider(tab.name),
+            // so rememberSaveable / rememberLazyListState / rememberScrollState
+            // inside each tab survive AnimatedContent's mount/unmount lifecycle.
+            // The user's scroll position on the guest Feed, Channels, Saved and
+            // Profile tabs is preserved across tab switches without any extra state
+            // in each screen.
+            val tabStateHolder = rememberSaveableStateHolder()
+
             AnimatedContent(
                 targetState = selectedTab,
                 transitionSpec = {
@@ -218,6 +229,7 @@ fun WebModeScaffold(graph: AppGraph) {
                 label = "web-tab-switch",
                 modifier = Modifier.fillMaxSize(),
             ) { tab ->
+                tabStateHolder.SaveableStateProvider(key = tab.name) {
                 when (tab) {
                     NavTab.Feed -> TimelineScreen(
                         feed = graph.webFeedSource,
@@ -259,6 +271,7 @@ fun WebModeScaffold(graph: AppGraph) {
                         // the next tier-2 sweep. Subscriptions survive.
                         onClearWebCache = { graph.webFeedSource.clearCacheAndRefresh() },
                     )
+                }
                 }
             }
         }
