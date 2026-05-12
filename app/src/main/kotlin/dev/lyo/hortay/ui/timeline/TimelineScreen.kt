@@ -222,14 +222,25 @@ fun TimelineScreen(
     // shrank from up to MAX_FEED_SIZE=1000 (per-channel GetChatHistory × N) to ~1 post
     // per channel (Chat.lastMessage harvest). A saved index from a previous session can
     // now be ≥ the new feed size — Compose silently clamps to the last item, landing
-    // the user at the OLDEST post in the feed instead of the top. Detect this on first
-    // non-empty paint and scroll to top; in-session scroll position is otherwise
-    // preserved. Fires once per saveable scope via `LaunchedEffect(Unit)`.
+    // the user at the OLDEST post in the feed instead of the top. Detect this on the
+    // very first non-empty paint AFTER process start and scroll to top.
+    //
+    // Gating: a process-level [coldStartClampDone] flag (file-private below). Saveable
+    // composition flags would be wrong here: rememberSaveable would survive process
+    // death and skip the clamp on the very situation it's meant to handle, while plain
+    // remember would re-arm on every TimelineScreen REMOUNT — including the in-process
+    // drill-into-channel → pop-back case, where the feed is fresh in memory and the
+    // user's restored scroll position is intentional. Process-level scope is the only
+    // correct lifetime. Reset on logout via [TdClient.loggedOut] in the file footer
+    // is unnecessary — a logout already wipes the feed and the next session starts
+    // with a fresh process anyway (TDLib re-init).
     LaunchedEffect(Unit) {
+        if (coldStartClampDone) return@LaunchedEffect
         androidx.compose.runtime.snapshotFlow { posts.size }.first { it > 0 }
         if (listState.firstVisibleItemIndex >= posts.size) {
             listState.scrollToItem(0)
         }
+        coldStartClampDone = true
     }
 
     // Pinned color-only scroll behavior — height transitions are owned by
@@ -1609,6 +1620,17 @@ internal fun groupReplies(
  * news-channel cadence — anything slower than that reads as a callback, not continuation.
  */
 private const val THREAD_FRESH_WINDOW_MS = 60L * 60L * 1000L
+
+/**
+ * Process-level "cold-start clamp already ran" flag. See the [LaunchedEffect(Unit)]
+ * usage near line ~230 for the full rationale. JVM-volatile so a concurrent flip from
+ * another TimelineScreen instance (Feed + Saved tabs both mount this Composable) is
+ * visible without locking. Reset only by process death — the correct scope, because
+ * the clamp's purpose is "saved index might be stale from a previous session"; that
+ * concern only exists at process boot, never on in-process drill/pop or tab swap.
+ */
+@Volatile
+private var coldStartClampDone: Boolean = false
 
 internal fun formatSubscribers(count: Int): String {
     fun compact(value: Double, suffix: String): String {
