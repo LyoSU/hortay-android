@@ -78,6 +78,36 @@ fun WebModeScaffold(graph: AppGraph) {
     // top). Same mechanism as MainScaffold so the home-tap-to-scroll gesture
     // works identically in both modes.
     var homeTapTrigger by rememberSaveable { mutableStateOf(0L) }
+
+    // Channel back-stack — guest-mode counterpart to MainScaffold's TDLib stack.
+    // Entries are channel usernames (String) because guest mode identifies channels
+    // by their t.me/s/ handle, not a TDLib chatId. Same push / pop / pop-to-existing
+    // semantics as the TDLib stack so the back gesture feels identical across modes.
+    // We don't track an entry tab (web mode users always enter channels from
+    // Channels tab → Feed-tab routing; restoring to Channels-tab on pop just means
+    // setting selectedTab back to Channels when the stack empties).
+    var channelStack by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var channelEntryTab by rememberSaveable { mutableStateOf<NavTab?>(null) }
+    fun enterWebChannel(name: String, fromTab: NavTab) {
+        if (channelStack.isEmpty()) channelEntryTab = fromTab
+        val lower = name.lowercase()
+        val existing = channelStack.indexOf(lower)
+        channelStack = if (existing >= 0) {
+            channelStack.subList(0, existing + 1).toList()
+        } else {
+            channelStack + lower
+        }
+        selectedTab = NavTab.Feed
+    }
+    fun popWebChannel() {
+        if (channelStack.isEmpty()) return
+        channelStack = channelStack.dropLast(1)
+        if (channelStack.isEmpty()) {
+            selectedTab = channelEntryTab ?: NavTab.Feed
+            channelEntryTab = null
+        }
+    }
+
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     val locale = remember { Locale.getDefault().language.lowercase() }
@@ -141,7 +171,12 @@ fun WebModeScaffold(graph: AppGraph) {
         }
     }
 
-    BackHandler(enabled = selectedTab != NavTab.Feed) {
+    // Back-priority chain mirrors MainScaffold's TDLib chain — channel-stack pops
+    // first, tab swaps back to Feed second, system close last. The leaf-most
+    // enabled BackHandler in the composition tree wins, so the channel stack
+    // takes precedence whenever the user is drilled into a channel.
+    BackHandler(enabled = channelStack.isNotEmpty()) { popWebChannel() }
+    BackHandler(enabled = channelStack.isEmpty() && selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
     }
 
@@ -155,14 +190,17 @@ fun WebModeScaffold(graph: AppGraph) {
             FloatingNavBar(
                 selected = selectedTab,
                 onSelect = { tab ->
-                    if (tab == selectedTab && tab == NavTab.Feed) {
-                        // Re-tap on the active Home tab → bump the counter so
+                    val reselectingFeed = tab == selectedTab && tab == NavTab.Feed
+                    if (reselectingFeed) {
+                        // Re-tap on the active Home tab → clear the channel
+                        // drill stack and bump the home-tap trigger so
                         // TimelineScreen scrolls to top (or refreshes when
                         // already there). Same gesture contract as TDLib mode.
+                        channelStack = emptyList()
+                        channelEntryTab = null
                         homeTapTrigger = System.nanoTime()
-                    } else {
-                        selectedTab = tab
                     }
+                    selectedTab = tab
                 },
             )
         },
@@ -231,22 +269,44 @@ fun WebModeScaffold(graph: AppGraph) {
             ) { tab ->
                 tabStateHolder.SaveableStateProvider(key = tab.name) {
                 when (tab) {
-                    NavTab.Feed -> TimelineScreen(
-                        feed = graph.webFeedSource,
-                        bookmarks = graph.bookmarkStore,
-                        contentPadding = padding,
-                        showOnlyBookmarked = false,
-                        onChannelOpen = { /* no per-channel drill in guest mode */ },
-                        homeTapTrigger = homeTapTrigger,
-                        onBrandTap = { homeTapTrigger = System.nanoTime() },
-                        onSearchClick = { searchOpen = true },
-                        topBarBadge = { GuestModeBadge() },
-                    )
+                    NavTab.Feed -> {
+                        // Routing parallel to MainScaffold: empty channel stack →
+                        // all-feed TimelineScreen; non-empty → WebChannelScreen
+                        // for the top username. Each entry gets its own nested
+                        // SaveableStateProvider so per-channel scroll position is
+                        // preserved while navigating in and out of the stack.
+                        val currentChannel = channelStack.lastOrNull()
+                        val saveableKey = currentChannel ?: "__all__"
+                        tabStateHolder.SaveableStateProvider(key = "web-feed:$saveableKey") {
+                            if (currentChannel == null) {
+                                TimelineScreen(
+                                    feed = graph.webFeedSource,
+                                    bookmarks = graph.bookmarkStore,
+                                    contentPadding = padding,
+                                    showOnlyBookmarked = false,
+                                    onChannelOpen = { /* no per-channel drill from feed bodies in guest mode */ },
+                                    homeTapTrigger = homeTapTrigger,
+                                    onBrandTap = { homeTapTrigger = System.nanoTime() },
+                                    onSearchClick = { searchOpen = true },
+                                    topBarBadge = { GuestModeBadge() },
+                                )
+                            } else {
+                                WebChannelScreen(
+                                    username = currentChannel,
+                                    graph = graph,
+                                    contentPadding = padding,
+                                    onBack = { popWebChannel() },
+                                )
+                            }
+                        }
+                    }
 
                     NavTab.Channels -> WebChannelsScreen(
                         graph = graph,
                         contentPadding = padding,
-                        onChannelClick = { selectedTab = NavTab.Feed },
+                        onChannelClick = { username ->
+                            enterWebChannel(username, fromTab = NavTab.Channels)
+                        },
                         onAddChannel = { addSheetOpen = true },
                     )
 

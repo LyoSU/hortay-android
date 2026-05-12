@@ -725,13 +725,6 @@ private fun ChannelTopBar(
                 windowInsets = barInsets,
             )
         } else {
-            // Telegram / X chat-screen header convention: avatar + name on the
-            // first line, subscriber count on the second line, single tappable
-            // surface (Row) that opens the channel info sheet. The entire title
-            // region is the tap target so the user doesn't have to hit a small
-            // dedicated info-icon — same affordance Telegram-Android offers
-            // (tap channel name / avatar opens "Channel info").
-            //
             // TODO(user): finalize subscriber-count plural/format — decide between:
             //   - "12.3K підписників" (current, compact), or
             //   - "12 345 підписників" (full count for smaller channels), or
@@ -741,62 +734,27 @@ private fun ChannelTopBar(
             val subtitleText = channelSubscribers?.let {
                 stringResource(R.string.timeline_subscribers, formatSubscribers(it))
             }
-            HortayTopBar(
-                size = HortayTopBarSize.Compact,
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(MaterialTheme.shapes.medium)
-                            .clickable(onClick = onTitleTap, role = Role.Button)
-                            .padding(end = 8.dp),
-                    ) {
-                        // 40 dp avatar — matches Telegram-Android's chat header
-                        // and X's profile-row sizing. The 3-tier ladder
-                        // (minithumb → file → initial letter) is owned by
-                        // [TdAvatar]; data is sourced from the VM, populated
-                        // reactively from the post stream + one-shot
-                        // [PostsRepository.chatAvatar] fallback.
-                        TdAvatar(
-                            name = channelTitle ?: "?",
-                            thumb = channelAvatarThumb,
-                            fileId = channelAvatarFileId,
-                            size = 40.dp,
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = channelTitle.orEmpty(),
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (subtitleText != null) {
-                                Text(
-                                    text = subtitleText,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Symbol(
-                            name = "arrow_back",
-                            contentDescription = stringResource(R.string.action_back),
-                        )
-                    }
-                },
+            // Telegram / X chat-screen header convention: avatar + name on the
+            // first line, subscribers on the second, entire title row tappable
+            // for the info sheet. Shared with the guest-mode WebChannelScreen
+            // via [ChannelHeaderBar] — single source of truth for chat-screen
+            // chrome so any visual tweak lands in both modes together.
+            ChannelHeaderBar(
+                titleText = channelTitle.orEmpty(),
+                subtitleText = subtitleText,
+                avatar = ChannelHeaderAvatar.Td(
+                    fileId = channelAvatarFileId,
+                    thumb = channelAvatarThumb,
+                    name = channelTitle ?: "?",
+                ),
+                onBack = onBack,
+                onTitleTap = onTitleTap,
+                scrollBehavior = scrollBehavior,
                 actions = {
                     // Only the search action stays as a dedicated icon — info
-                    // is now triggered by tapping the title row. Keeps the
-                    // action bar uncluttered and gives the title row a real
-                    // affordance instead of just being decorative chrome.
+                    // is triggered by tapping the title row. Keeps the action
+                    // bar uncluttered and gives the title region a real
+                    // affordance instead of decorative chrome.
                     IconButton(onClick = onSearchToggle) {
                         Symbol(
                             name = "search",
@@ -804,8 +762,6 @@ private fun ChannelTopBar(
                         )
                     }
                 },
-                scrollBehavior = scrollBehavior,
-                windowInsets = barInsets,
             )
         }
     }
