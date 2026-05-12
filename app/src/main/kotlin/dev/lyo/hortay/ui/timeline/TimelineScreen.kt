@@ -372,11 +372,30 @@ fun TimelineScreen(
     }
 
     // Switching folders jumps to the top of the feed — "show me the top of this
-    // folder" is the expected behaviour. Each channel visit now runs in its own
-    // ChannelScreen with a separate SaveableStateProvider scope, so this effect
-    // only fires for folder changes in the all-feed view.
-    LaunchedEffect(scope_filter) {
-        listState.scrollToItem(0)
+    // folder" is the expected behaviour. The gotcha: `LaunchedEffect(scope_filter)`
+    // by itself fires on every TimelineScreen REMOUNT (drilling into a channel
+    // then popping back unmounts/remounts this Composable; the new LaunchedEffect
+    // has no memory of the old key's value, so it fires even when the scope
+    // didn't actually change). That yanked the user to the top of the feed
+    // whenever they returned from a channel, regardless of where they were
+    // scrolled when they drilled in. Fix: track the previously-observed scope
+    // as a `rememberSaveable` String key — only scroll when the new key DIFFERS
+    // from the saved prior value AND a prior value exists (so initial mount
+    // does NOT scroll).
+    val scopeKey = remember(scope_filter) {
+        when (val s = scope_filter) {
+            FilterScope.All -> "all"
+            FilterScope.Archive -> "archive"
+            is FilterScope.Folder -> "folder:${s.id}"
+        }
+    }
+    var lastScopeKey by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(scopeKey) {
+        val previous = lastScopeKey
+        lastScopeKey = scopeKey
+        if (previous != null && previous != scopeKey) {
+            listState.scrollToItem(0)
+        }
     }
 
     // Scope predicate shared by the visible feed and the "X нових постів" pill — so the
