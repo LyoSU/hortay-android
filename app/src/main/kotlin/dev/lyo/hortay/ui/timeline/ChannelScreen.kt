@@ -28,8 +28,10 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -465,7 +467,7 @@ fun ChannelScreen(
                         onBack = onBack,
                         onSearchToggle = { vm.setSearchActive(!searchActive) },
                         onSearchQueryChange = { vm.setSearchQuery(it) },
-                        onInfoClick = { infoSheetVisible = true },
+                        onTitleTap = { infoSheetVisible = true },
                         scrollBehavior = scrollBehavior,
                     )
                 }
@@ -640,152 +642,172 @@ private fun ChannelTopBar(
     onBack: () -> Unit,
     onSearchToggle: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
-    onInfoClick: () -> Unit,
+    onTitleTap: () -> Unit,
     scrollBehavior: TopAppBarScrollBehavior,
 ) {
     val barInsets = WindowInsets(0)
     // M3E motion: search-mode swap rides MotionScheme spring instead of a hard
-    // instant snap. defaultSpatial drives the height delta (Medium ≈ 112 dp ↔
-    // Compact ≈ 64 dp) and fastEffects drives the cross-fade — same physics the
-    // FloatingNavBar tabs and ConnectionBanner use, so the whole app shares one
-    // motion vocabulary on state changes.
-    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntSize>()
+    // instant snap. defaultSpatial drives the cross-fade timing; both bar variants
+    // are the same Compact size (64 dp) now, so there is no height delta to
+    // negotiate — just the content inside the title slot swaps. Matches the
+    // FloatingNavBar / ConnectionBanner motion vocabulary.
     val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
     AnimatedContent(
         targetState = searchActive,
-        transitionSpec = {
-            (fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec))
-                .using(SizeTransform(clip = false) { _, _ -> spatialSpec })
-        },
+        transitionSpec = { fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec) },
         label = "channel-bar-search-swap",
     ) { isSearch ->
-    if (isSearch) {
-        HortayTopBar(
-            size = HortayTopBarSize.Compact,
-            title = {
-                val focusRequester = remember { FocusRequester() }
-                LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
-                BasicTextField(
-                    value = searchQuery,
-                    onValueChange = onSearchQueryChange,
-                    singleLine = true,
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    textStyle = MaterialTheme.typography.titleMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
-                    ),
-                    decorationBox = { inner ->
-                        Box {
-                            if (searchQuery.isEmpty()) {
-                                Text(
-                                    stringResource(R.string.timeline_search_in_channel),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+        // Both variants render as the canonical M3 Compact (Small) top app bar
+        // — 64 dp, single row. This is the right typeform for a chat-detail
+        // surface per Material 3 guidance: Medium / Large Flexible bars are for
+        // top-level destinations with prominent brand identity (Feed, Settings),
+        // while a channel screen is a secondary detail surface that reads as a
+        // sibling of every other "open a thing, see its content" navigation
+        // step (CommentsScreen, future post-detail). Mirrors Telegram-Android
+        // and X / Twitter chat-screen header sizing.
+        if (isSearch) {
+            HortayTopBar(
+                size = HortayTopBarSize.Compact,
+                title = {
+                    val focusRequester = remember { FocusRequester() }
+                    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = onSearchQueryChange,
+                        singleLine = true,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        textStyle = MaterialTheme.typography.titleMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        decorationBox = { inner ->
+                            Box {
+                                if (searchQuery.isEmpty()) {
+                                    Text(
+                                        stringResource(R.string.timeline_search_in_channel),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                inner()
                             }
-                            inner()
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester),
-                )
-            },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Symbol(
-                        name = "arrow_back",
-                        contentDescription = stringResource(R.string.action_back),
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester),
                     )
-                }
-            },
-            actions = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onSearchQueryChange("") }) {
+                },
+                navigationIcon = {
+                    // Search-mode back-arrow collapses the search overlay back to
+                    // the normal channel header — it does NOT pop the channel
+                    // off the back-stack. Standard chat-search UX (TG / X / Gmail
+                    // all do this) — back-arrow + search-overlay = close overlay,
+                    // back-arrow + normal-state = pop screen. The system-back
+                    // gesture is wired the same way via the leaf-scoped
+                    // BackHandler(enabled = searchActive) in [ChannelScreen].
+                    IconButton(onClick = onSearchToggle) {
                         Symbol(
-                            name = "close",
-                            contentDescription = stringResource(R.string.action_clear),
+                            name = "arrow_back",
+                            contentDescription = stringResource(R.string.action_back),
                         )
                     }
-                }
-            },
-            scrollBehavior = scrollBehavior,
-            windowInsets = barInsets,
-        )
-    } else {
-        // Subscriber-count subtitle. The exact formatting (K/M compact vs full number,
-        // "підписників" vs "members") is locale-dependent copy that the product owner
-        // will finalize — see the TODO. For now we reuse the existing
-        // `timeline_subscribers` string + `formatSubscribers` compact formatter which
-        // already ships the K/M shorthand. Both live in this package and were designed
-        // for the channel top bar.
-        //
-        // TODO(user): finalize subscriber-count plural/format — decide between:
-        //   - "12.3K підписників" (current, compact), or
-        //   - "12 345 підписників" (full count for smaller channels), or
-        //   - pluralStringResource(R.plurals.channel_subscribers, n, n) for
-        //     grammatically correct Ukrainian (1 підписник / 2 підписники / 5 підписників).
-        //   Once decided, extract to a plurals resource in values-uk/strings.xml.
-        val subtitleText = channelSubscribers?.let {
-            stringResource(R.string.timeline_subscribers, formatSubscribers(it))
+                },
+                actions = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { onSearchQueryChange("") }) {
+                            Symbol(
+                                name = "close",
+                                contentDescription = stringResource(R.string.action_clear),
+                            )
+                        }
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+                windowInsets = barInsets,
+            )
+        } else {
+            // Telegram / X chat-screen header convention: avatar + name on the
+            // first line, subscriber count on the second line, single tappable
+            // surface (Row) that opens the channel info sheet. The entire title
+            // region is the tap target so the user doesn't have to hit a small
+            // dedicated info-icon — same affordance Telegram-Android offers
+            // (tap channel name / avatar opens "Channel info").
+            //
+            // TODO(user): finalize subscriber-count plural/format — decide between:
+            //   - "12.3K підписників" (current, compact), or
+            //   - "12 345 підписників" (full count for smaller channels), or
+            //   - pluralStringResource(R.plurals.channel_subscribers, n, n) for
+            //     grammatically correct Ukrainian (1 підписник / 2 підписники / 5+).
+            //   Once decided, extract to a plurals resource in values-uk/strings.xml.
+            val subtitleText = channelSubscribers?.let {
+                stringResource(R.string.timeline_subscribers, formatSubscribers(it))
+            }
+            HortayTopBar(
+                size = HortayTopBarSize.Compact,
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.medium)
+                            .clickable(onClick = onTitleTap, role = Role.Button)
+                            .padding(end = 8.dp),
+                    ) {
+                        // 40 dp avatar — matches Telegram-Android's chat header
+                        // and X's profile-row sizing. The 3-tier ladder
+                        // (minithumb → file → initial letter) is owned by
+                        // [TdAvatar]; data is sourced from the VM, populated
+                        // reactively from the post stream + one-shot
+                        // [PostsRepository.chatAvatar] fallback.
+                        TdAvatar(
+                            name = channelTitle ?: "?",
+                            thumb = channelAvatarThumb,
+                            fileId = channelAvatarFileId,
+                            size = 40.dp,
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = channelTitle.orEmpty(),
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (subtitleText != null) {
+                                Text(
+                                    text = subtitleText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Symbol(
+                            name = "arrow_back",
+                            contentDescription = stringResource(R.string.action_back),
+                        )
+                    }
+                },
+                actions = {
+                    // Only the search action stays as a dedicated icon — info
+                    // is now triggered by tapping the title row. Keeps the
+                    // action bar uncluttered and gives the title row a real
+                    // affordance instead of just being decorative chrome.
+                    IconButton(onClick = onSearchToggle) {
+                        Symbol(
+                            name = "search",
+                            contentDescription = stringResource(R.string.action_search),
+                        )
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+                windowInsets = barInsets,
+            )
         }
-        HortayTopBar(
-            title = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    // Full 3-tier TdAvatar (minithumb → file → initial letter) sourced
-                    // from [ChannelViewModel.channelAvatar{FileId,Thumb}]. The VM
-                    // resolves these reactively from the post stream (channel posts
-                    // carry the channel's identity as sender), with a one-shot
-                    // [PostsRepository.chatAvatar] fallback for cold deep-links into
-                    // channels not yet in the merged feed. Same data shape as the
-                    // ChannelsScreen row avatar — visual consistency across surfaces.
-                    TdAvatar(
-                        name = channelTitle ?: "?",
-                        thumb = channelAvatarThumb,
-                        fileId = channelAvatarFileId,
-                        size = 32.dp,
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = channelTitle.orEmpty(),
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            },
-            subtitleSlot = subtitleText?.let { text ->
-                { Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            },
-            size = HortayTopBarSize.Medium,
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Symbol(
-                        name = "arrow_back",
-                        contentDescription = stringResource(R.string.action_back),
-                    )
-                }
-            },
-            actions = {
-                IconButton(onClick = onSearchToggle) {
-                    Symbol(
-                        name = "search",
-                        contentDescription = stringResource(R.string.action_search),
-                    )
-                }
-                IconButton(onClick = onInfoClick) {
-                    Symbol(
-                        name = "info",
-                        contentDescription = stringResource(R.string.channel_info_action),
-                    )
-                }
-            },
-            scrollBehavior = scrollBehavior,
-            windowInsets = barInsets,
-        )
-    }
     }
 }
 
