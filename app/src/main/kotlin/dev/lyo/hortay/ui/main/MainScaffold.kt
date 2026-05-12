@@ -377,7 +377,17 @@ fun MainScaffold(graph: AppGraph) {
     // post action sheet; cleared on sheet dismiss (or after ReportState.Success).
     // Not saveable across process death — a mid-flow report kill is acceptable
     // abandonment; the delegate try-chain in guest mode is stateless anyway.
-    var pendingReport by remember { mutableStateOf<Pair<Long, Long?>?>(null) }
+    // Per-open report target. The `token` is a monotonic timestamp that lets
+    // ReportFlowSheet's `viewModel(key = ...)` create a FRESH ViewModel instance
+    // each time the user taps Report — otherwise the Activity-scoped ViewModelStore
+    // caches the prior session's terminal state (Success / Error / FloodWait), and
+    // reopening the sheet on the same (chatId, messageId) auto-dismisses or shows
+    // stale errors. New tap → new nanoTime → distinct key → clean state machine.
+    data class ReportTarget(val chatId: Long, val messageId: Long?, val token: Long)
+    var pendingReport by remember { mutableStateOf<ReportTarget?>(null) }
+    fun openReport(chatId: Long, messageId: Long?) {
+        pendingReport = ReportTarget(chatId, messageId, System.nanoTime())
+    }
 
     // Predictive back for the comments overlay. We track live gesture progress so
     // CommentsScreen can translate / scale / fade under the user's finger instead of
@@ -543,14 +553,14 @@ fun MainScaffold(graph: AppGraph) {
                                     )
                                 },
                                 onReportClick = { post ->
-                                    pendingReport = post.chatId to if (post.id != 0L) post.id else null
+                                    openReport(post.chatId, if (post.id != 0L) post.id else null)
                                 },
                                 canReport = { post -> post.canReportChat },
                                 // Channel-level Report row inside the info sheet:
                                 // route to ReportFlowSheet with messageId=null so
                                 // TDLib treats the report as scoped to the whole
                                 // chat instead of a specific message.
-                                onReportChannel = { pendingReport = currentChatId to null },
+                                onReportChannel = { openReport(currentChatId, null) },
                             )
                         } else {
                             // All-feed view: TimelineScreen with no channel filter.
@@ -578,7 +588,7 @@ fun MainScaffold(graph: AppGraph) {
                                 },
                                 startupPhase = graph.startupCoordinator.phase,
                                 onReportClick = { post ->
-                                    pendingReport = post.chatId to if (post.id != 0L) post.id else null
+                                    openReport(post.chatId, if (post.id != 0L) post.id else null)
                                 },
                                 canReport = { post -> post.canReportChat },
                             )
@@ -613,7 +623,7 @@ fun MainScaffold(graph: AppGraph) {
                     onBrandTap = {},
                     startupPhase = graph.startupCoordinator.phase,
                     onReportClick = { post ->
-                        pendingReport = post.chatId to if (post.id != 0L) post.id else null
+                        openReport(post.chatId, if (post.id != 0L) post.id else null)
                     },
                     canReport = { post -> post.canReportChat },
                 )
@@ -679,10 +689,11 @@ fun MainScaffold(graph: AppGraph) {
     // the user is mid-flow. Keyed on (chatId, messageId) so reopening the same post
     // restores progress. Clears on Success (LaunchedEffect inside ReportFlowSheet)
     // or on manual dismiss.
-    pendingReport?.let { (chatId, messageId) ->
+    pendingReport?.let { target ->
         ReportFlowSheet(
-            chatId = chatId,
-            messageId = messageId,
+            chatId = target.chatId,
+            messageId = target.messageId,
+            openToken = target.token,
             channelUsername = null,
             onDismiss = { pendingReport = null },
             reportRepository = graph.reportRepository,

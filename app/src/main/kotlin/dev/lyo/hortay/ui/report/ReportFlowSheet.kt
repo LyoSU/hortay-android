@@ -76,6 +76,14 @@ import kotlinx.coroutines.launch
 fun ReportFlowSheet(
     chatId: Long,
     messageId: Long?,
+    /**
+     * Per-tap session token from the parent scaffold (System.nanoTime). Part of the
+     * ViewModel key so each fresh tap on Report gets a brand-new VM instance — the
+     * Activity-scoped ViewModelStore would otherwise cache the prior session's
+     * terminal state (Success / Error / FloodWait), causing the sheet to auto-
+     * dismiss immediately or silently fail on the very next open.
+     */
+    openToken: Long,
     @Suppress("UNUSED_PARAMETER") channelUsername: String?,
     onDismiss: () -> Unit,
     reportRepository: ReportRepository,
@@ -103,7 +111,11 @@ fun ReportFlowSheet(
         return
     }
 
-    val vmKey = "report:$chatId:${messageId ?: 0}"
+    // openToken makes each tap on Report a fresh VM scope. Without it, the
+    // Activity ViewModelStore returns the previous session's VM, whose state may
+    // be Success / Error / FloodWait — causing the auto-dismiss LaunchedEffect
+    // below to fire immediately on reopen, or the user to see stale chrome.
+    val vmKey = "report:$chatId:${messageId ?: 0}:$openToken"
     val vm: ReportFlowViewModel = viewModel(
         key = vmKey,
         factory = object : androidx.lifecycle.ViewModelProvider.Factory {
