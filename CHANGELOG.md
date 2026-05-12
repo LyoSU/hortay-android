@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- **CSAE-compliance in-app reporting (Google Play Child Safety Standards)**. Two
+  reporting paths ship together:
+  - **Auth mode (TDLib dynamic flow)**: `ReportFlowSheet` drives TDLib's
+    `ReportChat` multi-step protocol — `ReportChatResultOptionRequired` renders
+    a selection list; `ReportChatResultTextRequired` opens a freeform text field
+    (skippable when the field is optional per `isOptional`);
+    `ReportChatResultOk` dismisses with a success message.
+    `ReportFlowViewModel` owns the state machine and FLOOD_WAIT gate (recognises
+    both 420 and 429). A JSONL append-only audit log (`ReportLogStore`, 200-entry
+    rotation, no Room) records every submission for compliance retention.
+    One-time explainer dialog (`ReportExplainerStore` / `ReportAboutDialog`) shown
+    before the user's first report; gated on a DataStore boolean flag.
+  - **Guest mode (delegation chain)**: `GuestReportDelegator` tries in order:
+    `tg://resolve?domain=…&post=…` (installed Telegram client) →
+    `CustomTabsIntent` (in-app browser to `t.me/<channel>/<post>`) →
+    `Intent.ACTION_SENDTO` to `abuse@telegram.org`. After delegation,
+    `ReportInstructionDialog` explains how to complete the report inside Telegram.
+    All three Telegram-client package names and the `https://` / `mailto:` intent
+    shapes declared in `<queries>` in `AndroidManifest.xml` (API 30+).
+  - **Settings → Safety section**: three grouped `SegmentedListItem` rows —
+    "Report content" (navigates to `ReportContentScreen` sub-screen within
+    Settings), "Child safety standards" (opens `BuildConfig.CHILD_SAFETY_POLICY_URL`
+    via `CustomTabsIntent`), "Privacy policy" (opens `BuildConfig.PRIVACY_POLICY_URL`
+    via `CustomTabsIntent`). Visible in both modes; the Play Store review team
+    requires a discoverable in-app reporting entry point.
+  - **`ReportContentScreen`**: handle + optional post-ID form inside Settings;
+    Continue resolves the handle to a chatId in auth mode (`resolvePublicHandle` →
+    `PublicHandleResult.Channel`) then opens `ReportFlowSheet`, or dispatches
+    `GuestReportDelegator` in guest mode. Handle resolution errors surface via
+    the existing user-message bus snackbar (`link_not_found` /
+    `link_unsupported_*`).
+  - **`canReportChat: Boolean = false` on `TimelinePost`** (populated from
+    `TdApi.MessageProperties.canReportChat` in auth mode; always `false` for
+    guest and comment posts). Post action sheet shows "Report" row only when
+    `canReport(post)` is true; `PostInteractions.onReportClick` and `.canReport`
+    callbacks wired in both `TimelineScreen` and `ChannelScreen`.
+  - `versionName` bumped `"0.2.0"` → `"0.3.0"`.
+  - `androidx.browser:browser:1.8.0` added for `CustomTabsIntent`.
+  - `HORTAY_CHILD_SAFETY_POLICY_URL` / `HORTAY_PRIVACY_POLICY_URL` in
+    `gradle.properties`; compiled into `BuildConfig.CHILD_SAFETY_POLICY_URL` /
+    `BuildConfig.PRIVACY_POLICY_URL`.
+
 ### Architecture
 
 - **Single-channel view extracted to `ChannelScreen` + `ChannelViewModel`**.

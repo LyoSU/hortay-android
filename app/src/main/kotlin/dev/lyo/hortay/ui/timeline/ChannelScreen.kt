@@ -126,6 +126,8 @@ fun ChannelScreen(
     scrollToMessage: Pair<Long, Long>? = null,
     onScrollHandled: () -> Unit = {},
     onScrollMissed: () -> Unit = {},
+    onReportClick: (TimelinePost) -> Unit = {},
+    canReport: (TimelinePost) -> Boolean = { false },
 ) {
     // Per-channel VM. viewModel() keys the instance by (class, key), so each chatId
     // gets its own VM rather than sharing the all-feed TimelineViewModel. The factory is
@@ -339,7 +341,7 @@ fun ChannelScreen(
 
     // PostInteractions — keyed on the long-lived dependencies to avoid stale captures
     // across logout/login, mirrors TimelineScreen's keying rationale.
-    val interactions = remember(vm, viewer, translations, channelActions, repo, bookmarks) {
+    val interactions = remember(vm, viewer, translations, channelActions, repo, bookmarks, onReportClick, canReport) {
         PostInteractions(
             onMediaClick = { post, idx ->
                 markPostReadState.value(post)
@@ -423,6 +425,8 @@ fun ChannelScreen(
                 onOpenCommentsState.value(post)
             },
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedState.value },
+            onReportClick = onReportClick,
+            canReport = canReport,
         )
     }
 

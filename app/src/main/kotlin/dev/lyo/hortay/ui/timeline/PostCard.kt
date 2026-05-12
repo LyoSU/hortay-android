@@ -830,6 +830,13 @@ private fun PostActionSheet(
                 label = stringResource(R.string.post_open_telegram),
                 onClick = { runAndDismiss { interactions.onOpenClick(post) } },
             )
+            if (interactions.canReport(post)) {
+                SheetItem(
+                    symbol = "flag",
+                    label = stringResource(R.string.report_action),
+                    onClick = { runAndDismiss { interactions.onReportClick(post) } },
+                )
+            }
         }
     }
 }

@@ -4,7 +4,11 @@ import android.content.Context
 import dev.lyo.hortay.data.AutoDownloadStore
 import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.LinkDialogState
+import dev.lyo.hortay.data.report.ReportExplainerStore
+import dev.lyo.hortay.data.report.ReportLogStore
+import dev.lyo.hortay.data.report.ReportRepository
 import dev.lyo.hortay.data.toStringResolver
+import dev.lyo.hortay.ui.report.GuestReportDelegator
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
 import dev.lyo.hortay.data.CommentsRepository
@@ -384,6 +388,48 @@ class AppGraph(context: Context) {
         authStage = tdClient.authStage,
         scope = appScope,
     ).also { it.bind() }
+
+    // ---- CSAE-compliance: child safety reporting --------------------------------
+
+    /**
+     * Append-only JSONL audit log for all report attempts (both auth and guest mode).
+     * Max 200 entries; rotated on every log() call after the ceiling is reached.
+     * File lives in [Context.filesDir]/report_log.jsonl — not in cacheDir so it
+     * survives cache clears and can be inspected by compliance auditors.
+     */
+    val reportLogStore: ReportLogStore = ReportLogStore(context)
+
+    /**
+     * DataStore flag that persists whether the one-time "reports go to Telegram
+     * moderators" explainer has been shown. Resets on logout so a new account
+     * always sees it on first report.
+     */
+    val reportExplainerStore: ReportExplainerStore = ReportExplainerStore(context)
+
+    /**
+     * TDLib-based dynamic ReportChat flow. Called from [MainScaffold]'s
+     * [dev.lyo.hortay.ui.report.ReportFlowSheet] when the user reports in
+     * authenticated mode. Each call maps [TdApi.ReportChatResult] variants to
+     * [dev.lyo.hortay.data.report.ReportState] and logs the terminal outcome.
+     */
+    val reportRepository: ReportRepository = ReportRepository(
+        td = tdClient,
+        resolver = res,
+        log = reportLogStore,
+        scope = appScope,
+    )
+
+    /**
+     * Guest-mode report delegation chain: tg:// → CustomTabsIntent → mailto:.
+     * Called from [dev.lyo.hortay.ui.web.WebModeScaffold] when the user reports
+     * a post while not signed in to TDLib. Each delegation step logs its outcome
+     * to [reportLogStore].
+     */
+    val guestReportDelegator: GuestReportDelegator = GuestReportDelegator(
+        context = context,
+        log = reportLogStore,
+        logScope = appScope,
+    )
 
     init {
         // Pre-warm the web DB on a background thread. SQLDelight's AndroidSqliteDriver

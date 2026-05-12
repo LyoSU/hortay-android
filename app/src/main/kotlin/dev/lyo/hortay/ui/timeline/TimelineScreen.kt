@@ -154,6 +154,19 @@ fun TimelineScreen(
      */
     topBarBadge: (@Composable () -> Unit)? = null,
     /**
+     * Report callback forwarded into [PostInteractions.onReportClick]. Scaffold wires this
+     * to open [dev.lyo.hortay.ui.report.ReportFlowSheet] (auth) or
+     * [dev.lyo.hortay.ui.report.GuestReportDelegator] (guest). Default no-op keeps callers
+     * that don't wire reporting from crashing.
+     */
+    onReportClick: (TimelinePost) -> Unit = {},
+    /**
+     * Predicate forwarded into [PostInteractions.canReport]. Auth mode returns
+     * [TimelinePost.canReportChat]; guest mode returns true for all posts. Default false
+     * hides the Report affordance in the sheet when the callback is not wired.
+     */
+    canReport: (TimelinePost) -> Boolean = { false },
+    /**
      * Process-wide cold-start gate, TDLib mode only. While in
      * [StartupCoordinator.Phase.Booting] the comments-thread prefetch
      * collector silently skips its work to keep the TDLib RPC pipe clear for
@@ -814,6 +827,8 @@ fun TimelineScreen(
         tdlibRepo,
         feed,
         bookmarks,
+        onReportClick,
+        canReport,
     ) {
         // Album members share the same translation — TDLib stores translations against the
         // caption-carrying message id, but for the UI any post in the album should look
@@ -921,6 +936,8 @@ fun TimelineScreen(
                 onOpenCommentsState.value(post)
             },
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedState.value },
+            onReportClick = onReportClick,
+            canReport = canReport,
         )
     }
 

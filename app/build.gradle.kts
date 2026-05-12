@@ -81,10 +81,20 @@ android {
         // error from a forgotten manual bump. Debug installs keep this 1 — they
         // never go through Play.
         versionCode = 1
-        versionName = "0.2.0"
+        versionName = "0.3.0"
 
         buildConfigField("int", "TELEGRAM_API_ID", telegramApiId)
         buildConfigField("String", "TELEGRAM_API_HASH", "\"$telegramApiHash\"")
+
+        // CSAE-compliance URLs. Values come from gradle.properties so they can be
+        // updated without touching the build script. Both are string constants baked
+        // into the APK/AAB at compile time; no runtime network fetch.
+        val childSafetyUrl: String = (project.findProperty("HORTAY_CHILD_SAFETY_POLICY_URL") as? String)
+            ?: "https://dev.lyo.hortay/child-safety"
+        val privacyUrl: String = (project.findProperty("HORTAY_PRIVACY_POLICY_URL") as? String)
+            ?: "https://dev.lyo.hortay/privacy"
+        buildConfigField("String", "CHILD_SAFETY_POLICY_URL", "\"$childSafetyUrl\"")
+        buildConfigField("String", "PRIVACY_POLICY_URL", "\"$privacyUrl\"")
 
     }
 
@@ -294,6 +304,11 @@ dependencies {
     // way to read public channels without an authenticated TDLib session.
     implementation(libs.okhttp)
     implementation(libs.jsoup)
+
+    // Custom Tabs for external links in the Safety section (child safety + privacy
+    // policy). Uses the system browser in a modal overlay, stays within the app
+    // visually without forking into a separate WebView activity.
+    implementation("androidx.browser:browser:1.8.0")
 
     // SQLDelight: typed DAO + Flow integration for the web.db database. Android
     // driver is the runtime; coroutines-extensions adds the asFlow() bridge so a

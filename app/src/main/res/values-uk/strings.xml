@@ -472,4 +472,50 @@
     <string name="invite_dialog_title">Приєднатись до каналу</string>
     <string name="invite_dialog_unknown_chat">Канал Telegram</string>
     <string name="invite_dialog_join">Приєднатись</string>
+
+    <!-- Settings → Safety section (CSAE-compliance) -->
+    <string name="settings_section_safety">Безпека</string>
+    <string name="settings_safety_report_title">Поскаржитися</string>
+    <string name="settings_safety_report_subtitle">Повідомити модераторів Telegram про канал або пост</string>
+    <string name="settings_safety_child_policy_title">Захист дітей</string>
+    <string name="settings_safety_child_policy_subtitle">Стандарти Hortay щодо захисту дітей</string>
+    <string name="settings_safety_privacy_title">Політика конфіденційності</string>
+    <string name="settings_safety_privacy_subtitle">Як Hortay обробляє ваші дані</string>
+
+    <!-- Report content screen (Settings → Safety → Report content) -->
+    <string name="report_content_title">Поскаржитися</string>
+    <string name="report_handle_label">Нік каналу</string>
+    <string name="report_invalid_handle">Введіть коректний @нік (2–32 символи)</string>
+    <string name="report_post_id_label">ID поста (необовʼязково)</string>
+    <string name="report_post_id_placeholder">напр. 12345</string>
+    <string name="report_continue">Далі</string>
+
+    <!-- Report flow bottom sheet (in-app auth-mode reporting via TDLib) -->
+    <string name="report_loading">Підключаємось до Telegram…</string>
+    <string name="report_text_hint">Додайте деталі</string>
+    <string name="report_text_placeholder">Опишіть проблему (необовʼязково)</string>
+    <string name="report_skip">Пропустити</string>
+    <string name="report_submit">Надіслати скаргу</string>
+    <string name="report_success">Скаргу надіслано. Дякуємо</string>
+    <string name="report_retry">Спробувати ще</string>
+    <!-- %1$d — зворотній відлік у секундах. -->
+    <plurals name="report_flood_wait_plural">
+        <item quantity="one">Забагато скарг. Зачекайте %1$d секунду</item>
+        <item quantity="few">Забагато скарг. Зачекайте %1$d секунди</item>
+        <item quantity="many">Забагато скарг. Зачекайте %1$d секунд</item>
+        <item quantity="other">Забагато скарг. Зачекайте %1$d секунди</item>
+    </plurals>
+    <string name="report_flood_wait_generic">Забагато скарг. Спробуйте пізніше</string>
+
+    <!-- One-time explainer shown before first report (both modes). -->
+    <string name="report_about_dialog_title">Як це працює</string>
+    <string name="report_about_dialog_body">Ваша скарга надходить безпосередньо до модераторів Telegram. Hortay не переглядає контент — вся модерація виконується Telegram.</string>
+    <string name="report_about_dialog_ok">Зрозуміло</string>
+
+    <!-- Instruction dialog shown after guest-mode delegation opens Telegram or web. -->
+    <string name="report_guest_instruction_title">Завершіть скаргу</string>
+    <string name="report_guest_instruction_body">Telegram відкрито. Знайдіть канал або пост і скористайтеся пунктом «Поскаржитися» в меню (⋯ або тривале натискання).</string>
+
+    <!-- Post action sheet "Report" item -->
+    <string name="report_action">Поскаржитися</string>
 </resources>

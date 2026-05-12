@@ -68,6 +68,14 @@ data class TimelinePost(
     val parentId: Long? = null,
     /** Mirrors `TdApi.Message.isPinned` — surfaces a small pin badge on the card. */
     val isPinned: Boolean = false,
+    /**
+     * Whether the Telegram user can report this post's chat. Populated from
+     * [TdApi.MessageProperties.canReportChat] when the message mapper resolves
+     * message properties; defaults to false for comment replies and guest-mode posts
+     * (guest mode delegates to the [dev.lyo.hortay.ui.report.GuestReportDelegator]
+     * try-chain and never calls ReportChat directly).
+     */
+    val canReportChat: Boolean = false,
     /** Telegram verification mark (blue check / scam / fake). Null when none. */
     val verification: SenderVerification? = null,
     /**

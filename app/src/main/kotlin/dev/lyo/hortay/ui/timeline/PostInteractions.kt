@@ -44,6 +44,22 @@ class PostInteractions(
     val translateEnabled: Boolean = false,
     /** Toggle the user's reaction (emoji or custom-emoji) on the given post. */
     val onReactionToggle: (post: TimelinePost, item: ReactionItem) -> Unit = { _, _ -> },
+    /**
+     * User tapped "Report" in the post action sheet. In auth mode, [MainScaffold]
+     * wires this to open [dev.lyo.hortay.ui.report.ReportFlowSheet] for the resolved
+     * (chatId, messageId). In guest mode, [WebModeScaffold] wires it to
+     * [dev.lyo.hortay.ui.report.GuestReportDelegator]. Default is a no-op so callers
+     * that never wire reporting (e.g. CommentsScreen in guest mode) don't crash.
+     */
+    val onReportClick: (post: TimelinePost) -> Unit = {},
+    /**
+     * Whether the Report affordance should be shown for this post. Returns
+     * [TimelinePost.canReportChat] in auth mode (populated from TDLib's
+     * [TdApi.MessageProperties]); returns true for all posts in guest mode
+     * (delegation chain is always available). Default is false so the sheet
+     * action is hidden in contexts that don't wire it.
+     */
+    val canReport: (post: TimelinePost) -> Boolean = { false },
 ) {
     companion object {
         val Noop = PostInteractions()

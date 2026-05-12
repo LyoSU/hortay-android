@@ -41,6 +41,7 @@ import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.ui.channels.ChannelsScreen
 import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.settings.SettingsScreen
+import dev.lyo.hortay.ui.report.ReportFlowSheet
 import dev.lyo.hortay.ui.text.ChatInvitePreviewDialog
 import dev.lyo.hortay.ui.timeline.ChannelScreen
 import dev.lyo.hortay.ui.timeline.TimelineScreen
@@ -372,6 +373,12 @@ fun MainScaffold(graph: AppGraph) {
         }
     }
 
+    // Pending report: (chatId, messageId). Set when the user taps Report in the
+    // post action sheet; cleared on sheet dismiss (or after ReportState.Success).
+    // Not saveable across process death — a mid-flow report kill is acceptable
+    // abandonment; the delegate try-chain in guest mode is stateless anyway.
+    var pendingReport by remember { mutableStateOf<Pair<Long, Long?>?>(null) }
+
     // Predictive back for the comments overlay. We track live gesture progress so
     // CommentsScreen can translate / scale / fade under the user's finger instead of
     // just snapping closed on release. The edge (LEFT vs RIGHT) is forwarded because
@@ -535,6 +542,10 @@ fun MainScaffold(graph: AppGraph) {
                                         UserMessageBus.Severity.Info,
                                     )
                                 },
+                                onReportClick = { post ->
+                                    pendingReport = post.chatId to if (post.id != 0L) post.id else null
+                                },
+                                canReport = { post -> post.canReportChat },
                             )
                         } else {
                             // All-feed view: TimelineScreen with no channel filter.
@@ -561,6 +572,10 @@ fun MainScaffold(graph: AppGraph) {
                                     )
                                 },
                                 startupPhase = graph.startupCoordinator.phase,
+                                onReportClick = { post ->
+                                    pendingReport = post.chatId to if (post.id != 0L) post.id else null
+                                },
+                                canReport = { post -> post.canReportChat },
                             )
                         }
                     }
@@ -592,6 +607,10 @@ fun MainScaffold(graph: AppGraph) {
                     homeTapTrigger = 0L,
                     onBrandTap = {},
                     startupPhase = graph.startupCoordinator.phase,
+                    onReportClick = { post ->
+                        pendingReport = post.chatId to if (post.id != 0L) post.id else null
+                    },
+                    canReport = { post -> post.canReportChat },
                 )
                 NavTab.Profile -> SettingsScreen(
                     settings = graph.settingsStore,
@@ -599,6 +618,28 @@ fun MainScaffold(graph: AppGraph) {
                     contentPadding = padding,
                     onLogout = { scope.launch { graph.tdClient.logOut() } },
                     autoDownload = graph.autoDownloadStore,
+                    onReportContent = { handle, postId ->
+                        // Resolve handle → chatId on the TDLib thread, then flip
+                        // pendingReport to open ReportFlowSheet. An Unsupported /
+                        // NotFound result surfaces via the user-message bus exactly
+                        // like the deep-link path, so the UX is consistent.
+                        scope.launch {
+                            when (val r = graph.postsRepository.resolvePublicHandle(handle)) {
+                                is PublicHandleResult.Channel ->
+                                    pendingReport = r.chatId to postId
+                                is PublicHandleResult.Unsupported -> {
+                                    val strId = when (r.kind) {
+                                        PublicHandleKind.User -> R.string.link_unsupported_user
+                                        PublicHandleKind.Group -> R.string.link_unsupported_group
+                                        PublicHandleKind.Unknown -> R.string.link_unsupported_other
+                                    }
+                                    graph.userMessages.post(res.getString(strId))
+                                }
+                                PublicHandleResult.NotFound ->
+                                    graph.userMessages.post(res.getString(R.string.link_not_found))
+                            }
+                        }
+                    },
                 )
             }
             }
@@ -647,6 +688,22 @@ fun MainScaffold(graph: AppGraph) {
                 }
             },
             onDismiss = { graph.linkDialogs.dismissInvitePreview() },
+        )
+    }
+
+    // In-app reporting flow (auth mode). Rendered as a ModalBottomSheet here so it
+    // outlives the PostCard that triggered it and survives tab/channel changes while
+    // the user is mid-flow. Keyed on (chatId, messageId) so reopening the same post
+    // restores progress. Clears on Success (LaunchedEffect inside ReportFlowSheet)
+    // or on manual dismiss.
+    pendingReport?.let { (chatId, messageId) ->
+        ReportFlowSheet(
+            chatId = chatId,
+            messageId = messageId,
+            channelUsername = null,
+            onDismiss = { pendingReport = null },
+            reportRepository = graph.reportRepository,
+            explainerStore = graph.reportExplainerStore,
         )
     }
     }

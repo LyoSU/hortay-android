@@ -38,6 +38,8 @@ import dev.lyo.hortay.ui.main.FloatingNavBar
 import dev.lyo.hortay.ui.main.LinkAwareScaffold
 import dev.lyo.hortay.ui.main.NavTab
 import dev.lyo.hortay.ui.settings.SettingsScreen
+import dev.lyo.hortay.ui.report.GuestReportDelegator
+import dev.lyo.hortay.ui.report.ReportInstructionDialog
 import dev.lyo.hortay.ui.timeline.TimelineScreen
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -73,6 +75,8 @@ fun WebModeScaffold(graph: AppGraph) {
     // through the collector path naturally.
     var addSheetOpen by remember { mutableStateOf(false) }
     var deepLinkPrefill by remember { mutableStateOf<String?>(null) }
+    // guest-mode report instruction: set to the post's senderHandle after delegation fires.
+    var showReportInstruction by remember { mutableStateOf(false) }
     // Monotonic counter incremented on each "Home" re-tap — TimelineScreen
     // observes it and scrolls the feed to top (or refreshes when already at
     // top). Same mechanism as MainScaffold so the home-tap-to-scroll gesture
@@ -300,6 +304,17 @@ fun WebModeScaffold(graph: AppGraph) {
                                     onBrandTap = { homeTapTrigger = System.nanoTime() },
                                     onSearchClick = { searchOpen = true },
                                     topBarBadge = { GuestModeBadge() },
+                                    onReportClick = { post ->
+                                        val outcome = graph.guestReportDelegator.report(
+                                            channelUsername = post.senderHandle?.removePrefix("@") ?: post.senderName,
+                                            postId = if (post.id != 0L) post.id else null,
+                                        )
+                                        if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
+                                            outcome == GuestReportDelegator.Outcome.OpenedWeb) {
+                                            showReportInstruction = true
+                                        }
+                                    },
+                                    canReport = { true },
                                 )
                             } else {
                                 WebChannelScreen(
@@ -327,6 +342,17 @@ fun WebModeScaffold(graph: AppGraph) {
                         contentPadding = padding,
                         showOnlyBookmarked = true,
                         onChannelOpen = { /* no-op: guest mode */ },
+                        onReportClick = { post ->
+                            val outcome = graph.guestReportDelegator.report(
+                                channelUsername = post.senderHandle?.removePrefix("@") ?: post.senderName,
+                                postId = if (post.id != 0L) post.id else null,
+                            )
+                            if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
+                                outcome == GuestReportDelegator.Outcome.OpenedWeb) {
+                                showReportInstruction = true
+                            }
+                        },
+                        canReport = { true },
                     )
 
                     NavTab.Profile -> SettingsScreen(
@@ -339,6 +365,16 @@ fun WebModeScaffold(graph: AppGraph) {
                         // content immediately, not an empty feed waiting for
                         // the next tier-2 sweep. Subscriptions survive.
                         onClearWebCache = { graph.webFeedSource.clearCacheAndRefresh() },
+                        onGuestReport = { handle, postId ->
+                            val outcome = graph.guestReportDelegator.report(
+                                channelUsername = handle,
+                                postId = postId,
+                            )
+                            if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
+                                outcome == GuestReportDelegator.Outcome.OpenedWeb) {
+                                showReportInstruction = true
+                            }
+                        },
                     )
                 }
                 }
@@ -375,6 +411,12 @@ fun WebModeScaffold(graph: AppGraph) {
             bookmarks = graph.bookmarkStore,
             onDismiss = { searchOpen = false },
         )
+    }
+
+    // Instruction dialog: shown after guest-mode delegation opens Telegram or a
+    // web tab. Tells the user how to complete the report in the external surface.
+    if (showReportInstruction) {
+        ReportInstructionDialog(onDismiss = { showReportInstruction = false })
     }
     }
 }

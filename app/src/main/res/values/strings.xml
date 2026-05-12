@@ -465,4 +465,48 @@
     <string name="invite_dialog_title">Join channel</string>
     <string name="invite_dialog_unknown_chat">Telegram channel</string>
     <string name="invite_dialog_join">Join</string>
+
+    <!-- Settings → Safety section (CSAE-compliance) -->
+    <string name="settings_section_safety">Safety</string>
+    <string name="settings_safety_report_title">Report content</string>
+    <string name="settings_safety_report_subtitle">Report a channel or post to Telegram moderators</string>
+    <string name="settings_safety_child_policy_title">Child safety standards</string>
+    <string name="settings_safety_child_policy_subtitle">Hortay published standards for child safety</string>
+    <string name="settings_safety_privacy_title">Privacy policy</string>
+    <string name="settings_safety_privacy_subtitle">How Hortay handles your data</string>
+
+    <!-- Report content screen (Settings → Safety → Report content) -->
+    <string name="report_content_title">Report content</string>
+    <string name="report_handle_label">Channel handle</string>
+    <string name="report_invalid_handle">Enter a valid @handle (2–32 characters)</string>
+    <string name="report_post_id_label">Post ID (optional)</string>
+    <string name="report_post_id_placeholder">e.g. 12345</string>
+    <string name="report_continue">Continue</string>
+
+    <!-- Report flow bottom sheet (in-app auth-mode reporting via TDLib) -->
+    <string name="report_loading">Connecting to Telegram…</string>
+    <string name="report_text_hint">Add details</string>
+    <string name="report_text_placeholder">Describe the issue (optional)</string>
+    <string name="report_skip">Skip</string>
+    <string name="report_submit">Submit report</string>
+    <string name="report_success">Report submitted. Thank you</string>
+    <string name="report_retry">Try again</string>
+    <!-- %1$d is the retry-after countdown in seconds. -->
+    <plurals name="report_flood_wait_plural">
+        <item quantity="one">Too many reports. Please wait %1$d second</item>
+        <item quantity="other">Too many reports. Please wait %1$d seconds</item>
+    </plurals>
+    <string name="report_flood_wait_generic">Too many reports. Please try again later</string>
+
+    <!-- One-time explainer shown before first report (both modes). -->
+    <string name="report_about_dialog_title">How reporting works</string>
+    <string name="report_about_dialog_body">Your report goes directly to Telegram moderators. Hortay does not review content — we delegate all moderation to Telegram.</string>
+    <string name="report_about_dialog_ok">Got it</string>
+
+    <!-- Instruction dialog shown after guest-mode delegation opens Telegram or web. -->
+    <string name="report_guest_instruction_title">Complete your report</string>
+    <string name="report_guest_instruction_body">Telegram has opened. Find the channel or post and use the Report option from the menu (⋯ or long-press).</string>
+
+    <!-- Post action sheet "Report" item -->
+    <string name="report_action">Report</string>
 </resources>
