@@ -85,7 +85,14 @@ fun ReportFlowSheet(
      */
     openToken: Long,
     @Suppress("UNUSED_PARAMETER") channelUsername: String?,
-    onDismiss: () -> Unit,
+    /**
+     * Called on every sheet exit. The `success` flag is true when the user reached
+     * [ReportState.Success] — the parent can dispatch a confirmation snackbar
+     * "Report sent to Telegram" before clearing its pendingReport state. Manual
+     * dismiss (scrim tap, back gesture, drag-down) calls back with success=false
+     * so no snackbar fires.
+     */
+    onDismiss: (success: Boolean) -> Unit,
     reportRepository: ReportRepository,
     explainerStore: ReportExplainerStore,
 ) {
@@ -111,6 +118,10 @@ fun ReportFlowSheet(
         return
     }
 
+    // Local view of dismiss(success). Helper keeps the call sites narrow.
+    val dismissAsSuccess: () -> Unit = { onDismiss(true) }
+    val dismissManual: () -> Unit = { onDismiss(false) }
+
     // openToken makes each tap on Report a fresh VM scope. Without it, the
     // Activity ViewModelStore returns the previous session's VM, whose state may
     // be Success / Error / FloodWait — causing the auto-dismiss LaunchedEffect
@@ -128,13 +139,16 @@ fun ReportFlowSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val state by vm.state.collectAsState()
 
-    // Auto-dismiss on Success.
+    // Auto-dismiss on Success — flag the dismiss as a successful completion so the
+    // parent scaffold can dispatch its "Report sent to Telegram" snackbar. Manual
+    // dismissals (scrim tap / back gesture / drag-down) route through dismissManual
+    // and skip the snackbar.
     LaunchedEffect(state) {
-        if (state is ReportState.Success) onDismiss()
+        if (state is ReportState.Success) dismissAsSuccess()
     }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismissManual,
         sheetState = sheetState,
     ) {
         Column(

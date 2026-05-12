@@ -695,7 +695,20 @@ fun MainScaffold(graph: AppGraph) {
             messageId = target.messageId,
             openToken = target.token,
             channelUsername = null,
-            onDismiss = { pendingReport = null },
+            onDismiss = { success ->
+                pendingReport = null
+                // Surface a confirmation snackbar via the existing UserMessageBus
+                // (Severity.Info, not Error — the report succeeded). The bus is
+                // already wired to the scaffold's SnackbarHost; manual dismissals
+                // skip this path so the user only sees feedback when something
+                // actually happened.
+                if (success) {
+                    graph.userMessages.post(
+                        res.getString(R.string.report_success),
+                        UserMessageBus.Severity.Info,
+                    )
+                }
+            },
             reportRepository = graph.reportRepository,
             explainerStore = graph.reportExplainerStore,
         )
