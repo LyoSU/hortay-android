@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-12
+
 ### Changed
 
 - **Guest-mode Channels list — failing rows get an inline retry affordance
