@@ -376,8 +376,21 @@ fun TimelineScreen(
     // Twitter-style "tap home twice": first tap scrolls to top, second one (already at top)
     // refreshes. The trigger is a monotonic timestamp from the parent, so a single bump
     // produces a single reaction.
+    //
+    // Gotcha: `LaunchedEffect(homeTapTrigger)` by itself fires on every TimelineScreen
+    // REMOUNT — the fresh effect has no memory of the previous key value. If the user
+    // had ever tapped home in the session (`homeTapTrigger != 0`), then swapping
+    // to another tab (Channels / Saved / Profile) and back to Feed remounts this
+    // Composable and re-fires the effect with the same stale trigger value, yanking
+    // the user to the top of the feed. Same class of bug we patched for `scope_filter`
+    // and the cold-start clamp — track the last-handled timestamp in `rememberSaveable`
+    // so only an actual NEW bump (re-tap on Home from the FloatingNavBar / BrandRow)
+    // produces a reaction.
+    var lastHandledHomeTap by rememberSaveable { mutableLongStateOf(0L) }
     LaunchedEffect(homeTapTrigger) {
         if (homeTapTrigger == 0L) return@LaunchedEffect
+        if (homeTapTrigger == lastHandledHomeTap) return@LaunchedEffect
+        lastHandledHomeTap = homeTapTrigger
         val atTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
         if (atTop) vm.refresh() else listState.animateScrollToItem(0)
     }
