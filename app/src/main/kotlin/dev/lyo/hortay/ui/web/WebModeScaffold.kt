@@ -236,8 +236,7 @@ fun WebModeScaffold(graph: AppGraph) {
                         bookmarks = graph.bookmarkStore,
                         contentPadding = padding,
                         showOnlyBookmarked = false,
-                        channelFilter = null,
-                        onChannelFilterChange = { /* no per-channel filter in guest mode */ },
+                        onChannelOpen = { /* no per-channel drill in guest mode */ },
                         homeTapTrigger = homeTapTrigger,
                         onBrandTap = { homeTapTrigger = System.nanoTime() },
                         onSearchClick = { searchOpen = true },
@@ -256,8 +255,7 @@ fun WebModeScaffold(graph: AppGraph) {
                         bookmarks = graph.bookmarkStore,
                         contentPadding = padding,
                         showOnlyBookmarked = true,
-                        channelFilter = null,
-                        onChannelFilterChange = { /* no-op: guest mode */ },
+                        onChannelOpen = { /* no-op: guest mode */ },
                     )
 
                     NavTab.Profile -> SettingsScreen(

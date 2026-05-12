@@ -3,12 +3,6 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -16,16 +10,12 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -59,7 +49,6 @@ import dev.lyo.hortay.data.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.bookmarkKey
 import dev.lyo.hortay.ui.actions.PostActions
-import dev.lyo.hortay.ui.channels.ChannelInfoSheet
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
@@ -85,7 +74,7 @@ import kotlinx.coroutines.launch
 // kotlinx-coroutines 1.10.1 even though Flow.debounce(Duration) graduated.
 // Remove only when the Long overload is stabilised upstream.
 /**
- * Mode-agnostic timeline screen. Drives both the authenticated TDLib mode and
+ * Mode-agnostic home-feed screen. Drives both the authenticated TDLib mode and
  * the anonymous (guest) web mode through a single Composable.
  *
  *   - [feed] — required, mode-defining data source (TDLib's [PostsRepository]
@@ -98,15 +87,20 @@ import kotlinx.coroutines.launch
  *
  * What's gated by nullability:
  *   - Folders bar — needs [folders]
- *   - In-channel search — needs [tdlibRepo] (search uses TDLib SearchChatMessages)
- *   - Comments tap, channel-info sheet — need [commentsRepo] / [tdlibRepo]
+ *   - Comments tap — needs [commentsRepo]
  *   - Translation chip — needs [translations]
  *   - Channel actions (mute/unmute) — needs [channelActions]
- *   - Channel filter, archived chats, view receipts — need [tdlibRepo]
+ *   - Archived chats, view receipts — need [tdlibRepo]
  *
  * What's always present (works in both modes):
  *   - Pull-to-refresh, scroll gate, prefetch, bookmark, "new posts" pill,
  *     HortayTopBar (Medium) with BrandRow / saved title, empty state.
+ *
+ * Single-channel view is now a separate [ChannelScreen] composable backed by
+ * [ChannelViewModel]. [MainScaffold] routes channel drill-ins there instead of
+ * calling this composable with a [channelFilter] parameter. The split removes
+ * 30+ `if (channelFilter != null)` branches that used to live here and gives
+ * each channel visit its own independent lazy-list state and search state.
  */
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
@@ -115,8 +109,7 @@ fun TimelineScreen(
     bookmarks: BookmarkStore,
     contentPadding: PaddingValues,
     showOnlyBookmarked: Boolean,
-    channelFilter: Long?,
-    onChannelFilterChange: (Long?) -> Unit,
+    onChannelOpen: (Long) -> Unit = {},
     tdlibRepo: PostsRepository? = null,
     commentsRepo: CommentsRepository? = null,
     folders: ChatFoldersRepository? = null,
@@ -128,6 +121,11 @@ fun TimelineScreen(
     /**
      * One-shot "scroll to this message in the active feed" request. TDLib-mode
      * deep-link dispatcher only; guest mode passes null.
+     *
+     * Note: deep-link scroll to a specific channel's message is now owned by
+     * [ChannelScreen] (which gets [scrollToMessage] directly from [MainScaffold]).
+     * This parameter remains for the all-feed case where a deep link needs the
+     * feed to scroll to a post that happens to be in the merged view already.
      */
     scrollToMessage: Pair<Long, Long>? = null,
     onScrollHandled: () -> Unit = {},
@@ -144,9 +142,8 @@ fun TimelineScreen(
     /**
      * When non-null, a search action is shown in the default top bar (no filter,
      * not bookmarked-only) and tapping it invokes this callback. Guest mode wires
-     * it to a cross-channel local search overlay; TDLib mode already has its own
-     * in-channel search bar (active only when [channelFilter] is set), so it
-     * leaves this null and keeps the global feed bar minimal.
+     * it to a cross-channel local search overlay; TDLib mode leaves this null and
+     * keeps the global feed bar minimal.
      */
     onSearchClick: (() -> Unit)? = null,
     /**
@@ -160,9 +157,8 @@ fun TimelineScreen(
      * Process-wide cold-start gate, TDLib mode only. While in
      * [StartupCoordinator.Phase.Booting] the comments-thread prefetch
      * collector silently skips its work to keep the TDLib RPC pipe clear for
-     * the per-channel `GetChatHistory` fan-out and TDLib's own initial sync.
-     * Guest mode passes null and the collector runs unguarded — it doesn't
-     * make TDLib RPC anyway. See [StartupCoordinator] KDoc.
+     * TDLib's own initial sync. Guest mode passes null and the collector runs
+     * unguarded — it doesn't make TDLib RPC anyway. See [StartupCoordinator] KDoc.
      */
     startupPhase: kotlinx.coroutines.flow.StateFlow<dev.lyo.hortay.data.StartupCoordinator.Phase>? = null,
 ) {
@@ -199,30 +195,6 @@ fun TimelineScreen(
     val translationsMap = translations?.translations
         ?.collectAsStateWithLifecycle()?.value
         ?: emptyMap()
-    var infoSheetChatId by remember { mutableStateOf<Long?>(null) }
-
-    // Search state: only meaningful inside a channel filter. searchActive flips the top
-    // bar into a TextField; query drives a debounced SearchChatMessages call; results
-    // replace the normal feed in the list while the bar is in search mode.
-    //
-    // rememberSaveable with no key: scroll and search state preservation is now
-    // parent-owned via SaveableStateProvider(key = "feed-channel:<id>") in
-    // MainScaffold. Each channel context (and the all-feed __all__ context) gets its
-    // own saveable scope, so these values naturally reset when the key changes
-    // (i.e. the user enters a different channel) and are preserved within a context.
-    var searchActive by rememberSaveable { mutableStateOf(false) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
-    var searchResults by remember(channelFilter) { mutableStateOf<List<TimelinePost>>(emptyList()) }
-    if (channelFilter != null && tdlibRepo != null) {
-        LaunchedEffect(searchActive, searchQuery, channelFilter) {
-            if (!searchActive || searchQuery.isBlank()) {
-                searchResults = emptyList()
-                return@LaunchedEffect
-            }
-            kotlinx.coroutines.delay(SEARCH_DEBOUNCE_MS)
-            searchResults = tdlibRepo.searchInChannel(channelFilter, searchQuery.trim())
-        }
-    }
 
     // Pill is suppressed during a refresh: repo.refresh() replaces _posts, briefly making
     // the post-refresh delta look like "everything is new" until acceptPending() lands.
@@ -289,7 +261,9 @@ fun TimelineScreen(
     // and read as a tool stage with active input — those must stay pinned.
     // The behavior helper reads `enabled` live so toggling it doesn't
     // re-allocate the NestedScrollConnection.
-    val floatingBar = rememberFloatingTopBarBehavior(enabled = { channelFilter == null })
+    // The feed bar always participates in scroll-hide — there is no channel-filter
+    // tool stage to pin it in place (that case is now owned by ChannelScreen).
+    val floatingBar = rememberFloatingTopBarBehavior()
     val topBarFullHeightPx = floatingBar.fullHeightPx
     val topBarOffsetPx = floatingBar.offsetPx
     val topBarNestedScroll = floatingBar.nestedScroll
@@ -298,7 +272,10 @@ fun TimelineScreen(
     // mode. Without this the bar stayed at its last hidden offset across
     // navigation, so a fresh destination would briefly orphan the user
     // looking at chrome they didn't expect to be missing.
-    LaunchedEffect(channelFilter, showOnlyBookmarked) {
+    // Reset the bar to fully visible when switching between top-level destinations
+    // (Home ↔ Saved). Without this the bar stays at its last hidden offset across
+    // navigation.
+    LaunchedEffect(showOnlyBookmarked) {
         topBarOffsetPx.floatValue = 0f
     }
 
@@ -320,15 +297,6 @@ fun TimelineScreen(
             onScrollHandled()
         }
     }
-    LaunchedEffect(channelFilter) {
-        // Filter went back to "all" (or switched to a different chat than the queued
-        // target referenced) — drop the stale request so we don't fire it later.
-        val target = pendingScrollToMessage
-        if (target != null && (channelFilter == null || target.first != channelFilter)) {
-            pendingScrollToMessage = null
-        }
-    }
-
     // Selected folder/archive scope. Default: "All". Stored as a saveable so the user's
     // tab survives process death; folder tabs get rebuilt against the freshest folders
     // list each composition, so a folder removed in another client falls back gracefully.
@@ -403,62 +371,12 @@ fun TimelineScreen(
         if (atTop) vm.refresh() else listState.animateScrollToItem(0)
     }
 
-    // Switching folders within the all-feed (no channelFilter) jumps to the top —
-    // "show me the top of this folder" is the expected behaviour. Channel-filter
-    // visits don't need an explicit scroll: they run inside their own
-    // SaveableStateProvider scope (keyed on the chatId), so each channel starts at
-    // the top the first time it is visited; subsequent visits restore the saved
-    // position automatically.
+    // Switching folders jumps to the top of the feed — "show me the top of this
+    // folder" is the expected behaviour. Each channel visit now runs in its own
+    // ChannelScreen with a separate SaveableStateProvider scope, so this effect
+    // only fires for folder changes in the all-feed view.
     LaunchedEffect(scope_filter) {
-        if (channelFilter == null) {
-            listState.scrollToItem(0)
-        }
-    }
-
-    // Tell TDLib the filtered channel is in focus while the user is here, and eagerly pull
-    // a deeper slice of history so the filtered list is not just the few entries the global
-    // refresh fetched per channel.
-    //
-    // [previewLoading] is true while the very first history fetch is in flight for a freshly
-    // entered channel — used by the empty-state guard below so a non-subscribed channel
-    // doesn't blink "поки тут пусто" during the round-trip before posts arrive.
-    var previewLoading by remember(channelFilter) { mutableStateOf(channelFilter != null) }
-    LaunchedEffect(channelFilter) {
-        val id = channelFilter ?: run { previewLoading = false; return@LaunchedEffect }
-        val r = tdlibRepo ?: run { previewLoading = false; return@LaunchedEffect }
-        r.openChat(id)
-        try {
-            r.loadChannelHistory(id)
-        } finally {
-            previewLoading = false
-        }
-        try {
-            kotlinx.coroutines.awaitCancellation()
-        } finally {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { r.closeChat(id) }
-        }
-    }
-
-    // Pagination: when the user scrolls near the bottom of a single-channel feed, pull
-    // older posts. Only fires inside a channelFilter context — paginating the global
-    // mixed feed by oldest-of-each-channel would touch many channels at once and serves
-    // no real "I want to read this channel further back" intent.
-    if (channelFilter != null && tdlibRepo != null) {
-        LaunchedEffect(listState, channelFilter) {
-            androidx.compose.runtime.snapshotFlow {
-                val info = listState.layoutInfo
-                val total = info.totalItemsCount
-                val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
-                total to lastVisible
-            }
-                .distinctUntilChanged()
-                .collect { (total, last) ->
-                    if (total == 0 || last < 0) return@collect
-                    if (last >= total - PAGINATION_PREFETCH_THRESHOLD) {
-                        tdlibRepo.loadOlder(channelFilter)
-                    }
-                }
-        }
+        listState.scrollToItem(0)
     }
 
     // Scope predicate shared by the visible feed and the "X нових постів" pill — so the
@@ -485,28 +403,13 @@ fun TimelineScreen(
         }
     }
 
-    val visiblePosts = remember(
-        posts, scopePredicate, bookmarkedKeys, channelFilter, showOnlyBookmarked,
-    ) {
+    val visiblePosts = remember(posts, scopePredicate, bookmarkedKeys, showOnlyBookmarked) {
         buildList {
             posts.forEach { p ->
                 if (showOnlyBookmarked && p.bookmarkKey() !in bookmarkedKeys) return@forEach
-                if (channelFilter != null) {
-                    // Once the user has drilled into one channel, the channel view IS the
-                    // scope. Service rows, expired media, and folder/archive scope all
-                    // exist for browsing the mixed feed; clipping them inside a single-
-                    // channel view silently drops posts the user explicitly asked to see.
-                    // Without this gate, a deep link to a channel outside the active
-                    // folder scope (or to an archived chat while the user is in "Усі")
-                    // never lands in displayedItems, the scroll-to-message snapshotFlow
-                    // waits forever, and `loadOlder` pagination quietly stops surfacing
-                    // new rows because each loaded post is filtered out before render.
-                    if (p.chatId != channelFilter) return@forEach
-                } else {
-                    if (p.content is PostContent.Service) return@forEach
-                    if (p.content is PostContent.ExpiredMedia) return@forEach
-                    if (!scopePredicate(p)) return@forEach
-                }
+                if (p.content is PostContent.Service) return@forEach
+                if (p.content is PostContent.ExpiredMedia) return@forEach
+                if (!scopePredicate(p)) return@forEach
                 add(p)
             }
         }
@@ -519,15 +422,11 @@ fun TimelineScreen(
     // back into individual TimelinePost entries.
     val feedItems = remember(visiblePosts) { groupReplies(visiblePosts) }
 
-    // Source of truth for "what the LazyColumn is currently rendering". Search results stay
-    // flat (threading a search hit by its parent would surface posts the user didn't search
-    // for); outside search we reuse the grouped feedItems verbatim.
-    val displayedItems: List<FeedItem> = remember(
-        feedItems, searchActive, channelFilter, searchResults,
-    ) {
-        if (searchActive && channelFilter != null) searchResults.map(FeedItem::Single)
-        else feedItems
-    }
+    // Source of truth for "what the LazyColumn is currently rendering". The all-feed and
+    // bookmarks surfaces have no in-screen search (global search in web mode is a separate
+    // overlay; TDLib in-channel search now lives in ChannelScreen). feedItems is always
+    // used here.
+    val displayedItems: List<FeedItem> = feedItems
 
     // LaunchedEffect's block freezes its captures on the keys-last-changed composition
     // (Compose's [remember] under the hood holds the original lambda), so subsequent
@@ -654,35 +553,6 @@ fun TimelineScreen(
         }
     }
 
-    // TDLib-resolved title for the active filter. Populated even when the merged feed
-    // doesn't yet carry a post from this chat — e.g. the user tapped a t.me link to a
-    // non-subscribed public channel, the deep-link dispatcher resolved chatId via
-    // SearchPublicChat, and we're waiting for the first GetChatHistory batch. Without
-    // this fallback the top bar reads blank until the first post lands, which makes the
-    // 1–2 s preview window feel broken. Telegram-Android paints title + subscriber
-    // count immediately on chat open; this matches.
-    var tdResolvedTitle by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(channelFilter) {
-        tdResolvedTitle = channelFilter?.let { tdlibRepo?.chatTitle(it) }
-    }
-    val activeChannelTitle = remember(channelFilter, posts, tdResolvedTitle) {
-        channelFilter?.let { id ->
-            // Same canonical-channel-identity rule as the channels list / pendingChannels:
-            // if any post for this filter has a channelContext (personal-author mode), use
-            // its name; otherwise fall back to the post's own senderName which IS the
-            // channel name in standard channel-as-sender mode. Final fallback to TDLib's
-            // own chat title for non-subscribed channels with no posts yet.
-            val matches = posts.filter { it.chatId == id }
-            matches.firstNotNullOfOrNull { it.channelContext?.name }
-                ?: matches.firstOrNull()?.senderName
-                ?: tdResolvedTitle
-        }
-    }
-    var activeChannelSubscribers by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(channelFilter) {
-        activeChannelSubscribers = channelFilter?.let { tdlibRepo?.channelSubscribers(it) }
-    }
-
     // Warm the discussion-thread cache for posts that linger in the viewport. A cold
     // GetMessageThread is a server round-trip (~1.5–2s on first hit per channel); after
     // a single fetch TDLib answers from local cache (~200ms). Triggering this in the
@@ -766,7 +636,7 @@ fun TimelineScreen(
     // is bounded by MAX_FEED_SIZE (~1000), so the set stays small.
     val ackedRead = remember(tdlibRepo) { HashSet<Pair<Long, Long>>() }
     if (tdlibRepo != null) {
-        LaunchedEffect(listState, tdlibRepo, channelFilter) {
+        LaunchedEffect(listState, tdlibRepo) {
             androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
                 .distinctUntilChanged()
                 .collectLatest { indices ->
@@ -806,17 +676,13 @@ fun TimelineScreen(
     // that strictly: at most ONE merged-feed chat is open at any time, and it's the
     // chat of whatever post sits at the top of the viewport.
     //
-    // Skipped when channelFilter != null: the existing single-channel screen already
-    // OpenChat's its chat (line above), and posts in the viewport are scoped to that
-    // chat anyway, so the dwell-focus would just no-op against the refcount.
-    //
     // Hysteresis: FOCUS_DWELL_MS keeps us from rapidly cycling open/close on a quick
     // scroll. collectLatest cancels the delay on every viewport top change — only a
     // chat that wins the topmost slot AND holds it for FOCUS_DWELL_MS gets opened.
     //
-    // Cleanup: try/finally with NonCancellable on the close, mirroring the
-    // channelFilter-screen pattern, so a fast screen exit still flushes CloseChat.
-    if (tdlibRepo != null && channelFilter == null) {
+    // Cleanup: try/finally with NonCancellable on the close so a fast screen exit
+    // still flushes CloseChat.
+    if (tdlibRepo != null) {
         LaunchedEffect(listState, tdlibRepo) {
             var opened: Long? = null
             try {
@@ -865,7 +731,7 @@ fun TimelineScreen(
     val postsState = rememberUpdatedState(posts)
     val translationsState = rememberUpdatedState(translationsMap)
     val bookmarkedState = rememberUpdatedState(bookmarkedKeys)
-    val onChannelFilterChangeState = rememberUpdatedState(onChannelFilterChange)
+    val onChannelOpenState = rememberUpdatedState(onChannelOpen)
     val onOpenCommentsState = rememberUpdatedState(onOpenComments)
 
     // Explicit-tap read ack: any deliberate "open this post" action (open comments,
@@ -938,7 +804,7 @@ fun TimelineScreen(
                     viewer.openFor(post.content, idx)
                 }
             },
-            onChannelClick = { post -> onChannelFilterChangeState.value(post.chatId) },
+            onChannelClick = { post -> onChannelOpenState.value(post.chatId) },
             onForwardSourceClick = { post ->
                 val origin = post.forwardOrigin
                 val sourceId = when (origin) {
@@ -951,32 +817,25 @@ fun TimelineScreen(
                     is dev.lyo.hortay.data.ForwardOrigin.Chat -> origin.sourceHandle
                     else -> null
                 }
-                // Always switch the filter when we know the chatId — channel preview
-                // now works for non-subscribed channels (skeleton while TDLib loads
-                // GetChatHistory + GetChat for title). The historical `subscribed`
-                // gate was needed only when an empty filter meant a blank screen;
-                // with the preview path live, dropping it lets "Forwarded from
-                // <Channel>" land inside Hortay regardless of subscription state.
+                // Always open the channel when we know the chatId — ChannelScreen owns
+                // the preview/skeleton while TDLib loads the history for non-subscribed
+                // channels.
                 when {
-                    sourceId != null -> onChannelFilterChangeState.value(sourceId)
+                    sourceId != null -> onChannelOpenState.value(sourceId)
                     !sourceHandle.isNullOrBlank() -> {
                         // Username-only origins (TDLib didn't include the resolved id) —
                         // route through LocalUriHandler so HortayUriHandler resolves
-                        // the handle via SearchPublicChat and lands the same channel
-                        // preview path.
+                        // the handle via SearchPublicChat and lands the ChannelScreen path.
                         uriHandler.openUri("https://t.me/${sourceHandle.removePrefix("@")}")
                     }
                 }
             },
             onQuotedSourceClick = { post ->
-                // In-app "open the original" — switch the channel filter (no Intent chooser
-                // bounce) and queue a scroll-to-target. The scroll is one-shot: a
-                // LaunchedEffect below resolves it as soon as the target message lands in
-                // displayedItems, then clears the pending state. If the channel was already
-                // loaded the scroll happens on the next frame; otherwise we wait for
-                // loadChannelHistory to deliver, then snap.
+                // In-app "open the original" — open the channel (no Intent chooser bounce)
+                // and queue a scroll-to-target so the caller (MainScaffold) can pass it to
+                // the new ChannelScreen via pendingScrollTarget.
                 post.reply?.let { r ->
-                    onChannelFilterChangeState.value(r.replyToChatId)
+                    onChannelOpenState.value(r.replyToChatId)
                     pendingScrollToMessage = r.replyToChatId to r.replyToMessageId
                 }
             },
@@ -1073,31 +932,12 @@ fun TimelineScreen(
                     }
                 ) {
                     TimelineTopBar(
-                showOnlyBookmarked = showOnlyBookmarked,
-                channelTitle = activeChannelTitle,
-                channelSubscribers = activeChannelSubscribers,
-                hasFilter = channelFilter != null,
-                searchActive = searchActive,
-                searchQuery = searchQuery,
-                onSearchToggle = {
-                    searchActive = !searchActive
-                    if (!searchActive) searchQuery = ""
-                },
-                onSearchQueryChange = { searchQuery = it },
-                onClearFilter = {
-                    if (searchActive) {
-                        searchActive = false
-                        searchQuery = ""
-                    } else {
-                        onChannelFilterChange(null)
-                    }
-                },
-                onBrandTap = onBrandTap,
-                onTitleTap = { channelFilter?.let { infoSheetChatId = it } },
-                onGlobalSearchClick = onSearchClick,
-                topBarBadge = topBarBadge,
-                scrollBehavior = scrollBehavior,
-            )
+                        showOnlyBookmarked = showOnlyBookmarked,
+                        onBrandTap = onBrandTap,
+                        onGlobalSearchClick = onSearchClick,
+                        topBarBadge = topBarBadge,
+                        scrollBehavior = scrollBehavior,
+                    )
                 }
             }
         },
@@ -1141,7 +981,7 @@ fun TimelineScreen(
                         foldersList.map { FolderTab(it.id, it.name?.text?.text.orEmpty()) }
                     }
                     val hasFolderUi = tabs.isNotEmpty() || archivedChatIds.isNotEmpty()
-                    if (!showOnlyBookmarked && channelFilter == null && hasFolderUi) {
+                    if (!showOnlyBookmarked && hasFolderUi) {
                         FoldersBar(
                             selected = scope_filter,
                             folders = tabs,
@@ -1165,20 +1005,8 @@ fun TimelineScreen(
                         )
                     }
 
-                    val displayed = if (searchActive && channelFilter != null) searchResults else visiblePosts
-                    if (displayed.isEmpty() && !refreshing && !(searchActive && searchQuery.isBlank())) {
-                        when {
-                            searchActive -> SearchEmpty()
-                            // First-load skeleton for channel preview: while
-                            // [previewLoading] is true we're mid-roundtrip on
-                            // GetChatHistory for a freshly entered channel that has
-                            // no posts in the merged feed yet. Show shimmer rows
-                            // matching the eventual PostCard layout — same idiom
-                            // Telegram-Android uses while a public channel preview
-                            // loads — instead of "empty" which is misleading.
-                            previewLoading -> ChannelPreviewSkeleton()
-                            else -> EmptyState(showOnlyBookmarked)
-                        }
+                    if (visiblePosts.isEmpty() && !refreshing) {
+                        EmptyState(showOnlyBookmarked)
                     } else {
                         // Scroll gate: while the LazyColumn is mid-scroll (drag, fling,
                         // animateScrollToItem) media composables defer their ensure() so
@@ -1318,15 +1146,14 @@ fun TimelineScreen(
                 }
             }
 
-            // Floating "X нових постів" pill. Hidden in the Saved tab, inside a single-
-            // channel filter (frozen views), while a refresh is in flight (transient
-            // delta), and while the user is already at the top of the feed (we auto-
-            // accept pending in that case).
-            val pillVisible = !showOnlyBookmarked && channelFilter == null &&
+            // Floating "X нових постів" pill. Hidden in the Saved tab, while a
+            // refresh is in flight (transient delta), and while the user is already
+            // at the top of the feed (we auto-accept pending in that case).
+            val pillVisible = !showOnlyBookmarked &&
                 !refreshing && !atTop && scopedPendingChannels.isNotEmpty()
-            // Filter chips occupy the top ~56dp inside the same Box; offset the pill so
-            // it lands just below them instead of overlapping.
-            val chipsVisible = !showOnlyBookmarked && channelFilter == null
+            // Folder chips occupy the top ~56dp inside the same Box; offset the pill
+            // so it lands just below them instead of overlapping.
+            val chipsVisible = !showOnlyBookmarked
             val pillTopPadding = if (chipsVisible) 64.dp else 8.dp
             val pillSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
             val pillEffects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
@@ -1352,32 +1179,13 @@ fun TimelineScreen(
         }
     }
 
-    val ca = channelActions
-    if (ca != null) {
-        infoSheetChatId?.let { chatId ->
-            ChannelInfoSheet(
-                chatId = chatId,
-                actions = ca,
-                onDismiss = { infoSheetChatId = null },
-            )
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimelineTopBar(
     showOnlyBookmarked: Boolean,
-    channelTitle: String?,
-    channelSubscribers: Int?,
-    hasFilter: Boolean,
-    searchActive: Boolean,
-    searchQuery: String,
-    onSearchToggle: () -> Unit,
-    onSearchQueryChange: (String) -> Unit,
-    onClearFilter: () -> Unit,
     onBrandTap: () -> Unit,
-    onTitleTap: () -> Unit,
     onGlobalSearchClick: (() -> Unit)?,
     topBarBadge: (@Composable () -> Unit)?,
     scrollBehavior: TopAppBarScrollBehavior,
@@ -1388,101 +1196,19 @@ private fun TimelineTopBar(
     // travelling into the system status-bar area when the layout shrinker
     // pushes the bar upward on scroll).
     val barInsets = WindowInsets(0)
-    when {
-        hasFilter && searchActive -> HortayTopBar(
-            size = HortayTopBarSize.Compact,
-            title = {
-                val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
-                LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
-                BasicTextField(
-                    value = searchQuery,
-                    onValueChange = onSearchQueryChange,
-                    singleLine = true,
-                    cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-                    textStyle = MaterialTheme.typography.titleMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
-                    ),
-                    decorationBox = { inner ->
-                        Box {
-                            if (searchQuery.isEmpty()) {
-                                Text(
-                                    stringResource(R.string.timeline_search_in_channel),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            inner()
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester),
-                )
-            },
-            navigationIcon = {
-                IconButton(onClick = onClearFilter) {
-                    Symbol(name = "arrow_back", contentDescription = stringResource(R.string.action_back))
-                }
-            },
-            actions = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onSearchQueryChange("") }) {
-                        Symbol(name = "close", contentDescription = stringResource(R.string.action_clear))
-                    }
-                }
-            },
-            scrollBehavior = scrollBehavior,
-            windowInsets = barInsets,
-        )
-        hasFilter -> HortayTopBar(
-            size = HortayTopBarSize.Compact,
-            title = {
-                Column(modifier = Modifier.clickable(role = Role.Button, onClick = onTitleTap)) {
-                    Text(
-                        text = channelTitle.orEmpty(),
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    channelSubscribers?.let {
-                        Text(
-                            text = stringResource(R.string.timeline_subscribers, formatSubscribers(it)),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            },
-            navigationIcon = {
-                IconButton(onClick = onClearFilter) {
-                    Symbol(name = "arrow_back", contentDescription = stringResource(R.string.action_back))
-                }
-            },
-            actions = {
-                IconButton(onClick = onSearchToggle) {
-                    Symbol(name = "search", contentDescription = stringResource(R.string.action_search))
-                }
-            },
-            scrollBehavior = scrollBehavior,
-            windowInsets = barInsets,
-        )
-        // Bookmarks and Home both read as top-level destinations (vs filter /
-        // search which are tool stages drilled in from Home). M3 Expressive
-        // canon for destinations is the Medium-size flexible bar via
-        // [HortayTopBar]: a larger title typography on first paint that tells
-        // the user "you are here", auto-collapsing to compact 64 dp the moment
-        // the feed scrolls (motion-token-driven via [scrollBehavior]).
-        // Cost of the extra ~48 dp on first paint is recovered on the first
-        // scroll gesture; benefit is one less indistinguishable bar on a
-        // hierarchically flat app.
-        showOnlyBookmarked -> HortayTopBar(
+    // Both destinations (Bookmarks and Home) are top-level: M3 Expressive
+    // canon uses the Medium-size flexible bar — larger title on first paint
+    // that collapses to compact 64 dp on scroll. Tool stages (search,
+    // channel filter) now live in the dedicated [ChannelScreen].
+    if (showOnlyBookmarked) {
+        HortayTopBar(
             title = stringResource(R.string.timeline_saved_tab),
             size = HortayTopBarSize.Medium,
             scrollBehavior = scrollBehavior,
             windowInsets = barInsets,
         )
-        else -> HortayTopBar(
+    } else {
+        HortayTopBar(
             title = {
                 Box(modifier = Modifier.clickable(role = Role.Button, onClick = onBrandTap)) {
                     BrandRow()
@@ -1505,126 +1231,6 @@ private fun TimelineTopBar(
             },
             scrollBehavior = scrollBehavior,
             windowInsets = barInsets,
-        )
-    }
-}
-
-
-
-/**
- * Loading skeleton for a freshly entered channel preview — three placeholder cards
- * roughed to the shape of a real [PostCard] (avatar circle, two title bars, a body
- * paragraph). Matches the "shimmer while content loads" idiom Telegram-Android uses on
- * the public-channel preview screen, and removes the half-second "empty" flash that
- * was reading as "this channel has no posts" when really we were still waiting on
- * `GetChatHistory`'s round-trip.
- *
- * Shimmer is a single infinite Animatable driving the surfaceContainerHighest /
- * surfaceContainerLow alpha sweep — cheap (no allocations per frame, one Animatable
- * for the whole skeleton). MotionScheme isn't used here because the animation is a
- * deliberate slow loop (1.2s linear), not a state-change spring.
- */
-@Composable
-private fun ChannelPreviewSkeleton() {
-    val infinite = rememberInfiniteTransition(label = "preview-skeleton")
-    val shimmer by infinite.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "preview-skeleton-alpha",
-    )
-    val shimmerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = shimmer)
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        repeat(3) { SkeletonCard(shimmerColor) }
-    }
-}
-
-@Composable
-private fun SkeletonCard(barColor: Color) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(barColor),
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(
-                    modifier = Modifier
-                        .height(12.dp)
-                        .width(140.dp)
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .background(barColor),
-                )
-                Box(
-                    modifier = Modifier
-                        .height(10.dp)
-                        .width(80.dp)
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .background(barColor),
-                )
-            }
-        }
-        Spacer(Modifier.height(2.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(12.dp)
-                .clip(MaterialTheme.shapes.extraSmall)
-                .background(barColor),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.85f)
-                .height(12.dp)
-                .clip(MaterialTheme.shapes.extraSmall)
-                .background(barColor),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.6f)
-                .height(12.dp)
-                .clip(MaterialTheme.shapes.extraSmall)
-                .background(barColor),
-        )
-    }
-}
-
-@Composable
-private fun SearchEmpty() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        ExpressiveEmptyHero(
-            symbol = "search_off",
-            shape = dev.lyo.hortay.ui.theme.HortayExpressive.FolderSelected,
-        )
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = stringResource(R.string.timeline_search_empty),
-            style = MaterialTheme.typography.titleMedium,
-            textAlign = TextAlign.Center,
         )
     }
 }
@@ -1670,7 +1276,7 @@ private fun EmptyState(showingSaved: Boolean) {
  * recompositions don't allocate a fresh PolygonShape per frame.
  */
 @Composable
-private fun ExpressiveEmptyHero(
+internal fun ExpressiveEmptyHero(
     symbol: String,
     shape: androidx.graphics.shapes.RoundedPolygon,
 ) {
@@ -1788,7 +1394,7 @@ private const val INLINE_PREFETCH_MAX_DURATION_SEC = 30
  * trigger for them. The poster is what TdMediaImage paints behind the play badge / progress
  * overlay, so warming it is what makes "scrolled into view" feel instant.
  */
-private fun PostContent.posterFileIds(): List<Int> = buildList {
+internal fun PostContent.posterFileIds(): List<Int> = buildList {
     when (val content = this@posterFileIds) {
         is PostContent.PhotoAlbum -> content.items.forEach { item ->
             when (item) {
@@ -1824,7 +1430,7 @@ private fun PostContent.posterFileIds(): List<Int> = buildList {
  * user hasn't explicitly opted into seeing yet, even speculatively. Returns the empty list
  * for content types that are *not* inline-played in the feed (long videos, photos, audio).
  */
-private fun PostContent.playbackFileIds(): List<Int> = buildList {
+internal fun PostContent.playbackFileIds(): List<Int> = buildList {
     when (val content = this@playbackFileIds) {
         is PostContent.Video -> {
             if (!content.hasSpoiler && !content.isSecret &&
@@ -1985,7 +1591,7 @@ internal fun groupReplies(
  */
 private const val THREAD_FRESH_WINDOW_MS = 60L * 60L * 1000L
 
-private fun formatSubscribers(count: Int): String {
+internal fun formatSubscribers(count: Int): String {
     fun compact(value: Double, suffix: String): String {
         val rounded = ((value * 10).toLong()) / 10.0
         return if (rounded == rounded.toLong().toDouble()) "${rounded.toLong()}$suffix"

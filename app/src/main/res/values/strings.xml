@@ -183,6 +183,9 @@
     <string name="timeline_search_empty">Nothing found</string>
     <string name="timeline_subscribers">%1$s subscribers</string>
     <string name="timeline_saved_tab">Saved</string>
+    <string name="channel_empty_title">No posts yet</string>
+    <string name="channel_empty_body">There are no posts in this channel</string>
+    <string name="channel_info_action">Channel info</string>
 
     <!-- Time formatting -->
     <string name="time_just_now">just now</string>

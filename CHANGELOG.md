@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Architecture
+
+- **Single-channel view extracted to `ChannelScreen` + `ChannelViewModel`**.
+  The `channelFilter: Long?` parameter and all 30+ `if (channelFilter != null)`
+  branches that lived in `TimelineScreen` are removed. Each channel visit now
+  gets a dedicated `ChannelScreen` composable backed by a `ChannelViewModel`
+  instance keyed on `chatId` (via `viewModel(key = "channel:$chatId")`). This
+  gives every channel its own independent lazy-list state, search state,
+  `historyLoading` / `paginationLoading` guards, and read-ack set — navigating
+  between channels or back to the all-feed never bleeds state across contexts.
+  `TimelineScreen` is now feed-only: `MediumFlexibleTopAppBar` with `BrandRow`
+  or `timeline_saved_tab`, folders bar, pill, and the all-feed `LazyColumn`.
+  `MainScaffold` routes to `ChannelScreen` when `channelStack.lastOrNull() !=
+  null`, else `TimelineScreen`. `WebModeScaffold` drops the no-op
+  `channelFilter = null` arguments. `ChannelPreviewSkeleton`, search bar, and
+  channel-title/subscriber-count state are owned entirely by `ChannelScreen`.
+
 ### Changed
 
 - **Underlines removed from inline links in post bodies**. Telegram-Android

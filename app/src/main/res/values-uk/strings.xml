@@ -187,6 +187,9 @@
     <string name="timeline_search_empty">Нічого не знайдено</string>
     <string name="timeline_subscribers">%1$s підписників</string>
     <string name="timeline_saved_tab">Збережене</string>
+    <string name="channel_empty_title">Постів поки немає</string>
+    <string name="channel_empty_body">У цьому каналі ще немає публікацій</string>
+    <string name="channel_info_action">Інформація про канал</string>
 
     <!-- Time formatting -->
     <string name="time_just_now">щойно</string>

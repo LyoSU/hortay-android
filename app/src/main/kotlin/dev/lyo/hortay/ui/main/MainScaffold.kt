@@ -42,6 +42,7 @@ import dev.lyo.hortay.ui.channels.ChannelsScreen
 import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.settings.SettingsScreen
 import dev.lyo.hortay.ui.text.ChatInvitePreviewDialog
+import dev.lyo.hortay.ui.timeline.ChannelScreen
 import dev.lyo.hortay.ui.timeline.TimelineScreen
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -488,40 +489,64 @@ fun MainScaffold(graph: AppGraph) {
                 NavTab.Feed -> {
                     // Per-channel scope: each channel (and the __all__ all-feed view)
                     // gets its own independent saveable scope so scroll position, search
-                    // state, and any other rememberSaveable inside TimelineScreen is
+                    // state, and any other rememberSaveable inside the active screen is
                     // preserved per context. The stack key is stable as long as the
                     // user is on that channel; navigating away and back (via the stack)
                     // restores the exact state for that channel.
                     val channelKey = channelStack.lastOrNull()?.toString() ?: "__all__"
                     tabStateHolder.SaveableStateProvider(key = "feed-channel:$channelKey") {
-                        TimelineScreen(
-                            feed = graph.postsRepository,
-                            tdlibRepo = graph.postsRepository,
-                            commentsRepo = graph.commentsRepository,
-                            folders = graph.chatFoldersRepository,
-                            translations = graph.translations,
-                            channelActions = graph.channelActions,
-                            bookmarks = graph.bookmarkStore,
-                            contentPadding = padding,
-                            showOnlyBookmarked = false,
-                            channelFilter = channelFilter,
-                            onChannelFilterChange = { id ->
-                                if (id == null) clearChannelStack()
-                                else enterChannel(id, fromTab = NavTab.Feed)
-                            },
-                            onOpenComments = openComments,
-                            homeTapTrigger = homeTapTrigger,
-                            onBrandTap = { homeTapTrigger = System.nanoTime() },
-                            scrollToMessage = pendingScrollTarget,
-                            onScrollHandled = { pendingScrollTarget = null },
-                            onScrollMissed = {
-                                graph.userMessages.post(
-                                    res.getString(R.string.link_not_found),
-                                    UserMessageBus.Severity.Info,
-                                )
-                            },
-                            startupPhase = graph.startupCoordinator.phase,
-                        )
+                        val currentChatId = channelStack.lastOrNull()
+                        if (currentChatId != null) {
+                            // Channel drill: dedicated ChannelScreen backed by ChannelViewModel.
+                            // ChannelScreen owns its own LazyListState, search state, pagination,
+                            // and read-ack — no channel-filter branches needed in TimelineScreen.
+                            ChannelScreen(
+                                chatId = currentChatId,
+                                repo = graph.postsRepository,
+                                commentsRepo = graph.commentsRepository,
+                                bookmarks = graph.bookmarkStore,
+                                translations = graph.translations,
+                                channelActions = graph.channelActions,
+                                contentPadding = padding,
+                                onBack = ::popChannel,
+                                onChannelOpen = { id -> enterChannel(id, fromTab = NavTab.Feed) },
+                                onOpenComments = openComments,
+                                scrollToMessage = pendingScrollTarget,
+                                onScrollHandled = { pendingScrollTarget = null },
+                                onScrollMissed = {
+                                    graph.userMessages.post(
+                                        res.getString(R.string.link_not_found),
+                                        UserMessageBus.Severity.Info,
+                                    )
+                                },
+                            )
+                        } else {
+                            // All-feed view: TimelineScreen with no channel filter.
+                            TimelineScreen(
+                                feed = graph.postsRepository,
+                                tdlibRepo = graph.postsRepository,
+                                commentsRepo = graph.commentsRepository,
+                                folders = graph.chatFoldersRepository,
+                                translations = graph.translations,
+                                channelActions = graph.channelActions,
+                                bookmarks = graph.bookmarkStore,
+                                contentPadding = padding,
+                                showOnlyBookmarked = false,
+                                onChannelOpen = { id -> enterChannel(id, fromTab = NavTab.Feed) },
+                                onOpenComments = openComments,
+                                homeTapTrigger = homeTapTrigger,
+                                onBrandTap = { homeTapTrigger = System.nanoTime() },
+                                scrollToMessage = pendingScrollTarget,
+                                onScrollHandled = { pendingScrollTarget = null },
+                                onScrollMissed = {
+                                    graph.userMessages.post(
+                                        res.getString(R.string.link_not_found),
+                                        UserMessageBus.Severity.Info,
+                                    )
+                                },
+                                startupPhase = graph.startupCoordinator.phase,
+                            )
+                        }
                     }
                 }
                 NavTab.Channels -> ChannelsScreen(
@@ -541,13 +566,11 @@ fun MainScaffold(graph: AppGraph) {
                     bookmarks = graph.bookmarkStore,
                     contentPadding = padding,
                     showOnlyBookmarked = true,
-                    channelFilter = null,
-                    onChannelFilterChange = {
-                        // Tapping a channel from Saved jumps the user to the live feed
-                        // pre-filtered to that channel — same UX as ChannelsScreen.
-                        // enterChannel pushes onto the back-stack so Back returns the
-                        // user to Saved instead of always resetting to all-feed.
-                        if (it != null) enterChannel(it, fromTab = NavTab.Saved)
+                    onChannelOpen = { id ->
+                        // Tapping a channel from Saved jumps to ChannelScreen for that
+                        // channel. enterChannel pushes onto the back-stack so Back returns
+                        // the user to Saved instead of always resetting to all-feed.
+                        enterChannel(id, fromTab = NavTab.Saved)
                     },
                     onOpenComments = openComments,
                     homeTapTrigger = 0L,
