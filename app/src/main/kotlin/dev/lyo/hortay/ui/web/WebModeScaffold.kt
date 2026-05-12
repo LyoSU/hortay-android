@@ -190,15 +190,26 @@ fun WebModeScaffold(graph: AppGraph) {
             FloatingNavBar(
                 selected = selectedTab,
                 onSelect = { tab ->
-                    val reselectingFeed = tab == selectedTab && tab == NavTab.Feed
-                    if (reselectingFeed) {
-                        // Re-tap on the active Home tab → clear the channel
-                        // drill stack and bump the home-tap trigger so
-                        // TimelineScreen scrolls to top (or refreshes when
-                        // already there). Same gesture contract as TDLib mode.
-                        channelStack = emptyList()
-                        channelEntryTab = null
-                        homeTapTrigger = System.nanoTime()
+                    // Same three-case dispatch as MainScaffold's TDLib counterpart —
+                    // Home tap behaves differently depending on whether the user is
+                    // inside a channel drill, on the all-feed already, or coming
+                    // from another tab:
+                    //   (a) Home + inside a channel → exit the channel only; do NOT
+                    //       bump homeTapTrigger so the all-feed restores its prior
+                    //       scroll position.
+                    //   (b) Home + already on all-feed → bump homeTapTrigger for the
+                    //       canonical "scroll to top / refresh" gesture.
+                    //   (c) Any non-Home tab → just switch.
+                    val tappingHomeWhileInChannel =
+                        tab == NavTab.Feed && channelStack.isNotEmpty()
+                    val reselectingActiveFeed =
+                        tab == NavTab.Feed && tab == selectedTab && channelStack.isEmpty()
+                    when {
+                        tappingHomeWhileInChannel -> {
+                            channelStack = emptyList()
+                            channelEntryTab = null
+                        }
+                        reselectingActiveFeed -> homeTapTrigger = System.nanoTime()
                     }
                     selectedTab = tab
                 },
