@@ -27,6 +27,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -126,6 +127,7 @@ fun WebChannelsScreen(
                 ChannelRow(
                     entry = entry,
                     onClick = { onChannelClick(entry.info.username) },
+                    onRetryClick = { graph.webFeedSource.retry(entry.info.username) },
                     onUnsubscribeClick = { pendingUnsubscribe = entry },
                 )
             }
@@ -216,10 +218,12 @@ private fun EmptyChannelsState(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ChannelRow(
     entry: ChannelEntry,
     onClick: () -> Unit,
+    onRetryClick: () -> Unit,
     onUnsubscribeClick: () -> Unit,
 ) {
     Row(
@@ -252,24 +256,30 @@ private fun ChannelRow(
                     )
                 }
             }
-            val subscriberLine = entry.info.subscribers?.let {
-                stringResource(R.string.web_subscribers, it)
-            }
-            val subtitle = buildString {
-                append("@${entry.info.username}")
-                if (subscriberLine != null) {
-                    append(" · ")
-                    append(subscriberLine)
+            ChannelSubtitle(entry = entry)
+        }
+        if (entry.status.isRetryable()) {
+            // Inline retry sits BEFORE the close affordance so the eye lands
+            // on "recover" before "remove" for a row that's currently failing.
+            // While the fetch is in flight (Loading) we swap the icon for a
+            // small spinner — same slot, no layout shift. Tap target stays the
+            // full IconButton 48 dp so the user doesn't have to aim at the
+            // 20 dp glyph.
+            IconButton(onClick = onRetryClick, enabled = entry.status != ChannelFetchStatus.Loading) {
+                if (entry.status == ChannelFetchStatus.Loading) {
+                    LoadingIndicator(modifier = Modifier.size(20.dp))
+                } else {
+                    Symbol(
+                        name = "refresh",
+                        contentDescription = stringResource(
+                            R.string.web_retry_for,
+                            entry.info.title,
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        size = 20.dp,
+                    )
                 }
             }
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            StatusBadge(entry.status)
         }
         IconButton(onClick = onUnsubscribeClick) {
             // Channel-aware Talkback label. "Unsubscribe" alone gave a
@@ -287,6 +297,82 @@ private fun ChannelRow(
             )
         }
     }
+}
+
+/**
+ * Retryable statuses are the ones where a re-fetch has a reasonable chance of
+ * resolving the situation — transient network blips, server-side rate-limit
+ * windows that have since expired, and parser failures that we may have fixed
+ * in a newer build the user updated to. [ChannelFetchStatus.NotFound] and
+ * [ChannelFetchStatus.Private] are deliberately excluded: Telegram holds these
+ * states server-side, no amount of client-side retry will change them, and
+ * surfacing a retry button there would teach learned helplessness ("tap retry,
+ * nothing changes, must be broken"). [ChannelFetchStatus.Loading] also returns
+ * true so the row keeps the same slot for a spinner mid-fetch (no layout shift
+ * when the icon flips to spinner and back).
+ */
+private fun ChannelFetchStatus.isRetryable(): Boolean = when (this) {
+    ChannelFetchStatus.Error,
+    ChannelFetchStatus.RateLimited,
+    ChannelFetchStatus.ParseFailure,
+    ChannelFetchStatus.Loading -> true
+    ChannelFetchStatus.NotFound,
+    ChannelFetchStatus.Private,
+    ChannelFetchStatus.Idle,
+    ChannelFetchStatus.Ok -> false
+}
+
+/**
+ * Single-line subtitle that folds the live fetch status into the `@handle ·`
+ * line instead of stacking a third row beneath it. The previous design painted
+ * a separate [StatusBadge] under the subtitle — visually that read as part of
+ * the channel's identifier ("@telegramtips connection error" wrapping as one
+ * caption) instead of a transient sync state, and ate vertical space on every
+ * row regardless of whether the channel was healthy. Folding gives one line
+ * with a clear hierarchy: handle first, then status (when present), then
+ * subscriber count (when known and no status is interesting).
+ *
+ * When the channel has a status worth surfacing AND no subscriber count yet
+ * (first-fetch failure), the status replaces what would otherwise be a bare
+ * `@handle` line. When subscribers are known from a previous successful fetch,
+ * the status STILL wins over them — a stale "11.6M subscribers" sitting next
+ * to a fresh "не вдалося оновити" reads as contradictory; the freshness of
+ * the failure is what the user needs to act on.
+ */
+@Composable
+private fun ChannelSubtitle(entry: ChannelEntry) {
+    val statusRes = entry.status.subtitleStringRes()
+    val statusLine = statusRes?.let { stringResource(it) }
+    val subscriberLine = entry.info.subscribers?.let {
+        stringResource(R.string.web_subscribers, it)
+    }
+    val tail = statusLine ?: subscriberLine
+    val isError = statusLine != null && entry.status != ChannelFetchStatus.Loading
+    val text = buildString {
+        append("@${entry.info.username}")
+        if (tail != null) {
+            append(" · ")
+            append(tail)
+        }
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = if (isError) MaterialTheme.colorScheme.error
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+private fun ChannelFetchStatus.subtitleStringRes(): Int? = when (this) {
+    ChannelFetchStatus.Idle, ChannelFetchStatus.Ok -> null
+    ChannelFetchStatus.Loading -> R.string.web_status_loading
+    ChannelFetchStatus.Error -> R.string.web_status_error
+    ChannelFetchStatus.RateLimited -> R.string.web_status_rate_limited
+    ChannelFetchStatus.NotFound -> R.string.web_status_not_found
+    ChannelFetchStatus.Private -> R.string.web_status_private
+    ChannelFetchStatus.ParseFailure -> R.string.web_status_parse_failure
 }
 
 @Composable
@@ -347,22 +433,3 @@ internal fun GuestModeBadge() {
     )
 }
 
-@Composable
-private fun StatusBadge(status: ChannelFetchStatus) {
-    val labelRes = when (status) {
-        ChannelFetchStatus.NotFound -> R.string.web_status_not_found
-        ChannelFetchStatus.Private -> R.string.web_status_private
-        ChannelFetchStatus.RateLimited -> R.string.web_status_rate_limited
-        ChannelFetchStatus.Error -> R.string.web_status_error
-        ChannelFetchStatus.ParseFailure -> R.string.web_status_parse_failure
-        ChannelFetchStatus.Loading -> R.string.web_status_loading
-        ChannelFetchStatus.Idle, ChannelFetchStatus.Ok -> return
-    }
-    val color = if (status == ChannelFetchStatus.Loading) MaterialTheme.colorScheme.onSurfaceVariant
-    else MaterialTheme.colorScheme.error
-    Text(
-        text = stringResource(labelRes),
-        style = MaterialTheme.typography.labelSmall,
-        color = color,
-    )
-}

@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com),
 and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Changed
+
+- **Guest-mode Channels list — failing rows get an inline retry affordance
+  and a clearer per-status copy**. Previously a fetch failure for a
+  subscribed channel painted a tiny error-tinted "connection error" label as
+  a third row beneath `@handle`, with no way to act on it other than waiting
+  for the next 5-minute tier-2 sweep or doing a pull-to-refresh on the feed
+  tab (which the user has no reason to associate with the Channels tab).
+  Two converging fixes:
+  - **Inline retry icon button** (`refresh` symbol, 20 dp glyph in a 48 dp
+    `IconButton` hit target) sits before the existing unsubscribe `X` for
+    rows whose status is one of `Error` / `RateLimited` / `ParseFailure`
+    — the three statuses where a re-fetch has a reasonable chance of
+    resolving the situation. `NotFound` and `Private` deliberately get no
+    retry affordance (Telegram holds those server-side; surfacing a retry
+    button would teach learned helplessness when tap-after-tap changes
+    nothing). While the in-flight fetch is running the same slot shows a
+    M3-Expressive `LoadingIndicator(20.dp)` instead of the glyph — no
+    layout shift between the two states. Routes through the existing
+    `WebFeedSource.retry(username)` Job factory, so concurrency caps and
+    rate-limit gate are honoured for free.
+  - **Status line folded into the `@handle ·` subtitle** instead of
+    stacking a third row beneath it. The previous design painted
+    `StatusBadge` under the subtitle, which visually read as part of the
+    channel's identifier (`@telegramtips connection error` wrapping as one
+    caption) and ate vertical space on every row regardless of whether the
+    channel was healthy. Folding gives one line: handle first, then status
+    (error-tinted, when present), or subscriber count (when known and no
+    status is interesting). When a previously-successful row goes Error,
+    the status now WINS over the cached subscriber count — a stale
+    "11.6M subscribers" sitting next to a fresh "не вдалося оновити" reads
+    as contradictory; the freshness of the failure is what the user needs
+    to act on.
+  - **Per-status copy rewritten** to be unambiguous about what the user
+    can do: `Error` → "не вдалося оновити" (was "помилка з'єднання" —
+    misleading, since this branch covers 5xx and unclassified-3xx, not
+    only IOExceptions); `NotFound` → "канал не знайдено"; `Private` →
+    "приватний канал"; `RateLimited` → "Telegram попросив почекати";
+    `ParseFailure` → "сторінка змінилася". English mirrors. TalkBack
+    `contentDescription` on the retry button reads "Повторити для
+    &lt;channel&gt;" so users with N failing rows can disambiguate
+    targets by name instead of position.
+
 ## [0.3.0] — 2026-05-12
 
 ### Added
