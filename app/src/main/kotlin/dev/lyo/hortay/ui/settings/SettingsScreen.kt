@@ -31,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import dev.lyo.hortay.BuildConfig
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AutoDownloadStore
+import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.NetworkUsage
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StatsRepository
@@ -169,6 +170,30 @@ private fun SettingsMain(
                 ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // ---- Mode-agnostic: feed-order + snap-scroll preferences -----------------
+            // Generic display settings that apply to both TDLib and guest modes —
+            // placed at the top so they read as "this is how the feed behaves"
+            // before any mode-conditional sections.
+            val currentFeedOrder by settings.feedOrder.collectAsStateWithLifecycle(FeedOrder.Newest)
+            val currentSnapScroll by settings.snapScroll.collectAsStateWithLifecycle(false)
+            SectionLabel(stringResource(R.string.settings_section_feed))
+            FeedOrderRows(
+                current = currentFeedOrder,
+                onSelect = { order ->
+                    if (order != currentFeedOrder) {
+                        scope.launch { settings.setFeedOrder(order) }
+                    }
+                },
+            )
+            SnapScrollRow(
+                enabled = currentSnapScroll,
+                onToggle = { next ->
+                    if (next != currentSnapScroll) {
+                        scope.launch { settings.setSnapScroll(next) }
+                    }
+                },
+            )
+
             // ---- TDLib-mode-only: traffic & storage cards backed by StatsRepository ----
             if (stats != null) {
                 SectionLabel(stringResource(R.string.settings_section_traffic))
@@ -707,6 +732,157 @@ private fun SettingsRow(
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = tint,
+            )
+        },
+    )
+}
+
+/**
+ * Two-row [SegmentedListItem] group for the feed-order preference. Selection is
+ * shown by tinting the active row's leading icon — no [androidx.compose.material3.RadioButton]
+ * on the trailing slot, which would import additional metaphor (mutually-exclusive
+ * choices in a dialog) on top of an already-affordant row pair. Matches the rest of
+ * the settings vocabulary where rows are tappable surfaces, not radio-style picks.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun FeedOrderRows(
+    current: FeedOrder,
+    onSelect: (FeedOrder) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+        FeedOrderRow(
+            symbol = "arrow_downward",
+            title = stringResource(R.string.settings_feed_order_newest_title),
+            subtitle = stringResource(R.string.settings_feed_order_newest_subtitle),
+            isSelected = current == FeedOrder.Newest,
+            index = 0,
+            count = 2,
+            onClick = { onSelect(FeedOrder.Newest) },
+        )
+        FeedOrderRow(
+            symbol = "arrow_upward",
+            title = stringResource(R.string.settings_feed_order_oldest_title),
+            subtitle = stringResource(R.string.settings_feed_order_oldest_subtitle),
+            isSelected = current == FeedOrder.OldestUnreadFirst,
+            index = 1,
+            count = 2,
+            onClick = { onSelect(FeedOrder.OldestUnreadFirst) },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun FeedOrderRow(
+    symbol: String,
+    title: String,
+    subtitle: String,
+    isSelected: Boolean,
+    index: Int,
+    count: Int,
+    onClick: () -> Unit,
+) {
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = index,
+        count = count,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    val leadingTint by androidx.compose.animation.animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "feed-order-tint",
+    )
+    SegmentedListItem(
+        onClick = onClick,
+        shapes = shapes,
+        leadingContent = {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(
+                        if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Symbol(name = symbol, tint = leadingTint, size = 22.dp)
+            }
+        },
+        supportingContent = {
+            Text(
+                text = subtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        trailingContent = null,
+        content = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+    )
+}
+
+/**
+ * Standalone [SegmentedListItem] for the snap-scroll toggle. Independent of
+ * [FeedOrderRows] in the layout — snap is a presentation mode (how fling
+ * behaves) orthogonal to ordering (what's shown). Single-row segment shape
+ * (`segmentedShapes(0, 1)`) so it reads as its own card.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SnapScrollRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = 0,
+        count = 1,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        onClick = { onToggle(!enabled) },
+        shapes = shapes,
+        leadingContent = {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(
+                        if (enabled) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Symbol(
+                    name = "play_circle",
+                    tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 22.dp,
+                )
+            }
+        },
+        supportingContent = {
+            Text(
+                text = stringResource(R.string.settings_snap_scroll_subtitle),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        trailingContent = {
+            Switch(checked = enabled, onCheckedChange = onToggle)
+        },
+        content = {
+            Text(
+                text = stringResource(R.string.settings_snap_scroll_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
             )
         },
     )

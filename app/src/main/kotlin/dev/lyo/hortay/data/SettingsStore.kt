@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -10,6 +11,18 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 enum class ThemeMode { System, Light, Dark }
+
+/**
+ * How the merged feed is ordered. `Newest` is the canonical Twitter / Telegram
+ * top-down chronology — newest posts at the top. `OldestUnreadFirst` is the
+ * Reeder / Feedly idiom for read-it-all-once flows: unread posts go first
+ * (oldest → newest, so each block reads forward in time like a newspaper
+ * column), then read posts fill the tail. The toggle is a global preference
+ * the user picks once in Settings; switching mid-session reshuffles the feed
+ * and TimelineScreen scrolls back to the top so the new order has a clear
+ * starting point. Default is [Newest] — matches existing behaviour.
+ */
+enum class FeedOrder { Newest, OldestUnreadFirst }
 
 /**
  * User preferences persisted across launches: theme, notifications opt-in, etc.
@@ -25,6 +38,33 @@ class SettingsStore(context: Context) {
 
     suspend fun setThemeMode(mode: ThemeMode) {
         dataStore.edit { it[KEY_THEME] = mode.name }
+    }
+
+    val feedOrder: Flow<FeedOrder> = dataStore.data.map { prefs ->
+        prefs[KEY_FEED_ORDER]?.let { runCatching { FeedOrder.valueOf(it) }.getOrNull() } ?: FeedOrder.Newest
+    }
+
+    suspend fun setFeedOrder(order: FeedOrder) {
+        dataStore.edit { it[KEY_FEED_ORDER] = order.name }
+    }
+
+    /**
+     * Reels-style snap-fling toggle. When enabled, fling gestures on the
+     * timeline LazyColumn settle on the nearest item boundary — each post
+     * "clicks into place" at the top of the viewport instead of free-coasting
+     * past. Implementation uses `rememberSnapFlingBehavior(SnapPosition.Start)`,
+     * so drag scrolling continues to work naturally (free movement until the
+     * user releases). Default off — opt-in via Settings.
+     *
+     * Applies to BOTH FeedOrder.Newest and FeedOrder.OldestUnreadFirst — the
+     * snap is a presentation mode independent of ordering semantics.
+     */
+    val snapScroll: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[KEY_SNAP_SCROLL] ?: false
+    }
+
+    suspend fun setSnapScroll(enabled: Boolean) {
+        dataStore.edit { it[KEY_SNAP_SCROLL] = enabled }
     }
 
     /**
@@ -43,6 +83,8 @@ class SettingsStore(context: Context) {
     private companion object {
         val KEY_THEME = stringPreferencesKey("theme_mode")
         val KEY_LAST_STORAGE_OPTIMIZE_AT = longPreferencesKey("last_storage_optimize_at")
+        val KEY_FEED_ORDER = stringPreferencesKey("feed_order")
+        val KEY_SNAP_SCROLL = booleanPreferencesKey("snap_scroll")
     }
 }
 

@@ -1,0 +1,20 @@
+-- Schema migration: version 3 → 4.
+--
+-- Adds the per-channel read-state cursor table for guest mode. See
+-- [ChannelReadCursor.sq] for the design rationale (sidecar table preserves
+-- the existing `SELECT *` channel projection; ON DELETE CASCADE keeps clear-
+-- cache flows simple). Additive only — no existing column or index touched,
+-- so the migration is risk-free on upgraded installs.
+--
+-- File-naming convention reminder for the next migration:
+--   • <N>.sqm migrates FROM schema version N TO version N+1.
+--   • So this file (3.sqm) bumps version 3 → 4; the next bump (4 → 5) is
+--     4.sqm; etc.
+
+CREATE TABLE channel_read_cursor (
+    username TEXT NOT NULL PRIMARY KEY,
+    last_seen_post_seq INTEGER NOT NULL,
+    FOREIGN KEY(username) REFERENCES channel(username) ON DELETE CASCADE
+);
+
+PRAGMA user_version = 4;

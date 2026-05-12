@@ -4,13 +4,16 @@ import android.util.Log
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
+import dev.lyo.hortay.data.ReadCursors
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.web.db.ChannelQueries
+import dev.lyo.hortay.data.web.db.ChannelReadCursorQueries
 import dev.lyo.hortay.data.web.db.CustomEmojiQueries
 import dev.lyo.hortay.data.web.db.PostQueries
 import dev.lyo.hortay.data.web.db.WebDatabase
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +61,7 @@ class WebRepository(
     private val postQueries: PostQueries get() = db.postQueries
     private val customEmojiQueries: CustomEmojiQueries get() = db.customEmojiQueries
     private val suggestionQueries get() = db.channelSuggestionQueries
+    private val readCursorQueries: ChannelReadCursorQueries get() = db.channelReadCursorQueries
 
     // ---- Reads (Flow) -------------------------------------------------------
 
@@ -399,6 +403,44 @@ class WebRepository(
     suspend fun markRead(postId: String) = withContext(ioDispatcher) {
         postQueries.markRead(postId)
     }
+
+    /**
+     * Per-channel read-cursor advance — guest mode's parallel to TDLib's
+     * [org.drinkless.tdlib.TdApi.ViewMessages] + `forceRead = true`. Atomic
+     * INSERT OR IGNORE + UPDATE clamped to `MAX(...)` inside one transaction so
+     * a stale viewport that emits a smaller seq after a real read cannot
+     * rewind the cursor under us. Called from the viewport-dwell collector in
+     * [dev.lyo.hortay.ui.timeline.TimelineScreen]; the cursor flow downstream
+     * re-emits and the [dev.lyo.hortay.ui.timeline.UnreadStrip] for cards at
+     * or below this seq fades out.
+     */
+    suspend fun markChannelRead(username: String, postSeq: Long) = withContext(ioDispatcher) {
+        db.transaction {
+            readCursorQueries.markReadInsert(username, postSeq)
+            readCursorQueries.markReadUpdate(postSeq, username)
+        }
+    }
+
+    /**
+     * Snapshot of every channel's read cursor as a [ReadCursors] map, keyed by
+     * the synthetic chat id [dev.lyo.hortay.data.web.WebPostAdapter.stableChatId]
+     * uses for [TimelinePost.chatId]. The conversion happens inside the Flow
+     * chain so the UI [dev.lyo.hortay.ui.timeline.LocalReadCursors] consumer
+     * gets a drop-in replacement for the TDLib-mode cursor flow.
+     */
+    fun observeReadCursors(): kotlinx.coroutines.flow.Flow<ReadCursors> =
+        readCursorQueries
+            .selectAll()
+            .asFlow()
+            .mapToList(ioDispatcher)
+            .map { rows ->
+                if (rows.isEmpty()) persistentMapOf()
+                else rows.fold(persistentMapOf<Long, Long>()) { acc, row ->
+                    acc.put(WebPostAdapter.stableChatId(row.username), row.last_seen_post_seq)
+                }
+            }
+            .distinctUntilChanged()
+            .flowOn(ioDispatcher)
 
     /**
      * Called by Coil's image-loader error path when a CDN URL returns 401/403/410 —

@@ -2,7 +2,9 @@ package dev.lyo.hortay.data
 
 import android.util.Log
 import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.collections.immutable.mutate
 import kotlinx.coroutines.CoroutineScope
@@ -126,6 +128,22 @@ class PostsRepository(
     private val _posts = MutableStateFlow<PersistentList<TimelinePost>>(persistentListOf())
     override val posts: StateFlow<PersistentList<TimelinePost>> = _posts.asStateFlow()
 
+    // Per-chat read cursors mirrored from TDLib's UpdateChatReadInbox stream and seeded
+    // from UpdateNewChat. Single source of truth for "has the user read up to message X
+    // in chat Y" — drives the UnreadStrip on PostCard and the FeedOrder.OldestUnreadFirst
+    // sort. PersistentMap so the StateFlow re-emits a structurally-shared map on
+    // per-cursor advances (O(log N) instead of full O(N) copy on every read ack), and
+    // Compose treats the type as @Immutable for skippability.
+    //
+    // Why a separate flow (not a field on TimelinePost): the cursor advances on viewport
+    // dwell ~1/sec per visible post AND on every external ack from the official TG
+    // client. Folding into TimelinePost would re-emit the whole feed list on every
+    // cursor change — every dependent (ViewModel.visiblePosts filter, autodownloader,
+    // snapshot persister) re-runs for nothing. A sidecar map lets PostCard recompose
+    // only for the chat whose cursor actually moved.
+    private val _chatReadCursors = MutableStateFlow<PersistentMap<Long, Long>>(persistentMapOf())
+    val chatReadCursors: StateFlow<PersistentMap<Long, Long>> = _chatReadCursors.asStateFlow()
+
     // Real-time *new* post stream — emits ONLY for posts that arrived via
     // [TdApi.UpdateNewMessage] (direct + album-debounce flush), i.e. through
     // [ingest]. Refresh / loadOlder / restoreFromSnapshot / loadChannelHistory /
@@ -218,7 +236,33 @@ class PostsRepository(
         // Posts from a freshly-joined channel reach us anyway via UpdateNewMessage; the user
         // can pull-to-refresh for back-history. Just cache the metadata.
         td.updates.filterIsInstance<TdApi.UpdateNewChat>()
-            .onEach { update -> chatCache[update.chat.id] = update.chat }
+            .onEach { update ->
+                chatCache[update.chat.id] = update.chat
+                // Seed the read cursor from the chat's server-side state so cards
+                // entering the feed during cold-start render with the correct
+                // unread/read decoration immediately — without this, every visible
+                // post would flash "unread" for the first frame after auth.
+                val cursor = update.chat.lastReadInboxMessageId
+                if (cursor > 0L) {
+                    _chatReadCursors.update { it.put(update.chat.id, cursor) }
+                }
+            }
+            .launchIn(scope)
+
+        // Canonical read-state stream from TDLib. Fires whenever the user reads in
+        // ANY client (official Telegram-Android included), so an UnreadStrip on a
+        // card the user has just read in TG-Android animates out within ~1 frame
+        // of the server ack landing here. monotonic-only update — TDLib has been
+        // observed to emit redundant resets with smaller ids during chat repair
+        // flows; clamping to monoMax(...) keeps the cursor from rewinding under us.
+        td.updates.filterIsInstance<TdApi.UpdateChatReadInbox>()
+            .onEach { update ->
+                _chatReadCursors.update { current ->
+                    val existing = current[update.chatId] ?: 0L
+                    if (update.lastReadInboxMessageId <= existing) current
+                    else current.put(update.chatId, update.lastReadInboxMessageId)
+                }
+            }
             .launchIn(scope)
 
         // UpdateChatLastMessage fires when TDLib (a) discovers a fresh lastMessage for
@@ -264,6 +308,33 @@ class PostsRepository(
                 if (update.chatList is TdApi.ChatListArchive) {
                     _archivedChatIds.update { it - update.chatId }
                 }
+            }
+            .launchIn(scope)
+
+        // Keep cached `Chat.positions` live. UpdateNewChat snapshots positions at
+        // first-sighting time, but a chat's list membership changes over the
+        // session: user joins a channel (zero-order → non-zero in ChatListMain),
+        // leaves it (non-zero → zero), or archives it (Main order → 0, Archive
+        // order → non-zero). The [ingest] filter below uses positions to decide
+        // whether to surface a chat's UpdateNewMessage in the feed, so a stale
+        // snapshot would either (a) hide a freshly-joined channel until app
+        // restart, or (b) leak posts from a channel the user just left.
+        //
+        // TdApi.Chat is a mutable Java POJO; rewriting the positions array
+        // in-place is safe because every read site is on the TDLib update
+        // dispatcher thread (which serialises events, see TdClient SharedFlow
+        // contract). order=0 means "remove from this list"; per TDLib docs the
+        // event always carries a single list/order pair.
+        td.updates.filterIsInstance<TdApi.UpdateChatPosition>()
+            .onEach { update ->
+                val chat = chatCache[update.chatId] ?: return@onEach
+                val listClass = update.position.list::class
+                val existing = chat.positions.toMutableList()
+                existing.removeAll { it.list::class == listClass }
+                if (update.position.order != 0L) {
+                    existing += update.position
+                }
+                chat.positions = existing.toTypedArray()
             }
             .launchIn(scope)
 
@@ -859,6 +930,28 @@ class PostsRepository(
             ?.also { chatCache[it.id] = it }
             ?: return
         if (!chat.isChannel()) return
+        // Per TDLib: UpdateNewMessage fires for ANY chat the client has ever
+        // resolved, including channels TDLib synced as a side-effect of the
+        // user opening a related chat (linked discussion group's parent
+        // channel, deep-link previews, public-username resolutions). Those
+        // channels are NOT in the user's ChatListMain / ChatListArchive, so
+        // they shouldn't surface in the feed. The user-visible symptom on
+        // OldestUnreadFirst was unread anchor "creep": each channel drill-
+        // back inserted 1-2 posts from such side-channels above the user's
+        // scroll position, shifting `firstVisibleItemIndex` and reading as
+        // "the app threw me to a random post". Same root cause for the pill
+        // surfacing posts the user can't trace back to their subscriptions.
+        //
+        // Telegram-Android filter: `chat.positions.any { it.list is ChatListMain
+        // && it.order != 0L }` (mirrored from `DialogObject.getInternalIdFromDialogId`
+        // + `MessagesController.getDialogsArray` policy — a chat lives in a
+        // user's "feed" only when it has a non-zero order in that chat list).
+        // We honour both Main and Archive here; the feed-scope (All / Archive /
+        // Folder) filter in TimelineScreen does the secondary partition.
+        val inUserList = chat.positions.any { pos ->
+            pos.order != 0L && (pos.list is TdApi.ChatListMain || pos.list is TdApi.ChatListArchive)
+        }
+        if (!inUserList) return
 
         // If a real-time burst still left an album fragmented (e.g. members spread across
         // >600 ms by upstream), probe the chat for the missing siblings before mapping.
@@ -1302,6 +1395,7 @@ class PostsRepository(
         refreshMutex.withLock {
             _posts.value = persistentListOf()
             chatCache.clear()
+            _chatReadCursors.value = persistentMapOf()
             pendingInteractionInfo.clear()
             interactionFlushScheduled.set(false)
             albumBuffers.clear()
