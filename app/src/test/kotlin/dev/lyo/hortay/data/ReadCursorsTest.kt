@@ -36,9 +36,6 @@ class ReadCursorsTest {
 
     @Test
     fun `discussion thread reply is never marked unread`() {
-        // Channel inbox cursor doesn't apply to thread replies — replies live in
-        // the linked discussion supergroup which has its own per-thread read state
-        // we don't currently track. UnreadStrip stays a feed-only affordance.
         val cursors = persistentMapOf(CHAT_ID to 100L)
         val reply = post(id = 200L).copy(parentId = 42L)
         assertFalse(reply.isUnreadIn(cursors))
@@ -68,83 +65,133 @@ class ReadCursorsTest {
     }
 
     @Test
-    fun `resumeReadingIndex returns oldest unread when there is a clear read-unread boundary`() {
-        // Newest-first feed: unread at the top (just-arrived), read below
-        // (history). The "resume reading" target is the OLDEST unread post —
-        // the boundary just above the read block. Scrolling there in newest-
-        // first order lands the user with newer unread above them and read
-        // history below.
+    fun `Newest order is a no-op on already-chronological input`() {
         val cursors = persistentMapOf(CHAT_ID to 50L)
         val newestFirst = listOf(
-            post(id = 70L, date = 700L), // index 0, unread (newest)
-            post(id = 60L, date = 600L), // index 1, unread (oldest unread = TARGET)
-            post(id = 40L, date = 400L), // index 2, read (newest read)
-            post(id = 30L, date = 300L), // index 3, read (oldest)
+            post(id = 70L, date = 700L), // unread, newest
+            post(id = 60L, date = 600L), // unread
+            post(id = 40L, date = 400L), // read
+            post(id = 30L, date = 300L), // read, oldest
         )
-        assertEquals(1, resumeReadingIndex(newestFirst, cursors))
+        val ordered = newestFirst.orderedFor(FeedOrder.Newest, cursors)
+        assertEquals(listOf(70L, 60L, 40L, 30L), ordered.map { it.id })
     }
 
     @Test
-    fun `resumeReadingIndex returns -1 when caught up`() {
-        // Nothing to resume to — every post is read. Cold-start scroll pin
-        // stays at top (newest) and the UnreadCounterPill is hidden.
+    fun `OldestUnreadFirst puts read block on top, unread below, both asc by date`() {
+        // Chat-app idiom: read history at the top, unread queue at the bottom.
+        // User auto-scrolls to first-unread boundary on mount; scrolling up walks
+        // back into history, scrolling down advances through the queue.
+        val cursors = persistentMapOf(CHAT_ID to 50L)
+        val newestFirst = listOf(
+            post(id = 70L, date = 700L), // unread
+            post(id = 60L, date = 600L), // unread
+            post(id = 40L, date = 400L), // read
+            post(id = 30L, date = 300L), // read (oldest)
+        )
+        val ordered = newestFirst.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
+        assertEquals(listOf(30L, 40L, 60L, 70L), ordered.map { it.id })
+    }
+
+    @Test
+    fun `OldestUnreadFirst on all-read feed sorts everything asc by date`() {
+        // Channel cursor sits above every loaded post — no unread block; the list
+        // is just the read history asc. TimelineScreen auto-scroll falls back to
+        // lastIndex (= newest at the bottom).
+        val cursors = persistentMapOf(CHAT_ID to 1_000L)
+        val posts = listOf(
+            post(id = 70L, date = 700L),
+            post(id = 30L, date = 300L),
+            post(id = 50L, date = 500L),
+        )
+        val ordered = posts.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
+        assertEquals(listOf(30L, 50L, 70L), ordered.map { it.id })
+    }
+
+    @Test
+    fun `OldestUnreadFirst falls back to source order while cursors are empty`() {
+        // Cold-start race fallback. TimelineScreen also gates the LazyColumn
+        // render on cursors-landed for OldestUnreadFirst, so this branch is a
+        // belt-and-braces against any callsite that hits orderedFor before
+        // cursors arrive.
+        val cursors = persistentMapOf<Long, Long>()
+        val newestFirst = listOf(
+            post(id = 70L, date = 700L),
+            post(id = 60L, date = 600L),
+            post(id = 40L, date = 400L),
+            post(id = 30L, date = 300L),
+        )
+        val ordered = newestFirst.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
+        assertEquals(listOf(70L, 60L, 40L, 30L), ordered.map { it.id })
+    }
+
+    @Test
+    fun `OldestUnreadFirst preserves source order for same-date same-block posts`() {
+        val cursors = persistentMapOf(CHAT_ID to 0L)
+        val posts = listOf(
+            post(id = 10L, date = 500L),
+            post(id = 11L, date = 500L),
+            post(id = 12L, date = 500L),
+        )
+        val ordered = posts.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
+        assertEquals(listOf(10L, 11L, 12L), ordered.map { it.id })
+    }
+
+    @Test
+    fun `OldestUnreadFirst new unread arrival lands at the END of the unread block`() {
+        // New posts via UpdateNewMessage are unread and carry the highest date.
+        // In the read-on-top, unread-below layout, they sort to the bottom of
+        // the unread block.
+        val cursors = persistentMapOf(CHAT_ID to 50L)
+        val initial = listOf(
+            post(id = 60L, date = 600L), // unread
+            post(id = 70L, date = 700L), // unread
+            post(id = 40L, date = 400L), // read
+        )
+        val withArrival = listOf(post(id = 80L, date = 800L)) + initial
+        val ordered = withArrival.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
+        assertEquals(listOf(40L, 60L, 70L, 80L), ordered.map { it.id })
+    }
+
+    @Test
+    fun `continueReadingIndex points to oldest unread in Newest order`() {
+        // Newest-first orientation: oldest unread is the LAST entry in the
+        // unread block.
+        val cursors = persistentMapOf(CHAT_ID to 50L)
+        val newestFirst = listOf(
+            post(id = 70L, date = 700L), // index 0, unread (newest)
+            post(id = 60L, date = 600L), // index 1, unread (oldest unread)
+            post(id = 40L, date = 400L), // index 2, read
+            post(id = 30L, date = 300L), // index 3, read
+        )
+        assertEquals(1, continueReadingIndex(FeedOrder.Newest, newestFirst, cursors))
+    }
+
+    @Test
+    fun `continueReadingIndex returns -1 when everything is read`() {
         val cursors = persistentMapOf(CHAT_ID to 1_000L)
         val newestFirst = listOf(
             post(id = 70L, date = 700L),
             post(id = 30L, date = 300L),
         )
-        assertEquals(-1, resumeReadingIndex(newestFirst, cursors))
+        assertEquals(-1, continueReadingIndex(FeedOrder.Newest, newestFirst, cursors))
+        assertEquals(-1, continueReadingIndex(FeedOrder.OldestUnreadFirst, newestFirst, cursors))
     }
 
     @Test
-    fun `resumeReadingIndex returns -1 when all posts are unread`() {
-        // No read history to anchor the boundary against. Hortay reads more
-        // like a Twitter feed than a chat-app inbox; landing on the oldest
-        // post of the entire feed reads as "the app threw me into ancient
-        // history". Cold-start pin stays at top (newest); the user reads
-        // forward into the past as they scroll down. Without this guard, an
-        // account with no pre-existing read state would land on a 2017-era
-        // post on every cold start.
-        val cursors = persistentMapOf(CHAT_ID to 0L)
-        val newestFirst = listOf(
-            post(id = 70L, date = 700L),
-            post(id = 60L, date = 600L),
-            post(id = 30L, date = 300L),
-        )
-        assertEquals(-1, resumeReadingIndex(newestFirst, cursors))
-    }
-
-    @Test
-    fun `resumeReadingIndex returns -1 while cursors are empty`() {
-        // Cold-start race: TDLib UpdateChatReadInbox hasn't landed yet, so we
-        // can't classify any post. Don't auto-scroll until cursors arrive.
-        val newestFirst = listOf(
-            post(id = 70L, date = 700L),
-            post(id = 30L, date = 300L),
-        )
-        assertEquals(-1, resumeReadingIndex(newestFirst, EmptyReadCursors))
-    }
-
-    @Test
-    fun `resumeReadingIndex returns -1 on empty input`() {
+    fun `continueReadingIndex points to first unread (read-tail boundary) in OldestUnreadFirst`() {
+        // Layout: read history above (asc by date) → unread queue below. The
+        // "continue reading" target is the boundary — first unread index =
+        // top of unread block. Scrolling there lands the user at "where they
+        // left off".
         val cursors = persistentMapOf(CHAT_ID to 50L)
-        assertEquals(-1, resumeReadingIndex(emptyList(), cursors))
-    }
-
-    @Test
-    fun `resumeReadingIndex ignores thread replies when counting read posts`() {
-        // parentId != null are comment replies; they're treated as read by
-        // isUnreadIn (the feed cursor doesn't apply to discussion threads),
-        // but they aren't "feed read history" either. A feed of one thread
-        // reply + several unread channel posts must NOT land on a resume
-        // target — there's no real read history to anchor against.
-        val cursors = persistentMapOf(CHAT_ID to 50L)
-        val mixed = listOf(
-            post(id = 70L, date = 700L),                       // unread
-            post(id = 60L, date = 600L),                       // unread
-            post(id = 200L, date = 200L).copy(parentId = 42L), // thread reply (treated as read)
+        val displayed = listOf(
+            post(id = 30L, date = 300L), // read
+            post(id = 40L, date = 400L), // read
+            post(id = 60L, date = 600L), // first unread — the target
+            post(id = 70L, date = 700L),
         )
-        assertEquals(-1, resumeReadingIndex(mixed, cursors))
+        assertEquals(2, continueReadingIndex(FeedOrder.OldestUnreadFirst, displayed, cursors))
     }
 
     private companion object {
