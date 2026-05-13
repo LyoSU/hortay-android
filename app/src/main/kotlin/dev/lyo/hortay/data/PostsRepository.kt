@@ -396,18 +396,105 @@ class PostsRepository(
         restoreFromSnapshotInternal()
     }
 
-    /** Returns the number of posts restored — exposed for callers that care. */
+    /**
+     * Returns the number of posts written — exposed for callers that care.
+     *
+     * Two modes, picked by the current state of [_posts]:
+     *  - **Empty feed**: refresh failed (offline, RPC error, no subscriptions
+     *    drained yet). Restore the snapshot in full as a last-known-good
+     *    fallback.
+     *  - **Non-empty feed with degraded albums**: refresh produced a 1-photo
+     *    card for an album because TDLib's local message DB hadn't finished
+     *    hydrating when [coalesceAlbumFragments]' surround fetch fired. The
+     *    snapshot from the previous healthy session has every member id saved
+     *    per-post (see [saveSnapshotNow]), and `GetMessage` uses TDLib's
+     *    per-message local index — working even when the chat history slice
+     *    isn't loaded yet. Fetch the saved siblings directly and let
+     *    [foldRawIntoCurrent] swap the degraded card for the rebuilt
+     *    full-album card cleanly.
+     *
+     * A healthy non-empty feed is a no-op.
+     */
     suspend fun restoreFromSnapshotInternal(): Int {
-        if (_posts.value.isNotEmpty()) return 0
         val snapshot = runCatching { snapshotStore.load() }
             .warnUnlessCancelled(TAG, "loadSnapshot")
             .getOrDefault(emptyList())
         if (snapshot.isEmpty()) return 0
 
-        // Parallel GetMessage. Bound concurrency so a 200-message snapshot doesn't
-        // spawn 200 concurrent JNI calls and overflow TDLib's request queue.
+        val current = _posts.value
+        return if (current.isEmpty()) fullRestore(snapshot)
+            else upgradeDegradedAlbums(current, snapshot)
+    }
+
+    private suspend fun fullRestore(snapshot: List<Pair<Long, Long>>): Int {
+        val messages = fetchSnapshotMessages(snapshot)
+        if (messages.isEmpty()) return 0
+        val mapped = mapSnapshotMessages(messages)
+        if (mapped.isEmpty()) return 0
+
+        var added = 0
+        _posts.update { current ->
+            // Refresh may have raced ahead; if so, keep its result intact and
+            // abandon the full restore — fresh always wins for the cold paint.
+            if (current.isNotEmpty()) current
+            else {
+                added = mapped.size
+                PostFilterStrategy.apply(mapped).take(MAX_FEED_SIZE).toPersistentList()
+            }
+        }
+        return added
+    }
+
+    private suspend fun upgradeDegradedAlbums(
+        current: PersistentList<TimelinePost>,
+        snapshot: List<Pair<Long, Long>>,
+    ): Int {
+        // Index degraded albums by (chatId, mediaAlbumId). The snapshot stores
+        // (chatId, msgId) pairs flat — we need mediaAlbumId per snapshot
+        // message to know which saved ids belong to which degraded album, so
+        // we fetch first, then filter.
+        val degradedAlbumKeys = current
+            .asSequence()
+            .filter { it.mediaAlbumId != 0L && it.albumMessageIds.size <= 1 }
+            .mapTo(HashSet()) { it.chatId to it.mediaAlbumId }
+        if (degradedAlbumKeys.isEmpty()) return 0
+
+        val candidateChats = degradedAlbumKeys.mapTo(HashSet()) { it.first }
+        val candidates = snapshot.filter { (chatId, _) -> chatId in candidateChats }
+        if (candidates.isEmpty()) return 0
+
+        val messages = fetchSnapshotMessages(candidates)
+        // Keep only messages that belong to a currently-degraded album. Solo
+        // posts and unrelated albums saved in the same chat's snapshot slice
+        // are noise here — we don't want to re-add yesterday's top-of-feed
+        // standalones the user has already scrolled past.
+        val albumMembers = messages.filter { msg ->
+            msg.mediaAlbumId != 0L && (msg.chatId to msg.mediaAlbumId) in degradedAlbumKeys
+        }
+        if (albumMembers.isEmpty()) return 0
+
+        val mapped = mapSnapshotMessages(albumMembers)
+        if (mapped.isEmpty()) return 0
+
+        var upgraded = 0
+        _posts.update { live ->
+            val before = live.mapTo(HashSet()) { it.chatId to it.id }
+            val next = foldRawIntoCurrent(live, mapped, MAX_FEED_SIZE)
+            upgraded = next.count { (it.chatId to it.id) !in before }
+            next
+        }
+        return upgraded
+    }
+
+    private suspend fun fetchSnapshotMessages(
+        snapshot: List<Pair<Long, Long>>,
+    ): List<TdApi.Message> {
+        // Parallel GetMessage. Bound concurrency so a 200-message snapshot
+        // doesn't spawn 200 concurrent JNI calls and overflow TDLib's request
+        // queue. GetMessage uses TDLib's per-message local index and works on
+        // a cold chat-history cache.
         val semaphore = Semaphore(SNAPSHOT_RESTORE_CONCURRENCY)
-        val messages = coroutineScope {
+        return coroutineScope {
             snapshot.map { (chatId, msgId) ->
                 async {
                     semaphore.withPermit {
@@ -416,38 +503,21 @@ class PostsRepository(
                 }
             }.awaitAll().filterNotNull()
         }
-        if (messages.isEmpty()) return 0
+    }
 
-        // Group by chat so each channel is mapped against a single Chat object — saves
-        // one GetChat per message in the cold-cache case. Each chat's slice is run
-        // through [coalesceAlbumFragments] so a corrupted single-id snapshot (the
-        // outcome of a previous partial-refresh downgrade, see [foldRawIntoCurrent])
-        // self-heals on the next cold start: the orphan album member becomes a
-        // single-member group, the surround fetch pulls its siblings, and
-        // PostFilterStrategy re-merges the full card. Without this, snapshot
-        // corruption is one-way: once `albumMessageIds` collapses to `[]`, save/
-        // restore preserves the 1-photo state forever.
+    private suspend fun mapSnapshotMessages(
+        messages: List<TdApi.Message>,
+    ): List<TimelinePost> {
+        // Group by chat so each channel is mapped against a single Chat
+        // object — saves one GetChat per message in the cold-cache case.
         val byChat = messages.groupBy { it.chatId }
-        val mapped = byChat.flatMap { (chatId, msgs) ->
+        return byChat.flatMap { (chatId, msgs) ->
             val chat = chatCache[chatId]
                 ?: runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()?.also { chatCache[chatId] = it }
                 ?: return@flatMap emptyList()
             if (!chat.isChannel()) emptyList()
             else coalesceAlbumFragments(chatId, msgs).map { mapper.toChannelPost(it, chat) }
         }
-        if (mapped.isEmpty()) return 0
-
-        var added = 0
-        _posts.update { current ->
-            // Refresh may have raced ahead; if so, keep its result intact and abandon
-            // the snapshot — fresh always wins.
-            if (current.isNotEmpty()) current
-            else {
-                added = mapped.size
-                PostFilterStrategy.apply(mapped).take(MAX_FEED_SIZE).toPersistentList()
-            }
-        }
-        return added
     }
 
     // 30 (not 20) so an album sitting on the limit boundary doesn't get split: most
@@ -1507,57 +1577,12 @@ class PostsRepository(
             }.awaitAll()
         }
 
-        // Second pass: rescue chats whose top card came in as a partial
-        // album. On a real cold start, TDLib's local message database is
-        // still being deserialised from disk while the first ingest
-        // fan-out runs — [coalesceAlbumFragments]' surround fetch sees
-        // a cold cache and returns empty, so a 5-photo album anchored
-        // at `lastMessage = M1` lands as a 1-photo card.
-        //
-        // User-visible symptom: "до перезавантаження пост був повним
-        // альбомом; після перезавантаження — лише одна картинка з
-        // альбому" — TDLib emits no UpdateChatLastMessage to self-heal
-        // because the channel's last message id didn't change between
-        // sessions, so without this pass the user would stay stuck on
-        // the partial card until the next manual PTR.
-        //
-        // Strategy: brief wait for TDLib to warm up its message cache,
-        // then re-ingest only chats whose top card is degraded
-        // (`mediaAlbumId != 0L && albumMessageIds.size <= 1`). The
-        // re-ingest goes through the same `coalesceAlbumFragments` →
-        // `foldRawIntoCurrent` path; the second surround fetch sees a
-        // warm cache and recovers the siblings, then `foldRawIntoCurrent`
-        // replaces the degraded card cleanly. Non-album chats and
-        // already-complete albums are skipped.
-        //
-        // Cost: one extra delay + at most N second-pass ingests, where
-        // N is the number of channels whose top card is a partial
-        // album. On a typical account that's 0..2 chats (most channels
-        // post solo or already-warm albums); on a worst-case 200-channel
-        // account where half the top cards are albums it's still
-        // bounded by the same Sem=4, so ~25 sequential round-trips,
-        // ~5 s — but that's the very condition the user is reporting.
-        // The +500 ms baseline is borne by every refresh, but it lands
-        // after _posts is already painted (refresh is single-shot, not
-        // streaming), so the user sees the first-pass result during
-        // the wait and the second-pass upgrade lands transparently.
-        delay(COLD_START_ALBUM_RESCUE_DELAY_MS)
-        val partialAlbumChats = _posts.value
-            .filter { it.mediaAlbumId != 0L && it.albumMessageIds.size <= 1 }
-            .map { it.chatId }
-            .distinct()
-        if (partialAlbumChats.isNotEmpty()) {
-            coroutineScope {
-                partialAlbumChats.map { chatId ->
-                    async {
-                        semaphore.withPermit {
-                            val msg = chatCache[chatId]?.lastMessage ?: return@withPermit
-                            ingest(chatId, listOf(msg))
-                        }
-                    }
-                }.awaitAll()
-            }
-        }
+        // Partial-album rescue lives in [restoreFromSnapshotInternal] now —
+        // it does targeted GetMessage on the previous session's saved member
+        // ids and works deterministically against TDLib's per-message local
+        // index, sidestepping the chat-history hydration race that the old
+        // in-line delay-and-re-ingest pass tried (and sometimes failed) to
+        // wait out.
     }
 
     /**
@@ -1670,30 +1695,6 @@ class PostsRepository(
         // Aligns with TDLib's default ~4 simultaneous downloads — same shape, same back-
         // pressure profile.
         const val REFRESH_CONCURRENCY = 4
-
-        /**
-         * Delay between [refreshLocked]'s first ingest fan-out and its
-         * cold-start album-rescue second pass.
-         *
-         * Why a second pass exists at all. On a real cold start TDLib's
-         * local message database is still deserialising from disk while
-         * `refreshLocked`'s per-chat ingest fires its first GetChatHistory
-         * surround fetch. The fetch sees an empty / partial local cache
-         * for that chat's history, so [coalesceAlbumFragments] can't
-         * rescue an album's siblings — a 5-photo album whose anchor is
-         * `Chat.lastMessage` lands as a 1-photo card. User-visible
-         * symptom: "до перезавантаження пост був повним альбомом; після
-         * перезавантаження — лише одна картинка з альбому".
-         *
-         * 500 ms is empirically enough for TDLib to finish the per-chat
-         * message-DB hydration triggered by the first GetChatHistory
-         * (the call itself nudges TDLib to load that chat's slice into
-         * memory). On a warm-cache subsequent refresh the second pass
-         * finds no partial albums and exits immediately, so the cost
-         * is exactly +500 ms once per cold start, paid after the user
-         * already sees the first-pass result on screen.
-         */
-        const val COLD_START_ALBUM_RESCUE_DELAY_MS = 500L
 
         /**
          * How long [refreshLocked] waits for late-arriving `UpdateNewChat` emissions to

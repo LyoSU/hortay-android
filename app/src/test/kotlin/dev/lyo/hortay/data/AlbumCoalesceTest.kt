@@ -263,26 +263,23 @@ class AlbumCoalesceTest {
     }
 
     @Test
-    fun `cold-start refresh self-heals a partial album when TDLib warms up`() = runTest {
-        // Reproduces the user-reported "перезагружаю — лише одна картинка з
-        // альбому є в стрічці" regression. On a true cold start, TDLib's
-        // local message database may not be fully deserialised by the time
+    fun `restoreFromSnapshot upgrades a degraded album using the previous session's saved member ids`() = runTest {
+        // Reproduces the user-reported "перезавантажую — лише одна картинка з
+        // альбому в стрічці" regression. On a real cold start, TDLib's local
+        // message database may not be fully deserialised by the time
         // refreshLocked's per-chat ingest fires its first GetChatHistory
-        // surround fetch. The fetch returns empty (cold-cache race), so
-        // [coalesceAlbumFragments] can't rescue the album's siblings, and
-        // the merged card lands with just the anchor message — visually a
-        // 1-photo card for what should have been the full 5-photo album.
+        // surround fetch — the fetch returns empty (cold-cache race), so
+        // [coalesceAlbumFragments] can't rescue the album's siblings and the
+        // merged card lands with just the anchor message.
         //
-        // The first ingest fan-out is best-effort. A short delay + a second
-        // pass over chats whose top card is a degraded album anchor is
-        // enough to recover: by then TDLib has had ~500 ms of warmup,
-        // surround fetch succeeds, and the merged card swells to the
-        // complete sibling set via foldRawIntoCurrent.
-        //
-        // Self-heal must NOT depend on UpdateChatLastMessage — that event
-        // only fires when the channel's last message *changes*, which it
-        // won't if the album posted before the user's previous session
-        // closed.
+        // The previous healthy session persisted every album member id via
+        // [saveSnapshotNow]. [restoreFromSnapshotInternal]'s upgrade pass
+        // GetMessage's each saved id (which works on a cold chat-history
+        // cache because TDLib indexes messages individually), groups by the
+        // freshly-observed mediaAlbumId, and routes the rebuilt 5-member
+        // batch through [foldRawIntoCurrent]. The degraded card is dropped
+        // by the anchor-id-or-any-member-id de-dup and replaced by the
+        // PostFilterStrategy-merged full album.
         val harness = PostsRepositoryTestHarness(this)
         val chatId = -7400L
         val albumId = 555L
@@ -296,38 +293,88 @@ class AlbumCoalesceTest {
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
         harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(chatId)) }
 
-        // First surround fetch: TDLib still warming up its local message
-        // database — returns empty. Subsequent calls: warm cache, returns
-        // the full 5-member album. The fakeChannelMessage anchor id is in
-        // [1, 5], so we gate on fromMessageId to distinguish this album's
-        // surround call from any unrelated GetChatHistory traffic.
-        var coalesceCallCount = 0
-        harness.td.onAny("GetChatHistory") { req ->
-            val q = req as TdApi.GetChatHistory
-            if (q.fromMessageId in 1L..5L) {
-                coalesceCallCount++
-                if (coalesceCallCount == 1) {
-                    TdApi.Messages(0, emptyArray())
-                } else {
-                    TdApi.Messages(full.size, full.toTypedArray())
-                }
-            } else {
-                TdApi.Messages(0, emptyArray())
-            }
+        // GetChatHistory always returns empty here — simulates a TDLib cold
+        // local cache that never warms within the refresh window. This is
+        // the *worst* case the snapshot upgrade is designed to handle.
+        harness.td.onAny("GetChatHistory") { TdApi.Messages(0, emptyArray()) }
+
+        // Seed the snapshot with last session's full 5-member album ids and
+        // wire GetMessage to return the real messages — that's what TDLib's
+        // per-message local index provides on cold start (sidesteps the
+        // chat-history hydration race).
+        harness.snapshotStore.seed(full.map { chatId to it.id })
+        harness.td.onAny("GetMessage") { req ->
+            val q = req as TdApi.GetMessage
+            full.firstOrNull { it.id == q.messageId } ?: TdApi.Error(404, "not found")
         }
 
         harness.repo.refresh()
+        harness.advanceUntilIdle()
+
+        // After refresh: degraded 1-photo card (cold surround fetch returned
+        // empty, anchor id is in albumMessageIds via the size-1 mergeAlbumMembers
+        // shortcut). Pre-condition check so the rest of the test exercises a
+        // real degradation, not a false positive.
+        val degraded = harness.repo.posts.value.single()
+        assertEquals(
+            1,
+            (degraded.content as PostContent.PhotoAlbum).items.size,
+            "pre-condition: refresh against a cold TDLib cache must yield a 1-photo card",
+        )
+
+        harness.repo.restoreFromSnapshot()
         harness.advanceUntilIdle()
 
         val card = harness.repo.posts.value.single()
         assertEquals(
             5,
             card.albumMessageIds.size,
-            "cold-start refresh must re-attempt the surround fetch after TDLib warms up; " +
-                "the merged card must end up carrying all 5 album members",
+            "snapshot upgrade must rebuild the full 5-member album from the previous session's saved ids",
         )
         val items = (card.content as PostContent.PhotoAlbum).items
         assertEquals(5, items.size, "merged card content must carry 5 items, not 1")
+    }
+
+    @Test
+    fun `restoreFromSnapshot leaves a healthy feed untouched`() = runTest {
+        // Sibling invariant for the upgrade path: when [_posts] holds no
+        // degraded albums, restore must be a no-op. The snapshot may carry
+        // stale top-of-feed entries from yesterday that no longer belong in
+        // the live feed; the upgrade path is *only* there to repair
+        // partial-album damage from the cold-cache race, not to re-inject
+        // older content.
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -8200L
+        val solo = harness.fakeChannelMessage(chatId, /* messageId */ 42L, date = baseDate)
+        val chat = harness.fakeChannel(id = chatId, lastMessage = solo)
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+
+        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
+        harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(chatId)) }
+
+        // Snapshot from a previous session carries an older solo post the
+        // user has scrolled past — restore must NOT re-add it.
+        val stale = harness.fakeChannelMessage(chatId, /* messageId */ 7L, date = baseDate - 100)
+        harness.snapshotStore.seed(listOf(chatId to stale.id))
+        harness.td.onAny("GetMessage") { req ->
+            val q = req as TdApi.GetMessage
+            if (q.messageId == stale.id) stale else TdApi.Error(404, "not found")
+        }
+
+        harness.repo.refresh()
+        harness.advanceUntilIdle()
+        val before = harness.repo.posts.value
+        assertEquals(1, before.size, "pre-condition: feed has exactly one fresh post")
+
+        harness.repo.restoreFromSnapshot()
+        harness.advanceUntilIdle()
+        val after = harness.repo.posts.value
+        assertEquals(
+            before,
+            after,
+            "snapshot upgrade must leave a healthy feed untouched — no stale re-injection",
+        )
     }
 }
 
