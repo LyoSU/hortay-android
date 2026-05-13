@@ -97,9 +97,21 @@ fun List<TimelinePost>.orderedFor(
     cursors: ReadCursors,
 ): List<TimelinePost> = when (order) {
     FeedOrder.Newest -> this
-    FeedOrder.OldestUnreadFirst -> sortedWith(
-        compareBy({ it.isUnreadIn(cursors) }, { it.date }),
-    )
+    FeedOrder.OldestUnreadFirst -> {
+        // Cold-start race: when [cursors] is empty (TDLib UpdateChatReadInbox
+        // hasn't landed yet, typically 200-800ms after AuthorizationStateReady)
+        // [isUnreadIn] returns false for every post — by design, see KDoc on
+        // [isUnreadIn]. The stable sort below then groups everything into the
+        // "read" tier and orders ascending by date, so the visible top of the
+        // LazyColumn becomes the OLDEST post in the entire feed — exactly the
+        // "дуже старий рандомний пост на першому екрані" symptom. Fall back to
+        // the source order (newest-first per the [PostsRepository] /
+        // [WebFeedSource] contract) until cursors land; once they do, the
+        // re-sort kicks in and the cold-start scroll-pin lands at the actual
+        // first-unread boundary in one stable transition.
+        if (cursors.isEmpty()) this
+        else sortedWith(compareBy({ it.isUnreadIn(cursors) }, { it.date }))
+    }
 }
 
 /**
