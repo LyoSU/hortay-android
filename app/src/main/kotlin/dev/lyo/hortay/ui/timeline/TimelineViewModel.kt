@@ -9,6 +9,7 @@ import dev.lyo.hortay.data.TimelinePost
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -178,13 +179,30 @@ class TimelineViewModel(
                 }
             }
         }
-        // Cold-start path: restore the persisted snapshot first so the user sees real
-        // content within ~100ms (TDLib serves GetMessage from local DB synchronously),
-        // then kick off the freshness check in parallel. Both write through the same
-        // race-safe `_posts.update` merge in PostsRepository, so whichever finishes
-        // first becomes visible and the other layers on top without clobbering.
-        viewModelScope.launch { repo.restoreFromSnapshot() }
+        // Cold-start path: kick the network refresh off immediately, then race a
+        // grace-delayed snapshot restore against it. The snapshot reads ids from
+        // the persisted store and resolves each via TDLib's local DB — typically
+        // a sub-100ms pass — which made fast refresh-then-snapshot collisions
+        // briefly paint last-session top-of-feed before the live feed snapped in.
+        //
+        // Behaviour by race outcome:
+        //   • refresh wins (≤ grace, ~Wi-Fi/5G): the snapshot launch finds
+        //     [_posts] already populated; [PostsRepository.restoreFromSnapshotInternal]
+        //     bails on its `current.isNotEmpty()` guard and the user sees a single
+        //     stable state — no flicker, no scroll-target jump from snapshot
+        //     position to first-unread boundary.
+        //   • refresh loses (slow network, > grace): snapshot fires and renders
+        //     the cached top-of-feed in ~100ms after the grace expires — same UX
+        //     contract as before, the user gets real content while the refresh
+        //     RPC storm is still in flight.
+        //
+        // Both paths still write through the race-safe `_posts.update` merge in
+        // PostsRepository, so the merge correctness is unchanged.
         refreshIfStale()
+        viewModelScope.launch {
+            delay(SNAPSHOT_RESTORE_GRACE_PERIOD_MS)
+            repo.restoreFromSnapshot()
+        }
     }
 
     /** Pull-to-refresh — always fires regardless of staleness. Reveals pending afterwards. */
@@ -279,6 +297,12 @@ class TimelineViewModel(
         // catching deeper backfills (a user opening a channel they hadn't
         // looked at in days) as stale.
         const val PENDING_NEW_RECENCY_WINDOW_S = 6L * 60L * 60L
+        // Cold-start snapshot grace window. Sits at the perceptual "instant"
+        // threshold — long enough for a healthy-network refresh to land first
+        // (eliminating the snapshot → fresh-feed flicker that prompted this
+        // gate), short enough that on a slow network the user still sees the
+        // cached top-of-feed well before the refresh RPC storm finishes.
+        const val SNAPSHOT_RESTORE_GRACE_PERIOD_MS = 300L
     }
 }
 
