@@ -104,25 +104,20 @@ fun WebModeScaffold(graph: AppGraph) {
     // Same back-stack mechanics as MainScaffold — see [NavStack] KDoc.
     val stack by graph.nav.stack.collectAsStateWithLifecycle()
     val topEntry = stack.lastOrNull()
-    var preDrillTab by remember { mutableStateOf<NavTab?>(null) }
 
-    fun pushWebChannel(name: String, fromTab: NavTab) {
-        if (stack.isEmpty()) preDrillTab = fromTab
+    // The active tab is NOT touched on push — under the nav-overlay the
+    // user's originating tab keeps rendering, so a predictive-back swipe
+    // reveals the right content underneath. Pop just removes the overlay.
+    fun pushWebChannel(name: String) {
         graph.nav.push(NavEntry.WebChannel(username = name.lowercase()))
-        selectedTab = NavTab.Feed
     }
 
     fun popNav() {
-        graph.nav.pop() ?: return
-        if (graph.nav.stack.value.isEmpty()) {
-            selectedTab = preDrillTab ?: NavTab.Feed
-            preDrillTab = null
-        }
+        graph.nav.pop()
     }
 
     fun clearNav() {
         graph.nav.clear()
-        preDrillTab = null
     }
 
     val scope = rememberCoroutineScope()
@@ -401,7 +396,7 @@ fun WebModeScaffold(graph: AppGraph) {
                         graph = graph,
                         contentPadding = padding,
                         onChannelClick = { username ->
-                            pushWebChannel(username, fromTab = NavTab.Channels)
+                            pushWebChannel(username)
                         },
                         onAddChannel = { addSheetOpen = true },
                     )
