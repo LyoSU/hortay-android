@@ -15,6 +15,7 @@
 - Channels-row status folded into `@handle · <status>` subtitle (UK + EN).
 - Channel-drill rendered as overlay above always-mounted Feed.
 - Channel lists (TDLib + guest mode), channel-info sheet actions, and the country picker rows now render through Material 3 Expressive `SegmentedListItem` / `ListItem` instead of hand-rolled `Row + clip + clickable` chips — first/last rows get the larger outer corner radius, inner rows pinch tighter, and ripple respects the shape.
+- `OldestUnreadFirst` "Непрочитане" rule is now a peripheral session anchor: `labelSmall` typography with a 35%-opacity primary tint at ~28dp height, tuned so the rule reads as orientation rather than as a feed item asking for attention.
 
 ### Fixed
 - Reaction chips on the post-detail anchor and on comments now actually toggle; the anchor PostCard tracks the live feed entry so optimistic updates and server `UpdateMessageInteractionInfo` flow into the visible chip.
@@ -34,6 +35,7 @@
 - Web mode media URL rotation now actually re-fetches: the ingest fingerprint guard treated `fetched_at_ms == 0` (the marker `markMediaStale` writes when Coil reports a 401/403/410) as unchanged, so rotated CDN tokens never reached the DB and the next image load failed identically. Stale flag now forces the upsert through.
 - Feed ordering is now deterministic across refreshes when multiple posts share the same whole-second timestamp (cross-poster bots, schedule bursts). Newest-first sort tie-breaks by id descending; `OldestUnreadFirst` and the SQLite web-mode feed tie-break by id/seq. Previously the HashMap iteration order in `PostFilterStrategy.mergeAlbums` made same-second posts swap places between refreshes, reading as "feed jitters" or "post moved" in the UI.
 - Lint gate is green again — `LocalContextGetResourceValueCall` errors in `FullScreenMediaViewer` and `WebModeScaffold` (resource lookups via captured `LocalContext.current` inside coroutine bodies) now go through `context.resources.getString` so lint's heuristic stops flagging them.
+- `OldestUnreadFirst`: the "Непрочитане" boundary divider no longer migrates under the user's scroll when a card is dwell-acked. The rule now reads from a frozen cursor snapshot latched on cold-start landing and on pull-to-refresh completion; the per-card unread strip and the floating "↓ N" counter stay live as before. Matches the chat-app idiom (Telegram-Android, Slack, Discord all latch their New-messages rule on chat open and refuse to move it mid-session).
 
 ### Performance
 - Reaction taps flip optimistically across feed / channel / post detail / comments; server reconciles via `UpdateMessageInteractionInfo`, RPC failure rolls back.
