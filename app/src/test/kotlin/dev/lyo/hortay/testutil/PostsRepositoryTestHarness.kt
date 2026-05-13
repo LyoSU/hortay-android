@@ -81,7 +81,13 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
     private val connection = MutableStateFlow(ConnectionStatus.Ready)
     private val userMessages = UserMessageBus()
     private val mapper = MessageMapper(td, FakeStrings)
-    private val snapshotStore: TimelineSnapshotStore = InMemoryTimelineSnapshotStore()
+
+    /**
+     * Exposed for tests that drive the snapshot upgrade path directly —
+     * pre-populating the snapshot lets [PostsRepository.restoreFromSnapshot]
+     * be exercised without needing to chain a save round-trip first.
+     */
+    val snapshotStore: InMemoryTimelineSnapshotStore = InMemoryTimelineSnapshotStore()
 
     val repo: PostsRepository = PostsRepository(
         td = td,
@@ -145,10 +151,12 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
         )
     }
 
-    private class InMemoryTimelineSnapshotStore : TimelineSnapshotStore {
+    class InMemoryTimelineSnapshotStore : TimelineSnapshotStore {
         private var entries: List<Pair<Long, Long>> = emptyList()
         override suspend fun load(): List<Pair<Long, Long>> = entries
         override suspend fun save(entries: List<Pair<Long, Long>>) { this.entries = entries }
         override suspend fun clear() { entries = emptyList() }
+        /** Test-only seeder so tests can simulate "previous healthy session" state. */
+        fun seed(entries: List<Pair<Long, Long>>) { this.entries = entries }
     }
 }
