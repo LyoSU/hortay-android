@@ -145,7 +145,14 @@ class PostsRepositoryRefreshTest {
     }
 
     @Test
-    fun `refresh issues exactly one GetChatHistory per album lastMessage for coalescing`() = runTest {
+    fun `refresh issues exactly one GetChatHistory per album lastMessage on warm cache`() = runTest {
+        // RPC budget contract on the happy warm-cache path: ONE coalesce
+        // surround fetch per album lastMessage, zero for solo posts. The
+        // cold-cache rescue pass (`COLD_START_ALBUM_RESCUE_DELAY_MS`) does
+        // not fire here because the warm-cache responder returns the full
+        // album on the first pass, so the resulting merged card carries
+        // `albumMessageIds.size = 3 > 1` and is skipped by the rescue
+        // filter.
         val harness = PostsRepositoryTestHarness(this)
         val albumChat = harness.fakeChannel(
             id = -6000L,
@@ -164,11 +171,16 @@ class PostsRepositoryRefreshTest {
 
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
         harness.td.onAny("GetChats") { TdApi.Chats(3, longArrayOf(-6000L, -6001L, -6002L)) }
-        // Album coalesce probe returns the same single member (nothing extra to merge).
+        // Warm-cache responder: surround fetch returns all three album
+        // members so the merged card lands complete on the first pass.
         harness.td.onAny("GetChatHistory") {
             TdApi.Messages(
-                /*totalCount*/ 1,
-                arrayOf(harness.fakeChannelMessage(-6000L, 600L, mediaAlbumId = 999L)),
+                /*totalCount*/ 3,
+                arrayOf(
+                    harness.fakeChannelMessage(-6000L, 600L, mediaAlbumId = 999L),
+                    harness.fakeChannelMessage(-6000L, 601L, mediaAlbumId = 999L),
+                    harness.fakeChannelMessage(-6000L, 602L, mediaAlbumId = 999L),
+                ),
             )
         }
 
@@ -176,6 +188,6 @@ class PostsRepositoryRefreshTest {
         harness.advanceUntilIdle()
 
         assertEquals(1, harness.td.rpcCount("GetChatHistory"),
-            "GetChatHistory must fire exactly once — for the single album lastMessage")
+            "warm-cache path: one surround fetch for the one album lastMessage, no rescue pass")
     }
 }

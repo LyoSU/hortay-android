@@ -24,6 +24,7 @@
 - `OldestUnreadFirst` no longer auto-scrolls to the bottom on cold start when read cursors haven't loaded yet.
 - `OldestUnreadFirst` no longer flashes a random ancient post as the first visible card on cold start; falls back to newest-first until read cursors land, then re-sorts.
 - Editing a caption on an album in the channel no longer collapses the card to a single photo — `UpdateMessageContent` for any album member (anchor or sibling) re-ingests the whole group instead of replacing the merged content in place.
+- Cold-start refresh re-attempts the album surround fetch 500 ms after the first pass so a 5-photo album whose `Chat.lastMessage` is the anchor no longer lands as a 1-photo card while TDLib's local message database is still warming up.
 
 ### Performance
 - Reaction taps flip optimistically across feed / channel / post detail / comments; server reconciles via `UpdateMessageInteractionInfo`, RPC failure rolls back.

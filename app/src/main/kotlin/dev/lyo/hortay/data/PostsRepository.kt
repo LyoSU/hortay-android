@@ -1506,6 +1506,58 @@ class PostsRepository(
                 }
             }.awaitAll()
         }
+
+        // Second pass: rescue chats whose top card came in as a partial
+        // album. On a real cold start, TDLib's local message database is
+        // still being deserialised from disk while the first ingest
+        // fan-out runs — [coalesceAlbumFragments]' surround fetch sees
+        // a cold cache and returns empty, so a 5-photo album anchored
+        // at `lastMessage = M1` lands as a 1-photo card.
+        //
+        // User-visible symptom: "до перезавантаження пост був повним
+        // альбомом; після перезавантаження — лише одна картинка з
+        // альбому" — TDLib emits no UpdateChatLastMessage to self-heal
+        // because the channel's last message id didn't change between
+        // sessions, so without this pass the user would stay stuck on
+        // the partial card until the next manual PTR.
+        //
+        // Strategy: brief wait for TDLib to warm up its message cache,
+        // then re-ingest only chats whose top card is degraded
+        // (`mediaAlbumId != 0L && albumMessageIds.size <= 1`). The
+        // re-ingest goes through the same `coalesceAlbumFragments` →
+        // `foldRawIntoCurrent` path; the second surround fetch sees a
+        // warm cache and recovers the siblings, then `foldRawIntoCurrent`
+        // replaces the degraded card cleanly. Non-album chats and
+        // already-complete albums are skipped.
+        //
+        // Cost: one extra delay + at most N second-pass ingests, where
+        // N is the number of channels whose top card is a partial
+        // album. On a typical account that's 0..2 chats (most channels
+        // post solo or already-warm albums); on a worst-case 200-channel
+        // account where half the top cards are albums it's still
+        // bounded by the same Sem=4, so ~25 sequential round-trips,
+        // ~5 s — but that's the very condition the user is reporting.
+        // The +500 ms baseline is borne by every refresh, but it lands
+        // after _posts is already painted (refresh is single-shot, not
+        // streaming), so the user sees the first-pass result during
+        // the wait and the second-pass upgrade lands transparently.
+        delay(COLD_START_ALBUM_RESCUE_DELAY_MS)
+        val partialAlbumChats = _posts.value
+            .filter { it.mediaAlbumId != 0L && it.albumMessageIds.size <= 1 }
+            .map { it.chatId }
+            .distinct()
+        if (partialAlbumChats.isNotEmpty()) {
+            coroutineScope {
+                partialAlbumChats.map { chatId ->
+                    async {
+                        semaphore.withPermit {
+                            val msg = chatCache[chatId]?.lastMessage ?: return@withPermit
+                            ingest(chatId, listOf(msg))
+                        }
+                    }
+                }.awaitAll()
+            }
+        }
     }
 
     /**
@@ -1618,6 +1670,30 @@ class PostsRepository(
         // Aligns with TDLib's default ~4 simultaneous downloads — same shape, same back-
         // pressure profile.
         const val REFRESH_CONCURRENCY = 4
+
+        /**
+         * Delay between [refreshLocked]'s first ingest fan-out and its
+         * cold-start album-rescue second pass.
+         *
+         * Why a second pass exists at all. On a real cold start TDLib's
+         * local message database is still deserialising from disk while
+         * `refreshLocked`'s per-chat ingest fires its first GetChatHistory
+         * surround fetch. The fetch sees an empty / partial local cache
+         * for that chat's history, so [coalesceAlbumFragments] can't
+         * rescue an album's siblings — a 5-photo album whose anchor is
+         * `Chat.lastMessage` lands as a 1-photo card. User-visible
+         * symptom: "до перезавантаження пост був повним альбомом; після
+         * перезавантаження — лише одна картинка з альбому".
+         *
+         * 500 ms is empirically enough for TDLib to finish the per-chat
+         * message-DB hydration triggered by the first GetChatHistory
+         * (the call itself nudges TDLib to load that chat's slice into
+         * memory). On a warm-cache subsequent refresh the second pass
+         * finds no partial albums and exits immediately, so the cost
+         * is exactly +500 ms once per cold start, paid after the user
+         * already sees the first-pass result on screen.
+         */
+        const val COLD_START_ALBUM_RESCUE_DELAY_MS = 500L
 
         /**
          * How long [refreshLocked] waits for late-arriving `UpdateNewChat` emissions to

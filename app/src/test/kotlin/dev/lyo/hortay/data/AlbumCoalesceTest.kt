@@ -261,6 +261,74 @@ class AlbumCoalesceTest {
             "anchor edit must keep the 5 photo items in the merged card",
         )
     }
+
+    @Test
+    fun `cold-start refresh self-heals a partial album when TDLib warms up`() = runTest {
+        // Reproduces the user-reported "перезагружаю — лише одна картинка з
+        // альбому є в стрічці" regression. On a true cold start, TDLib's
+        // local message database may not be fully deserialised by the time
+        // refreshLocked's per-chat ingest fires its first GetChatHistory
+        // surround fetch. The fetch returns empty (cold-cache race), so
+        // [coalesceAlbumFragments] can't rescue the album's siblings, and
+        // the merged card lands with just the anchor message — visually a
+        // 1-photo card for what should have been the full 5-photo album.
+        //
+        // The first ingest fan-out is best-effort. A short delay + a second
+        // pass over chats whose top card is a degraded album anchor is
+        // enough to recover: by then TDLib has had ~500 ms of warmup,
+        // surround fetch succeeds, and the merged card swells to the
+        // complete sibling set via foldRawIntoCurrent.
+        //
+        // Self-heal must NOT depend on UpdateChatLastMessage — that event
+        // only fires when the channel's last message *changes*, which it
+        // won't if the album posted before the user's previous session
+        // closed.
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -7400L
+        val albumId = 555L
+        val full = (1L..5L).map { id ->
+            harness.fakePhotoAlbumMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
+        }
+        val chat = harness.fakeChannel(id = chatId, lastMessage = full.first())
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+
+        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
+        harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(chatId)) }
+
+        // First surround fetch: TDLib still warming up its local message
+        // database — returns empty. Subsequent calls: warm cache, returns
+        // the full 5-member album. The fakeChannelMessage anchor id is in
+        // [1, 5], so we gate on fromMessageId to distinguish this album's
+        // surround call from any unrelated GetChatHistory traffic.
+        var coalesceCallCount = 0
+        harness.td.onAny("GetChatHistory") { req ->
+            val q = req as TdApi.GetChatHistory
+            if (q.fromMessageId in 1L..5L) {
+                coalesceCallCount++
+                if (coalesceCallCount == 1) {
+                    TdApi.Messages(0, emptyArray())
+                } else {
+                    TdApi.Messages(full.size, full.toTypedArray())
+                }
+            } else {
+                TdApi.Messages(0, emptyArray())
+            }
+        }
+
+        harness.repo.refresh()
+        harness.advanceUntilIdle()
+
+        val card = harness.repo.posts.value.single()
+        assertEquals(
+            5,
+            card.albumMessageIds.size,
+            "cold-start refresh must re-attempt the surround fetch after TDLib warms up; " +
+                "the merged card must end up carrying all 5 album members",
+        )
+        val items = (card.content as PostContent.PhotoAlbum).items
+        assertEquals(5, items.size, "merged card content must carry 5 items, not 1")
+    }
 }
 
 /**
