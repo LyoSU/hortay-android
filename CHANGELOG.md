@@ -26,6 +26,7 @@
 - Editing a caption on an album in the channel no longer collapses the card to a single photo — `UpdateMessageContent` for any album member (anchor or sibling) re-ingests the whole group instead of replacing the merged content in place.
 - `OldestUnreadFirst` cold start: restore the asc-by-date reverse-feed layout (oldest read at top → unread queue → newest at the bottom, chat-app idiom) and eliminate the cold-start re-sort flash by gating the LazyColumn render on cursors-landed. The column shows nothing until TDLib's first `UpdateChatReadInbox` burst arrives, then paints in one stable transition with the scroll already positioned at the read→unread boundary (or at the bottom when caught up). No more "ghost old post for a beat, then jump".
 - 5-photo albums whose anchor is `Chat.lastMessage` now reliably reach the feed on relaunch: the previous healthy session's saved member ids drive a targeted `GetMessage` upgrade in `restoreFromSnapshot`, which sidesteps TDLib's chat-history hydration race that the old delay-and-retry pass tried (and sometimes failed) to wait out.
+- Cold-start snapshot no longer self-poisons when the user backgrounds before the album-upgrade pass lands: `saveSnapshotNow` now preserves previously-saved album siblings of any currently-degraded album, so the next cold start still has a source-of-truth to rebuild the full card from.
 
 ### Performance
 - Reaction taps flip optimistically across feed / channel / post detail / comments; server reconciles via `UpdateMessageInteractionInfo`, RPC failure rolls back.

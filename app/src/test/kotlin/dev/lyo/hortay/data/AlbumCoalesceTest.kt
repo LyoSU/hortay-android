@@ -5,6 +5,7 @@ import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -333,6 +334,85 @@ class AlbumCoalesceTest {
         )
         val items = (card.content as PostContent.PhotoAlbum).items
         assertEquals(5, items.size, "merged card content must carry 5 items, not 1")
+    }
+
+    @Test
+    fun `saveSnapshotNow does not poison healthy album membership when current view is degraded`() = runTest {
+        // Reproduces the "save-time poisoning" failure mode Codex flagged in
+        // audit. Lifecycle:
+        //   1. Session A persists healthy snapshot for album 555: ids [1..5].
+        //   2. Session B cold-starts. refreshLocked hits a cold TDLib cache;
+        //      coalesceAlbumFragments returns empty surround → the merged
+        //      card lands with just the anchor (mediaAlbumId set,
+        //      albumMessageIds.size == 1).
+        //   3. User backgrounds before restoreFromSnapshot's upgrade pass
+        //      lands. saveSnapshotNow runs on the foreground→background
+        //      transition. Without the anti-poisoning guard it overwrites
+        //      the on-disk snapshot with the degraded single id — losing
+        //      the last-known-good member set for good.
+        //   4. Next cold start: degraded again, but upgradeDegradedAlbums
+        //      has nothing to rebuild from. Permanent 1-photo card.
+        //
+        // The guard reads previous snapshot at save time, GetMessage's any
+        // id not already in the new save set (cheap — TDLib's per-message
+        // local index), and preserves siblings whose (chatId, mediaAlbumId)
+        // matches a currently-degraded album. Snapshot stays healthy
+        // through repeated degraded background-transitions.
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -7500L
+        val albumId = 556L
+        val full = (1L..5L).map { id ->
+            harness.fakePhotoAlbumMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
+        }
+        val chat = harness.fakeChannel(id = chatId, lastMessage = full.first())
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+
+        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
+        harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(chatId)) }
+        // Cold cache: surround fetch returns nothing → degraded card.
+        harness.td.onAny("GetChatHistory") { TdApi.Messages(0, emptyArray()) }
+        // Previous healthy session saved every member id.
+        val previousHealthySnapshot = full.map { chatId to it.id }
+        harness.snapshotStore.seed(previousHealthySnapshot)
+        // GetMessage works on cold cache (TDLib per-message local index).
+        harness.td.onAny("GetMessage") { req ->
+            val q = req as TdApi.GetMessage
+            full.firstOrNull { it.id == q.messageId } ?: TdApi.Error(404, "not found")
+        }
+
+        harness.repo.refresh()
+        harness.advanceUntilIdle()
+
+        // Pre-condition: refresh produced a degraded card — a single-member
+        // album short-circuits PostFilterStrategy.mergeAlbumMembers and
+        // returns the anchor post as-is with `albumMessageIds = emptyList()`
+        // but `mediaAlbumId` still set. That combination (mediaAlbumId != 0
+        // && albumMessageIds.size <= 1) is exactly what the save-time guard
+        // treats as degraded.
+        val degraded = harness.repo.posts.value.single()
+        assertEquals(
+            albumId,
+            degraded.mediaAlbumId,
+            "pre-condition: anchor's mediaAlbumId must survive the merge",
+        )
+        assertTrue(
+            degraded.albumMessageIds.size <= 1,
+            "pre-condition: refresh against cold cache must yield a degraded album",
+        )
+
+        // Skip restoreFromSnapshot — simulate user backgrounding before the
+        // upgrade pass runs. Trigger save by flipping foreground → background.
+        harness.goBackground()
+        harness.advanceUntilIdle()
+
+        val saved = harness.snapshotStore.load()
+        val savedIds = saved.filter { it.first == chatId }.map { it.second }.toSet()
+        assertEquals(
+            setOf(1L, 2L, 3L, 4L, 5L),
+            savedIds,
+            "save-time guard must preserve previously-saved siblings of currently-degraded albums",
+        )
     }
 
     @Test

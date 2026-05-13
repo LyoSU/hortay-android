@@ -77,7 +77,18 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
         }
     }
 
-    private val foreground = MutableStateFlow(true)
+    private val foregroundState = MutableStateFlow(true)
+
+    /** Flip foreground → background to trigger PostsRepository.saveSnapshotNow. */
+    fun goBackground() {
+        foregroundState.value = false
+    }
+
+    /** Flip background → foreground (no-op for save; symmetric helper). */
+    fun goForeground() {
+        foregroundState.value = true
+    }
+
     private val connection = MutableStateFlow(ConnectionStatus.Ready)
     private val userMessages = UserMessageBus()
     private val mapper = MessageMapper(td, FakeStrings)
@@ -96,7 +107,7 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
         userMessages = userMessages,
         connection = connection,
         snapshotStore = snapshotStore,
-        foreground = foreground,
+        foreground = foregroundState,
         res = FakeStrings,
     )
 
