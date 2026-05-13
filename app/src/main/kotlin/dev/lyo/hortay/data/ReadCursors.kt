@@ -95,7 +95,14 @@ fun List<TimelinePost>.orderedFor(
     cursors: ReadCursors,
 ): List<TimelinePost> = when (order) {
     FeedOrder.Newest -> this
-    FeedOrder.OldestUnreadFirst -> sortedBy { it.date }
+    // Tie-break by id ascending so same-date posts hold a deterministic
+    // position across re-sorts. PostFilterStrategy emits same-date posts in
+    // a non-deterministic HashMap iteration order, and Kotlin's stable
+    // sortedBy preserves that — meaning two posts with `date = 1715607123`
+    // could swap places between refreshes and read as "feed jitters" in
+    // the reverse-feed layout.
+    FeedOrder.OldestUnreadFirst ->
+        sortedWith(compareBy<TimelinePost> { it.date }.thenBy { it.id })
 }
 
 /**
