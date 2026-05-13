@@ -713,6 +713,40 @@ fun MainScaffold(graph: AppGraph) {
                     repo = graph.commentsRepository,
                     onDismiss = ::popNav,
                     onChannelClick = { p -> pushChannel(p.chatId) },
+                    onReactionToggle = { chatId, messageId, snapshot, kind, wasChosen ->
+                        // Tap origin is encoded in [chatId]: the anchor's chat is the
+                        // channel post's chatId; comments live in the linked discussion
+                        // supergroup ([CommentsRepository.ThreadState.Ready.threadChatId]).
+                        // We route the optimistic mutation to the repository that owns
+                        // that state and let TDLib reconcile via the usual
+                        // UpdateMessageInteractionInfo path.
+                        val isAnchor = chatId == entry.anchor.chatId
+                        val nowChosen = !wasChosen
+                        if (isAnchor) {
+                            graph.postsRepository.applyOptimisticReaction(chatId, messageId, kind, nowChosen)
+                        } else {
+                            graph.commentsRepository.applyOptimisticReaction(chatId, messageId, snapshot, kind, nowChosen)
+                        }
+                        scope.launch {
+                            val ok = graph.channelActions.toggleReaction(
+                                chatId = chatId,
+                                messageId = messageId,
+                                kind = kind,
+                                isChosen = wasChosen,
+                            )
+                            if (!ok) {
+                                // Revert: for the feed-backed anchor we re-toggle to the
+                                // pre-tap state (the inverse delta); for a comment we
+                                // simply drop the override so the chip falls back to
+                                // whatever TDLib last said.
+                                if (isAnchor) {
+                                    graph.postsRepository.applyOptimisticReaction(chatId, messageId, kind, wasChosen)
+                                } else {
+                                    graph.commentsRepository.clearOptimisticReaction(chatId, messageId)
+                                }
+                            }
+                        }
+                    },
                     backProgress = if (isCurrent) navBackProgress.value else 0f,
                     backSwipeEdge = navBackEdge,
                 )

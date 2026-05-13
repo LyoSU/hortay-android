@@ -35,14 +35,20 @@ class ChannelActionsRepository(
      * just no-ops with an error we log and discard. The UI chip still toggles optimistic
      * if the caller wants — TDLib will reconcile via UpdateMessageInteractionInfo.
      */
+    /**
+     * Toggle the user's reaction and return whether the RPC succeeded. Callers that
+     * applied an optimistic local update use the boolean to decide whether to revert.
+     * Failures still surface to [UserMessageBus] here — the boolean is purely the
+     * rollback signal, not a substitute for user-facing error routing.
+     */
     suspend fun toggleReaction(
         chatId: Long,
         messageId: Long,
         kind: ReactionKind,
         isChosen: Boolean,
-    ) {
+    ): Boolean {
         val type = kind.toTd()
-        runCatching {
+        val outcome = runCatching {
             if (isChosen) {
                 td.send(TdApi.RemoveMessageReaction(chatId, messageId, type))
             } else {
@@ -59,6 +65,7 @@ class ChannelActionsRepository(
         }
             .warnUnlessCancelled(TAG, "toggleReaction(${kind.stableKey}, isChosen=$isChosen)")
             .onFailure { it.surfaceTo(userMessages, res, R.string.op_change_reaction, connection.value) }
+        return outcome.isSuccess
     }
 
     private fun ReactionKind.toTd(): TdApi.ReactionType = when (this) {

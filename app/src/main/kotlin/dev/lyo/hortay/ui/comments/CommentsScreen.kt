@@ -34,6 +34,9 @@ import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.CommentsRepository
+import dev.lyo.hortay.data.ReactionItem
+import dev.lyo.hortay.data.ReactionKind
+import dev.lyo.hortay.data.Reactions
 import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.ThreadRow
@@ -79,6 +82,19 @@ fun CommentsScreen(
     repo: CommentsRepository,
     onDismiss: () -> Unit,
     onChannelClick: (TimelinePost) -> Unit = {},
+    /**
+     * Fired when the user taps a reaction chip — either on the pinned anchor post
+     * (chatId = channel chat id, messageId = album anchor id) or on a comment
+     * (chatId = linked discussion supergroup, messageId = comment id). The caller
+     * receives the [Reactions] snapshot the UI just rendered so it can apply an
+     * optimistic local toggle through the right repository without a re-read.
+     * Default is a no-op so the screen stays self-contained in previews/tests;
+     * production wiring lives in [MainScaffold] and routes to either
+     * `PostsRepository.applyOptimisticReaction` (anchor) or
+     * `CommentsRepository.applyOptimisticReaction` (comment), then to
+     * `ChannelActionsRepository.toggleReaction` with revert-on-failure.
+     */
+    onReactionToggle: (chatId: Long, messageId: Long, snapshot: Reactions, kind: ReactionKind, isChosen: Boolean) -> Unit = { _, _, _, _, _ -> },
     backProgress: Float = 0f,
     backSwipeEdge: Int = BackEventCompat.EDGE_LEFT,
 ) {
@@ -92,10 +108,19 @@ fun CommentsScreen(
     }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
 
     val viewer = LocalMediaViewer.current
-    val pinnedPostInteractions = remember(viewer, onChannelClick) {
+    val pinnedPostInteractions = remember(viewer, onChannelClick, onReactionToggle) {
         PostInteractions(
             onMediaClick = { p, idx -> viewer.openFor(p.content, idx) },
             onChannelClick = onChannelClick,
+            // Album anchor: Telegram pins reaction state to the FIRST message of an
+            // album (the carrier the rest of the members link back to). Mirrors the
+            // wiring in [TimelineScreen] — keep the two surfaces consistent so a
+            // reaction toggled in the feed reads as toggled on the post-detail card
+            // and vice versa.
+            onReactionToggle = { p, item ->
+                val target = p.albumMessageIds.firstOrNull() ?: p.id
+                onReactionToggle(p.chatId, target, p.reactions, item.kind, item.isChosen)
+            },
         )
     }
 
@@ -305,7 +330,24 @@ fun CommentsScreen(
                     }
                 } else {
                     items(items = s.rows, key = { it.message.id }) { row ->
-                        CommentNode(row, onMediaClick = { items, idx -> viewer.open(items, idx) })
+                        // [s.threadChatId] is the linked discussion supergroup — the
+                        // chat reactions live in for every comment. Captured fresh
+                        // per `Ready` emission so a re-resolved anchor (rare, but
+                        // possible if TDLib migrates the discussion group) routes
+                        // subsequent taps to the new chat without a screen rebuild.
+                        CommentNode(
+                            row = row,
+                            onMediaClick = { items, idx -> viewer.open(items, idx) },
+                            onReactionTap = { item ->
+                                onReactionToggle(
+                                    s.threadChatId,
+                                    row.message.id,
+                                    row.message.reactions,
+                                    item.kind,
+                                    item.isChosen,
+                                )
+                            },
+                        )
                     }
                 }
                 is CommentsRepository.ThreadState.Error -> item(key = "disabled") {
@@ -379,7 +421,11 @@ private fun CommentsEmptyState(symbol: String, title: String, body: String) {
 }
 
 @Composable
-private fun CommentNode(row: ThreadRow, onMediaClick: (List<AlbumItem>, Int) -> Unit) {
+private fun CommentNode(
+    row: ThreadRow,
+    onMediaClick: (List<AlbumItem>, Int) -> Unit,
+    onReactionTap: (ReactionItem) -> Unit,
+) {
     val indent = (row.depth * INDENT_DP).dp
     Row(
         modifier = Modifier
@@ -401,7 +447,12 @@ private fun CommentNode(row: ThreadRow, onMediaClick: (List<AlbumItem>, Int) -> 
                 )
             }
         }
-        CommentBubble(row, onMediaClick = onMediaClick, modifier = Modifier.weight(1f))
+        CommentBubble(
+            row = row,
+            onMediaClick = onMediaClick,
+            onReactionTap = onReactionTap,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -416,6 +467,7 @@ private fun CommentNode(row: ThreadRow, onMediaClick: (List<AlbumItem>, Int) -> 
 private fun CommentBubble(
     row: ThreadRow,
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
+    onReactionTap: (ReactionItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val message = row.message
@@ -488,7 +540,7 @@ private fun CommentBubble(
                 ) {
                     message.reactions.items.forEachIndexed { idx, item ->
                         if (idx > 0) Spacer(Modifier.width(6.dp))
-                        ReactionChip(item)
+                        ReactionChip(item, onClick = { onReactionTap(item) })
                     }
                 }
             }

@@ -30,12 +30,19 @@ Format — [Keep a Changelog](https://keepachangelog.com), versions — [SemVer]
 
 ### Fixed
 
+- Reaction chips on the post-detail anchor and on individual comments now actually toggle — the callback chain was wired only on the feed PostCard before, so taps on `CommentsScreen` chips were silently dropped.
 - Fresh posts now reach the visible feed in `OldestUnreadFirst` without an app restart — auto-accept gate is mode-aware (`atTop` / `atBottom`).
 - Cold-start scroll-pin no longer fires on mid-session arrivals (gated on `refreshing == true`).
 - Photo albums no longer arrive in the feed with missing members on slow networks: 2–9-member partial batches now trigger a surround fetch, the fetch window is sized to cover all 10 possible members, and `ingest()` refuses to replace a complete album card with a partial one. Album debounce widened 600 → 1000 ms.
 
+### Performance
+
+- Reaction taps land instantly across feed, channel, post detail and comments — the chip flips and the count adjusts before the TDLib RPC returns. Server reconciliation via `UpdateMessageInteractionInfo` overwrites the optimistic guess; RPC failure rolls back via the inverse toggle on the feed-backed posts and a dropped override on comments.
+
 ### Architecture
 
+- `ReactionTogglePolicy` — pure, unit-tested data-layer helper (`apply(current, kind, nowChosen)`) shared by `PostsRepository.applyOptimisticReaction` and `CommentsRepository.applyOptimisticReaction`. One source of truth for the optimistic toggle delta.
+- `CommentsRepository` gains a per-thread optimistic override map merged into the single-collector update fan-in via a new `ThreadEvent` sealed adapter; server `UpdateMessageInteractionInfo` clears the corresponding override so the chip always converges on TDLib's truth.
 - `LocalReadCursors` CompositionLocal decouples the reactive cursor map from the `TimelinePost` graph — `@Immutable` skippability preserved.
 
 ## [0.3.0] — 2026-05-12

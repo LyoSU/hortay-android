@@ -390,14 +390,21 @@ fun ChannelScreen(
             translationFor = ::lookupTranslation,
             translateEnabled = true,
             onReactionToggle = { post, item ->
+                // Optimistic UI: flip the chip first via [PostsRepository]
+                // ([TimelineScreen.onReactionToggle] uses the same pattern), then
+                // dispatch the RPC, then revert on failure. Keeps the channel-drill
+                // tap latency identical to the feed.
+                val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
+                val nowChosen = !item.isChosen
+                repo.applyOptimisticReaction(post.chatId, target, item.kind, nowChosen)
                 scope.launch {
-                    val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
-                    channelActions.toggleReaction(
+                    val ok = channelActions.toggleReaction(
                         chatId = post.chatId,
                         messageId = target,
                         kind = item.kind,
                         isChosen = item.isChosen,
                     )
+                    if (!ok) repo.applyOptimisticReaction(post.chatId, target, item.kind, item.isChosen)
                 }
             },
             onPostClick = { post ->

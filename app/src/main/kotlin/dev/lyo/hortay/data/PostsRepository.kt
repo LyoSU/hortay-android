@@ -1264,6 +1264,30 @@ class PostsRepository(
         // a frame and isn't worth the read-modify-write on _posts.
     }
 
+    /**
+     * Optimistic reaction toggle for the feed. The UI applies the obvious local effect
+     * (chip flips, count adjusts by one) BEFORE the RPC, then dispatches the real
+     * `AddMessageReaction` / `RemoveMessageReaction` via [ChannelActionsRepository].
+     * The eventual `UpdateMessageInteractionInfo` overwrites this state with server
+     * truth on the same `_posts.update` path the live update stream uses
+     * ([flushPendingInteractionInfo]) — so a slightly-off optimistic guess can never
+     * stick. On RPC failure, the caller invokes this method again with the inverted
+     * [nowChosen] to roll back the visual change.
+     *
+     * Album-aware: pass any member id and the anchor's reactions are flipped — keeps
+     * one card in lockstep with however TDLib happens to address the message.
+     */
+    fun applyOptimisticReaction(
+        chatId: Long,
+        messageId: Long,
+        kind: ReactionKind,
+        nowChosen: Boolean,
+    ) {
+        updateOnePostByAnyMemberId(chatId, messageId) {
+            it.copy(reactions = ReactionTogglePolicy.apply(it.reactions, kind, nowChosen))
+        }
+    }
+
     private fun handleIsPinnedChanged(update: TdApi.UpdateMessageIsPinned) {
         // Pin badge: TDLib pins one specific message; for an album in our timeline that
         // can be any sibling (Telegram typically pins the caption-carrier, but admins
