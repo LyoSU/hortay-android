@@ -775,7 +775,25 @@ fun TimelineScreen(
                         feedOrder, visiblePosts, sortCursors,
                     )
                     when {
-                        fu >= 0 -> fu
+                        // Boundary worth landing at: there ARE read posts
+                        // above the unread block, so first-unread positions
+                        // the boundary at the top of the viewport — the user
+                        // resumes reading from where they left off.
+                        //
+                        // `fu == 0` (all-unread case, no read posts ahead of
+                        // the unread block) deliberately falls through to the
+                        // `lastIndex` branch below: landing at index 0 is the
+                        // OLDEST unread post (Telegram-Android idiom — first
+                        // unread at top of viewport), but Hortay's "reverse"
+                        // feed is read like a Twitter timeline rather than a
+                        // chat-app inbox — newest-at-bottom is where the user
+                        // wants to be when they have no read history to
+                        // anchor the boundary against, the same place "caught
+                        // up" lands. Without this carve-out, an account with
+                        // zero pre-existing read state opens the app to a
+                        // 2017-era post, which reads as "the app threw me
+                        // into ancient history".
+                        fu > 0 -> fu
                         visiblePosts.isEmpty() -> 0
                         // "Don't know yet" (cold-start race) != "caught up".
                         // Stay at top until cursors land; then a single stable
