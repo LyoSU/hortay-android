@@ -127,6 +127,26 @@ class ReadCursorsTest {
     }
 
     @Test
+    fun `OldestUnreadFirst falls back to source order while cursors are empty`() {
+        // Cold-start race: TDLib UpdateChatReadInbox hasn't landed yet, so the
+        // cursors map is empty. Without the guard in orderedFor, every post
+        // sorts into the "read" tier (isUnreadIn = false when there's no
+        // cursor) ascending by date, putting the OLDEST post at index 0 —
+        // user-visible as "a random ancient post on the first frame after
+        // cold start". With the guard, we keep the source (newest-first)
+        // order until cursors arrive and the real boundary sort can run.
+        val cursors = persistentMapOf<Long, Long>() // empty
+        val newestFirst = listOf(
+            post(id = 70L, date = 700L),
+            post(id = 60L, date = 600L),
+            post(id = 40L, date = 400L),
+            post(id = 30L, date = 300L),
+        )
+        val ordered = newestFirst.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
+        assertEquals(listOf(70L, 60L, 40L, 30L), ordered.map { it.id })
+    }
+
+    @Test
     fun `OldestUnreadFirst preserves source order for same-date same-block posts`() {
         // Stable sort — Telegram emits album members with the same whole-second
         // date, and PostFilterStrategy already anchors albums on a deterministic id.
