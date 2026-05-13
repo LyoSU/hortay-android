@@ -14,13 +14,15 @@ enum class ThemeMode { System, Light, Dark }
 
 /**
  * How the merged feed is ordered. `Newest` is the canonical Twitter / Telegram
- * top-down chronology — newest posts at the top. `OldestUnreadFirst` is the
- * Reeder / Feedly idiom for read-it-all-once flows: unread posts go first
- * (oldest → newest, so each block reads forward in time like a newspaper
- * column), then read posts fill the tail. The toggle is a global preference
- * the user picks once in Settings; switching mid-session reshuffles the feed
- * and TimelineScreen scrolls back to the top so the new order has a clear
- * starting point. Default is [Newest] — matches existing behaviour.
+ * top-down chronology — newest posts at the top, scroll DOWN for older.
+ * `OldestUnreadFirst` is the reverse-feed / chat-app idiom — strict ascending
+ * by date, so OLDEST posts on top and NEWEST at the bottom; scrolling DOWN
+ * advances forward in time. On cold start the screen lands the user at the
+ * first unread post (= where to resume reading) when there's a backlog,
+ * otherwise at the bottom (= newest). The toggle is a global preference the
+ * user picks once in Settings; switching mid-session reshuffles the feed
+ * and TimelineScreen scrolls back to the home target so the new order has
+ * a clear starting point. Default is [Newest] — matches existing behaviour.
  */
 enum class FeedOrder { Newest, OldestUnreadFirst }
 

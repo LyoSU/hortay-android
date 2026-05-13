@@ -88,8 +88,7 @@ class TimelineViewModel(
                 // in their natural date position (the consumer sorts by date)
                 // rather than buffered under a "X новi постiв" pill that
                 // would mislead the user about freshness.
-                val now = System.currentTimeMillis() / 1000
-                val cutoff = now - PENDING_NEW_RECENCY_WINDOW_S
+                val cutoff = System.currentTimeMillis() - PENDING_NEW_RECENCY_WINDOW_MS
                 live.filter { p ->
                     val mark = hw[p.chatId] ?: return@filter true
                     p.date <= mark || p.date < cutoff
@@ -111,9 +110,11 @@ class TimelineViewModel(
                 // post-reconnect resync, or fetching linked-discussion-group
                 // parents. Without the window, days-old posts would inflate
                 // the "X нових" pill counter and surface as freshness when
-                // they're really just sync catch-up.
-                val now = System.currentTimeMillis() / 1000  // TdApi.Message.date is Unix seconds
-                val cutoff = now - PENDING_NEW_RECENCY_WINDOW_S
+                // they're really just sync catch-up. Both timestamps are in
+                // milliseconds — [MessageMapper.toChannelPost] does the
+                // `* 1000L` conversion on `TdApi.Message.date` (Unix seconds)
+                // so `TimelinePost.date` is consistently ms.
+                val cutoff = System.currentTimeMillis() - PENDING_NEW_RECENCY_WINDOW_MS
                 live.filter { p ->
                     val mark = hw[p.chatId] ?: return@filter false
                     p.date > mark && p.date >= cutoff
@@ -299,13 +300,14 @@ class TimelineViewModel(
 
     private companion object {
         const val STOP_TIMEOUT_MS = 5_000L
-        // Pending-pill freshness gate. Posts whose `date` is older than this
+        // Pending-pill freshness gate, in milliseconds (matches
+        // [TimelinePost.date]). Posts whose `date` is older than this
         // window are sync catch-up, not genuine new arrivals — they go
         // straight to [posts] without surfacing in the "X new posts" pill.
         // 6 h covers typical offline-and-back-in-the-evening cases while
         // catching deeper backfills (a user opening a channel they hadn't
         // looked at in days) as stale.
-        const val PENDING_NEW_RECENCY_WINDOW_S = 6L * 60L * 60L
+        const val PENDING_NEW_RECENCY_WINDOW_MS = 6L * 60L * 60L * 1000L
     }
 }
 

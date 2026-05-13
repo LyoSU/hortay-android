@@ -104,14 +104,24 @@ fun rememberReadAckDwell(
     val itemsState = rememberUpdatedState(displayedItems)
     if (markAsRead != null) {
         LaunchedEffect(listState, ackKey) {
-            snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+            // Track viewport by item KEY, not by index. During the dwell delay a
+            // fresh post can insert above the visible window (UpdateNewMessage)
+            // or the feed can re-sort (pull-to-refresh re-snapshot in
+            // OldestUnreadFirst), shifting the same index to a different post —
+            // dwell-by-index would then mark-as-read posts the user never
+            // actually saw. Key-based lookup keeps the ack honest: a key that's
+            // no longer in the rendered list silently drops out.
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.key } }
                 .distinctUntilChanged()
-                .collectLatest { indices ->
-                    if (indices.isEmpty()) return@collectLatest
+                .collectLatest { keys ->
+                    if (keys.isEmpty()) return@collectLatest
                     delay(dwellMs)
                     val snapshot = itemsState.value
                     if (snapshot.isEmpty()) return@collectLatest
-                    val visible = indices.flatMap { idx -> snapshot.getOrNull(idx)?.posts().orEmpty() }
+                    val keySet = keys.toHashSet()
+                    val visible = snapshot
+                        .filter { it.key in keySet }
+                        .flatMap { it.posts() }
                     val fresh = visible.filter { (it.chatId to it.id) !in ackedRead }
                     if (fresh.isEmpty()) return@collectLatest
                     fresh.forEach { ackedRead.add(it.chatId to it.id) }
