@@ -21,6 +21,7 @@
 - Photo albums no longer ship with missing members on slow networks.
 - Cold start no longer flashes last-session posts before settling on the fresh feed.
 - `OldestUnreadFirst` no longer auto-scrolls to the bottom on cold start when read cursors haven't loaded yet.
+- Editing a caption on an album in the channel no longer collapses the card to a single photo — `UpdateMessageContent` for any album member (anchor or sibling) re-ingests the whole group instead of replacing the merged content in place.
 
 ### Performance
 - Reaction taps flip optimistically across feed / channel / post detail / comments; server reconciles via `UpdateMessageInteractionInfo`, RPC failure rolls back.

@@ -1236,32 +1236,61 @@ class PostsRepository(
     }
 
     private fun handleContentChanged(update: TdApi.UpdateMessageContent) {
-        // The post might be an already-merged album whose anchor id ≠ update.messageId
-        // (the edited member is one of the siblings). Re-fetch + re-coalesce the whole
-        // album: that's the only way to keep the merged caption + items in sync given
-        // we don't track which item belongs to which member id at content level.
-        // For solo posts the fast path simply replaces the content in place.
-        val solo = updateOnePost(update.chatId, update.messageId) {
-            it.copy(content = MessageContentMapper.map(update.newContent, res))
-        }
-        if (solo) return
-        val anchor = _posts.value.firstOrNull {
-            it.chatId == update.chatId && update.messageId in it.albumMessageIds
+        // Locate the post the update targets — either by anchor id or by
+        // membership in an already-merged album's `albumMessageIds`. We do
+        // the lookup BEFORE deciding the strategy because the right branch
+        // depends on whether the post is an album at all, not just on
+        // whether its anchor id matches the update.
+        //
+        // The previous shape gated on "anchor.id == update.messageId" via
+        // [updateOnePost] and treated that as solo. That misclassified
+        // album anchor edits: TDLib emits `UpdateMessageContent(messageId
+        // = M1, newContent = MessagePhoto)` whenever an admin edits the
+        // caption (Telegram attaches captions to the anchor — per
+        // tdlib/td#2312, the first album member is the caption-carrier).
+        // The naive `.copy(content = mapper.map(newContent))` replaced
+        // the merged `PhotoAlbum(items = [5 photos])` with
+        // `PhotoAlbum(items = [1 photo from M1])` while `albumMessageIds`
+        // still claimed 5 siblings — inconsistent state, UI rendered
+        // `content.items`, the 5-photo card visibly collapsed to 1 photo.
+        // The user-visible regression was "card was correct, then a
+        // second later it shrank to one image".
+        //
+        // The right gate is [TimelinePost.mediaAlbumId]: anything with a
+        // non-zero album id must re-ingest the whole group, regardless of
+        // which member id the update names.
+        val target = _posts.value.firstOrNull { post ->
+            post.chatId == update.chatId &&
+                (post.id == update.messageId || update.messageId in post.albumMessageIds)
         } ?: return
-        // Re-ingest: GetMessage for the touched id, push through the album debounce so
-        // coalesceAlbumFragments fetches the rest and the regular ingest dedup logic
-        // replaces the merged anchor cleanly.
+
+        if (target.mediaAlbumId == 0L) {
+            // Solo post — fast path, swap content in place.
+            updateOnePost(update.chatId, update.messageId) {
+                it.copy(content = MessageContentMapper.map(update.newContent, res))
+            }
+            return
+        }
+
+        // Album member edit (anchor OR sibling). Re-ingest the whole album
+        // so the merged card stays consistent: GetMessage(touched id) →
+        // handleNewMessage → debounce → ingest → coalesceAlbumFragments
+        // rescues the siblings → foldRawIntoCurrent replaces the merged
+        // anchor cleanly with the freshly-coalesced 5-member set carrying
+        // the new caption.
+        //
+        // Note: we deliberately do not bump editDate here — the paired
+        // UpdateMessageEdited event arrives separately and is the
+        // authoritative source. The re-ingest resyncs the full album
+        // content; any intermediate "edited" badge would beat the
+        // official update only by a frame and isn't worth the
+        // read-modify-write on _posts.
         scope.launch {
             val msg = runCatching { td.send(TdApi.GetMessage(update.chatId, update.messageId)) }
                 .warnUnlessCancelled(TAG, "getMessage(${update.chatId},${update.messageId})")
                 .getOrNull() ?: return@launch
             handleNewMessage(msg)
         }
-        // Note: we deliberately do not bump editDate here — the paired
-        // UpdateMessageEdited event arrives separately and is the authoritative
-        // source. The re-ingest above resyncs the full album content; any
-        // intermediate "edited" badge would beat the official update only by
-        // a frame and isn't worth the read-modify-write on _posts.
     }
 
     /**

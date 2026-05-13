@@ -178,4 +178,113 @@ class AlbumCoalesceTest {
         assertEquals(5, survivor.albumMessageIds.size,
             "partial coalesce result must NOT replace an already-complete merged album")
     }
+
+    @Test
+    fun `album anchor caption edit must not downgrade the card to a single item`() = runTest {
+        // Reproduces the user-reported regression: an admin edits the caption
+        // of a 5-photo album in the channel. TDLib emits UpdateMessageContent
+        // for the anchor message (the lowest-id album member, which is the
+        // canonical caption-carrier per tdlib/td#2312). The naive
+        // updateOnePost-by-anchor-id path would replace the merged content
+        // with MessageContentMapper.map(MessagePhoto), which produces a
+        // PhotoAlbum-with-ONE-item — visually collapsing the 5-photo card to
+        // a single image, while albumMessageIds still claims 5 siblings
+        // (inconsistent state that the UI resolves by rendering content.items).
+        //
+        // Correct behaviour: any UpdateMessageContent targeting an album
+        // member (anchor or sibling) must re-ingest the album so the merged
+        // card stays whole with the updated caption.
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -7300L
+        val albumId = 666L
+
+        val full = (1L..5L).map { id ->
+            harness.fakePhotoAlbumMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
+        }
+        val chat = harness.fakeChannel(id = chatId, lastMessage = full.last())
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+
+        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
+        harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(chatId)) }
+        harness.td.onAny("GetChatHistory") { TdApi.Messages(full.size, full.toTypedArray()) }
+        // Anchor re-ingest path (the fix) performs a GetMessage(chatId, M1)
+        // before handing the result back through handleNewMessage. Make the
+        // fake respond with the post-edit anchor message so the test passes
+        // once the fix is in place; on the buggy path this responder simply
+        // isn't consulted.
+        harness.td.onAny("GetMessage") { req ->
+            val q = req as TdApi.GetMessage
+            harness.fakePhotoAlbumMessage(
+                chatId = q.chatId,
+                messageId = q.messageId,
+                date = baseDate,
+                mediaAlbumId = albumId,
+                caption = "edited caption",
+            )
+        }
+
+        harness.repo.refresh()
+        harness.advanceUntilIdle()
+
+        val seeded = harness.repo.posts.value.single()
+        assertEquals(5, seeded.albumMessageIds.size, "preflight: 5-photo album seeded")
+        assertEquals(
+            5,
+            (seeded.content as PostContent.PhotoAlbum).items.size,
+            "preflight: card content carries all 5 items",
+        )
+
+        // Admin edits caption on the anchor. The edited content is a
+        // MessagePhoto (single-photo message) — the structure TDLib emits for
+        // any individual album member, since each member IS a standalone
+        // photo message under the hood.
+        val editedAnchorContent = TdApi.MessagePhoto().apply {
+            photo = TdApi.Photo(false, null, emptyArray())
+            caption = TdApi.FormattedText("edited caption", emptyArray())
+        }
+        harness.td.emitUpdate(
+            TdApi.UpdateMessageContent(chatId, /* messageId */ 1L, editedAnchorContent),
+        )
+        harness.advanceUntilIdle()
+
+        val survivor = harness.repo.posts.value.single()
+        assertEquals(
+            5,
+            survivor.albumMessageIds.size,
+            "anchor edit must not shrink the album's member list",
+        )
+        val items = (survivor.content as PostContent.PhotoAlbum).items
+        assertEquals(
+            5,
+            items.size,
+            "anchor edit must keep the 5 photo items in the merged card",
+        )
+    }
+}
+
+/**
+ * Build a fake [TdApi.Message] carrying a [TdApi.MessagePhoto] content. Album
+ * tests need the items list to be non-empty after PostFilterStrategy merge —
+ * the harness's default [PostsRepositoryTestHarness.fakeChannelMessage] uses
+ * [TdApi.MessageText], which `MessageContentMapper` maps to `PostContent.Text`,
+ * yielding zero items inside the merged `PhotoAlbum`. Tests that assert on
+ * `content.items.size` therefore need this MessagePhoto-flavoured variant.
+ */
+private fun PostsRepositoryTestHarness.fakePhotoAlbumMessage(
+    chatId: Long,
+    messageId: Long,
+    date: Int,
+    mediaAlbumId: Long,
+    caption: String = "",
+): TdApi.Message = TdApi.Message().apply {
+    this.id = messageId
+    this.chatId = chatId
+    this.date = date
+    this.mediaAlbumId = mediaAlbumId
+    this.senderId = TdApi.MessageSenderChat(chatId)
+    this.content = TdApi.MessagePhoto().apply {
+        photo = TdApi.Photo(false, null, emptyArray())
+        this.caption = TdApi.FormattedText(caption, emptyArray())
+    }
 }
