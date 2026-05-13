@@ -15,7 +15,7 @@
 - Channel-drill rendered as overlay above always-mounted Feed.
 
 ### Fixed
-- Reaction chips on the post-detail anchor and on comments now actually toggle.
+- Reaction chips on the post-detail anchor and on comments now actually toggle; the anchor PostCard tracks the live feed entry so optimistic updates and server `UpdateMessageInteractionInfo` flow into the visible chip.
 - Fresh posts reach `OldestUnreadFirst` feed without restart.
 - Cold-start scroll-pin no longer fires on mid-session arrivals.
 - Photo albums no longer ship with missing members on slow networks.

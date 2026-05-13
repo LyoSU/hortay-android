@@ -711,6 +711,7 @@ fun MainScaffold(graph: AppGraph) {
                 is NavEntry.Comments -> CommentsScreen(
                     post = entry.anchor,
                     repo = graph.commentsRepository,
+                    feedRepo = graph.postsRepository,
                     onDismiss = ::popNav,
                     onChannelClick = { p -> pushChannel(p.chatId) },
                     onReactionToggle = { chatId, messageId, snapshot, kind, wasChosen ->

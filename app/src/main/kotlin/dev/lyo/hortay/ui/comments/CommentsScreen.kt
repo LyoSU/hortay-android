@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.CommentsRepository
+import dev.lyo.hortay.data.PostsRepository
 import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.Reactions
@@ -41,6 +42,7 @@ import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.ThreadRow
 import dev.lyo.hortay.data.TimelinePost
+import kotlinx.coroutines.flow.map
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
@@ -80,6 +82,18 @@ import kotlinx.coroutines.launch
 fun CommentsScreen(
     post: TimelinePost,
     repo: CommentsRepository,
+    /**
+     * Live feed source so the pinned anchor PostCard reflects the same reactions,
+     * view counts and comment counts the user would see in the feed below. Without
+     * this the anchor is rendered from the frozen [NavEntry.Comments] snapshot
+     * (captured at navigation time) — optimistic toggles and incoming
+     * `UpdateMessageInteractionInfo` updates go to `PostsRepository._posts` but
+     * never flow back to the visible chip on this screen. When the post is no
+     * longer in the feed window (deep-link to an evicted post, fresh deep-link
+     * before ingest), this falls through and the frozen snapshot stays — the
+     * chip just won't animate on tap until the post lands in `_posts`.
+     */
+    feedRepo: PostsRepository,
     onDismiss: () -> Unit,
     onChannelClick: (TimelinePost) -> Unit = {},
     /**
@@ -98,6 +112,26 @@ fun CommentsScreen(
     backProgress: Float = 0f,
     backSwipeEdge: Int = BackEventCompat.EDGE_LEFT,
 ) {
+    // Live anchor: track the feed entry whose chat+id matches the post we were
+    // opened with so reactions / view count / comment count stay fresh while the
+    // user is on this screen. `firstOrNull` keys on the anchor id directly —
+    // `PostsRepository` stores the album-coalesced anchor under its first
+    // member's id, and the NavEntry snapshot was minted from the same source, so
+    // ids match by construction. `distinctUntilChanged` is implicit via
+    // [collectAsStateWithLifecycle] keyed on the post identity; re-keying on
+    // post.id keeps a fresh subscription per pushComments(...). When the live
+    // lookup misses (post evicted from the 1000-entry window, or never ingested
+    // because it's a deep-link target) the frozen snapshot stays so the chip
+    // is still drawable.
+    val anchorChatId = post.chatId
+    val anchorId = post.id
+    val liveAnchor: TimelinePost? by remember(feedRepo, anchorChatId, anchorId) {
+        feedRepo.posts.map { list ->
+            list.firstOrNull { it.chatId == anchorChatId && it.id == anchorId }
+        }
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val anchor = liveAnchor ?: post
+
     // For an album, all sibling ids are candidates — the thread carrier may be any of
     // them. For a standalone post the only candidate is post.id.
     val candidateIds = remember(post.id, post.albumMessageIds) {
@@ -295,7 +329,12 @@ fun CommentsScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "post") {
-                PostCard(post = post, interactions = pinnedPostInteractions, clickable = false, expanded = true)
+                // Render the live feed entry when available so optimistic toggles
+                // and server-driven UpdateMessageInteractionInfo updates flow into
+                // this card without remounting the screen. Falls back to the
+                // frozen [NavEntry] snapshot for posts that aren't in the feed
+                // window.
+                PostCard(post = anchor, interactions = pinnedPostInteractions, clickable = false, expanded = true)
             }
 
             // The previous inline "X replies" / "no comments yet" label has been
