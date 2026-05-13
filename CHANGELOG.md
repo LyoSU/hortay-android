@@ -20,6 +20,7 @@
 - Cold-start scroll-pin no longer fires on mid-session arrivals.
 - Photo albums no longer ship with missing members on slow networks.
 - Cold start no longer flashes last-session posts before settling on the fresh feed.
+- `OldestUnreadFirst` no longer auto-scrolls to the bottom on cold start when read cursors haven't loaded yet.
 
 ### Performance
 - Reaction taps flip optimistically across feed / channel / post detail / comments; server reconciles via `UpdateMessageInteractionInfo`, RPC failure rolls back.

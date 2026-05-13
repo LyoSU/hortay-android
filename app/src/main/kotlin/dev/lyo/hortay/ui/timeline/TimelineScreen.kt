@@ -709,16 +709,29 @@ fun TimelineScreen(
     // actually changes, and the value is deterministic in inputs so it
     // stabilises after one pass.
     //
-    // OldestUnreadFirst target picker has three cases:
+    // OldestUnreadFirst target picker has four cases:
     //   - Has unread → first-unread boundary (where to resume reading).
-    //   - All caught up (no unread) → LAST index = newest read post. Top of
-    //     the list is the oldest read item (potentially 2017-era), which the
-    //     user has already moved past; landing there on a Home tap reads as
-    //     "the app threw me into ancient history". Newest-on-the-bottom is
-    //     where they most likely want to be when everything's done — same
-    //     contract as Twitter's "you're caught up, here's the latest". Home
-    //     tap at this position (atTarget) then triggers refresh — canonical
-    //     two-tap pattern.
+    //   - Cursors empty (cold-start race) → 0. [sortCursors] starts empty
+    //     because [snapshotCursors] only freezes once [readCursors] becomes
+    //     non-empty, and [readCursors] fills from TDLib UpdateChatReadInbox /
+    //     UpdateNewChat events that arrive AFTER AuthorizationStateReady
+    //     (typically 200-800ms after [posts] has already streamed in via
+    //     refresh / snapshot). Without this guard `isUnreadIn` returns false
+    //     for every post (null-cursor convention from ReadCursors.kt — keeps
+    //     the UnreadStrip from lighting every card up for ~500ms), then
+    //     [continueReadingIndex] returns -1, and the next branch sends the
+    //     user to [visiblePosts.lastIndex] under the mistaken impression
+    //     they're caught up. User-visible: snapshot top flashes for a beat,
+    //     then the feed scroll-pin yanks the LazyColumn to the BOTTOM of the
+    //     newly-streamed posts before cursors arrive to correct the target.
+    //   - All caught up (cursors known, no unread) → LAST index = newest read
+    //     post. Top of the list is the oldest read item (potentially 2017-era),
+    //     which the user has already moved past; landing there on a Home tap
+    //     reads as "the app threw me into ancient history". Newest-on-the-
+    //     bottom is where they most likely want to be when everything's done —
+    //     same contract as Twitter's "you're caught up, here's the latest".
+    //     Home tap at this position (atTarget) then triggers refresh —
+    //     canonical two-tap pattern.
     //   - Empty list → 0.
     val homeScrollIndex by remember(visiblePosts, sortCursors, feedOrder) {
         derivedStateOf {
@@ -731,6 +744,10 @@ fun TimelineScreen(
                     when {
                         fu >= 0 -> fu
                         visiblePosts.isEmpty() -> 0
+                        // "Don't know yet" (cold-start race) != "caught up".
+                        // Stay at top until cursors land; then a single stable
+                        // transition to first-unread or lastIndex follows.
+                        sortCursors.isEmpty() -> 0
                         else -> visiblePosts.lastIndex
                     }
                 }
