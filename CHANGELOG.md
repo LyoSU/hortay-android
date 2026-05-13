@@ -14,6 +14,7 @@
 ### Changed
 - Channels-row status folded into `@handle · <status>` subtitle (UK + EN).
 - Channel-drill rendered as overlay above always-mounted Feed.
+- Channel lists (TDLib + guest mode), channel-info sheet actions, and the country picker rows now render through Material 3 Expressive `SegmentedListItem` / `ListItem` instead of hand-rolled `Row + clip + clickable` chips — first/last rows get the larger outer corner radius, inner rows pinch tighter, and ripple respects the shape.
 
 ### Fixed
 - Reaction chips on the post-detail anchor and on comments now actually toggle; the anchor PostCard tracks the live feed entry so optimistic updates and server `UpdateMessageInteractionInfo` flow into the visible chip.

@@ -18,12 +18,15 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -154,32 +157,45 @@ fun CountryPickerSheet(
     }
 }
 
+/**
+ * Picker row built on Material 3 [ListItem]. Flag → name → dial code maps cleanly onto the
+ * leading/headline/trailing slots, so we get the standard ListItem rhythm (text alignment,
+ * 56 dp min height, padding) without hand-tuning a `Row + spacedBy(14.dp) + padding`.
+ *
+ * Container is transparent so the row sits flat on the sheet surface; rounded clip stays on
+ * `Modifier.clickable` chained INSIDE the `ListItem.modifier` so the ripple respects the
+ * shape — `ListItemDefaults.colors(containerColor = Transparent)` lets the sheet's own
+ * background show through.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun CountryRow(country: Country, onClick: () -> Unit) {
-    Row(
+    ListItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        // The flag glyph alignment differs across vendor emoji fonts — wrapping it in a
-        // fixed-width Box keeps the name column aligned across all rows regardless.
-        Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
-            Text(text = country.flag, style = MaterialTheme.typography.titleLarge)
-        }
-        Text(
-            text = country.name,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = country.dialCode,
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+            .clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
+            // The flag glyph alignment differs across vendor emoji fonts — wrapping
+            // it in a fixed-width Box keeps the name column aligned across all rows.
+            Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
+                Text(text = country.flag, style = MaterialTheme.typography.titleLarge)
+            }
+        },
+        headlineContent = {
+            Text(
+                text = country.name,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        },
+        trailingContent = {
+            Text(
+                text = country.dialCode,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+    )
 }

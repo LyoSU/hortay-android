@@ -2,18 +2,17 @@ package dev.lyo.hortay.ui.channels
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -173,6 +172,18 @@ fun ChannelInfoSheet(
     }
 }
 
+/**
+ * Bottom-sheet action row built on Material 3 [ListItem]. Each entry is a
+ * standalone action (mute, leave, join, report), not part of a connected
+ * segmented group — so plain `ListItem` is the right primitive here rather
+ * than [androidx.compose.material3.SegmentedListItem]. The 36 dp tinted disc
+ * around the leading glyph is preserved as the leading slot content so the
+ * sheet retains its visual identity (matches Telegram's chat-info modal where
+ * destructive actions read in red-on-tonal). Container is transparent so it
+ * sits flat on the sheet surface, with the standard ListItem padding handling
+ * vertical rhythm — no hand-tuned `padding(vertical = 12.dp)` required.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ActionRow(
     symbol: String,
@@ -180,35 +191,30 @@ private fun ActionRow(
     tint: Color = MaterialTheme.colorScheme.onSurface,
     onClick: () -> Unit,
 ) {
-    Row(
+    ListItem(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Start,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-            contentAlignment = Alignment.Center,
-        ) {
-            Symbol(
-                name = symbol,
-                tint = tint,
-                size = 20.dp,
+            .clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentAlignment = Alignment.Center,
+            ) {
+                Symbol(name = symbol, tint = tint, size = 20.dp)
+            }
+        },
+        headlineContent = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = tint,
             )
-        }
-        Spacer(Modifier.width(16.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = tint,
-        )
-    }
+        },
+    )
 }
 
 private fun formatThousands(n: Int): String =

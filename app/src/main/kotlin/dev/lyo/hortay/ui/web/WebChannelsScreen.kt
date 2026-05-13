@@ -1,22 +1,18 @@
 package dev.lyo.hortay.ui.web
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
@@ -27,9 +23,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -44,7 +42,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,8 +60,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Subscribed-channels list for guest mode. Mirrors [dev.lyo.hortay.ui.channels.ChannelsScreen]
- * shape: own [Scaffold] + collapsing [HortayTopBar] (Large), `surfaceContainerLow`
- * rounded row chips with a 48dp [TdAvatar] and per-channel status indicator.
+ * shape: own [Scaffold] + collapsing [HortayTopBar] (Large), Material 3 Expressive
+ * [SegmentedListItem] rows with a 48dp [TdAvatar] in the leading slot and a per-channel
+ * status indicator folded into the supporting line.
  *
  * Unsubscribe affordance: explicit trailing `close` icon button on each row, plus
  * a confirmation dialog. Long-press alone was discoverability-hostile.
@@ -79,7 +77,6 @@ fun WebChannelsScreen(
 ) {
     val channels by graph.webFeedSource.channels.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    val layoutDirection = LocalLayoutDirection.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         rememberTopAppBarState(),
     )
@@ -121,11 +118,13 @@ fun WebChannelsScreen(
                 top = padding.calculateTopPadding() + 8.dp,
                 bottom = contentPadding.calculateBottomPadding() + 8.dp,
             ),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
         ) {
-            items(subscribed, key = { it.info.username }) { entry ->
+            itemsIndexed(subscribed, key = { _, it -> it.info.username }) { index, entry ->
                 ChannelRow(
                     entry = entry,
+                    index = index,
+                    count = subscribed.size,
                     onClick = { onChannelClick(entry.info.username) },
                     onRetryClick = { graph.webFeedSource.retry(entry.info.username) },
                     onUnsubscribeClick = { pendingUnsubscribe = entry },
@@ -222,22 +221,68 @@ private fun EmptyChannelsState(
 @Composable
 private fun ChannelRow(
     entry: ChannelEntry,
+    index: Int,
+    count: Int,
     onClick: () -> Unit,
     onRetryClick: () -> Unit,
     onUnsubscribeClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ChannelAvatar(name = entry.info.title, avatarUrl = entry.info.avatarUrl)
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = index,
+        count = count,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        onClick = onClick,
+        shapes = shapes,
+        leadingContent = { ChannelAvatar(name = entry.info.title, avatarUrl = entry.info.avatarUrl) },
+        supportingContent = { ChannelSubtitle(entry = entry) },
+        trailingContent = {
+            // Two icon buttons live in a Row inside the trailing slot. Retry
+            // sits BEFORE close so the eye lands on "recover" before "remove"
+            // for a row that's currently failing. While the fetch is in flight
+            // (Loading) we swap the icon for a small spinner — same slot,
+            // no layout shift. Tap target stays the full IconButton 48 dp so
+            // the user doesn't have to aim at the 20 dp glyph.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (entry.status.isRetryable()) {
+                    IconButton(
+                        onClick = onRetryClick,
+                        enabled = entry.status != ChannelFetchStatus.Loading,
+                    ) {
+                        if (entry.status == ChannelFetchStatus.Loading) {
+                            LoadingIndicator(modifier = Modifier.size(20.dp))
+                        } else {
+                            Symbol(
+                                name = "refresh",
+                                contentDescription = stringResource(
+                                    R.string.web_retry_for,
+                                    entry.info.title,
+                                ),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                size = 20.dp,
+                            )
+                        }
+                    }
+                }
+                IconButton(onClick = onUnsubscribeClick) {
+                    // Channel-aware Talkback label. "Unsubscribe" alone gave a
+                    // user with N rows N identical-sounding buttons in row order
+                    // — they had to land focus elsewhere first to discover which
+                    // channel each one targeted. Now reads "Unsubscribe from <name>".
+                    Symbol(
+                        name = "close",
+                        contentDescription = stringResource(
+                            R.string.web_unsubscribe_from,
+                            entry.info.title,
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        size = 20.dp,
+                    )
+                }
+            }
+        },
+        content = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = entry.info.title,
@@ -256,47 +301,8 @@ private fun ChannelRow(
                     )
                 }
             }
-            ChannelSubtitle(entry = entry)
-        }
-        if (entry.status.isRetryable()) {
-            // Inline retry sits BEFORE the close affordance so the eye lands
-            // on "recover" before "remove" for a row that's currently failing.
-            // While the fetch is in flight (Loading) we swap the icon for a
-            // small spinner — same slot, no layout shift. Tap target stays the
-            // full IconButton 48 dp so the user doesn't have to aim at the
-            // 20 dp glyph.
-            IconButton(onClick = onRetryClick, enabled = entry.status != ChannelFetchStatus.Loading) {
-                if (entry.status == ChannelFetchStatus.Loading) {
-                    LoadingIndicator(modifier = Modifier.size(20.dp))
-                } else {
-                    Symbol(
-                        name = "refresh",
-                        contentDescription = stringResource(
-                            R.string.web_retry_for,
-                            entry.info.title,
-                        ),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        size = 20.dp,
-                    )
-                }
-            }
-        }
-        IconButton(onClick = onUnsubscribeClick) {
-            // Channel-aware Talkback label. "Unsubscribe" alone gave a
-            // user with N rows N identical-sounding buttons in row order
-            // — they had to land focus elsewhere first to discover which
-            // channel each one targeted. Now reads "Unsubscribe from <name>".
-            Symbol(
-                name = "close",
-                contentDescription = stringResource(
-                    R.string.web_unsubscribe_from,
-                    entry.info.title,
-                ),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 20.dp,
-            )
-        }
-    }
+        },
+    )
 }
 
 /**
@@ -432,4 +438,3 @@ internal fun GuestModeBadge() {
         modifier = Modifier.padding(end = 12.dp),
     )
 }
-
