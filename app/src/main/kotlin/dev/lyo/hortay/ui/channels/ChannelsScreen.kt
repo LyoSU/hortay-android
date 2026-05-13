@@ -1,23 +1,35 @@
 package dev.lyo.hortay.ui.channels
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
@@ -28,8 +40,14 @@ import dev.lyo.hortay.ui.media.TdAvatar
 /**
  * List of channels the user is subscribed to. Data is derived from the same feed as the
  * timeline (each unique chat is a channel), so it stays in sync without a second TDLib query.
+ *
+ * Rows render through [SegmentedListItem] with [ListItemDefaults.segmentedShapes] — first/last
+ * rows get a larger outer radius, inner rows pinch to a tighter corner, and the column gap
+ * (`ListItemDefaults.SegmentedGap`) is the spacing that the shape math expects. Mixing this
+ * with custom `Arrangement.spacedBy(8.dp)` would visually drift away from the Material 3
+ * Expressive segmented-list metric.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ChannelsScreen(
     repo: PostsRepository,
@@ -65,11 +83,16 @@ fun ChannelsScreen(
                     top = padding.calculateTopPadding() + 8.dp,
                     bottom = contentPadding.calculateBottomPadding() + 8.dp,
                 ),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(items = channels, key = { it.chatId }) { ch ->
-                    ChannelRow(channel = ch, onClick = { onChannelClick(ch.chatId) })
+                itemsIndexed(items = channels, key = { _, it -> it.chatId }) { index, ch ->
+                    ChannelRow(
+                        channel = ch,
+                        index = index,
+                        count = channels.size,
+                        onClick = { onChannelClick(ch.chatId) },
+                    )
                 }
             }
         }
@@ -119,33 +142,32 @@ private fun aggregate(posts: List<TimelinePost>): List<ChannelSummary> = posts
     }
     .sortedByDescending { it.lastPostDate }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ChannelRow(channel: ChannelSummary, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TdAvatar(
-            name = channel.title,
-            thumb = channel.avatarThumb,
-            fileId = channel.avatarFileId,
-            size = 48.dp,
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = channel.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+private fun ChannelRow(
+    channel: ChannelSummary,
+    index: Int,
+    count: Int,
+    onClick: () -> Unit,
+) {
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = index,
+        count = count,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        onClick = onClick,
+        shapes = shapes,
+        leadingContent = {
+            TdAvatar(
+                name = channel.title,
+                thumb = channel.avatarThumb,
+                fileId = channel.avatarFileId,
+                size = 48.dp,
             )
-            if (channel.lastPostExcerpt.isNotBlank()) {
+        },
+        supportingContent = if (channel.lastPostExcerpt.isNotBlank()) {
+            {
                 Text(
                     text = channel.lastPostExcerpt,
                     style = MaterialTheme.typography.bodyMedium,
@@ -154,8 +176,17 @@ private fun ChannelRow(channel: ChannelSummary, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-        }
-    }
+        } else null,
+        content = {
+            Text(
+                text = channel.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+    )
 }
 
 @Composable
