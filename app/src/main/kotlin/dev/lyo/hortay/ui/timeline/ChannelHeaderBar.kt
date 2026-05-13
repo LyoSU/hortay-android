@@ -99,7 +99,14 @@ sealed interface ChannelHeaderAvatar {
 internal fun ChannelHeaderBar(
     titleText: String,
     subtitleText: String?,
-    avatar: ChannelHeaderAvatar,
+    /**
+     * Optional avatar slot. `null` hides the disc + its spacing entirely so the
+     * title row hugs the navigation icon. Channel-detail screens pass null
+     * because the user is already inside the channel — repeating the avatar
+     * next to the back-arrow is redundant chrome. Other surfaces (channel
+     * lists, search hits) keep it for identity.
+     */
+    avatar: ChannelHeaderAvatar?,
     onBack: () -> Unit,
     onTitleTap: () -> Unit,
     scrollBehavior: TopAppBarScrollBehavior,
@@ -116,8 +123,10 @@ internal fun ChannelHeaderBar(
                     .clickable(onClick = onTitleTap, role = Role.Button)
                     .padding(end = 8.dp),
             ) {
-                ChannelHeaderAvatarSlot(avatar)
-                Spacer(modifier = Modifier.width(12.dp))
+                if (avatar != null) {
+                    ChannelHeaderAvatarSlot(avatar)
+                    Spacer(modifier = Modifier.width(12.dp))
+                }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = titleText,
@@ -185,3 +194,4 @@ private fun ChannelHeaderAvatarSlot(avatar: ChannelHeaderAvatar) {
         }
     }
 }
+

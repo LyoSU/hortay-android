@@ -13,8 +13,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalUriHandler
@@ -22,12 +25,18 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.EmptyReadCursors
+import dev.lyo.hortay.data.FeedOrder
+import dev.lyo.hortay.data.isUnreadIn
+import dev.lyo.hortay.data.orderedFor
 import dev.lyo.hortay.data.web.WebPostAdapter
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.timeline.ChannelHeaderAvatar
 import dev.lyo.hortay.ui.timeline.ChannelHeaderBar
+import dev.lyo.hortay.ui.timeline.LocalReadCursors
 import dev.lyo.hortay.ui.timeline.PostCard
 import dev.lyo.hortay.ui.timeline.PostInteractions
 
@@ -60,6 +69,14 @@ fun WebChannelScreen(
     graph: AppGraph,
     contentPadding: PaddingValues,
     onBack: () -> Unit,
+    /**
+     * Per-user feed ordering, from [dev.lyo.hortay.data.SettingsStore.feedOrder].
+     * Mirrors the contract of the TDLib-mode ChannelScreen — OldestUnreadFirst
+     * flips the channel into the reverse-feed layout (asc-by-date, read above
+     * unread) and the cold-entry effect below lands the user at the read→unread
+     * boundary so the channel opens "where you left off".
+     */
+    feedOrder: FeedOrder = FeedOrder.Newest,
 ) {
     val feedSource = graph.webFeedSource
     val bookmarks = graph.bookmarkStore
@@ -74,11 +91,45 @@ fun WebChannelScreen(
     val channelInfo = remember(channels, username) {
         channels.firstOrNull { it.info.username.equals(username, ignoreCase = true) }?.info
     }
-    val filteredPosts = remember(posts, chatId) {
-        posts.filter { it.chatId == chatId }
+    // Per-channel slice, sorted by [feedOrder]. orderedFor is a pure function
+    // with no cursor dependency (see ReadCursors.kt) — passing EmptyReadCursors
+    // keeps the remember key small and avoids re-sorting on every cursor advance.
+    val filteredPosts = remember(posts, chatId, feedOrder) {
+        posts.filter { it.chatId == chatId }.orderedFor(feedOrder, EmptyReadCursors)
     }
 
     val listState = rememberLazyListState()
+
+    // Cold-entry scroll for OldestUnreadFirst (chat-app idiom). Same contract
+    // as ChannelScreen: fires once per WebChannelScreen instance, only when
+    // the LazyListState is at its default 0/0 (respect any saveable restore
+    // from a drill-out/drill-in). Boundary picker: first post that's unread
+    // per [LocalReadCursors]; fallback to [List.lastIndex] = newest at bottom
+    // when caught up. Guest mode has no per-channel async load step, so
+    // we wait only for the list to become non-empty.
+    val readCursors = LocalReadCursors.current
+    val filteredPostsState = rememberUpdatedState(filteredPosts)
+    val readCursorsStateForEntry = rememberUpdatedState(readCursors)
+    LaunchedEffect(chatId, feedOrder) {
+        if (feedOrder != FeedOrder.OldestUnreadFirst) return@LaunchedEffect
+        if (listState.firstVisibleItemIndex != 0 ||
+            listState.firstVisibleItemScrollOffset != 0
+        ) {
+            return@LaunchedEffect
+        }
+        snapshotFlow { filteredPostsState.value.size }.first { it > 0 }
+        if (listState.isScrollInProgress) return@LaunchedEffect
+        if (listState.firstVisibleItemIndex != 0 ||
+            listState.firstVisibleItemScrollOffset != 0
+        ) {
+            return@LaunchedEffect
+        }
+        val items = filteredPostsState.value
+        val cursors = readCursorsStateForEntry.value
+        val boundary = items.indexOfFirst { it.isUnreadIn(cursors) }
+        val target = if (boundary >= 0) boundary else items.lastIndex
+        if (target > 0) listState.scrollToItem(target)
+    }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
 
     val interactions = remember(viewer, bookmarks, chatId, uriHandler) {

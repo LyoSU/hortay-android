@@ -46,12 +46,16 @@ import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.DownloadPriority
+import dev.lyo.hortay.data.EmptyReadCursors
+import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.data.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.bookmarkKey
 import dev.lyo.hortay.data.isUnplayableVideo
+import dev.lyo.hortay.data.isUnreadIn
+import dev.lyo.hortay.data.orderedFor
 import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.ui.channels.ChannelInfoSheet
 import dev.lyo.hortay.ui.components.HortayTopBar
@@ -68,6 +72,7 @@ import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 // FlowPreview opt-in stays: Flow.debounce(Long) is still preview-marked in
@@ -125,6 +130,17 @@ fun ChannelScreen(
      * accepts a channel-level report against the whole chat). Null hides the row.
      */
     onReportChannel: (() -> Unit)? = null,
+    /**
+     * Per-user feed ordering, from [dev.lyo.hortay.data.SettingsStore.feedOrder]. Mirrors
+     * the same setting [TimelineScreen] respects on the all-feed: [FeedOrder.Newest]
+     * is the canonical newest-at-top arrangement; [FeedOrder.OldestUnreadFirst]
+     * sorts ascending by date (oldest read posts on top, unread queue below,
+     * newest at the bottom — chat-app idiom) and the cold-entry effect below
+     * lands the user at the read→unread boundary so the channel opens "where
+     * you left off". Default [FeedOrder.Newest] keeps the previous behaviour
+     * for any call site that hasn't been migrated yet.
+     */
+    feedOrder: FeedOrder = FeedOrder.Newest,
     /**
      * Process-wide cold-start gate, TDLib mode only. While in
      * [StartupCoordinator.Phase.Booting] the comments-thread prefetch collector
@@ -193,30 +209,24 @@ fun ChannelScreen(
         }
     }
 
-    // Pinned color-only scroll behaviour; height is owned by the floating-bar
-    // layout shrinker below. Mirrors CommentsScreen and TimelineScreen.
+    // Pinned-only top bar on the channel detail surface. Standard M3 pinned
+    // behaviour keeps the surface tint reactive to scroll without moving the
+    // bar — the header stays visible at all times so "where am I" + search
+    // affordance never become hidden gestures.
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
-
-    // Twitter / Instagram floating-bar pattern — scroll delta directly drives
-    // the bar's vertical offset. Disabled while search is active (the search
-    // TextField is a tool stage that must stay pinned). Same helper used by
-    // TimelineScreen and CommentsScreen for consistent motion vocabulary.
-    val floatingBar = rememberFloatingTopBarBehavior(enabled = { !searchActive })
-    val topBarFullHeightPx = floatingBar.fullHeightPx
-    val topBarOffsetPx = floatingBar.offsetPx
-    val topBarNestedScroll = floatingBar.nestedScroll
-
-    // Reset the bar to fully visible when the channel context changes.
-    LaunchedEffect(chatId) {
-        topBarOffsetPx.floatValue = 0f
-    }
 
     // Source-of-truth for what the LazyColumn renders. While search is active
     // we render the raw results list (no threading). Outside search we apply the
-    // Threads-style grouping from groupReplies, same as the all-feed path.
-    val displayedItems: List<FeedItem> = remember(posts, searchActive, searchResults) {
+    // Threads-style grouping from groupReplies, same as the all-feed path. The
+    // user-selected [feedOrder] is honoured here so OldestUnreadFirst flips the
+    // channel into the reverse-feed layout exactly like TimelineScreen does on
+    // the all-feed — search results stay in their RPC relevance order regardless.
+    // EmptyReadCursors: orderedFor's cursor argument is unused (see ReadCursors.kt
+    // doc) — passing the empty map avoids re-sorting on every cursor advance,
+    // matching the TimelineScreen call.
+    val displayedItems: List<FeedItem> = remember(posts, searchActive, searchResults, feedOrder) {
         if (searchActive) searchResults.map(FeedItem::Single)
-        else groupReplies(posts)
+        else groupReplies(posts.orderedFor(feedOrder, EmptyReadCursors))
     }
 
     // Resolve the queued scroll-to-message once the target row appears.
@@ -241,6 +251,63 @@ fun ChannelScreen(
         if (highlightedPostKey == null) return@LaunchedEffect
         kotlinx.coroutines.delay(CHANNEL_HIGHLIGHT_DURATION_MS)
         highlightedPostKey = null
+    }
+
+    // Cold-entry scroll for OldestUnreadFirst (chat-app idiom). Fires once per
+    // ChannelScreen instance when:
+    //   - [feedOrder] is OldestUnreadFirst (Newest stays at index 0 = newest top,
+    //     no positioning needed),
+    //   - [historyLoading] has cleared so we're picking the boundary against the
+    //     full per-channel slice rather than the 1–3 posts the global feed
+    //     harvest seeded (the wrong boundary would land the user mid-list),
+    //   - [pendingScrollToMessage] is null (deep-link scroll-to-message has
+    //     priority — let it land first; this effect re-arms via the keyed
+    //     restart below if the user changes feedOrder afterwards),
+    //   - the LazyListState is at its default 0/0 position. If it isn't, the
+    //     SaveableStateProvider in MainScaffold restored a scroll position from
+    //     a previous drill-out/drill-in — respect the user's intent over the
+    //     boundary pin, same contract TimelineScreen's cold-start pin uses.
+    //
+    // Boundary picker: first FeedItem containing any unread post (asc-by-date
+    // sort means oldest unread is the top of the unread block). Fallback to
+    // [List.lastIndex] = newest at the bottom = "caught up, here's the latest"
+    // landing. The state wrappers below keep the long-running effect reading
+    // live values without restarting on every recomposition (same idiom as
+    // TimelineScreen's [feedItemsState]).
+    val readCursors = LocalReadCursors.current
+    val displayedItemsState = rememberUpdatedState(displayedItems)
+    val readCursorsStateForEntry = rememberUpdatedState(readCursors)
+    val historyLoadingState = rememberUpdatedState(historyLoading)
+    val pendingScrollState = rememberUpdatedState(pendingScrollToMessage)
+    LaunchedEffect(chatId, feedOrder) {
+        if (feedOrder != FeedOrder.OldestUnreadFirst) return@LaunchedEffect
+        if (listState.firstVisibleItemIndex != 0 ||
+            listState.firstVisibleItemScrollOffset != 0
+        ) {
+            return@LaunchedEffect
+        }
+        androidx.compose.runtime.snapshotFlow {
+            ChannelColdEntryState(
+                loading = historyLoadingState.value,
+                size = displayedItemsState.value.size,
+                hasPendingTarget = pendingScrollState.value != null,
+            )
+        }
+            .distinctUntilChanged()
+            .first { !it.loading && it.size > 0 && !it.hasPendingTarget }
+        if (listState.isScrollInProgress) return@LaunchedEffect
+        if (listState.firstVisibleItemIndex != 0 ||
+            listState.firstVisibleItemScrollOffset != 0
+        ) {
+            return@LaunchedEffect
+        }
+        val items = displayedItemsState.value
+        val cursors = readCursorsStateForEntry.value
+        val boundary = items.indexOfFirst { feedItem ->
+            feedItem.posts().any { it.isUnreadIn(cursors) }
+        }
+        val target = if (boundary >= 0) boundary else items.lastIndex
+        if (target > 0) listState.scrollToItem(target)
     }
 
     // Pagination: near-bottom snapshotFlow → VM.loadOlderIfPossible(). The VM
@@ -426,48 +493,31 @@ fun ChannelScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .nestedScroll(scrollBehavior.nestedScrollConnection)
-            .nestedScroll(topBarNestedScroll),
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            // Two-zone pattern: zone 1 = persistent status-bar background (never moves),
-            // zone 2 = layout-shrunk floating bar (slides on scroll). Same pattern as
-            // TimelineScreen and CommentsScreen — see TimelineScreen's topBar comment
-            // for the full engineering rationale.
+            // Pinned: status-bar strip + ChannelTopBar in a Column. No layout
+            // shrinker, no nested-scroll offset — the bar stays fully visible
+            // throughout the user's scroll. The status-bar strip continues to
+            // own the system-bar inset so we never double-pad.
             Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
                 Spacer(
                     modifier = Modifier
                         .fillMaxWidth()
                         .windowInsetsTopHeight(WindowInsets.statusBars),
                 )
-                Box(
-                    modifier = Modifier
-                        .clipToBounds()
-                        .layout { measurable, constraints ->
-                            val placeable = measurable.measure(constraints)
-                            if (topBarFullHeightPx.floatValue == 0f && placeable.height > 0) {
-                                topBarFullHeightPx.floatValue = placeable.height.toFloat()
-                            }
-                            val offset = topBarOffsetPx.floatValue.toInt()
-                            val height = (placeable.height + offset).coerceAtLeast(0)
-                            layout(placeable.width, height) {
-                                placeable.placeRelative(0, offset)
-                            }
-                        },
-                ) {
-                    ChannelTopBar(
-                        channelTitle = channelTitle,
-                        channelSubscribers = channelSubscribers,
-                        channelAvatarFileId = channelAvatarFileId,
-                        channelAvatarThumb = channelAvatarThumb,
-                        searchActive = searchActive,
-                        searchQuery = searchQuery,
-                        onBack = onBack,
-                        onSearchToggle = { vm.setSearchActive(!searchActive) },
-                        onSearchQueryChange = { vm.setSearchQuery(it) },
-                        onTitleTap = { infoSheetVisible = true },
-                        scrollBehavior = scrollBehavior,
-                    )
-                }
+                ChannelTopBar(
+                    channelTitle = channelTitle,
+                    channelSubscribers = channelSubscribers,
+                    channelAvatarFileId = channelAvatarFileId,
+                    channelAvatarThumb = channelAvatarThumb,
+                    searchActive = searchActive,
+                    searchQuery = searchQuery,
+                    onBack = onBack,
+                    onSearchToggle = { vm.setSearchActive(!searchActive) },
+                    onSearchQueryChange = { vm.setSearchQuery(it) },
+                    onTitleTap = { infoSheetVisible = true },
+                    scrollBehavior = scrollBehavior,
+                )
             }
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -928,3 +978,15 @@ private const val CHANNEL_COMMENTS_PREFETCH_LIMIT = 1
 
 /** Posts ahead of first visible to eagerly prefetch. Matches TimelineScreen's PREFETCH_AHEAD. */
 private const val CHANNEL_PREFETCH_AHEAD = 2
+
+/**
+ * Snapshot of the cold-entry conditions the OldestUnreadFirst boundary-scroll
+ * effect waits on. Plain data class so [distinctUntilChanged] coalesces ticks
+ * where the meaningful triple hasn't changed (e.g. an interaction-info update
+ * mutates the post list ref without changing the size).
+ */
+private data class ChannelColdEntryState(
+    val loading: Boolean,
+    val size: Int,
+    val hasPendingTarget: Boolean,
+)

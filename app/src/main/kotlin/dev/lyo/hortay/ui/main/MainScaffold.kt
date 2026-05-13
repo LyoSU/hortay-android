@@ -715,6 +715,7 @@ fun MainScaffold(graph: AppGraph) {
                     onReportClick = onPostReportClick,
                     canReport = canReportPost,
                     onReportChannel = { openReport(entry.chatId, null) },
+                    feedOrder = feedOrder,
                     startupPhase = graph.startupCoordinator.phase,
                 )
                 is NavEntry.Comments -> CommentsScreen(
