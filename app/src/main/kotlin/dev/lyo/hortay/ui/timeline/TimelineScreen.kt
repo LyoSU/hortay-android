@@ -339,57 +339,67 @@ fun TimelineScreen(
         ) {
             return@LaunchedEffect
         }
-        // Phase 1: pin to index 0 during the streaming refresh window. The
-        // target is hard-coded to 0 (not [homeScrollIndexState.intValue]) on
-        // purpose — see below.
+        // Cold-start scroll pin. Single collector with a switching target:
         //
-        // Why 0, not the live home target. In OldestUnreadFirst, the home
-        // target flips from 0 (cursors empty fallback) to lastIndex (caught
-        // up) or first-unread the moment TDLib's UpdateChatReadInbox stream
-        // populates [sortCursors]. If the pin chased that target, it would
-        // yank the LazyColumn to the end-of-feed mid-streaming the second
-        // cursors landed — exactly the user-visible "секунду показує старий
-        // пост, потім кидає на кінець стрічки" symptom on cold start in
-        // reverse mode. Decoupling: streaming-pin = 0 (canonical "newest at
-        // top"), then a single Phase 2 snap below lands at the real home
-        // target once both refresh and cursors have settled.
+        //   - Cursors still loading (OldestUnreadFirst cold-start race) →
+        //     pin to index 0 = top of source order = newest post per the
+        //     [PostsRepository] / [WebFeedSource] contract. Keeps the user
+        //     at the canonical "newest at top" while TDLib's first
+        //     UpdateChatReadInbox burst arrives (typically 200-800 ms after
+        //     [AuthorizationStateReady], up to a few seconds on slow
+        //     devices).
+        //   - Cursors landed → pin to live [homeScrollIndexState.intValue]
+        //     (first-unread boundary, or lastIndex when caught up / when
+        //     there are no read posts above the unread block). The pin
+        //     fires the moment cursors land AND on every subsequent
+        //     emission that nudges the target — so a sort re-shuffle
+        //     during the streaming refresh window can't strand the
+        //     LazyColumn at a stale `firstVisibleItemIndex` (Compose's
+        //     LazyListState saver pins by index, not by key, across the
+        //     sort change).
         //
-        // Trigger set: (posts.size, refreshing, sortCursorsLandedState.value).
-        // The cursors-non-empty bit forces a re-pin at the exact moment the
-        // OldestUnreadFirst sort re-orders the list — without it, LazyColumn's
-        // key-anchored stability would follow the previously-visible top
-        // post to its new index in the re-sorted list (in caught-up case,
-        // newest post moves from index 0 to lastIndex), again landing the
-        // user at the end of feed.
+        // Exit: user starts scrolling (respect their intent) OR refresh
+        // has finished AND cursors have landed. Pinning past the settled
+        // state would yank the user back to home on every live arrival.
+        //
+        // The unified collector replaces an earlier split phase-1 /
+        // phase-2 design — the split timed out the post-refresh snap if
+        // cursors didn't land within ~1.5 s, leaving the LazyColumn at
+        // index 0 of whatever sort eventually applied (= the OLDEST post
+        // in OldestUnreadFirst). Waiting until cursors land in the same
+        // collector closes that race entirely.
         androidx.compose.runtime.snapshotFlow {
-            Triple(posts.size, refreshing, sortCursorsLandedState.value)
+            val landed = sortCursorsLandedState.value
+            val target = if (landed) homeScrollIndexState.intValue else 0
+            ColdStartPinState(
+                postsSize = posts.size,
+                refreshing = refreshing,
+                cursorsLanded = landed,
+                target = target,
+            )
         }
             .distinctUntilChanged()
-            .takeWhile { (_, isRefreshing, _) ->
-                !listState.isScrollInProgress && isRefreshing
+            .takeWhile { state ->
+                !listState.isScrollInProgress &&
+                    (state.refreshing || !state.cursorsLanded)
             }
-            .collect { (size, _, _) ->
-                if (size > 0 &&
-                    (listState.firstVisibleItemIndex != 0 ||
+            .collect { state ->
+                if (state.postsSize > 0 &&
+                    (listState.firstVisibleItemIndex != state.target ||
                         listState.firstVisibleItemScrollOffset != 0)
                 ) {
-                    listState.scrollToItem(0)
+                    listState.scrollToItem(state.target)
                 }
             }
-
-        // Phase 2: refresh has settled. For OldestUnreadFirst, wait briefly
-        // for cursors to land (TDLib's UpdateChatReadInbox can lag refresh by
-        // a few hundred ms on slow networks) and snap once to the actual home
-        // target — first-unread boundary if anything is unread, lastIndex
-        // (newest read at the bottom) if the user is caught up. One atomic
-        // transition, no intermediate jumps.
+        // Take one final emission of (cursorsLanded, target) so the very
+        // last snap — the one [takeWhile] dropped when it observed the
+        // exit condition — actually fires. Without this, in the common
+        // path where cursors land before refresh completes, the last
+        // collected emission was the "still refreshing" tick whose
+        // target may differ from the post-cursor home target by a
+        // composition pass.
         if (listState.isScrollInProgress) return@LaunchedEffect
-        if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
-            kotlinx.coroutines.withTimeoutOrNull(COLD_START_CURSOR_WAIT_MS) {
-                androidx.compose.runtime.snapshotFlow { sortCursorsLandedState.value }
-                    .first { it }
-            }
-            if (listState.isScrollInProgress) return@LaunchedEffect
+        if (sortCursorsLandedState.value) {
             val target = homeScrollIndexState.intValue
             if (target > 0 && target != listState.firstVisibleItemIndex) {
                 listState.scrollToItem(target)
@@ -1873,15 +1883,16 @@ internal fun ExpressiveEmptyHero(
 private const val SEARCH_DEBOUNCE_MS = 300L
 
 /**
- * Upper bound for the cold-start scroll pin's Phase-2 wait on
- * [dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst] cursors to land. Empirically TDLib
- * dispatches its first `UpdateChatReadInbox` burst within 200–800 ms of
- * `AuthorizationStateReady`; 1500 ms gives 5G headroom for the slow tail without
- * stalling the snap on devices that never receive cursors (truly empty account, RPC
- * stall) — on timeout we fall through and the LazyColumn renders at index 0, which
- * is the canonical "newest at top" position the streaming pin already pinned to.
+ * Frame for the cold-start scroll pin's [snapshotFlow] emissions. A data class
+ * (rather than a [Triple] / [Quadruple]) so [distinctUntilChanged] uses
+ * structural equality on the actual fields and so the call sites read clearly.
  */
-private const val COLD_START_CURSOR_WAIT_MS = 1500L
+private data class ColdStartPinState(
+    val postsSize: Int,
+    val refreshing: Boolean,
+    val cursorsLanded: Boolean,
+    val target: Int,
+)
 
 /** Avatars in the "X нових постів" pill — same cap as the original VM-side limit. */
 private const val MAX_PILL_BADGES = 3
