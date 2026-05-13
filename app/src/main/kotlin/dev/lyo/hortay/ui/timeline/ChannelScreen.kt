@@ -272,7 +272,13 @@ fun ChannelScreen(
         ackKey = chatId,
         markAsRead = { fresh ->
             fresh.groupBy { it.chatId }.forEach { (cid, group) ->
-                vm.viewMessages(cid, group.map { it.id })
+                // Expand albums to every member id so TDLib's
+                // lastReadInboxMessageId advances past the highest member,
+                // matching the explicit-tap path below ([markPostReadState]).
+                val ids = group.flatMap { post ->
+                    post.albumMessageIds.ifEmpty { listOf(post.id) }
+                }.distinct()
+                vm.viewMessages(cid, ids)
             }
         },
         scope = scope,

@@ -35,6 +35,25 @@ class ReadCursorsTest {
     }
 
     @Test
+    fun `album stays unread when cursor is below the highest member id`() {
+        // External acks (UpdateChatReadInbox from the official Telegram
+        // client) can land the cursor mid-album: anchor below cursor, later
+        // members above. Comparing only anchor.id would flip the card to
+        // "read" prematurely — the card must stay unread until every
+        // member is at or below the cursor.
+        val cursors = persistentMapOf(CHAT_ID to 102L)
+        val album = post(id = 100L).copy(albumMessageIds = listOf(100L, 101L, 102L, 103L, 104L))
+        assertTrue(album.isUnreadIn(cursors), "104 > 102 — card must still be unread")
+    }
+
+    @Test
+    fun `album marked read only when cursor passes the highest member id`() {
+        val cursors = persistentMapOf(CHAT_ID to 104L)
+        val album = post(id = 100L).copy(albumMessageIds = listOf(100L, 101L, 102L, 103L, 104L))
+        assertFalse(album.isUnreadIn(cursors), "cursor at top member — card is read")
+    }
+
+    @Test
     fun `discussion thread reply is never marked unread`() {
         val cursors = persistentMapOf(CHAT_ID to 100L)
         val reply = post(id = 200L).copy(parentId = 42L)

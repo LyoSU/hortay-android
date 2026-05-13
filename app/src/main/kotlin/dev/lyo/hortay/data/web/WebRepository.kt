@@ -301,7 +301,18 @@ class WebRepository(
         // full re-ingest with forceNetwork=true, bypassing this guard via the
         // Page outcome path.
         val existing = postQueries.selectFingerprint(channelUsername, post.seq).executeAsOneOrNull()
-        if (existing != null && existing.text_html == post.textHtml && existing.views == post.views) {
+        // markMediaStale sets fetched_at_ms = 0 to force a re-ingest of media URLs (CDN
+        // tokens rotate every 1–4 h). The naive fingerprint guard (text + views match)
+        // would skip the upsert in that case and the stale media JSON + fetched_at_ms=0
+        // would persist forever, so the next Coil load would 401/403 again and re-trigger
+        // markMediaStale — a tight infinite loop with no visible recovery. Treating
+        // `fetched_at_ms == 0` as "media re-ingest pending" forces the upsert through
+        // even when text/views are unchanged.
+        if (existing != null &&
+            existing.text_html == post.textHtml &&
+            existing.views == post.views &&
+            existing.fetched_at_ms != 0L
+        ) {
             return
         }
         val mediaJson = json.encodeToString(mediaListSerializer, post.media.toList())
