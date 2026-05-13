@@ -477,6 +477,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                 graph = graph,
                                 contentPadding = padding,
                                 onBack = ::popNav,
+                                feedOrder = feedOrder,
                             )
                         }
                     }
