@@ -217,6 +217,9 @@ fun WebModeScaffold(graph: AppGraph) {
     val snapScroll by graph.settingsStore.snapScroll.collectAsStateWithLifecycle(
         initialValue = false,
     )
+    val inlineVideoAutoplay by graph.settingsStore.inlineVideoAutoplay.collectAsStateWithLifecycle(
+        initialValue = true,
+    )
     // Guest-mode dwell-ack wrapper. Groups the viewport batch by channel
     // (recovered from `senderHandle` since web posts have no real chatId) and
     // advances each channel's local cursor to the highest seq in the batch.
@@ -239,7 +242,10 @@ fun WebModeScaffold(graph: AppGraph) {
         }
     }
     LinkAwareScaffold(graph) {
-    CompositionLocalProvider(LocalReadCursors provides readCursors) {
+    CompositionLocalProvider(
+        LocalReadCursors provides readCursors,
+        dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,
+    ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = {

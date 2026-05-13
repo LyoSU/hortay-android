@@ -300,6 +300,8 @@
     <string name="settings_feed_order_snackbar">Feed reordered</string>
     <string name="settings_snap_scroll_title">Snap scroll</string>
     <string name="settings_snap_scroll_subtitle">Each post clicks into place when you fling — TikTok/Reels feel</string>
+    <string name="settings_inline_autoplay_title">Autoplay videos in feed</string>
+    <string name="settings_inline_autoplay_subtitle">Short videos already in cache play silently as you scroll. Tap to open full-screen with sound.</string>
     <string name="timeline_unread_boundary">Unread</string>
     <string name="settings_section_traffic">Traffic</string>
     <string name="settings_section_storage">Storage</string>

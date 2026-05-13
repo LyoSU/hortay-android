@@ -314,6 +314,8 @@
     <string name="settings_feed_order_snackbar">Стрічку переупорядковано</string>
     <string name="settings_snap_scroll_title">Прилипання при гортанні</string>
     <string name="settings_snap_scroll_subtitle">Кожен пост клацає на місце при змахуванні — як у TikTok/Reels</string>
+    <string name="settings_inline_autoplay_title">Автозапуск відео у стрічці</string>
+    <string name="settings_inline_autoplay_subtitle">Короткі відео, які вже в кеші, тихо програються під час прокручування. Тапніть, щоб відкрити на весь екран зі звуком.</string>
     <string name="timeline_unread_boundary">Непрочитане</string>
     <string name="settings_section_traffic">Трафік</string>
     <string name="settings_section_storage">Сховище</string>
