@@ -30,11 +30,11 @@ typealias ReadCursors = PersistentMap<Long, Long>
 val EmptyReadCursors: ReadCursors = persistentMapOf()
 
 /**
- * Pure test target. Returns `true` when [TimelinePost.id] is strictly greater
- * than the cursor for its [TimelinePost.chatId]. Posts in chats without a
- * recorded cursor count as read — the cold-start race where `chatCache` hasn't
- * populated yet would otherwise light every visible card up as "unread" for the
- * first ~500 ms after auth, which reads as a UI bug.
+ * Returns `true` when [TimelinePost.id] is strictly greater than the cursor for
+ * its [TimelinePost.chatId]. Posts in chats without a recorded cursor count as
+ * read — the cold-start race where `chatCache` hasn't populated yet would
+ * otherwise light every visible card up as "unread" for the first ~500 ms after
+ * auth, which reads as a UI bug.
  *
  * Discussion-thread replies (`parentId != null`) are always treated as read
  * because the cursor we track is the channel inbox cursor; thread state has a
@@ -50,89 +50,53 @@ fun TimelinePost.isUnreadIn(cursors: ReadCursors): Boolean {
 }
 
 /**
- * Returns the index of the first unread post in [posts], or `-1` if every post
- * is read (or [posts] is empty). Used by the "Continue reading" affordance to
- * scroll the feed to the boundary between read and unread.
- *
- * "First" is interpreted in iteration order of the supplied list — callers in
- * `Newest`-orientation pass the list as-displayed (newest-at-top) and the first
- * unread is the topmost still-unread row; `OldestUnreadFirst` callers pass the
- * already-sorted list and get index 0 when anything is unread.
+ * Returns the index of the first unread post in [posts] (iteration order), or
+ * `-1` if every post is read (or [posts] is empty).
  */
 fun firstUnreadIndex(posts: List<TimelinePost>, cursors: ReadCursors): Int =
     posts.indexOfFirst { it.isUnreadIn(cursors) }
 
 /**
- * Reorder [posts] for the requested [FeedOrder]. [posts] arrives in the
- * canonical newest-first chronological order that [PostsRepository] / [WebFeedSource]
- * emit; both branches return a fresh list so the caller can hand the result
- * straight to a [androidx.compose.foundation.lazy.LazyColumn] without worrying
- * about stable identity on the source list.
+ * "Where should the user resume reading?" — the canonical cold-start scroll
+ * target for [dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst].
  *
- * `OldestUnreadFirst` mirrors the **chat-app idiom** that Telegram-Android,
- * WhatsApp, and Slack all settle on for an inbox:
- *   - Read posts on top (asc by date), unread posts below (asc by date).
- *   - `compareBy({ isUnreadIn(cursors) }, { date })` — Kotlin's stable sort
- *     puts `false < true`, so read posts (where `isUnread = false`) lead.
- *     Within each block, ascending date keeps "newspaper-column" reading
- *     direction.
- *   - TimelineScreen auto-scrolls to the boundary on mount so the user
- *     lands at the FIRST unread post — scrolling DOWN walks forward through
- *     unread; scrolling UP walks backward into already-read history. Same
- *     gesture model as opening a chat in any modern messenger.
- *   - Read posts render dimmed (alpha 0.55) so the visual hierarchy reads
- *     "primary = unread, supporting = history" without changing the
- *     chronological layout.
+ * The feed is always rendered in newest-first source order (no per-mode
+ * re-sort — see PR rationale in CHANGELOG): the [OldestUnreadFirst] mode is
+ * a *scroll-target* setting, not a *sort* setting. The target is the OLDEST
+ * unread post (`indexOfLast { isUnread }` in the newest-first list), which is
+ * the boundary post — scrolling UP from there walks forward chronologically
+ * through newer unread, scrolling DOWN walks back into older read history.
  *
- * Callers in TimelineScreen pin [cursors] to a frozen snapshot captured at
- * refresh boundaries (initial mount, pull-to-refresh) so mid-scroll dwell
- * acks don't shuffle posts across the unread/read boundary under the
- * user's eyes. The TDLib cursor itself continues advancing in the
- * background — only the SORT's view of cursors is frozen. On pull-to-
- * refresh the snapshot updates and acked posts migrate from unread to read
- * block as a single visible reordering.
+ * Returns `-1` when there is no meaningful resume target:
+ *   - `cursors.isEmpty()` — TDLib's `UpdateChatReadInbox` burst hasn't landed
+ *     yet (cold-start race). Don't auto-scroll; the LazyColumn renders at its
+ *     natural starting position (top = newest) and the cursor pipeline will
+ *     repaint when cursors do arrive without yanking the user.
+ *   - all caught up — nothing to resume to.
+ *   - all unread, no read posts to anchor a "boundary" against — Hortay reads
+ *     more like a Twitter feed than a chat inbox; landing on the chronologically
+ *     oldest post of the entire feed reads as "the app threw me into ancient
+ *     history" rather than "here's where you left off". The user lands at the
+ *     top (newest) instead.
  */
-fun List<TimelinePost>.orderedFor(
-    order: FeedOrder,
-    cursors: ReadCursors,
-): List<TimelinePost> = when (order) {
-    FeedOrder.Newest -> this
-    FeedOrder.OldestUnreadFirst -> {
-        // Cold-start race: when [cursors] is empty (TDLib UpdateChatReadInbox
-        // hasn't landed yet, typically 200-800ms after AuthorizationStateReady)
-        // [isUnreadIn] returns false for every post — by design, see KDoc on
-        // [isUnreadIn]. The stable sort below then groups everything into the
-        // "read" tier and orders ascending by date, so the visible top of the
-        // LazyColumn becomes the OLDEST post in the entire feed — exactly the
-        // "дуже старий рандомний пост на першому екрані" symptom. Fall back to
-        // the source order (newest-first per the [PostsRepository] /
-        // [WebFeedSource] contract) until cursors land; once they do, the
-        // re-sort kicks in and the cold-start scroll-pin lands at the actual
-        // first-unread boundary in one stable transition.
-        if (cursors.isEmpty()) this
-        else sortedWith(compareBy({ it.isUnreadIn(cursors) }, { it.date }))
+fun resumeReadingIndex(posts: List<TimelinePost>, cursors: ReadCursors): Int {
+    if (cursors.isEmpty() || posts.isEmpty()) return -1
+    var firstUnread = -1
+    var lastUnread = -1
+    var hasRead = false
+    for (i in posts.indices) {
+        val post = posts[i]
+        if (post.isUnreadIn(cursors)) {
+            if (firstUnread < 0) firstUnread = i
+            lastUnread = i
+        } else if (post.parentId == null) {
+            // parentId != null are thread replies; isUnreadIn returns false for
+            // them by design, but they also don't count as "real read posts" for
+            // the boundary check — they aren't part of the feed-reading flow.
+            hasRead = true
+        }
     }
-}
-
-/**
- * "Where should the user continue reading from?" — the canonical target for
- * the [dev.lyo.hortay.ui.timeline.ContinueReadingChip] in the given [order].
- *
- * The semantic is "oldest unread post" (= where reading should resume,
- * chronologically). The index of that post depends on the iteration order:
- *   - In `Newest` (newest-first), oldest unread is the LAST entry in the
- *     unread block — `indexOfLast { isUnread }`. Scrolling to it puts the
- *     user just above the unread/read boundary.
- *   - In `OldestUnreadFirst` (unread-only, ascending date), oldest unread is
- *     simply index 0.
- *
- * Returns `-1` when there's nothing to continue to (all read, empty feed).
- */
-fun continueReadingIndex(
-    order: FeedOrder,
-    posts: List<TimelinePost>,
-    cursors: ReadCursors,
-): Int = when (order) {
-    FeedOrder.Newest -> posts.indexOfLast { it.isUnreadIn(cursors) }
-    FeedOrder.OldestUnreadFirst -> posts.indexOfFirst { it.isUnreadIn(cursors) }
+    if (lastUnread < 0) return -1  // caught up
+    if (!hasRead) return -1  // all unread, no boundary to land on
+    return lastUnread  // oldest unread = boundary in newest-first iteration
 }
