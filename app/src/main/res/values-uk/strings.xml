@@ -209,6 +209,15 @@
         <item quantity="other">%d нових постів</item>
     </plurals>
 
+    <!-- Unread counter pill (OldestUnreadFirst feed mode) -->
+    <string name="unread_remaining_overflow">99+ непрочитаних</string>
+    <plurals name="unread_remaining">
+        <item quantity="one">%d непрочитаний</item>
+        <item quantity="few">%d непрочитані</item>
+        <item quantity="many">%d непрочитаних</item>
+        <item quantity="other">%d непрочитаних</item>
+    </plurals>
+
     <!-- Post card -->
     <string name="post_translated_chip">Перекладено · Показати оригінал</string>
     <string name="post_forwarded_from">Переслано від %1$s</string>

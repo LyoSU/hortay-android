@@ -1587,6 +1587,51 @@ fun TimelineScreen(
                 )
             }
 
+            // Ambient "↓ N" unread-remaining chip, OldestUnreadFirst-only.
+            // Lives at BottomEnd so it never collides with the centred
+            // NewPostsPill — different role (ambient progress vs. alert),
+            // different anchor.
+            //
+            // Count uses LIVE readCursors (via `cursorsState`), not the
+            // frozen sort snapshot — so the number ticks down as
+            // viewport-dwell acks land, giving the user real-time
+            // "how much is left to read" feedback even while posts hold
+            // their position in the snapshot-sorted queue.
+            //
+            // Hidden in Saved tab (no unread concept on bookmarks) and
+            // when nothing is left to read.
+            if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst && !showOnlyBookmarked) {
+                val unreadRemaining by remember(visiblePosts, feedOrder) {
+                    derivedStateOf {
+                        visiblePosts.count { it.isUnreadIn(cursorsState.value) }
+                    }
+                }
+                AnimatedVisibility(
+                    visible = unreadRemaining > 0,
+                    enter = slideInVertically(pillSpatial) { it } + fadeIn(pillEffects),
+                    exit = slideOutVertically(pillSpatial) { it } + fadeOut(pillEffects),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 16.dp, bottom = pillBottomPadding),
+                ) {
+                    UnreadCounterPill(
+                        count = unreadRemaining,
+                        onClick = {
+                            // Jump to the first STILL-unread post per the
+                            // live cursor — skips past anything the snapshot
+                            // still has in the unread block but the user has
+                            // already dwelled-acked. Falls back to the
+                            // snapshot's first-unread boundary (homeScrollIndex)
+                            // if every visible post happens to be live-read in
+                            // the race between this click and a refresh.
+                            val live = visiblePosts.indexOfFirst { it.isUnreadIn(cursorsState.value) }
+                            val target = if (live >= 0) live else homeScrollIndex
+                            scope.launch { listState.animateScrollToItem(target) }
+                        },
+                    )
+                }
+            }
+
         }
     }
 

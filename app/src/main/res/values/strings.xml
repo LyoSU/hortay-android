@@ -203,6 +203,13 @@
         <item quantity="other">%d new posts</item>
     </plurals>
 
+    <!-- Unread counter pill (OldestUnreadFirst feed mode) -->
+    <string name="unread_remaining_overflow">99+ unread</string>
+    <plurals name="unread_remaining">
+        <item quantity="one">%d unread</item>
+        <item quantity="other">%d unread</item>
+    </plurals>
+
     <!-- Post card -->
     <string name="post_translated_chip">Translated · Show original</string>
     <string name="post_forwarded_from">Forwarded from %1$s</string>

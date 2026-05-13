@@ -9,6 +9,7 @@
 - Snap-scroll mode (Settings → Feed).
 - Per-chat read state with unread strip on card edge.
 - Inline retry on failed guest-mode Channel rows.
+- Floating "↓ N" unread-remaining counter in `OldestUnreadFirst` — ticks down live as you scroll; tap to jump to the next unread.
 
 ### Changed
 - Channels-row status folded into `@handle · <status>` subtitle (UK + EN).
