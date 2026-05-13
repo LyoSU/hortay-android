@@ -185,10 +185,16 @@ object WebPostAdapter {
 
     /**
      * Username → Long chat id. Hash-based, deterministic across runs of the same
-     * process. We bias the value to the negative range (channels in TDLib are
-     * always negative ids in the format `-100<channelId>`) so when we eventually
-     * route deep links by chatId in guest mode there's a clean "is this a
-     * synthetic web id?" check via `chatId < -1_000_000_000_000L`.
+     * process. The negative range matches the TDLib supergroup id convention
+     * (`-100<channelId>`) so the value stays consistent across guest / TDLib
+     * routing helpers.
+     *
+     * NB: the bit range `-1_000_000_000_000L - hash` overlaps real TDLib supergroup
+     * chat ids (`-1_000_000_000_000 - <internal channelId>`). Do NOT use a chatId
+     * threshold like `chatId < -1_000_000_000_000L` to detect guest-mode posts —
+     * real channels with mid-to-large internal ids will be false-positives.
+     * Guest mode is signalled by the caller's nullable [PostsRepository] argument
+     * (null in guest, non-null in TDLib).
      */
     fun stableChatId(username: String): Long {
         val base = username.lowercase().hashCode().toLong() and 0xFFFFFFFFL

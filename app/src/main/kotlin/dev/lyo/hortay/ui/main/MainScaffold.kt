@@ -466,7 +466,16 @@ fun MainScaffold(graph: AppGraph) {
     val tdlibMarkAsRead: suspend (List<TimelinePost>) -> Unit = remember(graph) {
         { batch ->
             batch.groupBy { it.chatId }.forEach { (chatId, group) ->
-                graph.postsRepository.viewMessages(chatId, group.map { it.id })
+                // Expand each post to every album-member id so TDLib advances
+                // lastReadInboxMessageId past the LAST member, not just the
+                // anchor (anchor = lowest id, so an album-aware comparison in
+                // isUnreadIn would otherwise re-light the card as unread until
+                // the cursor crossed every member). Solo posts contribute
+                // their own id via the ifEmpty fallback.
+                val ids = group.flatMap { post ->
+                    post.albumMessageIds.ifEmpty { listOf(post.id) }
+                }.distinct()
+                graph.postsRepository.viewMessages(chatId, ids)
             }
         }
     }

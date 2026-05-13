@@ -183,7 +183,7 @@ WHERE channel_username = :channelUsername AND seq = :seq;
 -- upsert uses; on a match we skip the four JSON serialises and the UPDATE.
 -- Returns a single row when the post exists, empty otherwise.
 selectFingerprint:
-SELECT text_html, views FROM post
+SELECT text_html, views, fetched_at_ms FROM post
 WHERE channel_username = :channelUsername AND seq = :seq;
 
 markRead:

@@ -46,7 +46,16 @@ val EmptyReadCursors: ReadCursors = persistentMapOf()
 fun TimelinePost.isUnreadIn(cursors: ReadCursors): Boolean {
     if (parentId != null) return false
     val cursor = cursors[chatId] ?: return false
-    return id > cursor
+    // For albums, the anchor is the LOWEST member id (PostFilterStrategy
+    // sorts ascending and picks `first()`). Comparing only anchor.id flips
+    // the card to "read" as soon as the cursor passes the first member,
+    // even when later members of the same album are still above the cursor
+    // — which happens when external acks (e.g. UpdateChatReadInbox from
+    // the official Telegram client) land the cursor mid-album. Use the
+    // highest member id so the card stays unread until every member has
+    // been acked.
+    val highestId = albumMessageIds.maxOrNull() ?: id
+    return highestId > cursor
 }
 
 /**

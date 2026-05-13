@@ -30,20 +30,29 @@ object PostActions {
     /**
      * Resolved share URL: TDLib-minted when available, hand-rolled otherwise. Always
      * returns a non-empty string suitable for embedding in share text / OS clipboard.
+     *
+     * Mode discriminator is the nullability of [repo], not the chatId range. The previous
+     * `chatId <= -1_000_000_000_000` check looked like a clean way to detect synthetic
+     * web ids, but TDLib supergroup ids share the same range — they're computed as
+     * `-1_000_000_000_000 - <internal 32-bit channelId>`, so real channels land in
+     * `[-1_004_294_967_295, -1_000_000_000_000)` and overlap synthetic web ids
+     * exactly. That misrouted real TDLib posts into the fallback path for a small but
+     * not vanishingly small fraction of channels — visible to the user as a `t.me/<handle>/<huge-mangled-id>`
+     * link when "open in Telegram" / "share" was tapped. The callers already pass
+     * `null` for guest mode and the live repo for TDLib mode, so the safe2-derive2
+     * boolean is just `repo == null`.
      */
     private suspend fun shareUrl(repo: PostsRepository?, post: TimelinePost): String =
-        repo?.takeIf { post.chatId > GUEST_CHAT_ID_THRESHOLD }
-            ?.canonicalShareUrl(post)
-            ?: fallbackShareUri(post).toString()
+        repo?.canonicalShareUrl(post) ?: fallbackShareUri(post, isGuest = repo == null).toString()
 
     /**
      * Hand-rolled `https://t.me/...` fallback. Public channels get `t.me/<handle>/<post>`;
      * private channels get `t.me/c/<rawId>/<post>` (which only resolves for users in
      * that channel — Telegram's invariant, same as the official "Copy link" action).
      */
-    private fun fallbackShareUri(post: TimelinePost): Uri {
+    private fun fallbackShareUri(post: TimelinePost, isGuest: Boolean): Uri {
         val username = post.senderHandle?.removePrefix("@")
-        val serverPostId = fallbackServerPostId(post)
+        val serverPostId = fallbackServerPostId(post, isGuest)
         return when {
             !username.isNullOrBlank() -> "https://t.me/$username/$serverPostId".toUri()
             else -> {
@@ -59,17 +68,8 @@ object PostActions {
      * posts skip the shift because their id IS the raw `t.me/<u>/<seq>` number — applying
      * `ushr 20` would collapse `seq=36046` to 0 and produce a `/0` URL.
      */
-    private fun fallbackServerPostId(post: TimelinePost): Long =
-        if (post.chatId <= GUEST_CHAT_ID_THRESHOLD) post.id else post.id ushr 20
-
-    /**
-     * Below this threshold, the chatId was minted by [dev.lyo.hortay.data.web.WebPostAdapter.stableChatId]
-     * (`-1_000_000_000_000L - hash`). Real TDLib channel chatIds are `-100<channelId>`,
-     * far above this floor — `-100<largest-32-bit-channelId>` sits around `-1.0e15` worst
-     * case, but the guest range starts at `-1.0e12` and only goes more negative. Picking
-     * the boundary at `-1e12` keeps a wide safety margin from real TDLib ids.
-     */
-    private const val GUEST_CHAT_ID_THRESHOLD = -1_000_000_000_000L
+    private fun fallbackServerPostId(post: TimelinePost, isGuest: Boolean): Long =
+        if (isGuest) post.id else post.id ushr 20
 
     suspend fun openInTelegram(context: Context, repo: PostsRepository?, post: TimelinePost) {
         // Hand the OS an https://t.me/... URL — Telegram's intent-filter claims it and
