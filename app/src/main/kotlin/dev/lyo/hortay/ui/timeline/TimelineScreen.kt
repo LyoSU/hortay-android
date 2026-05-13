@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class,
+    kotlinx.coroutines.ExperimentalCoroutinesApi::class,
+)
 
 package dev.lyo.hortay.ui.timeline
 
@@ -64,7 +67,10 @@ import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.async
+import kotlinx.coroutines.selects.select
 import androidx.compose.foundation.gestures.ScrollableDefaults
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -225,7 +231,7 @@ fun TimelineScreen(
     // wired up. Same pattern as [homeScrollIndexState] — keeps the pin's
     // effect at the top of the composable while reading state that's
     // computed deep below.
-    val sortCursorsLandedState = androidx.compose.runtime.remember {
+    val readCursorsLandedState = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(false)
     }
 
@@ -369,7 +375,7 @@ fun TimelineScreen(
         // in OldestUnreadFirst). Waiting until cursors land in the same
         // collector closes that race entirely.
         androidx.compose.runtime.snapshotFlow {
-            val landed = sortCursorsLandedState.value
+            val landed = readCursorsLandedState.value
             val target = if (landed) homeScrollIndexState.intValue else 0
             ColdStartPinState(
                 postsSize = posts.size,
@@ -399,7 +405,7 @@ fun TimelineScreen(
         // target may differ from the post-cursor home target by a
         // composition pass.
         if (listState.isScrollInProgress) return@LaunchedEffect
-        if (sortCursorsLandedState.value) {
+        if (readCursorsLandedState.value) {
             val target = homeScrollIndexState.intValue
             if (target > 0 && target != listState.firstVisibleItemIndex) {
                 listState.scrollToItem(target)
@@ -652,88 +658,75 @@ fun TimelineScreen(
 
     // Live cursor map from LocalReadCursors — drives the UnreadStrip fade per
     // visible card, the [UnreadCounterPill] counter, the
-    // [dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst] sort, and the
-    // cold-start scroll target.
+    // [dev.lyo.hortay.ui.timeline.UnreadBoundaryRow] divider, and the
+    // cold-start scroll target. The sort itself is independent of cursors
+    // (strict ascending by date for OldestUnreadFirst), so cursor-arrival
+    // never re-orders the list — UnreadStrip just fades and the divider
+    // moves.
     val readCursors = LocalReadCursors.current
     val cursorsState = rememberUpdatedState(readCursors)
 
-    // Frozen cursor snapshot for OldestUnreadFirst SORT stability. The list
-    // is sorted [read asc-by-date, unread asc-by-date] — without freezing
-    // the cursor map at refresh boundaries, every viewport-dwell ack
-    // (~1 Hz under scroll) would migrate the just-read post from the
-    // unread block to the read block, yanking the scroll position out
-    // from under the user's eyes. Reeder / Feedly idiom: dwell-acks
-    // advance the LIVE cursor (for the official Telegram client to see
-    // the read state) but the sort's view stays put until the next
-    // pull-to-refresh, when the snapshot updates and the acked posts
-    // migrate as one visible reordering.
-    //
-    // Keyed on (feed, feedOrder) so a feed-identity change — TDLib
-    // logout / re-login swaps `feed` to a fresh PostsRepository instance,
-    // mode flip swaps it between PostsRepository and WebFeedSource —
-    // drops the previous account's frozen cursors instead of overlaying
-    // them onto the new feed.
-    val snapshotCursors = remember(feed, feedOrder) {
-        mutableStateOf<dev.lyo.hortay.data.ReadCursors>(dev.lyo.hortay.data.EmptyReadCursors)
+    val visiblePosts = remember(filteredPosts, feedOrder) {
+        filteredPosts.orderedFor(feedOrder, dev.lyo.hortay.data.EmptyReadCursors)
     }
-    // First-fill capture: wait for `readCursors` to become non-empty, then
-    // freeze it. TimelineScreen also uses this signal to gate the
-    // LazyColumn render below (no flicker from a mid-cold-start re-sort).
-    LaunchedEffect(feedOrder, feed) {
-        if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) return@LaunchedEffect
-        androidx.compose.runtime.snapshotFlow { cursorsState.value }
-            .filter { it.isNotEmpty() }
-            .first()
-            .let { snapshotCursors.value = it }
-    }
-    // Re-snapshot after each pull-to-refresh completion so acked posts
-    // migrate out of the unread queue as a single visible reordering.
-    val prevRefreshing = remember { mutableStateOf(refreshing) }
-    LaunchedEffect(refreshing) {
-        if (prevRefreshing.value && !refreshing &&
-            feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst
-        ) {
-            snapshotCursors.value = cursorsState.value
-        }
-        prevRefreshing.value = refreshing
-    }
-    // Overlay rule: for chats that materialised AFTER the snapshot was
-    // captured (fresh subscription, late UpdateNewChat), use the live
-    // cursor. Without this, brand-new chats with cursors[chatId] == null
-    // get isUnreadIn = false and sort into the read block, landing visually
-    // above older unread posts — "newer post is above older post" looks
-    // like a broken sort.
-    val sortCursors = if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
-        remember(snapshotCursors.value, readCursors.keys.size) {
-            val snap = snapshotCursors.value
-            val missing = readCursors.entries.filter { it.key !in snap }
-            if (missing.isEmpty()) snap
-            else snap.putAll(missing.associate { it.key to it.value })
-        }
-    } else readCursors
 
-    val visiblePosts = remember(filteredPosts, feedOrder, sortCursors) {
-        filteredPosts.orderedFor(feedOrder, sortCursors)
+    // Cold-start "cursors usable for the boundary picker" signal. Two
+    // sources count as ready:
+    //   1. TDLib's first UpdateChatReadInbox burst — usually 200–800 ms
+    //      after AuthorizationStateReady, sometimes later on slow networks.
+    //   2. A grace timeout after refresh completes. For brand-new accounts
+    //      or chats the user has never opened, TDLib seeds the cursor map
+    //      only when `lastReadInboxMessageId > 0` ([PostsRepository.kt]
+    //      ~line 274), so the map can stay empty indefinitely. Without
+    //      the timeout the cold-start pin would never settle the LazyColumn
+    //      at a meaningful target.
+    val cursorsHaveLandedState = remember(feed, feedOrder) {
+        androidx.compose.runtime.mutableStateOf(false)
     }
+    LaunchedEffect(feed, feedOrder) {
+        if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
+            cursorsHaveLandedState.value = true
+            return@LaunchedEffect
+        }
+        val cursorsArrived = async {
+            androidx.compose.runtime.snapshotFlow { cursorsState.value }
+                .first { it.isNotEmpty() }
+        }
+        val timeoutFallback = async {
+            // Wait for refresh to complete first, then a small grace for the
+            // cursor pipeline; if cursors haven't arrived by then, treat as
+            // "ready anyway" — better to render the feed at its natural
+            // landing than to hang on a Spacer forever.
+            androidx.compose.runtime.snapshotFlow { refreshing }.first { !it }
+            kotlinx.coroutines.delay(COLD_START_CURSOR_GRACE_MS)
+        }
+        select<Unit> {
+            cursorsArrived.onAwait { it; Unit }
+            timeoutFallback.onAwait { Unit }
+        }
+        cursorsArrived.cancel()
+        timeoutFallback.cancel()
+        cursorsHaveLandedState.value = true
+    }
+    val cursorsHaveLanded = cursorsHaveLandedState.value
 
     // Cold-start scroll-target picker.
     //   - Newest: index 0 (top = newest, canonical Twitter / RSS-feed landing).
     //   - OldestUnreadFirst, cursors known + has unread: first-unread boundary
-    //     (= where to resume reading; read history above, unread below).
-    //   - OldestUnreadFirst, caught up: lastIndex (= newest at the bottom of
-    //     asc-by-date; canonical "you're up to date, here's the latest").
-    //   - OldestUnreadFirst, cursors still empty: 0 — the LazyColumn render is
-    //     gated on cursors-landed below, so this is a transient value the user
-    //     never actually sees.
-    val homeScrollIndex by remember(visiblePosts, sortCursors, feedOrder) {
+    //     (= where to resume reading; older history above, unread below).
+    //   - OldestUnreadFirst, caught up / cursors-empty fallback: lastIndex
+    //     (= newest at the bottom of asc-by-date; canonical "you're up to
+    //     date, here's the latest").
+    val homeScrollIndex by remember(visiblePosts, readCursors, feedOrder, cursorsHaveLanded) {
         derivedStateOf {
             when (feedOrder) {
                 dev.lyo.hortay.data.FeedOrder.Newest -> 0
                 dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> {
-                    if (sortCursors.isEmpty() || visiblePosts.isEmpty()) 0
+                    if (visiblePosts.isEmpty()) 0
+                    else if (!cursorsHaveLanded) 0
                     else {
                         val boundary = dev.lyo.hortay.data.continueReadingIndex(
-                            feedOrder, visiblePosts, sortCursors,
+                            feedOrder, visiblePosts, readCursors,
                         )
                         if (boundary >= 0) boundary else visiblePosts.lastIndex
                     }
@@ -741,24 +734,21 @@ fun TimelineScreen(
             }
         }
     }
-    // Mirror into the forward-declared holder so the cold-start pin /
+    // Mirror into the forward-declared holders so the cold-start pin /
     // home-tap / scope-switch effects further up the composable see the
     // current target. Single-effect write keeps the read consistent.
-    val cursorsHaveLanded = sortCursors.isNotEmpty()
     LaunchedEffect(homeScrollIndex, cursorsHaveLanded) {
         homeScrollIndexState.intValue = homeScrollIndex
-        sortCursorsLandedState.value = cursorsHaveLanded
+        readCursorsLandedState.value = cursorsHaveLanded
     }
 
-    // LazyColumn render gate for OldestUnreadFirst cold start. Until cursors
-    // arrive we have nothing to render: the source-order list (newest at top)
-    // would briefly show the wrong content before the sort flipped it on top
-    // of the user's head — historically that one-frame flash plus the
-    // subsequent jump to the boundary was the dominant cold-start UX
-    // complaint. Hide the column entirely until cursors land and the
-    // [homeScrollIndex] target is meaningful; show the canonical empty-state
-    // skeleton in its place. Newest mode renders immediately (no sort
-    // dependency).
+    // LazyColumn render gate for OldestUnreadFirst cold start. The sort is
+    // cursor-independent, so a mid-cold-start re-sort no longer occurs;
+    // however the cold-start scroll target snaps from `0` to its real value
+    // (boundary or lastIndex) when [cursorsHaveLanded] flips true, and we'd
+    // rather paint atomically at the final target than land at oldest-at-top
+    // for a frame and then jump. Newest mode renders immediately (no
+    // target dependency).
     val feedReady = feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst ||
         cursorsHaveLanded
 
@@ -1441,17 +1431,17 @@ fun TimelineScreen(
                         // above the first item containing an unread post.
                         // Telegram-Android does the same in chat history — a
                         // "New messages" rule across the bubble column. Driven
-                        // by [sortCursors] (the frozen snapshot), so dwell-acks
+                        // by [readCursors] (the frozen snapshot), so dwell-acks
                         // don't migrate the rule around mid-scroll.
                         val unreadBoundaryKey by remember(
-                            feedItems, sortCursors, feedOrder,
+                            feedItems, readCursors, feedOrder,
                         ) {
                             derivedStateOf {
                                 if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
                                     return@derivedStateOf null
                                 }
                                 feedItems.firstOrNull { feedItem ->
-                                    feedItem.posts().any { it.isUnreadIn(sortCursors) }
+                                    feedItem.posts().any { it.isUnreadIn(readCursors) }
                                 }?.key
                             }
                         }
@@ -1480,7 +1470,7 @@ fun TimelineScreen(
                                     // item that contains an unread post (OldestUnreadFirst
                                     // only). Composed at the start of the item lambda so it
                                     // sticks to the same FeedItem in LazyColumn — pull-to-
-                                    // refresh updates the boundary by reassigning [sortCursors]
+                                    // refresh updates the boundary by reassigning [readCursors]
                                     // and the rule moves naturally with the new snapshot.
                                     if (item.key == unreadBoundaryKey) {
                                         UnreadBoundaryRow()
@@ -1838,6 +1828,22 @@ private data class ColdStartPinState(
     val cursorsLanded: Boolean,
     val target: Int,
 )
+
+/**
+ * How long the OldestUnreadFirst cold-start gate waits AFTER refresh has
+ * settled for TDLib's first `UpdateChatReadInbox` burst to arrive before
+ * giving up and rendering the feed anyway. Without this fallback, a brand-new
+ * account (no chats ever opened → no cursors ever sent by TDLib) would hang
+ * on the empty placeholder forever — the cursor map only seeds when
+ * `lastReadInboxMessageId > 0` (see [PostsRepository] ~L274).
+ *
+ * 800 ms is the empirical 95th-percentile for cursor arrival on a real
+ * cold start. If they're going to come at all they're already here by then;
+ * if not, the user is almost certainly on a fresh account and we should
+ * land them on the bottom of the asc-by-date feed (= newest) rather than
+ * stall.
+ */
+private const val COLD_START_CURSOR_GRACE_MS = 800L
 
 /** Avatars in the "X нових постів" pill — same cap as the original VM-side limit. */
 private const val MAX_PILL_BADGES = 3

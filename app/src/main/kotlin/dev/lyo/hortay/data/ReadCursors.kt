@@ -63,29 +63,30 @@ fun firstUnreadIndex(posts: List<TimelinePost>, cursors: ReadCursors): Int =
  * hand the result straight to a [androidx.compose.foundation.lazy.LazyColumn]
  * without worrying about stable identity on the source list.
  *
- * `OldestUnreadFirst` is the **reverse-feed / chat-app idiom** that Telegram,
- * WhatsApp, and Slack settle on for an inbox:
- *   - Posts sorted ascending by date: OLDEST on top, NEWEST at the bottom.
- *   - Within the asc-by-date layout, read posts sort above unread (so the
- *     read block forms the upper half of the column, unread queue the lower).
- *   - The TimelineScreen cold-start scroll-target picker lands the user at
- *     the boundary between read and unread (= first unread = where to resume
- *     reading) so scrolling DOWN walks forward chronologically through the
- *     queue and scrolling UP walks back into already-read history.
+ * `OldestUnreadFirst` is the **reverse-feed idiom**: strict ascending by
+ * date — OLDEST on top, NEWEST at the bottom, chronological reading direction
+ * (scroll DOWN to advance forward in time). The TimelineScreen cold-start
+ * scroll-target picker lands the user at the first unread post (chat-app
+ * idiom: "where you left off") for accounts with unread, or at the bottom
+ * (= newest) for caught-up accounts.
  *
- * Caller passes cursors that are guaranteed non-empty (TimelineScreen gates
- * the LazyColumn render on cursors-landed for OldestUnreadFirst mode), so we
- * don't carry a cold-start race fallback here.
+ * Read/unread state is rendered via [dev.lyo.hortay.ui.timeline.UnreadStrip]
+ * per-card and the [dev.lyo.hortay.ui.timeline.UnreadBoundaryRow] divider —
+ * it does NOT influence the sort. The previous design ran a stable sort with
+ * a read/unread compound key, which could lift a newer read post above an
+ * older unread post and read as "broken sort" in a reverse-feed.
+ *
+ * The [cursors] parameter is unused by the sort; kept in the signature so
+ * the call site doesn't have to branch on feed order to decide whether to
+ * pass it.
  */
+@Suppress("UNUSED_PARAMETER")
 fun List<TimelinePost>.orderedFor(
     order: FeedOrder,
     cursors: ReadCursors,
 ): List<TimelinePost> = when (order) {
     FeedOrder.Newest -> this
-    FeedOrder.OldestUnreadFirst -> {
-        if (cursors.isEmpty()) this  // race fallback — TimelineScreen also gates render on this
-        else sortedWith(compareBy({ it.isUnreadIn(cursors) }, { it.date }))
-    }
+    FeedOrder.OldestUnreadFirst -> sortedBy { it.date }
 }
 
 /**

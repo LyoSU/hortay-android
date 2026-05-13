@@ -78,55 +78,58 @@ class ReadCursorsTest {
     }
 
     @Test
-    fun `OldestUnreadFirst puts read block on top, unread below, both asc by date`() {
-        // Chat-app idiom: read history at the top, unread queue at the bottom.
-        // User auto-scrolls to first-unread boundary on mount; scrolling up walks
-        // back into history, scrolling down advances through the queue.
+    fun `OldestUnreadFirst sorts strictly ascending by date — oldest at top, newest at bottom`() {
+        // Reverse-feed: chronological order, scroll DOWN to advance forward
+        // in time. Read / unread state doesn't affect the sort (would have
+        // lifted a newer read post above an older unread post in the old
+        // block model — reads as a broken sort in a reverse feed).
         val cursors = persistentMapOf(CHAT_ID to 50L)
         val newestFirst = listOf(
-            post(id = 70L, date = 700L), // unread
+            post(id = 70L, date = 700L), // unread, newest
             post(id = 60L, date = 600L), // unread
             post(id = 40L, date = 400L), // read
-            post(id = 30L, date = 300L), // read (oldest)
+            post(id = 30L, date = 300L), // read, oldest
         )
         val ordered = newestFirst.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
         assertEquals(listOf(30L, 40L, 60L, 70L), ordered.map { it.id })
     }
 
     @Test
-    fun `OldestUnreadFirst on all-read feed sorts everything asc by date`() {
-        // Channel cursor sits above every loaded post — no unread block; the list
-        // is just the read history asc. TimelineScreen auto-scroll falls back to
-        // lastIndex (= newest at the bottom).
-        val cursors = persistentMapOf(CHAT_ID to 1_000L)
-        val posts = listOf(
-            post(id = 70L, date = 700L),
-            post(id = 30L, date = 300L),
-            post(id = 50L, date = 500L),
-        )
-        val ordered = posts.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
-        assertEquals(listOf(30L, 50L, 70L), ordered.map { it.id })
-    }
-
-    @Test
-    fun `OldestUnreadFirst falls back to source order while cursors are empty`() {
-        // Cold-start race fallback. TimelineScreen also gates the LazyColumn
-        // render on cursors-landed for OldestUnreadFirst, so this branch is a
-        // belt-and-braces against any callsite that hits orderedFor before
-        // cursors arrive.
-        val cursors = persistentMapOf<Long, Long>()
+    fun `OldestUnreadFirst sort is independent of cursor state`() {
+        // Same input, same output across (a) empty cursors, (b) caught up,
+        // (c) all unread — the sort doesn't peek at the cursor map at all.
         val newestFirst = listOf(
             post(id = 70L, date = 700L),
             post(id = 60L, date = 600L),
             post(id = 40L, date = 400L),
             post(id = 30L, date = 300L),
         )
-        val ordered = newestFirst.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
-        assertEquals(listOf(70L, 60L, 40L, 30L), ordered.map { it.id })
+        val expected = listOf(30L, 40L, 60L, 70L)
+        assertEquals(
+            expected,
+            newestFirst.orderedFor(FeedOrder.OldestUnreadFirst, EmptyReadCursors).map { it.id },
+        )
+        assertEquals(
+            expected,
+            newestFirst.orderedFor(
+                FeedOrder.OldestUnreadFirst,
+                persistentMapOf(CHAT_ID to 1_000L), // caught up
+            ).map { it.id },
+        )
+        assertEquals(
+            expected,
+            newestFirst.orderedFor(
+                FeedOrder.OldestUnreadFirst,
+                persistentMapOf(CHAT_ID to 0L), // all unread
+            ).map { it.id },
+        )
     }
 
     @Test
-    fun `OldestUnreadFirst preserves source order for same-date same-block posts`() {
+    fun `OldestUnreadFirst is a stable sort — preserves input order on date ties`() {
+        // Telegram emits album members with the same whole-second date, and
+        // PostFilterStrategy already anchors albums on a deterministic id.
+        // The asc-by-date sort must not disturb that ordering.
         val cursors = persistentMapOf(CHAT_ID to 0L)
         val posts = listOf(
             post(id = 10L, date = 500L),
@@ -138,10 +141,10 @@ class ReadCursorsTest {
     }
 
     @Test
-    fun `OldestUnreadFirst new unread arrival lands at the END of the unread block`() {
-        // New posts via UpdateNewMessage are unread and carry the highest date.
-        // In the read-on-top, unread-below layout, they sort to the bottom of
-        // the unread block.
+    fun `OldestUnreadFirst new unread arrival lands at the END of the list`() {
+        // New posts via UpdateNewMessage carry the highest date, so they
+        // sort to the bottom of the asc-by-date list — the canonical
+        // "newest at the bottom" position in a reverse feed.
         val cursors = persistentMapOf(CHAT_ID to 50L)
         val initial = listOf(
             post(id = 60L, date = 600L), // unread

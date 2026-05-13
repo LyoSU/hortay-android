@@ -366,7 +366,16 @@ class PostsRepository(
     }
 
     private suspend fun saveSnapshotNow() {
-        val current = _posts.value
+        // Persist the subscribed-feed view, NOT the raw _posts buffer.
+        // _posts can carry transient rows from a single-channel drill or a
+        // deep-link preview (loadChannelHistory / loadHistoryAround write
+        // straight to _posts to keep ChannelScreen rendering, then
+        // subscribedPosts filters them back out for the merged feed). Saving
+        // _posts.value would persist those transient rows into the snapshot,
+        // and on the next cold start — if the live refresh fails before
+        // _mainChatIds populates — the fallback restore would inject them
+        // straight into the visible main feed.
+        val current = subscribedPosts.value
         if (current.isEmpty()) return
         val top = current.take(SNAPSHOT_SIZE).flatMap { post ->
             // Persist every album member id, not just the anchor — restoreFromSnapshot
