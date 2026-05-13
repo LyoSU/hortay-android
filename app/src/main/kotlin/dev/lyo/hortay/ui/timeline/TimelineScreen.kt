@@ -656,13 +656,14 @@ fun TimelineScreen(
         }
     }
 
-    // Live cursor map from LocalReadCursors — drives the UnreadStrip fade per
-    // visible card, the [UnreadCounterPill] counter, the
-    // [dev.lyo.hortay.ui.timeline.UnreadBoundaryRow] divider, and the
-    // cold-start scroll target. The sort itself is independent of cursors
-    // (strict ascending by date for OldestUnreadFirst), so cursor-arrival
-    // never re-orders the list — UnreadStrip just fades and the divider
-    // moves.
+    // Live cursor map from LocalReadCursors — drives the UnreadStrip fade
+    // per visible card, the [UnreadCounterPill] counter, and the cold-start
+    // scroll target. The sort itself is independent of cursors (strict
+    // ascending by date for OldestUnreadFirst), so cursor-arrival never
+    // re-orders the list.
+    //
+    // The [dev.lyo.hortay.ui.timeline.UnreadBoundaryRow] divider does NOT
+    // read this live map — see [boundaryCursorsState] below for why.
     val readCursors = LocalReadCursors.current
     val cursorsState = rememberUpdatedState(readCursors)
 
@@ -709,6 +710,53 @@ fun TimelineScreen(
         cursorsHaveLandedState.value = true
     }
     val cursorsHaveLanded = cursorsHaveLandedState.value
+
+    // Frozen cursor snapshot for the [UnreadBoundaryRow] divider. Latches on
+    // discrete boundary events — never on the per-card dwell-acks that flow
+    // through [readCursors] continuously. Triggers:
+    //   1. Cold-start landing: snapshot the moment `cursorsHaveLanded`
+    //      first flips true (= TDLib's UpdateChatReadInbox burst arrived,
+    //      or the grace timeout fired).
+    //   2. Pull-to-refresh completion: `refreshing` falls true → false. The
+    //      user explicitly asked for a fresh view of the world, so it's
+    //      legitimate to move the boundary.
+    //   3. Feed identity change (logout / mode switch / scope-level VM
+    //      rebuild): `remember(feed, feedOrder)` resets the snapshot.
+    //
+    // Why not the live map: the boundary divider is a ~28dp LazyColumn item
+    // keyed by FeedItem. When it migrates from above item A to above
+    // item B (because A just got dwell-acked), every item below A jumps up
+    // by the divider's height and every item above shifts the other way —
+    // a visible "skip" under the user's scroll. Telegram-Android, Slack,
+    // and Discord all latch the New-messages rule on chat-open and refuse
+    // to move it mid-session for the same reason: the divider is meant to
+    // be an ANCHOR ("here is where you came in"), not a live read-edge
+    // ("here is where you are now"). The per-card unread strip in
+    // [PostCard.kt] keeps the live signal — and it can afford to, because
+    // `Modifier.drawBehind` shifts zero pixels of layout.
+    //
+    // The per-card live strip + frozen divider + live `↓ N` pill answer
+    // three different questions ("is this read?", "where did I come in?",
+    // "how many left?") with three different cadences. That separation is
+    // load-bearing — collapsing them costs either clarity (drop the
+    // divider) or stability (let it migrate).
+    val boundaryCursorsState = remember(feed, feedOrder) {
+        androidx.compose.runtime.mutableStateOf(dev.lyo.hortay.data.EmptyReadCursors)
+    }
+    LaunchedEffect(feed, feedOrder, cursorsHaveLanded, refreshing) {
+        if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) return@LaunchedEffect
+        if (!cursorsHaveLanded) return@LaunchedEffect
+        // Re-latch on (a) the first cold-start landing — `cursorsHaveLanded`
+        // just flipped, capture the current map — and (b) refresh idle
+        // transitions. The `!refreshing` gate covers both: it's true on
+        // the cold-start landing turn (refresh has already completed by
+        // then in nearly every path) AND it's true the instant a
+        // pull-to-refresh round-trip ends.
+        if (!refreshing) {
+            boundaryCursorsState.value = cursorsState.value
+        }
+    }
+    val boundaryCursors = boundaryCursorsState.value
 
     // Cold-start scroll-target picker.
     //   - Newest: index 0 (top = newest, canonical Twitter / RSS-feed landing).
@@ -1428,20 +1476,23 @@ fun TimelineScreen(
                         // In OldestUnreadFirst, locate the read→unread boundary
                         // in the asc-by-date sort (read block on top, unread
                         // queue below). Paint a [UnreadBoundaryRow] divider
-                        // above the first item containing an unread post.
-                        // Telegram-Android does the same in chat history — a
-                        // "New messages" rule across the bubble column. Driven
-                        // by [readCursors] (the frozen snapshot), so dwell-acks
-                        // don't migrate the rule around mid-scroll.
+                        // above the first item containing an unread post per
+                        // the FROZEN [boundaryCursors] snapshot — explicitly
+                        // not the live [readCursors] map. The rationale lives
+                        // alongside [boundaryCursorsState] above; tl;dr the
+                        // divider is a session anchor, so dwell-acks must not
+                        // migrate it under the user's scroll. Telegram-Android,
+                        // Slack and Discord all do the same with their
+                        // "New messages" rule.
                         val unreadBoundaryKey by remember(
-                            feedItems, readCursors, feedOrder,
+                            feedItems, boundaryCursors, feedOrder,
                         ) {
                             derivedStateOf {
                                 if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
                                     return@derivedStateOf null
                                 }
                                 feedItems.firstOrNull { feedItem ->
-                                    feedItem.posts().any { it.isUnreadIn(readCursors) }
+                                    feedItem.posts().any { it.isUnreadIn(boundaryCursors) }
                                 }?.key
                             }
                         }
@@ -1707,30 +1758,32 @@ internal enum class EmptyKind { Default, Saved, CaughtUp }
  * from the unread queue below, so the user navigating up into history doesn't
  * confuse what's been seen with what hasn't.
  *
- * Style: 36 dp tall, two `primary`-tinted divider lines flanking a
- * `labelMedium` "Непрочитане" pill in `primary` color. No background fill —
+ * Style: ~28 dp tall, two `primary`-tinted divider lines flanking a
+ * `labelSmall` "Непрочитане" pill in `primary` color. No background fill —
  * the rule reads as a typographic boundary inside the feed, not as a heavy
- * separator card. Padding matches PostCard horizontal padding so the lines
- * extend edge-to-edge of the column.
+ * separator card. Restrained on purpose: this is peripheral orientation
+ * ("you came in here"), not a CTA — Telegram-Android's same rule is
+ * similarly understated. Padding matches PostCard horizontal padding so
+ * the lines extend edge-to-edge of the column.
  */
 @Composable
 private fun UnreadBoundaryRow() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+        val tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
         HorizontalDivider(modifier = Modifier.weight(1f), color = tint)
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
         Text(
             text = stringResource(R.string.timeline_unread_boundary),
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
         HorizontalDivider(modifier = Modifier.weight(1f), color = tint)
     }
 }
