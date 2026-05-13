@@ -216,7 +216,7 @@ fun FullScreenMediaViewer(
                                         is MediaShareActions.Result.Success -> successMsg
                                         is MediaShareActions.Result.Failure ->
                                             saveFailedMsg.format(
-                                                actionContext.getString(res.reasonResId, *res.args.toTypedArray()),
+                                                actionContext.resources.getString(res.reasonResId, *res.args.toTypedArray()),
                                             )
                                     }
                                     Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()
@@ -243,7 +243,7 @@ fun FullScreenMediaViewer(
                                             is MediaShareActions.Result.Success -> copiedMsg
                                             is MediaShareActions.Result.Failure ->
                                                 copyFailedMsg.format(
-                                                    actionContext.getString(res.reasonResId, *res.args.toTypedArray()),
+                                                    actionContext.resources.getString(res.reasonResId, *res.args.toTypedArray()),
                                                 )
                                         }
                                         Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()

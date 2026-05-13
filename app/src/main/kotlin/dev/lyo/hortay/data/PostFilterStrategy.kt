@@ -21,7 +21,16 @@ object PostFilterStrategy {
         // filter (see TimelineScreen.visiblePosts).
         .filterNot { it.content is PostContent.Unsupported }
         .let(::mergeAlbums)
-        .sortedByDescending { it.date }
+        // Tie-break by id descending so same-date posts have a deterministic
+        // order across refreshes. Telegram channels routinely emit several
+        // posts within the same whole second (cross-poster bots, schedule
+        // bursts), and the upstream input order is non-deterministic — it
+        // comes from a `groupBy { chatId to mediaAlbumId }` HashMap iteration
+        // plus the standalones-then-grouped concat order in [mergeAlbums].
+        // Without the secondary key, two posts with `date = 1715607123` would
+        // swap places between refreshes, reading as "feed jumps" or "post
+        // disappeared and came back lower" in the UI.
+        .sortedWith(compareByDescending<TimelinePost> { it.date }.thenByDescending { it.id })
 
     private fun mergeAlbums(posts: List<TimelinePost>): List<TimelinePost> {
         val standalones = posts.filter { it.mediaAlbumId == 0L }

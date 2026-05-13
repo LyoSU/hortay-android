@@ -165,13 +165,13 @@ fun WebModeScaffold(graph: AppGraph) {
                         // was inferred (from `#tag@channel` text-entity suffix or
                         // PostBody's scoped LocalHashtagTap), generic otherwise.
                         val msg = if (link.channelHandle != null) {
-                            context.getString(
+                            context.resources.getString(
                                 R.string.link_hashtag_search_in_channel,
                                 link.tag,
                                 "@${link.channelHandle}",
                             )
                         } else {
-                            context.getString(R.string.link_hashtag_search, link.tag)
+                            context.resources.getString(R.string.link_hashtag_search, link.tag)
                         }
                         snackbarHostState.showSnackbar(msg)
                     }

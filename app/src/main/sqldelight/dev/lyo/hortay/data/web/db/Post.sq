@@ -86,11 +86,14 @@ CREATE INDEX post_bookmark_idx ON post(is_bookmarked) WHERE is_bookmarked = 1;
 selectFeed:
 -- Global feed: latest from every subscribed channel. Joining on channel keeps
 -- posts from unsubscribed channels out without needing a separate cleanup pass.
+-- Tie-break by `seq` so same-second posts hold a deterministic order (Telegram
+-- t.me/s/<u> pages compress to per-second timestamps; without the secondary
+-- key, SQLite's row order is undefined and the feed can shuffle between sweeps).
 SELECT post.*, channel.title AS channel_title, channel.avatar_url AS channel_avatar
 FROM post
 JOIN channel ON channel.username = post.channel_username
 WHERE channel.is_subscribed = 1
-ORDER BY post.published_at_ms DESC
+ORDER BY post.published_at_ms DESC, post.seq DESC
 LIMIT :limit;
 
 selectFeedByChannel:
@@ -98,7 +101,7 @@ SELECT post.*, channel.title AS channel_title, channel.avatar_url AS channel_ava
 FROM post
 JOIN channel ON channel.username = post.channel_username
 WHERE post.channel_username = :username
-ORDER BY post.published_at_ms DESC
+ORDER BY post.published_at_ms DESC, post.seq DESC
 LIMIT :limit;
 
 selectBookmarked:
@@ -106,7 +109,7 @@ SELECT post.*, channel.title AS channel_title, channel.avatar_url AS channel_ava
 FROM post
 JOIN channel ON channel.username = post.channel_username
 WHERE post.is_bookmarked = 1
-ORDER BY post.published_at_ms DESC;
+ORDER BY post.published_at_ms DESC, post.seq DESC;
 
 selectById:
 SELECT post.*, channel.title AS channel_title, channel.avatar_url AS channel_avatar
@@ -140,7 +143,7 @@ FROM post
 JOIN channel ON channel.username = post.channel_username
 WHERE LOWER(post.text_plain) LIKE :pattern
   AND channel.is_subscribed = 1
-ORDER BY post.published_at_ms DESC
+ORDER BY post.published_at_ms DESC, post.seq DESC
 LIMIT :limit;
 
 -- Two-step upsert (portable across SQLite < 3.24 on older Android — see
@@ -220,7 +223,7 @@ WHERE is_bookmarked = 0
       SELECT id FROM post AS p2
       WHERE p2.channel_username = post.channel_username
         AND p2.is_bookmarked = 0
-      ORDER BY p2.published_at_ms DESC
+      ORDER BY p2.published_at_ms DESC, p2.seq DESC
       LIMIT :keepCount
   );
 
@@ -239,5 +242,5 @@ SELECT post.text_html, post.forwarded_from_json
 FROM post
 JOIN channel ON channel.username = post.channel_username
 WHERE channel.is_subscribed = 1
-ORDER BY post.published_at_ms DESC
+ORDER BY post.published_at_ms DESC, post.seq DESC
 LIMIT :limit;
