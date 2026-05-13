@@ -15,9 +15,16 @@
 - Channel-drill rendered as overlay above always-mounted Feed.
 
 ### Fixed
+- Reaction chips on the post-detail anchor and on comments now actually toggle.
 - Fresh posts reach `OldestUnreadFirst` feed without restart.
 - Cold-start scroll-pin no longer fires on mid-session arrivals.
 - Photo albums no longer ship with missing members on slow networks.
+
+### Performance
+- Reaction taps flip optimistically across feed / channel / post detail / comments; server reconciles via `UpdateMessageInteractionInfo`, RPC failure rolls back.
+
+### Architecture
+- `ReactionTogglePolicy` + `PostsRepository.applyOptimisticReaction` + `CommentsRepository` per-thread override map merged into the single-collector update fan-in.
 
 ## [0.3.0] — 2026-05-12
 

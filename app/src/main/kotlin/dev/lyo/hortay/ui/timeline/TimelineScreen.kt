@@ -1143,14 +1143,24 @@ fun TimelineScreen(
             translateEnabled = translations != null,
             onReactionToggle = { post, item ->
                 val ca = channelActions ?: return@PostInteractions
+                val repo = tdlibRepo ?: return@PostInteractions
+                // Optimistic UI: flip the chip and adjust the count BEFORE the RPC so
+                // the tap feels instant — the canonical pattern (Telegram-Android,
+                // Twitter, Reddit, Slack). The eventual `UpdateMessageInteractionInfo`
+                // overwrites the local guess with server truth via
+                // [PostsRepository.flushPendingInteractionInfo]; on RPC failure we
+                // revert by applying the inverse toggle.
+                val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
+                val nowChosen = !item.isChosen
+                repo.applyOptimisticReaction(post.chatId, target, item.kind, nowChosen)
                 scope.launch {
-                    val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
-                    ca.toggleReaction(
+                    val ok = ca.toggleReaction(
                         chatId = post.chatId,
                         messageId = target,
                         kind = item.kind,
                         isChosen = item.isChosen,
                     )
+                    if (!ok) repo.applyOptimisticReaction(post.chatId, target, item.kind, item.isChosen)
                 }
             },
             onPostClick = { post ->

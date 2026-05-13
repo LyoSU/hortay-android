@@ -3,11 +3,15 @@ package dev.lyo.hortay.data
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.shareIn
 import org.drinkless.tdlib.TdApi
 import java.util.Collections
@@ -104,6 +108,28 @@ class CommentsRepository(
     // the prefetched batch doesn't cover the viewport. ~16 bytes per entry, on
     // par with [resolvedAnchors].
     private val prefetchedAnchors = ConcurrentHashMap.newKeySet<Pair<Long, Long>>()
+
+    /**
+     * Optimistic reaction overrides keyed by `(threadChatId, messageId)`. Populated by
+     * [applyOptimisticReaction] when the user taps a chip; consulted in [buildTree] so
+     * the visible chip reflects the local guess instantly. Cleared on the next
+     * authoritative `UpdateMessageInteractionInfo` for that message (see [applyUpdate])
+     * — server truth always wins on reconciliation, even if our optimistic arithmetic
+     * is slightly off.
+     *
+     * Survives the [SharingStarted.WhileSubscribed] linger so a scroll-out + scroll-in
+     * inside the 30 s window picks the override back up. Cleared by [clear] on logout.
+     */
+    private val optimisticOverrides = ConcurrentHashMap<Pair<Long, Long>, Reactions>()
+
+    /**
+     * Side-channel that nudges the active [threadFlow] to re-emit when an override
+     * lands, without going through `td.updates` (those are server-driven and would
+     * mean fabricating fake `TdApi.MessageReactions` payloads — needless impedance).
+     * Merged into the single-collector update fan-in inside [threadFlow] so the
+     * "one writer mutates `live`" invariant still holds.
+     */
+    private val invalidations = MutableSharedFlow<Pair<Long, Long>>(extraBufferCapacity = 64)
 
     // Bounded LRU. accessOrder=true bumps an entry to most-recently-used on every
     // get/put; removeEldestEntry caps the size and lets the JVM GC the dropped
@@ -245,10 +271,27 @@ class CommentsRepository(
             // capacity is generous because realistic comment-update bursts are tiny (a
             // handful of UpdateMessageInteractionInfo per second) and even an off-by-one
             // accidental flood is bounded.
-            td.updates
+            // Two event streams feed a single mutator coroutine:
+            //   • TDLib updates (server-driven new messages, interaction info,
+            //     content edits, deletes) — write into `live`.
+            //   • Optimistic-override invalidations from [applyOptimisticReaction] —
+            //     `live` is unchanged but the override map has a new entry, so we
+            //     just need to re-emit so [buildTree] picks the override up.
+            // Filtering invalidations by threadChatId scopes each flow to its own
+            // thread so a different overlay's tap doesn't ripple here.
+            val tdlibEvents: Flow<ThreadEvent> = td.updates.map { ThreadEvent.Tdlib(it) }
+            val invalidationEvents: Flow<ThreadEvent> = invalidations
+                .filter { it.first == anchor.threadChatId }
+                .map { ThreadEvent.OptimisticInvalidate }
+            val events: Flow<ThreadEvent> = merge(tdlibEvents, invalidationEvents)
+            events
                 .buffer(capacity = UPDATE_BUFFER_CAPACITY)
-                .collect { upd ->
-                    if (applyUpdate(upd, anchor, live, seenIds)) emit(buildReady(live, anchor))
+                .collect { ev ->
+                    val changed = when (ev) {
+                        is ThreadEvent.Tdlib -> applyUpdate(ev.update, anchor, live, seenIds)
+                        ThreadEvent.OptimisticInvalidate -> true
+                    }
+                    if (changed) emit(buildReady(live, anchor))
                 }
         }
     }
@@ -418,7 +461,15 @@ class CommentsRepository(
             else {
                 val idx = live.indexOfFirst { it.id == upd.messageId }
                 if (idx == -1) false
-                else { live[idx].interactionInfo = upd.interactionInfo; true }
+                else {
+                    // Server truth landed for this message — drop any optimistic
+                    // override we stamped on it. The next [buildTree] pass will
+                    // map the fresh interactionInfo through [MessageContentMapper]
+                    // and the chip reflects the canonical state.
+                    optimisticOverrides.remove(anchor.threadChatId to upd.messageId)
+                    live[idx].interactionInfo = upd.interactionInfo
+                    true
+                }
             }
         }
         is TdApi.UpdateMessageContent -> {
@@ -448,7 +499,51 @@ class CommentsRepository(
         live: List<TdApi.Message>,
         anchor: ResolvedAnchor,
     ): ThreadState.Ready =
-        ThreadState.Ready(buildTree(live, anchor.rootId), anchor.threadChatId)
+        ThreadState.Ready(buildTree(live, anchor), anchor.threadChatId)
+
+    /**
+     * Apply an optimistic reaction toggle on a comment row inside this thread. The
+     * caller is the UI's tap handler — it has the live [Reactions] snapshot it just
+     * rendered, so it passes that as [current] and the policy here computes the
+     * post-tap state without re-reading from TdApi. The override is stored
+     * (key = `threadChatId, messageId`) and an invalidation nudges the active
+     * thread flow to re-emit; if the flow has no current subscribers, the override
+     * is picked up next time someone attaches (within the 30 s linger window) or
+     * dropped on logout via [clear]. Server reconciliation in [applyUpdate]
+     * removes the override the moment TDLib confirms the change.
+     */
+    fun applyOptimisticReaction(
+        threadChatId: Long,
+        messageId: Long,
+        current: Reactions,
+        kind: ReactionKind,
+        nowChosen: Boolean,
+    ) {
+        val next = ReactionTogglePolicy.apply(current, kind, nowChosen)
+        val key = threadChatId to messageId
+        optimisticOverrides[key] = next
+        invalidations.tryEmit(key)
+    }
+
+    /**
+     * Drop the override for a single comment without dispatching the RPC. Called
+     * from the rollback path when [ChannelActionsRepository.toggleReaction] fails;
+     * the next emit reverts the chip to its pre-tap state, and any concurrent
+     * `UpdateMessageInteractionInfo` the server happened to send for this
+     * message in the meantime still wins because [applyUpdate] already cleared
+     * the override.
+     */
+    fun clearOptimisticReaction(threadChatId: Long, messageId: Long) {
+        val key = threadChatId to messageId
+        if (optimisticOverrides.remove(key) != null) {
+            invalidations.tryEmit(key)
+        }
+    }
+
+    private sealed interface ThreadEvent {
+        data class Tdlib(val update: TdApi.Update) : ThreadEvent
+        data object OptimisticInvalidate : ThreadEvent
+    }
 
     suspend fun viewMessages(threadChatId: Long, messageIds: List<Long>) =
         ChatPresence.viewMessages(
@@ -468,12 +563,22 @@ class CommentsRepository(
             forceRead = false,
         )
 
-    private suspend fun buildTree(messages: List<TdApi.Message>, rootMessageId: Long): List<ThreadRow> {
+    private suspend fun buildTree(messages: List<TdApi.Message>, anchor: ResolvedAnchor): List<ThreadRow> {
         if (messages.isEmpty()) return emptyList()
+        val rootMessageId = anchor.rootId
 
         // Map every message via the shared mapper FIRST — same caching layer as channel
         // posts, so users that already appeared in the feed don't trigger a fresh GetUser.
-        val mapped: Map<Long, TimelinePost> = messages.associate { it.id to mapper.toThreadComment(it) }
+        // After mapping, splice in any optimistic reaction override the user just stamped.
+        // The override map is consulted (not the message's TdApi reactions) when present so
+        // the chip flips instantly on tap and stays flipped until the server's
+        // `UpdateMessageInteractionInfo` clears the override.
+        val mapped: Map<Long, TimelinePost> = messages.associate { msg ->
+            val base = mapper.toThreadComment(msg)
+            val override = optimisticOverrides[anchor.threadChatId to msg.id]
+            val withOverride = if (override != null) base.copy(reactions = override) else base
+            msg.id to withOverride
+        }
 
         // Group by parent. The conversation root (the channel-post mirror) becomes the
         // virtual depth-0 parent; ids that no longer exist in the thread (deleted /
@@ -513,6 +618,7 @@ class CommentsRepository(
      */
     fun clear() {
         resolvedAnchors.clear()
+        optimisticOverrides.clear()
         synchronized(streams) { streams.clear() }
     }
 
