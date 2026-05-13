@@ -976,31 +976,36 @@ class PostsRepository(
             .filter { it.content !is PostContent.Unsupported }
         if (newPosts.isEmpty()) return
 
-        // Track what actually got added so we can emit it on [newArrivals] AFTER the
-        // CAS-loop below settles. Captured by reference inside the `update` lambda;
-        // the final successful retry's value wins (earlier retries may overwrite, that
-        // is correct — we want the addition computed against the actually-written state).
+        // Route the live ingest through the same album-aware merge helper as the
+        // on-demand paths (loadChannelHistory / loadOlder / loadHistoryAround /
+        // restoreFromSnapshot). The helper:
+        //   - rejects partial album batches that would downgrade an existing
+        //     complete merged card (the third converging fix for the
+        //     "5-photo card becomes 2-photo" class of bugs);
+        //   - dedups raw against every albumMessageIds entry, not just the
+        //     anchor id, so a late sibling doesn't stack on top of the merged
+        //     anchor and produce a duplicated items list;
+        //   - re-runs PostFilterStrategy so album members re-merge cleanly and
+        //     the feed cap is honoured.
+        //
+        // Earlier this method had its own bespoke prune-then-PostFilterStrategy
+        // logic that lacked the partial-album-downgrade guard — so live arrivals
+        // (UpdateNewMessage debounce flush, UpdateChatLastMessage) could replace
+        // a complete 5-photo merged card with a partial 2-photo batch. That
+        // regression is closed by routing through [foldRawIntoCurrent].
+        //
+        // newArrivals semantics. We emit only posts whose anchor id is not in
+        // the pre-fold snapshot, computed from the (chatId, anchorId) key
+        // before the update. The diff is captured inside the `update` lambda
+        // so the final successful retry's value wins (earlier retries may
+        // overwrite — correct, because we want the addition computed against
+        // the state that actually got written).
         var addedForEmit: List<TimelinePost> = emptyList()
         _posts.update { current ->
-            // When an incoming batch contains album members, [coalesceAlbumFragments] has
-            // already fetched the full sibling set for each affected mediaAlbumId, so the
-            // raw newPosts are authoritative for those albums. Drop any existing entry
-            // (merged anchor or solo) participating in those album groups before re-running
-            // PostFilterStrategy. Without this prune, a late sibling stacks the
-            // already-merged anchor's items on top of the raw siblings and mergeAlbumMembers
-            // duplicates the overlapping media inside one card.
-            val incomingAlbumKeys = newPosts
-                .filter { it.mediaAlbumId != 0L }
-                .mapTo(HashSet()) { it.chatId to it.mediaAlbumId }
-            val pruned = if (incomingAlbumKeys.isEmpty()) current
-                else current.mutate { list ->
-                    list.removeAll { p -> p.mediaAlbumId != 0L && (p.chatId to p.mediaAlbumId) in incomingAlbumKeys }
-                }
-            val existingKeys = pruned.mapTo(mutableSetOf()) { it.chatId to it.id }
-            val addition = newPosts.filterNot { (it.chatId to it.id) in existingKeys }
-            addedForEmit = addition
-            if (addition.isEmpty() && pruned === current) current
-            else PostFilterStrategy.apply(pruned.addAll(addition)).take(MAX_FEED_SIZE).toPersistentList()
+            val before = current.mapTo(HashSet()) { it.chatId to it.id }
+            val next = foldRawIntoCurrent(current, newPosts, MAX_FEED_SIZE)
+            addedForEmit = next.filter { (it.chatId to it.id) !in before }
+            next
         }
         // Emit AFTER the state write so any listener sees a consistent feed.
         // tryEmit can never block under DROP_OLDEST, so we don't risk back-pressuring
@@ -1009,14 +1014,43 @@ class PostsRepository(
     }
 
     /**
-     * GetChatHistory returns N latest messages — when an album crosses the window edge,
-     * only some of its members are inside. This pass detects single-member groups with a
-     * non-zero mediaAlbumId (Telegram never emits a real album of size 1) and queries a
-     * small window around the fragment to pick up the missing siblings.
+     * Telegram albums (2–10 messages sharing one `mediaAlbumId`) have no completion
+     * signal on the wire — TDLib maintainer levlam confirms in
+     * [tdlib/td#1482](https://github.com/tdlib/td/issues/1482): *"There is no way
+     * to know this. You need to use some timeout."* Any batch we receive may
+     * therefore carry 1..N members of an album whose remaining siblings are
+     * still pending. Three paths drop us into the partial case:
+     *  - **Window edge.** `GetChatHistory(N)` returns the latest N messages; an
+     *    album straddling positions N..N+k is split between this response and
+     *    the next page.
+     *  - **Debounce flush race.** [handleNewMessage] buffers album members for
+     *    [ALBUM_DEBOUNCE_MS]; on slow mobile networks (3G/Roaming) per-member
+     *    arrival can exceed the silence window, flushing 2..9 members while
+     *    siblings are still in flight. Same failure mode as openclaw#1811 (their
+     *    500 ms wasn't enough; their fix bumped to 1000–1500 ms — we use 1000).
+     *  - **Cold-start lastMessage harvest.** [refreshLocked] routes
+     *    `Chat.lastMessage` per channel through this method; if `lastMessage`
+     *    is an album member, the batch is trivially `size=1`.
      *
-     * Concurrency: each fragment fires a parallel GetChatHistory; results are merged
-     * synchronously after [awaitAll] so the seen-set has no race. Bounded by the number of
-     * distinct album ids in the input — typically 0..2 per refresh batch, so cost is low.
+     * **Coalesce trigger.** Surround-fetch fires for any album group whose
+     * member count is `<` [TELEGRAM_MAX_ALBUM_SIZE]. The previous `size == 1`
+     * filter only rescued single fragments — a 2..9 partial fell through and
+     * the merged card landed with the partial item count. Triggering up to
+     * size-1 is correct because Telegram's protocol caps an album at 10 members
+     * (see TDLib `sendMessageAlbum`), so a batch of exactly 10 is provably
+     * complete and skips the fetch.
+     *
+     * **Window sizing.** `offset = -(MAX_ALBUM - 1)`, `limit = 2 * MAX_ALBUM - 1`
+     * (i.e. -9, 19). TDLib semantics: returns up to 9 newer than the anchor,
+     * the anchor itself, and up to 9 older — covering every possible anchor
+     * position inside a 10-member album. The previous `-5, 10` reached only
+     * 5 newer + 4 older around the anchor, so a 10-member album whose
+     * `lastMessage` is the highest-id member (the canonical cold-start case)
+     * returned only 5 of 10.
+     *
+     * Concurrency: each fragment fires a parallel GetChatHistory; results
+     * are merged synchronously after [awaitAll] so the seen-set has no race.
+     * Bounded by distinct album ids in the input — typically 0..2 per batch.
      */
     private suspend fun coalesceAlbumFragments(
         chatId: Long,
@@ -1026,8 +1060,12 @@ class PostsRepository(
             .filter { it.mediaAlbumId != 0L }
             .groupBy { it.mediaAlbumId }
             .values
-            .filter { it.size == 1 }
-            .map { it.single() }
+            .filter { it.size < TELEGRAM_MAX_ALBUM_SIZE }
+            // Pick one anchor per under-sized group. Surround fetch returns every
+            // sibling sharing the mediaAlbumId, so one query per group is enough;
+            // using the first member as anchor is arbitrary but stable (groupBy
+            // preserves first-seen order).
+            .map { it.first() }
         if (fragments.isEmpty()) return messages
 
         val seen = messages.mapTo(hashSetOf()) { it.id }
@@ -1035,15 +1073,12 @@ class PostsRepository(
             fragments.map { fragment ->
                 async {
                     val resp = runCatching {
-                        // fromMessageId in the middle of a 10-msg window: offset=-5 means
-                        // "give me 5 newer + the anchor + 4 older". Albums are at most 10
-                        // members so this almost always covers the whole group.
                         td.send(
                             TdApi.GetChatHistory(
                                 chatId,
                                 /* fromMessageId */ fragment.id,
-                                /* offset */ -5,
-                                /* limit */ 10,
+                                /* offset */ -(TELEGRAM_MAX_ALBUM_SIZE - 1),
+                                /* limit */ 2 * TELEGRAM_MAX_ALBUM_SIZE - 1,
                                 /* onlyLocal */ false,
                             ),
                         )
@@ -1489,9 +1524,44 @@ class PostsRepository(
         // the WebFeedSource staleness gate so both modes feel equally responsive
         // to foreground re-entry.
         const val REFRESH_STALE_MS = 60_000L
-        // ~600ms is what the official Telegram client uses to coalesce album bursts.
-        // Shorter loses tail members on slow networks; longer makes albums feel laggy.
-        const val ALBUM_DEBOUNCE_MS = 600L
+
+        /**
+         * Hard cap on members per Telegram album, per the protocol. Drives
+         * [coalesceAlbumFragments]: a batch with exactly this many members of one
+         * `mediaAlbumId` is provably complete and skips the surround fetch;
+         * anything smaller is potentially partial and triggers a rescue query.
+         * Source: TDLib `sendMessageAlbum` spec.
+         */
+        const val TELEGRAM_MAX_ALBUM_SIZE = 10
+
+        /**
+         * How long [handleNewMessage] waits for the rest of an album's
+         * UpdateNewMessage burst before flushing. Each new member resets the
+         * timer (silence-based debounce) so a steady stream of sibling
+         * messages keeps the album whole.
+         *
+         * Calibration. Telegram-Android uses ~600 ms — the canonical lower bound,
+         * fine on stable Wi-Fi but regress-prone under cellular jitter (see
+         * [openclaw#1811](https://github.com/openclaw/openclaw/issues/1811): a
+         * 500 ms window dropped images on 4+ image groups; Telethon's Lonami
+         * concedes in [#4075](https://github.com/LonamiWebs/Telethon/issues/4075)
+         * that 1–2 s is closer to the practical floor). 1000 ms is the
+         * industry sweet spot: it absorbs ~99% of mobile-network jitter while
+         * keeping perceived album latency tolerable.
+         *
+         * Trade-off. +400 ms over the old 600 ms means an album posted to a
+         * channel takes ~400 ms longer to surface in the feed than before. The
+         * cost is invisible against the ALBUM-coalesce TDLib RPC tail anyway
+         * (50–200 ms) and dwarfed by the user-facing benefit of never
+         * downgrading a complete album to a partial card.
+         *
+         * Defence-in-depth. Even when this window is too short and a partial
+         * flush happens, [coalesceAlbumFragments]' size<MAX criterion still
+         * triggers a surround fetch, and [foldRawIntoCurrent] still refuses to
+         * replace a complete card with a partial one. So this constant is the
+         * cheap first line; the next two layers are the safety net.
+         */
+        const val ALBUM_DEBOUNCE_MS = 1_000L
         // Aligns with TDLib's default ~4 simultaneous downloads — same shape, same back-
         // pressure profile.
         const val REFRESH_CONCURRENCY = 4

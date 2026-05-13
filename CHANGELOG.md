@@ -32,6 +32,7 @@ Format — [Keep a Changelog](https://keepachangelog.com), versions — [SemVer]
 
 - Fresh posts now reach the visible feed in `OldestUnreadFirst` without an app restart — auto-accept gate is mode-aware (`atTop` / `atBottom`).
 - Cold-start scroll-pin no longer fires on mid-session arrivals (gated on `refreshing == true`).
+- Photo albums no longer arrive in the feed with missing members on slow networks: 2–9-member partial batches now trigger a surround fetch, the fetch window is sized to cover all 10 possible members, and `ingest()` refuses to replace a complete album card with a partial one. Album debounce widened 600 → 1000 ms.
 
 ### Architecture
 
