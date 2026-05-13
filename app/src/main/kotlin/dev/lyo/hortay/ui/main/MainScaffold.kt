@@ -142,38 +142,29 @@ fun MainScaffold(graph: AppGraph) {
     // Single owner of the "are we currently overlaying something" answer.
     // Tab-reset back-handler / Home-tap re-route both gate on `stack.isEmpty()`.
     var selectedTab by remember { mutableStateOf(NavTab.Feed) }
-    var preDrillTab by remember { mutableStateOf<NavTab?>(null) }
     val stack by graph.nav.stack.collectAsStateWithLifecycle()
     val topEntry = stack.lastOrNull()
 
-    // Nav helpers that route through [AppGraph.nav]. `pushChannel` and
-    // `pushComments` accept a "fromTab" only on the FIRST push (when the
-    // stack is empty) so back to the empty stack restores the tab the user
-    // was on when they first drilled in. Subsequent pushes within a drill
-    // session inherit the same entry tab.
-    fun pushChannel(chatId: Long, scrollTo: Long? = null, fromTab: NavTab = NavTab.Feed) {
-        if (stack.isEmpty()) preDrillTab = fromTab
+    // Nav helpers route through [AppGraph.nav]. The active tab is NOT
+    // touched on push — under the nav-overlay the user's originating tab
+    // (Channels, Saved, …) keeps rendering, so a predictive-back swipe
+    // reveals the right content underneath. Pop just removes the top
+    // overlay layer; tab restoration is automatic because we never moved
+    // away from it.
+    fun pushChannel(chatId: Long, scrollTo: Long? = null) {
         graph.nav.push(NavEntry.Channel(chatId = chatId, scrollToMessageId = scrollTo))
-        selectedTab = NavTab.Feed
     }
 
-    fun pushComments(post: TimelinePost, fromTab: NavTab = NavTab.Feed) {
-        if (stack.isEmpty()) preDrillTab = fromTab
+    fun pushComments(post: TimelinePost) {
         graph.nav.push(NavEntry.Comments(anchor = post))
-        selectedTab = NavTab.Feed
     }
 
     fun popNav() {
-        graph.nav.pop() ?: return
-        if (graph.nav.stack.value.isEmpty()) {
-            selectedTab = preDrillTab ?: NavTab.Feed
-            preDrillTab = null
-        }
+        graph.nav.pop()
     }
 
     fun clearNav() {
         graph.nav.clear()
-        preDrillTab = null
     }
     // Pending invite-link confirmation. Stored on the graph rather than in a local
     // [rememberSaveable] because TDLib's `CheckChatInviteLink` is suspending and runs
@@ -343,7 +334,7 @@ fun MainScaffold(graph: AppGraph) {
                                 // Already a member — drill into the channel via the back-stack
                                 // so Back returns the user to where they came from rather than
                                 // clearing the filter to all-feed.
-                                pushChannel(preview.chatId, fromTab = NavTab.Feed)
+                                pushChannel(preview.chatId)
                             }
                             preview.kind == InviteLinkKind.Channel -> {
                                 graph.linkDialogs.showInvitePreview(preview)
@@ -359,14 +350,12 @@ fun MainScaffold(graph: AppGraph) {
                         return@collect
                     }
                 }
-                // Deep-link to a specific channel: push onto the nav-stack so Back
-                // returns the user to where they were before the tap, rather than
-                // always resetting to the all-feed view. fromTab = Feed is the
-                // canonical entry point for external links — the user was not
-                // inside a named tab when the link arrived. The optional message
-                // anchor is baked into the same entry (NavEntry.Channel.scrollToMessageId)
-                // so the channel screen lands on the linked post on first frame.
-                pushChannel(targetChat, scrollTo = tdMessageId, fromTab = NavTab.Feed)
+                // Deep-link to a specific channel: push a Channel entry — Back
+                // returns the user to whichever tab they were on, not a forced
+                // reset. The optional message anchor rides
+                // [NavEntry.Channel.scrollToMessageId] so the channel screen
+                // lands on the linked post on first frame.
+                pushChannel(targetChat, scrollTo = tdMessageId)
             } catch (t: Throwable) {
                 if (t is kotlin.coroutines.cancellation.CancellationException) throw t
                 Log.w("MainScaffold", "deep-link dispatch failed for $link", t)
@@ -606,8 +595,8 @@ fun MainScaffold(graph: AppGraph) {
                             bookmarks = graph.bookmarkStore,
                             contentPadding = padding,
                             showOnlyBookmarked = false,
-                            onChannelOpen = { id -> pushChannel(id, fromTab = NavTab.Feed) },
-                            onOpenComments = { post -> pushComments(post, fromTab = NavTab.Feed) },
+                            onChannelOpen = { id -> pushChannel(id) },
+                            onOpenComments = { post -> pushComments(post) },
                             homeTapTrigger = homeTapTrigger,
                             onBrandTap = { homeTapTrigger = System.nanoTime() },
                             // Deep-link scroll targets are now baked into the nav-entry
@@ -635,7 +624,7 @@ fun MainScaffold(graph: AppGraph) {
                     repo = graph.postsRepository,
                     contentPadding = padding,
                     onChannelClick = { chatId ->
-                        pushChannel(chatId, fromTab = NavTab.Channels)
+                        pushChannel(chatId)
                     },
                 )
                 NavTab.Saved -> TimelineScreen(
@@ -652,9 +641,9 @@ fun MainScaffold(graph: AppGraph) {
                         // Tapping a channel from Saved pushes a Channel entry — Back
                         // returns the user to Saved instead of always resetting to
                         // all-feed.
-                        pushChannel(id, fromTab = NavTab.Saved)
+                        pushChannel(id)
                     },
-                    onOpenComments = { post -> pushComments(post, fromTab = NavTab.Saved) },
+                    onOpenComments = { post -> pushComments(post) },
                     homeTapTrigger = 0L,
                     onBrandTap = {},
                     startupPhase = graph.startupCoordinator.phase,
@@ -800,7 +789,7 @@ fun MainScaffold(graph: AppGraph) {
                 scope.launch {
                     val joinedId = graph.channelActions.joinByInvite(preview.inviteLink)
                     if (joinedId != null) {
-                        pushChannel(joinedId, fromTab = NavTab.Feed)
+                        pushChannel(joinedId)
                     }
                 }
             },
