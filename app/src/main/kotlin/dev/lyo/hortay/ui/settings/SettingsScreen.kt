@@ -176,6 +176,7 @@ private fun SettingsMain(
             // before any mode-conditional sections.
             val currentFeedOrder by settings.feedOrder.collectAsStateWithLifecycle(FeedOrder.Newest)
             val currentSnapScroll by settings.snapScroll.collectAsStateWithLifecycle(false)
+            val currentInlineAutoplay by settings.inlineVideoAutoplay.collectAsStateWithLifecycle(true)
             SectionLabel(stringResource(R.string.settings_section_feed))
             FeedOrderRows(
                 current = currentFeedOrder,
@@ -190,6 +191,14 @@ private fun SettingsMain(
                 onToggle = { next ->
                     if (next != currentSnapScroll) {
                         scope.launch { settings.setSnapScroll(next) }
+                    }
+                },
+            )
+            InlineAutoplayRow(
+                enabled = currentInlineAutoplay,
+                onToggle = { next ->
+                    if (next != currentInlineAutoplay) {
+                        scope.launch { settings.setInlineVideoAutoplay(next) }
                     }
                 },
             )
@@ -881,6 +890,71 @@ private fun SnapScrollRow(
         content = {
             Text(
                 text = stringResource(R.string.settings_snap_scroll_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+    )
+}
+
+/**
+ * Standalone [SegmentedListItem] for the inline-video-autoplay toggle. Independent
+ * of [SnapScrollRow] in the layout — autoplay is a media-playback policy
+ * orthogonal to how the list scrolls. Single-row segment so it reads as its own
+ * card.
+ *
+ * Note: autoplay is also gated by "is the file already on disk?" — toggling this
+ * row on doesn't override the user's [AutoDownloadStore] policy; videos that
+ * weren't pulled by auto-download still show their static poster + play badge
+ * until the user opens them. The row's subtitle calls this out so users don't
+ * think the toggle is broken when their videos sit still on a roaming plan.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun InlineAutoplayRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = 0,
+        count = 1,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        onClick = { onToggle(!enabled) },
+        shapes = shapes,
+        leadingContent = {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(
+                        if (enabled) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Symbol(
+                    name = "smart_display",
+                    tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 22.dp,
+                )
+            }
+        },
+        supportingContent = {
+            Text(
+                text = stringResource(R.string.settings_inline_autoplay_subtitle),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        trailingContent = {
+            Switch(checked = enabled, onCheckedChange = onToggle)
+        },
+        content = {
+            Text(
+                text = stringResource(R.string.settings_inline_autoplay_title),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )

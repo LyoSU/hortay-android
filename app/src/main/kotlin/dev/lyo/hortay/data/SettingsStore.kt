@@ -70,6 +70,30 @@ class SettingsStore(context: Context) {
     }
 
     /**
+     * Silent inline autoplay of short videos in the feed. Only videos already on
+     * disk (TDLib mode: [MediaState.Ready], i.e. fetched by the user's configured
+     * [AutoDownloadStore] policy) auto-play; non-cached posts keep the static
+     * poster + play-badge until tapped. The toggle is the on/off switch around
+     * that whole behaviour — set to false and even cached short videos stay
+     * still until the user opens them.
+     *
+     * Web (anonymous) mode has no on-disk cache concept, so the toggle simply
+     * gates whether ExoPlayer streams inline from the t.me/s/ URL or waits for
+     * an explicit tap.
+     *
+     * Default true — matches the existing shipped behaviour ("short videos
+     * autoplay silently") for the common case where auto-download keeps the
+     * cache full of recent clips.
+     */
+    val inlineVideoAutoplay: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[KEY_INLINE_VIDEO_AUTOPLAY] ?: true
+    }
+
+    suspend fun setInlineVideoAutoplay(enabled: Boolean) {
+        dataStore.edit { it[KEY_INLINE_VIDEO_AUTOPLAY] = enabled }
+    }
+
+    /**
      * Epoch-ms of the last successful TDLib [TdApi.OptimizeStorage] sweep. Read by
      * [TdClient] to throttle the cleanup to once per [STORAGE_OPTIMIZE_INTERVAL_MS] —
      * scanning a multi-GB tdlib-files directory on every cold start used to add real
@@ -87,6 +111,7 @@ class SettingsStore(context: Context) {
         val KEY_LAST_STORAGE_OPTIMIZE_AT = longPreferencesKey("last_storage_optimize_at")
         val KEY_FEED_ORDER = stringPreferencesKey("feed_order")
         val KEY_SNAP_SCROLL = booleanPreferencesKey("snap_scroll")
+        val KEY_INLINE_VIDEO_AUTOPLAY = booleanPreferencesKey("inline_video_autoplay")
     }
 }
 

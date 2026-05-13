@@ -45,11 +45,16 @@ import androidx.compose.foundation.clickable
 import dev.lyo.hortay.data.WebPreview
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
+import dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay
+import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.SpoilerKind
 import dev.lyo.hortay.ui.media.SpoilerOverlay
 import dev.lyo.hortay.ui.media.StickerView
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.TdVideoPlayer
+import dev.lyo.hortay.data.MediaState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.ui.text.RichText
 import dev.lyo.hortay.ui.text.linkLongPress
 import dev.lyo.hortay.ui.text.rememberAnnotatedString
@@ -353,11 +358,33 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
         mutableStateOf(!item.hasSpoiler && !item.isSecret)
     }
     val unplayable = item.isUnplayableVideo
+    val inlineAutoplayEnabled = LocalInlineVideoAutoplay.current
+    // Cache-presence gate. The user's contract for inline autoplay is "play only
+    // what auto-download already pulled to disk" — anything else would override
+    // the auto-download policy by stealthily downloading the playback file just
+    // because the post entered the viewport. `Ready` is the only MediaState that
+    // guarantees an on-disk path; `Downloading` / `Idle` / `Failed` mean either
+    // the auto-download policy didn't pick this file up, or it's mid-flight (in
+    // which case waiting for the explicit tap matches user expectation —
+    // autoplay starting mid-download would just show the loading overlay over
+    // a poster, which is worse than the poster alone).
+    //
+    // Guest (web) mode has fileId=0 + remoteUrl; there is no MediaCache slot
+    // to consult, so the cached-gate degenerates to "always allow when remote".
+    // ExoPlayer streams from the URL directly; the [inlineAutoplayEnabled]
+    // toggle is the only off-switch in that mode.
+    val asVideo = item as? AlbumItem.Video
+    val cached = isCachedReady(
+        fileId = asVideo?.playbackFileId,
+        remoteUrl = asVideo?.remoteVideoUrl,
+    )
     val autoplayVideo = revealed
         && isActive
-        && item is AlbumItem.Video
+        && asVideo != null
         && !unplayable
-        && item.durationSec in 1..INLINE_AUTOPLAY_MAX_SEC
+        && asVideo.durationSec in 1..INLINE_AUTOPLAY_MAX_SEC
+        && inlineAutoplayEnabled
+        && cached
     // Blur regime:
     //   • spoiler / sensitive: heavy blur until the user reveals — same as TDLib mode.
     //   • unplayable video: light blur as a visual "this is a preview, you'll need to
@@ -387,11 +414,10 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
                 .fillMaxSize()
                 .let { if (blur > 0.dp) it.blur(blur) else it },
         )
-        if (autoplayVideo) {
-            val video = item as AlbumItem.Video
+        if (autoplayVideo && asVideo != null) {
             TdVideoPlayer(
-                fileId = video.playbackFileId,
-                remoteUrl = video.remoteVideoUrl,
+                fileId = asVideo.playbackFileId,
+                remoteUrl = asVideo.remoteVideoUrl,
                 autoPlay = true,
                 autoLoop = true,
                 showControls = false,
@@ -399,7 +425,7 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
                 modifier = Modifier.fillMaxSize(),
             )
             DurationChip(
-                text = formatDuration(video.durationSec),
+                text = formatDuration(asVideo.durationSec),
                 modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
             )
         } else {
@@ -1071,6 +1097,44 @@ private fun formatDuration(seconds: Int): String {
     val m = (seconds % 3600) / 60
     val s = seconds % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+/**
+ * Read-only probe into [dev.lyo.hortay.data.MediaCache] that answers "is the
+ * playback file already on disk?" without enqueuing a download. Used by inline
+ * autoplay to enforce the "honour auto-download policy" contract — only files
+ * that the user's policy already pulled may auto-play.
+ *
+ * Behaviour split:
+ *  • [fileId] == null  → guest (web) mode AlbumItem.Video uses [remoteUrl];
+ *    no MediaCache slot exists, so we return `true` and let the caller's
+ *    autoplay-master toggle be the sole gate (matches "no cache concept here").
+ *  • [remoteUrl] also null with no fileId → not a real video slot; `false`.
+ *  • Real TDLib fileId → observe the slot via [MediaCache.observe] (no side
+ *    effect) and emit a single resync request on first mount so cold-start
+ *    state reflects the on-disk reality. The resync routes a GetFile answer
+ *    through MediaCache's single-writer reducer, which flips the slot to
+ *    Ready when the file is present from a prior session.
+ *
+ * Crucially, this composable never calls [MediaCache.ensure]: a side-effect
+ * here would defeat the whole point of the cached-gate. The user's
+ * [AutoDownloadStore] policy + the auto-downloader's `UpdateNewMessage` hook
+ * are the only legitimate paths to MediaState.Ready for inline-autoplay files;
+ * if a video isn't Ready when the post lands, the poster + play-badge wait
+ * for an explicit tap (which mounts [TdVideoPlayer] with the full
+ * ensure-and-stream pathway).
+ */
+@Composable
+private fun isCachedReady(fileId: Int?, remoteUrl: String?): Boolean {
+    if (fileId == null || fileId == 0) {
+        // Web-mode video: caller decides via the master autoplay flag.
+        return remoteUrl != null
+    }
+    val cache = LocalMediaCache.current
+    val state by remember(fileId) { cache.observe(fileId) }
+        .collectAsStateWithLifecycle()
+    LaunchedEffect(fileId) { cache.resync(fileId) }
+    return state is MediaState.Ready
 }
 
 private fun formatFileSize(bytes: Long, units: Array<String>): String {

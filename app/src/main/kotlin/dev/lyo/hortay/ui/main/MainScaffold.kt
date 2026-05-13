@@ -452,6 +452,9 @@ fun MainScaffold(graph: AppGraph) {
     val snapScroll by graph.settingsStore.snapScroll.collectAsStateWithLifecycle(
         initialValue = false,
     )
+    val inlineVideoAutoplay by graph.settingsStore.inlineVideoAutoplay.collectAsStateWithLifecycle(
+        initialValue = true,
+    )
     // Mode-agnostic read-state ack handed to TimelineScreen / ChannelScreen. TDLib
     // mode groups the dwell-batch by chatId and bridges to viewMessages(forceRead=true)
     // — the canonical TDLib path that advances `lastReadInboxMessageId` server-side
@@ -496,7 +499,10 @@ fun MainScaffold(graph: AppGraph) {
     }
     val canReportPost = remember { { post: TimelinePost -> post.canReportChat } }
     LinkAwareScaffold(graph) {
-    CompositionLocalProvider(LocalReadCursors provides readCursors) {
+    CompositionLocalProvider(
+        LocalReadCursors provides readCursors,
+        dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,
+    ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = {

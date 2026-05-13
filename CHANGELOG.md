@@ -10,6 +10,7 @@
 - Per-chat read state with unread strip on card edge.
 - Inline retry on failed guest-mode Channel rows.
 - Floating "↓ N" unread-remaining counter in `OldestUnreadFirst` — ticks down live as you scroll; tap to jump to the next unread.
+- Inline-video autoplay is now gated on (a) a new Settings → Feed toggle "Autoplay videos in feed" (default ON) and (b) the playback file actually being on disk. Short videos pulled by the user's auto-download policy still play silently as you scroll; videos that policy didn't fetch keep the static poster + play badge until tapped (no stealth downloads triggered just because a post entered the viewport).
 
 ### Changed
 - Channels-row status folded into `@handle · <status>` subtitle (UK + EN).
