@@ -1,10 +1,8 @@
 <!--
 Maintainer notes:
-- This file is an INDEX, not a tutorial. Setup and "what this is" — see @README.md (imported below).
-- Rationale ("why this way") lives NEXT TO THE CODE (header KDoc in TdClient.kt, MediaCache.kt, etc.).
-  Here — only "where to look + what not to break".
-- If you find yourself adding 3+ sentences of rationale to a section, that's a signal to move it into a code comment.
-- Every rule must be verifiable: "Use X" rather than "be mindful of X".
+- INDEX, not tutorial. Setup / "what this is" → @README.md. Rationale → header KDoc next to code.
+- Every rule must be verifiable: "Use X" / "Don't Y", not "be mindful of X".
+- 3+ sentences of rationale = move it into a code comment.
 -->
 
 # CLAUDE.md
@@ -14,16 +12,15 @@ Project context for agents. README + CHANGELOG are pulled in by import — don't
 @README.md
 @CHANGELOG.md
 
-## Language
+## Language policy
 
-- **All code, comments, file content, commit messages, and identifiers — English.** No exceptions.
-- **User-facing strings — never hardcoded.** Route everything through `strings.xml` (default English) with a `values-uk/strings.xml` mirror. Use `<plurals>` for counted nouns (UK: one/few/many/other; EN: one/other).
-- **Talk to the user in the language they use.** If they write in Ukrainian, reply in Ukrainian; if in Polish, reply in Polish; etc. Code, file content, and commit messages stay English regardless.
-- **Adding any new user-visible string** = add to both `values/strings.xml` and `values-uk/strings.xml` in the same change. No "I'll translate later" — half-localised features ship half-broken.
+- **Code, comments, identifiers, commit messages — English only.**
+- **User-facing strings — never hardcoded.** `strings.xml` (default English) + `values-uk/strings.xml` mirror, in the same commit. Use `<plurals>` (UK: one/few/many/other; EN: one/other).
+- **Talk to the user in their language** (UA/PL/EN/…). Code stays English.
 
 ## Two modes
 
-1. **Authenticated (TDLib)** — full MTProto client. Persistence is TDLib's own (`useFileDatabase` / `useChatInfoDatabase` / `useMessageDatabase = true`).
+1. **Authenticated (TDLib)** — full MTProto. Persistence is TDLib's own (`useFileDatabase` / `useChatInfoDatabase` / `useMessageDatabase = true`).
 2. **Guest / anonymous** — read `t.me/s/<u>` without credentials. Persistence in `web.db` (SQLDelight). Activated via `GuestModeStore` flag.
 
 Single-process, single-Activity. `MainActivity` routes: `auth.Ready → MainScaffold` → `isGuest → WebModeScaffold` → else `AuthScreen`. Subscriptions (DataStore `SubscriptionsStore`) survive both transitions.
@@ -31,10 +28,10 @@ Single-process, single-Activity. `MainActivity` routes: `auth.Ready → MainScaf
 ## Architecture (3 modules)
 
 - **`:app`** — Compose UI, `AppGraph` (manual DI), repositories, ViewModels. JVM 17.
-- **`:libtdlib`** — Vendored TDLib JNI (`org.drinkless.tdlib.{Client,TdApi}.java`) + `jniLibs`. **Don't edit the `.java` files by hand** — `scripts/update-tdlib.sh` will clobber them.
+- **`:libtdlib`** — Vendored TDLib JNI (`org.drinkless.tdlib.{Client,TdApi}.java`) + `jniLibs`. Don't hand-edit the `.java` files — `scripts/update-tdlib.sh` will clobber them.
 - **`:baselineprofile`** — Macrobenchmark, AOT cold-start profile.
 
-DI is built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(application as HortayApp).graph`. Heavy singletons (`MediaCache`, `CustomEmoji`, `ExoPlayerPool`) are injected via CompositionLocal in `MainActivity`.
+DI built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(application as HortayApp).graph`. Heavy singletons (`MediaCache`, `CustomEmoji`, `ExoPlayerPool`, `ReadCursors`) injected via CompositionLocal in `MainActivity`.
 
 ## Load-bearing — don't change without reading the rationale in place
 
@@ -66,43 +63,62 @@ DI is built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(applica
 | `HortayApp.graph` | Process-singleton DI root. |
 | `LocalMediaCache` / `LocalCustomEmoji` / `LocalExoPlayerPool` / `LocalReadCursors` | CompositionLocal heavy-singleton injection. |
 
-## Forbidden
+## Hard rules
 
-- Hilt / Dagger / Koin — DI is manual (`AppGraph`).
-- Firebase / Crashlytics / Sentry / analytics / phone-home — INTERNET is for TDLib + anonymous `t.me/s/` only.
-- Room — kapt overhead; SQLDelight replaced it.
-- OkHttp / Retrofit / Ktor as a general HTTP client — Coil pulls `coil-network-okhttp` for images, that's enough.
-- FCM / push — TDLib `RegisterDevice` + `UpdateNotification`.
-- ViewBinding / Fragment-based screens — Compose-only, single-Activity.
-- Compose Navigation typed routes — string-based + `MainScaffold` switch is enough.
-- `GetChat × N` / `GetChatHistory × N` per-channel fan-out on cold-start. On-demand paths (`loadChannelHistory`, `loadOlder`, `loadHistoryAround`) are fine.
-- `rememberSaveable` for top-level navigation (`selectedTab`, `channelStack`) — cold launch must land on Home top-of-feed.
-- Direct `client.send` from UI / Composable — always go through a repository (FLOOD_WAIT gate + UserMessageBus error routing live there).
-- `enableV1Signing = true` — AGP 9 + R8 zip layout breaks JarInputStream v1.
-- `x86_64` in release `abiFilters` — +24 MB libtdjni.so for zero users.
-- `LOG_VERBOSITY` above 1.
-- Hand-editing `libtdlib/.../{Client,TdApi}.java` — vendored upstream.
-- New `.md` files without an explicit user request. README + CHANGELOG + this CLAUDE.md is enough.
-- Literal `tween(...)` for transitions — use `MotionScheme.{default,fast}{Spatial,Effects}Spec()` everywhere.
-- Hardcoded user-facing strings. Always `strings.xml` + `values-uk/strings.xml`.
-- Non-English code, comments, or commits.
-- TODO comments, commented-out dead code, debug `println`s.
+### Architecture & DI
 
-## Allowed / correct practices
+- ❌ Hilt / Dagger / Koin — settled, rejected. DI is manual (`AppGraph`).
+- ❌ Firebase / Crashlytics / Sentry / analytics / phone-home. INTERNET is for TDLib + anonymous `t.me/s/` only.
+- ❌ Room — kapt overhead; SQLDelight replaced it.
+- ❌ OkHttp / Retrofit / Ktor as general HTTP client. Coil pulls `coil-network-okhttp` for images — that's enough.
+- ❌ FCM / push — TDLib `RegisterDevice` + `UpdateNotification`.
+- ❌ ViewBinding / Fragments. Compose-only, single-Activity.
+- ❌ Compose Navigation typed routes. String-based + `MainScaffold` switch is enough.
+- ✅ SQLDelight 2.3 for `web.db` only. TDLib mode runs without a DB.
 
-- **SQLDelight 2.3** for `web.db` only. TDLib mode runs without a DB (TDLib owns its persistence).
-- **Material 3 Expressive**: `MaterialExpressiveTheme` + `MotionScheme.expressive()`.
-- **Predictive back**: `PredictiveBackHandler` + `Animatable` + `graphicsLayer`. Only one handler `enabled = true` at any time.
-- **Heavy singletons** via CompositionLocal. Passing them as Composable params caused a constructor explosion on the 600-row PostCard.
-- **`@Immutable` end-to-end** for anything reaching Compose. Any `var` / `MutableList` / `Any?` in the graph is a silent skippability regression.
-- **`PersistentList` / `PersistentMap`** from `kotlinx.collections.immutable`. Don't substitute `List` "for simplicity".
-- **TDLib lifecycle**: `OpenChat` / `CloseChat` / `ViewMessages` go through `ChatPresence`. Wrap critical pairs in `NonCancellable` (`tdlib/td#2312`).
-- **Per-account state cleanup**: every session-scoped state holder subscribes to `TdClient.loggedOut.collect { clear() }`. Includes process-wide sets and Composable state.
-- **Lambdas in LazyColumn `items`** must be wrapped in `remember(...)` with stable keys. Inline `{ ... }` capturing non-stable scope breaks skipping under scroll.
-- **Read state**: `ReadCursors` (TDLib + DataStore) is the single source of truth. UI consumes it via `LocalReadCursors`.
-- **Monotonic clamp** on read cursors. Every seed (`UpdateNewChat`) and update (`UpdateChatReadInbox`) does `if (new > existing) put` — otherwise logout/login races corrupt cursors.
-- **i18n by default**: every new user-facing string lands in both `values/strings.xml` and `values-uk/strings.xml` in the same commit. Use `<plurals>` for counts. `contentDescription` via `stringResource` with a placeholder for the entity name.
-- **A11y**: every clickable Row/Box that isn't an `IconButton`/`Button` gets `Modifier.clickable(role = Role.Button)` + a meaningful `contentDescription`.
+### TDLib usage
+
+- ❌ Direct `client.send` from UI / Composable. Go through a repository (FLOOD_WAIT gate + UserMessageBus error routing live there).
+- ❌ `GetChat × N` / `GetChatHistory × N` per-channel fan-out on cold-start. 200 channels × `GetChatHistory(80)` = instant FLOOD_WAIT. On-demand paths (`loadChannelHistory`, `loadOlder`, `loadHistoryAround`) are fine.
+- ❌ Parsing FLOOD_WAIT from error message strings. `TdClient` handles it centrally (420 + 429) — extend the helper if needed.
+- ❌ Hand-editing `libtdlib/.../{Client,TdApi}.java` — vendored upstream.
+- ❌ `LOG_VERBOSITY > 1`.
+- ✅ `OpenChat` / `CloseChat` / `ViewMessages` go through `ChatPresence`. Wrap critical pairs in `NonCancellable` (`tdlib/td#2312`).
+- ✅ Every session-scoped state holder subscribes to `TdClient.loggedOut.collect { clear() }`. Includes process-wide sets and Composable state.
+
+### Compose
+
+- ❌ `rememberSaveable` for top-level navigation (`selectedTab`, `channelStack`). Cold launch must land on Home top-of-feed.
+- ❌ Literal `tween(...)` for transitions. Use `MotionScheme.{default,fast}{Spatial,Effects}Spec()`.
+- ❌ Stripping `@Immutable` from `TimelinePost` / `PostContent` graph. Silent skippability regression.
+- ❌ Substituting `PersistentList` / `PersistentMap` with `List` / `Map` "for simplicity".
+- ❌ Passing heavy singletons as Composable params (caused constructor explosion on 600-row PostCard). Use CompositionLocal.
+- ✅ Material 3 Expressive: `MaterialExpressiveTheme` + `MotionScheme.expressive()`.
+- ✅ Predictive back: `PredictiveBackHandler` + `Animatable` + `graphicsLayer`. Only one handler `enabled = true` at any time.
+- ✅ Lambdas in `LazyColumn`/`LazyRow` items wrapped in `remember(...)` with stable keys. Inline `{ … }` capturing non-stable scope breaks skipping under scroll.
+- ✅ Read state: `ReadCursors` is the single source of truth, consumed via `LocalReadCursors`. Cursors are monotonic — clamp on every seed/update (`if (new > existing) put`) to survive logout/login races.
+
+### i18n & a11y
+
+- ❌ Hardcoded user-facing strings. Always `values/strings.xml` + `values-uk/strings.xml` in the same commit.
+- ❌ Replying to the user in English when they write in another language.
+- ✅ `<plurals>` for counts. `contentDescription` via `stringResource(...)`.
+- ✅ Every clickable Row/Box that isn't `IconButton`/`Button` gets `Modifier.clickable(role = Role.Button)` + meaningful `contentDescription`.
+
+### Build & release
+
+- ❌ `enableV1Signing = true` — AGP 9 + R8 zip layout breaks JarInputStream v1.
+- ❌ `x86_64` in release `abiFilters` — +24 MB libtdjni.so for zero users.
+- ❌ Bumping `versionCode` by hand. It's auto-derived from `git rev-list --count HEAD` (`app/build.gradle.kts:158-185`).
+- ❌ `bundleRelease` without a fresh commit — same versionCode → Play returns 409. Workflow: commit → bundle.
+
+### Workspace
+
+- ❌ New `.md` files without an explicit user request. README + CHANGELOG + this file is enough.
+- ❌ TODO comments, commented-out dead code, debug `println`s.
+- ❌ Compressing header KDocs that say "tried X, broke Y" — they're load-bearing for onboarding.
+- ✅ Conventional commits, scope = package: `feat(timeline):`, `perf(media):`, `build(beta):`.
+- ✅ `@Immutable` / `@Stable` on every data class that reaches Compose.
 
 ## Commands
 
@@ -111,57 +127,30 @@ DI is built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(applica
 ./gradlew :app:assembleRelease           # release APK (needs keystore.properties)
 ./gradlew :app:assembleBeta              # beta, applicationId.beta, versionCode = git commit count
 ./gradlew test                           # JUnit 5 unit tests
-./gradlew :app:lintRelease               # R8 + lint vital
+./gradlew :app:lintRelease               # R8 + lint vital — pre-commit gate
 ./gradlew :app:generateBaselineProfile   # AOT profile (~3–5 min on device)
 ./scripts/update-tdlib.sh [SHA]          # Bump TDLib (Docker, ~10–15 min)
-adb logcat -s TdClient MediaCache PostsRepository
+adb logcat -s TdClient MediaCache PostsRepository ChatPresence
 ```
 
-JDK 17, Gradle 9.4.1, AGP 9.2.0, Kotlin 2.3.10 (K2). Compose Compiler via `org.jetbrains.kotlin.plugin.compose`.
+Toolchain: JDK 17, Gradle 9.4.1, AGP 9.2.0, Kotlin 2.3.10 (K2). Compose Compiler via `org.jetbrains.kotlin.plugin.compose`.
+
+### Verifying rules
+
+- **Compose skippability** — Compose Compiler stability reports are wired via the Kotlin Compose plugin; check `app/build/compose_compiler/` after a build. New `@Stable`/`@Immutable` regressions show up as "unstable" classes in the graph.
+- **Translations parity** — `./gradlew :app:lintRelease` flags `MissingTranslation`. CI gate.
+- **Cold-start budget** — `:baselineprofile` macrobenchmark + `adb logcat -s PostsRepository` (look for `GetChat`/`GetChatHistory` storms).
 
 ## Setup delta on top of README
 
-- `keystore.properties` at the repo root (gitignored), `storeFile=~/.hortay/release.jks`, `keyAlias=hortay`. AGP enables release signing when this file exists (`app/build.gradle.kts:59-70`).
+- `keystore.properties` at the repo root (gitignored), `storeFile=~/.hortay/release.jks`, `keyAlias=hortay`. AGP enables release signing only when this file exists (`app/build.gradle.kts:59-70`).
 - Beta uses the same keystore + auto-versionCode from git.
 - `gradle.properties` carries `HORTAY_CHILD_SAFETY_POLICY_URL` / `HORTAY_PRIVACY_POLICY_URL` for CSAE compliance.
 
-## Code style
-
-- Kotlin official, 4-space indent.
-- **Comments are an engineering archive**, not self-description. Header KDocs that say "tried X, broke Y" are load-bearing for onboarding — don't compress them.
-- Conventional commits, scope = package: `feat(timeline):`, `perf(media):`, `build(beta):`.
-- `@Immutable` / `@Stable` on every data class that reaches Compose.
-- No emoji in code, comments, commits, or user-facing strings.
-
-## CHANGELOG
-
-- Every user-visible change → a bullet under `## [Unreleased]` in `CHANGELOG.md`, Keep-a-Changelog format.
-- Categories: **Added** / **Changed** / **Fixed** / **Performance** / **Architecture** / **Build**.
-- One bullet = 1–3 lines. No emoji, tables, or code blocks. No long-form rationale.
-- Engineering rationale ("why this way, what we tried, what broke") goes into the file's header KDoc or the commit body — **not** the CHANGELOG.
-- At release time, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD` and create a fresh `[Unreleased]`.
-
 ## Versioning
 
-- `versionCode` for release and beta is auto-derived from `git rev-list --count HEAD` (wired in `androidComponents.onVariants` in `app/build.gradle.kts:158-185`). **Don't bump it by hand.**
-- `bundleRelease` without a new commit produces the same versionCode Play already saw → 409. Always: commit → then bundle.
+- `versionCode` for release and beta is auto-derived from `git rev-list --count HEAD` (`app/build.gradle.kts:158-185`).
 - `versionCode = 1` in `defaultConfig` is a sentinel for debug builds.
 - `versionName` is manual. Bump on semver-worthy releases. Beta auto-appends `-beta-<sha>`.
 - TDLib pin: `scripts/tdlib-version.txt` (auto-generated). Dedicated commit `chore(tdlib): bump to <sha>` per bump.
-- Native debug symbols: `scripts/update-tdlib.sh` (default `KEEP_DEBUG=1`) extracts unstripped libs into `libtdlib/build/tdlib-unstripped/<abi>/libtdjni.so`. AGP `debugSymbolLevel = "FULL"` packages symbol info into the AAB metadata.
-
-## Common agent mistakes
-
-- Don't add Hilt; don't propose it. Settled, rejected.
-- Don't substitute `PersistentList` → `List` "for simplicity".
-- Don't strip `@Immutable` from the `TimelinePost` graph. Silent skippability regression.
-- Don't call `client.send` from UI / Composable.
-- Don't pre-fetch the whole chat history. 200 channels × `GetChatHistory(80)` = instant FLOOD_WAIT.
-- Don't edit `libtdlib/.../{Client,TdApi}.java`.
-- Don't raise `LOG_VERBOSITY` above 1.
-- Don't create extra `.md` files.
-- Don't use literal `tween(...)` for transitions — `MotionScheme` everywhere.
-- Don't forget logout-cleanup for per-account state (subscribe to `TdClient.loggedOut`).
-- Don't parse FLOOD_WAIT from message strings — `TdClient` does it centrally; expose a helper if you need one.
-- Don't hardcode user-facing strings. Don't ship a string in English without its `values-uk` mirror in the same commit.
-- Don't reply to the user in English when they're writing in another language.
+- Native debug symbols: `scripts/update-tdlib.sh` (default `KEEP_DEBUG=1`) extracts unstripped libs into `libtdlib/build/tdlib-unstripped/<abi>/libtdjni.so`. AGP `debugSymbolLevel = "FULL"` packages them into the AAB.
