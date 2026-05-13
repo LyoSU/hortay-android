@@ -19,7 +19,7 @@
 - Fresh posts reach `OldestUnreadFirst` feed without restart.
 - Cold-start scroll-pin no longer fires on mid-session arrivals.
 - Photo albums no longer ship with missing members on slow networks.
-- Cold start no longer flashes last-session posts before settling on the fresh feed.
+- Cold start waits for the fresh feed and only falls back to the cached snapshot when refresh fails — no more visible top-of-feed content swap mid-load.
 - `OldestUnreadFirst` no longer auto-scrolls to the bottom on cold start when read cursors haven't loaded yet.
 - Editing a caption on an album in the channel no longer collapses the card to a single photo — `UpdateMessageContent` for any album member (anchor or sibling) re-ingests the whole group instead of replacing the merged content in place.
 
