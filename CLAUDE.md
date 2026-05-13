@@ -1,141 +1,167 @@
 <!--
-Maintainer notes (stripped from Claude's context — see code.claude.com/docs/en/memory):
-- Цей файл — ІНДЕКС, не туторіал. Setup і "що це" — у @README.md (підтягнуто нижче).
-- Rationale ("чому так") живе ПОРУЧ З КОДОМ (header KDoc у TdClient.kt, MediaCache.kt тощо).
-  Тут — лише "куди дивитись + чого не ламати".
-- Якщо знайдете себе додаючи 3+ речення rationale в розділ — це сигнал переїхати до code-comment'а.
-- Кожне правило має бути verifiable: "Use X" а не "be mindful of X".
+Maintainer notes:
+- This file is an INDEX, not a tutorial. Setup and "what this is" — see @README.md (imported below).
+- Rationale ("why this way") lives NEXT TO THE CODE (header KDoc in TdClient.kt, MediaCache.kt, etc.).
+  Here — only "where to look + what not to break".
+- If you find yourself adding 3+ sentences of rationale to a section, that's a signal to move it into a code comment.
+- Every rule must be verifiable: "Use X" rather than "be mindful of X".
 -->
 
 # CLAUDE.md
 
-Project context for Claude Code agents. README + CHANGELOG підтягуються імпортом — не дублюємо.
+Project context for agents. README + CHANGELOG are pulled in by import — don't duplicate them.
 
 @README.md
 @CHANGELOG.md
 
-## Кодова доповнення до README
+## Language
 
-README пояснює що це і як запустити. Нижче — те, чого README не каже і код сам по собі не показує.
+- **All code, comments, file content, commit messages, and identifiers — English.** No exceptions.
+- **User-facing strings — never hardcoded.** Route everything through `strings.xml` (default English) with a `values-uk/strings.xml` mirror. Use `<plurals>` for counted nouns (UK: one/few/many/other; EN: one/other).
+- **Talk to the user in the language they use.** If they write in Ukrainian, reply in Ukrainian; if in Polish, reply in Polish; etc. Code, file content, and commit messages stay English regardless.
+- **Adding any new user-visible string** = add to both `values/strings.xml` and `values-uk/strings.xml` in the same change. No "I'll translate later" — half-localised features ship half-broken.
 
-## Два режими
+## Two modes
 
-Hortay вміє два режими:
+1. **Authenticated (TDLib)** — full MTProto client. Persistence is TDLib's own (`useFileDatabase` / `useChatInfoDatabase` / `useMessageDatabase = true`).
+2. **Guest / anonymous** — read `t.me/s/<u>` without credentials. Persistence in `web.db` (SQLDelight). Activated via `GuestModeStore` flag.
 
-1. **Authenticated (TDLib)** — повний клієнт з MTProto, коментарями, реакціями, приватними каналами. Persistence власна у TDLib. Цей режим — basis оригінального README.
-2. **Guest / анонімний (web)** — читання публічних каналів через `t.me/s/<u>` без авторизації. Persistence у власному `web.db` (SQLDelight). Жодних credentials не передаємо Telegram. Активується через `GuestModeStore` flag — користувач натискає "Без входу" на `AuthScreen` або повертається через `WebSettingsSheet`.
+Single-process, single-Activity. `MainActivity` routes: `auth.Ready → MainScaffold` → `isGuest → WebModeScaffold` → else `AuthScreen`. Subscriptions (DataStore `SubscriptionsStore`) survive both transitions.
 
-Обидва режими — single-process, single-Activity. `MainActivity` маршрутизує: `auth.Ready` → TDLib UI, `isGuest` → web UI, інакше — `AuthScreen`. Підписки користувача (DataStore `SubscriptionsStore`) переживають обидва напрямки перемикання.
-
-## Архітектура (3 модулі)
+## Architecture (3 modules)
 
 - **`:app`** — Compose UI, `AppGraph` (manual DI), repositories, ViewModels. JVM 17.
-- **`:libtdlib`** — Vendored TDLib JNI (`org.drinkless.tdlib.{Client,TdApi}.java`) + `jniLibs/{arm64-v8a,x86_64}`. **Не редагувати `.java` руками** — `scripts/update-tdlib.sh` затре.
-- **`:baselineprofile`** — Macrobenchmark проти `benchmark` build type, генерує AOT cold-start профіль.
+- **`:libtdlib`** — Vendored TDLib JNI (`org.drinkless.tdlib.{Client,TdApi}.java`) + `jniLibs`. **Don't edit the `.java` files by hand** — `scripts/update-tdlib.sh` will clobber them.
+- **`:baselineprofile`** — Macrobenchmark, AOT cold-start profile.
 
-DI-граф створюється в `HortayApp.onCreate` як `graph: AppGraph`, доступається через `(application as HortayApp).graph`. Heavy synglet'и (`MediaCache`, `CustomEmoji`, `ExoPlayerPool`) інжектяться у Compose-дерево через CompositionLocal — `LocalMediaCache` тощо у `MainActivity:34-37`.
+DI is built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(application as HortayApp).graph`. Heavy singletons (`MediaCache`, `CustomEmoji`, `ExoPlayerPool`) are injected via CompositionLocal in `MainActivity`.
 
-## Load-bearing — НЕ ламати без читання rationale на місці
+## Load-bearing — don't change without reading the rationale in place
 
-Кожен пункт має детальний rationale у header-коментарі вказаного файлу. Тут — лише "куди дивитись".
-
-| Що | Де rationale | TL;DR не-ламання |
+| What | Rationale lives in | TL;DR |
 |---|---|---|
-| TDLib two-stage update pipeline | `data/TdClient.kt:71-89` | UNLIMITED Channel → SharedFlow(64). Дві ранніші ітерації обидві ламали ordering або login burst. |
-| MediaCache single-coroutine reducer | `data/MediaCache.kt:125-138` | `fileEvents` Channel = один writer для slot state. Інший writer = silent dropped Ready emit. |
-| MediaCache stall watchdog | `data/MediaCache.kt:149-178` | 3 регіми (background suspend / idle 5s / active 2s) + skip під `WaitingForNetwork`. |
-| PostsRepository concurrency | `data/PostsRepository.kt:32-49` | `refreshMutex` + `PersistentList` + album coalescing per `(chatId, mediaAlbumId)`. |
-| PostsRepository cold-start contract | `data/PostsRepository.kt:refreshLocked` | Harvests `Chat.lastMessage` from `chatCache` (populated by `UpdateNewChat` / `UpdateChatLastMessage`). **Do NOT re-introduce `GetChat × N` or `GetChatHistory × N` fan-out on cold-start** — the ~30× FLOOD_WAIT regression class lives there. Spec: `docs/superpowers/specs/2026-05-11-tdlib-cold-start-lastmessage-only-design.md`. |
-| Compose stability chain | `data/PostContent.kt`, `TimelinePost.kt` | `@Immutable` end-to-end від `TimelinePost`. Будь-який `var`/`MutableList`/`Any?` у графі = тихий regress skippability. |
-| Cold start снапшот | `data/TimelineSnapshotStore.kt` + `TimelineViewModel:59-66` | Restore → паралельний refreshIfStale. Race-safe через `_posts.update` reducer. |
-| FLOOD_WAIT global gate | `data/TdClient.kt:100-113` | Один глобальний `AtomicLong` deadline. Per-method tracking — overkill для read-only. |
-| TDLib quirks (album sync, stall, post-completion resync) | `data/MediaCache.kt:55-71` + `PostsRepository.kt:67-74` | Issue refs: `tdlib/td#2523` (albums), `tdlib/td#2585` (stall mid-chunk). |
-| Web-mode SQL portability | `app/src/main/sqldelight/.../web/db/*.sq` | Усі upsert'и через `INSERT OR IGNORE` + `UPDATE`, **не** `ON CONFLICT DO UPDATE`. Android 8/9 SQLite < 3.24. FTS5 теж пропущено (Samsung/Pixel SQLite ship без модуля). |
-| Web-mode media TTL | `data/web/Post.sq` (`fetched_at_ms`) + `WebFeedSource.DEFAULT_MEDIA_TTL_MS` | t.me/s/ підписані CDN URL живуть 1-4 год. Канал зі стиглими URL отримує `FORCE_NETWORK` на наступному sweep, Coil failure → `markMediaStale()`. |
-| Guest-mode routing precedence | `MainActivity.kt` | `auth.Ready → MainScaffold` → `isGuest → WebModeScaffold` → `else → AuthScreen`. Підписки переживають перемикання обох напрямків. |
+| TDLib two-stage update pipeline | `data/TdClient.kt:71-89` | UNLIMITED Channel → SharedFlow(64). |
+| MediaCache single-coroutine reducer | `data/MediaCache.kt:125-138` | `fileEvents` Channel = one writer. |
+| MediaCache stall watchdog | `data/MediaCache.kt:149-178` | 3 regimes; skip under `WaitingForNetwork`. |
+| PostsRepository concurrency | `data/PostsRepository.kt:32-49` | `refreshMutex` + `PersistentList` + album coalescing. |
+| PostsRepository cold-start contract | `data/PostsRepository.kt:refreshLocked` | Harvest `Chat.lastMessage` from `chatCache`. **Don't reintroduce `GetChat × N` / `GetChatHistory × N`** — FLOOD_WAIT class. |
+| Compose stability chain | `data/PostContent.kt`, `TimelinePost.kt` | `@Immutable` end-to-end. |
+| Cold-start snapshot | `data/TimelineSnapshotStore.kt` + `TimelineViewModel:59-66` | Restore → parallel `refreshIfStale`. |
+| FLOOD_WAIT global gate | `data/TdClient.kt:100-113` | Single `AtomicLong` deadline. Recognise **both 420 and 429**. |
+| TDLib quirks (album sync, stall) | `data/MediaCache.kt:55-71` + `PostsRepository.kt:67-74` | `tdlib/td#2523`, `tdlib/td#2585`. |
+| Web-mode SQL portability | `app/src/main/sqldelight/.../web/db/*.sq` | All upserts via `INSERT OR IGNORE` + `UPDATE` — **not** `ON CONFLICT DO UPDATE`. Android 8/9 SQLite < 3.24. FTS5 skipped. |
+| Web-mode media TTL | `data/web/Post.sq` + `WebFeedSource.DEFAULT_MEDIA_TTL_MS` | t.me/s/ CDN URLs live 1–4 h. |
+| Guest-mode routing | `MainActivity.kt` | `auth.Ready → MainScaffold` → `isGuest → WebModeScaffold` → `AuthScreen`. |
+| StartupCoordinator | `data/StartupCoordinator.kt` | `Booting → Active` gates speculative work. |
+| Channel-drill as overlay | `ui/main/MainScaffold.kt` | `channelStack` is `remember`; AnimatedVisibility over always-mounted feed. |
+| ReadCursors / OldestUnreadFirst | `data/ReadCursors.kt`, `ui/timeline/LocalReadCursors.kt` | `PersistentMap` + CompositionLocal; snapshot frozen at refresh boundaries. |
 
 ## Critical identifiers
 
-| Ідентифікатор | Чому load-bearing |
+| Identifier | Why it's load-bearing |
 |---|---|
-| `dev.lyo.hortay` (+ `.beta`) | applicationId, namespace, signing identity. Зміна = всі users перевстановлюють. |
-| `org.drinkless.tdlib` | TDLib upstream FQCN. Зміна = JNI symbol mismatch у libtdjni.so. |
-| `~/.hortay/release.jks`, `keyAlias=hortay` | Release signing. Loose'нете keystore = втрата upgrade path для всіх users. |
+| `dev.lyo.hortay` (+ `.beta`) | applicationId, namespace, signing identity. |
+| `org.drinkless.tdlib` | TDLib upstream FQCN. Renaming breaks JNI symbol lookup in libtdjni.so. |
+| `~/.hortay/release.jks`, `keyAlias=hortay` | Release signing. Losing it = losing the upgrade path. |
 | `HortayApp.graph` | Process-singleton DI root. |
-| `LocalMediaCache`/`LocalCustomEmoji`/`LocalExoPlayerPool` | CompositionLocal heavy-singleton injection. Альтернатива (param-через-Composable) була пробувалась — конструктор-explosion на 600-row PostCard. |
+| `LocalMediaCache` / `LocalCustomEmoji` / `LocalExoPlayerPool` / `LocalReadCursors` | CompositionLocal heavy-singleton injection. |
 
-## Заборонено
+## Forbidden
 
-- ❌ Hilt / Dagger / Koin — DI ручний (`AppGraph`), навмисно. Один process, ~15 синглтонів.
-- ❌ Firebase / Crashlytics / Sentry / analytics / phone-home — INTERNET виключно для TDLib + анонімного `t.me/s/`.
-- ❌ Room — kapt overhead, замінено SQLDelight там, де БД дійсно потрібна.
-- ✅ SQLDelight 2.3 — **тільки** для `web.db` (анонімний режим, `app/src/main/sqldelight/...`). TDLib режим залишається БЕЗ БД (TDLib `useFileDatabase`/`useChatInfoDatabase`/`useMessageDatabase = true`). Не тягніть TDLib-режимні дані у `web.db`, і не вмикайте `web.db` для авторизованих юзерів — inkjections іде через `AppGraph.webDatabase` лиш у guest-mode UI tree.
-- ❌ OkHttp / Retrofit / Ktor — Coil тягне `coil-network-okhttp` для зображень, цього достатньо.
-- ❌ FCM / push через Firebase — TDLib `RegisterDevice` + `UpdateNotification` коли треба буде.
-- ❌ ViewBinding / Fragment-based screens — Compose-only, single-Activity.
-- ❌ Compose Navigation typed routes — string-based + `MainScaffold` switch достатньо.
-- ❌ `GetChat × N` / `GetChatHistory × N` per-channel fan-out on cold-start.
-  Killed in the lastMessage-harvest rework (2026-05-11) — caused FLOOD_WAIT for
-  power-user accounts. On-demand per-channel paths (`loadChannelHistory`,
-  `loadOlder`, `loadHistoryAround`) stay.
+- Hilt / Dagger / Koin — DI is manual (`AppGraph`).
+- Firebase / Crashlytics / Sentry / analytics / phone-home — INTERNET is for TDLib + anonymous `t.me/s/` only.
+- Room — kapt overhead; SQLDelight replaced it.
+- OkHttp / Retrofit / Ktor as a general HTTP client — Coil pulls `coil-network-okhttp` for images, that's enough.
+- FCM / push — TDLib `RegisterDevice` + `UpdateNotification`.
+- ViewBinding / Fragment-based screens — Compose-only, single-Activity.
+- Compose Navigation typed routes — string-based + `MainScaffold` switch is enough.
+- `GetChat × N` / `GetChatHistory × N` per-channel fan-out on cold-start. On-demand paths (`loadChannelHistory`, `loadOlder`, `loadHistoryAround`) are fine.
+- `rememberSaveable` for top-level navigation (`selectedTab`, `channelStack`) — cold launch must land on Home top-of-feed.
+- Direct `client.send` from UI / Composable — always go through a repository (FLOOD_WAIT gate + UserMessageBus error routing live there).
+- `enableV1Signing = true` — AGP 9 + R8 zip layout breaks JarInputStream v1.
+- `x86_64` in release `abiFilters` — +24 MB libtdjni.so for zero users.
+- `LOG_VERBOSITY` above 1.
+- Hand-editing `libtdlib/.../{Client,TdApi}.java` — vendored upstream.
+- New `.md` files without an explicit user request. README + CHANGELOG + this CLAUDE.md is enough.
+- Literal `tween(...)` for transitions — use `MotionScheme.{default,fast}{Spatial,Effects}Spec()` everywhere.
+- Hardcoded user-facing strings. Always `strings.xml` + `values-uk/strings.xml`.
+- Non-English code, comments, or commits.
+- TODO comments, commented-out dead code, debug `println`s.
 
-## Команди
+## Allowed / correct practices
+
+- **SQLDelight 2.3** for `web.db` only. TDLib mode runs without a DB (TDLib owns its persistence).
+- **Material 3 Expressive**: `MaterialExpressiveTheme` + `MotionScheme.expressive()`.
+- **Predictive back**: `PredictiveBackHandler` + `Animatable` + `graphicsLayer`. Only one handler `enabled = true` at any time.
+- **Heavy singletons** via CompositionLocal. Passing them as Composable params caused a constructor explosion on the 600-row PostCard.
+- **`@Immutable` end-to-end** for anything reaching Compose. Any `var` / `MutableList` / `Any?` in the graph is a silent skippability regression.
+- **`PersistentList` / `PersistentMap`** from `kotlinx.collections.immutable`. Don't substitute `List` "for simplicity".
+- **TDLib lifecycle**: `OpenChat` / `CloseChat` / `ViewMessages` go through `ChatPresence`. Wrap critical pairs in `NonCancellable` (`tdlib/td#2312`).
+- **Per-account state cleanup**: every session-scoped state holder subscribes to `TdClient.loggedOut.collect { clear() }`. Includes process-wide sets and Composable state.
+- **Lambdas in LazyColumn `items`** must be wrapped in `remember(...)` with stable keys. Inline `{ ... }` capturing non-stable scope breaks skipping under scroll.
+- **Read state**: `ReadCursors` (TDLib + DataStore) is the single source of truth. UI consumes it via `LocalReadCursors`.
+- **Monotonic clamp** on read cursors. Every seed (`UpdateNewChat`) and update (`UpdateChatReadInbox`) does `if (new > existing) put` — otherwise logout/login races corrupt cursors.
+- **i18n by default**: every new user-facing string lands in both `values/strings.xml` and `values-uk/strings.xml` in the same commit. Use `<plurals>` for counts. `contentDescription` via `stringResource` with a placeholder for the entity name.
+- **A11y**: every clickable Row/Box that isn't an `IconButton`/`Button` gets `Modifier.clickable(role = Role.Button)` + a meaningful `contentDescription`.
+
+## Commands
 
 ```bash
-./gradlew :app:installDebug              # Debug на пристрій
-./gradlew :app:assembleRelease           # Release APK (потребує keystore.properties)
-./gradlew :app:assembleBeta              # Beta-канал, applicationId.beta, версія "0.1.0-beta-<sha>", versionCode = git commit count
-./gradlew test                           # JUnit 5 unit (PostFilterStrategy, CommentsRepository через FakeTdSender)
+./gradlew :app:installDebug
+./gradlew :app:assembleRelease           # release APK (needs keystore.properties)
+./gradlew :app:assembleBeta              # beta, applicationId.beta, versionCode = git commit count
+./gradlew test                           # JUnit 5 unit tests
 ./gradlew :app:lintRelease               # R8 + lint vital
-./gradlew :app:generateBaselineProfile   # Re-bake AOT профіль (~3-5 хв на пристрої)
-./scripts/update-tdlib.sh [SHA]          # Bump TDLib з upstream (Docker, ~10-15 хв)
+./gradlew :app:generateBaselineProfile   # AOT profile (~3–5 min on device)
+./scripts/update-tdlib.sh [SHA]          # Bump TDLib (Docker, ~10–15 min)
 adb logcat -s TdClient MediaCache PostsRepository
 ```
 
-JDK 17, Gradle 9.4.1, AGP 9.2.0, Kotlin 2.3.10 (K2). Compose Compiler через `org.jetbrains.kotlin.plugin.compose`, не legacy `kotlinCompilerExtensionVersion`.
+JDK 17, Gradle 9.4.1, AGP 9.2.0, Kotlin 2.3.10 (K2). Compose Compiler via `org.jetbrains.kotlin.plugin.compose`.
 
-## Setup-delta поверх README
+## Setup delta on top of README
 
-README пояснює `local.properties` (telegram.apiId/apiHash) і TDLib build. Додатково для signing/розробки:
-
-- `keystore.properties` у корені (gitignored), `storeFile=~/.hortay/release.jks`, `keyAlias=hortay`. AGP вмикає release signing коли файл існує (`app/build.gradle.kts:59-70`).
-- Beta-білди не потребують додаткового setup'у — використовують той самий release keystore + auto-versionCode з git.
+- `keystore.properties` at the repo root (gitignored), `storeFile=~/.hortay/release.jks`, `keyAlias=hortay`. AGP enables release signing when this file exists (`app/build.gradle.kts:59-70`).
+- Beta uses the same keystore + auto-versionCode from git.
+- `gradle.properties` carries `HORTAY_CHILD_SAFETY_POLICY_URL` / `HORTAY_PRIVACY_POLICY_URL` for CSAE compliance.
 
 ## Code style
 
 - Kotlin official, 4-space indent.
-- **Коментарі = архів інженерних рішень**, не самоопис. У repos типу cally / hortay header-KDoc'и містять "пробували X, зламалося Y" — це load-bearing для онбордингу. Не редагуйте в "стислу версію".
-- Conventional commits зі скоупом-як-пакет: `feat(timeline):`, `perf(media):`, `build(beta):`.
-- `@Immutable` / `@Stable` на data class усе, що дотягується до Compose.
-- Без emojis у коді / коммітах.
+- **Comments are an engineering archive**, not self-description. Header KDocs that say "tried X, broke Y" are load-bearing for onboarding — don't compress them.
+- Conventional commits, scope = package: `feat(timeline):`, `perf(media):`, `build(beta):`.
+- `@Immutable` / `@Stable` on every data class that reaches Compose.
+- No emoji in code, comments, commits, or user-facing strings.
 
-## НЕ робіть (типові помилки агента)
+## CHANGELOG
 
-- НЕ додавайте Hilt, не пропонуйте. Обговорено, відмовлено.
-- НЕ замінюйте `PersistentList` → `List` "для простоти".
-- НЕ вилучайте `@Immutable` з графа `TimelinePost`. Тихий regress skippability.
-- НЕ робіть `client.send` з UI / Composable. Завжди через repository (FLOOD_WAIT gate + UserMessageBus error routing там).
-- НЕ вмикайте `enableV1Signing = true`. AGP 9 + R8 zip layout ламає JarInputStream v1. Деталі — git коміт `444d0fb`.
-- НЕ додавайте `x86_64` у release `abiFilters`. +24MB libtdjni.so для нуля користувачів.
-- НЕ pre-fetch'те весь chat history. 200 каналів × `GetChatHistory(80)` = миттєвий FLOOD_WAIT.
-- НЕ редагуйте `libtdlib/src/main/java/.../{Client,TdApi}.java` — vendored upstream.
-- НЕ підіймайте `LOG_VERBOSITY` понад 1. Гард у `TdClient.kt:426`.
-- НЕ створюйте додаткових `.md` файлів (ARCHITECTURE.md, CONTRIBUTING.md, ROADMAP.md) без явного запиту. README + CHANGELOG + цей CLAUDE.md — достатньо.
+- Every user-visible change → a bullet under `## [Unreleased]` in `CHANGELOG.md`, Keep-a-Changelog format.
+- Categories: **Added** / **Changed** / **Fixed** / **Performance** / **Architecture** / **Build**.
+- One bullet = 1–3 lines. No emoji, tables, or code blocks. No long-form rationale.
+- Engineering rationale ("why this way, what we tried, what broke") goes into the file's header KDoc or the commit body — **not** the CHANGELOG.
+- At release time, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD` and create a fresh `[Unreleased]`.
 
 ## Versioning
 
-- `versionCode` для **release** і **beta** — auto з `git rev-list --count HEAD` (вшито у `androidComponents.onVariants` в `app/build.gradle.kts:158-185`). НЕ бампати руками. Single source of truth — git history.
-- Це означає: `bundleRelease` без нового коміту видасть той самий код, який Play вже бачив → 409. Завжди коміт → потім bundle.
-- `versionCode = 1` у `defaultConfig` — це сентинель для debug-білдів (ніколи не йдуть у Play). Не міняти.
-- `versionName` — ручний (`0.1.0`). Бампати при semver-достойних релізах. Beta автоматично додає `-beta-<sha>` суфікс.
-- TDLib pin: `scripts/tdlib-version.txt` (auto-generated). Окремий коміт `chore(tdlib): bump to <sha>` при upstream bump'і.
-- Native debug symbols (Play Console crash symbolication для `libtdjni.so`):
-  `scripts/update-tdlib.sh` за замовчуванням (`KEEP_DEBUG=1`) видобуває
-  unstripped libs у `libtdlib/build/tdlib-unstripped/<abi>/libtdjni.so`
-  (gitignored). Це overlay-source у `libtdlib/build.gradle.kts:sourceSets` —
-  AGP'ів `debugSymbolLevel = "FULL"` автоматично пакує symbol info у
-  AAB metadata, далі Play Console їх підтягує без manual upload. Рилізна
-  послідовність: `./scripts/update-tdlib.sh` → коміт → `./gradlew
-  :app:bundleRelease`. Debug builds на overlay не залежать; працюють на
-  stripped libs з `src/main/jniLibs/` (committed).
-- Кожна user-visible зміна → `## [Unreleased]` у `CHANGELOG.md` (Keep a Changelog: Added / Changed / Fixed / Performance / Architecture).
+- `versionCode` for release and beta is auto-derived from `git rev-list --count HEAD` (wired in `androidComponents.onVariants` in `app/build.gradle.kts:158-185`). **Don't bump it by hand.**
+- `bundleRelease` without a new commit produces the same versionCode Play already saw → 409. Always: commit → then bundle.
+- `versionCode = 1` in `defaultConfig` is a sentinel for debug builds.
+- `versionName` is manual. Bump on semver-worthy releases. Beta auto-appends `-beta-<sha>`.
+- TDLib pin: `scripts/tdlib-version.txt` (auto-generated). Dedicated commit `chore(tdlib): bump to <sha>` per bump.
+- Native debug symbols: `scripts/update-tdlib.sh` (default `KEEP_DEBUG=1`) extracts unstripped libs into `libtdlib/build/tdlib-unstripped/<abi>/libtdjni.so`. AGP `debugSymbolLevel = "FULL"` packages symbol info into the AAB metadata.
+
+## Common agent mistakes
+
+- Don't add Hilt; don't propose it. Settled, rejected.
+- Don't substitute `PersistentList` → `List` "for simplicity".
+- Don't strip `@Immutable` from the `TimelinePost` graph. Silent skippability regression.
+- Don't call `client.send` from UI / Composable.
+- Don't pre-fetch the whole chat history. 200 channels × `GetChatHistory(80)` = instant FLOOD_WAIT.
+- Don't edit `libtdlib/.../{Client,TdApi}.java`.
+- Don't raise `LOG_VERBOSITY` above 1.
+- Don't create extra `.md` files.
+- Don't use literal `tween(...)` for transitions — `MotionScheme` everywhere.
+- Don't forget logout-cleanup for per-account state (subscribe to `TdClient.loggedOut`).
+- Don't parse FLOOD_WAIT from message strings — `TdClient` does it centrally; expose a helper if you need one.
+- Don't hardcode user-facing strings. Don't ship a string in English without its `values-uk` mirror in the same commit.
+- Don't reply to the user in English when they're writing in another language.

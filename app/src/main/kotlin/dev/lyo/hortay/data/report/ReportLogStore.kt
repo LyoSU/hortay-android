@@ -70,13 +70,20 @@ class ReportLogStore(private val context: Context) {
     private fun rotateIfNeeded() {
         if (!file.exists()) return
         val lines = file.readLines().filter { it.isNotBlank() }
-        if (lines.size > MAX_ENTRIES) {
+        if (lines.size > ROTATE_THRESHOLD) {
             val trimmed = lines.takeLast(MAX_ENTRIES)
-            file.writeText(trimmed.joinToString("\n") + "\n")
+            val tmp = File(file.parentFile, file.name + ".tmp")
+            tmp.writeText(trimmed.joinToString("\n") + "\n")
+            if (!tmp.renameTo(file)) {
+                // Fallback for platforms where rename fails when target exists.
+                file.delete()
+                tmp.renameTo(file)
+            }
         }
     }
 
     companion object {
         const val MAX_ENTRIES = 200
+        private const val ROTATE_THRESHOLD = MAX_ENTRIES * 11 / 10
     }
 }

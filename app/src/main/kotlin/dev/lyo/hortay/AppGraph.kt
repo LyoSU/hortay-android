@@ -4,6 +4,7 @@ import android.content.Context
 import dev.lyo.hortay.data.AutoDownloadStore
 import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.LinkDialogState
+import dev.lyo.hortay.data.report.ReportDialogState
 import dev.lyo.hortay.data.report.ReportExplainerStore
 import dev.lyo.hortay.data.report.ReportLogStore
 import dev.lyo.hortay.data.report.ReportRepository
@@ -18,6 +19,7 @@ import dev.lyo.hortay.data.DeepLinkRouter
 import dev.lyo.hortay.data.MediaAutoDownloader
 import dev.lyo.hortay.data.MediaCache
 import dev.lyo.hortay.data.MessageMapper
+import dev.lyo.hortay.data.NavStack
 import dev.lyo.hortay.data.PostsRepository
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StartupCoordinator
@@ -255,6 +257,19 @@ class AppGraph(context: Context) {
     val linkDialogs: LinkDialogState = LinkDialogState()
 
     /**
+     * Process-wide polymorphic back-stack for channel-drill and comments
+     * overlays. Replaces the three disjoint stacks that previously lived on
+     * each scaffold (`channelStack`, `commentsForPost`, `pendingScrollTarget`).
+     * See [NavStack] KDoc for the full lifetime contract.
+     *
+     * Lives on the graph because deep-link routing (`DeepLinkRouter`) may
+     * push entries before the UI scaffold composes, and because per-entry
+     * ViewModel keying is keyed on a stable [NavEntry.entryId] that survives
+     * scaffold recompose / tab swap.
+     */
+    val nav: NavStack = NavStack()
+
+    /**
      * Anonymous-mode SQLDelight database. Stores channel metadata, post payloads,
      * resolved custom-emoji assets and curated/discovery suggestions. Construction
      * triggers schema creation on first launch and migration validation on every
@@ -416,8 +431,18 @@ class AppGraph(context: Context) {
         td = tdClient,
         resolver = res,
         log = reportLogStore,
-        scope = appScope,
     )
+
+    /**
+     * Process-wide holder for the active report-flow target. Hoisted off
+     * `MainScaffold`'s local state for the same reason [linkDialogs] is hoisted:
+     * `ReportFlowSheet`'s ViewModel keeps partial answers across TDLib
+     * roundtrips, and a rotation mid-flow would otherwise null the target and
+     * drop the sheet on the floor before the user gets to submit. Cleared on
+     * logout via [runLogoutCleanup]. See [ReportDialogState] KDoc for the
+     * lifetime contract.
+     */
+    val reportDialogs: ReportDialogState = ReportDialogState()
 
     /**
      * Guest-mode report delegation chain: tg:// → CustomTabsIntent → mailto:.
@@ -485,6 +510,14 @@ class AppGraph(context: Context) {
         runCatching { chatFoldersRepository.clear() }
         runCatching { translations.clear() }
         runCatching { migrationStore.reset() }
+        // Drop any in-flight report sheet — its target's chatId/messageId
+        // belongs to account A's TDLib database and will be invalid the moment
+        // the new client spawns.
+        runCatching { reportDialogs.close() }
+        // Drop any in-flight drill stack — chatId / messageIds belong to
+        // account A's TDLib database and will be invalid the moment the new
+        // client spawns.
+        runCatching { nav.clear() }
     }
 }
 

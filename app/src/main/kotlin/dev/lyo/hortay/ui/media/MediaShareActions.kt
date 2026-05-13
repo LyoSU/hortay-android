@@ -9,8 +9,10 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.core.content.FileProvider
 import androidx.core.content.getSystemService
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import java.io.File
 import java.text.SimpleDateFormat
@@ -52,7 +54,23 @@ object MediaShareActions {
 
     sealed interface Result {
         data object Success : Result
-        data class Failure(val reason: String) : Result
+        /**
+         * Localised failure payload. [reasonResId] is the user-facing string,
+         * [args] feed any `%1$s` / `%2$d` format-args (currently only the
+         * mkdir branch carries one — the directory path). The call site does
+         * `context.getString(reasonResId, *args)` to resolve.
+         *
+         * [debugDetail] is an English diagnostic string surfaced to logcat /
+         * crash reports only — never to UI. Captures the underlying exception
+         * message when a `try/catch` collapsed an arbitrary throwable into a
+         * generic "save failed" result, so the localised toast stays clean
+         * but bug-report digging still has the original cause.
+         */
+        data class Failure(
+            @StringRes val reasonResId: Int,
+            val args: List<Any> = emptyList(),
+            val debugDetail: String? = null,
+        ) : Result
     }
 
     /**
@@ -77,7 +95,7 @@ object MediaShareActions {
         localPath: String,
     ): Result {
         val src = File(localPath)
-        if (!src.exists()) return Result.Failure("source missing")
+        if (!src.exists()) return Result.Failure(R.string.media_share_error_source_missing)
 
         val isVideo = item !is AlbumItem.Photo
         val mime = item.guessMimeType()
@@ -91,7 +109,10 @@ object MediaShareActions {
             }
         } catch (t: Throwable) {
             Log.w(TAG, "saveToGallery failed", t)
-            Result.Failure(t.message ?: t.javaClass.simpleName)
+            Result.Failure(
+                reasonResId = R.string.media_share_error_insert_failed,
+                debugDetail = t.message ?: t.javaClass.simpleName,
+            )
         }
     }
 
@@ -106,9 +127,9 @@ object MediaShareActions {
         item: AlbumItem,
         localPath: String,
     ): Result {
-        if (item !is AlbumItem.Photo) return Result.Failure("only photos")
+        if (item !is AlbumItem.Photo) return Result.Failure(R.string.media_share_error_only_photos)
         val src = File(localPath)
-        if (!src.exists()) return Result.Failure("source missing")
+        if (!src.exists()) return Result.Failure(R.string.media_share_error_source_missing)
         val mime = item.guessMimeType()
 
         return try {
@@ -123,7 +144,7 @@ object MediaShareActions {
                 }
             }
             val cm = context.getSystemService<ClipboardManager>()
-                ?: return Result.Failure("clipboard unavailable")
+                ?: return Result.Failure(R.string.media_share_error_clipboard_unavailable)
             cm.setPrimaryClip(clip)
             // Without the read-grant flag a paster on Q+ receives a SecurityException
             // when resolving the URI. ClipData.newUri does NOT auto-grant on its own;
@@ -140,7 +161,10 @@ object MediaShareActions {
             Result.Success
         } catch (t: Throwable) {
             Log.w(TAG, "copyToClipboard failed", t)
-            Result.Failure(t.message ?: t.javaClass.simpleName)
+            Result.Failure(
+                reasonResId = R.string.media_share_error_clipboard_unavailable,
+                debugDetail = t.message ?: t.javaClass.simpleName,
+            )
         }
     }
 
@@ -169,7 +193,7 @@ object MediaShareActions {
         }
 
         val uri = resolver.insert(collection, values)
-            ?: return Result.Failure("insert returned null")
+            ?: return Result.Failure(R.string.media_share_error_insert_failed)
         try {
             resolver.openOutputStream(uri, "w")?.use { out ->
                 src.inputStream().use { it.copyTo(out) }
@@ -194,7 +218,12 @@ object MediaShareActions {
     ): Result {
         val rootName = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
         val dir = File(Environment.getExternalStoragePublicDirectory(rootName), SUBFOLDER)
-        if (!dir.exists() && !dir.mkdirs()) return Result.Failure("cannot mkdir $dir")
+        if (!dir.exists() && !dir.mkdirs()) {
+            return Result.Failure(
+                reasonResId = R.string.media_share_error_mkdir,
+                args = listOf(dir.toString()),
+            )
+        }
         val dest = File(dir, displayName)
         src.inputStream().use { input ->
             dest.outputStream().use { out -> input.copyTo(out) }

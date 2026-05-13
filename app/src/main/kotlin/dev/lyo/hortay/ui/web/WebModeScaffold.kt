@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.DeepLink
+import dev.lyo.hortay.data.NavEntry
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.FloatingNavBar
 import dev.lyo.hortay.ui.main.LinkAwareScaffold
@@ -70,16 +72,19 @@ import java.util.Locale
 fun WebModeScaffold(graph: AppGraph) {
     var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
-    // [addSheetOpen] + [deepLinkPrefill] are deliberately NOT `rememberSaveable`.
-    // The pair is set together by the deep-link collector when a guest-mode user
-    // taps `t.me/<handle>`. If the user dismissed the sheet pre-process-death we
-    // wouldn't want to re-open it on cold-launch; if the user was mid-decision
-    // when the process was killed they almost certainly abandoned the action.
-    // The deep-link router buffers the inbound event itself (UNLIMITED channel
-    // on the graph), so a re-entry that genuinely needs the sheet will re-arrive
-    // through the collector path naturally.
-    var addSheetOpen by remember { mutableStateOf(false) }
-    var deepLinkPrefill by remember { mutableStateOf<String?>(null) }
+    // [addSheetOpen] + [deepLinkPrefill] are `rememberSaveable` so a user
+    // mid-input in [AddChannelSheet] (typing a handle, reviewing a pasted URL)
+    // doesn't lose the sheet and their typed text on rotation — the sheet's
+    // own field state is saveable, but the parent's open/prefill flags need
+    // to survive the same configuration change for the sheet to stay mounted.
+    // Boolean and String? both serialise via the default Saver.
+    //
+    // Process-kill semantics are unchanged: rotation now preserves both flags,
+    // and on a cold-launch after process death the deep-link router's
+    // UNLIMITED channel on the graph re-delivers unconsumed events through the
+    // collector path, which sets the pair again.
+    var addSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var deepLinkPrefill by rememberSaveable { mutableStateOf<String?>(null) }
     // guest-mode report instruction: set to the post's senderHandle after delegation fires.
     var showReportInstruction by remember { mutableStateOf(false) }
     // Monotonic counter incremented on each "Home" re-tap — TimelineScreen
@@ -89,32 +94,35 @@ fun WebModeScaffold(graph: AppGraph) {
     var homeTapTrigger by rememberSaveable { mutableStateOf(0L) }
 
     // Channel back-stack — guest-mode counterpart to MainScaffold's TDLib stack.
-    // Entries are channel usernames (String) because guest mode identifies channels
-    // by their t.me/s/ handle, not a TDLib chatId. Same push / pop / pop-to-existing
-    // semantics as the TDLib stack so the back gesture feels identical across modes.
-    // We don't track an entry tab (web mode users always enter channels from
-    // Channels tab → Feed-tab routing; restoring to Channels-tab on pop just means
-    // setting selectedTab back to Channels when the stack empties).
-    var channelStack by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
-    var channelEntryTab by rememberSaveable { mutableStateOf<NavTab?>(null) }
-    fun enterWebChannel(name: String, fromTab: NavTab) {
-        if (channelStack.isEmpty()) channelEntryTab = fromTab
-        val lower = name.lowercase()
-        val existing = channelStack.indexOf(lower)
-        channelStack = if (existing >= 0) {
-            channelStack.subList(0, existing + 1).toList()
-        } else {
-            channelStack + lower
-        }
+    // Single polymorphic nav-stack on [AppGraph.nav]. Guest mode only ever
+    // pushes [NavEntry.WebChannel]; the auth-mode variants (Channel, Comments)
+    // are owned by [dev.lyo.hortay.ui.main.MainScaffold] and never appear here
+    // because the two scaffolds never compose simultaneously
+    // ([dev.lyo.hortay.MainActivity] routes auth.Ready → MainScaffold,
+    // isGuest → WebModeScaffold).
+    //
+    // Same back-stack mechanics as MainScaffold — see [NavStack] KDoc.
+    val stack by graph.nav.stack.collectAsStateWithLifecycle()
+    val topEntry = stack.lastOrNull()
+    var preDrillTab by remember { mutableStateOf<NavTab?>(null) }
+
+    fun pushWebChannel(name: String, fromTab: NavTab) {
+        if (stack.isEmpty()) preDrillTab = fromTab
+        graph.nav.push(NavEntry.WebChannel(username = name.lowercase()))
         selectedTab = NavTab.Feed
     }
-    fun popWebChannel() {
-        if (channelStack.isEmpty()) return
-        channelStack = channelStack.dropLast(1)
-        if (channelStack.isEmpty()) {
-            selectedTab = channelEntryTab ?: NavTab.Feed
-            channelEntryTab = null
+
+    fun popNav() {
+        graph.nav.pop() ?: return
+        if (graph.nav.stack.value.isEmpty()) {
+            selectedTab = preDrillTab ?: NavTab.Feed
+            preDrillTab = null
         }
+    }
+
+    fun clearNav() {
+        graph.nav.clear()
+        preDrillTab = null
     }
 
     val scope = rememberCoroutineScope()
@@ -180,32 +188,30 @@ fun WebModeScaffold(graph: AppGraph) {
         }
     }
 
-    // Predictive back for the web channel overlay. Mirror of MainScaffold's
-    // channelBackProgress chain. PredictiveBackHandler degrades to a regular
-    // back on pre-Android-13 devices, so this primitive covers the full
-    // supported range.
-    val channelBackProgress = remember { androidx.compose.animation.core.Animatable(0f) }
-    var channelBackEdge by remember { mutableIntStateOf(androidx.activity.BackEventCompat.EDGE_LEFT) }
-    androidx.activity.compose.PredictiveBackHandler(enabled = channelStack.isNotEmpty()) { progress ->
+    // Predictive back for the top nav-entry. Mirrors MainScaffold's
+    // navBackProgress — same M3E fastEffectsSpec, same epsilon-skip,
+    // same EXIT_PROGRESS extension on commit.
+    val backCommitSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val backRewindSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val navBackProgress = remember { androidx.compose.animation.core.Animatable(0f) }
+    var navBackEdge by remember { mutableIntStateOf(androidx.activity.BackEventCompat.EDGE_LEFT) }
+    androidx.activity.compose.PredictiveBackHandler(enabled = topEntry != null) { progress ->
         try {
             progress.collect { event ->
-                channelBackEdge = event.swipeEdge
-                channelBackProgress.snapTo(event.progress)
+                navBackEdge = event.swipeEdge
+                val next = event.progress
+                if (kotlin.math.abs(next - navBackProgress.value) >= 0.005f) {
+                    navBackProgress.snapTo(next)
+                }
             }
-            channelBackProgress.animateTo(
-                2f,
-                androidx.compose.animation.core.tween(220, easing = androidx.compose.animation.core.FastOutLinearInEasing),
-            )
-            popWebChannel()
-            channelBackProgress.snapTo(0f)
+            navBackProgress.animateTo(2f, backCommitSpec)
+            popNav()
+            navBackProgress.snapTo(0f)
         } catch (_: kotlinx.coroutines.CancellationException) {
-            channelBackProgress.animateTo(
-                0f,
-                androidx.compose.animation.core.tween(160, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            )
+            navBackProgress.animateTo(0f, backRewindSpec)
         }
     }
-    BackHandler(enabled = channelStack.isEmpty() && selectedTab != NavTab.Feed) {
+    BackHandler(enabled = topEntry == null && selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
     }
 
@@ -221,13 +227,21 @@ fun WebModeScaffold(graph: AppGraph) {
     // advances each channel's local cursor to the highest seq in the batch.
     // Result mirrors TDLib's "lastReadInboxMessageId moved up to message X":
     // the channel_read_cursor row gets MAX-clamped to the freshest seen post.
-    val webMarkAsRead: suspend (List<TimelinePost>) -> Unit = { batch ->
-        batch.groupBy { it.senderHandle?.removePrefix("@")?.lowercase() ?: "" }
-            .forEach { (username, group) ->
-                if (username.isNotEmpty()) {
-                    graph.webRepository.markChannelRead(username, group.maxOf { it.id })
+    //
+    // `remember`-wrapped on graph.webRepository so the lambda instance is stable
+    // across WebModeScaffold recompositions. TimelineScreen uses this as a key for
+    // `interactions = remember(...)` / `ackedRead = remember(markAsRead)`; a fresh
+    // closure per recompose would invalidate those blocks and trigger redundant
+    // markChannelRead writes on every dwell-batch evaluation.
+    val webMarkAsRead: suspend (List<TimelinePost>) -> Unit = remember(graph.webRepository) {
+        { batch ->
+            batch.groupBy { it.senderHandle?.removePrefix("@")?.lowercase() ?: "" }
+                .forEach { (username, group) ->
+                    if (username.isNotEmpty()) {
+                        graph.webRepository.markChannelRead(username, group.maxOf { it.id })
+                    }
                 }
-            }
+        }
     }
     LinkAwareScaffold(graph) {
     CompositionLocalProvider(LocalReadCursors provides readCursors) {
@@ -237,35 +251,49 @@ fun WebModeScaffold(graph: AppGraph) {
             SnackbarHost(snackbarHostState) { data -> Snackbar(snackbarData = data) }
         },
         bottomBar = {
-            FloatingNavBar(
-                selected = selectedTab,
-                onSelect = { tab ->
-                    // Same three-case dispatch as MainScaffold's TDLib counterpart —
-                    // Home tap behaves differently depending on whether the user is
-                    // inside a channel drill, on the all-feed already, or coming
-                    // from another tab:
-                    //   (a) Home + inside a channel → exit the channel only; do NOT
-                    //       bump homeTapTrigger so the all-feed restores its prior
-                    //       scroll position.
-                    //   (b) Home + already on all-feed → bump homeTapTrigger for the
-                    //       canonical "scroll to top / refresh" gesture.
-                    //   (c) Any non-Home tab → just switch.
-                    val tappingHomeWhileInChannel =
-                        tab == NavTab.Feed && channelStack.isNotEmpty()
-                    val reselectingActiveFeed =
-                        tab == NavTab.Feed && tab == selectedTab && channelStack.isEmpty()
-                    when {
-                        tappingHomeWhileInChannel -> {
-                            channelStack = emptyList()
-                            channelEntryTab = null
-                        }
-                        reselectingActiveFeed -> homeTapTrigger = System.nanoTime()
-                    }
-                    selectedTab = tab
-                },
-            )
+            // Hide nav-bar inside a drill (same rationale as MainScaffold).
+            // Animated through M3E motion so the surrounding content padding
+            // eases instead of snapping when the overlay pushes / pops.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = topEntry == null,
+                enter = androidx.compose.animation.expandVertically(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                ) + androidx.compose.animation.fadeIn(
+                    MaterialTheme.motionScheme.defaultEffectsSpec(),
+                ),
+                exit = androidx.compose.animation.shrinkVertically(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                ) + androidx.compose.animation.fadeOut(
+                    MaterialTheme.motionScheme.defaultEffectsSpec(),
+                ),
+            ) {
+                FloatingNavBar(
+                    selected = selectedTab,
+                    onSelect = { tab ->
+                        val reselectingActiveFeed =
+                            tab == NavTab.Feed && tab == selectedTab
+                        if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
+                        selectedTab = tab
+                    },
+                )
+            }
         },
         floatingActionButton = {
+            // Hide the FAB inside a drill (the overlay owns the surface).
+            // Symmetric M3E fade so it doesn't pop in/out abruptly.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = topEntry == null,
+                enter = androidx.compose.animation.fadeIn(
+                    MaterialTheme.motionScheme.defaultEffectsSpec(),
+                ) + androidx.compose.animation.scaleIn(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                ),
+                exit = androidx.compose.animation.fadeOut(
+                    MaterialTheme.motionScheme.defaultEffectsSpec(),
+                ) + androidx.compose.animation.scaleOut(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                ),
+            ) {
             // Primary "add channel" action. Surfaced on tabs where adding a
             // channel is contextually meaningful — Feed (where the user reads)
             // and Channels (where the list of subscriptions lives). Settings
@@ -301,6 +329,7 @@ fun WebModeScaffold(graph: AppGraph) {
                     text = { Text(stringResource(R.string.web_add_channel)) },
                 )
             }
+            }
         },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
@@ -333,8 +362,8 @@ fun WebModeScaffold(graph: AppGraph) {
                     NavTab.Feed -> {
                         // Overlay pattern (mirror MainScaffold): TimelineScreen is
                         // ALWAYS mounted in the Feed tab; WebChannelScreen renders
-                        // as a slide-in overlay outside this tab branch (search the
-                        // file for `channelStack.lastOrNull()?.let { topUsername ->`).
+                        // as a nav-stack overlay outside this tab branch (the top-2
+                        // entries of [graph.nav.stack] drawn below this Box block).
                         // Keeping the feed mounted preserves scroll position across
                         // channel drills without the SaveableStateProvider serialise/
                         // restore cycle that would otherwise mis-anchor the user
@@ -352,7 +381,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                 topBarBadge = { GuestModeBadge() },
                                 onReportClick = { post ->
                                     val outcome = graph.guestReportDelegator.report(
-                                        channelUsername = post.senderHandle?.removePrefix("@") ?: post.senderName,
+                                        channelUsername = post.senderHandle?.removePrefix("@"),
                                         postId = if (post.id != 0L) post.id else null,
                                     )
                                     if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
@@ -372,7 +401,7 @@ fun WebModeScaffold(graph: AppGraph) {
                         graph = graph,
                         contentPadding = padding,
                         onChannelClick = { username ->
-                            enterWebChannel(username, fromTab = NavTab.Channels)
+                            pushWebChannel(username, fromTab = NavTab.Channels)
                         },
                         onAddChannel = { addSheetOpen = true },
                     )
@@ -385,7 +414,7 @@ fun WebModeScaffold(graph: AppGraph) {
                         onChannelOpen = { /* no-op: guest mode */ },
                         onReportClick = { post ->
                             val outcome = graph.guestReportDelegator.report(
-                                channelUsername = post.senderHandle?.removePrefix("@") ?: post.senderName,
+                                channelUsername = post.senderHandle?.removePrefix("@"),
                                 postId = if (post.id != 0L) post.id else null,
                             )
                             if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
@@ -414,45 +443,47 @@ fun WebModeScaffold(graph: AppGraph) {
                 }
             }
 
-            // Guest-mode channel overlay — slides in over the always-mounted
-            // feed tab. Same rationale as MainScaffold: keeping TimelineScreen
-            // mounted means its scroll position survives drill-ins without
-            // anchor drift from shared `_posts` mutations the user didn't see.
-            val topWebChannel = channelStack.lastOrNull()
-            androidx.compose.animation.AnimatedVisibility(
-                visible = topWebChannel != null,
-                enter = androidx.compose.animation.slideInHorizontally(
-                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                    initialOffsetX = { it },
-                ) + androidx.compose.animation.fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
-                exit = androidx.compose.animation.slideOutHorizontally(
-                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                    targetOffsetX = { it },
-                ) + androidx.compose.animation.fadeOut(MaterialTheme.motionScheme.defaultEffectsSpec()),
-            ) {
-                val username = topWebChannel ?: return@AnimatedVisibility
-                tabStateHolder.SaveableStateProvider(key = "web-channel:$username") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                val p = channelBackProgress.value.coerceIn(0f, 2f)
-                                val signed = when (channelBackEdge) {
-                                    androidx.activity.BackEventCompat.EDGE_RIGHT -> -p
-                                    else -> p
-                                }
-                                translationX = signed * size.width * 0.25f
-                                val s = 1f - p.coerceAtMost(1f) * 0.05f
-                                scaleX = s; scaleY = s
-                                alpha = (1f - p.coerceAtMost(1f) * 0.9f).coerceAtLeast(0f)
-                            },
-                    ) {
-                        WebChannelScreen(
-                            username = username,
-                            graph = graph,
-                            contentPadding = padding,
-                            onBack = { popWebChannel() },
-                        )
+            // Top-2 nav-stack entries rendered as stacked layers above the
+            // always-mounted feed. Single forEach so each entry stays in a
+            // stable composition position — after pop, the entry that was at
+            // index 0 stays at index 0 (now `isTop = true`), preserving its
+            // remember-group identity. Mirror of MainScaffold's overlay logic.
+            val visibleEntries = stack.takeLast(2)
+            val navStateHolder = rememberSaveableStateHolder()
+            visibleEntries.forEachIndexed { idx, entry ->
+                val isTop = idx == visibleEntries.lastIndex
+                if (entry !is NavEntry.WebChannel) return@forEachIndexed
+                key(entry.entryId) {
+                    navStateHolder.SaveableStateProvider(key = entry.entryId) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (isTop) {
+                                        Modifier.graphicsLayer {
+                                            val p = navBackProgress.value.coerceIn(0f, 2f)
+                                            val signed = when (navBackEdge) {
+                                                androidx.activity.BackEventCompat.EDGE_RIGHT -> -p
+                                                else -> p
+                                            }
+                                            translationX = signed * size.width * 0.25f
+                                            val s = 1f - p.coerceAtMost(1f) * 0.05f
+                                            scaleX = s; scaleY = s
+                                            alpha = (1f - p.coerceAtMost(1f) * 0.9f)
+                                                .coerceAtLeast(0f)
+                                        }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                        ) {
+                            WebChannelScreen(
+                                username = entry.username,
+                                graph = graph,
+                                contentPadding = padding,
+                                onBack = ::popNav,
+                            )
+                        }
                     }
                 }
             }

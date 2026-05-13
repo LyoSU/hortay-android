@@ -214,7 +214,10 @@ fun FullScreenMediaViewer(
                                     val successMsg = if (activeItem is AlbumItem.Photo) savedPhotoMsg else savedVideoMsg
                                     val toast = when (res) {
                                         is MediaShareActions.Result.Success -> successMsg
-                                        is MediaShareActions.Result.Failure -> saveFailedMsg.format(res.reason)
+                                        is MediaShareActions.Result.Failure ->
+                                            saveFailedMsg.format(
+                                                actionContext.getString(res.reasonResId, *res.args.toTypedArray()),
+                                            )
                                     }
                                     Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()
                                 }
@@ -238,7 +241,10 @@ fun FullScreenMediaViewer(
                                         }
                                         val toast = when (res) {
                                             is MediaShareActions.Result.Success -> copiedMsg
-                                            is MediaShareActions.Result.Failure -> copyFailedMsg.format(res.reason)
+                                            is MediaShareActions.Result.Failure ->
+                                                copyFailedMsg.format(
+                                                    actionContext.getString(res.reasonResId, *res.args.toTypedArray()),
+                                                )
                                         }
                                         Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()
                                     }

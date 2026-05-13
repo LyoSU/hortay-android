@@ -8,7 +8,6 @@ package dev.lyo.hortay.data.report
 import dev.lyo.hortay.data.StringResolver
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdSender
-import kotlinx.coroutines.CoroutineScope
 import org.drinkless.tdlib.TdApi
 
 /**
@@ -33,7 +32,6 @@ sealed interface ReportState {
         val options: List<TdApi.ReportOption>,
     ) : ReportState
     data class TextRequired(
-        val optionId: ByteArray,
         val isOptional: Boolean,
     ) : ReportState
     data object Success : ReportState
@@ -42,6 +40,19 @@ sealed interface ReportState {
     /** TDLib 420 / 429 FLOOD_WAIT. [retryAfterSeconds] == 0 means "unknown delay". */
     data class FloodWait(val retryAfterSeconds: Int) : ReportState
 }
+
+/**
+ * Repository-internal step type. Carries the server [optionId] alongside the
+ * public-facing [ReportState] so the ViewModel can stash it for the eventual
+ * [ReportRepository.submitText] call without leaking [ByteArray] into the
+ * public [ReportState] graph (where [ByteArray] equality breaks [@Stable]
+ * analysis and StateFlow dedup).
+ */
+data class ReportStep(
+    val state: ReportState,
+    /** Non-null only when [state] is [ReportState.TextRequired]. */
+    val pendingOptionId: ByteArray? = null,
+)
 
 /**
  * Drives the TDLib dynamic ReportChat flow for the authenticated mode.
@@ -64,13 +75,12 @@ class ReportRepository(
     private val td: TdSender,
     private val resolver: StringResolver,
     private val log: ReportLogStore,
-    @Suppress("UnusedPrivateMember") private val scope: CoroutineScope,
 ) {
     /**
      * Begin a report against [chatId] / [messageId].
      * Pass an empty [optionId] and empty [text] per TDLib spec for the initial request.
      */
-    suspend fun start(chatId: Long, messageId: Long?): ReportState =
+    suspend fun start(chatId: Long, messageId: Long?): ReportStep =
         sendReport(chatId, messageId, byteArrayOf(), "")
 
     /** User selected one of the server-provided [TdApi.ReportOption]s. */
@@ -78,7 +88,7 @@ class ReportRepository(
         chatId: Long,
         messageId: Long?,
         option: TdApi.ReportOption,
-    ): ReportState = sendReport(chatId, messageId, option.id, "")
+    ): ReportStep = sendReport(chatId, messageId, option.id, "")
 
     /** User typed text (or tapped Skip when text is optional). */
     suspend fun submitText(
@@ -86,7 +96,7 @@ class ReportRepository(
         messageId: Long?,
         optionId: ByteArray,
         text: String,
-    ): ReportState = sendReport(chatId, messageId, optionId, text)
+    ): ReportStep = sendReport(chatId, messageId, optionId, text)
 
     // -------------------------------------------------------------------------
 
@@ -95,19 +105,15 @@ class ReportRepository(
         messageId: Long?,
         optionId: ByteArray,
         text: String,
-    ): ReportState {
+    ): ReportStep {
         val messageIds = if (messageId != null && messageId != 0L) longArrayOf(messageId)
         else longArrayOf()
         val result = runCatching {
             td.send(TdApi.ReportChat(chatId, optionId, messageIds, text))
         }
         return result.fold(
-            onSuccess = { reportResult ->
-                mapResult(chatId, messageId, reportResult)
-            },
-            onFailure = { e ->
-                mapError(chatId, messageId, e)
-            },
+            onSuccess = { reportResult -> mapResult(chatId, messageId, reportResult) },
+            onFailure = { e -> ReportStep(mapError(chatId, messageId, e)) },
         )
     }
 
@@ -115,62 +121,34 @@ class ReportRepository(
         chatId: Long,
         messageId: Long?,
         result: TdApi.ReportChatResult,
-    ): ReportState = when (result) {
+    ): ReportStep = when (result) {
         is TdApi.ReportChatResultOk -> {
-            log.log(
-                ReportLogEntry(
-                    timestamp = System.currentTimeMillis(),
-                    mode = "auth",
-                    channelUsername = null,
-                    chatId = chatId,
-                    messageId = messageId,
-                    deliveryMethod = "tdlib",
-                    deliveryStatus = "ok",
-                ),
-            )
-            ReportState.Success
+            logTerminal("tdlib", "ok", chatId, messageId)
+            ReportStep(ReportState.Success)
         }
         is TdApi.ReportChatResultOptionRequired ->
-            ReportState.OptionSelection(
-                title = result.title,
-                options = result.options.toList(),
+            ReportStep(
+                ReportState.OptionSelection(
+                    title = result.title,
+                    options = result.options.toList(),
+                ),
             )
         is TdApi.ReportChatResultTextRequired ->
-            ReportState.TextRequired(
-                optionId = result.optionId,
-                isOptional = result.isOptional,
+            ReportStep(
+                state = ReportState.TextRequired(isOptional = result.isOptional),
+                pendingOptionId = result.optionId,
             )
         is TdApi.ReportChatResultMessagesRequired -> {
             // We have no multi-message selection UI yet; surface a generic error
             // so the user at least knows the report was attempted.
             val msg = resolver.getString(dev.lyo.hortay.R.string.error_generic)
-            log.log(
-                ReportLogEntry(
-                    timestamp = System.currentTimeMillis(),
-                    mode = "auth",
-                    channelUsername = null,
-                    chatId = chatId,
-                    messageId = messageId,
-                    deliveryMethod = "tdlib",
-                    deliveryStatus = "delegated",
-                ),
-            )
-            ReportState.Error(msg)
+            logTerminal("tdlib", "delegated", chatId, messageId)
+            ReportStep(ReportState.Error(msg))
         }
         else -> {
             val msg = resolver.getString(dev.lyo.hortay.R.string.error_generic)
-            log.log(
-                ReportLogEntry(
-                    timestamp = System.currentTimeMillis(),
-                    mode = "auth",
-                    channelUsername = null,
-                    chatId = chatId,
-                    messageId = messageId,
-                    deliveryMethod = "tdlib",
-                    deliveryStatus = "failed",
-                ),
-            )
-            ReportState.Error(msg)
+            logTerminal("tdlib", "failed", chatId, messageId)
+            ReportStep(ReportState.Error(msg))
         }
     }
 
@@ -179,37 +157,33 @@ class ReportRepository(
         messageId: Long?,
         e: Throwable,
     ): ReportState {
-        val code = (e as? TdClient.TdException)?.code ?: 0
-        return if (TdClient.isFloodWaitCode(code)) {
-            // Extract "FLOOD_WAIT_N" seconds from the message, e.g. "[420] FLOOD_WAIT_31"
-            val seconds = Regex("\\d+").find(e.message.orEmpty().substringAfter("FLOOD_WAIT"))
-                ?.value?.toIntOrNull() ?: 0
-            log.log(
-                ReportLogEntry(
-                    timestamp = System.currentTimeMillis(),
-                    mode = "auth",
-                    channelUsername = null,
-                    chatId = chatId,
-                    messageId = messageId,
-                    deliveryMethod = "tdlib",
-                    deliveryStatus = "failed",
-                ),
-            )
-            ReportState.FloodWait(seconds)
-        } else {
-            val msg = resolver.getString(dev.lyo.hortay.R.string.error_generic)
-            log.log(
-                ReportLogEntry(
-                    timestamp = System.currentTimeMillis(),
-                    mode = "auth",
-                    channelUsername = null,
-                    chatId = chatId,
-                    messageId = messageId,
-                    deliveryMethod = "tdlib",
-                    deliveryStatus = "failed",
-                ),
-            )
-            ReportState.Error(msg)
+        val tdEx = e as? TdClient.TdException
+        if (tdEx != null && TdClient.isFloodWaitCode(tdEx.code)) {
+            val seconds = TdClient.parseFloodWaitSeconds(tdEx) ?: 0
+            logTerminal("tdlib", "failed", chatId, messageId)
+            return ReportState.FloodWait(seconds)
         }
+        val msg = resolver.getString(dev.lyo.hortay.R.string.error_generic)
+        logTerminal("tdlib", "failed", chatId, messageId)
+        return ReportState.Error(msg)
+    }
+
+    private suspend fun logTerminal(
+        method: String,
+        status: String,
+        chatId: Long,
+        messageId: Long?,
+    ) {
+        log.log(
+            ReportLogEntry(
+                timestamp = System.currentTimeMillis(),
+                mode = "auth",
+                channelUsername = null,
+                chatId = chatId,
+                messageId = messageId,
+                deliveryMethod = method,
+                deliveryStatus = status,
+            ),
+        )
     }
 }

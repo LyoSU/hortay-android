@@ -140,7 +140,11 @@ fun AddChannelSheet(
                     ),
                 )
                 is LookupResult.NetworkError -> LookupState.Error(
-                    ctx.getString(R.string.web_add_network_error, r.cause.message ?: ""),
+                    if (r.cause is dev.lyo.hortay.data.web.LookupTimeoutException) {
+                        ctx.getString(R.string.web_lookup_timed_out)
+                    } else {
+                        ctx.getString(R.string.web_add_network_error, r.cause.message ?: "")
+                    },
                 )
             }
         }

@@ -1,6 +1,5 @@
 package dev.lyo.hortay.ui.timeline
 
-import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.lyo.hortay.data.BookmarkStore

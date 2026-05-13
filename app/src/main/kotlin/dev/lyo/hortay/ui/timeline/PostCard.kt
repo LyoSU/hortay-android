@@ -436,7 +436,7 @@ private fun VerificationBadge(verification: SenderVerification) {
     when (verification) {
         SenderVerification.Verified -> Symbol(
             name = "verified",
-            contentDescription = "Verified",
+            contentDescription = stringResource(R.string.cd_verified_badge),
             tint = MaterialTheme.colorScheme.primary,
             size = 16.dp,
         )

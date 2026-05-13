@@ -109,6 +109,7 @@ fun ReportFlowSheet(
 
     if (showExplainer) {
         ReportAboutDialog(
+            onDismiss = { onDismiss(false) },
             onConfirm = {
                 scope.launch { runCatching { explainerStore.markShown() } }
                 explainerDismissed = true

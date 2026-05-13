@@ -1,0 +1,172 @@
+@file:OptIn(kotlinx.coroutines.FlowPreview::class)
+
+package dev.lyo.hortay.ui.timeline
+
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import dev.lyo.hortay.data.StartupCoordinator
+import dev.lyo.hortay.data.TimelinePost
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+
+/**
+ * Resolves a deferred "scroll to (chatId, messageId)" request once the target row
+ * appears in [displayedItems]. On miss, runs [loadHistoryAround] once and either
+ * lands on the next snapshot tick or invokes [onMissed].
+ *
+ * @param displayedItems Current LazyColumn data source; read through
+ *   [rememberUpdatedState] internally so a long-running snapshotFlow sees fresh values
+ *   without restarting on every list mutation.
+ * @param pendingTarget (chatId, messageId) to scroll to, or null when idle. Effect
+ *   keys on this — replacement target restarts the search.
+ * @param loadHistoryAround TDLib `GetChatHistory(from = anchor, offset = -limit/2)`
+ *   wrapper; returns false when the chat is inaccessible / window came back empty.
+ * @param onLanded Called once with the resolved row index when the target appears.
+ *   Caller is responsible for the actual scroll, highlight, and clearing
+ *   [pendingTarget].
+ * @param onMissed Called once when [loadHistoryAround] returns false. Caller
+ *   surfaces a "message not available" message and clears [pendingTarget].
+ */
+@Composable
+fun rememberPendingScrollToMessage(
+    displayedItems: List<FeedItem>,
+    pendingTarget: Pair<Long, Long>?,
+    loadHistoryAround: suspend (chatId: Long, messageId: Long) -> Boolean,
+    onLanded: suspend (chatId: Long, messageId: Long, index: Int) -> Unit,
+    onMissed: () -> Unit,
+) {
+    val itemsState = rememberUpdatedState(displayedItems)
+    LaunchedEffect(pendingTarget) {
+        val (chatId, messageId) = pendingTarget ?: return@LaunchedEffect
+        var requestedAroundLoad = false
+        snapshotFlow { itemsState.value }
+            .collect { items ->
+                val idx = items.indexOfFirst { item ->
+                    item.posts().any { p ->
+                        p.chatId == chatId && (p.id == messageId || messageId in p.albumMessageIds)
+                    }
+                }
+                if (idx >= 0) {
+                    onLanded(chatId, messageId, idx)
+                    return@collect
+                }
+                if (!requestedAroundLoad) {
+                    requestedAroundLoad = true
+                    val landed = loadHistoryAround(chatId, messageId)
+                    if (!landed) {
+                        onMissed()
+                        return@collect
+                    }
+                }
+            }
+    }
+}
+
+/**
+ * Viewport-stable read-ack dwell. Waits [dwellMs] of viewport stability, then
+ * dispatches [markAsRead] for the visible posts that haven't already been acked.
+ *
+ * @param listState Drives the viewport snapshotFlow.
+ * @param displayedItems Current LazyColumn data source; read through
+ *   [rememberUpdatedState] so the collector picks up fresh feed mutations without
+ *   restarting.
+ * @param ackKey Reset key for the dedup set — pass `markAsRead` for the merged
+ *   feed (resets the set when the mode-specific wrapper changes), pass `chatId`
+ *   for a single-channel surface.
+ * @param markAsRead Suspend dispatcher for `viewMessages(forceRead = true)`.
+ *   Null disables the effect (e.g. guest mode without TDLib).
+ * @param scope Caller's [CoroutineScope]; the suspending [markAsRead] is detached
+ *   into it so a viewport change a frame later doesn't cancel an in-flight ack.
+ * @param dwellMs Stability threshold; matches `READ_DWELL_MS` / `CHANNEL_READ_DWELL_MS`.
+ * @return The same dedup set the effect populates, so callers can extend it from
+ *   explicit-tap acks ("open this post") that should suppress the next dwell pass
+ *   for that post.
+ */
+@Composable
+fun rememberReadAckDwell(
+    listState: LazyListState,
+    displayedItems: List<FeedItem>,
+    ackKey: Any?,
+    markAsRead: (suspend (List<TimelinePost>) -> Unit)?,
+    scope: CoroutineScope,
+    dwellMs: Long = 1000L,
+): MutableSet<Pair<Long, Long>> {
+    val ackedRead = remember(ackKey) { HashSet<Pair<Long, Long>>() }
+    val itemsState = rememberUpdatedState(displayedItems)
+    if (markAsRead != null) {
+        LaunchedEffect(listState, ackKey) {
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+                .distinctUntilChanged()
+                .collectLatest { indices ->
+                    if (indices.isEmpty()) return@collectLatest
+                    delay(dwellMs)
+                    val snapshot = itemsState.value
+                    if (snapshot.isEmpty()) return@collectLatest
+                    val visible = indices.flatMap { idx -> snapshot.getOrNull(idx)?.posts().orEmpty() }
+                    val fresh = visible.filter { (it.chatId to it.id) !in ackedRead }
+                    if (fresh.isEmpty()) return@collectLatest
+                    fresh.forEach { ackedRead.add(it.chatId to it.id) }
+                    scope.launch { markAsRead(fresh) }
+                }
+        }
+    }
+    return ackedRead
+}
+
+/**
+ * Warms the comments-thread cache for the top-N viewport-stable posts. Skips
+ * silently while [startupPhase] is `Booting` so the cold-start RPC budget stays
+ * reserved for TDLib's own initial sync.
+ *
+ * @param listState Drives the viewport snapshotFlow.
+ * @param displayedItems Current LazyColumn data source; read through
+ *   [rememberUpdatedState] so layoutInfo indices always pair against the latest
+ *   rendered list.
+ * @param startupPhase Process-wide cold-start gate; null = unguarded (guest mode).
+ * @param prefetchThread Per-post prefetch dispatcher (typically
+ *   `commentsRepo.prefetchThread`). Receives (chatId, candidateMessageIds).
+ * @param debounceMs Viewport-stable debounce; matches `1200L` in both screens.
+ * @param maxConcurrent Cap on prefetches per stable window; matches the
+ *   `COMMENTS_PREFETCH_LIMIT` (1) used in both screens by default.
+ */
+@Composable
+fun rememberCommentsPrefetch(
+    listState: LazyListState,
+    displayedItems: List<FeedItem>,
+    startupPhase: StateFlow<StartupCoordinator.Phase>?,
+    prefetchThread: suspend (chatId: Long, candidateMessageIds: List<Long>) -> Unit,
+    debounceMs: Long = 1200L,
+    maxConcurrent: Int = 1,
+) {
+    val itemsState = rememberUpdatedState(displayedItems)
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+            .distinctUntilChanged()
+            .debounce(debounceMs)
+            .collect { indices ->
+                if (startupPhase?.value == StartupCoordinator.Phase.Booting) {
+                    return@collect
+                }
+                val snapshot = itemsState.value
+                snapshot.let {
+                    indices.flatMap { idx -> snapshot.getOrNull(idx)?.posts().orEmpty() }
+                        .asSequence()
+                        .filter { (it.commentCount ?: 0) > 0 }
+                        .take(maxConcurrent)
+                        .forEach { post ->
+                            val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
+                            prefetchThread(post.chatId, ids)
+                        }
+                }
+            }
+    }
+}

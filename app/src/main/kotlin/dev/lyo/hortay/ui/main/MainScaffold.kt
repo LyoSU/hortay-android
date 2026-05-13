@@ -7,9 +7,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -27,7 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.IntOffset
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import kotlin.coroutines.cancellation.CancellationException
 import android.util.Log
 import dev.lyo.hortay.AppGraph
@@ -35,10 +36,12 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ChatInvitePreview
 import dev.lyo.hortay.data.DeepLink
 import dev.lyo.hortay.data.InviteLinkKind
+import dev.lyo.hortay.data.NavEntry
 import dev.lyo.hortay.data.PublicHandleKind
 import dev.lyo.hortay.data.PublicHandleResult
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.UserMessageBus
+import dev.lyo.hortay.data.report.ReportTarget
 import dev.lyo.hortay.ui.channels.ChannelsScreen
 import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.settings.SettingsScreen
@@ -47,9 +50,6 @@ import dev.lyo.hortay.ui.text.ChatInvitePreviewDialog
 import dev.lyo.hortay.ui.timeline.ChannelScreen
 import dev.lyo.hortay.ui.timeline.LocalReadCursors
 import dev.lyo.hortay.ui.timeline.TimelineScreen
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -68,6 +68,36 @@ private const val EXIT_PROGRESS = 2f
  * internal form.
  */
 private const val SERVER_TO_TD_SHIFT = 20
+
+/**
+ * Per-[NavEntry] [ViewModelStoreOwner] with deterministic cleanup. The host
+ * creates an isolated [ViewModelStore] keyed on [entry]'s stable UUID and
+ * clears it when the entry leaves composition (i.e. when the user pops the
+ * stack past it).
+ *
+ * Why custom and not [androidx.lifecycle.viewmodel.compose.viewModel] keyed
+ * on a chatId string: that helper caches into the surrounding Activity-scoped
+ * [ViewModelStore], so the cached ViewModel never gets cleared until the
+ * Activity dies. Repeatedly drilling into channels accumulated one VM per
+ * unique chatId for the whole session — a real (if slow) heap leak. This host
+ * is the canonical Google-recommended workaround (and the same pattern that
+ * AndroidX Navigation uses internally): a [ViewModelStoreOwner] scoped to the
+ * navigation entry, [DisposableEffect]-cleared on exit.
+ */
+@Composable
+private fun NavEntryHost(entry: NavEntry, content: @Composable () -> Unit) {
+    val owner = remember(entry.entryId) {
+        object : ViewModelStoreOwner {
+            override val viewModelStore: ViewModelStore = ViewModelStore()
+        }
+    }
+    DisposableEffect(entry.entryId) {
+        onDispose { owner.viewModelStore.clear() }
+    }
+    CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
+        content()
+    }
+}
 
 /**
  * Top-level container that owns nav-tab state, the global channel filter and the comments
@@ -92,98 +122,59 @@ fun MainScaffold(graph: AppGraph) {
     // recoveries within a session preserve in-screen state — only the top-level
     // route resets.
     //
-    // channelStack is the full history of channel-filter entries since the user
-    // last drilled in from a top-level tab. The last element is the currently
-    // visible channel filter; an empty stack means "all-feed / no filter".
-    // channelStackEntryTab records which top-level tab initiated the drill — popping
-    // back to an empty stack restores that tab so the user lands where they started.
-    // Pop-to-existing dedup (see enterChannel): if the user taps a link to a channel
-    // already in the stack we truncate to that depth instead of pushing a duplicate.
+    // Unified polymorphic nav-stack on [AppGraph.nav]. Each push is a new layer
+    // (no dedup on repeated chatIds) — permits unlimited nesting in the
+    // Telegram-Android pattern: channel → comments → channel → comments → …
+    //
+    // Replaces the three previously-disjoint nav states that lived here:
+    //   1. `channelStack: List<Long>`        — channel-drill overlay
+    //   2. `commentsForPost` + `pendingCommentsKey` — comments overlay
+    //   3. `pendingScrollTarget`             — deep-link scroll target
+    //
+    // Top entry receives back gestures + predictive back. Each entry has its
+    // own stable [NavEntry.entryId] (UUID), used as the key for the per-entry
+    // [SaveableStateProvider] and `viewModel(key)` so each push is an isolated
+    // screen instance with its own scroll position and ViewModel — pushing the
+    // same channel twice produces two independent screens. This is also the
+    // fix for the per-chatId ViewModelStore leak that previously accumulated
+    // VMs across the Activity lifetime.
+    //
+    // Single owner of the "are we currently overlaying something" answer.
+    // Tab-reset back-handler / Home-tap re-route both gate on `stack.isEmpty()`.
     var selectedTab by remember { mutableStateOf(NavTab.Feed) }
-    var channelStack by remember { mutableStateOf<List<Long>>(emptyList()) }
-    var channelStackEntryTab by remember { mutableStateOf<NavTab?>(null) }
-    val channelFilter = channelStack.lastOrNull()
+    var preDrillTab by remember { mutableStateOf<NavTab?>(null) }
+    val stack by graph.nav.stack.collectAsStateWithLifecycle()
+    val topEntry = stack.lastOrNull()
 
-    // Two-state pair for the comments overlay so it survives a process kill:
-    //   • pendingCommentsKey — (chatId, post.id), saveable across process death
-    //     because TimelinePost itself is not Parcelable (deep @Immutable graph
-    //     including PersistentList/ByteArray fields → big Parcelize blast
-    //     radius and ongoing schema-stability cost). The pair is.
-    //   • commentsForPost — transient TimelinePost?, derived. Setters update
-    //     both in lockstep via [openComments] / clearing both via the back
-    //     stack. After process restoration, the LaunchedEffect below
-    //     re-resolves the post from the live feed once it loads — small
-    //     latency price, but the overlay reappears on the same post the
-    //     user was reading instead of vanishing.
-    var pendingCommentsKey by rememberSaveable { mutableStateOf<Pair<Long, Long>?>(null) }
-    var commentsForPost by remember { mutableStateOf<TimelinePost?>(null) }
-    val openComments: (TimelinePost?) -> Unit = { post ->
-        commentsForPost = post
-        pendingCommentsKey = post?.let { it.chatId to it.id }
-    }
-
-    // Channel back-stack navigation helpers, defined after [openComments] so
-    // enterChannel can call openComments(null) when drilling clears any open thread.
-    //
-    // enterChannel: push chatId onto the stack (or truncate to an existing depth).
-    //   Pop-to-existing dedup prevents stack bloat on tg:// cycles where a link
-    //   brings the user back to a channel they were already viewing.
-    //
-    // popChannel: pop one level. On empty stack, restore the tab the user was on
-    //   when they first drilled in (channelStackEntryTab), then reset that record.
-    //
-    // clearChannelStack: used when the user re-taps Home — go back to the
-    //   all-feed state on the Feed tab, discarding the entire drill history.
-    fun enterChannel(chatId: Long, fromTab: NavTab) {
-        if (channelStack.isEmpty()) channelStackEntryTab = fromTab
-        val existingIdx = channelStack.indexOf(chatId)
-        channelStack = if (existingIdx >= 0) {
-            channelStack.subList(0, existingIdx + 1).toList()
-        } else {
-            channelStack + chatId
-        }
+    // Nav helpers that route through [AppGraph.nav]. `pushChannel` and
+    // `pushComments` accept a "fromTab" only on the FIRST push (when the
+    // stack is empty) so back to the empty stack restores the tab the user
+    // was on when they first drilled in. Subsequent pushes within a drill
+    // session inherit the same entry tab.
+    fun pushChannel(chatId: Long, scrollTo: Long? = null, fromTab: NavTab = NavTab.Feed) {
+        if (stack.isEmpty()) preDrillTab = fromTab
+        graph.nav.push(NavEntry.Channel(chatId = chatId, scrollToMessageId = scrollTo))
         selectedTab = NavTab.Feed
-        openComments(null)
     }
 
-    fun popChannel() {
-        if (channelStack.isEmpty()) return
-        channelStack = channelStack.dropLast(1)
-        if (channelStack.isEmpty()) {
-            selectedTab = channelStackEntryTab ?: NavTab.Feed
-            channelStackEntryTab = null
+    fun pushComments(post: TimelinePost, fromTab: NavTab = NavTab.Feed) {
+        if (stack.isEmpty()) preDrillTab = fromTab
+        graph.nav.push(NavEntry.Comments(anchor = post))
+        selectedTab = NavTab.Feed
+    }
+
+    fun popNav() {
+        graph.nav.pop() ?: return
+        if (graph.nav.stack.value.isEmpty()) {
+            selectedTab = preDrillTab ?: NavTab.Feed
+            preDrillTab = null
         }
     }
 
-    fun clearChannelStack() {
-        channelStack = emptyList()
-        channelStackEntryTab = null
+    fun clearNav() {
+        graph.nav.clear()
+        preDrillTab = null
     }
-
-    // Restoration: after process kill, commentsForPost is null but pendingCommentsKey
-    // survives. Watch the live feed and re-derive the post once it loads — match
-    // either by anchor id or by any album member id (the user could have been
-    // reading the album-anchor's comments before the kill, and on restore the
-    // anchor id may have shuffled — see PostFilterStrategy album-id stability).
-    LaunchedEffect(pendingCommentsKey) {
-        val key = pendingCommentsKey ?: return@LaunchedEffect
-        if (commentsForPost?.let { it.chatId to it.id } == key) return@LaunchedEffect
-        val match = graph.postsRepository.posts
-            .map { posts ->
-                posts.firstOrNull { post ->
-                    post.chatId == key.first &&
-                        (post.id == key.second || key.second in post.albumMessageIds)
-                }
-            }
-            .filterNotNull()
-            .first()
-        commentsForPost = match
-    }
-    // One-shot scroll-to-message request (deep link arrived with a post id, or any
-    // future caller that needs TimelineScreen to land on a specific row). The pair is
-    // (chatId, TDLib-shifted messageId). TimelineScreen consumes via [onScrollHandled]
-    // so the request fires exactly once even if MainScaffold recomposes.
-    var pendingScrollTarget by remember { mutableStateOf<Pair<Long, Long>?>(null) }
     // Pending invite-link confirmation. Stored on the graph rather than in a local
     // [rememberSaveable] because TDLib's `CheckChatInviteLink` is suspending and runs
     // on the app scope — a rotation between the user tapping the link and the
@@ -240,7 +231,7 @@ fun MainScaffold(graph: AppGraph) {
                 // time we test `targetChat != null` it is in fact always set in the
                 // taken path. Compiler tracks this via DFA but we keep the explicit
                 // null-check for readability — it documents "this is the only path
-                // that flips channelFilter".
+                // that pushes a Channel entry onto the nav stack".
                 val targetChat: Long
                 val tdMessageId: Long?
                 when (link) {
@@ -268,9 +259,9 @@ fun MainScaffold(graph: AppGraph) {
                         // Same kind-gate as Message — `t.me/c/<rawId>/...` *should* point
                         // at a channel but TDLib can have the chat cached as a private
                         // supergroup-chat (the user is in the group but it's not a
-                        // broadcast channel). Without the gate, channelFilter flips to a
-                        // chatId that loadChannelHistory short-circuits on, leaving an
-                        // empty skeleton with no error path.
+                        // broadcast channel). Without the gate we would push a chatId
+                        // onto the nav stack that loadChannelHistory short-circuits on,
+                        // leaving an empty skeleton with no error path.
                         when (val resolved = graph.postsRepository.resolveChatKind(link.chatId)) {
                             is PublicHandleResult.Channel -> {
                                 targetChat = resolved.chatId
@@ -294,7 +285,7 @@ fun MainScaffold(graph: AppGraph) {
                         // Same kind-gate. `GetMessageLinkInfo` happily returned a
                         // (chatId, message) pair, but the chat could be a basic group
                         // or 1:1 DM the user is in — neither has a feed surface in
-                        // Hortay. Without the gate, channelFilter would land on a chat
+                        // Hortay. Without the gate, the nav stack would land on a chat
                         // whose loadChannelHistory returns false, freezing the user.
                         when (val resolved = graph.postsRepository.resolveChatKind(link.chatId)) {
                             is PublicHandleResult.Channel -> {
@@ -352,7 +343,7 @@ fun MainScaffold(graph: AppGraph) {
                                 // Already a member — drill into the channel via the back-stack
                                 // so Back returns the user to where they came from rather than
                                 // clearing the filter to all-feed.
-                                enterChannel(preview.chatId, fromTab = NavTab.Feed)
+                                pushChannel(preview.chatId, fromTab = NavTab.Feed)
                             }
                             preview.kind == InviteLinkKind.Channel -> {
                                 graph.linkDialogs.showInvitePreview(preview)
@@ -368,15 +359,14 @@ fun MainScaffold(graph: AppGraph) {
                         return@collect
                     }
                 }
-                // Deep-link to a specific channel: push onto the back-stack so Back
+                // Deep-link to a specific channel: push onto the nav-stack so Back
                 // returns the user to where they were before the tap, rather than
                 // always resetting to the all-feed view. fromTab = Feed is the
-                // canonical entry point for external links — the user was not inside
-                // a named tab when the link arrived.
-                enterChannel(targetChat, fromTab = NavTab.Feed)
-                if (tdMessageId != null) {
-                    pendingScrollTarget = targetChat to tdMessageId
-                }
+                // canonical entry point for external links — the user was not
+                // inside a named tab when the link arrived. The optional message
+                // anchor is baked into the same entry (NavEntry.Channel.scrollToMessageId)
+                // so the channel screen lands on the linked post on first frame.
+                pushChannel(targetChat, scrollTo = tdMessageId, fromTab = NavTab.Feed)
             } catch (t: Throwable) {
                 if (t is kotlin.coroutines.cancellation.CancellationException) throw t
                 Log.w("MainScaffold", "deep-link dispatch failed for $link", t)
@@ -384,85 +374,81 @@ fun MainScaffold(graph: AppGraph) {
         }
     }
 
-    // Pending report: (chatId, messageId). Set when the user taps Report in the
-    // post action sheet; cleared on sheet dismiss (or after ReportState.Success).
-    // Not saveable across process death — a mid-flow report kill is acceptable
-    // abandonment; the delegate try-chain in guest mode is stateless anyway.
-    // Per-open report target. The `token` is a monotonic timestamp that lets
-    // ReportFlowSheet's `viewModel(key = ...)` create a FRESH ViewModel instance
-    // each time the user taps Report — otherwise the Activity-scoped ViewModelStore
-    // caches the prior session's terminal state (Success / Error / FloodWait), and
-    // reopening the sheet on the same (chatId, messageId) auto-dismisses or shows
-    // stale errors. New tap → new nanoTime → distinct key → clean state machine.
-    data class ReportTarget(val chatId: Long, val messageId: Long?, val token: Long)
-    var pendingReport by remember { mutableStateOf<ReportTarget?>(null) }
+    // Pending report: (chatId, messageId, token). Hoisted off local state onto
+    // [AppGraph.reportDialogs] so a rotation mid-flow doesn't drop the sheet on
+    // the floor — `ReportFlowViewModel` keeps partial answers across TDLib
+    // roundtrips, and a re-created composition starting with null target would
+    // erase the user's progress visibly. See [dev.lyo.hortay.data.report.ReportDialogState]
+    // for the lifetime contract (rotation-safe, logout-cleared, NOT process-death-safe).
+    val pendingReport by graph.reportDialogs.target.collectAsStateWithLifecycle()
     fun openReport(chatId: Long, messageId: Long?) {
-        pendingReport = ReportTarget(chatId, messageId, System.nanoTime())
+        graph.reportDialogs.open(ReportTarget(chatId, messageId, System.nanoTime()))
     }
 
-    // Predictive back for the comments overlay. We track live gesture progress so
-    // CommentsScreen can translate / scale / fade under the user's finger instead of
-    // just snapping closed on release. The edge (LEFT vs RIGHT) is forwarded because
-    // users can bind back to either side of the screen — a hard-coded translateX
-    // direction would invert the motion on right-handed setups.
-    val commentsBackProgress = remember { Animatable(0f) }
-    var commentsBackEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
-    PredictiveBackHandler(enabled = commentsForPost != null) { progress ->
+    // Single predictive-back handler for the top nav-entry. Translates,
+    // scales, fades the visible top layer under the user's finger; edge
+    // (LEFT vs RIGHT) is forwarded because users can bind back to either
+    // edge — a hard-coded translateX direction would invert the motion on
+    // right-handed setups. Motion springs captured here in @Composable scope
+    // (`progress.collect` is a plain coroutine; `MaterialTheme` reads require
+    // composable context) — same M3E `fastEffectsSpec` the tab AnimatedContent
+    // rides, so the predictive-back commit / rewind shares physics with the
+    // rest of the chrome instead of riding a one-off duration-tween.
+    //
+    // Replaces the previous TWO handlers (comments + channel separately).
+    // With a single polymorphic stack, the top entry — whichever variant —
+    // is what back gestures act on; the layer underneath (next-top) animates
+    // in naturally via the overlay AnimatedContent below.
+    val backCommitSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val backRewindSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val navBackProgress = remember { Animatable(0f) }
+    var navBackEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
+    PredictiveBackHandler(enabled = topEntry != null) { progress ->
         try {
             progress.collect { event ->
-                commentsBackEdge = event.swipeEdge
-                commentsBackProgress.snapTo(event.progress)
+                navBackEdge = event.swipeEdge
+                // System emits at pointer-move rate (60–120 Hz). Epsilon-skip
+                // sub-pixel deltas so we don't pay an Animatable snapshot write
+                // (and the resulting graphicsLayer re-evaluation in the top
+                // entry's content) for invisible motion. 0.005f ≈ half a pixel
+                // on a 1080px-wide screen at translation 0.1 — below perceptual
+                // threshold.
+                val next = event.progress
+                if (kotlin.math.abs(next - navBackProgress.value) >= 0.005f) {
+                    navBackProgress.snapTo(next)
+                }
             }
-            // Commit: extend progress past the peek state (1f) to a full exit (2f) so
-            // CommentsScreen continues translating off-screen and fading to zero alpha
-            // before we drop it from composition. Without this leg the overlay would
-            // freeze at peek (~70% visible) for the duration of the commit animation
-            // and then snap away — janky on a flagship-class device.
-            // FastOutLinearInEasing accelerates outwards, the canonical M3 exit curve.
-            commentsBackProgress.animateTo(EXIT_PROGRESS, tween(220, easing = FastOutLinearInEasing))
-            openComments(null)
-            commentsBackProgress.snapTo(0f)
+            // Commit: extend past peek (1f) to full exit (2f) so the top
+            // layer continues translating off-screen and fades to zero alpha
+            // before we drop it from composition. Without this leg the
+            // overlay would freeze at peek (~70% visible) for the duration
+            // of the commit animation and then snap away — janky on flagship.
+            navBackProgress.animateTo(EXIT_PROGRESS, backCommitSpec)
+            popNav()
+            navBackProgress.snapTo(0f)
         } catch (_: CancellationException) {
-            // User released before the threshold — rewind smoothly.
-            commentsBackProgress.animateTo(0f, tween(160, easing = FastOutSlowInEasing))
-        }
-    }
-    // Predictive back for the channel overlay. Mirror of [commentsBackProgress]
-    // but a level lower in z-order (comments stacks ABOVE channel). Same
-    // EXIT_PROGRESS curve so the gesture-feel is consistent across overlays.
-    // PredictiveBackHandler degrades to a regular back on pre-Android-13
-    // devices, so this is the right primitive on every supported API.
-    val channelBackProgress = remember { Animatable(0f) }
-    var channelBackEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
-    PredictiveBackHandler(enabled = commentsForPost == null && channelStack.isNotEmpty()) { progress ->
-        try {
-            progress.collect { event ->
-                channelBackEdge = event.swipeEdge
-                channelBackProgress.snapTo(event.progress)
-            }
-            channelBackProgress.animateTo(EXIT_PROGRESS, tween(220, easing = FastOutLinearInEasing))
-            popChannel()
-            channelBackProgress.snapTo(0f)
-        } catch (_: CancellationException) {
-            channelBackProgress.animateTo(0f, tween(160, easing = FastOutSlowInEasing))
+            navBackProgress.animateTo(0f, backRewindSpec)
         }
     }
     // Stack empty + not on Feed: return to Feed tab. Plain BackHandler — no
     // overlay to animate at this point.
-    BackHandler(enabled = commentsForPost == null && channelStack.isEmpty() && selectedTab != NavTab.Feed) {
+    BackHandler(enabled = topEntry == null && selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
     }
 
     // SaveableStateHolders must live in MainScaffold's @Composable body, NOT inside
     // the Scaffold content lambda. The Scaffold body owns the tab AnimatedContent;
-    // the commentsForPost overlay sits OUTSIDE that lambda (above the tab chrome and
-    // FloatingNavBar — see the let-block below the Scaffold). Declaring the holder
-    // inside the Scaffold lambda would put it out of scope for the overlay's
-    // SaveableStateProvider call. One declaration at this level lets both call-sites
-    // capture the same reference. Both holders are `remember`-backed under the hood,
-    // so they survive recomposition and configuration changes.
+    // the nav-overlay sits OUTSIDE that lambda (above the tab chrome and
+    // FloatingNavBar). Declaring the holder inside the Scaffold lambda would put it
+    // out of scope for the overlay's SaveableStateProvider call. One declaration at
+    // this level lets both call-sites capture the same reference.
+    //
+    // [navStateHolder] keys per-NavEntry by its stable UUID `entryId`. Each push
+    // — channel or comments — gets its own SaveableStateProvider scope, so
+    // pushing the same channel twice (legitimate in unlimited-nesting flows)
+    // produces two independent screens with their own scroll positions.
     val tabStateHolder = rememberSaveableStateHolder()
-    val commentsStateHolder = rememberSaveableStateHolder()
+    val navStateHolder = rememberSaveableStateHolder()
 
     // Wrap the entire content tree with the in-app UriHandler. Every descendant call
     // — LinkAnnotation.Url taps in post bodies, WebPreviewCard opens, AddChannelSheet
@@ -481,11 +467,36 @@ fun MainScaffold(graph: AppGraph) {
     // mode groups the dwell-batch by chatId and bridges to viewMessages(forceRead=true)
     // — the canonical TDLib path that advances `lastReadInboxMessageId` server-side
     // and surfaces the read through to the official Telegram client.
-    val tdlibMarkAsRead: suspend (List<TimelinePost>) -> Unit = { batch ->
-        batch.groupBy { it.chatId }.forEach { (chatId, group) ->
-            graph.postsRepository.viewMessages(chatId, group.map { it.id })
+    //
+    // `remember`-wrapped on the stable AppGraph identity so the lambda referenced
+    // by `markAsRead` keeps the same instance across MainScaffold recompositions.
+    // Without this, every recomposition allocates a fresh closure, breaking
+    // skippability of TimelineScreen's `interactions = remember(...)` and
+    // `ackedRead = remember(markAsRead)` blocks — which would trigger redundant
+    // `viewMessages` RPCs on every dwell-batch evaluation.
+    val tdlibMarkAsRead: suspend (List<TimelinePost>) -> Unit = remember(graph) {
+        { batch ->
+            batch.groupBy { it.chatId }.forEach { (chatId, group) ->
+                graph.postsRepository.viewMessages(chatId, group.map { it.id })
+            }
         }
     }
+    // Same stability concern as [tdlibMarkAsRead]: TimelineScreen / ChannelScreen
+    // hold `onReportClick` and `canReport` as parameters that feed into
+    // `interactions = remember(...)`. Fresh lambdas per recomposition would invalidate
+    // that remember block and propagate unstable callbacks down to PostCard.
+    val onPostReportClick = remember(graph) {
+        { post: TimelinePost ->
+            graph.reportDialogs.open(
+                ReportTarget(
+                    post.chatId,
+                    if (post.id != 0L) post.id else null,
+                    System.nanoTime(),
+                ),
+            )
+        }
+    }
+    val canReportPost = remember { { post: TimelinePost -> post.canReportChat } }
     LinkAwareScaffold(graph) {
     CompositionLocalProvider(LocalReadCursors provides readCursors) {
     Scaffold(
@@ -496,37 +507,46 @@ fun MainScaffold(graph: AppGraph) {
             }
         },
         bottomBar = {
+            // Hide the nav-bar while a nav-overlay is visible (Telegram /
+            // Twitter / Instagram all do this for drilled-in screens — the
+            // overlay owns the bottom edge so the last row of content isn't
+            // occluded). Animated through M3E motion springs:
+            // height-shrinks + fades so the surrounding Scaffold content
+            // padding eases instead of snapping.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = topEntry == null,
+                enter = androidx.compose.animation.expandVertically(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                ) + androidx.compose.animation.fadeIn(
+                    MaterialTheme.motionScheme.defaultEffectsSpec(),
+                ),
+                exit = androidx.compose.animation.shrinkVertically(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                ) + androidx.compose.animation.fadeOut(
+                    MaterialTheme.motionScheme.defaultEffectsSpec(),
+                ),
+            ) {
             FloatingNavBar(
                 selected = selectedTab,
                 onSelect = { tab ->
                     // Three distinct cases when the user taps the Home pill while
                     // selectedTab is already Feed. Telegram-Android / Twitter / X all
                     // settle on the same rule, surfaced explicitly here:
-                    //
-                    //  (a) User is drilled into a channel (channelStack non-empty).
-                    //      Tap Home = "exit this channel back to the all-feed", do
-                    //      NOT scroll the feed to the top — preserve where they were
-                    //      before drilling in. Clear the stack; no homeTapTrigger bump.
-                    //
-                    //  (b) User is on the all-feed (channelStack empty) AND re-tapping
-                    //      the active Home tab. This is the canonical "tap home twice"
-                    //      gesture: bump homeTapTrigger so TimelineScreen scrolls to
-                    //      top (or refreshes if already there).
-                    //
-                    //  (c) User is on a different tab (Channels / Saved / Profile) and
-                    //      taps Home. Just switch tabs — no scroll-to-top, no stack
-                    //      change (it's already empty by definition).
-                    val tappingHomeWhileInChannel =
-                        tab == NavTab.Feed && channelStack.isNotEmpty()
+                    //  (a) User on Feed AND re-tapping the active Home tab.
+                    //      Canonical "tap home twice" gesture: bump homeTapTrigger
+                    //      so TimelineScreen scrolls to top (or refreshes if already
+                    //      there).
+                    //  (b) User on a different tab. Just switch tabs.
+                    // (Home-tap-while-drilled is unreachable here because the
+                    // nav-bar is hidden in that state — see the early return
+                    // above.)
                     val reselectingActiveFeed =
-                        tab == NavTab.Feed && tab == selectedTab && channelStack.isEmpty()
-                    when {
-                        tappingHomeWhileInChannel -> clearChannelStack()
-                        reselectingActiveFeed -> homeTapTrigger = System.nanoTime()
-                    }
+                        tab == NavTab.Feed && tab == selectedTab
+                    if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
                     selectedTab = tab
                 },
             )
+            }
         },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
@@ -559,10 +579,10 @@ fun MainScaffold(graph: AppGraph) {
             when (tab) {
                 NavTab.Feed -> {
                     // Telegram-Android / Twitter / Instagram pattern: list screen
-                    // stays mounted, detail screen slides in as an overlay rendered
-                    // OUTSIDE this tab branch (search the file for
-                    // `channelStack.lastOrNull()?.let { topChannelId ->`). Keeping
-                    // TimelineScreen mounted across channel drills means:
+                    // stays mounted, detail screens render as nav-stack overlays
+                    // OUTSIDE this tab branch (the top-2 entries of [graph.nav.stack],
+                    // drawn just below the ConnectionBanner). Keeping TimelineScreen
+                    // mounted across channel drills means:
                     //   - Scroll position is owned by [rememberLazyListState],
                     //     never serialised through SaveableStateProvider's
                     //     unmount→remount cycle. The shared `_posts` flow can
@@ -586,12 +606,16 @@ fun MainScaffold(graph: AppGraph) {
                             bookmarks = graph.bookmarkStore,
                             contentPadding = padding,
                             showOnlyBookmarked = false,
-                            onChannelOpen = { id -> enterChannel(id, fromTab = NavTab.Feed) },
-                            onOpenComments = openComments,
+                            onChannelOpen = { id -> pushChannel(id, fromTab = NavTab.Feed) },
+                            onOpenComments = { post -> pushComments(post, fromTab = NavTab.Feed) },
                             homeTapTrigger = homeTapTrigger,
                             onBrandTap = { homeTapTrigger = System.nanoTime() },
-                            scrollToMessage = pendingScrollTarget,
-                            onScrollHandled = { pendingScrollTarget = null },
+                            // Deep-link scroll targets are now baked into the nav-entry
+                            // itself (NavEntry.Channel.scrollToMessageId). The all-feed
+                            // TimelineScreen is never the deep-link landing — links push
+                            // a channel entry that owns the scroll-target. Pass null here.
+                            scrollToMessage = null,
+                            onScrollHandled = {},
                             onScrollMissed = {
                                 graph.userMessages.post(
                                     res.getString(R.string.link_not_found),
@@ -599,10 +623,8 @@ fun MainScaffold(graph: AppGraph) {
                                 )
                             },
                             startupPhase = graph.startupCoordinator.phase,
-                            onReportClick = { post ->
-                                openReport(post.chatId, if (post.id != 0L) post.id else null)
-                            },
-                            canReport = { post -> post.canReportChat },
+                            onReportClick = onPostReportClick,
+                            canReport = canReportPost,
                             markAsRead = tdlibMarkAsRead,
                             feedOrder = feedOrder,
                             snapScroll = snapScroll,
@@ -613,7 +635,7 @@ fun MainScaffold(graph: AppGraph) {
                     repo = graph.postsRepository,
                     contentPadding = padding,
                     onChannelClick = { chatId ->
-                        enterChannel(chatId, fromTab = NavTab.Channels)
+                        pushChannel(chatId, fromTab = NavTab.Channels)
                     },
                 )
                 NavTab.Saved -> TimelineScreen(
@@ -627,19 +649,17 @@ fun MainScaffold(graph: AppGraph) {
                     contentPadding = padding,
                     showOnlyBookmarked = true,
                     onChannelOpen = { id ->
-                        // Tapping a channel from Saved jumps to ChannelScreen for that
-                        // channel. enterChannel pushes onto the back-stack so Back returns
-                        // the user to Saved instead of always resetting to all-feed.
-                        enterChannel(id, fromTab = NavTab.Saved)
+                        // Tapping a channel from Saved pushes a Channel entry — Back
+                        // returns the user to Saved instead of always resetting to
+                        // all-feed.
+                        pushChannel(id, fromTab = NavTab.Saved)
                     },
-                    onOpenComments = openComments,
+                    onOpenComments = { post -> pushComments(post, fromTab = NavTab.Saved) },
                     homeTapTrigger = 0L,
                     onBrandTap = {},
                     startupPhase = graph.startupCoordinator.phase,
-                    onReportClick = { post ->
-                        openReport(post.chatId, if (post.id != 0L) post.id else null)
-                    },
-                    canReport = { post -> post.canReportChat },
+                    onReportClick = onPostReportClick,
+                    canReport = canReportPost,
                     markAsRead = tdlibMarkAsRead,
                     feedOrder = feedOrder,
                     snapScroll = snapScroll,
@@ -655,74 +675,109 @@ fun MainScaffold(graph: AppGraph) {
             }
         }
 
-        // Channel overlay — slides in over the always-mounted TimelineScreen.
-        // Why an overlay and not a separate navigation destination: the shared
-        // `_posts` flow is the single source of truth for both feed and
-        // channel; while a channel is open, `loadChannelHistory` writes new
-        // older posts into that flow, and Telegram pushes live arrivals from
-        // the user's other subscribed channels. Keeping the underlying
-        // TimelineScreen MOUNTED means its `rememberLazyListState` survives
-        // intact — when the overlay slides off, the feed is exactly where the
-        // user left it, no anchor drift from list mutations they didn't see.
-        // Telegram-Android / Twitter / Instagram all settle on this pattern
-        // for the "tap a row, drill into detail" gesture. Comments overlay
-        // (rendered above this block, z-stacked higher) covers the channel
-        // overlay when active so tapping replies inside a channel still
-        // routes through the same composition.
-        val topChannelId = channelStack.lastOrNull()
-        androidx.compose.animation.AnimatedVisibility(
-            visible = topChannelId != null,
-            enter = androidx.compose.animation.slideInHorizontally(
-                animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                initialOffsetX = { it },
-            ) + androidx.compose.animation.fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
-            exit = androidx.compose.animation.slideOutHorizontally(
-                animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                targetOffsetX = { it },
-            ) + androidx.compose.animation.fadeOut(MaterialTheme.motionScheme.defaultEffectsSpec()),
-        ) {
-            val id = topChannelId ?: return@AnimatedVisibility
-            tabStateHolder.SaveableStateProvider(key = "channel:$id") {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            val p = channelBackProgress.value.coerceIn(0f, 2f)
-                            val signed = when (channelBackEdge) {
-                                BackEventCompat.EDGE_RIGHT -> -p
-                                else -> p
-                            }
-                            translationX = signed * size.width * 0.25f
-                            val s = 1f - p.coerceAtMost(1f) * 0.05f
-                            scaleX = s; scaleY = s
-                            alpha = (1f - p.coerceAtMost(1f) * 0.9f).coerceAtLeast(0f)
-                        },
-                ) {
-                    ChannelScreen(
-                        chatId = id,
-                        repo = graph.postsRepository,
-                        commentsRepo = graph.commentsRepository,
-                        bookmarks = graph.bookmarkStore,
-                        translations = graph.translations,
-                        channelActions = graph.channelActions,
-                        contentPadding = padding,
-                        onBack = ::popChannel,
-                        onChannelOpen = { cid -> enterChannel(cid, fromTab = NavTab.Feed) },
-                        onOpenComments = openComments,
-                        scrollToMessage = pendingScrollTarget,
-                        onScrollHandled = { pendingScrollTarget = null },
-                        onScrollMissed = {
-                            graph.userMessages.post(
-                                res.getString(R.string.link_not_found),
-                                UserMessageBus.Severity.Info,
-                            )
-                        },
-                        onReportClick = { post ->
-                            openReport(post.chatId, if (post.id != 0L) post.id else null)
-                        },
-                        canReport = { post -> post.canReportChat },
-                        onReportChannel = { openReport(id, null) },
-                    )
+        // Top-2 entries rendered as stacked layers above the always-mounted
+        // feed. Why TWO and not just the top: during a predictive-back swipe
+        // the user expects to see the layer underneath peeking through — a
+        // single-slot top render would reveal the static feed underneath
+        // instead of the next-below stack entry (Channel underneath Comments,
+        // or vice-versa). Telegram / Twitter / Instagram all behave this way.
+        // The extra cost is one screen composition; the bottom entry stays
+        // mounted across the swipe so its scroll position and ViewModel are
+        // untouched.
+        //
+        // No push/pop slide animation: M3 Expressive favours immediacy for
+        // detail-screen pushes (TG-Android and Twitter both render new
+        // detail screens in place). The only motion that matters here is
+        // the predictive-back transform on the current top, which the
+        // graphicsLayer drives via [navBackProgress].
+        @Composable
+        fun RenderNavEntry(entry: NavEntry, isCurrent: Boolean) {
+            when (entry) {
+                is NavEntry.Channel -> ChannelScreen(
+                    chatId = entry.chatId,
+                    repo = graph.postsRepository,
+                    commentsRepo = graph.commentsRepository,
+                    bookmarks = graph.bookmarkStore,
+                    translations = graph.translations,
+                    channelActions = graph.channelActions,
+                    contentPadding = padding,
+                    onBack = ::popNav,
+                    onChannelOpen = { cid -> pushChannel(cid) },
+                    onOpenComments = { post -> pushComments(post) },
+                    scrollToMessage = entry.scrollToMessageId
+                        ?.let { entry.chatId to it }
+                        ?.takeIf { isCurrent },
+                    onScrollHandled = {},
+                    onScrollMissed = {
+                        graph.userMessages.post(
+                            res.getString(R.string.link_not_found),
+                            UserMessageBus.Severity.Info,
+                        )
+                    },
+                    onReportClick = onPostReportClick,
+                    canReport = canReportPost,
+                    onReportChannel = { openReport(entry.chatId, null) },
+                    startupPhase = graph.startupCoordinator.phase,
+                )
+                is NavEntry.Comments -> CommentsScreen(
+                    post = entry.anchor,
+                    repo = graph.commentsRepository,
+                    onDismiss = ::popNav,
+                    onChannelClick = { p -> pushChannel(p.chatId) },
+                    backProgress = if (isCurrent) navBackProgress.value else 0f,
+                    backSwipeEdge = navBackEdge,
+                )
+                // Guest-mode variant — never composed here in practice
+                // (MainActivity routes WebChannel into WebModeScaffold), but
+                // making the `when` exhaustive over the sealed hierarchy keeps
+                // the compiler honest if the routing rule ever changes.
+                is NavEntry.WebChannel -> Unit
+            }
+        }
+
+        // Render visible entries in ONE forEach so each entry has a single
+        // stable position in the composition tree. After a pop, the entry
+        // that was at index 0 (the "below" layer) is still at index 0 in
+        // the new takeLast(2) result — Compose's position+key identity
+        // matching preserves its remember-group across the transition:
+        // ViewModelStore stays the same instance, saveable state stays
+        // bound, no remount-flicker on comment counts or list rows.
+        //
+        // The opposite — rendering "below" and "top" in two separate
+        // top-level branches — created two distinct composition positions,
+        // and an entry migrating between them looked like an unmount +
+        // remount to Compose.
+        val visibleEntries = stack.takeLast(2)
+        visibleEntries.forEachIndexed { idx, entry ->
+            val isTop = idx == visibleEntries.lastIndex
+            key(entry.entryId) {
+                navStateHolder.SaveableStateProvider(key = entry.entryId) {
+                    NavEntryHost(entry = entry) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (isTop) {
+                                        Modifier.graphicsLayer {
+                                            val p = navBackProgress.value.coerceIn(0f, 2f)
+                                            val signed = when (navBackEdge) {
+                                                BackEventCompat.EDGE_RIGHT -> -p
+                                                else -> p
+                                            }
+                                            translationX = signed * size.width * 0.25f
+                                            val s = 1f - p.coerceAtMost(1f) * 0.05f
+                                            scaleX = s; scaleY = s
+                                            alpha = (1f - p.coerceAtMost(1f) * 0.9f)
+                                                .coerceAtLeast(0f)
+                                        }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                        ) {
+                            RenderNavEntry(entry = entry, isCurrent = isTop)
+                        }
+                    }
                 }
             }
         }
@@ -737,25 +792,6 @@ fun MainScaffold(graph: AppGraph) {
         }
     }
 
-    commentsForPost?.let { post ->
-        // commentsStateHolder keys each overlay on (chatId, post.id) so that
-        // reopening the same post restores the thread's exact scroll position.
-        // State preservation is parent-owned via SaveableStateProvider here —
-        // CommentsScreen's own rememberLazyListState() at line 111 does not need
-        // any custom keying; it benefits automatically from this scope.
-        commentsStateHolder.SaveableStateProvider(key = "post:${post.chatId}:${post.id}") {
-        CommentsScreen(
-            post = post,
-            repo = graph.commentsRepository,
-            onDismiss = { openComments(null) },
-            onChannelClick = { p ->
-                enterChannel(p.chatId, fromTab = NavTab.Feed)
-            },
-            backProgress = commentsBackProgress.value,
-            backSwipeEdge = commentsBackEdge,
-        )
-        }
-    }
     pendingInvitePreview?.let { preview ->
         ChatInvitePreviewDialog(
             preview = preview,
@@ -764,7 +800,7 @@ fun MainScaffold(graph: AppGraph) {
                 scope.launch {
                     val joinedId = graph.channelActions.joinByInvite(preview.inviteLink)
                     if (joinedId != null) {
-                        enterChannel(joinedId, fromTab = NavTab.Feed)
+                        pushChannel(joinedId, fromTab = NavTab.Feed)
                     }
                 }
             },
@@ -784,7 +820,7 @@ fun MainScaffold(graph: AppGraph) {
             openToken = target.token,
             channelUsername = null,
             onDismiss = { success ->
-                pendingReport = null
+                graph.reportDialogs.close()
                 // Surface a confirmation snackbar via the existing UserMessageBus
                 // (Severity.Info, not Error — the report succeeded). The bus is
                 // already wired to the scaffold's SnackbarHost; manual dismissals

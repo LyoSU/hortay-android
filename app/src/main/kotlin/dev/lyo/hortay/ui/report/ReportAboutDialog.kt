@@ -22,10 +22,11 @@ import dev.lyo.hortay.R
  */
 @Composable
 fun ReportAboutDialog(
+    onDismiss: () -> Unit = {},
     onConfirm: () -> Unit = {},
 ) {
     AlertDialog(
-        onDismissRequest = onConfirm,
+        onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(stringResource(R.string.report_about_dialog_ok))

@@ -146,7 +146,7 @@ class WebTelegramClient(
             return if (remainingMs > 0L) {
                 LookupResult.RateLimited(remainingMs)
             } else {
-                LookupResult.NetworkError(java.io.IOException("Lookup timed out"))
+                LookupResult.NetworkError(LookupTimeoutException())
             }
         }
         return when (result) {
@@ -407,6 +407,15 @@ sealed interface FetchResult {
     /** HTML returned but parser couldn't make sense of it. Telegram changed something. */
     data object ParseFailure : FetchResult
 }
+
+/**
+ * Sentinel thrown when [WebTelegramClient.lookupChannel]'s 15 s deadline
+ * elapses without a rate-limit-gate hit (so we can't blame the gate). Carries
+ * no message: the consumer is expected to look up a localised string
+ * (`R.string.web_lookup_timed_out`) when it sees this type, rather than
+ * leaking an English literal through `e.message`.
+ */
+class LookupTimeoutException : IOException()
 
 /** Result of [WebTelegramClient.lookupChannel] — a UX-shaped subset of [FetchResult]. */
 sealed interface LookupResult {

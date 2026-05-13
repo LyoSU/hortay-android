@@ -57,8 +57,6 @@ import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
 import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
-import androidx.compose.foundation.background
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.ui.theme.asComposeShape
 import dev.lyo.hortay.ui.media.LocalIsCenteredItem
@@ -69,7 +67,6 @@ import dev.lyo.hortay.ui.media.LocalScrollGate
 import kotlinx.coroutines.FlowPreview
 import androidx.compose.foundation.gestures.ScrollableDefaults
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -212,10 +209,13 @@ fun TimelineScreen(
 ) {
     // Forward-declared scroll target for every "go home" callsite (cold-start
     // pin, folder switch, NewPostsPill click, NavBar Home tap). Populated
-    // lazily later in the body once [visiblePosts] / [sortCursors] are
-    // computed — declared here so the effects above can reference it without
-    // forward-reference errors. Default `0` is the right fallback for the
-    // very first composition pass when downstream state hasn't landed.
+    // lazily later in the body via a [LaunchedEffect] that mirrors the
+    // [derivedStateOf]-computed `homeScrollIndex` into this holder — keeps the
+    // computation out of the composition critical path (no `intValue = …`
+    // assignments during composition) while letting the effects above
+    // reference it without forward-reference errors. Default `0` is the right
+    // fallback for the very first composition pass when downstream state
+    // hasn't landed.
     val homeScrollIndexState = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableIntStateOf(0)
     }
@@ -302,6 +302,18 @@ fun TimelineScreen(
     // one-shot guard so in-process remounts — drilling into a channel and popping
     // back, tab swaps, Saved ↔ Home toggles — preserve the user's intentional
     // scroll position via the saveable index.
+    // Logout privacy / correctness gate: the process-wide
+    // [coldStartScrolledSurfaces] set normally survives until process death so
+    // an in-process drill / pop / tab swap preserves the user's scroll. After a
+    // TDLib logout + re-login we're entering a brand-new account whose first
+    // paint should land at top-of-feed exactly like a fresh launch — clear the
+    // gate when [TdClient.loggedOut] fires so the pin re-arms. Guest mode mounts
+    // TimelineScreen without `tdlibRepo`, but `loggedOut` only fires in TDLib
+    // mode anyway, so reaching through the app graph is safe in both modes.
+    LaunchedEffect(context) {
+        val app = context.applicationContext as? dev.lyo.hortay.HortayApp ?: return@LaunchedEffect
+        app.graph.tdClient.loggedOut.collect { coldStartScrolledSurfaces.clear() }
+    }
     LaunchedEffect(Unit) {
         val surfaceKey = if (showOnlyBookmarked) "saved" else "home"
         if (!coldStartScrolledSurfaces.add(surfaceKey)) return@LaunchedEffect
@@ -319,6 +331,11 @@ fun TimelineScreen(
             return@LaunchedEffect
         }
         androidx.compose.runtime.snapshotFlow { posts.size to refreshing }
+            // De-duplicate identical (size, refreshing) emissions. A streaming
+            // refresh fires snapshotFlow on every list mutation; without this,
+            // a 100-post burst would invoke the collector 100 times even though
+            // only the final state matters.
+            .distinctUntilChanged()
             // Pin only while the cold-start refresh storm is in flight. Once
             // [TimelineViewModel.refreshIfStale] settles (refreshing flips
             // true → false), exit the flow — subsequent `posts.size` growth
@@ -398,7 +415,7 @@ fun TimelineScreen(
     // this: in-app quote-card taps (see [PostInteractions.onQuotedSourceClick]) and
     // external deep links (the [scrollToMessage] parameter from MainScaffold). One
     // consumer — the LaunchedEffect below — resolves the target by scanning
-    // displayedItems and clears the request on success. Cleared too on filter dismissal
+    // feedItems and clears the request on success. Cleared too on filter dismissal
     // (C2 fix) so a stale target from a previous channel doesn't yank the user later.
     var pendingScrollToMessage by remember { mutableStateOf<Pair<Long, Long>?>(null) }
     // (chatId, messageId) of the post we just scrolled to via a deep link / quote tap.
@@ -615,7 +632,13 @@ fun TimelineScreen(
     // invariant), all their strips fade synchronously while their slots in the
     // queue remain stable until refresh. Honest to TDLib semantics, no
     // client-side read-set divergence from the official client.
-    val snapshotCursors = remember(feedOrder) { mutableStateOf<dev.lyo.hortay.data.ReadCursors>(dev.lyo.hortay.data.EmptyReadCursors) }
+    // Keyed on (feed, feedOrder) so a feed-identity change — TDLib logout /
+    // re-login swaps `feed` to a fresh PostsRepository instance, mode flip
+    // swaps it between PostsRepository and WebFeedSource — drops the
+    // previous account's frozen cursors instead of overlaying them onto the
+    // new feed. feedOrder change resets too (snapshot belongs to
+    // OldestUnreadFirst sort only).
+    val snapshotCursors = remember(feed, feedOrder) { mutableStateOf<dev.lyo.hortay.data.ReadCursors>(dev.lyo.hortay.data.EmptyReadCursors) }
     val cursorsState = rememberUpdatedState(readCursors)
     LaunchedEffect(feedOrder) {
         if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) return@LaunchedEffect
@@ -661,7 +684,15 @@ fun TimelineScreen(
     // correctly. Once the next pull-to-refresh re-snapshots, the new chats are
     // baked in and the overlay becomes a no-op for them.
     val sortCursors = if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
-        remember(snapshotCursors.value, readCursors) {
+        // Gate the overlay rebuild on `readCursors.keys.size` (not on the
+        // PersistentMap identity) so a dwell-ack — which produces a NEW
+        // PersistentMap instance with the same key-set but an advanced
+        // value for one chatId — does NOT rebuild the overlay. The overlay
+        // only needs to cover chats absent from the snapshot, so key-set
+        // growth is the only signal that matters. Without this gate
+        // the overlay rebuilt on every ack (~1 Hz under scroll) and the
+        // downstream `orderedFor` re-sort ran on the whole feed for free.
+        remember(snapshotCursors.value, readCursors.keys.size) {
             val snap = snapshotCursors.value
             val missing = readCursors.entries.filter { it.key !in snap }
             if (missing.isEmpty()) snap
@@ -689,18 +720,29 @@ fun TimelineScreen(
     //     tap at this position (atTarget) then triggers refresh — canonical
     //     two-tap pattern.
     //   - Empty list → 0.
-    homeScrollIndexState.intValue = when (feedOrder) {
-        dev.lyo.hortay.data.FeedOrder.Newest -> 0
-        dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> {
-            val fu = dev.lyo.hortay.data.continueReadingIndex(
-                feedOrder, visiblePosts, sortCursors,
-            )
-            when {
-                fu >= 0 -> fu
-                visiblePosts.isEmpty() -> 0
-                else -> visiblePosts.lastIndex
+    val homeScrollIndex by remember(visiblePosts, sortCursors, feedOrder) {
+        derivedStateOf {
+            when (feedOrder) {
+                dev.lyo.hortay.data.FeedOrder.Newest -> 0
+                dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> {
+                    val fu = dev.lyo.hortay.data.continueReadingIndex(
+                        feedOrder, visiblePosts, sortCursors,
+                    )
+                    when {
+                        fu >= 0 -> fu
+                        visiblePosts.isEmpty() -> 0
+                        else -> visiblePosts.lastIndex
+                    }
+                }
             }
         }
+    }
+    // Mirror the derived value into the forward-declared holder so the
+    // earlier [LaunchedEffect]s (cold-start pin, home-tap, scope switch)
+    // see the current target. The mirror runs as an effect — no write
+    // happens during composition.
+    LaunchedEffect(homeScrollIndex) {
+        homeScrollIndexState.intValue = homeScrollIndex
     }
 
     // Reset scroll on FeedOrder flip — but ONLY on an actual user-driven change
@@ -722,7 +764,7 @@ fun TimelineScreen(
         if (previous != null && previous != feedOrder.name &&
             !listState.isScrollInProgress
         ) {
-            listState.scrollToItem(homeScrollIndexState.intValue)
+            listState.scrollToItem(homeScrollIndex)
         }
     }
 
@@ -733,15 +775,9 @@ fun TimelineScreen(
     // back into individual TimelinePost entries.
     val feedItems = remember(visiblePosts) { groupReplies(visiblePosts) }
 
-    // Source of truth for "what the LazyColumn is currently rendering". The all-feed and
-    // bookmarks surfaces have no in-screen search (global search in web mode is a separate
-    // overlay; TDLib in-channel search now lives in ChannelScreen). feedItems is always
-    // used here.
-    val displayedItems: List<FeedItem> = feedItems
-
     // LaunchedEffect's block freezes its captures on the keys-last-changed composition
     // (Compose's [remember] under the hood holds the original lambda), so subsequent
-    // changes to [displayedItems] aren't seen by the long-running effect bodies below.
+    // changes to [feedItems] aren't seen by the long-running effect bodies below.
     // Routing the read through [rememberUpdatedState] gives us a [State] handle whose
     // .value is refreshed on every recomposition without restarting any effect — the
     // same pattern this composable already uses for [postsState], [translationsState],
@@ -749,71 +785,30 @@ fun TimelineScreen(
     // because the feed list ref churns with every UpdateMessageInteractionInfo (~30 Hz
     // on a busy news day): a stale capture would have us ack the wrong posts as
     // forceRead=true and (worse) OpenChat the wrong chat.
-    val displayedItemsState = rememberUpdatedState(displayedItems)
+    val feedItemsState = rememberUpdatedState(feedItems)
 
-    // Resolve the queued "scroll to messageId" once the target row appears. Keyed on
-    // [pendingScrollToMessage] alone (NOT on displayedItems) so a busy feed doesn't
-    // restart the effect dozens of times per second on every list mutation — instead we
-    // use snapshotFlow inside to react to displayedItems changes lazily, and stop
-    // collecting as soon as we land the scroll. The lookup matches both the post's
-    // canonical id AND any of its album member ids — TimelinePost collapses an album
-    // into a single row keyed on the oldest member, but a quote card may point at any
-    // member.
-    //
-    // Old-message handling: when the target is below the head load that
-    // [loadChannelHistory] fetched (deep-linked old post, quote-reply to an old anchor)
-    // it won't appear in displayedItems no matter how long we wait. Per TDLib docs we
-    // ask for a window CENTERED on the anchor — see [PostsRepository.loadHistoryAround]
-    // — exactly once per pending target. The follow-up snapshot tick then lands the
-    // scroll. Single-shot guard ([requestedAroundLoad]) keeps a busy feed from re-firing
-    // the RPC on every list mutation.
-    LaunchedEffect(pendingScrollToMessage) {
-        val (chatId, messageId) = pendingScrollToMessage ?: return@LaunchedEffect
-        var requestedAroundLoad = false
-        // snapshotFlow must read State — a plain local `val displayedItems` is captured
-        // by value and never re-evaluated, so subsequent posts-arrived recompositions
-        // would never re-emit. Reading through [displayedItemsState] (a
-        // rememberUpdatedState wrapper) gives us a proper State.value read that the
-        // snapshot system tracks.
-        androidx.compose.runtime.snapshotFlow { displayedItemsState.value }
-            .collect { items ->
-                val idx = items.indexOfFirst { item ->
-                    item.posts().any { p ->
-                        p.chatId == chatId && (p.id == messageId || messageId in p.albumMessageIds)
-                    }
-                }
-                if (idx >= 0) {
-                    // Jump instantly via [scrollToItem] rather than animateScrollToItem.
-                    // For a deep-linked old post the target row can be 200+ items down;
-                    // animating through every intermediate row took seconds and made the
-                    // app feel like it was searching for the post. Telegram-Android also
-                    // hard-jumps on a link click. The highlight tint (set BEFORE the jump
-                    // so it's composed by the time the user sees the new viewport) is
-                    // what tells the eye where to look on arrival.
-                    highlightedPostKey = chatId to messageId
-                    listState.scrollToItem(idx)
-                    pendingScrollToMessage = null
-                    return@collect
-                }
-                if (!requestedAroundLoad) {
-                    requestedAroundLoad = true
-                    // TDLib best practice for "open by link to an out-of-cache message":
-                    // GetChatHistory(from = anchor, offset = -limit/2). PostsRepository
-                    // wraps that and returns false when the chat is inaccessible /
-                    // network failed / the channel returned an empty window. In any of
-                    // those cases there's nothing more to wait for — clear the pending
-                    // target so the snapshot collector exits, mirroring Telegram-
-                    // Android's "Message is no longer available" UX instead of leaving
-                    // the user staring at a frozen skeleton.
-                    val landed = tdlibRepo?.loadHistoryAround(chatId, messageId) ?: false
-                    if (!landed) {
-                        pendingScrollToMessage = null
-                        onScrollMissed()
-                        return@collect
-                    }
-                }
-            }
-    }
+    // Resolve the queued "scroll to messageId" once the target row appears.
+    // Extracted to [rememberPendingScrollToMessage] — shared with [ChannelScreen].
+    // Highlight is set BEFORE the jump so it's composed by the time the new viewport
+    // paints; [scrollToItem] is an instant jump (Telegram-Android also hard-jumps on a
+    // link click — animating through 200+ intermediate rows for a deep-linked old post
+    // made the app feel like it was searching for the post). On miss the helper invokes
+    // [onScrollMissed] via the [onMissed] callback so the scaffold surfaces "Посилання
+    // не знайдено" instead of leaving the user staring at a frozen skeleton.
+    rememberPendingScrollToMessage(
+        displayedItems = feedItems,
+        pendingTarget = pendingScrollToMessage,
+        loadHistoryAround = { cid, mid -> tdlibRepo?.loadHistoryAround(cid, mid) ?: false },
+        onLanded = { cid, mid, idx ->
+            highlightedPostKey = cid to mid
+            listState.scrollToItem(idx)
+            pendingScrollToMessage = null
+        },
+        onMissed = {
+            pendingScrollToMessage = null
+            onScrollMissed()
+        },
+    )
 
     // Auto-clear: the highlight pulses for [HIGHLIGHT_DURATION_MS] then fades away.
     // Cleared one-shot per landing so the next scroll-to-message can re-trigger.
@@ -866,8 +861,18 @@ fun TimelineScreen(
     //
     // Scoped pending only: archive / other-folder pending stays unread for those
     // tabs until the user navigates to them.
-    LaunchedEffect(atTop, atBottom, scopedPendingNew, feedOrder) {
+    // Local proxy for the VM's private `bootstrapped` flag: true once the
+    // feed has populated and refresh has settled. Without this guard
+    // [atTop] and [atBottom] both evaluate to `true` during cold-start
+    // (a feed that hasn't yet rendered any rows looks like the user is
+    // simultaneously at top and bottom), so the auto-accept fires and
+    // dissolves pendingNew before the user sees the pill.
+    val bootstrapped by remember {
+        derivedStateOf { posts.isNotEmpty() && !refreshing }
+    }
+    LaunchedEffect(atTop, atBottom, scopedPendingNew, feedOrder, bootstrapped) {
         if (scopedPendingNew.isEmpty()) return@LaunchedEffect
+        if (!bootstrapped) return@LaunchedEffect
         val atFreshnessEdge = when (feedOrder) {
             dev.lyo.hortay.data.FeedOrder.Newest -> atTop
             dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> atBottom
@@ -877,67 +882,23 @@ fun TimelineScreen(
         }
     }
 
-    // Warm the discussion-thread cache for posts that linger in the viewport. A cold
-    // GetMessageThread is a server round-trip (~1.5–2s on first hit per channel); after
-    // a single fetch TDLib answers from local cache (~200ms). Triggering this in the
-    // background while the user is reading means the comments tap is effectively
-    // instant for visible posts, and avoids burning bandwidth on posts the user just
-    // scrolls past. CommentsRepository de-duplicates per anchor so this is safe to spam.
+    // Warm the discussion-thread cache for posts that linger in the viewport.
+    // Extracted to [rememberCommentsPrefetch] — shared with [ChannelScreen]. Cold
+    // GetMessageThread is ~1.5–2 s per channel; after a single fetch TDLib answers
+    // from local cache (~200 ms). Cap of [COMMENTS_PREFETCH_LIMIT] keeps the TDLib
+    // RPC pipe clear (per Levin tdlib/td#3019 the pipe is a single per-client
+    // queue), and the [StartupCoordinator] gate keeps us silent during the post-auth
+    // storm. commentCount > 0 (not just != null) skips the typical "0 replies
+    // forever" case that would otherwise burn 2 wasted RPCs per post on the
+    // dominant share of first-launch volume.
     if (commentsRepo != null) {
-        LaunchedEffect(listState, commentsRepo) {
-            androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
-                .distinctUntilChanged()
-                .debounce(1200)
-                .collect { indices ->
-                    // Read latest list via [displayedItemsState] — captures
-                    // [feedItems] directly here would freeze on the keys-change
-                    // composition and miss subsequent feed mutations (~30 Hz on busy
-                    // news days). Indices come from the actual layoutInfo so they
-                    // already reference the latest rendered list — pairing them with
-                    // a stale snapshot would prefetch threads for posts that have
-                    // since shifted out of those positions.
-                    val snapshot = displayedItemsState.value
-                    // Cap how many threads we warm per viewport-stable window. Each
-                    // [CommentsRepository.prefetchThread] fires
-                    // [TdApi.GetMessageProperties] + [TdApi.GetMessageThread] +
-                    // [TdApi.GetMessageThreadHistory] on the same TDLib RPC pipe that
-                    // also carries the user's interactive calls (taps, ack-on-dwell,
-                    // chat presence). With 5-10 visible posts having comments, the
-                    // burst flooded the pipe in the *exact* moment the user might tap
-                    // a different post's comments — surfacing as the "сomments
-                    // sometimes load slowly" symptom. Per Levin (tdlib/td#3019), TDLib
-                    // serialises RPC requests through a single per-client queue, so
-                    // unbounded fan-out blocks the head of the queue for the duration
-                    // of the burst. Top-3 visible posts is the **plurality** of
-                    // dwell-targets a user is likely to tap into without scrolling
-                    // again — covers the warm-up benefit without owning the pipe.
-                    // Cold-start gate: skip the prefetch entirely while we're in
-                    // the post-auth storm window. The same viewport-stable will
-                    // re-emit naturally as scroll / dwell continues, and by then
-                    // the gate has flipped to Active and the prefetch lands without
-                    // contention. See [StartupCoordinator] KDoc.
-                    if (startupPhase?.value == dev.lyo.hortay.data.StartupCoordinator.Phase.Booting) {
-                        return@collect
-                    }
-                    // commentCount > 0 (not just != null): a channel-with-discussion
-                    // post that has zero replies still carries a non-null
-                    // commentCount (TDLib populates replyInfo with `replyCount = 0`),
-                    // and prefetching it costs 2 wasted RPCs (GetMessageProperties +
-                    // GetMessageThread) for a thread guaranteed to be empty. Most
-                    // posts on commenting channels are this case — typical post
-                    // collects a few replies on the first hour and zero forever
-                    // after. The old filter sprayed prefetch across them all and
-                    // was the dominant share of the first-launch RPC volume.
-                    indices.flatMap { snapshot.getOrNull(it)?.posts().orEmpty() }
-                        .asSequence()
-                        .filter { (it.commentCount ?: 0) > 0 }
-                        .take(COMMENTS_PREFETCH_LIMIT)
-                        .forEach { post ->
-                            val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
-                            commentsRepo.prefetchThread(post.chatId, ids)
-                        }
-                }
-        }
+        rememberCommentsPrefetch(
+            listState = listState,
+            displayedItems = feedItems,
+            startupPhase = startupPhase,
+            prefetchThread = commentsRepo::prefetchThread,
+            maxConcurrent = COMMENTS_PREFETCH_LIMIT,
+        )
     }
 
     // Read-state acks: posts that stayed visible long enough get marked as seen via
@@ -958,33 +919,20 @@ fun TimelineScreen(
     // every viewport mutation. TDLib filters re-acks server-side anyway (issue #136),
     // but skipping the round-trip altogether is cheaper. Cap is implicit: feed size
     // is bounded by MAX_FEED_SIZE (~1000), so the set stays small.
-    val ackedRead = remember(markAsRead) { HashSet<Pair<Long, Long>>() }
-    if (markAsRead != null) {
-        LaunchedEffect(listState, markAsRead) {
-            androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
-                .distinctUntilChanged()
-                .collectLatest { indices ->
-                    if (indices.isEmpty()) return@collectLatest
-                    kotlinx.coroutines.delay(READ_DWELL_MS)
-                    // Read the LATEST list via [displayedItemsState] — see the State
-                    // wrapper's KDoc for why feedItems-by-closure would be stale here.
-                    val snapshot = displayedItemsState.value
-                    if (snapshot.isEmpty()) return@collectLatest
-                    val visible = indices.flatMap { idx -> snapshot.getOrNull(idx)?.posts().orEmpty() }
-                    val fresh = visible.filter { (it.chatId to it.id) !in ackedRead }
-                    if (fresh.isEmpty()) return@collectLatest
-                    // Populate ackedRead BEFORE dispatching the suspending ack. If the
-                    // dispatch coroutine is cancelled mid-batch we must not leave half
-                    // the chats acked locally and the others not — that produces
-                    // inconsistent re-issue behaviour on the next dwell. The mode-
-                    // specific call is detached into [scope] so a viewport change a
-                    // frame later doesn't kill the in-flight ack: collectLatest cancel
-                    // only affects this body, not coroutines launched from outer scope.
-                    fresh.forEach { ackedRead.add(it.chatId to it.id) }
-                    scope.launch { markAsRead(fresh) }
-                }
-        }
-    }
+    // Read-ack dwell extracted to [rememberReadAckDwell] — shared with
+    // [ChannelScreen]. Populates ackedRead BEFORE dispatching the suspending ack so
+    // a mid-batch cancellation can't leave half the chats acked locally; the
+    // mode-specific call is detached into [scope] so a viewport change a frame later
+    // doesn't kill the in-flight ack. The returned set is the same one
+    // [markPostReadState] below extends with explicit-tap acks.
+    val ackedRead = rememberReadAckDwell(
+        listState = listState,
+        displayedItems = feedItems,
+        ackKey = markAsRead,
+        markAsRead = markAsRead,
+        scope = scope,
+        dwellMs = READ_DWELL_MS,
+    )
 
     // Focus-chat tracking: keep the chat of the topmost-visible post OpenChat'd while
     // the user is dwelling on it, then transition cleanly to the next chat as they
@@ -1013,7 +961,7 @@ fun TimelineScreen(
                         if (topIdx == null) return@collectLatest
                         kotlinx.coroutines.delay(FOCUS_DWELL_MS)
                         // Latest displayed list — same staleness reason as Effect 1.
-                        val items = displayedItemsState.value
+                        val items = feedItemsState.value
                         val topChat = items.getOrNull(topIdx)?.posts()?.firstOrNull()?.chatId
                             ?: return@collectLatest
                         if (topChat == opened) return@collectLatest
@@ -1161,9 +1109,11 @@ fun TimelineScreen(
                 }
             },
             onQuotedSourceClick = { post ->
-                // In-app "open the original" — open the channel (no Intent chooser bounce)
-                // and queue a scroll-to-target so the caller (MainScaffold) can pass it to
-                // the new ChannelScreen via pendingScrollTarget.
+                // In-app "open the original": push a Channel entry on the
+                // nav-stack and queue a same-channel scroll-to-target for
+                // when the user navigates back into the all-feed (rare; this
+                // surface is the feed itself, so the scroll-to-message rarely
+                // fires here — the typical case lands inside ChannelScreen).
                 post.reply?.let { r ->
                     onChannelOpenState.value(r.replyToChatId)
                     pendingScrollToMessage = r.replyToChatId to r.replyToMessageId
@@ -1380,12 +1330,12 @@ fun TimelineScreen(
                                 else listState.firstVisibleItemIndex
                             }
                         }
-                        LaunchedEffect(prefetchAnchor, displayedItems) {
+                        LaunchedEffect(prefetchAnchor, feedItems) {
                             val firstVisible = prefetchAnchor ?: return@LaunchedEffect
-                            if (firstVisible >= displayedItems.size) return@LaunchedEffect
-                            val end = (firstVisible + PREFETCH_AHEAD).coerceAtMost(displayedItems.lastIndex)
+                            if (firstVisible >= feedItems.size) return@LaunchedEffect
+                            val end = (firstVisible + PREFETCH_AHEAD).coerceAtMost(feedItems.lastIndex)
                             for (idx in (firstVisible + 1)..end) {
-                                val item = displayedItems.getOrNull(idx) ?: continue
+                                val item = feedItems.getOrNull(idx) ?: continue
                                 // All prefetch at [DownloadPriority.Prefetch]. Visible posts
                                 // already self-ensure at [DownloadPriority.VisibleMedia] via
                                 // [rememberMediaBinding], so promoting prefetched neighbours
@@ -1466,13 +1416,13 @@ fun TimelineScreen(
                         // across the bubble column. Computed via derivedStateOf so
                         // changes only fire when the boundary key actually flips.
                         val unreadBoundaryKey by remember(
-                            displayedItems, sortCursors, feedOrder,
+                            feedItems, sortCursors, feedOrder,
                         ) {
                             derivedStateOf {
                                 if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
                                     return@derivedStateOf null
                                 }
-                                displayedItems.firstOrNull { feedItem ->
+                                feedItems.firstOrNull { feedItem ->
                                     feedItem.posts().any { it.isUnreadIn(sortCursors) }
                                 }?.key
                             }
@@ -1488,7 +1438,7 @@ fun TimelineScreen(
                                 ),
                                 modifier = Modifier.fillMaxSize(),
                             ) {
-                                items(items = displayedItems, key = { it.key }) { item ->
+                                items(items = feedItems, key = { it.key }) { item ->
                                     // "Unread starts here" divider rendered above the first
                                     // item that contains an unread post (OldestUnreadFirst
                                     // only). Composed at the start of the item lambda so it
@@ -1600,7 +1550,7 @@ fun TimelineScreen(
                         //     lastIndex via a snapshot read at dispatch time.
                         scope.launch {
                             val target = if (pillAtTop) {
-                                homeScrollIndexState.intValue
+                                homeScrollIndex
                             } else {
                                 (visiblePosts.lastIndex).coerceAtLeast(0)
                             }
@@ -1792,9 +1742,6 @@ internal fun ExpressiveEmptyHero(
  * Compact subscriber count formatter — Telegram convention. 12 345 → "12.3K", 1 050 000
  * → "1.1M". Round numbers drop the decimal so the label reads as "12K" rather than "12.0K".
  */
-/** How many items from the end of the list trigger an older-history prefetch. */
-private const val PAGINATION_PREFETCH_THRESHOLD = 6
-
 /** How long after the last keystroke we issue the search round-trip. */
 private const val SEARCH_DEBOUNCE_MS = 300L
 
