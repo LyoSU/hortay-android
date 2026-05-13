@@ -521,4 +521,17 @@
 
     <!-- Post action sheet "Report" item -->
     <string name="report_action">Report</string>
+
+    <!-- MediaShareActions failure reasons (surfaced via Toast in the fullscreen viewer). -->
+    <string name="media_share_error_source_missing">Source unavailable</string>
+    <string name="media_share_error_only_photos">Only photos can be copied</string>
+    <string name="media_share_error_clipboard_unavailable">Clipboard unavailable</string>
+    <string name="media_share_error_insert_failed">Couldn\'t save to gallery</string>
+    <string name="media_share_error_mkdir">Couldn\'t create folder %1$s</string>
+
+    <!-- WebTelegramClient.lookupChannel timed out (no rate-limit gate). -->
+    <string name="web_lookup_timed_out">Lookup timed out</string>
+
+    <!-- Accessibility label for the verified-channel badge in PostCard. -->
+    <string name="cd_verified_badge">Verified</string>
 </resources>

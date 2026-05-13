@@ -55,7 +55,12 @@ class TimelineViewModel(
     private val bookmarks: BookmarkStore,
 ) : ViewModel() {
 
-    private val livePosts: StateFlow<PersistentList<TimelinePost>> = repo.posts
+    // Merged feed reads `subscribedPosts` so transient rows fetched into
+    // `repo.posts` by a single-channel drill (e.g. tapping a comment-link into
+    // a channel the user is NOT subscribed to → `loadChannelHistory` writes
+    // 80 rows into `_posts`) don't leak into TimelineScreen. ChannelScreen
+    // keeps using `repo.posts` directly with its own per-chat filter.
+    private val livePosts: StateFlow<PersistentList<TimelinePost>> = repo.subscribedPosts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
 
     // chatId → max post.date the user has acknowledged seeing in this channel. Pending =

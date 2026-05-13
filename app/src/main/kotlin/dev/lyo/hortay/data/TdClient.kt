@@ -483,10 +483,11 @@ class TdClient private constructor(
     private fun registerFloodWait(message: String) {
         // TDLib formats the error a couple of ways depending on origin: the legacy
         // MTProto layer hands back "FLOOD_WAIT_42"; the newer translated layer uses
-        // "Too Many Requests: retry after 42". We extract the first run of digits
-        // from the message — works for both, and degrades gracefully if Telegram
-        // ever changes the wording (we just don't throttle that one).
-        val seconds = Regex("(\\d+)").find(message)?.value?.toLongOrNull() ?: return
+        // "Too Many Requests: retry after 42". Pinning to those two prefixes is
+        // safer than the previous bare `\d+` scan, which would happily parse a
+        // stray number out of any unrelated message text.
+        val seconds = FLOOD_WAIT_SECONDS_RX.find(message)
+            ?.groupValues?.get(1)?.toLongOrNull() ?: return
         if (seconds <= 0) return
         // Cap at FLOOD_WAIT_CAP_SECONDS as a safety belt — Telegram occasionally
         // returns absurd values (hours, days) that would freeze the app entirely.
@@ -647,6 +648,34 @@ class TdClient private constructor(
         // "FLOOD_WAIT_42") and 429 (newer translation, "Too Many Requests:
         // retry after 42"). Both observed in the field — treat as equivalent.
         fun isFloodWaitCode(code: Int): Boolean = code == 420 || code == 429
+
+        // Shared with [registerFloodWait] and [parseFloodWaitSeconds]; matches
+        // both TDLib formats — "FLOOD_WAIT_<n>" (420 / MTProto) and "retry after
+        // <n>" (429 / translated layer; the verbose form is "Too Many Requests:
+        // retry after <n>").
+        private val FLOOD_WAIT_SECONDS_RX =
+            Regex("(?:FLOOD_WAIT_|retry after )(\\d+)")
+
+        /**
+         * Public helper for callers (e.g. ReportRepository.mapError) that need
+         * to surface a "Telegram попросив почекати N секунд" hint from a TDLib
+         * error. Returns null when the error is not a flood-wait one, or when
+         * the message doesn't carry a parseable second count.
+         */
+        fun parseFloodWaitSeconds(error: TdApi.Error): Int? {
+            if (!isFloodWaitCode(error.code)) return null
+            val msg = error.message ?: return null
+            return FLOOD_WAIT_SECONDS_RX.find(msg)
+                ?.groupValues?.get(1)?.toIntOrNull()
+        }
+
+        /** Same as [parseFloodWaitSeconds] but for a [TdException] surfaced from [send]. */
+        fun parseFloodWaitSeconds(exception: TdException): Int? {
+            if (!isFloodWaitCode(exception.code)) return null
+            val msg = exception.message ?: return null
+            return FLOOD_WAIT_SECONDS_RX.find(msg)
+                ?.groupValues?.get(1)?.toIntOrNull()
+        }
         // Safety cap on flood-wait throttling. Telegram very occasionally returns
         // multi-hour or multi-day deadlines (typically after egregious abuse). For an
         // interactive client, sleeping that long is worse than failing visibly, so we

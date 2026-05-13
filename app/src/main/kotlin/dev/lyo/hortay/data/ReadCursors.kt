@@ -80,9 +80,9 @@ fun firstUnreadIndex(posts: List<TimelinePost>, cursors: ReadCursors): Int =
  *     lands at the FIRST unread post — scrolling DOWN walks forward through
  *     unread; scrolling UP walks backward into already-read history. Same
  *     gesture model as opening a chat in any modern messenger.
- *   - Read posts render dimmed (alpha 0.55) via [LocalDimReadPosts] so the
- *     visual hierarchy reads "primary = unread, supporting = history"
- *     without changing the chronological layout.
+ *   - Read posts render dimmed (alpha 0.55) so the visual hierarchy reads
+ *     "primary = unread, supporting = history" without changing the
+ *     chronological layout.
  *
  * Callers in TimelineScreen pin [cursors] to a frozen snapshot captured at
  * refresh boundaries (initial mount, pull-to-refresh) so mid-scroll dwell

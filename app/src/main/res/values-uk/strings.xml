@@ -530,4 +530,17 @@
 
     <!-- Post action sheet "Report" item -->
     <string name="report_action">Поскаржитися</string>
+
+    <!-- MediaShareActions failure reasons (surfaced via Toast in the fullscreen viewer). -->
+    <string name="media_share_error_source_missing">Джерело недоступне</string>
+    <string name="media_share_error_only_photos">Скопіювати можна тільки фото</string>
+    <string name="media_share_error_clipboard_unavailable">Буфер обміну недоступний</string>
+    <string name="media_share_error_insert_failed">Не вдалося зберегти в галерею</string>
+    <string name="media_share_error_mkdir">Не вдалося створити теку %1$s</string>
+
+    <!-- WebTelegramClient.lookupChannel timed out (no rate-limit gate). -->
+    <string name="web_lookup_timed_out">Перевищено час очікування</string>
+
+    <!-- Accessibility label for the verified-channel badge in PostCard. -->
+    <string name="cd_verified_badge">Верифіковано</string>
 </resources>

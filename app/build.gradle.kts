@@ -40,6 +40,20 @@ gradle.taskGraph.whenReady {
                 "See app/build.gradle.kts:17 and CLAUDE.md (Setup-delta) for details."
         )
     }
+    val packagingTask = allTasks.firstOrNull { task ->
+        task.name.matches(Regex("^(package|bundle)(Release|Beta).*"))
+    }
+    if (packagingTask != null) {
+        val variant = if (packagingTask.name.contains("Beta")) "beta" else "release"
+        val childSafety = (project.findProperty("HORTAY_CHILD_SAFETY_POLICY_URL") as? String)?.takeIf { it.isNotBlank() }
+        val privacy = (project.findProperty("HORTAY_PRIVACY_POLICY_URL") as? String)?.takeIf { it.isNotBlank() }
+        if (childSafety == null) {
+            error("HORTAY_CHILD_SAFETY_POLICY_URL must be set in gradle.properties for $variant builds")
+        }
+        if (privacy == null) {
+            error("HORTAY_PRIVACY_POLICY_URL must be set in gradle.properties for $variant builds")
+        }
+    }
 }
 
 // Git metadata for release + beta builds. Lazy so we only fork `git` when a
@@ -89,12 +103,10 @@ android {
         // CSAE-compliance URLs. Values come from gradle.properties so they can be
         // updated without touching the build script. Both are string constants baked
         // into the APK/AAB at compile time; no runtime network fetch.
-        val childSafetyUrl: String = (project.findProperty("HORTAY_CHILD_SAFETY_POLICY_URL") as? String)
-            ?: "https://dev.lyo.hortay/child-safety"
-        val privacyUrl: String = (project.findProperty("HORTAY_PRIVACY_POLICY_URL") as? String)
-            ?: "https://dev.lyo.hortay/privacy"
-        buildConfigField("String", "CHILD_SAFETY_POLICY_URL", "\"$childSafetyUrl\"")
-        buildConfigField("String", "PRIVACY_POLICY_URL", "\"$privacyUrl\"")
+        val childSafetyProp = (project.findProperty("HORTAY_CHILD_SAFETY_POLICY_URL") as? String)?.takeIf { it.isNotBlank() }
+        val privacyProp = (project.findProperty("HORTAY_PRIVACY_POLICY_URL") as? String)?.takeIf { it.isNotBlank() }
+        buildConfigField("String", "CHILD_SAFETY_POLICY_URL", "\"${childSafetyProp ?: "https://dev.lyo.hortay/child-safety"}\"")
+        buildConfigField("String", "PRIVACY_POLICY_URL", "\"${privacyProp ?: "https://dev.lyo.hortay/privacy"}\"")
 
     }
 

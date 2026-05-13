@@ -18,7 +18,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.StateFlow
@@ -127,6 +130,32 @@ class PostsRepository(
 
     private val _posts = MutableStateFlow<PersistentList<TimelinePost>>(persistentListOf())
     override val posts: StateFlow<PersistentList<TimelinePost>> = _posts.asStateFlow()
+
+    // Merged-feed surface: posts limited to chats actually in the user's
+    // subscription lists (ChatListMain or ChatListArchive). `loadChannelHistory`
+    // and `loadHistoryAround` write into `_posts` directly so the single-channel
+    // screen has its rows, but those rows must NOT leak into TimelineScreen for
+    // channels the user hasn't joined (deep-link drill into a comment-reply
+    // channel, public-handle search preview, etc.). Single-channel surfaces
+    // (ChannelScreen) keep using [posts] and filter per-chat themselves.
+    //
+    // Pre-bootstrap (`_mainChatIds` empty) we don't filter — the cold-start
+    // refresh harvests `Chat.lastMessage` straight into `_posts` and the
+    // ChatListMain list arrives concurrently; gating on an empty set would
+    // produce a blank feed for the first ~1–2 s.
+    // `by lazy` because `_mainChatIds` / `_archivedChatIds` are declared later
+    // in this file (forward reference). Lazy defers `combine(...)` evaluation
+    // to first access, by which point both fields are initialised. No race:
+    // first access is from TimelineViewModel.init through `repo.subscribedPosts`,
+    // long after PostsRepository's constructor returns.
+    override val subscribedPosts: StateFlow<PersistentList<TimelinePost>> by lazy {
+        combine(_posts, _mainChatIds, _archivedChatIds) { all, mainIds, archivedIds ->
+            if (mainIds.isEmpty() && archivedIds.isEmpty()) all
+            else all.filter { it.chatId in mainIds || it.chatId in archivedIds }
+                .toPersistentList()
+        }
+            .stateIn(scope, SharingStarted.Eagerly, persistentListOf())
+    }
 
     // Per-chat read cursors mirrored from TDLib's UpdateChatReadInbox stream and seeded
     // from UpdateNewChat. Single source of truth for "has the user read up to message X
@@ -244,7 +273,14 @@ class PostsRepository(
                 // post would flash "unread" for the first frame after auth.
                 val cursor = update.chat.lastReadInboxMessageId
                 if (cursor > 0L) {
-                    _chatReadCursors.update { it.put(update.chat.id, cursor) }
+                    // Monotonic clamp: a stale UpdateNewChat arriving after a fresh
+                    // UpdateChatReadInbox must NOT roll the cursor backwards, else
+                    // already-read posts re-appear as unread.
+                    _chatReadCursors.update { current ->
+                        val existing = current[update.chat.id] ?: 0L
+                        if (cursor <= existing) current
+                        else current.put(update.chat.id, cursor)
+                    }
                 }
             }
             .launchIn(scope)

@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.lyo.hortay.data.report.ReportRepository
 import dev.lyo.hortay.data.report.ReportState
+import dev.lyo.hortay.data.report.ReportStep
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,36 +60,34 @@ class ReportFlowViewModel(
     fun start() {
         viewModelScope.launch {
             _state.value = ReportState.Loading
-            _state.value = repo.start(chatId, messageId)
+            apply(repo.start(chatId, messageId))
         }
     }
 
     fun selectOption(option: TdApi.ReportOption) {
         viewModelScope.launch {
             _state.value = ReportState.Loading
-            val next = repo.selectOption(chatId, messageId, option)
-            // Cache the optionId so submitText knows what to attach if the next
-            // step is TextRequired. The OptionSelection branch doesn't carry an
-            // optionId per TDLib spec — the user's choice IS the optionId.
-            if (next is ReportState.TextRequired) {
-                pendingOptionId = next.optionId
-            }
-            _state.value = next
+            apply(repo.selectOption(chatId, messageId, option))
         }
     }
 
     /**
      * Submit user text (or empty string when text is optional and the user tapped Skip).
-     * Attaches [pendingOptionId] from the previous [ReportState.TextRequired] transition.
+     * Attaches [pendingOptionId] captured from the previous [ReportState.TextRequired] step.
      */
     fun submitText(text: String) {
         viewModelScope.launch {
             _state.value = ReportState.Loading
-            _state.value = repo.submitText(chatId, messageId, pendingOptionId, text)
+            apply(repo.submitText(chatId, messageId, pendingOptionId, text))
         }
     }
 
     fun retry() {
         start()
+    }
+
+    private fun apply(step: ReportStep) {
+        step.pendingOptionId?.let { pendingOptionId = it }
+        _state.value = step.state
     }
 }

@@ -31,6 +31,19 @@ interface FeedSource {
     val posts: StateFlow<PersistentList<TimelinePost>>
 
     /**
+     * Subset of [posts] limited to chats the user is actually subscribed to.
+     * Used by the merged feed surface (TimelineScreen) so transient posts
+     * fetched into [posts] by a single-channel drill (`loadChannelHistory`,
+     * `loadHistoryAround`) — for a channel the user is NOT subscribed to —
+     * don't leak into the main feed. Single-channel surfaces (ChannelScreen)
+     * still consume [posts] directly with their own per-chat filter.
+     *
+     * Default implementation = identity; impls without a subscription model
+     * (guest mode) treat every fetched chat as subscribed.
+     */
+    val subscribedPosts: StateFlow<PersistentList<TimelinePost>> get() = posts
+
+    /**
      * Force a fresh fetch regardless of staleness window. Pull-to-refresh
      * always uses this path. May suspend for several seconds on cold network.
      */

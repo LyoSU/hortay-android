@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.SharingStarted
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Multi-channel orchestrator for the anonymous web pipeline. Co-ordinates:
@@ -63,6 +64,16 @@ class WebFeedSource(
 
     private val refreshMutex = Mutex()
     private val fetchSemaphore = Semaphore(maxConcurrentFetches)
+
+    // Dedup map for UI-initiated retries: two fast taps + a background sweep
+    // could otherwise launch 3 concurrent fetches for the same channel. The
+    // tier-2 sweep (doRefresh) does not yet register its per-username jobs
+    // here — refreshMutex single-flights the whole sweep, so any in-flight
+    // doRefresh is already mutually-exclusive with other sweeps, and racing
+    // a retry against an in-flight sweep is benign (both write the same
+    // channel page; SQLDelight upserts are idempotent). If/when the sweep
+    // gains per-username concurrency it should register its jobs here too.
+    private val inFlightRetries = ConcurrentHashMap<String, Job>()
 
     // Last-known DataStore subscription set, used for delta computation in
     // [handleSubscriptionsChanged]. We deliberately diff against THIS rather
@@ -255,8 +266,20 @@ class WebFeedSource(
     }
 
     /** Re-fetch a single channel — used after an explicit error chip tap. */
-    fun retry(username: String): Job = scope.launch {
-        fetchOne(username.lowercase(), forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
+    fun retry(username: String): Job {
+        val key = username.lowercase()
+        // Dedup: if a retry for this username is still in flight, hand back
+        // the existing Job. Prevents two fast taps from launching parallel
+        // fetches that race on the same channel's status / media writes.
+        inFlightRetries[key]?.let { existing ->
+            if (!existing.isCompleted) return existing
+        }
+        val job = scope.launch {
+            fetchOne(key, forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
+        }
+        inFlightRetries[key] = job
+        job.invokeOnCompletion { inFlightRetries.remove(key, job) }
+        return job
     }
 
     /** Re-fetch the channel a post belongs to after Coil reports a stale media URL. */

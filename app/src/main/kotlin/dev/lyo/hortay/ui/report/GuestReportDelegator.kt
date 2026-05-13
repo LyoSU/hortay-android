@@ -49,7 +49,11 @@ class GuestReportDelegator(
      * Returns the [Outcome] so callers can decide whether to show
      * [ReportInstructionDialog].
      */
-    fun report(channelUsername: String, postId: Long?): Outcome {
+    fun report(channelUsername: String?, postId: Long?): Outcome {
+        if (channelUsername.isNullOrBlank()) {
+            logOutcome(channelUsername, postId, "delegated", "no_handle")
+            return Outcome.AllFailed
+        }
         // 1. Try tg:// with any installed Telegram-compatible client.
         if (isAnyTelegramClientInstalled()) {
             val uri = deepLink(channelUsername, postId)
@@ -72,10 +76,11 @@ class GuestReportDelegator(
 
     private fun openWebFallback(channelUsername: String, postId: Long?): Outcome {
         // 2. Custom Tab pointing at t.me/<user> or t.me/<user>/<post>.
+        val encodedUser = Uri.encode(channelUsername)
         val webUri = if (postId != null && postId != 0L) {
-            Uri.parse("https://t.me/$channelUsername/$postId")
+            Uri.parse("https://t.me/$encodedUser/$postId")
         } else {
-            Uri.parse("https://t.me/$channelUsername")
+            Uri.parse("https://t.me/$encodedUser")
         }
         return try {
             CustomTabsIntent.Builder().build().launchUrl(context, webUri)
@@ -114,12 +119,14 @@ class GuestReportDelegator(
         }
     }
 
-    private fun deepLink(username: String, postId: Long?): Uri =
-        if (postId != null && postId != 0L) {
-            Uri.parse("tg://resolve?domain=$username&post=$postId")
+    private fun deepLink(username: String, postId: Long?): Uri {
+        val encoded = Uri.encode(username)
+        return if (postId != null && postId != 0L) {
+            Uri.parse("tg://resolve?domain=$encoded&post=$postId")
         } else {
-            Uri.parse("tg://resolve?domain=$username")
+            Uri.parse("tg://resolve?domain=$encoded")
         }
+    }
 
     private fun isAnyTelegramClientInstalled(): Boolean =
         TELEGRAM_PACKAGES.any { pkg ->
@@ -130,7 +137,7 @@ class GuestReportDelegator(
         }
 
     private fun logOutcome(
-        channelUsername: String,
+        channelUsername: String?,
         postId: Long?,
         method: String,
         status: String,

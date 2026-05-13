@@ -3,12 +3,7 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -28,10 +23,8 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -43,7 +36,6 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -75,8 +67,6 @@ import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -135,6 +125,15 @@ fun ChannelScreen(
      * accepts a channel-level report against the whole chat). Null hides the row.
      */
     onReportChannel: (() -> Unit)? = null,
+    /**
+     * Process-wide cold-start gate, TDLib mode only. While in
+     * [StartupCoordinator.Phase.Booting] the comments-thread prefetch collector
+     * silently skips its work to keep the TDLib RPC pipe clear for TDLib's own
+     * initial sync — matches the gate [TimelineScreen] applies on the all-feed
+     * path. A deep-link drill into a channel within the first ~3 s after auth
+     * would otherwise bypass that budget. Null = unguarded (guest mode / tests).
+     */
+    startupPhase: kotlinx.coroutines.flow.StateFlow<dev.lyo.hortay.data.StartupCoordinator.Phase>? = null,
 ) {
     // Per-channel VM. viewModel() keys the instance by (class, key), so each chatId
     // gets its own VM rather than sharing the all-feed TimelineViewModel. The factory is
@@ -170,7 +169,7 @@ fun ChannelScreen(
     // Search-mode back-handler. When search is active, system back / predictive-back
     // should collapse the search overlay back to the channel's normal Medium top bar
     // — NOT pop the channel itself off the back-stack. Without this BackHandler, the
-    // gesture bubbles up to MainScaffold's channelStack.popChannel() and yanks the
+    // gesture bubbles up to MainScaffold's nav-stack popNav() and yanks the
     // user out to the originating tab (typically Channels), losing both the search
     // and the channel context. Composable-local BackHandler near the leaf takes
     // priority over parent BackHandlers, which is exactly the dispatch rule we need.
@@ -219,38 +218,23 @@ fun ChannelScreen(
         if (searchActive) searchResults.map(FeedItem::Single)
         else groupReplies(posts)
     }
-    val displayedItemsState = rememberUpdatedState(displayedItems)
 
     // Resolve the queued scroll-to-message once the target row appears.
-    // Mirrors the LaunchedEffect in TimelineScreen verbatim — same TDLib best-
-    // practice contract for deep links to older messages.
-    LaunchedEffect(pendingScrollToMessage) {
-        val (tChatId, messageId) = pendingScrollToMessage ?: return@LaunchedEffect
-        var requestedAroundLoad = false
-        androidx.compose.runtime.snapshotFlow { displayedItemsState.value }
-            .collect { items ->
-                val idx = items.indexOfFirst { item ->
-                    item.posts().any { p ->
-                        p.chatId == tChatId && (p.id == messageId || messageId in p.albumMessageIds)
-                    }
-                }
-                if (idx >= 0) {
-                    highlightedPostKey = tChatId to messageId
-                    listState.scrollToItem(idx)
-                    pendingScrollToMessage = null
-                    return@collect
-                }
-                if (!requestedAroundLoad) {
-                    requestedAroundLoad = true
-                    val landed = repo.loadHistoryAround(tChatId, messageId)
-                    if (!landed) {
-                        pendingScrollToMessage = null
-                        onScrollMissed()
-                        return@collect
-                    }
-                }
-            }
-    }
+    // Extracted to [rememberPendingScrollToMessage] — shared with [TimelineScreen].
+    rememberPendingScrollToMessage(
+        displayedItems = displayedItems,
+        pendingTarget = pendingScrollToMessage,
+        loadHistoryAround = { cid, mid -> repo.loadHistoryAround(cid, mid) },
+        onLanded = { cid, mid, idx ->
+            highlightedPostKey = cid to mid
+            listState.scrollToItem(idx)
+            pendingScrollToMessage = null
+        },
+        onMissed = {
+            pendingScrollToMessage = null
+            onScrollMissed()
+        },
+    )
 
     // Auto-clear the highlight after CHANNEL_HIGHLIGHT_DURATION_MS.
     LaunchedEffect(highlightedPostKey) {
@@ -278,48 +262,35 @@ fun ChannelScreen(
             }
     }
 
-    // Read-state acks: viewport-stable dwell → viewMessages. Mirrors the feed's
-    // READ_DWELL_MS logic, scoped to chatId. The acked set prevents re-issuing for
-    // the same posts on every scroll event.
-    val ackedRead = remember(chatId) { HashSet<Pair<Long, Long>>() }
-    LaunchedEffect(listState, chatId) {
-        androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
-            .distinctUntilChanged()
-            .collectLatest { indices ->
-                if (indices.isEmpty()) return@collectLatest
-                kotlinx.coroutines.delay(CHANNEL_READ_DWELL_MS)
-                val snapshot = displayedItemsState.value
-                if (snapshot.isEmpty()) return@collectLatest
-                val visible = indices.flatMap { idx -> snapshot.getOrNull(idx)?.posts().orEmpty() }
-                val fresh = visible.filter { (it.chatId to it.id) !in ackedRead }
-                if (fresh.isEmpty()) return@collectLatest
-                fresh.forEach { ackedRead.add(it.chatId to it.id) }
-                val grouped = fresh.groupBy { it.chatId }
-                scope.launch {
-                    grouped.forEach { (cid, group) ->
-                        vm.viewMessages(cid, group.map { it.id })
-                    }
-                }
+    // Read-state acks: viewport-stable dwell → viewMessages. Extracted to
+    // [rememberReadAckDwell] — shared with [TimelineScreen]. Scoped to chatId. The
+    // returned set is the same one [markPostReadState] below extends with
+    // explicit-tap acks.
+    val ackedRead = rememberReadAckDwell(
+        listState = listState,
+        displayedItems = displayedItems,
+        ackKey = chatId,
+        markAsRead = { fresh ->
+            fresh.groupBy { it.chatId }.forEach { (cid, group) ->
+                vm.viewMessages(cid, group.map { it.id })
             }
-    }
+        },
+        scope = scope,
+        dwellMs = CHANNEL_READ_DWELL_MS,
+    )
 
-    // Comments-thread prefetch: same cap (1) and debounce (1200 ms) as TimelineScreen.
-    LaunchedEffect(listState, commentsRepo) {
-        androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
-            .distinctUntilChanged()
-            .debounce(CHANNEL_PREFETCH_DEBOUNCE_MS)
-            .collect { indices ->
-                val snapshot = displayedItemsState.value
-                indices.flatMap { snapshot.getOrNull(it)?.posts().orEmpty() }
-                    .asSequence()
-                    .filter { (it.commentCount ?: 0) > 0 }
-                    .take(CHANNEL_COMMENTS_PREFETCH_LIMIT)
-                    .forEach { post ->
-                        val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
-                        commentsRepo.prefetchThread(post.chatId, ids)
-                    }
-            }
-    }
+    // Comments-thread prefetch — extracted to [rememberCommentsPrefetch], shared
+    // with [TimelineScreen]. Same cap (1) and debounce (1200 ms); same cold-start
+    // gate so a deep-link drill in the first ~3 s after auth doesn't bypass the
+    // post-auth RPC budget.
+    rememberCommentsPrefetch(
+        listState = listState,
+        displayedItems = displayedItems,
+        startupPhase = startupPhase,
+        prefetchThread = commentsRepo::prefetchThread,
+        debounceMs = CHANNEL_PREFETCH_DEBOUNCE_MS,
+        maxConcurrent = CHANNEL_COMMENTS_PREFETCH_LIMIT,
+    )
 
     // --- State wrappers for lambdas (same rememberUpdatedState pattern as TimelineScreen) ---
     val bookmarkedState = rememberUpdatedState(bookmarkedKeys)
@@ -390,8 +361,10 @@ fun ChannelScreen(
                         // Same channel: queue a scroll to the target message.
                         pendingScrollToMessage = r.replyToChatId to r.replyToMessageId
                     } else {
-                        // Different channel: drill in. MainScaffold owns pendingScrollTarget
-                        // routing; the cross-channel scroll will be wired there.
+                        // Different channel: drill in. The cross-channel scroll
+                        // target would need to ride a per-push `scrollToMessageId`
+                        // on the new NavEntry.Channel — wire it through onChannelOpen
+                        // if that turns out to matter; for now we just drill.
                         onChannelOpenState.value(r.replyToChatId)
                     }
                 }
@@ -659,14 +632,14 @@ private fun ChannelTopBar(
 ) {
     val barInsets = WindowInsets(0)
     // M3E motion: search-mode swap rides MotionScheme spring instead of a hard
-    // instant snap. defaultSpatial drives the cross-fade timing; both bar variants
-    // are the same Compact size (64 dp) now, so there is no height delta to
-    // negotiate — just the content inside the title slot swaps. Matches the
+    // instant snap. Both bar variants are the same Compact size (64 dp), so there
+    // is no height delta to negotiate — just the content inside the title slot
+    // crossfades. Crossfade (vs AnimatedContent) is the right primitive here:
+    // no enter/exit slide, no SizeTransform, just an alpha swap. Matches the
     // FloatingNavBar / ConnectionBanner motion vocabulary.
-    val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    AnimatedContent(
+    androidx.compose.animation.Crossfade(
         targetState = searchActive,
-        transitionSpec = { fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec) },
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "channel-bar-search-swap",
     ) { isSearch ->
         // Both variants render as the canonical M3 Compact (Small) top app bar
@@ -737,12 +710,6 @@ private fun ChannelTopBar(
                 windowInsets = barInsets,
             )
         } else {
-            // TODO(user): finalize subscriber-count plural/format — decide between:
-            //   - "12.3K підписників" (current, compact), or
-            //   - "12 345 підписників" (full count for smaller channels), or
-            //   - pluralStringResource(R.plurals.channel_subscribers, n, n) for
-            //     grammatically correct Ukrainian (1 підписник / 2 підписники / 5+).
-            //   Once decided, extract to a plurals resource in values-uk/strings.xml.
             val subtitleText = channelSubscribers?.let {
                 stringResource(R.string.timeline_subscribers, formatSubscribers(it))
             }
