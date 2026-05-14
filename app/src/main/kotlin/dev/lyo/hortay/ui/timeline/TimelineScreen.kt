@@ -256,6 +256,18 @@ fun TimelineScreen(
     val foldersList: List<org.drinkless.tdlib.TdApi.ChatFolderInfo> = folders?.folders
         ?.collectAsStateWithLifecycle()?.value
         ?: emptyList()
+    // Resolved per-folder rules (kept hot by ChatFoldersRepository). Used to hide tabs
+    // that the user can't act on:
+    //   • folders whose membership rule matches none of the subscribed channels — the
+    //     tab would just open onto an empty feed;
+    //   • folders whose rule is indistinguishable from the default "All" scope — the
+    //     tab would duplicate the already-present "Усі" chip.
+    // Filtering is gated on rules being resolved: while [fullFolders] is empty (cold
+    // start, between UpdateChatFolders and the parallel GetChatFolder fan-out landing),
+    // we render the raw list as before so the bar doesn't flicker / lose tabs.
+    val fullFoldersMap: Map<Int, org.drinkless.tdlib.TdApi.ChatFolder> = folders?.fullFolders
+        ?.collectAsStateWithLifecycle()?.value
+        ?: emptyMap()
     val archivedChatIds: Set<Long> = tdlibRepo?.archivedChatIds
         ?.collectAsStateWithLifecycle()?.value
         ?: emptySet()
@@ -1276,8 +1288,31 @@ fun TimelineScreen(
                     //   - Or we're in guest mode (folders == null → empty list)
                     // Showing a single "All" tab on its own is a vestigial control
                     // that takes vertical space without giving the user a choice.
-                    val tabs = remember(foldersList) {
-                        foldersList.map { FolderTab(it.id, it.name?.text?.text.orEmpty()) }
+                    // Tabs we actually show in the bar. A folder is hidden when:
+                    //   1. Its full rule is resolved AND every subscribed channel falls
+                    //      outside it (the tab would land on an empty feed), OR
+                    //   2. Its full rule is resolved AND is indistinguishable from the
+                    //      default "All" scope (`includeChannels=true`, no pins / explicit
+                    //      includes / excludes / archive-mute-read narrowing) — the chip
+                    //      would just duplicate "Усі".
+                    // While rules haven't been resolved yet (cold start / between
+                    // UpdateChatFolders and the GetChatFolder fan-out landing), we render
+                    // the raw list so the bar doesn't briefly drop folders.
+                    val visibleChatIds = remember(posts) {
+                        posts.asSequence().map { it.chatId }.toSet()
+                    }
+                    val tabs = remember(foldersList, fullFoldersMap, visibleChatIds, folders) {
+                        val repo = folders
+                        foldersList.mapNotNull { info ->
+                            val full = fullFoldersMap[info.id]
+                            val keep = when {
+                                full == null || repo == null -> true
+                                repo.isEquivalentToAll(full) -> false
+                                visibleChatIds.isEmpty() -> true
+                                else -> visibleChatIds.any { repo.isChannelInFolder(full, it) }
+                            }
+                            if (keep) FolderTab(info.id, info.name?.text?.text.orEmpty()) else null
+                        }
                     }
                     val hasFolderUi = tabs.isNotEmpty() || archivedChatIds.isNotEmpty()
                     if (!showOnlyBookmarked && hasFolderUi) {
