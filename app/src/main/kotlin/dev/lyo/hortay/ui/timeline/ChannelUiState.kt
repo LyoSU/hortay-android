@@ -5,6 +5,10 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import dev.lyo.hortay.data.EmptyReadCursors
+import dev.lyo.hortay.data.FeedOrder
+import dev.lyo.hortay.data.ReadCursors
+import dev.lyo.hortay.data.continueReadingIndex
 import kotlinx.collections.immutable.PersistentList
 
 /**
@@ -52,6 +56,14 @@ sealed interface ChannelUiState {
  *
  * [chatId] is the owning channel's id, used by [resolveTargetIndex] to match
  * posts in [items]. Pass the VM's [ChannelViewModel.chatId].
+ *
+ * [feedOrder] + [cursors] drive the cold-entry boundary for
+ * [FeedOrder.OldestUnreadFirst]: in that mode, with no deep-link target and
+ * outside search, [Ready.initialIndex] lands at the first FeedItem containing
+ * an unread post (asc-by-date sort = oldest unread at the top of the unread
+ * block, chat-app idiom). Falls back to `lastIndex` ("caught up, here's the
+ * latest") when nothing is unread. Default [cursors] = [EmptyReadCursors]
+ * keeps the Newest-mode call sites unchanged.
  */
 internal fun buildChannelUiState(
     items: PersistentList<FeedItem>,
@@ -60,12 +72,21 @@ internal fun buildChannelUiState(
     attemptedAround: Boolean,
     searchActive: Boolean,
     chatId: Long = items.firstOrNull()?.posts()?.firstOrNull()?.chatId ?: 0L,
+    feedOrder: FeedOrder = FeedOrder.Newest,
+    cursors: ReadCursors = EmptyReadCursors,
 ): ChannelUiState {
     if (historyLoading) return ChannelUiState.Resolving
     if (scrollToMessageId == null || searchActive) {
+        val initialIndex = if (feedOrder == FeedOrder.OldestUnreadFirst && items.isNotEmpty()) {
+            val anchorPosts = items.map { it.posts().first() }
+            val boundary = continueReadingIndex(feedOrder, anchorPosts, cursors)
+            if (boundary >= 0) boundary else items.lastIndex.coerceAtLeast(0)
+        } else {
+            0
+        }
         return ChannelUiState.Ready(
             items = items,
-            initialIndex = 0,
+            initialIndex = initialIndex,
             highlightedMessageId = null,
         )
     }

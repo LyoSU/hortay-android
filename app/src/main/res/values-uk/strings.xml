@@ -488,6 +488,7 @@
     <string name="link_unsupported_group">Групи відкриваються в Telegram</string>
     <string name="link_unsupported_other">Це посилання відкриється в Telegram</string>
     <string name="link_not_found">Посилання не знайдено</string>
+    <string name="deep_link_post_unavailable">Пост недоступний</string>
     <string name="link_hashtag_search">Пошук %1$s буде у наступному оновленні</string>
     <string name="link_hashtag_search_in_channel">Пошук %1$s у %2$s буде у наступному оновленні</string>
     <!-- Підтвердження приєднання до каналу за інвайт-лінком. -->

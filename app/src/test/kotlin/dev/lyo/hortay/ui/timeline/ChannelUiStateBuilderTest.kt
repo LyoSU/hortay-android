@@ -1,7 +1,9 @@
 package dev.lyo.hortay.ui.timeline
 
+import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.testutil.testPost
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toPersistentList
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -99,6 +101,26 @@ class ChannelUiStateBuilderTest {
         assertTrue(s is ChannelUiState.Ready)
         s as ChannelUiState.Ready
         assertEquals(1, s.initialIndex)
+    }
+
+    @Test
+    fun `OldestUnreadFirst lands at first-unread boundary when no deep-link`() {
+        // Asc-by-date layout: ids 100..103, cursor at 101 means 100/101 read,
+        // 102/103 unread. Boundary = index 2 (first FeedItem containing unread).
+        val items = listOf(item(100L), item(101L), item(102L), item(103L)).toPersistentList()
+        val s = buildChannelUiState(
+            items = items,
+            historyLoading = false,
+            scrollToMessageId = null,
+            attemptedAround = false,
+            searchActive = false,
+            feedOrder = FeedOrder.OldestUnreadFirst,
+            cursors = persistentMapOf(1L to 101L),
+        )
+        assertTrue(s is ChannelUiState.Ready)
+        s as ChannelUiState.Ready
+        assertEquals(2, s.initialIndex)
+        assertNull(s.highlightedMessageId)
     }
 
     @Test

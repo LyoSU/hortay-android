@@ -13,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
@@ -21,6 +20,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,7 +54,6 @@ import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.bookmarkKey
 import dev.lyo.hortay.data.isUnplayableVideo
-import dev.lyo.hortay.data.isUnreadIn
 import dev.lyo.hortay.data.orderedFor
 import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.ui.channels.ChannelInfoSheet
@@ -70,9 +69,9 @@ import dev.lyo.hortay.ui.media.LocalScrollGate
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 // FlowPreview opt-in stays: Flow.debounce(Long) is still preview-marked in
@@ -173,6 +172,7 @@ fun ChannelScreen(
 
     val posts by vm.posts.collectAsStateWithLifecycle()
     val historyLoading by vm.historyLoading.collectAsStateWithLifecycle()
+    val attemptedAround by vm.attemptedAround.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val channelTitle by vm.channelTitle.collectAsStateWithLifecycle()
     val channelSubscribers by vm.channelSubscribers.collectAsStateWithLifecycle()
@@ -200,24 +200,6 @@ fun ChannelScreen(
     // priority over parent BackHandlers, which is exactly the dispatch rule we need.
     BackHandler(enabled = searchActive) { vm.setSearchActive(false) }
 
-    // Scroll state. Each ChannelScreen instance gets its own rememberLazyListState()
-    // scoped by the parent SaveableStateProvider(key = "feed-channel:<chatId>") in
-    // MainScaffold — reopening a channel restores the exact scroll position.
-    val listState = rememberLazyListState()
-
-    // One-shot scroll-to-message request from deep-link or quote-tap.
-    var pendingScrollToMessage by remember { mutableStateOf<Pair<Long, Long>?>(null) }
-    // (chatId, messageId) of the post we just scrolled to — drives a brief highlight
-    // on that PostCard so the user's eye finds it after the jump.
-    var highlightedPostKey by remember { mutableStateOf<Pair<Long, Long>?>(null) }
-
-    LaunchedEffect(scrollToMessage) {
-        if (scrollToMessage != null) {
-            pendingScrollToMessage = scrollToMessage
-            onScrollHandled()
-        }
-    }
-
     // Pinned-only top bar on the channel detail surface. Standard M3 pinned
     // behaviour keeps the surface tint reactive to scroll without moving the
     // bar — the header stays visible at all times so "where am I" + search
@@ -233,13 +215,94 @@ fun ChannelScreen(
     // EmptyReadCursors: orderedFor's cursor argument is unused (see ReadCursors.kt
     // doc) — passing the empty map avoids re-sorting on every cursor advance,
     // matching the TimelineScreen call.
-    val displayedItems: List<FeedItem> = remember(posts, searchActive, searchResults, feedOrder) {
-        if (searchActive) searchResults.map(FeedItem::Single)
+    val readCursors = LocalReadCursors.current
+    val displayedItems = remember(posts, searchActive, searchResults, feedOrder) {
+        val list = if (searchActive) searchResults.map<TimelinePost, FeedItem>(FeedItem::Single)
         else groupReplies(posts.orderedFor(feedOrder, EmptyReadCursors))
+        list.toPersistentList()
     }
 
-    // Resolve the queued scroll-to-message once the target row appears.
-    // Extracted to [rememberPendingScrollToMessage] — shared with [TimelineScreen].
+    // [ChannelUiState] is the single source of truth for what gets mounted on
+    // this screen. The VM owns the deep-link around-load — when the candidate
+    // resolves to [ChannelUiState.Resolving], the channel paints a [SkeletonFeed]
+    // instead of flashing the head post at index 0 for a frame before the deep
+    // link lands. On [ChannelUiState.Missing] the screen falls back to the
+    // normal newest-first view and surfaces a snackbar via [onScrollMissed].
+    val candidateChannelUiState = buildChannelUiState(
+        items = displayedItems,
+        historyLoading = historyLoading,
+        scrollToMessageId = vm.scrollToMessageId,
+        attemptedAround = attemptedAround,
+        searchActive = searchActive,
+        chatId = chatId,
+        feedOrder = feedOrder,
+        cursors = readCursors,
+    )
+    val channelUiState = rememberLatchedChannelUiState(
+        candidate = candidateChannelUiState,
+        routeKey = chatId,
+    )
+    // Notify the host that the deep-link request has been consumed by the VM —
+    // ChannelViewModel reads [scrollToMessage] from its constructor and drives
+    // the around-load itself. Fires once on first composition with a non-null
+    // request, matching the previous LaunchedEffect(scrollToMessage) contract.
+    LaunchedEffect(scrollToMessage) {
+        if (scrollToMessage != null) onScrollHandled()
+    }
+    // Missing → snackbar via the existing scaffold-wide route. Single fire per
+    // latched Missing transition; reusing [onScrollMissed] keeps the snackbar
+    // plumbing untouched (the host already surfaces a localized message and
+    // dedups against concurrent posts).
+    LaunchedEffect(channelUiState) {
+        if (channelUiState is ChannelUiState.Missing) onScrollMissed()
+    }
+
+    // [highlightedPostKey] has two producers:
+    //   1. Deep-link landing: derived from the latched [Ready.highlightedMessageId]
+    //      so the target pulses after the LazyColumn mounts at the resolved index.
+    //   2. In-channel quote-tap: [onQuotedSourceClick] sets [pendingScrollToMessage]
+    //      below; [rememberPendingScrollToMessage] resolves it and writes the key
+    //      on its [onLanded] callback.
+    // Newest-mode (no deep link) and the Missing fallback produce null on path 1.
+    // Auto-clear after CHANNEL_HIGHLIGHT_DURATION_MS for both paths.
+    var highlightedPostKey by remember(chatId) { mutableStateOf<Pair<Long, Long>?>(null) }
+    LaunchedEffect(channelUiState, chatId) {
+        val mid = (channelUiState as? ChannelUiState.Ready)?.highlightedMessageId ?: return@LaunchedEffect
+        highlightedPostKey = chatId to mid
+    }
+    LaunchedEffect(highlightedPostKey) {
+        if (highlightedPostKey == null) return@LaunchedEffect
+        kotlinx.coroutines.delay(CHANNEL_HIGHLIGHT_DURATION_MS)
+        highlightedPostKey = null
+    }
+    // In-channel quote-tap pending target. Deep-link scroll is owned by the VM
+    // (see [ChannelViewModel.scrollToMessageId] + [attemptedAround] → builder
+    // gates Ready behind it), so this state holds ONLY the quoted-message
+    // jump path — same-channel reply navigation from a [PostInteractions.onQuotedSourceClick]
+    // tap. [rememberPendingScrollToMessage] resolves the target and clears it.
+    var pendingScrollToMessage by remember(chatId) { mutableStateOf<Pair<Long, Long>?>(null) }
+
+    // Scroll state. The LazyColumn mounts via [LazyListState(initialIndex, 0)] on
+    // the first Ready transition, so first paint lands at the correct row in one
+    // frame — no scroll-pin loop, no animate-through index 0. [rememberSaveable]
+    // keyed on (chatId, initialIndex) preserves scroll across drill-out/drill-in
+    // within the parent SaveableStateProvider(key = "feed-channel:<chatId>") in
+    // MainScaffold; a route-key change discards the saver bundle and re-seeds
+    // from the fresh [initialIndex]. The cold-entry scroll-pin effect for
+    // OldestUnreadFirst is now folded into [buildChannelUiState] so the boundary
+    // index is type-level, not a snapshotFlow + scrollToItem race.
+    val initialIndexSeed = (channelUiState as? ChannelUiState.Ready)?.initialIndex ?: 0
+    val listState = rememberSaveable(
+        chatId, initialIndexSeed,
+        saver = androidx.compose.foundation.lazy.LazyListState.Saver,
+    ) {
+        androidx.compose.foundation.lazy.LazyListState(initialIndexSeed, 0)
+    }
+
+    // Resolve in-channel quote-tap scroll-to-message once the target row appears.
+    // Shared with [TimelineScreen]; deep-link landings DO NOT use this path — VM
+    // owns those. On miss the helper invokes [onScrollMissed] so the host posts a
+    // "link not found" snackbar instead of leaving the user staring at nothing.
     rememberPendingScrollToMessage(
         displayedItems = displayedItems,
         pendingTarget = pendingScrollToMessage,
@@ -254,70 +317,6 @@ fun ChannelScreen(
             onScrollMissed()
         },
     )
-
-    // Auto-clear the highlight after CHANNEL_HIGHLIGHT_DURATION_MS.
-    LaunchedEffect(highlightedPostKey) {
-        if (highlightedPostKey == null) return@LaunchedEffect
-        kotlinx.coroutines.delay(CHANNEL_HIGHLIGHT_DURATION_MS)
-        highlightedPostKey = null
-    }
-
-    // Cold-entry scroll for OldestUnreadFirst (chat-app idiom). Fires once per
-    // ChannelScreen instance when:
-    //   - [feedOrder] is OldestUnreadFirst (Newest stays at index 0 = newest top,
-    //     no positioning needed),
-    //   - [historyLoading] has cleared so we're picking the boundary against the
-    //     full per-channel slice rather than the 1–3 posts the global feed
-    //     harvest seeded (the wrong boundary would land the user mid-list),
-    //   - [pendingScrollToMessage] is null (deep-link scroll-to-message has
-    //     priority — let it land first; this effect re-arms via the keyed
-    //     restart below if the user changes feedOrder afterwards),
-    //   - the LazyListState is at its default 0/0 position. If it isn't, the
-    //     SaveableStateProvider in MainScaffold restored a scroll position from
-    //     a previous drill-out/drill-in — respect the user's intent over the
-    //     boundary pin, same contract TimelineScreen's cold-start pin uses.
-    //
-    // Boundary picker: first FeedItem containing any unread post (asc-by-date
-    // sort means oldest unread is the top of the unread block). Fallback to
-    // [List.lastIndex] = newest at the bottom = "caught up, here's the latest"
-    // landing. The state wrappers below keep the long-running effect reading
-    // live values without restarting on every recomposition (same idiom as
-    // TimelineScreen's [feedItemsState]).
-    val readCursors = LocalReadCursors.current
-    val displayedItemsState = rememberUpdatedState(displayedItems)
-    val readCursorsStateForEntry = rememberUpdatedState(readCursors)
-    val historyLoadingState = rememberUpdatedState(historyLoading)
-    val pendingScrollState = rememberUpdatedState(pendingScrollToMessage)
-    LaunchedEffect(chatId, feedOrder) {
-        if (feedOrder != FeedOrder.OldestUnreadFirst) return@LaunchedEffect
-        if (listState.firstVisibleItemIndex != 0 ||
-            listState.firstVisibleItemScrollOffset != 0
-        ) {
-            return@LaunchedEffect
-        }
-        androidx.compose.runtime.snapshotFlow {
-            ChannelColdEntryState(
-                loading = historyLoadingState.value,
-                size = displayedItemsState.value.size,
-                hasPendingTarget = pendingScrollState.value != null,
-            )
-        }
-            .distinctUntilChanged()
-            .first { !it.loading && it.size > 0 && !it.hasPendingTarget }
-        if (listState.isScrollInProgress) return@LaunchedEffect
-        if (listState.firstVisibleItemIndex != 0 ||
-            listState.firstVisibleItemScrollOffset != 0
-        ) {
-            return@LaunchedEffect
-        }
-        val items = displayedItemsState.value
-        val cursors = readCursorsStateForEntry.value
-        val boundary = items.indexOfFirst { feedItem ->
-            feedItem.posts().any { it.isUnreadIn(cursors) }
-        }
-        val target = if (boundary >= 0) boundary else items.lastIndex
-        if (target > 0) listState.scrollToItem(target)
-    }
 
     // Pagination: near-bottom snapshotFlow → VM.loadOlderIfPossible(). The VM
     // guards against concurrent calls; the threshold (6 items from the end)
@@ -550,9 +549,27 @@ fun ChannelScreen(
                     )
                 },
             ) {
-                val displayedList = displayedItems
-
+                // Render gate. The latched [ChannelUiState] is the single source of
+                // truth for what mounts:
+                //   • Resolving → [SkeletonFeed]: history-loading or deep-link
+                //     around-load in flight. No LazyColumn = no flash of the
+                //     channel's head post before the deep-link target lands.
+                //   • Missing   → snackbar is fired by the LaunchedEffect above;
+                //     the LazyColumn renders the normal newest-first view at
+                //     index 0 so the user isn't stuck on a skeleton.
+                //   • Ready     → LazyColumn mounted at [Ready.initialIndex], so
+                //     deep-link / OldestUnreadFirst landings hit the correct row
+                //     in one frame.
+                val displayedList = when (channelUiState) {
+                    is ChannelUiState.Ready -> channelUiState.items
+                    ChannelUiState.Missing -> displayedItems
+                    ChannelUiState.Resolving -> displayedItems
+                }
+                val isResolving = channelUiState is ChannelUiState.Resolving
                 when {
+                    isResolving -> {
+                        SkeletonFeed(modifier = Modifier.fillMaxSize())
+                    }
                     displayedList.isEmpty() && !refreshing -> {
                         when {
                             searchActive && searchQuery.isNotBlank() -> ChannelSearchEmpty()
@@ -987,15 +1004,3 @@ private const val CHANNEL_COMMENTS_PREFETCH_LIMIT = 1
 
 /** Posts ahead of first visible to eagerly prefetch. Matches TimelineScreen's PREFETCH_AHEAD. */
 private const val CHANNEL_PREFETCH_AHEAD = 2
-
-/**
- * Snapshot of the cold-entry conditions the OldestUnreadFirst boundary-scroll
- * effect waits on. Plain data class so [distinctUntilChanged] coalesces ticks
- * where the meaningful triple hasn't changed (e.g. an interaction-info update
- * mutates the post list ref without changing the size).
- */
-private data class ChannelColdEntryState(
-    val loading: Boolean,
-    val size: Int,
-    val hasPendingTarget: Boolean,
-)
