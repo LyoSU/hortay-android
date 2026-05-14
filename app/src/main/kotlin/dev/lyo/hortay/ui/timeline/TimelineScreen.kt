@@ -587,7 +587,7 @@ fun TimelineScreen(
         val target = homeScrollIndexState.intValue
         val atTarget = listState.firstVisibleItemIndex == target &&
             listState.firstVisibleItemScrollOffset == 0
-        if (atTarget) vm.refresh() else listState.animateScrollToItem(target)
+        if (atTarget) vm.refresh() else listState.smartScrollTo(target)
     }
 
     // Switching folders jumps to the top of the feed — "show me the top of this
@@ -1632,7 +1632,7 @@ fun TimelineScreen(
                             } else {
                                 (visiblePosts.lastIndex).coerceAtLeast(0)
                             }
-                            listState.animateScrollToItem(target)
+                            listState.smartScrollTo(target)
                         }
                     },
                 )
@@ -1677,7 +1677,7 @@ fun TimelineScreen(
                             // click and a refresh.
                             val live = visiblePosts.indexOfFirst { it.isUnreadIn(cursorsState.value) }
                             val target = if (live >= 0) live else homeScrollIndex
-                            scope.launch { listState.animateScrollToItem(target) }
+                            scope.launch { listState.smartScrollTo(target) }
                         },
                     )
                 }
