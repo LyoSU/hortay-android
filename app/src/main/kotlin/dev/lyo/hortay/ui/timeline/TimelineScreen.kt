@@ -1507,54 +1507,17 @@ fun TimelineScreen(
                                 Spacer(modifier = Modifier.fillMaxSize())
                                 return@CompositionLocalProvider
                             }
-                            LazyColumn(
+                            TimelineFeedColumn(
                                 state = listState,
                                 flingBehavior = flingBehavior,
-                                contentPadding = PaddingValues(
-                                    top = 8.dp,
-                                    bottom = contentPadding.calculateBottomPadding(),
-                                ),
+                                bottomPadding = contentPadding.calculateBottomPadding(),
+                                feedItems = feedItems,
+                                unreadBoundaryKey = unreadBoundaryKey,
+                                centeredItemKey = centeredItemKey,
+                                highlightedPostKey = highlightedPostKey,
+                                interactions = interactions,
                                 modifier = Modifier.fillMaxSize(),
-                            ) {
-                                items(items = feedItems, key = { it.key }) { item ->
-                                    // "Unread starts here" divider rendered above the first
-                                    // item that contains an unread post (OldestUnreadFirst
-                                    // only). Composed at the start of the item lambda so it
-                                    // sticks to the same FeedItem in LazyColumn — pull-to-
-                                    // refresh updates the boundary by reassigning [readCursors]
-                                    // and the rule moves naturally with the new snapshot.
-                                    if (item.key == unreadBoundaryKey) {
-                                        UnreadBoundaryRow()
-                                    }
-                                    // Per-item State so a centre flip recomposes
-                                    // only the two affected items (old centre →
-                                    // false, new centre → true) instead of the
-                                    // whole feed.
-                                    val isCentered = remember { mutableStateOf(false) }
-                                    isCentered.value = item.key == centeredItemKey
-                                    val highlighted = highlightedPostKey?.let { (cid, mid) ->
-                                        item.posts().any { p ->
-                                            p.chatId == cid && (p.id == mid || mid in p.albumMessageIds)
-                                        }
-                                    } == true
-                                    CompositionLocalProvider(
-                                        LocalIsCenteredItem provides isCentered,
-                                        LocalIsHighlightedItem provides highlighted,
-                                    ) {
-                                        when (item) {
-                                            is FeedItem.Single -> PostCard(
-                                                post = item.post,
-                                                interactions = interactions,
-                                            )
-                                            is FeedItem.Thread -> ThreadedPostPair(
-                                                parent = item.parent,
-                                                reply = item.reply,
-                                                interactions = interactions,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                            )
                         }
                     }
                 }
@@ -1686,6 +1649,75 @@ fun TimelineScreen(
         }
     }
 
+}
+
+/**
+ * Mechanical extraction of the main feed LazyColumn from [TimelineScreen]. Behaviour
+ * is identical to the inline body it replaced — captures from the outer scope are
+ * hoisted into explicit parameters so the upcoming render gate (Task 5b) can swap
+ * this for [SkeletonFeed] / [ExpressiveEmptyHero] via a clean `when(uiState)` switch
+ * without re-touching the 2200-line outer composable.
+ */
+@Composable
+private fun TimelineFeedColumn(
+    state: androidx.compose.foundation.lazy.LazyListState,
+    flingBehavior: androidx.compose.foundation.gestures.FlingBehavior,
+    bottomPadding: androidx.compose.ui.unit.Dp,
+    feedItems: List<FeedItem>,
+    unreadBoundaryKey: Any?,
+    centeredItemKey: Any?,
+    highlightedPostKey: Pair<Long, Long>?,
+    interactions: PostInteractions,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        state = state,
+        flingBehavior = flingBehavior,
+        contentPadding = PaddingValues(
+            top = 8.dp,
+            bottom = bottomPadding,
+        ),
+        modifier = modifier,
+    ) {
+        items(items = feedItems, key = { it.key }) { item ->
+            // "Unread starts here" divider rendered above the first
+            // item that contains an unread post (OldestUnreadFirst
+            // only). Composed at the start of the item lambda so it
+            // sticks to the same FeedItem in LazyColumn — pull-to-
+            // refresh updates the boundary by reassigning [readCursors]
+            // and the rule moves naturally with the new snapshot.
+            if (item.key == unreadBoundaryKey) {
+                UnreadBoundaryRow()
+            }
+            // Per-item State so a centre flip recomposes
+            // only the two affected items (old centre →
+            // false, new centre → true) instead of the
+            // whole feed.
+            val isCentered = remember { mutableStateOf(false) }
+            isCentered.value = item.key == centeredItemKey
+            val highlighted = highlightedPostKey?.let { (cid, mid) ->
+                item.posts().any { p ->
+                    p.chatId == cid && (p.id == mid || mid in p.albumMessageIds)
+                }
+            } == true
+            CompositionLocalProvider(
+                LocalIsCenteredItem provides isCentered,
+                LocalIsHighlightedItem provides highlighted,
+            ) {
+                when (item) {
+                    is FeedItem.Single -> PostCard(
+                        post = item.post,
+                        interactions = interactions,
+                    )
+                    is FeedItem.Thread -> ThreadedPostPair(
+                        parent = item.parent,
+                        reply = item.reply,
+                        interactions = interactions,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
