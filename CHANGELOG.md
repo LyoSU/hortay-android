@@ -44,6 +44,9 @@
 ### Architecture
 - `ReactionTogglePolicy` + `PostsRepository.applyOptimisticReaction` + `CommentsRepository` per-thread override map merged into the single-collector update fan-in.
 
+### Build
+- Removed three Gradle dependencies that were declared in `libs.versions.toml` + `app/build.gradle.kts` but never imported by any source file: `androidx-navigation-compose` (project uses the in-house `NavStack` for both `MainScaffold` and `WebModeScaffold`), `compose-material-icons-extended` (project uses the in-house `Symbol` system over `painterResource(R.drawable.*)`), and `sqldelight-primitive-adapters` (`WebDatabase` is constructed without any `ColumnAdapter` — all `.sq` columns are raw `INTEGER`/`TEXT`). Lint + unit tests stay green; downstream effect is a slightly smaller R8 input and one fewer transitive `androidx.navigation.*` graph for AGP to resolve.
+
 ## [0.3.0] — 2026-05-12
 
 ### Added

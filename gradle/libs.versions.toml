@@ -20,7 +20,6 @@ graphicsShapes = "1.1.0"
 coreKtx = "1.16.0"
 activityCompose = "1.10.0"
 lifecycle = "2.9.0"
-navigation = "2.9.0"
 coroutines = "1.10.1"
 serialization = "1.7.3"
 datastore = "1.2.0"
@@ -47,7 +46,6 @@ androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-p
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
-androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 androidx-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
 
@@ -58,7 +56,6 @@ compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "composeMaterial3" }
 androidx-graphics-shapes = { group = "androidx.graphics", name = "graphics-shapes", version.ref = "graphicsShapes" }
-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 compose-ui-text-google-fonts = { group = "androidx.compose.ui", name = "ui-text-google-fonts" }
 
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
@@ -82,11 +79,9 @@ okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhtt
 
 # SQLDelight 2.x — typed SQL DAO for the anonymous web-mode database (web.db).
 # Android driver provides AndroidSqliteDriver wrapping AOSP SQLiteOpenHelper;
-# coroutines-extensions exposes asFlow()/mapToList() helpers for StateFlow plumbing;
-# primitive-adapters supplies built-in adapters for Boolean/Long/etc when needed.
+# coroutines-extensions exposes asFlow()/mapToList() helpers for StateFlow plumbing.
 sqldelight-android-driver = { group = "app.cash.sqldelight", name = "android-driver", version.ref = "sqldelight" }
 sqldelight-coroutines-extensions = { group = "app.cash.sqldelight", name = "coroutines-extensions", version.ref = "sqldelight" }
-sqldelight-primitive-adapters = { group = "app.cash.sqldelight", name = "primitive-adapters", version.ref = "sqldelight" }
 
 junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.ref = "junit5" }
 junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher", version.ref = "junitPlatform" }

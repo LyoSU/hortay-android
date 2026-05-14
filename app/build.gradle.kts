@@ -279,7 +279,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.splashscreen)
 
@@ -288,7 +287,6 @@ dependencies {
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.material3)
     implementation(libs.androidx.graphics.shapes)
-    implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.ui.text.google.fonts)
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.tooling.preview)
@@ -326,11 +324,10 @@ dependencies {
     // driver is the runtime; coroutines-extensions adds the asFlow() bridge so a
     // SELECT returns a Flow that re-emits whenever any of its source tables change
     // (queries are reference-counted internally, so observers cost nothing while
-    // unsubscribed). Primitive-adapters covers Long↔Boolean / Long↔Instant style
-    // mappings without hand-rolling each ColumnAdapter.
+    // unsubscribed). All web.db columns are raw INTEGER/TEXT — no Kotlin-typed
+    // mappings — so the primitive-adapters artifact would only add dead classes.
     implementation(libs.sqldelight.android.driver)
     implementation(libs.sqldelight.coroutines.extensions)
-    implementation(libs.sqldelight.primitive.adapters)
 
     implementation(project(":libtdlib"))
 
