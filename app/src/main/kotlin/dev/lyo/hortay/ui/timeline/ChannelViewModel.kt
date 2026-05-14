@@ -15,11 +15,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Per-channel ViewModel created (and keyed) by [ChannelScreen] on entry. Each chatId
@@ -59,6 +61,7 @@ class ChannelViewModel(
     private val repo: PostsRepository,
     private val bookmarks: BookmarkStore,
     val chatId: Long,
+    val scrollToMessageId: Long?,
 ) : ViewModel() {
 
     // Live per-channel slice of the global [PostsRepository.posts] flow. Filters by
@@ -75,6 +78,14 @@ class ChannelViewModel(
     // inaccessible channel doesn't freeze the screen on the skeleton forever.
     private val _historyLoading = MutableStateFlow(true)
     val historyLoading: StateFlow<Boolean> = _historyLoading.asStateFlow()
+
+    // Deep-link around-load attempt flag. Starts false; flipped to true by the init
+    // block after [repo.loadHistoryAround] resolves (or the 1500 ms grace elapses).
+    // Consumed by [buildChannelUiState] — once true and the target still isn't in
+    // [posts], the UI transitions to [ChannelUiState.Missing] and falls back to index 0.
+    // No-op when [scrollToMessageId] is null (no deep-link).
+    private val _attemptedAround = MutableStateFlow(false)
+    val attemptedAround: StateFlow<Boolean> = _attemptedAround.asStateFlow()
 
     // Pagination single-flight guard: prevents concurrent [loadOlder] calls from a
     // rapid-scroll listener (near-bottom LaunchedEffect fires many times before the
@@ -150,6 +161,29 @@ class ChannelViewModel(
                 repo.loadChannelHistory(chatId)
             } finally {
                 _historyLoading.value = false
+            }
+        }
+        // Deep-link around-load: if the caller supplied a scrollToMessageId, check
+        // whether the target is already in the global feed slice (from the cold-start
+        // harvest). If not, issue loadHistoryAround exactly once, then wait up to
+        // 1500 ms for the post to surface in the posts flow. Either way, flip
+        // _attemptedAround so [buildChannelUiState] can transition out of Resolving.
+        if (scrollToMessageId != null) {
+            viewModelScope.launch {
+                val initialMatch = posts.value.any { p ->
+                    p.id == scrollToMessageId || scrollToMessageId in p.albumMessageIds
+                }
+                if (!initialMatch) {
+                    runCatching { repo.loadHistoryAround(chatId, scrollToMessageId) }
+                    withTimeoutOrNull(1_500L) {
+                        posts.first { ps ->
+                            ps.any { p ->
+                                p.id == scrollToMessageId || scrollToMessageId in p.albumMessageIds
+                            }
+                        }
+                    }
+                }
+                _attemptedAround.value = true
             }
         }
         // Channel title: watch the post stream for a post whose senderName / channelContext

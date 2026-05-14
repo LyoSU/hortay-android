@@ -157,8 +157,17 @@ fun ChannelScreen(
     // with the same key reuse the existing instance regardless of the factory parameter.
     val vm: ChannelViewModel = viewModel(
         key = "channel:$chatId",
-        factory = remember(repo, bookmarks, chatId) {
-            viewModelFactory { initializer { ChannelViewModel(repo, bookmarks, chatId) } }
+        factory = remember(repo, bookmarks, chatId, scrollToMessage) {
+            viewModelFactory {
+                initializer {
+                    ChannelViewModel(
+                        repo = repo,
+                        bookmarks = bookmarks,
+                        chatId = chatId,
+                        scrollToMessageId = scrollToMessage?.second,
+                    )
+                }
+            }
         },
     )
 
