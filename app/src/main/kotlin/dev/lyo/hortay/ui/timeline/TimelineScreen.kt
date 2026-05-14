@@ -16,7 +16,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.clip
 import androidx.compose.material3.*
@@ -67,6 +66,7 @@ import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.async
@@ -76,7 +76,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
 
 // FlowPreview opt-in stays: Flow.debounce(Long) is still preview-marked in
@@ -287,130 +286,32 @@ fun TimelineScreen(
     // Guest / web mode mounts TimelineScreen without a per-channel provider but with a
     // top-level tab provider from WebModeScaffold, which is equivalent: the all-feed
     // state is preserved across tab switches.
-    val listState = rememberLazyListState()
-
-    // Cold-launch scroll reset that survives the streaming refresh storm.
     //
-    // Three pile-on bugs converge here:
-    //  1. [LazyListState.Saver] persists `firstVisibleItemIndex` across process death
-    //     via Compose's standard saveable plumbing — closing on a mid-feed scroll
-    //     position would otherwise reopen there instead of the canonical feed-top.
-    //  2. The cold-start refresh streams new posts in above the head ([PostsRepository.
-    //     refreshLocked] writes incrementally per channel, and any [UpdateNewMessage]
-    //     events landing during the refresh window add even more). So even after
-    //     `scrollToItem(0)` lands us at the snapshot-restored top, the LazyColumn's
-    //     keyed-stability — `items(key = { it.key })` ties scroll-anchor to the
-    //     visible item's key, not its index — preserves the visual position of
-    //     whatever post was originally at index 0 while fresh content gets tucked
-    //     invisibly above the viewport. User-visible symptom: opens the app and
-    //     sees yesterday's top post instead of the freshest one streaming in.
-    //  3. Telegram-Android, Twitter and most social feeds use a non-keyed
-    //     `LinearLayoutManager` (or equivalent index-anchored behaviour) — Compose's
-    //     key-anchored stability is great for in-session feed mutations (a reaction
-    //     count update doesn't yank the user's scroll) but works against the
-    //     cold-start "land on freshest" expectation.
+    // Cold-start positioning is now owned by the `LazyListState(initialIndex, 0)`
+    // constructor arg: [initialIndexSeed] is rebound when [latchedUiState] first
+    // transitions to [TimelineUiState.Ready], which discards the saver bundle
+    // and instantiates a freshly-positioned [LazyListState]. The old
+    // snapshotFlow / scrollToItem cold-start pin is gone — first paint of the
+    // LazyColumn lands at the correct row in one frame, without animating
+    // through index 0 of whatever sort happened to apply pre-cursors.
     //
-    // Fix: replay `scrollToItem(0)` on every `posts.size` mutation through the
-    // cold-start refresh window. Bail the moment the user manually scrolls
-    // (`isScrollInProgress`) so we respect their intent — once they've reached for
-    // the list, we're done pinning. Per-surface ([coldStartScrolledSurfaces])
-    // one-shot guard so in-process remounts — drilling into a channel and popping
-    // back, tab swaps, Saved ↔ Home toggles — preserve the user's intentional
-    // scroll position via the saveable index.
-    // Logout privacy / correctness gate: the process-wide
-    // [coldStartScrolledSurfaces] set normally survives until process death so
-    // an in-process drill / pop / tab swap preserves the user's scroll. After a
-    // TDLib logout + re-login we're entering a brand-new account whose first
-    // paint should land at top-of-feed exactly like a fresh launch — clear the
-    // gate when [TdClient.loggedOut] fires so the pin re-arms. Guest mode mounts
-    // TimelineScreen without `tdlibRepo`, but `loggedOut` only fires in TDLib
-    // mode anyway, so reaching through the app graph is safe in both modes.
-    LaunchedEffect(context) {
-        val app = context.applicationContext as? dev.lyo.hortay.HortayApp ?: return@LaunchedEffect
-        app.graph.tdClient.loggedOut.collect { coldStartScrolledSurfaces.clear() }
+    // [LazyListState.Saver] still persists `firstVisibleItemIndex` across tab
+    // swaps within a process (the SaveableStateProvider in MainScaffold /
+    // WebModeScaffold scopes saved state per route), so drilling into a
+    // channel and popping back retains the user's scroll. Process death is
+    // handled implicitly: the seed re-evaluates from 0 on restore, latches to
+    // its real value on the next Ready transition, and the column mounts
+    // pre-positioned. We don't try to bridge scroll across process death —
+    // see the "Cold launch always lands on Home top-of-feed" guarantee.
+    val routeKey = if (showOnlyBookmarked) "saved" else "home"
+    val initialIndexSeed = androidx.compose.runtime.remember(routeKey) {
+        androidx.compose.runtime.mutableIntStateOf(0)
     }
-    LaunchedEffect(Unit) {
-        val surfaceKey = if (showOnlyBookmarked) "saved" else "home"
-        if (!coldStartScrolledSurfaces.add(surfaceKey)) return@LaunchedEffect
-        // Respect a saveable-restored scroll position. If the LazyListState
-        // came back from a SaveableStateHolder restore (user drilled into a
-        // channel and popped back — `rememberLazyListState()` rehydrated to
-        // their last position), we'd be fighting that restore by pinning to
-        // index 0 / homeScrollIndex. Bail out the moment we detect the user
-        // already has a non-default scroll position. New cold-launch path
-        // still works: initial firstVisibleItemIndex/offset are both 0, so
-        // the pin proceeds normally.
-        if (listState.firstVisibleItemIndex != 0 ||
-            listState.firstVisibleItemScrollOffset != 0
-        ) {
-            return@LaunchedEffect
-        }
-        // Cold-start scroll pin. Single collector with a switching target:
-        //
-        //   - Cursors still loading (OldestUnreadFirst cold-start race) →
-        //     pin to index 0 = top of source order = newest post per the
-        //     [PostsRepository] / [WebFeedSource] contract. Keeps the user
-        //     at the canonical "newest at top" while TDLib's first
-        //     UpdateChatReadInbox burst arrives (typically 200-800 ms after
-        //     [AuthorizationStateReady], up to a few seconds on slow
-        //     devices).
-        //   - Cursors landed → pin to live [homeScrollIndexState.intValue]
-        //     (first-unread boundary, or lastIndex when caught up / when
-        //     there are no read posts above the unread block). The pin
-        //     fires the moment cursors land AND on every subsequent
-        //     emission that nudges the target — so a sort re-shuffle
-        //     during the streaming refresh window can't strand the
-        //     LazyColumn at a stale `firstVisibleItemIndex` (Compose's
-        //     LazyListState saver pins by index, not by key, across the
-        //     sort change).
-        //
-        // Exit: user starts scrolling (respect their intent) OR refresh
-        // has finished AND cursors have landed. Pinning past the settled
-        // state would yank the user back to home on every live arrival.
-        //
-        // The unified collector replaces an earlier split phase-1 /
-        // phase-2 design — the split timed out the post-refresh snap if
-        // cursors didn't land within ~1.5 s, leaving the LazyColumn at
-        // index 0 of whatever sort eventually applied (= the OLDEST post
-        // in OldestUnreadFirst). Waiting until cursors land in the same
-        // collector closes that race entirely.
-        androidx.compose.runtime.snapshotFlow {
-            val landed = readCursorsLandedState.value
-            val target = if (landed) homeScrollIndexState.intValue else 0
-            ColdStartPinState(
-                postsSize = posts.size,
-                refreshing = refreshing,
-                cursorsLanded = landed,
-                target = target,
-            )
-        }
-            .distinctUntilChanged()
-            .takeWhile { state ->
-                !listState.isScrollInProgress &&
-                    (state.refreshing || !state.cursorsLanded)
-            }
-            .collect { state ->
-                if (state.postsSize > 0 &&
-                    (listState.firstVisibleItemIndex != state.target ||
-                        listState.firstVisibleItemScrollOffset != 0)
-                ) {
-                    listState.scrollToItem(state.target)
-                }
-            }
-        // Take one final emission of (cursorsLanded, target) so the very
-        // last snap — the one [takeWhile] dropped when it observed the
-        // exit condition — actually fires. Without this, in the common
-        // path where cursors land before refresh completes, the last
-        // collected emission was the "still refreshing" tick whose
-        // target may differ from the post-cursor home target by a
-        // composition pass.
-        if (listState.isScrollInProgress) return@LaunchedEffect
-        if (readCursorsLandedState.value) {
-            val target = homeScrollIndexState.intValue
-            if (target > 0 && target != listState.firstVisibleItemIndex) {
-                listState.scrollToItem(target)
-            }
-        }
+    val listState = rememberSaveable(
+        routeKey, initialIndexSeed.intValue,
+        saver = androidx.compose.foundation.lazy.LazyListState.Saver,
+    ) {
+        androidx.compose.foundation.lazy.LazyListState(initialIndexSeed.intValue, 0)
     }
 
     // Pinned color-only scroll behavior — height transitions are owned by
@@ -790,16 +691,6 @@ fun TimelineScreen(
         readCursorsLandedState.value = cursorsHaveLanded
     }
 
-    // LazyColumn render gate for OldestUnreadFirst cold start. The sort is
-    // cursor-independent, so a mid-cold-start re-sort no longer occurs;
-    // however the cold-start scroll target snaps from `0` to its real value
-    // (boundary or lastIndex) when [cursorsHaveLanded] flips true, and we'd
-    // rather paint atomically at the final target than land at oldest-at-top
-    // for a frame and then jump. Newest mode renders immediately (no
-    // target dependency).
-    val feedReady = feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst ||
-        cursorsHaveLanded
-
     // Reset scroll on FeedOrder flip — but ONLY on an actual user-driven change
     // of the setting, not on every remount of this Composable.
     //
@@ -829,6 +720,42 @@ fun TimelineScreen(
     // that map "visible item indices" → posts use [FeedItem.posts] to flatten threaded slots
     // back into individual TimelinePost entries.
     val feedItems = remember(visiblePosts) { groupReplies(visiblePosts) }
+
+    // Single source of truth for what TimelineScreen renders — derived from the
+    // already-filtered, already-ordered, already-grouped [feedItems], the live
+    // [ReadCursors] map, and the [feedOrder] / [refreshing] flags. The latching
+    // wrapper enforces the one-shot contract on [TimelineUiState.Ready.initialIndex]:
+    // it's captured on the first Ready transition (or on PTR completion via the
+    // falling-edge `refreshing` signal inside the reducer) and held stable across
+    // recompositions thereafter, so live cursor advances and post arrivals can't
+    // yank the user's scroll. [routeKey] is the same key the saver bundle uses, so
+    // a Home ↔ Saved tab switch resets the latch into the new route's context.
+    val persistentFeedItems = remember(feedItems) { feedItems.toPersistentList() }
+    val candidateUiState: TimelineUiState = buildTimelineUiState(
+        items = persistentFeedItems,
+        cursorsLanded = readCursorsLandedState.value,
+        frozenCursors = readCursors,
+        feedOrder = feedOrder,
+        refreshing = refreshing,
+    )
+    val latchedUiState = rememberLatchedTimelineUiState(
+        candidate = candidateUiState,
+        refreshing = refreshing,
+        routeKey = routeKey,
+    )
+
+    // One-shot seeding of [initialIndexSeed] on the first Ready transition.
+    // The reducer's latching guarantees [Ready.initialIndex] is stable for the
+    // lifetime of this routeKey, so this effect fires at most once per route
+    // entry — it rebinds [initialIndexSeed] which discards the saver bundle and
+    // re-instantiates [listState] positioned at [initialIndex]. The LazyColumn
+    // mounts pre-positioned in one frame, no animate-through.
+    LaunchedEffect(latchedUiState, routeKey) {
+        val ready = latchedUiState as? TimelineUiState.Ready ?: return@LaunchedEffect
+        if (initialIndexSeed.intValue != ready.initialIndex) {
+            initialIndexSeed.intValue = ready.initialIndex
+        }
+    }
 
     // LaunchedEffect's block freezes its captures on the keys-last-changed composition
     // (Compose's [remember] under the hood holds the original lambda), so subsequent
@@ -1352,20 +1279,36 @@ fun TimelineScreen(
                         )
                     }
 
-                    if (visiblePosts.isEmpty() && !refreshing) {
-                        // Three empty-state variants:
-                        //   - showOnlyBookmarked: Saved tab is empty
-                        //   - OldestUnreadFirst with non-empty filteredPosts:
-                        //     queue is depleted (everything read) → "all caught up"
-                        //   - default: no posts loaded yet / no channels followed
-                        val emptyKind = when {
-                            showOnlyBookmarked -> EmptyKind.Saved
-                            feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst &&
-                                filteredPosts.isNotEmpty() -> EmptyKind.CaughtUp
-                            else -> EmptyKind.Default
+                    // Render gate. The latched [TimelineUiState] is the single source
+                    // of truth for what gets mounted:
+                    //   • Loading → [SkeletonFeed]: refresh in flight on an empty
+                    //     feed, OR reverse-feed items present but cursors not yet
+                    //     landed. The LazyColumn is intentionally NOT mounted so
+                    //     no transient "wrong sort" / "wrong row at index 0" frame
+                    //     can leak.
+                    //   • Empty → [EmptyState]: refresh finished and there is
+                    //     genuinely nothing to show — Saved tab is empty, queue is
+                    //     caught up in OldestUnreadFirst, or no channels followed yet.
+                    //   • Ready → [TimelineFeedColumn]: items non-empty, [listState]
+                    //     was constructed with `LazyListState(initialIndex, 0)` so
+                    //     first paint lands at the correct row in one frame. The
+                    //     scroll-gate / prefetch / centered-key / boundary-key
+                    //     scaffolding sits inside this branch so observers don't
+                    //     attach to a column that isn't mounted.
+                    when (val state = latchedUiState) {
+                        TimelineUiState.Loading -> {
+                            SkeletonFeed(modifier = Modifier.fillMaxSize())
                         }
-                        EmptyState(emptyKind)
-                    } else {
+                        TimelineUiState.Empty -> {
+                            val emptyKind = when {
+                                showOnlyBookmarked -> EmptyKind.Saved
+                                feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst &&
+                                    filteredPosts.isNotEmpty() -> EmptyKind.CaughtUp
+                                else -> EmptyKind.Default
+                            }
+                            EmptyState(emptyKind)
+                        }
+                        is TimelineUiState.Ready -> {
                         // Scroll gate: while the LazyColumn is mid-scroll (drag, fling,
                         // animateScrollToItem) media composables defer their ensure() so
                         // we don't saturate TDLib's 4-slot pool with intermediate posts
@@ -1498,26 +1441,25 @@ fun TimelineScreen(
                         }
 
                         CompositionLocalProvider(LocalScrollGate provides scrollGate) {
-                            // Cold-start render gate for OldestUnreadFirst: hide
-                            // the LazyColumn until cursors arrive and the sort
-                            // is meaningful. Until then a transient empty Box
-                            // sits in the column's place — no one-frame flash
-                            // of the wrong order before the boundary snap.
-                            if (!feedReady) {
-                                Spacer(modifier = Modifier.fillMaxSize())
-                                return@CompositionLocalProvider
-                            }
+                            // The reverse-feed cold-start gate is now upstream:
+                            // [buildTimelineUiState] returns Loading in
+                            // OldestUnreadFirst until [cursorsLanded] flips true,
+                            // so we never reach this branch with cursors absent.
+                            // First paint of [TimelineFeedColumn] lands at the
+                            // [Ready.initialIndex] row in one frame — no
+                            // animate-through, no transient wrong-order frame.
                             TimelineFeedColumn(
                                 state = listState,
                                 flingBehavior = flingBehavior,
                                 bottomPadding = contentPadding.calculateBottomPadding(),
-                                feedItems = feedItems,
+                                feedItems = state.items,
                                 unreadBoundaryKey = unreadBoundaryKey,
                                 centeredItemKey = centeredItemKey,
                                 highlightedPostKey = highlightedPostKey,
                                 interactions = interactions,
                                 modifier = Modifier.fillMaxSize(),
                             )
+                        }
                         }
                     }
                 }
@@ -1903,18 +1845,6 @@ internal fun ExpressiveEmptyHero(
 private const val SEARCH_DEBOUNCE_MS = 300L
 
 /**
- * Frame for the cold-start scroll pin's [snapshotFlow] emissions. A data class
- * (rather than a [Triple] / [Quadruple]) so [distinctUntilChanged] uses
- * structural equality on the actual fields and so the call sites read clearly.
- */
-private data class ColdStartPinState(
-    val postsSize: Int,
-    val refreshing: Boolean,
-    val cursorsLanded: Boolean,
-    val target: Int,
-)
-
-/**
  * How long the OldestUnreadFirst cold-start gate waits AFTER refresh has
  * settled for TDLib's first `UpdateChatReadInbox` burst to arrive before
  * giving up and rendering the feed anyway. Without this fallback, a brand-new
@@ -2212,19 +2142,6 @@ internal fun groupReplies(
  * news-channel cadence — anything slower than that reads as a callback, not continuation.
  */
 private const val THREAD_FRESH_WINDOW_MS = 60L * 60L * 1000L
-
-/**
- * Process-level set of TimelineScreen surfaces that have already been scrolled to the
- * top once this process. Keys: `"home"` (all-feed, `showOnlyBookmarked = false`) and
- * `"saved"` (`showOnlyBookmarked = true`). Backed by [ConcurrentHashMap.newKeySet] so
- * the Feed and Saved tabs (both mount [TimelineScreen]) can flip their flags
- * concurrently without locking. Reset only by process death — the correct scope,
- * because the cold-start reset's purpose is "give the user the top of the feed on
- * launch"; subsequent in-process drill / pop / tab swap should preserve the user's
- * intentional scroll position via Compose's saveable `firstVisibleItemIndex`.
- */
-private val coldStartScrolledSurfaces: MutableSet<String> =
-    java.util.concurrent.ConcurrentHashMap.newKeySet()
 
 internal fun formatSubscribers(count: Int): String {
     fun compact(value: Double, suffix: String): String {
