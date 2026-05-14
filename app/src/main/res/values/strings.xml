@@ -372,7 +372,6 @@
     <string name="media_video_quality">Video quality</string>
     <string name="media_retry">retry</string>
     <string name="media_load_stalled">download stalled</string>
-    <string name="spoiler_tap_to_view">Tap to view</string>
     <string name="spoiler_sensitive_tap">Sensitive. Tap to view</string>
 
     <!-- Personal-author channel mode: "in <Channel>" subtitle under admin's name -->

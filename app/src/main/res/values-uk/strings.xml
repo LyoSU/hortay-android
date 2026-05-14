@@ -386,8 +386,7 @@
     <string name="media_video_quality">Якість відео</string>
     <string name="media_retry">повторити</string>
     <string name="media_load_stalled">завантаження зависло</string>
-    <string name="spoiler_tap_to_view">Тицьніть, щоб переглянути</string>
-    <string name="spoiler_sensitive_tap">Делікатне. Тицьніть, щоб переглянути</string>
+    <string name="spoiler_sensitive_tap">Делікатне. Торкніться, щоб переглянути</string>
 
     <!-- Personal-author channel mode -->
     <string name="post_in_channel">у %1$s</string>

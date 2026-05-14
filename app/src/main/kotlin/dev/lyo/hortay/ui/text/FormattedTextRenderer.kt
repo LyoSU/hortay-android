@@ -1,5 +1,12 @@
 package dev.lyo.hortay.ui.text
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.InlineTextContent
@@ -7,10 +14,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
@@ -31,58 +38,82 @@ import androidx.compose.ui.unit.em
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.LocalCustomEmoji
+import kotlinx.coroutines.launch
 
 /**
  * Renderable view of a [FormattedText]: the [AnnotatedString] to hand to a `Text` plus
- * the [InlineTextContent] map that supplies composables for any custom-emoji
- * placeholders embedded in the string, plus the dst-coordinate URL ranges so a long-
- * press handler can hit-test the user's touch position against link characters and
- * surface a Copy / Open menu (Telegram-style). Always pass both together.
+ * the [InlineTextContent] map and link-range / spoiler-group metadata.
+ *
+ * Spoiler model: TDLib commonly emits the *same* visual cover as MULTIPLE Spoiler
+ * entities — for example `||hidden 🎉 phrase||` becomes Spoiler[0..7] + Spoiler[8..15]
+ * with the CustomEmoji entity living in the 1-char gap at index 7. Treating each entity
+ * as its own click target makes the cover reveal in halves, which the user reads as
+ * "the emoji and the text separate weirdly".
+ *
+ * To match Telegram's single-cover UX we group spoiler entities by transitive
+ * adjacency (gap ≤ 1 source character — covers the codepoint-of-CustomEmoji case) at
+ * build time. Each group renders as ONE shimmer over the union of its dst ranges with
+ * a single shared seed, and reveals atomically with one [Animatable] for the whole
+ * group. Genuinely distant spoilers — different paragraphs, different hidden phrases
+ * — fall into separate groups and still reveal independently.
  */
 @Immutable
 data class RenderableText(
     val text: AnnotatedString,
     val inlineContent: Map<String, InlineTextContent>,
     val linkRanges: List<LinkRange> = emptyList(),
+    val spoilerGroups: List<SpoilerGroupInfo> = emptyList(),
+    val spoilerDispersion: (Int) -> Float? = { _ -> null },
+    /**
+     * Identity that downstream composables should pass to `remember(...)` instead of
+     * the full [RenderableText] or [text]. Stable across:
+     *  * `spoilerDispersion` lambda churn (data-class equality of the wrapping
+     *    RenderableText fails every recomposition because of the lambda).
+     *  * Spoiler reveal flips (the underlying AnnotatedString changes colour spans
+     *    when a spoiler is revealed; keying on `text` would reset expand-state).
+     *  * Reactions / view counts / read-cursor updates that hand the parent a fresh
+     *    FormattedText instance whose source content is unchanged.
+     * Derived from the FormattedText's source text only — if the author edits the
+     * post, this key flips and downstream state (expand toggle, long-press sheet)
+     * legitimately resets.
+     */
+    val contentKey: Any = text,
 ) {
     companion object {
         val Empty = RenderableText(AnnotatedString(""), emptyMap())
     }
 }
 
-/**
- * Dst-coordinate URL range for hit-testing long-press gestures. [start] and [end] are
- * character offsets into [RenderableText.text] (post-rebuild, after inline-content
- * placeholders collapsed the source range). [url] is the resolved URL (`tg://` or
- * `https://t.me/...` for mentions/hashtags, the raw href for explicit / inline URLs).
- */
+/** Dst-coordinate URL range for hit-testing long-press gestures. */
 @Immutable
 data class LinkRange(val start: Int, val end: Int, val url: String)
 
 /**
- * Compose [FormattedText] into a renderable view. Returns the legacy [AnnotatedString]-only
- * shape for compatibility — call sites that don't carry inline custom emoji can keep using
- * it, while richer renderers should prefer [rememberRenderableText].
+ * One logical spoiler cover (group of adjacent TDLib Spoiler entities that visually
+ * read as a single block). [seed] is shared across all ranges so the dot pattern is
+ * continuous across entity boundaries. [groupId] is the index into
+ * [RenderableText.spoilerGroups] — passed to `spoilerDispersion`. [ranges] are
+ * dst-coordinate IntRanges (start..end-1) to be unioned into a Path for clipping.
  */
+@Immutable
+data class SpoilerGroupInfo(
+    val groupId: Int,
+    val seed: Int,
+    val ranges: List<IntRange>,
+)
+
 @Composable
 fun rememberAnnotatedString(formatted: FormattedText): AnnotatedString =
     rememberRenderableText(formatted).text
 
 /**
- * Convert a [FormattedText] into a Compose [AnnotatedString] using current theme colors,
- * plus an inline-content map for any custom-emoji spans.
+ * Convert a [FormattedText] into a Compose [AnnotatedString], inline-content map for
+ * custom emoji, link metadata, and spoiler-group metadata.
  *
- * URL spans are encoded as [LinkAnnotation.Url] so `Text` / `BasicText` route taps through
- * `LocalUriHandler` automatically — no custom click detection needed.
- *
- * Spoiler spans are encoded as [LinkAnnotation.Clickable] with a per-span listener that
- * flips the span's index into a [Set<Int>] of revealed indices. The set is keyed on
- * [formatted] so navigating away and back resets the cover (same behaviour as Telegram).
- *
- * Custom-emoji spans (`Style.CustomEmoji`) become Compose `appendInlineContent` markers
- * with a 1.2em-square placeholder; the matching [InlineTextContent] in the returned map
- * draws the resolved sticker via [CustomEmojiInlineView]. Placeholder size is fixed (in
- * EM units) so the line layout doesn't shift when the sticker resolves asynchronously.
+ * Spoiler grouping (see [RenderableText] doc): we project spoiler entities into source
+ * ranges, then run a union-find / connected-components pass over transitive adjacency
+ * (gap ≤ 1 char). Each group gets one shared [Animatable]; tapping any glyph or
+ * inline-emoji stub inside a group triggers dispersion for the whole group at once.
  */
 @Composable
 fun rememberRenderableText(formatted: FormattedText): RenderableText {
@@ -95,9 +126,51 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
     val hashtagTap = LocalHashtagTap.current
     val customEmoji = LocalCustomEmoji.current
 
-    // Reveal state lives in a State so flipping it from the link listener triggers a
-    // recomposition of any Text consuming the AnnotatedString.
-    var revealed by remember(formatted) { mutableStateOf(emptySet<Int>()) }
+    // Pre-compute spoiler grouping (source-coordinate). Stable per formatted.
+    val spoilerSrc = remember(formatted) { computeSpoilerSrcGrouping(formatted) }
+
+    // Content-stable identity used as the remember key for ALL spoiler-reveal state.
+    // We cannot key on `formatted` itself: reactions / edits / translations / scroll-
+    // and-return cause the parent to hand us a new FormattedText instance whose data
+    // class equality is fragile (span re-ordering by the mapper, fresh inline-emoji
+    // entities arriving asynchronously, etc.). A stable hash over (text, spoiler
+    // positions) survives every update that doesn't actually change *what* is hidden.
+    // If the post text is genuinely edited, this hash flips and the covers come back
+    // — which is correct, because the old reveal index may no longer point at the
+    // same hidden phrase.
+    val spoilerStateKey = remember(formatted) { spoilerContentKey(formatted) }
+
+    val revealedGroups = remember(spoilerStateKey) { mutableStateOf(emptySet<Int>()) }
+    val dispersing = remember(spoilerStateKey) {
+        mutableStateMapOf<Int, Animatable<Float, AnimationVector1D>>()
+    }
+    val scope = rememberCoroutineScope()
+
+    val revealGroup: (Int) -> Unit = remember(spoilerStateKey) {
+        { groupId ->
+            if (groupId !in revealedGroups.value) {
+                revealedGroups.value = revealedGroups.value + groupId
+                val anim = Animatable(0f)
+                dispersing[groupId] = anim
+                scope.launch {
+                    anim.animateTo(
+                        targetValue = 1f,
+                        animationSpec = tween(
+                            durationMillis = SPOILER_REVEAL_MS,
+                            easing = SpoilerEaseInQuad,
+                        ),
+                    )
+                    dispersing.remove(groupId)
+                }
+            }
+        }
+    }
+
+    val revealAtSrcPos: (Int) -> Unit = remember(spoilerStateKey, spoilerSrc) {
+        { srcPos ->
+            spoilerSrc.groupAtSrcPos(srcPos)?.let { revealGroup(it) }
+        }
+    }
 
     val customEmojiIds = remember(formatted) {
         formatted.spans.asSequence()
@@ -106,27 +179,17 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
             .toSet()
     }
 
-    // Hint the resolver early so the batch fetch starts before any inline-content slot
-    // is composed — that way the sticker is ready by the time Compose lays the line out.
     LaunchedEffect(customEmojiIds) {
         if (customEmojiIds.isNotEmpty()) customEmoji.request(customEmojiIds)
     }
 
-    // Hoisting attempt — making one Flow collector here and passing per-id resolved
-    // stickers down via [CustomEmojiInlineView.preResolvedSticker] — measured worse on
-    // Galaxy S25 (24% janky vs 14% without). Cause: `customEmojiIds.associateWith {
-    // storeState.value[it] }` allocates a new HashMap on every store change AND the
-    // resulting [inlineContent] remember key flips, re-running all 30 InlineTextContent
-    // composables together instead of per-id. Per-instance `derivedStateOf` inside
-    // CustomEmojiInlineView turns out to be the cheaper path here: it only invalidates
-    // when THIS id's resolved sticker changes, not when ANY id in the store does.
-    // The `preResolvedSticker` parameter stays in place as a future opt-in for callers
-    // that have a static, externally-resolved sticker (e.g. reaction-chip rendering
-    // that already resolves stickers for chip layout).
-
-    val built = remember(formatted, accent, codeBg, mute, onSurface, revealed, confirmMaskedLink, hashtagTap) {
+    val built = remember(
+        formatted, spoilerSrc, accent, codeBg, mute, onSurface,
+        revealedGroups.value, confirmMaskedLink, hashtagTap,
+    ) {
         buildFromFormatted(
             formatted = formatted,
+            spoilerSrc = spoilerSrc,
             accent = accent,
             codeBg = codeBg,
             mute = mute,
@@ -134,49 +197,185 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
             uriHandler = uriHandler,
             confirmMaskedLink = confirmMaskedLink,
             hashtagTap = hashtagTap,
-            revealedSpoilers = revealed,
-            onSpoilerTap = { idx -> revealed = revealed + idx },
+            revealedGroups = revealedGroups.value,
+            revealAtSrcPos = revealAtSrcPos,
         )
     }
-    val annotated = built.text
-    val linkRanges = built.linkRanges
 
-    val inlineContent = remember(customEmojiIds, onSurface) {
-        if (customEmojiIds.isEmpty()) emptyMap()
-        else customEmojiIds.associate { id ->
-            customEmojiTag(id) to InlineTextContent(
-                placeholder = Placeholder(
-                    width = 1.2.em,
-                    height = 1.2.em,
-                    placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
-                ),
-            ) { _ ->
-                CustomEmojiInlineView(
-                    customEmojiId = id,
-                    modifier = Modifier.fillMaxSize(),
-                    tintColor = onSurface,
-                    contentDescription = null,
-                )
+    val spoilerDispersion: (Int) -> Float? = remember(spoilerStateKey) {
+        { groupId ->
+            val anim = dispersing[groupId]
+            when {
+                anim != null -> anim.value           // scattering
+                groupId in revealedGroups.value -> null   // fully revealed
+                else -> 0f                           // covered, idle shimmer
             }
         }
     }
 
-    return RenderableText(annotated, inlineContent, linkRanges)
+    val inlineContent = remember(customEmojiIds, onSurface, built.emojiCoverSrcPositions, revealAtSrcPos) {
+        if (customEmojiIds.isEmpty()) {
+            emptyMap()
+        } else {
+            buildMap {
+                customEmojiIds.forEach { id ->
+                    put(
+                        customEmojiTag(id),
+                        InlineTextContent(
+                            placeholder = Placeholder(
+                                width = 1.2.em,
+                                height = 1.2.em,
+                                placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
+                            ),
+                        ) { _ ->
+                            CustomEmojiInlineView(
+                                customEmojiId = id,
+                                modifier = Modifier.fillMaxSize(),
+                                tintColor = onSurface,
+                                contentDescription = null,
+                            )
+                        },
+                    )
+                }
+                built.emojiCoverSrcPositions.forEach { srcPos ->
+                    put(
+                        coveredEmojiTag(srcPos),
+                        InlineTextContent(
+                            placeholder = Placeholder(
+                                width = 1.2.em,
+                                height = 1.2.em,
+                                placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
+                            ),
+                        ) { _ ->
+                            val interaction = remember { MutableInteractionSource() }
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .clickable(
+                                        interactionSource = interaction,
+                                        indication = null,
+                                        onClick = { revealAtSrcPos(srcPos) },
+                                    ),
+                            )
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    return RenderableText(
+        text = built.text,
+        inlineContent = inlineContent,
+        linkRanges = built.linkRanges,
+        spoilerGroups = built.spoilerGroups,
+        spoilerDispersion = spoilerDispersion,
+        contentKey = formatted.text,
+    )
 }
 
-/** Internal carrier so [buildFromFormatted] can return both the string AND the
- *  link-range index in one allocation. */
+private const val SPOILER_REVEAL_MS = 1100
+private val SpoilerEaseInQuad: Easing = Easing { t -> t * t }
+private const val SPOILER_ADJACENCY_GAP = 1
+
+/**
+ * Content-stable hash for keying spoiler reveal state. Considers only the things that
+ * actually determine *what* a spoiler covers: the message text and the (start, end)
+ * positions of every Spoiler entity. Sensitive to:
+ *  * Text edit by the author — reveal state should reset (the old reveal could now
+ *    point at unrelated content).
+ *  * Spoiler entity moved / added / removed by the author — reset, same reasoning.
+ * Insensitive to:
+ *  * Reactions, view counts, edit-flag, translation arriving — no change to hash.
+ *  * Span list re-ordering — Spoiler positions are folded in sorted order.
+ *  * New CustomEmoji entities — they're not in the hash; the corresponding spoiler
+ *    grouping derives them from positions anyway.
+ */
+private fun spoilerContentKey(formatted: FormattedText): Long {
+    var h = formatted.text.hashCode().toLong()
+    val spoilerSpans = formatted.spans
+        .asSequence()
+        .filter { it.style == FormattedText.Style.Spoiler }
+        .map { it.start to it.end }
+        .sortedWith(compareBy({ it.first }, { it.second }))
+    for ((start, end) in spoilerSpans) {
+        h = h * 1_000_003L + start
+        h = h * 1_000_003L + end
+    }
+    return h
+}
+
+private fun customEmojiTag(id: Long): String = "ce-$id"
+private fun coveredEmojiTag(srcPos: Int): String = "spoiler-emoji-cover@$srcPos"
+
+/** Result of transitive-adjacency grouping of TDLib Spoiler entities in source space. */
+private class SpoilerSrcGrouping(
+    /** For each TDLib spoiler-span index, the groupId it belongs to. */
+    private val spanIdxToGroup: Map<Int, Int>,
+    /** Source-position ranges per group, used for hit-testing taps. */
+    private val groupSrcRanges: Map<Int, List<IntRange>>,
+) {
+    fun groupOf(spanIdx: Int): Int? = spanIdxToGroup[spanIdx]
+    fun groupAtSrcPos(srcPos: Int): Int? {
+        for ((groupId, ranges) in groupSrcRanges) {
+            if (ranges.any { srcPos in it }) return groupId
+        }
+        return null
+    }
+    val groupIds: Set<Int> get() = groupSrcRanges.keys
+}
+
+private fun computeSpoilerSrcGrouping(formatted: FormattedText): SpoilerSrcGrouping {
+    val srcLen = formatted.text.length
+    data class Entry(val spanIdx: Int, val start: Int, val end: Int)
+    val entries = formatted.spans.withIndex()
+        .filter { (_, sp) -> sp.style == FormattedText.Style.Spoiler }
+        .map { (idx, sp) ->
+            val s = sp.start.coerceIn(0, srcLen)
+            val e = sp.end.coerceIn(s, srcLen)
+            Entry(idx, s, e)
+        }
+        .filter { it.start < it.end }
+        .sortedBy { it.start }
+
+    if (entries.isEmpty()) {
+        return SpoilerSrcGrouping(emptyMap(), emptyMap())
+    }
+
+    // Linear sweep: a new group starts when the gap from the previous entry's end is
+    // greater than SPOILER_ADJACENCY_GAP source characters. The +1 tolerance covers the
+    // common case where a CustomEmoji codepoint splits one logical spoiler into two
+    // TDLib entities; longer gaps mean the spoilers are visually distinct.
+    val spanIdxToGroup = HashMap<Int, Int>()
+    val groupRanges = HashMap<Int, MutableList<IntRange>>()
+    var currentGroup = 0
+    var currentEnd = entries[0].end
+    spanIdxToGroup[entries[0].spanIdx] = 0
+    groupRanges.getOrPut(0) { mutableListOf() } += (entries[0].start until entries[0].end)
+    for (i in 1 until entries.size) {
+        val e = entries[i]
+        if (e.start - currentEnd > SPOILER_ADJACENCY_GAP) {
+            currentGroup++
+        }
+        spanIdxToGroup[e.spanIdx] = currentGroup
+        groupRanges.getOrPut(currentGroup) { mutableListOf() } += (e.start until e.end)
+        currentEnd = maxOf(currentEnd, e.end)
+    }
+    return SpoilerSrcGrouping(spanIdxToGroup, groupRanges)
+}
+
 private data class BuiltAnnotated(
     val text: AnnotatedString,
     val linkRanges: List<LinkRange>,
+    val spoilerGroups: List<SpoilerGroupInfo>,
+    val emojiCoverSrcPositions: Set<Int>,
 )
-
-private fun customEmojiTag(id: Long): String = "ce-$id"
 
 private data class CustomEmojiRange(val start: Int, val end: Int, val emojiId: Long)
 
 private fun buildFromFormatted(
     formatted: FormattedText,
+    spoilerSrc: SpoilerSrcGrouping,
     accent: Color,
     codeBg: Color,
     mute: Color,
@@ -184,17 +383,16 @@ private fun buildFromFormatted(
     uriHandler: UriHandler,
     confirmMaskedLink: (String) -> Unit,
     hashtagTap: (String) -> Unit,
-    revealedSpoilers: Set<Int>,
-    onSpoilerTap: (Int) -> Unit,
+    revealedGroups: Set<Int>,
+    revealAtSrcPos: (Int) -> Unit,
 ): BuiltAnnotated {
     val linkRanges = mutableListOf<LinkRange>()
+    val emojiCoverSrcPositions = mutableSetOf<Int>()
+    val groupDstRanges = HashMap<Int, MutableList<IntRange>>()
     val annotated = buildAnnotatedString {
     val srcText = formatted.text
     val srcLen = srcText.length
 
-    // Sort custom-emoji ranges so we can stream the source text and substitute each range
-    // with a single inline-content placeholder. TDLib guarantees these spans don't overlap
-    // (one entity per emoji glyph), so a simple linear pass is sufficient.
     val customEmojiRanges = formatted.spans
         .mapNotNull { sp ->
             (sp.style as? FormattedText.Style.CustomEmoji)?.let { ce ->
@@ -208,11 +406,14 @@ private fun buildFromFormatted(
         .filter { it.start < it.end }
         .sortedBy { it.start }
 
-    // positionMap[srcIdx] = corresponding dst index in the AnnotatedString we're building.
-    // Used to re-anchor all OTHER spans (bold, URL, mention…) onto the rebuilt string —
-    // collapsing each multi-codepoint emoji range into one placeholder character shifts
-    // every downstream offset, and a naïve `addStyle(start, end)` would land on the wrong
-    // glyph. The map is filled while we walk the source.
+    fun emojiUnderCoveredGroup(srcPos: Int): Boolean {
+        val groupId = spoilerSrc.groupAtSrcPos(srcPos) ?: return false
+        return groupId !in revealedGroups
+    }
+
+    fun emojiUnderAnyGroup(srcPos: Int): Boolean =
+        spoilerSrc.groupAtSrcPos(srcPos) != null
+
     val positionMap = IntArray(srcLen + 1)
     var dst = 0
     var src = 0
@@ -220,11 +421,11 @@ private fun buildFromFormatted(
     while (src < srcLen) {
         if (rangeIdx < customEmojiRanges.size && src == customEmojiRanges[rangeIdx].start) {
             val r = customEmojiRanges[rangeIdx]
-            // All source positions inside [start, end) collapse to the placeholder dst.
             for (i in r.start until r.end) positionMap[i] = dst
-            // U+FFFC is the official Object Replacement Character — a stable, invisible
-            // 1-char anchor that paints nothing if the inline content fails to resolve.
-            appendInlineContent(customEmojiTag(r.emojiId), "￼")
+            if (emojiUnderAnyGroup(r.start)) emojiCoverSrcPositions += r.start
+            val tag = if (emojiUnderCoveredGroup(r.start)) coveredEmojiTag(r.start)
+                else customEmojiTag(r.emojiId)
+            appendInlineContent(tag, "￼")
             dst += 1
             src = r.end
             rangeIdx++
@@ -236,23 +437,11 @@ private fun buildFromFormatted(
     }
     positionMap[srcLen] = dst
 
-    // Telegram-Android paints links in accent with NO underline — underline is reserved
-    // for the explicit `<u>` entity (Style.Underline below). Matching that vocabulary so
-    // a body of mixed mentions / hashtags / URLs reads as one calm accent layer.
     val linkStyle = TextLinkStyles(SpanStyle(color = accent))
     val mentionStyle = TextLinkStyles(SpanStyle(color = accent))
-    // tg://… URIs throw ActivityNotFoundException when no Telegram client is installed.
-    // openUri propagates that synchronously from inside the gesture handler — we'd crash.
-    // Wrap in runCatching so the tap is a no-op instead.
     val safeOpen = LinkInteractionListener { link ->
         if (link is LinkAnnotation.Url) runCatching { uriHandler.openUri(link.url) }
     }
-    // Tap listener for **masked** links (TDLib `Style.TextUrl`) — the
-    // `[visible text](url)` shape where display and destination can differ. Anti-phishing
-    // pattern from Telegram-Android: route through [LocalLinkConfirm] to surface the
-    // destination domain before opening. When no scaffold installed an override (the
-    // sentinel [Unhandled] is in effect), fall back to direct openUri so a bare-renderer
-    // caller — e.g. tests — still gets working clicks.
     val maskedOpen = LinkInteractionListener { link ->
         if (link !is LinkAnnotation.Url) return@LinkInteractionListener
         if (confirmMaskedLink === Unhandled) {
@@ -263,13 +452,8 @@ private fun buildFromFormatted(
     }
 
     formatted.spans.forEachIndexed { idx, span ->
-        // CustomEmoji ranges have already been collapsed into inline-content placeholders
-        // above — applying their span here would produce a no-op style on a 1-char anchor.
         if (span.style is FormattedText.Style.CustomEmoji) return@forEachIndexed
 
-        // Re-anchor onto the rebuilt string. The positionMap is dense over the source so
-        // a span that ENDED at the inclusive last index (end == srcLen) maps cleanly to
-        // dst's tail.
         val srcStart = span.start.coerceIn(0, srcLen)
         val srcEnd = span.end.coerceIn(srcStart, srcLen)
         val start = positionMap[srcStart]
@@ -281,19 +465,11 @@ private fun buildFromFormatted(
                 linkRanges += LinkRange(start, end, s.url)
             }
             FormattedText.Style.Url -> {
-                // Inline URL — read the URL from the SOURCE text (placeholders aren't part
-                // of the URL even when the span happens to wrap one).
                 val url = normalizeUrl(srcText.substring(srcStart, srcEnd))
                 addLink(LinkAnnotation.Url(url, linkStyle, safeOpen), start, end)
                 linkRanges += LinkRange(start, end, url)
             }
             FormattedText.Style.Mention -> {
-                // @username — encode as the canonical public `https://t.me/<handle>` URL.
-                // HortayUriHandler's resolver (TDLib GetInternalLinkType) classifies it
-                // as InternalLinkTypePublicChat and the router opens the channel in-app.
-                // Choosing the https:// form over `tg://resolve?domain=...` keeps the
-                // long-press preview / Copy / Share payload human-readable: t.me/durov
-                // vs. a service-looking `tg://resolve?...`, identical routing either way.
                 val handle = srcText.substring(srcStart, srcEnd).trimStart('@')
                 if (handle.isNotEmpty()) {
                     val url = "https://t.me/$handle"
@@ -302,13 +478,6 @@ private fun buildFromFormatted(
                 }
             }
             FormattedText.Style.Hashtag -> {
-                // Clickable, NOT a Url annotation. See [LocalHashtagTap] for the full
-                // rationale — TL;DR `#` in a tg://search?query=#foo URL is a fragment
-                // delimiter so the resolver couldn't classify it, AND any URL form
-                // leaks to clipboard / share / long-press preview which Telegram-
-                // Android avoids by treating hashtags as an in-app feature with no
-                // shareable URL. Deliberately omitted from `linkRanges` so the long-
-                // press hit-tester skips the span entirely.
                 val tag = srcText.substring(srcStart, srcEnd)
                 addLink(
                     LinkAnnotation.Clickable(
@@ -321,18 +490,19 @@ private fun buildFromFormatted(
                 )
             }
             FormattedText.Style.Spoiler -> {
-                if (idx in revealedSpoilers) {
-                    // Once tapped, render the text in normal colors with no further click.
+                val groupId = spoilerSrc.groupOf(idx) ?: return@forEachIndexed
+                groupDstRanges.getOrPut(groupId) { mutableListOf() } += (start until end)
+                if (groupId in revealedGroups) {
                     addStyle(SpanStyle(color = onSurface), start, end)
                 } else {
-                    // Mask the glyphs by painting them the same colour as the cover; tap
-                    // to flip the index into the revealed set.
-                    val cover = SpanStyle(background = mute, color = mute)
+                    val cover = SpanStyle(color = Color.Transparent)
                     addLink(
                         LinkAnnotation.Clickable(
                             tag = "spoiler-$idx",
                             styles = TextLinkStyles(cover),
-                            linkInteractionListener = LinkInteractionListener { onSpoilerTap(idx) },
+                            linkInteractionListener = LinkInteractionListener {
+                                revealAtSrcPos(srcStart)
+                            },
                         ),
                         start,
                         end,
@@ -344,7 +514,21 @@ private fun buildFromFormatted(
         }
     }
     }
-    return BuiltAnnotated(annotated, linkRanges.toList())
+    val spoilerGroups = groupDstRanges
+        .toSortedMap()
+        .map { (groupId, ranges) ->
+            // Seed combines groupId + first range start so two distinct groups in the
+            // same message look like distinct clouds (different particle layouts), but
+            // a single group has one consistent pattern across all its sub-ranges.
+            val seed = groupId * 31 + (ranges.firstOrNull()?.first ?: 0)
+            SpoilerGroupInfo(groupId = groupId, seed = seed, ranges = ranges.toList())
+        }
+    return BuiltAnnotated(
+        text = annotated,
+        linkRanges = linkRanges.toList(),
+        spoilerGroups = spoilerGroups,
+        emojiCoverSrcPositions = emojiCoverSrcPositions.toSet(),
+    )
 }
 
 private fun FormattedText.Style.toSpanStyle(
@@ -368,7 +552,6 @@ private fun FormattedText.Style.toSpanStyle(
     FormattedText.Style.BotCommand -> SpanStyle(color = accent)
     is FormattedText.Style.CustomEmoji -> null
     FormattedText.Style.BlockQuote -> SpanStyle(color = mute)
-    // Url / TextUrl / Mention / Hashtag / Spoiler handled via addLink in the caller.
     FormattedText.Style.Url,
     is FormattedText.Style.TextUrl,
     FormattedText.Style.Mention,
@@ -376,11 +559,6 @@ private fun FormattedText.Style.toSpanStyle(
     FormattedText.Style.Spoiler -> null
 }
 
-/**
- * TDLib reports inline URLs verbatim — `t.me/foo` without scheme, `example.com` etc.
- * Compose's UriHandler hands the string straight to ACTION_VIEW, which fails for
- * scheme-less inputs. Prepend `https://` so the OS gets a parseable Uri.
- */
 private fun normalizeUrl(raw: String): String {
     if (raw.contains("://")) return raw
     if (raw.startsWith("mailto:") || raw.startsWith("tel:")) return raw

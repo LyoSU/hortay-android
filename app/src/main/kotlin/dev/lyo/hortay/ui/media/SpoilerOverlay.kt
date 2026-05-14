@@ -1,55 +1,58 @@
 package dev.lyo.hortay.ui.media
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import dev.lyo.hortay.R
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
-import kotlin.random.Random
 
 /**
- * Telegram-style spoiler / sensitive-content cover. Sits on top of an already-loaded
- * media composable; tap dismisses it and reveals the underlying photo / video.
+ * Telegram-style spoiler / sensitive-content cover for media. Sits on top of an already-
+ * blurred photo / video poster (the caller applies `Modifier.blur` to the underlying
+ * media). The visual differs by [SpoilerKind]:
  *
- *  * The animated dot field mimics Telegram's "shimmering particle" effect — small white
- *    dots drift on a blurred dark background. Implemented as a single Canvas pass with
- *    pseudo-random positions seeded by the slot's stable id, so the same spoiler always
- *    looks the same across recompositions but two different spoilers don't sync up.
- *  * Clickable area covers the whole composable; a small "tap to view" hint sits in the
- *    bottom-center for discoverability.
+ *  * [SpoilerKind.Spoiler] — pure shimmering dot cloud, no label. The cloud itself is the
+ *    affordance: like Telegram, tap to reveal. No icon, no copy: a known-by-author
+ *    spoiler doesn't need the user to be told *why* it's hidden.
+ *  * [SpoilerKind.Sensitive] — dot cloud PLUS a centred icon-and-label pill, so the
+ *    user knows *why* the cover is there and that tapping is a deliberate consent step.
  *
- * For [SpoilerKind.Sensitive] (TDLib's `isSecret`) the dismiss-required text reads
- * stronger ("конфіденційне"), matching Telegram's wording on time-limited self-destruct
- * media.
+ * Reveal is a Thanos-style dispersion: tap starts a 750ms `Animatable` that pushes a
+ * `dispersionProgress` 0 → 1 into the shimmer drawer (particles scatter outward with
+ * seeded direction + delay, fading and shrinking); when the animation completes the
+ * overlay calls [onReveal] and the parent flips its `revealed` state, removing both
+ * the overlay and the underlying blur in one frame.
  */
 enum class SpoilerKind { Spoiler, Sensitive }
+
+private const val REVEAL_DURATION_MS = 1100
+private val EaseInQuad: Easing = Easing { t -> t * t }
 
 @Composable
 fun SpoilerOverlay(
@@ -58,91 +61,81 @@ fun SpoilerOverlay(
     modifier: Modifier = Modifier,
     onReveal: () -> Unit,
 ) {
-    val transition = rememberInfiniteTransition(label = "spoiler-shimmer")
-    val drift by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 6_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "spoiler-drift",
-    )
+    val drift by rememberSpoilerDrift()
+    val dispersion = remember { Animatable(0f) }
+    var dismissing by remember { mutableStateOf(false) }
+    val dispersionProgress = dispersion.value
+
+    LaunchedEffect(dismissing) {
+        if (dismissing) {
+            // easeInQuad — slow start, fast finish. Matches Telegram-Android's spoiler
+            // ripple (Easings.easeInQuad in SpoilerEffect.java). The dot cloud lingers
+            // visibly for the first ~250ms so the user *sees* the dispersion start,
+            // then accelerates outward in the second half — the "lift off" feel.
+            dispersion.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = REVEAL_DURATION_MS,
+                    easing = EaseInQuad,
+                ),
+            )
+            onReveal()
+        }
+    }
+
+    // No-ripple click so the dispersion is the visible feedback, not a Material highlight.
+    val interactionSource = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
             .fillMaxSize()
-            .clickable(onClick = onReveal),
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = !dismissing,
+                onClick = { dismissing = true },
+            ),
     ) {
-        Canvas(
+        // Veil fades out together with the particles so the underlying (still-blurred)
+        // media gets brighter as the cloud disperses — gives the reveal a sense of
+        // "the haze lifts" before the parent drops the blur entirely.
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .blur(SHIMMER_BLUR)
-                .background(Color.Black.copy(alpha = 0.62f)),
-        ) {
-            drawShimmerField(seed = seed, drift = drift)
+                .graphicsLayer { alpha = 1f - dispersionProgress }
+                .background(Color.Black.copy(alpha = 0.28f)),
+        )
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawSpoilerShimmer(
+                seed = seed,
+                drift = drift,
+                color = Color.White,
+                dispersionProgress = dispersionProgress,
+            )
         }
-        // Bottom-center hint: short copy + lock icon. Telegram puts a similar pill
-        // in the same position; keeps the user aware they have to tap.
-        Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(
+        if (kind == SpoilerKind.Sensitive) {
+            Row(
                 modifier = Modifier
+                    .align(Alignment.Center)
+                    .graphicsLayer { alpha = 1f - dispersionProgress }
+                    .padding(16.dp)
                     .clip(RoundedCornerShape(50))
                     .background(Color.Black.copy(alpha = 0.55f))
                     .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Symbol(
-                    name = if (kind == SpoilerKind.Sensitive) "lock" else "visibility_off",
+                    name = "visibility_off",
                     tint = Color.White,
-                    size = 20.dp,
+                    size = 18.dp,
+                )
+                Text(
+                    text = stringResource(R.string.spoiler_sensitive_tap),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Medium,
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = when (kind) {
-                    SpoilerKind.Spoiler -> stringResource(R.string.spoiler_tap_to_view)
-                    SpoilerKind.Sensitive -> stringResource(R.string.spoiler_sensitive_tap)
-                },
-                color = Color.White,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Medium,
-            )
         }
     }
 }
-
-private fun DrawScope.drawShimmerField(seed: Int, drift: Float) {
-    val rng = Random(seed)
-    val w = size.width
-    val h = size.height
-    val area = (w * h).toLong()
-    // Roughly one dot per ~700 device-px² — same density as the official client at
-    // typical spoiler sizes. Caps prevent absurd counts on giant or tiny photos.
-    val count = ((area / 700f).toInt()).coerceIn(40, 240)
-    repeat(count) {
-        val baseX = rng.nextFloat() * w
-        val baseY = rng.nextFloat() * h
-        // Each dot drifts in its own small circle — keeps motion gentle and avoids a
-        // distracting global parallax. Phase offset per dot prevents synchronization.
-        val phase = rng.nextFloat()
-        val angle = (drift + phase) * 2f * Math.PI.toFloat()
-        val dx = kotlin.math.cos(angle) * DOT_DRIFT_PX
-        val dy = kotlin.math.sin(angle) * DOT_DRIFT_PX
-        val r = DOT_RADIUS_PX + rng.nextFloat() * DOT_RADIUS_VARIANCE_PX
-        val a = 0.35f + rng.nextFloat() * 0.45f
-        drawCircle(
-            color = Color.White.copy(alpha = a),
-            radius = r,
-            center = Offset(baseX + dx, baseY + dy),
-        )
-    }
-}
-
-private val SHIMMER_BLUR = 6.dp
-private const val DOT_DRIFT_PX = 4f
-private const val DOT_RADIUS_PX = 0.8f
-private const val DOT_RADIUS_VARIANCE_PX = 1.2f

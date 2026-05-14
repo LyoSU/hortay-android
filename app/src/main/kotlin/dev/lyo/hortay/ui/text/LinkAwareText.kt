@@ -2,6 +2,7 @@
 
 package dev.lyo.hortay.ui.text
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -9,31 +10,26 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
+import dev.lyo.hortay.ui.media.TEXT_DENSITY_PX_PER_DOT
+import dev.lyo.hortay.ui.media.drawSpoilerShimmer
+import dev.lyo.hortay.ui.media.rememberSpoilerDrift
 
 /**
- * Drop-in [Text] replacement that wires three otherwise-tangled link-tap concerns into
- * one composable:
+ * Drop-in [Text] replacement with link-tap handling, long-press, and spoiler dot-cloud
+ * overlay. See [RenderableText] for the spoiler grouping model.
  *
- *   1. Renders the [RenderableText]'s AnnotatedString + inline custom-emoji content
- *      verbatim, just like a bare [Text].
- *
- *   2. Captures [TextLayoutResult] and feeds it into [linkLongPress] so a finger-hold
- *      over a link character hit-tests correctly. The detector is a no-op when
- *      [RenderableText.linkRanges] is empty (plain prose without any URLs), so this
- *      composable is safe to use as a universal `Text` substitute even on bodies that
- *      have nothing to long-press.
- *
- *   3. Hosts the resulting [LinkActionsSheet] (Open / Copy / Share) locally so the
- *      caller doesn't have to thread a sheet-state holder up through their composable
- *      tree. State is keyed on [renderable] so post edits / scroll-and-return reset
- *      the sheet to closed — same lifecycle as expand-collapse.
- *
- * Callers that need an expand-toggle (feed `PostCard` with [maxLines] = 18) wrap this
- * with their own state-machine; callers that don't (detail surfaces, comments anchor)
- * pass `maxLines = Int.MAX_VALUE` for an uncapped render.
+ * Each [SpoilerGroupInfo] is painted as ONE shimmer over the union of its sub-range
+ * paths. That's the visual fix for the "emoji and text reveal separately" bug: TDLib
+ * commonly splits a single spoiler into two adjacent entities around a CustomEmoji,
+ * but the group merges them back into one cover with one shared seed → continuous
+ * particle pattern → reveals as one.
  */
 @Composable
 fun LinkAwareText(
@@ -44,8 +40,14 @@ fun LinkAwareText(
     overflow: TextOverflow = TextOverflow.Clip,
     onTextLayout: (TextLayoutResult) -> Unit = {},
 ) {
-    var layoutResult by remember(renderable) { mutableStateOf<TextLayoutResult?>(null) }
-    var pressedLink by remember(renderable) { mutableStateOf<String?>(null) }
+    // Key on [renderable.contentKey] (source text identity) rather than `renderable`
+    // or its `text` AnnotatedString: RenderableText carries a `spoilerDispersion`
+    // lambda whose identity flips per-recomposition, and `text` itself mutates when
+    // a spoiler is revealed (Transparent → onSurface). contentKey is stable across
+    // both, so long-press sheet and captured TextLayout survive reactions / edits /
+    // expand-toggles / spoiler reveals.
+    var layoutResult by remember(renderable.contentKey) { mutableStateOf<TextLayoutResult?>(null) }
+    var pressedLink by remember(renderable.contentKey) { mutableStateOf<String?>(null) }
 
     val linkMod = if (renderable.linkRanges.isNotEmpty()) {
         Modifier.linkLongPress(
@@ -53,6 +55,42 @@ fun LinkAwareText(
             layoutResult = layoutResult,
             onLongPress = { range -> pressedLink = range.url },
         )
+    } else Modifier
+
+    val spoilerGroups = renderable.spoilerGroups
+    val spoilerDispersion = renderable.spoilerDispersion
+    val spoilerColor = MaterialTheme.colorScheme.onSurface
+    val spoilerDrift by rememberSpoilerDrift()
+    val spoilerMod = if (spoilerGroups.isNotEmpty()) {
+        Modifier.drawWithContent {
+            drawContent()
+            val layout = layoutResult ?: return@drawWithContent
+            val textLen = layout.layoutInput.text.length
+            for (group in spoilerGroups) {
+                val progress = spoilerDispersion(group.groupId) ?: continue
+                if (progress >= 1f) continue
+                val merged = Path()
+                var any = false
+                for (r in group.ranges) {
+                    val end = r.last.coerceAtMost(textLen - 1) + 1
+                    val start = r.first.coerceIn(0, end)
+                    if (start >= end) continue
+                    val sub = layout.getPathForRange(start, end)
+                    if (any) merged.op(merged, sub, PathOperation.Union) else merged.addPath(sub)
+                    any = true
+                }
+                if (!any) continue
+                clipPath(merged) {
+                    drawSpoilerShimmer(
+                        seed = group.seed,
+                        drift = spoilerDrift,
+                        color = spoilerColor,
+                        dispersionProgress = progress,
+                        densityPxPerDot = TEXT_DENSITY_PX_PER_DOT,
+                    )
+                }
+            }
+        }
     } else Modifier
 
     Text(
@@ -65,7 +103,7 @@ fun LinkAwareText(
             layoutResult = layout
             onTextLayout(layout)
         },
-        modifier = modifier.then(linkMod),
+        modifier = modifier.then(linkMod).then(spoilerMod),
     )
 
     pressedLink?.let { url ->

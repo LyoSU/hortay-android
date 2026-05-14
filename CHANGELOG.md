@@ -13,6 +13,7 @@
 - Inline-video autoplay is now gated on (a) a new Settings → Feed toggle "Autoplay videos in feed" (default ON) and (b) the playback file actually being on disk. Short videos pulled by the user's auto-download policy still play silently as you scroll; videos that policy didn't fetch keep the static poster + play badge until tapped (no stealth downloads triggered just because a post entered the viewport).
 
 ### Changed
+- Spoilers (text + media) reveal as a Telegram-style shimmering particle cloud that disperses Thanos-style on tap, no longer a flat grey block / "tap to view" pill. Adjacent TDLib `Spoiler` entities that get split around a custom-emoji codepoint group back into one logical cover with one shared particle pattern, so the hidden phrase reveals as a single unit instead of in halves. Sensitive (TDLib `isSecret`) covers keep the centred icon-and-label pill so the user knows *why* a consent tap is needed. Reveal state, "show more" expand, and the link long-press sheet now survive reactions, edits-that-don't-change-text, and the reveal animation itself.
 - Channels-row status folded into `@handle · <status>` subtitle (UK + EN).
 - Channel-drill rendered as overlay above always-mounted Feed.
 - Channel lists (TDLib + guest mode), channel-info sheet actions, and the country picker rows now render through Material 3 Expressive `SegmentedListItem` / `ListItem` instead of hand-rolled `Row + clip + clickable` chips — first/last rows get the larger outer corner radius, inner rows pinch tighter, and ripple respects the shape.
