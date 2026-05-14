@@ -1,6 +1,10 @@
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.ReadCursors
 import dev.lyo.hortay.data.continueReadingIndex
@@ -80,4 +84,63 @@ fun buildTimelineUiState(
         initialIndex = initialIndex,
         frozenCursors = frozenCursors,
     )
+}
+
+/**
+ * Pure reducer: one-shot latching for [TimelineUiState.Ready.initialIndex] and
+ * [TimelineUiState.Ready.frozenCursors]. Why latching exists: the LazyColumn's
+ * scroll position is owned by the user the moment first paint lands. Live
+ * cursor advances (dwell-acks) and post arrivals must not trigger auto-scroll
+ * — they only update the items list.
+ *
+ * Re-latching on PTR completion (chat-app idiom: pull-to-refresh is an
+ * explicit user request for a fresh anchor) is handled by [refreshJustCompleted]
+ * — set true on the falling edge of `refreshing` by the caller.
+ */
+internal fun reduceTimelineUiState(
+    previous: TimelineUiState?,
+    candidate: TimelineUiState,
+    refreshJustCompleted: Boolean,
+): TimelineUiState {
+    if (refreshJustCompleted) return candidate
+    if (previous is TimelineUiState.Ready && candidate is TimelineUiState.Ready) {
+        return candidate.copy(
+            initialIndex = previous.initialIndex,
+            frozenCursors = previous.frozenCursors,
+        )
+    }
+    return candidate
+}
+
+/**
+ * Composable wrapper: maintain a latched [TimelineUiState] via [remember] +
+ * [LaunchedEffect]. Caller passes the live [candidate] from [buildTimelineUiState],
+ * the current [refreshing] flag, and a [routeKey] that resets the latch when
+ * navigation context changes (e.g. Home ↔ Saved tab switch).
+ *
+ * Falling-edge detection on `refreshing` produces the [refreshJustCompleted]
+ * signal that re-latches at PTR completion.
+ */
+@Composable
+internal fun rememberLatchedTimelineUiState(
+    candidate: TimelineUiState,
+    refreshing: Boolean,
+    routeKey: Any,
+): TimelineUiState {
+    val effective = remember(routeKey) {
+        mutableStateOf<TimelineUiState>(TimelineUiState.Loading)
+    }
+    val previousRefreshing = remember(routeKey) {
+        mutableStateOf(false)
+    }
+    LaunchedEffect(candidate, refreshing, routeKey) {
+        val refreshJustCompleted = previousRefreshing.value && !refreshing
+        previousRefreshing.value = refreshing
+        effective.value = reduceTimelineUiState(
+            previous = effective.value,
+            candidate = candidate,
+            refreshJustCompleted = refreshJustCompleted,
+        )
+    }
+    return effective.value
 }
