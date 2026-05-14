@@ -1061,8 +1061,13 @@ private fun ExpandableText(
         dev.lyo.hortay.ui.text.LinkAwareText(renderable = renderable, style = style)
         return
     }
-    var expanded by remember(renderable) { mutableStateOf(false) }
-    var canExpand by remember(renderable) { mutableStateOf(false) }
+    // Key on [renderable.contentKey] (source-text identity) — survives recompositions
+    // where `renderable` itself or its `text` AnnotatedString changes (lambda churn
+    // on the wrapping data class, plus spoiler reveal flipping colour spans inside
+    // the AnnotatedString). The user's "show more" choice now persists through
+    // reactions, edits-that-don't-change-text, and spoiler reveals.
+    var expanded by remember(renderable.contentKey) { mutableStateOf(false) }
+    var canExpand by remember(renderable.contentKey) { mutableStateOf(false) }
     dev.lyo.hortay.ui.text.LinkAwareText(
         renderable = renderable,
         style = style,
