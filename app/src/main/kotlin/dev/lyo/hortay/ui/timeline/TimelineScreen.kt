@@ -212,32 +212,19 @@ fun TimelineScreen(
      */
     startupPhase: kotlinx.coroutines.flow.StateFlow<dev.lyo.hortay.data.StartupCoordinator.Phase>? = null,
 ) {
-    // Forward-declared scroll target for every "go home" callsite (cold-start
-    // pin, folder switch, NewPostsPill click, NavBar Home tap). Populated
-    // lazily later in the body via a [LaunchedEffect] that mirrors the
-    // [derivedStateOf]-computed `homeScrollIndex` into this holder — keeps the
-    // computation out of the composition critical path (no `intValue = …`
-    // assignments during composition) while letting the effects above
-    // reference it without forward-reference errors. Default `0` is the right
-    // fallback for the very first composition pass when downstream state
-    // hasn't landed.
+    // Holders read by long-lived LaunchedEffects (home-tap, scope-switch) so
+    // their captures stay live across recomposition without restarting the
+    // effect bodies. `.intValue = …` / `.value = …` assignments happen inside
+    // a single [LaunchedEffect] below the [latchedUiState] / [feedItems]
+    // computation, NOT during composition — keeps the writes outside the
+    // composition critical path. Default `0` / `false` / empty are the right
+    // pre-landing fallbacks.
     val homeScrollIndexState = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableIntStateOf(0)
     }
-    // Forward-declared "have cold-start cursors landed yet" gate for the
-    // cold-start scroll pin's Phase-2 snap. Mirrored from [snapshotCursors]
-    // by a [LaunchedEffect] further down, once the cursor pipeline is
-    // wired up. Same pattern as [homeScrollIndexState] — keeps the pin's
-    // effect at the top of the composable while reading state that's
-    // computed deep below.
     val readCursorsLandedState = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(false)
     }
-    // Forward-declared feed-items holder for the home-tap highlight pulse.
-    // Assigned after [feedItems] is computed further down; the home-tap
-    // LaunchedEffect reads .value at suspend time so it always sees the
-    // current list regardless of when the effect was keyed. Same pattern
-    // as [homeScrollIndexState].
     val feedItemsForEffectsState = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<List<FeedItem>>(emptyList())
     }
@@ -295,98 +282,43 @@ fun TimelineScreen(
     // top-level tab provider from WebModeScaffold, which is equivalent: the all-feed
     // state is preserved across tab switches.
     //
-    // Cold-start positioning is now owned by the `LazyListState(initialIndex, 0)`
-    // constructor arg: [initialIndexSeed] is rebound when [latchedUiState] first
-    // transitions to [TimelineUiState.Ready], which discards the saver bundle
-    // and instantiates a freshly-positioned [LazyListState]. The old
-    // snapshotFlow / scrollToItem cold-start pin is gone — first paint of the
-    // LazyColumn lands at the correct row in one frame, without animating
-    // through index 0 of whatever sort happened to apply pre-cursors.
+    // Cold-start positioning is owned by the `LazyListState(initialIndex, 0)`
+    // constructor arg: the seed is derived SYNCHRONOUSLY from [latchedUiState]
+    // at the [rememberSaveable] call site, so when the latcher flips to
+    // [TimelineUiState.Ready(initialIndex = N)] the very next composition pass
+    // re-keys the saver bundle and instantiates a fresh [LazyListState] at
+    // index N. No `LaunchedEffect → MutableIntState → re-key` chain → no
+    // one-frame paint at index 0 before the seed updates. Mirrors the pattern
+    // [ChannelScreen] uses (see ChannelScreen.kt around line 294).
+    //
+    // [feedOrder] is part of [routeKey] so flipping Newest ↔ OldestUnreadFirst
+    // invalidates the saver bundle directly: the latched [Ready.initialIndex]
+    // would otherwise be preserved across the order flip (reducer's Ready→Ready
+    // branch keeps the previous index), and a `LaunchedEffect(feedOrder)`
+    // mutating a seed holder could no-op when old and new boundaries collide
+    // (both `0`, for example), stranding the user on the old sort's anchor.
     //
     // [LazyListState.Saver] still persists `firstVisibleItemIndex` across tab
     // swaps within a process (the SaveableStateProvider in MainScaffold /
     // WebModeScaffold scopes saved state per route), so drilling into a
     // channel and popping back retains the user's scroll. Process death is
-    // handled implicitly: the seed re-evaluates from 0 on restore, latches to
-    // its real value on the next Ready transition, and the column mounts
+    // handled implicitly: the seed re-evaluates from 0 on restore, then jumps
+    // to its real value on the next Ready transition, and the column mounts
     // pre-positioned. We don't try to bridge scroll across process death —
     // see the "Cold launch always lands on Home top-of-feed" guarantee.
-    val routeKey = if (showOnlyBookmarked) "saved" else "home"
-    val initialIndexSeed = androidx.compose.runtime.remember(routeKey) {
-        androidx.compose.runtime.mutableIntStateOf(0)
-    }
-    val listState = rememberSaveable(
-        routeKey, initialIndexSeed.intValue,
-        saver = androidx.compose.foundation.lazy.LazyListState.Saver,
-    ) {
-        androidx.compose.foundation.lazy.LazyListState(initialIndexSeed.intValue, 0)
-    }
-
-    // Pinned color-only scroll behavior — height transitions are owned by
-    // [topBarOffsetPx] below so we don't fight two systems for the same dp.
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
-
-    // Twitter / Instagram floating-bar pattern: scroll delta directly drives
-    // the destination-style bar's vertical offset, in sync with the user's
-    // finger. No separate timed animation = no reflow jolt.
+    // ────────────────────────────────────────────────────────────────────────
+    // Latcher chain — every input to [buildTimelineUiState] + [rememberLatchedTimelineUiState]
+    // is computed here, BEFORE [listState], so the [readySeed] read into the
+    // [rememberSaveable] key is the LATCHED Ready.initialIndex (not a stale 0 seeded
+    // by a LaunchedEffect that runs after composition). ChannelScreen uses the same
+    // shape — see ChannelScreen.kt:294.
     //
-    // Earlier iterations tried `AnimatedVisibility` wrapped around the topBar
-    // slot — that runs a 150 ms shrink tween on the bar's height while the
-    // user is mid-scroll. Scaffold re-measured the topBar slot every frame
-    // of the tween, body's `padding(top = topPadding)` jumped along, the
-    // FoldersBar / LazyColumn underneath shifted up at ~750 dp/s for those
-    // 150 ms while the user's own scroll continued at ~200 dp/s. The
-    // combined velocity discontinuity was the visible jank.
-    //
-    // The fix is to drive the bar's "exit" purely by scroll delta via a
-    // [NestedScrollConnection]: every pixel the user pulls the content up
-    // moves the bar one pixel further out of view, until the bar is fully
-    // hidden. Scrolling back down at the top of the list passes leftover
-    // delta through to reveal the bar — Twitter / Instagram canonical. The
-    // bar's measured height shrinks via [Modifier.layout] in lockstep with
-    // its visual offset so Scaffold's body padding tracks the same signal,
-    // never a competing timeline.
-    // Only the destination-style bars (home, bookmarks) participate in the
-    // scroll-hide. Filter / search-inside-filter use [HortayTopBarSize.Compact]
-    // and read as a tool stage with active input — those must stay pinned.
-    // The behavior helper reads `enabled` live so toggling it doesn't
-    // re-allocate the NestedScrollConnection.
-    // The feed bar always participates in scroll-hide — there is no channel-filter
-    // tool stage to pin it in place (that case is now owned by ChannelScreen).
-    val floatingBar = rememberFloatingTopBarBehavior()
-    val topBarFullHeightPx = floatingBar.fullHeightPx
-    val topBarOffsetPx = floatingBar.offsetPx
-    val topBarNestedScroll = floatingBar.nestedScroll
-    // Reset the bar to fully visible whenever the user switches between
-    // top-level destinations (home ↔ bookmarks) or in/out of channel filter
-    // mode. Without this the bar stayed at its last hidden offset across
-    // navigation, so a fresh destination would briefly orphan the user
-    // looking at chrome they didn't expect to be missing.
-    // Reset the bar to fully visible when switching between top-level destinations
-    // (Home ↔ Saved). Without this the bar stays at its last hidden offset across
-    // navigation.
-    LaunchedEffect(showOnlyBookmarked) {
-        topBarOffsetPx.floatValue = 0f
-    }
+    // Order matters:
+    //   scope_filter + folder vars → scopePredicate → filteredPosts → visiblePosts →
+    //   readCursors → cursorsHaveLanded → boundaryCursors → feedItems → candidateUiState →
+    //   latchedUiState → routeKey (includes feedOrder) → listState seeded from latched.
+    // ────────────────────────────────────────────────────────────────────────
 
-    // One-shot "scroll to this messageId once it lands in the list". Two producers feed
-    // this: in-app quote-card taps (see [PostInteractions.onQuotedSourceClick]) and
-    // external deep links (the [scrollToMessage] parameter from MainScaffold). One
-    // consumer — the LaunchedEffect below — resolves the target by scanning
-    // feedItems and clears the request on success. Cleared too on filter dismissal
-    // (C2 fix) so a stale target from a previous channel doesn't yank the user later.
-    var pendingScrollToMessage by remember { mutableStateOf<Pair<Long, Long>?>(null) }
-    // (chatId, messageId) of the post we just scrolled to via a deep link / quote tap.
-    // Drives a brief surface-tint highlight on that PostCard so the user can locate it
-    // post-scroll. Auto-clears after [HIGHLIGHT_DURATION_MS]; null when no highlight is
-    // active.
-    var highlightedPostKey by remember { mutableStateOf<Pair<Long, Long>?>(null) }
-    LaunchedEffect(scrollToMessage) {
-        if (scrollToMessage != null) {
-            pendingScrollToMessage = scrollToMessage
-            onScrollHandled()
-        }
-    }
     // Selected folder/archive scope. Default: "All". Stored as a saveable so the user's
     // tab survives process death; folder tabs get rebuilt against the freshest folders
     // list each composition, so a folder removed in another client falls back gracefully.
@@ -433,116 +365,6 @@ fun TimelineScreen(
             folderIncludesAllChannels = full.includeChannels
             folderExcludedIds = full.excludedChatIds?.toSet().orEmpty()
             folderExcludeArchived = full.excludeArchived
-        }
-    }
-    val viewer = LocalMediaViewer.current
-
-    // True when the LazyColumn is at the very top — used to auto-collapse pending posts
-    // (no pill needed if the user is already looking at the top of the feed). MUST be
-    // keyed on `listState`: the active list flips between [globalListState] and
-    // [filterListState] on `channelFilter` toggle (see selection above), and a bare
-    // `remember { derivedStateOf {...} }` would capture the first listState forever —
-    // so after entering a channel filter, `atTop` would still reflect the GLOBAL feed's
-    // scroll position. The "новi пости" pill auto-accept gate and pill visibility both
-    // read this flag, so the bug surfaced as the pill behaving for the wrong scope.
-    // Mirrors the keying applied to `scrollGate` and `prefetchAnchor` further below.
-    val atTop by remember(listState) {
-        derivedStateOf {
-            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 8
-        }
-    }
-
-    // Mirror of [atTop] for OldestUnreadFirst, where freshness lives at the
-    // bottom (tail of the unread block, sorted asc by date). True when the
-    // last visible item is the actual last item in the list AND its trailing
-    // edge is within the viewport — guard against "last item peeking 1 px
-    // above the fold" false positives that would auto-accept arrivals while
-    // the user still has unread cards below.
-    val atBottom by remember(listState) {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-            val totalItems = info.totalItemsCount
-            if (totalItems == 0) return@derivedStateOf false
-            last.index >= totalItems - 1 &&
-                last.offset + last.size <= info.viewportEndOffset + 8
-        }
-    }
-
-    // Twitter-style "tap home twice": first tap scrolls to top, second one (already at top)
-    // refreshes. The trigger is a monotonic timestamp from the parent, so a single bump
-    // produces a single reaction.
-    //
-    // Gotcha: `LaunchedEffect(homeTapTrigger)` by itself fires on every TimelineScreen
-    // REMOUNT — the fresh effect has no memory of the previous key value. If the user
-    // had ever tapped home in the session (`homeTapTrigger != 0`), then swapping
-    // to another tab (Channels / Saved / Profile) and back to Feed remounts this
-    // Composable and re-fires the effect with the same stale trigger value, yanking
-    // the user to the top of the feed. Same class of bug we patched for `scope_filter`
-    // and the cold-start clamp — track the last-handled timestamp in `rememberSaveable`
-    // so only an actual NEW bump (re-tap on Home from the FloatingNavBar / BrandRow)
-    // produces a reaction.
-    var lastHandledHomeTap by rememberSaveable { mutableLongStateOf(0L) }
-    LaunchedEffect(homeTapTrigger) {
-        if (homeTapTrigger == 0L) return@LaunchedEffect
-        if (homeTapTrigger == lastHandledHomeTap) return@LaunchedEffect
-        lastHandledHomeTap = homeTapTrigger
-        // Mode-aware "Home" target via [homeScrollIndexState]:
-        //   - Newest: index 0 (newest content — "show me what's fresh").
-        //   - OldestUnreadFirst: first-unread boundary — "take me to where I
-        //     should be reading". Top of the list is the oldest read post,
-        //     not what the user expects from a Home tap.
-        // Re-tap when already at the target = refresh (Twitter / TG idiom).
-        val target = homeScrollIndexState.intValue
-        val atTarget = listState.firstVisibleItemIndex == target &&
-            listState.firstVisibleItemScrollOffset == 0
-        if (atTarget) {
-            vm.refresh()
-        } else {
-            listState.smartScrollTo(target)
-            // Brief surface-tint pulse on the destination card — canonical
-            // chat-UI pattern (Telegram/Slack/Discord: "you just landed here").
-            // Reuses the same [highlightedPostKey] pipeline that deep-link and
-            // quote-tap landings drive, so there is a single rendering path for
-            // the highlight. The set happens after the scroll call so the card
-            // is already in the visible viewport by the time Compose reads the key.
-            val destinationPost = feedItemsForEffectsState.value
-                .getOrNull(target)?.posts()?.firstOrNull()
-            if (destinationPost != null) {
-                highlightedPostKey = destinationPost.chatId to destinationPost.id
-            }
-        }
-    }
-
-    // Switching folders jumps to the top of the feed — "show me the top of this
-    // folder" is the expected behaviour. The gotcha: `LaunchedEffect(scope_filter)`
-    // by itself fires on every TimelineScreen REMOUNT (drilling into a channel
-    // then popping back unmounts/remounts this Composable; the new LaunchedEffect
-    // has no memory of the old key's value, so it fires even when the scope
-    // didn't actually change). That yanked the user to the top of the feed
-    // whenever they returned from a channel, regardless of where they were
-    // scrolled when they drilled in. Fix: track the previously-observed scope
-    // as a `rememberSaveable` String key — only scroll when the new key DIFFERS
-    // from the saved prior value AND a prior value exists (so initial mount
-    // does NOT scroll).
-    val scopeKey = remember(scope_filter) {
-        when (val s = scope_filter) {
-            FilterScope.All -> "all"
-            FilterScope.Archive -> "archive"
-            is FilterScope.Folder -> "folder:${s.id}"
-        }
-    }
-    var lastScopeKey by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(scopeKey) {
-        val previous = lastScopeKey
-        lastScopeKey = scopeKey
-        if (previous != null && previous != scopeKey) {
-            // Mode-aware "home" — same target as the NavBar Home tap. In
-            // OldestUnreadFirst this lands at the first-unread boundary, not
-            // the oldest read post. Route through [smartScrollTo] so short
-            // distances animate while large jumps hard-cut, matching the
-            // home-tap and deep-link landing behaviour.
-            listState.smartScrollTo(homeScrollIndexState.intValue)
         }
     }
 
@@ -684,25 +506,36 @@ fun TimelineScreen(
     }
     val boundaryCursors = boundaryCursorsState.value
 
-    // Cold-start scroll-target picker.
-    //   - Newest: index 0 (top = newest, canonical Twitter / RSS-feed landing).
-    //   - OldestUnreadFirst, cursors known + has unread: first-unread boundary
-    //     (= where to resume reading; older history above, unread below).
-    //   - OldestUnreadFirst, caught up / cursors-empty fallback: lastIndex
-    //     (= newest at the bottom of asc-by-date; canonical "you're up to
-    //     date, here's the latest").
-    val homeScrollIndex by remember(visiblePosts, readCursors, feedOrder, cursorsHaveLanded) {
+    // Threads-style grouping: when a post replies to another post that's ALSO present in the
+    // visible feed, the two are merged into a single LazyColumn slot (parent stacked above
+    // reply, joined by a connector line). Drives the main feed render; LaunchedEffects below
+    // that map "visible item indices" → posts use [FeedItem.posts] to flatten threaded slots
+    // back into individual TimelinePost entries.
+    val feedItems = remember(visiblePosts) { groupReplies(visiblePosts) }
+    // Keep the forward-declared holder current so the home-tap LaunchedEffect
+    // can read the latest list without capturing a stale reference.
+    feedItemsForEffectsState.value = feedItems
+
+    // Row-space scroll target for user-initiated jumps (home tap, scope switch,
+    // ↑ N / ↓ N pills). MUST be computed against [feedItems] — the LazyColumn
+    // renders FeedItem rows after [groupReplies] folds reply chains into single
+    // slots, so any post-space index would shift past every grouped reply ahead
+    // of the target. The latcher's own [Ready.initialIndex] is also row-space
+    // (see [buildTimelineUiState] using items.map { it.posts().first() }), so
+    // these stay in sync.
+    val homeScrollIndex by remember(feedItems, readCursors, feedOrder, cursorsHaveLanded) {
         derivedStateOf {
             when (feedOrder) {
                 dev.lyo.hortay.data.FeedOrder.Newest -> 0
                 dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> {
-                    if (visiblePosts.isEmpty()) 0
+                    if (feedItems.isEmpty()) 0
                     else if (!cursorsHaveLanded) 0
                     else {
+                        val anchorPosts = feedItems.map { it.posts().first() }
                         val boundary = dev.lyo.hortay.data.continueReadingIndex(
-                            feedOrder, visiblePosts, readCursors,
+                            feedOrder, anchorPosts, readCursors,
                         )
-                        if (boundary >= 0) boundary else visiblePosts.lastIndex
+                        if (boundary >= 0) boundary else feedItems.lastIndex.coerceAtLeast(0)
                     }
                 }
             }
@@ -716,54 +549,19 @@ fun TimelineScreen(
         readCursorsLandedState.value = cursorsHaveLanded
     }
 
-    // Re-anchor the LazyListState when the user changes the feed order setting.
-    //
-    // Old approach: `LaunchedEffect(feedOrder) { listState.scrollToItem(homeScrollIndex) }`.
-    // That called into a possibly-stale listState (the order flip produces a new
-    // candidate UiState with a different initialIndex, but the latcher preserves
-    // the previous initialIndex until refreshJustCompleted fires — so the column
-    // was pre-positioned at the WRONG boundary and the scroll call landed on the
-    // wrong item).
-    //
-    // New approach: bump [initialIndexSeed] so the [rememberSaveable] key changes,
-    // discarding the old saver bundle and re-constructing LazyListState at the new
-    // boundary in the next composition. The column mounts pre-positioned in one
-    // frame — no animate-through, no stale-listState race. The saveable-key guard
-    // (lastFeedOrderKey) is still needed: without it this effect re-fires on every
-    // remount (tab switch, channel drill + pop, rotation) and resets scroll the
-    // user didn't ask for.
-    var lastFeedOrderKey by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(feedOrder) {
-        val previous = lastFeedOrderKey
-        lastFeedOrderKey = feedOrder.name
-        if (previous != null && previous != feedOrder.name) {
-            // Bump [initialIndexSeed] to the new boundary. The saver key is
-            // `routeKey + initialIndexSeed.intValue`, so a new seed value
-            // discards the bundle and re-mounts LazyListState at the right row.
-            initialIndexSeed.intValue = homeScrollIndex
-        }
-    }
-
-    // Threads-style grouping: when a post replies to another post that's ALSO present in the
-    // visible feed, the two are merged into a single LazyColumn slot (parent stacked above
-    // reply, joined by a connector line). Drives the main feed render; LaunchedEffects below
-    // that map "visible item indices" → posts use [FeedItem.posts] to flatten threaded slots
-    // back into individual TimelinePost entries.
-    val feedItems = remember(visiblePosts) { groupReplies(visiblePosts) }
-    // Keep the forward-declared holder current so the home-tap LaunchedEffect
-    // can read the latest list without capturing a stale reference.
-    feedItemsForEffectsState.value = feedItems
-
     // Single source of truth for what TimelineScreen renders — derived from the
     // already-filtered, already-ordered, already-grouped [feedItems], the live
     // [ReadCursors] map, and the [feedOrder] / [refreshing] flags. The latching
     // wrapper enforces the one-shot contract on [TimelineUiState.Ready.initialIndex]:
-    // it's captured on the first Ready transition (or on PTR completion via the
-    // falling-edge `refreshing` signal inside the reducer) and held stable across
-    // recompositions thereafter, so live cursor advances and post arrivals can't
-    // yank the user's scroll. [routeKey] is the same key the saver bundle uses, so
-    // a Home ↔ Saved tab switch resets the latch into the new route's context.
+    // captured on the first Ready transition and held stable across recompositions
+    // — live cursor advances and post arrivals can't yank the user's scroll. PTR
+    // completion only re-latches [frozenCursors] (not [initialIndex]) so the unread
+    // boundary divider can update while the user keeps their scroll. [routeKey]
+    // includes [feedOrder] so an order flip invalidates the saver bundle directly
+    // (the latched initialIndex would otherwise be preserved across the flip and a
+    // seed-bump LaunchedEffect could no-op when old/new boundaries collide).
     val persistentFeedItems = remember(feedItems) { feedItems.toPersistentList() }
+    val routeKey = (if (showOnlyBookmarked) "saved" else "home") to feedOrder
     val candidateUiState: TimelineUiState = buildTimelineUiState(
         items = persistentFeedItems,
         cursorsLanded = readCursorsLandedState.value,
@@ -777,16 +575,205 @@ fun TimelineScreen(
         routeKey = routeKey,
     )
 
-    // One-shot seeding of [initialIndexSeed] on the first Ready transition.
-    // The reducer's latching guarantees [Ready.initialIndex] is stable for the
-    // lifetime of this routeKey, so this effect fires at most once per route
-    // entry — it rebinds [initialIndexSeed] which discards the saver bundle and
-    // re-instantiates [listState] positioned at [initialIndex]. The LazyColumn
-    // mounts pre-positioned in one frame, no animate-through.
-    LaunchedEffect(latchedUiState, routeKey) {
-        val ready = latchedUiState as? TimelineUiState.Ready ?: return@LaunchedEffect
-        if (initialIndexSeed.intValue != ready.initialIndex) {
-            initialIndexSeed.intValue = ready.initialIndex
+    // Cold-start positioning is owned by the `LazyListState(initialIndex, 0)`
+    // constructor arg: the seed is derived SYNCHRONOUSLY from [latchedUiState]
+    // at the [rememberSaveable] call site. When the latcher flips to
+    // [TimelineUiState.Ready(initialIndex = N)], the very next composition pass
+    // re-keys the saver bundle and instantiates a fresh [LazyListState] at
+    // index N — first paint of the LazyColumn lands at the correct row in one
+    // frame. No `LaunchedEffect → MutableIntState → re-key` chain → no
+    // one-frame paint at index 0 before the seed updates. Mirrors the pattern
+    // [ChannelScreen] uses (see ChannelScreen.kt around line 294).
+    //
+    // [LazyListState.Saver] still persists `firstVisibleItemIndex` across tab
+    // swaps within a process (the SaveableStateProvider in MainScaffold /
+    // WebModeScaffold scopes saved state per route), so drilling into a
+    // channel and popping back retains the user's scroll. Process death is
+    // handled implicitly: the seed re-evaluates from 0 on restore, jumps to
+    // its real value on the next Ready transition, and the column mounts
+    // pre-positioned. We don't try to bridge scroll across process death —
+    // see the "Cold launch always lands on Home top-of-feed" guarantee.
+    val readySeed = (latchedUiState as? TimelineUiState.Ready)?.initialIndex ?: 0
+    val listState = rememberSaveable(
+        routeKey, readySeed,
+        saver = androidx.compose.foundation.lazy.LazyListState.Saver,
+    ) {
+        androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
+    }
+
+    // Pinned color-only scroll behavior — height transitions are owned by
+    // [topBarOffsetPx] below so we don't fight two systems for the same dp.
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
+
+    // Twitter / Instagram floating-bar pattern: scroll delta directly drives
+    // the destination-style bar's vertical offset, in sync with the user's
+    // finger. No separate timed animation = no reflow jolt.
+    //
+    // Earlier iterations tried `AnimatedVisibility` wrapped around the topBar
+    // slot — that runs a 150 ms shrink tween on the bar's height while the
+    // user is mid-scroll. Scaffold re-measured the topBar slot every frame
+    // of the tween, body's `padding(top = topPadding)` jumped along, the
+    // FoldersBar / LazyColumn underneath shifted up at ~750 dp/s for those
+    // 150 ms while the user's own scroll continued at ~200 dp/s. The
+    // combined velocity discontinuity was the visible jank.
+    //
+    // The fix is to drive the bar's "exit" purely by scroll delta via a
+    // [NestedScrollConnection]: every pixel the user pulls the content up
+    // moves the bar one pixel further out of view, until the bar is fully
+    // hidden. Scrolling back down at the top of the list passes leftover
+    // delta through to reveal the bar — Twitter / Instagram canonical. The
+    // bar's measured height shrinks via [Modifier.layout] in lockstep with
+    // its visual offset so Scaffold's body padding tracks the same signal,
+    // never a competing timeline.
+    // Only the destination-style bars (home, bookmarks) participate in the
+    // scroll-hide. Filter / search-inside-filter use [HortayTopBarSize.Compact]
+    // and read as a tool stage with active input — those must stay pinned.
+    // The behavior helper reads `enabled` live so toggling it doesn't
+    // re-allocate the NestedScrollConnection.
+    // The feed bar always participates in scroll-hide — there is no channel-filter
+    // tool stage to pin it in place (that case is now owned by ChannelScreen).
+    val floatingBar = rememberFloatingTopBarBehavior()
+    val topBarFullHeightPx = floatingBar.fullHeightPx
+    val topBarOffsetPx = floatingBar.offsetPx
+    val topBarNestedScroll = floatingBar.nestedScroll
+    // Reset the bar to fully visible whenever the user switches between
+    // top-level destinations (home ↔ bookmarks) or in/out of channel filter
+    // mode. Without this the bar stayed at its last hidden offset across
+    // navigation, so a fresh destination would briefly orphan the user
+    // looking at chrome they didn't expect to be missing.
+    // Reset the bar to fully visible when switching between top-level destinations
+    // (Home ↔ Saved). Without this the bar stays at its last hidden offset across
+    // navigation.
+    LaunchedEffect(showOnlyBookmarked) {
+        topBarOffsetPx.floatValue = 0f
+    }
+
+    // One-shot "scroll to this messageId once it lands in the list". Two producers feed
+    // this: in-app quote-card taps (see [PostInteractions.onQuotedSourceClick]) and
+    // external deep links (the [scrollToMessage] parameter from MainScaffold). One
+    // consumer — the LaunchedEffect below — resolves the target by scanning
+    // feedItems and clears the request on success. Cleared too on filter dismissal
+    // (C2 fix) so a stale target from a previous channel doesn't yank the user later.
+    var pendingScrollToMessage by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    // (chatId, messageId) of the post we just scrolled to via a deep link / quote tap.
+    // Drives a brief surface-tint highlight on that PostCard so the user can locate it
+    // post-scroll. Auto-clears after [HIGHLIGHT_DURATION_MS]; null when no highlight is
+    // active.
+    var highlightedPostKey by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    LaunchedEffect(scrollToMessage) {
+        if (scrollToMessage != null) {
+            pendingScrollToMessage = scrollToMessage
+            onScrollHandled()
+        }
+    }
+    val viewer = LocalMediaViewer.current
+
+    // True when the LazyColumn is at the very top — used to auto-collapse pending posts
+    // (no pill needed if the user is already looking at the top of the feed). MUST be
+    // keyed on `listState`: the active list flips between [globalListState] and
+    // [filterListState] on `channelFilter` toggle (see selection above), and a bare
+    // `remember { derivedStateOf {...} }` would capture the first listState forever —
+    // so after entering a channel filter, `atTop` would still reflect the GLOBAL feed's
+    // scroll position. The "новi пости" pill auto-accept gate and pill visibility both
+    // read this flag, so the bug surfaced as the pill behaving for the wrong scope.
+    // Mirrors the keying applied to `scrollGate` and `prefetchAnchor` further below.
+    val atTop by remember(listState) {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 8
+        }
+    }
+
+    // Mirror of [atTop] for OldestUnreadFirst, where freshness lives at the
+    // bottom (tail of the unread block, sorted asc by date). True when the
+    // last visible item is the actual last item in the list AND its trailing
+    // edge is within the viewport — guard against "last item peeking 1 px
+    // above the fold" false positives that would auto-accept arrivals while
+    // the user still has unread cards below.
+    val atBottom by remember(listState) {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            val totalItems = info.totalItemsCount
+            if (totalItems == 0) return@derivedStateOf false
+            last.index >= totalItems - 1 &&
+                last.offset + last.size <= info.viewportEndOffset + 8
+        }
+    }
+
+    // Twitter-style "tap home twice": first tap scrolls to top, second one (already at top)
+    // refreshes. The trigger is a monotonic timestamp from the parent, so a single bump
+    // produces a single reaction.
+    //
+    // Gotcha: `LaunchedEffect(homeTapTrigger)` by itself fires on every TimelineScreen
+    // REMOUNT — the fresh effect has no memory of the previous key value. If the user
+    // had ever tapped home in the session (`homeTapTrigger != 0`), then swapping
+    // to another tab (Channels / Saved / Profile) and back to Feed remounts this
+    // Composable and re-fires the effect with the same stale trigger value, yanking
+    // the user to the top of the feed. Same class of bug we patched for `scope_filter`
+    // and the cold-start clamp — track the last-handled timestamp in `rememberSaveable`
+    // so only an actual NEW bump (re-tap on Home from the FloatingNavBar / BrandRow)
+    // produces a reaction.
+    var lastHandledHomeTap by rememberSaveable { mutableLongStateOf(0L) }
+    LaunchedEffect(homeTapTrigger) {
+        if (homeTapTrigger == 0L) return@LaunchedEffect
+        if (homeTapTrigger == lastHandledHomeTap) return@LaunchedEffect
+        lastHandledHomeTap = homeTapTrigger
+        // Mode-aware "Home" target via [homeScrollIndexState]:
+        //   - Newest: index 0 (newest content — "show me what's fresh").
+        //   - OldestUnreadFirst: first-unread boundary — "take me to where I
+        //     should be reading". Top of the list is the oldest read post,
+        //     not what the user expects from a Home tap.
+        // Re-tap when already at the target = refresh (Twitter / TG idiom).
+        val target = homeScrollIndexState.intValue
+        val atTarget = listState.firstVisibleItemIndex == target &&
+            listState.firstVisibleItemScrollOffset == 0
+        if (atTarget) {
+            vm.refresh()
+        } else {
+            listState.smartScrollTo(target)
+            // Brief surface-tint pulse on the destination card — canonical
+            // chat-UI pattern (Telegram/Slack/Discord: "you just landed here").
+            // Reuses the same [highlightedPostKey] pipeline that deep-link and
+            // quote-tap landings drive, so there is a single rendering path for
+            // the highlight. The set happens after the scroll call so the card
+            // is already in the visible viewport by the time Compose reads the key.
+            val destinationPost = feedItemsForEffectsState.value
+                .getOrNull(target)?.posts()?.firstOrNull()
+            if (destinationPost != null) {
+                highlightedPostKey = destinationPost.chatId to destinationPost.id
+            }
+        }
+    }
+
+    // Switching folders jumps to the top of the feed — "show me the top of this
+    // folder" is the expected behaviour. The gotcha: `LaunchedEffect(scope_filter)`
+    // by itself fires on every TimelineScreen REMOUNT (drilling into a channel
+    // then popping back unmounts/remounts this Composable; the new LaunchedEffect
+    // has no memory of the old key's value, so it fires even when the scope
+    // didn't actually change). That yanked the user to the top of the feed
+    // whenever they returned from a channel, regardless of where they were
+    // scrolled when they drilled in. Fix: track the previously-observed scope
+    // as a `rememberSaveable` String key — only scroll when the new key DIFFERS
+    // from the saved prior value AND a prior value exists (so initial mount
+    // does NOT scroll).
+    val scopeKey = remember(scope_filter) {
+        when (val s = scope_filter) {
+            FilterScope.All -> "all"
+            FilterScope.Archive -> "archive"
+            is FilterScope.Folder -> "folder:${s.id}"
+        }
+    }
+    var lastScopeKey by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(scopeKey) {
+        val previous = lastScopeKey
+        lastScopeKey = scopeKey
+        if (previous != null && previous != scopeKey) {
+            // Mode-aware "home" — same target as the NavBar Home tap. In
+            // OldestUnreadFirst this lands at the first-unread boundary, not
+            // the oldest read post. Route through [smartScrollTo] so short
+            // distances animate while large jumps hard-cut, matching the
+            // home-tap and deep-link landing behaviour.
+            listState.smartScrollTo(homeScrollIndexState.intValue)
         }
     }
 
@@ -810,8 +797,13 @@ fun TimelineScreen(
     // made the app feel like it was searching for the post). On miss the helper invokes
     // [onScrollMissed] via the [onMissed] callback so the scaffold surfaces "Посилання
     // не знайдено" instead of leaving the user staring at a frozen skeleton.
+    // Gate displayedItems on Ready — while Loading the LazyColumn isn't mounted
+    // (the `when (latchedUiState)` block renders SkeletonFeed instead), so
+    // [listState.scrollToItem] would target an unmounted column. The empty-list
+    // short-circuit inside the helper makes [onLanded] a no-op until Ready, so
+    // the pending target survives the wait and resolves once the column paints.
     rememberPendingScrollToMessage(
-        displayedItems = feedItems,
+        displayedItems = if (latchedUiState is TimelineUiState.Ready) feedItems else emptyList(),
         pendingTarget = pendingScrollToMessage,
         loadHistoryAround = { cid, mid -> tdlibRepo?.loadHistoryAround(cid, mid) ?: false },
         onLanded = { cid, mid, idx ->
@@ -1556,19 +1548,20 @@ fun TimelineScreen(
                         // Ack only scope-visible pending; archive / other-folder pending
                         // stays unread for those tabs.
                         vm.acceptIds(scopedPendingNew.map { it.chatId to it.id })
-                        // Scroll target mirrors the pill anchor:
+                        // Scroll target mirrors the pill anchor — both in row-space
+                        // because LazyColumn renders FeedItem rows, not raw posts:
                         //   - Newest pill (top): home target = index 0
                         //     (freshest, top of feed).
                         //   - OldestUnreadFirst pill (bottom): tail of list =
                         //     the just-arrived posts user opted to see, which
                         //     sort to the very end (asc by date). After ack,
-                        //     [visiblePosts] grows, so request the new
-                        //     lastIndex via a snapshot read at dispatch time.
+                        //     [feedItems] grows; request the new lastIndex via
+                        //     a snapshot read at dispatch time.
                         scope.launch {
                             val target = if (pillAtTop) {
                                 homeScrollIndex
                             } else {
-                                (visiblePosts.lastIndex).coerceAtLeast(0)
+                                (feedItems.lastIndex).coerceAtLeast(0)
                             }
                             listState.smartScrollTo(target)
                         }
@@ -1606,14 +1599,17 @@ fun TimelineScreen(
                     UnreadCounterPill(
                         count = unreadRemaining,
                         onClick = {
-                            // Jump to the first STILL-unread post per the live
-                            // cursor — skips past anything the snapshot still has
-                            // in the unread block but the user has already
-                            // dwelled-acked. Falls back to the snapshot's
+                            // Jump to the first STILL-unread FeedItem per the live
+                            // cursor — row-space, because LazyColumn renders folded
+                            // reply chains as single rows. Skips past anything the
+                            // snapshot still has in the unread block but the user
+                            // has already dwelled-acked. Falls back to the snapshot's
                             // boundary (homeScrollIndex) if everything visible
                             // happens to be live-read in the race between this
                             // click and a refresh.
-                            val live = visiblePosts.indexOfFirst { it.isUnreadIn(cursorsState.value) }
+                            val live = feedItems.indexOfFirst { item ->
+                                item.posts().any { it.isUnreadIn(cursorsState.value) }
+                            }
                             val target = if (live >= 0) live else homeScrollIndex
                             scope.launch { listState.smartScrollTo(target) }
                         },

@@ -51,13 +51,16 @@ class LatchTimelineUiStateTest {
     }
 
     @Test
-    fun `refresh just completed re-latches initialIndex and frozenCursors`() {
+    fun `refresh just completed re-latches frozenCursors but preserves initialIndex`() {
+        // PTR while scrolled MUST preserve the user's scroll anchor — re-keying
+        // [rememberSaveable] on a fresh initialIndex would yank them. Only the
+        // boundary cursors get re-latched so the unread divider can update.
         val first = ready(items = listOf(item(1L), item(2L)), initialIndex = 1, cursorsValue = 100L)
         val candidate = ready(items = listOf(item(1L), item(2L), item(3L)), initialIndex = 2, cursorsValue = 200L)
         val out = reduceTimelineUiState(previous = first, candidate = candidate, refreshJustCompleted = true)
         assertTrue(out is TimelineUiState.Ready)
         out as TimelineUiState.Ready
-        assertEquals(2, out.initialIndex)
+        assertEquals(1, out.initialIndex)
         assertEquals(persistentMapOf(1L to 200L), out.frozenCursors)
     }
 

@@ -165,20 +165,27 @@ class ChannelViewModel(
         }
         // Deep-link around-load: if the caller supplied a scrollToMessageId, check
         // whether the target is already in the global feed slice (from the cold-start
-        // harvest). If not, issue loadHistoryAround exactly once, then wait up to
-        // 1500 ms for the post to surface in the posts flow. Either way, flip
-        // _attemptedAround so [buildChannelUiState] can transition out of Resolving.
+        // harvest). If not, issue loadHistoryAround exactly once. The repo returns
+        // `true` when the around-window landed (the target post should reach the
+        // posts flow shortly), `false` when the chat is inaccessible / FLOOD_WAIT
+        // exhausted / permission revoked — no point waiting on a post that will
+        // never come, so skip the timeout and flip [_attemptedAround] immediately
+        // so [buildChannelUiState] can transition to Missing.
         if (scrollToMessageId != null) {
             viewModelScope.launch {
                 val initialMatch = posts.value.any { p ->
                     p.id == scrollToMessageId || scrollToMessageId in p.albumMessageIds
                 }
                 if (!initialMatch) {
-                    runCatching { repo.loadHistoryAround(chatId, scrollToMessageId) }
-                    withTimeoutOrNull(1_500L) {
-                        posts.first { ps ->
-                            ps.any { p ->
-                                p.id == scrollToMessageId || scrollToMessageId in p.albumMessageIds
+                    val landed = runCatching {
+                        repo.loadHistoryAround(chatId, scrollToMessageId)
+                    }.getOrDefault(false)
+                    if (landed) {
+                        withTimeoutOrNull(1_500L) {
+                            posts.first { ps ->
+                                ps.any { p ->
+                                    p.id == scrollToMessageId || scrollToMessageId in p.albumMessageIds
+                                }
                             }
                         }
                     }

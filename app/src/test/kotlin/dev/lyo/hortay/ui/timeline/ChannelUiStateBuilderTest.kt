@@ -23,6 +23,7 @@ class ChannelUiStateBuilderTest {
             scrollToMessageId = 200L,
             attemptedAround = false,
             searchActive = false,
+            chatId = 1L,
         )
         assertTrue(s is ChannelUiState.Resolving)
     }
@@ -36,6 +37,7 @@ class ChannelUiStateBuilderTest {
             scrollToMessageId = null,
             attemptedAround = false,
             searchActive = false,
+            chatId = 1L,
         )
         assertTrue(s is ChannelUiState.Ready)
         s as ChannelUiState.Ready
@@ -52,6 +54,7 @@ class ChannelUiStateBuilderTest {
             scrollToMessageId = 200L,
             attemptedAround = false,
             searchActive = false,
+            chatId = 1L,
         )
         assertTrue(s is ChannelUiState.Ready)
         s as ChannelUiState.Ready
@@ -68,6 +71,7 @@ class ChannelUiStateBuilderTest {
             scrollToMessageId = 999L,
             attemptedAround = false,
             searchActive = false,
+            chatId = 1L,
         )
         assertTrue(s is ChannelUiState.Resolving)
     }
@@ -81,6 +85,7 @@ class ChannelUiStateBuilderTest {
             scrollToMessageId = 999L,
             attemptedAround = true,
             searchActive = false,
+            chatId = 1L,
         )
         assertTrue(s is ChannelUiState.Missing)
     }
@@ -97,6 +102,7 @@ class ChannelUiStateBuilderTest {
             scrollToMessageId = 202L,
             attemptedAround = false,
             searchActive = false,
+            chatId = 1L,
         )
         assertTrue(s is ChannelUiState.Ready)
         s as ChannelUiState.Ready
@@ -114,6 +120,7 @@ class ChannelUiStateBuilderTest {
             scrollToMessageId = null,
             attemptedAround = false,
             searchActive = false,
+            chatId = 1L,
             feedOrder = FeedOrder.OldestUnreadFirst,
             cursors = persistentMapOf(1L to 101L),
         )
@@ -135,6 +142,7 @@ class ChannelUiStateBuilderTest {
             scrollToMessageId = 200L,
             attemptedAround = false,
             searchActive = true,
+            chatId = 1L,
         )
         assertTrue(s is ChannelUiState.Ready)
         s as ChannelUiState.Ready

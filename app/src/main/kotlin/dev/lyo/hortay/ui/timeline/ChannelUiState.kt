@@ -55,7 +55,9 @@ sealed interface ChannelUiState {
  * own context, not a deep-link anchor.
  *
  * [chatId] is the owning channel's id, used by [resolveTargetIndex] to match
- * posts in [items]. Pass the VM's [ChannelViewModel.chatId].
+ * posts in [items]. Pass the VM's [ChannelViewModel.chatId] — required, no default,
+ * so the call site can't accidentally fall through to `0L` when [items] is empty
+ * (which would silently miss every deep-link target).
  *
  * [feedOrder] + [cursors] drive the cold-entry boundary for
  * [FeedOrder.OldestUnreadFirst]: in that mode, with no deep-link target and
@@ -71,7 +73,7 @@ internal fun buildChannelUiState(
     scrollToMessageId: Long?,
     attemptedAround: Boolean,
     searchActive: Boolean,
-    chatId: Long = items.firstOrNull()?.posts()?.firstOrNull()?.chatId ?: 0L,
+    chatId: Long,
     feedOrder: FeedOrder = FeedOrder.Newest,
     cursors: ReadCursors = EmptyReadCursors,
 ): ChannelUiState {

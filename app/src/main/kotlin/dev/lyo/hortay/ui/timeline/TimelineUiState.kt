@@ -88,25 +88,28 @@ fun buildTimelineUiState(
 
 /**
  * Pure reducer: one-shot latching for [TimelineUiState.Ready.initialIndex] and
- * [TimelineUiState.Ready.frozenCursors]. Why latching exists: the LazyColumn's
- * scroll position is owned by the user the moment first paint lands. Live
- * cursor advances (dwell-acks) and post arrivals must not trigger auto-scroll
- * — they only update the items list.
+ * re-latching of [TimelineUiState.Ready.frozenCursors] at PTR completion.
  *
- * Re-latching on PTR completion (chat-app idiom: pull-to-refresh is an
- * explicit user request for a fresh anchor) is handled by [refreshJustCompleted]
- * — set true on the falling edge of `refreshing` by the caller.
+ * Why [initialIndex] is ALWAYS preserved across Ready→Ready transitions: the
+ * LazyColumn's scroll position is owned by the user the moment first paint
+ * lands. Re-keying [rememberSaveable] on a fresh [initialIndex] would yank the
+ * user — explicitly forbidden by the "pull-to-refresh while scrolled preserves
+ * position" promise. [refreshJustCompleted] only re-latches [frozenCursors] so
+ * the unread-boundary divider can update; the user's scroll anchor is theirs
+ * to move via [smartScrollTo] from an explicit user intent (home tap, pill).
+ *
+ * Live cursor advances (dwell-acks) and post arrivals must not trigger
+ * auto-scroll — they only update [items].
  */
 internal fun reduceTimelineUiState(
     previous: TimelineUiState?,
     candidate: TimelineUiState,
     refreshJustCompleted: Boolean,
 ): TimelineUiState {
-    if (refreshJustCompleted) return candidate
     if (previous is TimelineUiState.Ready && candidate is TimelineUiState.Ready) {
         return candidate.copy(
             initialIndex = previous.initialIndex,
-            frozenCursors = previous.frozenCursors,
+            frozenCursors = if (refreshJustCompleted) candidate.frozenCursors else previous.frozenCursors,
         )
     }
     return candidate
