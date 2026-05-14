@@ -15,13 +15,33 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * Locates the (chatId, messageId) target in [items]. Returns the row index, or
+ * -1 when not found. Albums hit on any member id.
+ */
+internal fun resolveTargetIndex(
+    items: List<FeedItem>,
+    chatId: Long,
+    messageId: Long,
+): Int = items.indexOfFirst { item ->
+    item.posts().any { p ->
+        p.chatId == chatId && (p.id == messageId || messageId in p.albumMessageIds)
+    }
+}
 
 /**
  * Resolves a deferred "scroll to (chatId, messageId)" request once the target row
- * appears in [displayedItems]. On miss, runs [loadHistoryAround] once and either
- * lands on the next snapshot tick or invokes [onMissed].
+ * appears in [displayedItems]. On first miss, runs [loadHistoryAround] exactly
+ * once. If the target still isn't present after the next snapshot emission within
+ * [loadGraceMs], [onMissed] fires — prevents the silent-hang failure mode where
+ * loadHistoryAround returned true but PostFilterStrategy / grouping pruned the
+ * target out of [displayedItems].
  *
  * @param displayedItems Current LazyColumn data source; read through
  *   [rememberUpdatedState] internally so a long-running snapshotFlow sees fresh values
@@ -33,8 +53,13 @@ import kotlinx.coroutines.CoroutineScope
  * @param onLanded Called once with the resolved row index when the target appears.
  *   Caller is responsible for the actual scroll, highlight, and clearing
  *   [pendingTarget].
- * @param onMissed Called once when [loadHistoryAround] returns false. Caller
- *   surfaces a "message not available" message and clears [pendingTarget].
+ * @param onMissed Called once when [loadHistoryAround] returns false OR when the
+ *   grace window elapses after a successful load without the target appearing.
+ *   Caller surfaces a "message not available" message and clears [pendingTarget].
+ * @param loadGraceMs Grace window after a successful [loadHistoryAround] call. If the
+ *   target doesn't appear in [displayedItems] within this many milliseconds,
+ *   [onMissed] fires. Prevents silent-hang when PostFilterStrategy / album grouping
+ *   prunes the target from the rendered list.
  */
 @Composable
 fun rememberPendingScrollToMessage(
@@ -43,31 +68,38 @@ fun rememberPendingScrollToMessage(
     loadHistoryAround: suspend (chatId: Long, messageId: Long) -> Boolean,
     onLanded: suspend (chatId: Long, messageId: Long, index: Int) -> Unit,
     onMissed: () -> Unit,
+    loadGraceMs: Long = 1500L,
 ) {
     val itemsState = rememberUpdatedState(displayedItems)
     LaunchedEffect(pendingTarget) {
         val (chatId, messageId) = pendingTarget ?: return@LaunchedEffect
-        var requestedAroundLoad = false
-        snapshotFlow { itemsState.value }
-            .collect { items ->
-                val idx = items.indexOfFirst { item ->
-                    item.posts().any { p ->
-                        p.chatId == chatId && (p.id == messageId || messageId in p.albumMessageIds)
-                    }
-                }
-                if (idx >= 0) {
-                    onLanded(chatId, messageId, idx)
-                    return@collect
-                }
-                if (!requestedAroundLoad) {
-                    requestedAroundLoad = true
-                    val landed = loadHistoryAround(chatId, messageId)
-                    if (!landed) {
-                        onMissed()
-                        return@collect
-                    }
-                }
-            }
+        // First pass: target may already be in [displayedItems] from a prior
+        // global feed harvest — try a single resolve before issuing an RPC.
+        val initialIndex = resolveTargetIndex(itemsState.value, chatId, messageId)
+        if (initialIndex >= 0) {
+            onLanded(chatId, messageId, initialIndex)
+            return@LaunchedEffect
+        }
+        // Miss: issue around-load. False return = chat inaccessible / window empty.
+        val landed = loadHistoryAround(chatId, messageId)
+        if (!landed) {
+            onMissed()
+            return@LaunchedEffect
+        }
+        // Around-load succeeded. Race the next snapshot emission against a grace
+        // timeout. If a new emission contains the target → land. If grace elapses
+        // first → onMissed (target got filtered out by PostFilterStrategy or by
+        // album grouping that pruned a single member).
+        val landedIndex = withTimeoutOrNull(loadGraceMs) {
+            snapshotFlow { itemsState.value }
+                .map { resolveTargetIndex(it, chatId, messageId) }
+                .first { it >= 0 }
+        }
+        if (landedIndex != null) {
+            onLanded(chatId, messageId, landedIndex)
+        } else {
+            onMissed()
+        }
     }
 }
 
