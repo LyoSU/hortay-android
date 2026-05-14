@@ -809,14 +809,19 @@ fun TimelineScreen(
     // made the app feel like it was searching for the post). On miss the helper invokes
     // [onScrollMissed] via the [onMissed] callback so the scaffold surfaces "Посилання
     // не знайдено" instead of leaving the user staring at a frozen skeleton.
-    // Gate displayedItems on Ready — while Loading the LazyColumn isn't mounted
-    // (the `when (latchedUiState)` block renders SkeletonFeed instead), so
-    // [listState.scrollToItem] would target an unmounted column. The empty-list
-    // short-circuit inside the helper makes [onLanded] a no-op until Ready, so
-    // the pending target survives the wait and resolves once the column paints.
+    // Gate `pendingTarget` (NOT displayedItems) on Ready. The resolver's
+    // LaunchedEffect keys on pendingTarget — a non-null target fires it
+    // immediately, even with an empty items list, which makes loadHistoryAround
+    // run and (on its `false` return, or after the 1500ms grace) trigger
+    // onMissed before the column was ever mounted. Clearing the pending target
+    // until Ready keeps the effect dormant: it re-fires only when both (a) the
+    // user's deep-link is still pending AND (b) the column is actually mounted,
+    // so the resolved index lands on a real row.
+    val readyPendingTarget = pendingScrollToMessage
+        ?.takeIf { latchedUiState is TimelineUiState.Ready }
     rememberPendingScrollToMessage(
-        displayedItems = if (latchedUiState is TimelineUiState.Ready) feedItems else emptyList(),
-        pendingTarget = pendingScrollToMessage,
+        displayedItems = feedItems,
+        pendingTarget = readyPendingTarget,
         loadHistoryAround = { cid, mid -> tdlibRepo?.loadHistoryAround(cid, mid) ?: false },
         onLanded = { cid, mid, idx ->
             highlightedPostKey = cid to mid
