@@ -473,11 +473,6 @@
     <string name="link_unsupported_group">Group chats open in Telegram</string>
     <string name="link_unsupported_other">This link opens in Telegram</string>
     <string name="link_not_found">Link not found</string>
-    <!-- Snackbar shown when a deep-link's target post couldn't be located in
-         the channel after the around-load attempt resolved. The channel falls
-         back to its normal newest-first view. Mirrors `link_not_found` but
-         scoped to the per-channel screen. -->
-    <string name="deep_link_post_unavailable">Post unavailable</string>
     <!-- Surfaced when a `#tag` link/tap arrives without a channel scope —
          Comments-thread bodies, `tg://search?query=…` URLs, settings text. %1$s
          is the tag with its leading `#`. -->
