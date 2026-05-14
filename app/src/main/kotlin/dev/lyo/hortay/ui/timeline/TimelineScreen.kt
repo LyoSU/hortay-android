@@ -233,6 +233,14 @@ fun TimelineScreen(
     val readCursorsLandedState = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(false)
     }
+    // Forward-declared feed-items holder for the home-tap highlight pulse.
+    // Assigned after [feedItems] is computed further down; the home-tap
+    // LaunchedEffect reads .value at suspend time so it always sees the
+    // current list regardless of when the effect was keyed. Same pattern
+    // as [homeScrollIndexState].
+    val feedItemsForEffectsState = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<List<FeedItem>>(emptyList())
+    }
 
     // viewModel() keys the cached instance by VM class only; the `factory`
     // parameter is consulted *just* on first creation. With both MainScaffold
@@ -488,7 +496,22 @@ fun TimelineScreen(
         val target = homeScrollIndexState.intValue
         val atTarget = listState.firstVisibleItemIndex == target &&
             listState.firstVisibleItemScrollOffset == 0
-        if (atTarget) vm.refresh() else listState.smartScrollTo(target)
+        if (atTarget) {
+            vm.refresh()
+        } else {
+            listState.smartScrollTo(target)
+            // Brief surface-tint pulse on the destination card — canonical
+            // chat-UI pattern (Telegram/Slack/Discord: "you just landed here").
+            // Reuses the same [highlightedPostKey] pipeline that deep-link and
+            // quote-tap landings drive, so there is a single rendering path for
+            // the highlight. The set happens after the scroll call so the card
+            // is already in the visible viewport by the time Compose reads the key.
+            val destinationPost = feedItemsForEffectsState.value
+                .getOrNull(target)?.posts()?.firstOrNull()
+            if (destinationPost != null) {
+                highlightedPostKey = destinationPost.chatId to destinationPost.id
+            }
+        }
     }
 
     // Switching folders jumps to the top of the feed — "show me the top of this
@@ -516,8 +539,10 @@ fun TimelineScreen(
         if (previous != null && previous != scopeKey) {
             // Mode-aware "home" — same target as the NavBar Home tap. In
             // OldestUnreadFirst this lands at the first-unread boundary, not
-            // the oldest read post.
-            listState.scrollToItem(homeScrollIndexState.intValue)
+            // the oldest read post. Route through [smartScrollTo] so short
+            // distances animate while large jumps hard-cut, matching the
+            // home-tap and deep-link landing behaviour.
+            listState.smartScrollTo(homeScrollIndexState.intValue)
         }
     }
 
@@ -691,26 +716,31 @@ fun TimelineScreen(
         readCursorsLandedState.value = cursorsHaveLanded
     }
 
-    // Reset scroll on FeedOrder flip — but ONLY on an actual user-driven change
-    // of the setting, not on every remount of this Composable.
+    // Re-anchor the LazyListState when the user changes the feed order setting.
     //
-    // Without the saveable-key guard below, `LaunchedEffect(feedOrder)` re-fires
-    // every time TimelineScreen re-enters composition: tab switch away and back
-    // (NavTab.Channels → NavTab.Feed), drilling into a channel and popping out,
-    // even rotation under the same tab — all yank the user back to the home
-    // target. Saveable lastFeedOrderKey is the same pattern the scope-switch
-    // effect below uses: scroll only when the *previously observed* feedOrder
-    // existed AND differs from the current one. First mount sees `previous ==
-    // null` and skips the scroll, leaving cold-start positioning to its own
-    // LaunchedEffect.
+    // Old approach: `LaunchedEffect(feedOrder) { listState.scrollToItem(homeScrollIndex) }`.
+    // That called into a possibly-stale listState (the order flip produces a new
+    // candidate UiState with a different initialIndex, but the latcher preserves
+    // the previous initialIndex until refreshJustCompleted fires — so the column
+    // was pre-positioned at the WRONG boundary and the scroll call landed on the
+    // wrong item).
+    //
+    // New approach: bump [initialIndexSeed] so the [rememberSaveable] key changes,
+    // discarding the old saver bundle and re-constructing LazyListState at the new
+    // boundary in the next composition. The column mounts pre-positioned in one
+    // frame — no animate-through, no stale-listState race. The saveable-key guard
+    // (lastFeedOrderKey) is still needed: without it this effect re-fires on every
+    // remount (tab switch, channel drill + pop, rotation) and resets scroll the
+    // user didn't ask for.
     var lastFeedOrderKey by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(feedOrder) {
         val previous = lastFeedOrderKey
         lastFeedOrderKey = feedOrder.name
-        if (previous != null && previous != feedOrder.name &&
-            !listState.isScrollInProgress
-        ) {
-            listState.scrollToItem(homeScrollIndex)
+        if (previous != null && previous != feedOrder.name) {
+            // Bump [initialIndexSeed] to the new boundary. The saver key is
+            // `routeKey + initialIndexSeed.intValue`, so a new seed value
+            // discards the bundle and re-mounts LazyListState at the right row.
+            initialIndexSeed.intValue = homeScrollIndex
         }
     }
 
@@ -720,6 +750,9 @@ fun TimelineScreen(
     // that map "visible item indices" → posts use [FeedItem.posts] to flatten threaded slots
     // back into individual TimelinePost entries.
     val feedItems = remember(visiblePosts) { groupReplies(visiblePosts) }
+    // Keep the forward-declared holder current so the home-tap LaunchedEffect
+    // can read the latest list without capturing a stale reference.
+    feedItemsForEffectsState.value = feedItems
 
     // Single source of truth for what TimelineScreen renders — derived from the
     // already-filtered, already-ordered, already-grouped [feedItems], the live
