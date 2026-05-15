@@ -5,6 +5,7 @@ package dev.lyo.hortay.ui.settings
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -411,11 +412,16 @@ private fun SettingsMain(
 
             Spacer(Modifier.height(8.dp))
             SectionLabel(stringResource(R.string.settings_section_about))
-            SettingsRow(
-                symbol = "info",
-                title = stringResource(R.string.settings_version),
-                subtitle = "${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+                LanguageRow(index = 0, count = 2)
+                SettingsRow(
+                    symbol = "info",
+                    title = stringResource(R.string.settings_version),
+                    subtitle = "${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
+                    index = 1,
+                    count = 2,
+                )
+            }
         }
     }
 
@@ -1032,6 +1038,122 @@ private fun InlineAutoplayRow(
             )
         },
     )
+}
+
+/**
+ * Per-app language row. Reads / writes through [AppCompatDelegate.setApplicationLocales],
+ * which is the canonical androidx bridge to the Android 13+ system per-app language
+ * picker: on API 33+ the call propagates into the platform's
+ * `LocaleManager.setApplicationLocales` (so the choice also surfaces in
+ * Settings → System → Languages → Hortay), on API 26-32 AppCompat persists the
+ * tag in shared prefs and re-applies it on next Activity create. The locales
+ * declared in `xml/locales_config.xml` (`en`, `uk`) are the universe that
+ * Android's system picker offers as well — the in-app row simply mirrors that
+ * choice so the user discovers it without leaving the app.
+ *
+ * Empty [LocaleListCompat] = "follow system" (the API 33+ "App default" option).
+ *
+ * The recreation that picks up the new locale happens inside AppCompat: setting
+ * a non-empty list on API 33+ triggers an Activity recreate via LocaleManager;
+ * on older API it schedules a recreate through AppCompatDelegate. Either way
+ * the user sees the UI flip languages within a frame of dismissing the dialog —
+ * no manual `Activity.recreate()` plumbing required.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun LanguageRow(index: Int, count: Int) {
+    var showDialog by remember { mutableStateOf(false) }
+    val current = androidx.appcompat.app.AppCompatDelegate.getApplicationLocales()
+    val activeTag = if (current.isEmpty) null else current[0]?.language
+    val summary = when (activeTag) {
+        "uk" -> stringResource(R.string.settings_language_summary_uk)
+        "en" -> stringResource(R.string.settings_language_summary_en)
+        else -> stringResource(R.string.settings_language_summary_system)
+    }
+    SettingsRow(
+        symbol = "translate",
+        title = stringResource(R.string.settings_language),
+        subtitle = summary,
+        chevron = true,
+        index = index,
+        count = count,
+        onClick = { showDialog = true },
+    )
+    if (showDialog) {
+        LanguageDialog(
+            activeTag = activeTag,
+            onDismiss = { showDialog = false },
+            onSelect = { tag ->
+                val list = if (tag == null) {
+                    androidx.core.os.LocaleListCompat.getEmptyLocaleList()
+                } else {
+                    androidx.core.os.LocaleListCompat.forLanguageTags(tag)
+                }
+                androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(list)
+                showDialog = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun LanguageDialog(
+    activeTag: String?,
+    onDismiss: () -> Unit,
+    onSelect: (String?) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.settings_logout_cancel))
+            }
+        },
+        title = { Text(stringResource(R.string.settings_language_dialog_title)) },
+        text = {
+            Column {
+                LanguageOption(
+                    label = stringResource(R.string.settings_language_summary_system),
+                    selected = activeTag == null,
+                    onClick = { onSelect(null) },
+                )
+                LanguageOption(
+                    label = stringResource(R.string.settings_language_summary_uk),
+                    selected = activeTag == "uk",
+                    onClick = { onSelect("uk") },
+                )
+                LanguageOption(
+                    label = stringResource(R.string.settings_language_summary_en),
+                    selected = activeTag == "en",
+                    onClick = { onSelect("en") },
+                )
+            }
+        },
+    )
+}
+
+@Composable
+private fun LanguageOption(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .selectable(
+                selected = selected,
+                onClick = onClick,
+                role = androidx.compose.ui.semantics.Role.RadioButton,
+            )
+            .padding(vertical = 12.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+    }
 }
 
 // ---- Author attribution ------------------------------------------------------

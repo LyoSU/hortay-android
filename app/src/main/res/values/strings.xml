@@ -330,6 +330,11 @@
     <string name="settings_author_channel_title">Author\'s channel</string>
     <string name="settings_author_developer_title">Developer</string>
     <string name="settings_section_about">About</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_summary_system">System default</string>
+    <string name="settings_language_summary_uk">Українська</string>
+    <string name="settings_language_summary_en">English</string>
+    <string name="settings_language_dialog_title">App language</string>
     <string name="settings_logout_title">Sign out</string>
     <string name="settings_logout_subtitle">Telegram session resets, cache stays</string>
     <string name="settings_version">Version</string>

@@ -344,6 +344,11 @@
     <string name="settings_author_channel_title">Канал автора</string>
     <string name="settings_author_developer_title">Розробник</string>
     <string name="settings_section_about">Про застосунок</string>
+    <string name="settings_language">Мова</string>
+    <string name="settings_language_summary_system">Системна</string>
+    <string name="settings_language_summary_uk">Українська</string>
+    <string name="settings_language_summary_en">English</string>
+    <string name="settings_language_dialog_title">Мова застосунку</string>
     <string name="settings_logout_title">Вийти з акаунту</string>
     <string name="settings_logout_subtitle">Сесія Telegram скинеться, кеш залишиться</string>
     <string name="settings_version">Версія</string>

@@ -289,6 +289,12 @@ androidComponents {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    // AppCompat is pulled in solely for AppCompatDelegate.setApplicationLocales
+    // (canonical androidx bridge to the Android 13+ per-app language picker;
+    // back-ports the override below API 33). HortayApp / MainActivity do NOT
+    // extend AppCompat counterparts — the rest of the app stays Compose-only,
+    // single-Activity.
+    implementation(libs.androidx.appcompat)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -305,6 +311,7 @@ dependencies {
     implementation(libs.compose.ui.text.google.fonts)
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.leakcanary.android)
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

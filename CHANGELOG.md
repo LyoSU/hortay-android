@@ -4,10 +4,14 @@
 
 ## [Unreleased]
 
+### Added
+- Settings → About → "App language" / "Мова застосунку" lets you pin the UI to Ukrainian or English independently of the system locale. Default is "System default" — the existing behavior. On Android 13+ the choice also surfaces in the system per-app language picker (Settings → Apps → Hortay → Language) and survives reinstall when Android's automatic data-restore kicks in. Persisted via `AppCompatDelegate.setApplicationLocales`, declared via `app/src/main/res/xml/locales_config.xml` (`en` + `uk`). Bilingual users (Ukrainian system locale + occasional EN context, or vice-versa) no longer have to change the entire phone to switch Hortay's language.
+
 ### Performance
 - Comments overlay, report sheet, and country picker recompose less often. `CommentsRepository.ThreadState.Ready.rows`, `ReportState.OptionSelection.options`, and `Country.allDialCodes` switched from platform `List<X>` to `kotlinx.collections.immutable.ImmutableList<X>`, and the parent data classes are now `@Immutable`. Strong-skipping mode (Kotlin 2.3 / Compose Compiler 2.x default) now skips these slots when the comment thread, report state, or selected country didn't actually change between recompositions — previously the platform-list field made the whole data class "unstable" and every recomposition cascaded.
 
 ### Build
+- LeakCanary 2.14 wired as `debugImplementation` only — ships in debug builds for memory-leak detection, zero release/beta footprint.
 - Compose Compiler stability / skippability reports are now actually generated. `composeCompiler { reportsDestination + metricsDestination }` was missing — CLAUDE.md referenced reports in `app/build/compose_compiler/` but the destination was never wired. Reports land there on every `assembleRelease` / `bundleRelease` and surface skippability regressions as `unstable` verdicts in `app-classes.txt` and as `restartable` without `skippable` in `app-composables.txt`.
 - New `compose_stability.conf` at the repo root marks `kotlinx.collections.immutable.{Persistent,Immutable}{List,Map,Set}` and `kotlinx.serialization.json.JsonElement` as stable to Compose. Platform `kotlin.collections.{List,Map,Set}` are deliberately NOT listed — the project's contract is to use `Persistent*` for any collection that reaches a `@Composable` parameter, and treating the platform types as stable would silently mask passing a mutable list at a call site.
 - R8 now collapses every obfuscated class into the empty package via `-repackageclasses ''`. Drops per-class package-name strings from the DEX string pool. Stack traces in Play Console stay readable via auto-deobfuscation against the bundled `mapping.txt`.
