@@ -133,13 +133,12 @@ fun ChannelScreen(
      * Per-user feed ordering, from [dev.lyo.hortay.data.SettingsStore.feedOrder]. Mirrors
      * the same setting [TimelineScreen] respects on the all-feed: [FeedOrder.Newest]
      * is the canonical newest-at-top arrangement; [FeedOrder.OldestUnreadFirst]
-     * sorts ascending by date (oldest read posts on top, unread queue below,
-     * newest at the bottom — chat-app idiom) and the cold-entry effect below
-     * lands the user at the read→unread boundary so the channel opens "where
-     * you left off". Default [FeedOrder.Newest] keeps the previous behaviour
-     * for any call site that hasn't been migrated yet.
+     * (the default) sorts ascending by date (oldest read posts on top, unread
+     * queue below, newest at the bottom — chat-app idiom) and the cold-entry
+     * effect below lands the user at the read→unread boundary so the channel
+     * opens "where you left off".
      */
-    feedOrder: FeedOrder = FeedOrder.Newest,
+    feedOrder: FeedOrder = FeedOrder.OldestUnreadFirst,
     /**
      * Process-wide cold-start gate, TDLib mode only. While in
      * [StartupCoordinator.Phase.Booting] the comments-thread prefetch collector

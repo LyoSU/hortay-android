@@ -76,7 +76,7 @@ fun WebChannelScreen(
      * unread) and the cold-entry effect below lands the user at the read→unread
      * boundary so the channel opens "where you left off".
      */
-    feedOrder: FeedOrder = FeedOrder.Newest,
+    feedOrder: FeedOrder = FeedOrder.OldestUnreadFirst,
 ) {
     val feedSource = graph.webFeedSource
     val bookmarks = graph.bookmarkStore

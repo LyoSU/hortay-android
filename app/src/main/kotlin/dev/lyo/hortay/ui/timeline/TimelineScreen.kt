@@ -187,15 +187,17 @@ fun TimelineScreen(
      */
     markAsRead: (suspend (List<TimelinePost>) -> Unit)? = null,
     /**
-     * User-chosen feed ordering (defaults to [dev.lyo.hortay.data.FeedOrder.Newest] —
-     * the canonical newest-first chronology). Scaffolds collect from
+     * User-chosen feed ordering (defaults to
+     * [dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst] — the Telegram-channel
+     * chat-app idiom: oldest read posts on top, unread queue below, newest at
+     * the bottom). Scaffolds collect from
      * [dev.lyo.hortay.data.SettingsStore.feedOrder] and pass in; the sort runs in a
      * keyed `remember` over [visiblePosts] + [LocalReadCursors] so switching the
      * setting at runtime reshuffles the feed without any extra wiring. Per UX
-     * guard: a runtime switch also auto-scrolls the LazyColumn back to the top
-     * so the new order has a clear starting point.
+     * guard: a runtime switch also auto-scrolls the LazyColumn back to the home
+     * target so the new order has a clear starting point.
      */
-    feedOrder: dev.lyo.hortay.data.FeedOrder = dev.lyo.hortay.data.FeedOrder.Newest,
+    feedOrder: dev.lyo.hortay.data.FeedOrder = dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst,
     /**
      * Snap-fling toggle from [dev.lyo.hortay.data.SettingsStore.snapScroll].
      * When true, the LazyColumn fling settles on the nearest item boundary
