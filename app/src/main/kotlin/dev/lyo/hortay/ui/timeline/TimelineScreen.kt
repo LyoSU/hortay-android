@@ -118,7 +118,14 @@ fun TimelineScreen(
     bookmarks: BookmarkStore,
     contentPadding: PaddingValues,
     showOnlyBookmarked: Boolean,
-    onChannelOpen: (Long) -> Unit = {},
+    /**
+     * Called when the user taps a post's channel header, a forward-source chip,
+     * or an inline reply / quote card. The second parameter is the optional
+     * messageId to land on inside the destination channel — used by the quote-tap
+     * path so the new [ChannelScreen] highlights the replied-to message instead
+     * of opening cold. Header / forward-source taps pass null.
+     */
+    onChannelOpen: (chatId: Long, scrollToMessageId: Long?) -> Unit = { _, _ -> },
     tdlibRepo: PostsRepository? = null,
     commentsRepo: CommentsRepository? = null,
     folders: ChatFoldersRepository? = null,
@@ -1096,9 +1103,9 @@ fun TimelineScreen(
     val postsState = rememberUpdatedState(posts)
     val translationsState = rememberUpdatedState(translationsMap)
     val bookmarkedState = rememberUpdatedState(bookmarkedKeys)
-    val onChannelOpenState = rememberUpdatedState { chatId: Long ->
+    val onChannelOpenState = rememberUpdatedState { chatId: Long, scrollTo: Long? ->
         captureOverlayReturnAnchorState.value()
-        onChannelOpen(chatId)
+        onChannelOpen(chatId, scrollTo)
     }
     val onOpenCommentsState = rememberUpdatedState { post: TimelinePost ->
         captureOverlayReturnAnchorState.value()
@@ -1186,7 +1193,7 @@ fun TimelineScreen(
                     viewer.openFor(post.content, idx)
                 }
             },
-            onChannelClick = { post -> onChannelOpenState.value(post.chatId) },
+            onChannelClick = { post -> onChannelOpenState.value(post.chatId, null) },
             onForwardSourceClick = { post ->
                 val origin = post.forwardOrigin
                 val sourceId = when (origin) {
@@ -1203,7 +1210,7 @@ fun TimelineScreen(
                 // the preview/skeleton while TDLib loads the history for non-subscribed
                 // channels.
                 when {
-                    sourceId != null -> onChannelOpenState.value(sourceId)
+                    sourceId != null -> onChannelOpenState.value(sourceId, null)
                     !sourceHandle.isNullOrBlank() -> {
                         // Username-only origins (TDLib didn't include the resolved id) —
                         // route through LocalUriHandler so HortayUriHandler resolves
@@ -1214,14 +1221,15 @@ fun TimelineScreen(
                 }
             },
             onQuotedSourceClick = { post ->
-                // In-app "open the original": push a Channel entry on the
-                // nav-stack and queue a same-channel scroll-to-target for
-                // when the user navigates back into the all-feed (rare; this
-                // surface is the feed itself, so the scroll-to-message rarely
-                // fires here — the typical case lands inside ChannelScreen).
+                // Open the original in a ChannelScreen, with the replied-to messageId
+                // baked into the nav-entry so the channel lands at that message and
+                // pulses the highlight inside the new overlay. Critically, the feed's
+                // own [pendingScrollToMessage] is NOT touched here — otherwise the
+                // resolver would also scroll the feed underneath the overlay and flash
+                // a highlight there, which the user reads as "the feed jumped under me"
+                // (see bug: tap reply → channel opens AND feed highlights the post).
                 post.reply?.let { r ->
-                    onChannelOpenState.value(r.replyToChatId)
-                    pendingScrollToMessage = r.replyToChatId to r.replyToMessageId
+                    onChannelOpenState.value(r.replyToChatId, r.replyToMessageId)
                 }
             },
             onBookmarkClick = { post -> vm.toggleBookmark(post) },

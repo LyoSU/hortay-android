@@ -99,10 +99,13 @@ import kotlinx.coroutines.launch
  * corresponding [TimelineScreen] patterns verbatim; differences are called out in
  * their inline comments.
  *
- * @param onChannelOpen Called when the user taps a channel header or forward source
- *   that refers to a DIFFERENT channel than the one currently displayed. The back-stack
- *   router in [MainScaffold] pushes the new chatId and creates a fresh [ChannelScreen].
- *   Same-channel taps are no-ops (already here).
+ * @param onChannelOpen Called when the user taps a channel header, a forward-source
+ *   chip, or an inline reply / quote card whose target is a DIFFERENT channel than the
+ *   one currently displayed. The back-stack router in [MainScaffold] pushes the new
+ *   chatId and creates a fresh [ChannelScreen]. The second parameter is the optional
+ *   messageId to land on inside the destination channel — used by the cross-channel
+ *   quote-tap path so the freshly pushed screen highlights the replied-to message
+ *   instead of opening cold. Same-channel taps are no-ops (already here).
  */
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
@@ -116,7 +119,7 @@ fun ChannelScreen(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     onOpenComments: (TimelinePost) -> Unit,
-    onChannelOpen: (Long) -> Unit,
+    onChannelOpen: (chatId: Long, scrollToMessageId: Long?) -> Unit,
     scrollToMessage: Pair<Long, Long>? = null,
     onScrollHandled: () -> Unit = {},
     onScrollMissed: () -> Unit = {},
@@ -421,7 +424,7 @@ fun ChannelScreen(
             },
             onChannelClick = { post ->
                 // Same-channel tap: already here, no-op. Different-channel: drill in.
-                if (post.chatId != chatId) onChannelOpenState.value(post.chatId)
+                if (post.chatId != chatId) onChannelOpenState.value(post.chatId, null)
             },
             onForwardSourceClick = { post ->
                 val origin = post.forwardOrigin
@@ -436,7 +439,7 @@ fun ChannelScreen(
                     else -> null
                 }
                 when {
-                    sourceId != null -> onChannelOpenState.value(sourceId)
+                    sourceId != null -> onChannelOpenState.value(sourceId, null)
                     !sourceHandle.isNullOrBlank() -> {
                         // Username-only: route through HortayUriHandler so the public
                         // channel handle resolves via SearchPublicChat.
@@ -447,14 +450,16 @@ fun ChannelScreen(
             onQuotedSourceClick = { post ->
                 post.reply?.let { r ->
                     if (r.replyToChatId == chatId) {
-                        // Same channel: queue a scroll to the target message.
+                        // Same channel: queue an in-place scroll to the target message.
                         pendingScrollToMessage = r.replyToChatId to r.replyToMessageId
                     } else {
-                        // Different channel: drill in. The cross-channel scroll
-                        // target would need to ride a per-push `scrollToMessageId`
-                        // on the new NavEntry.Channel — wire it through onChannelOpen
-                        // if that turns out to matter; for now we just drill.
-                        onChannelOpenState.value(r.replyToChatId)
+                        // Different channel: drill in WITH the replied-to messageId
+                        // baked into the new NavEntry.Channel — the freshly mounted
+                        // ChannelScreen lands at the target and pulses the highlight
+                        // there. Without the messageId the new screen would open cold
+                        // (newest-first) and the user would have to scroll-hunt for
+                        // the thing they tapped on.
+                        onChannelOpenState.value(r.replyToChatId, r.replyToMessageId)
                     }
                 }
             },

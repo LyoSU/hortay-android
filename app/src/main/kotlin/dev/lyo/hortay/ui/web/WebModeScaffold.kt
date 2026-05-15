@@ -378,7 +378,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                 bookmarks = graph.bookmarkStore,
                                 contentPadding = padding,
                                 showOnlyBookmarked = false,
-                                onChannelOpen = { /* no per-channel drill from feed bodies in guest mode */ },
+                                onChannelOpen = { _, _ -> /* no per-channel drill from feed bodies in guest mode */ },
                                 homeTapTrigger = homeTapTrigger,
                                 onBrandTap = { homeTapTrigger = System.nanoTime() },
                                 onSearchClick = { searchOpen = true },
@@ -415,7 +415,7 @@ fun WebModeScaffold(graph: AppGraph) {
                         bookmarks = graph.bookmarkStore,
                         contentPadding = padding,
                         showOnlyBookmarked = true,
-                        onChannelOpen = { /* no-op: guest mode */ },
+                        onChannelOpen = { _, _ -> /* no-op: guest mode */ },
                         onReportClick = { post ->
                             val outcome = graph.guestReportDelegator.report(
                                 channelUsername = post.senderHandle?.removePrefix("@"),

@@ -42,7 +42,7 @@
   the channel's head post flashed for a moment before the scroll landed.
 
 ### Fixed
-- Action-sheet "Copy" and "Share" excerpts are no longer blank for poll-only / checklist / audio / document posts. Polls expose the question; checklists expose the title plus `[x] / [ ]` task lines; audio exposes title + performer; documents fall back to the filename when no caption was authored.
+- Tapping an inline reply / quote card on a post no longer scrolls and highlights the post underneath in the feed. Feed: the freshly pushed `ChannelScreen` lands at the replied-to message and pulses the highlight there; the feed itself stays still. In-channel cross-channel replies now also pass the target messageId through to the new channel screen — drilling into a different channel from a quote tap lands at the replied-to post instead of opening cold at the newest message. Polls expose the question; checklists expose the title plus `[x] / [ ]` task lines; audio exposes title + performer; documents fall back to the filename when no caption was authored.
 - Post-card "Report" action shows a moderation glyph instead of the silent help question-mark fallback. Bundle a dedicated `sym_flag.xml` when convenient — current mapping is `shield`.
 - Reaction chips on the post-detail anchor and on comments now actually toggle; the anchor PostCard tracks the live feed entry so optimistic updates and server `UpdateMessageInteractionInfo` flow into the visible chip.
 - Fresh posts reach `OldestUnreadFirst` feed without restart.
