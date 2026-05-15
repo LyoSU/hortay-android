@@ -8,6 +8,8 @@ package dev.lyo.hortay.data.report
 import dev.lyo.hortay.data.StringResolver
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdSender
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.toImmutableList
 import org.drinkless.tdlib.TdApi
 
 /**
@@ -29,7 +31,7 @@ sealed interface ReportState {
     data object Loading : ReportState
     data class OptionSelection(
         val title: String,
-        val options: List<TdApi.ReportOption>,
+        val options: ImmutableList<TdApi.ReportOption>,
     ) : ReportState
     data class TextRequired(
         val isOptional: Boolean,
@@ -130,7 +132,7 @@ class ReportRepository(
             ReportStep(
                 ReportState.OptionSelection(
                     title = result.title,
-                    options = result.options.toList(),
+                    options = result.options.toList().toImmutableList(),
                 ),
             )
         is TdApi.ReportChatResultTextRequired ->

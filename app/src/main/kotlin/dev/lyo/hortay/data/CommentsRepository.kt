@@ -1,5 +1,7 @@
 package dev.lyo.hortay.data
 
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -56,7 +58,7 @@ class CommentsRepository(
 
     sealed interface ThreadState {
         data object Loading : ThreadState
-        data class Ready(val rows: List<ThreadRow>, val threadChatId: Long) : ThreadState
+        data class Ready(val rows: ImmutableList<ThreadRow>, val threadChatId: Long) : ThreadState
         data class Error(val message: String) : ThreadState
     }
 
@@ -499,7 +501,7 @@ class CommentsRepository(
         live: List<TdApi.Message>,
         anchor: ResolvedAnchor,
     ): ThreadState.Ready =
-        ThreadState.Ready(buildTree(live, anchor), anchor.threadChatId)
+        ThreadState.Ready(buildTree(live, anchor).toImmutableList(), anchor.threadChatId)
 
     /**
      * Apply an optimistic reaction toggle on a comment row inside this thread. The

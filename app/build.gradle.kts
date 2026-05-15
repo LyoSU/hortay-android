@@ -209,6 +209,21 @@ android {
     }
 }
 
+// Compose Compiler reports + stability config. Reports land under
+// app/build/compose_compiler/ on every Kotlin compile that runs the Compose
+// plugin; skippability regressions surface as "unstable" verdicts in
+// <module>-classes.txt and as "restartable" without "skippable" in
+// <module>-composables.txt (see CLAUDE.md → Verifying rules). Stability config
+// tells the compiler about external types whose JVM signature doesn't reveal
+// their de-facto immutability — see compose_stability.conf at the repo root.
+composeCompiler {
+    reportsDestination = layout.buildDirectory.dir("compose_compiler")
+    metricsDestination = layout.buildDirectory.dir("compose_compiler")
+    stabilityConfigurationFiles.add(
+        rootProject.layout.projectDirectory.file("compose_stability.conf")
+    )
+}
+
 // Anonymous web-mode database. Schema files live under
 // app/src/main/sqldelight/dev/lyo/hortay/data/web/db/*.sq; SQLDelight generates
 // typed DAO sources at build time. Migrations sit alongside as `<n>.sqm`.

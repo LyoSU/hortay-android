@@ -1,6 +1,10 @@
 package dev.lyo.hortay.data
 
+import androidx.compose.runtime.Immutable
 import dev.lyo.hortay.R
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,12 +24,13 @@ import org.drinkless.tdlib.TdApi
  * matches what official Telegram does, but the whole array is preserved so a future
  * `GetPhoneNumberInfo` lookup can identify every variant.
  */
+@Immutable
 data class Country(
     val iso: String,
     val name: String,
     val dialCode: String,
     val flag: String,
-    val allDialCodes: List<String>,
+    val allDialCodes: ImmutableList<String>,
     /**
      * True for the synthetic "Інша країна" row — selecting it unlocks the dial-code field
      * for free typing in [PhoneForm], so a user with an exotic carrier code can punch in
@@ -48,7 +53,7 @@ internal fun fragmentAnonymousNumbers(res: StringResolver): Country = Country(
     name = res.getString(R.string.country_anonymous_numbers),
     dialCode = "+888",
     flag = "🏴‍☠️",
-    allDialCodes = listOf("888"),
+    allDialCodes = persistentListOf("888"),
 )
 
 internal fun customCountryEntry(res: StringResolver): Country = Country(
@@ -56,7 +61,7 @@ internal fun customCountryEntry(res: StringResolver): Country = Country(
     name = res.getString(R.string.country_other),
     dialCode = "+",
     flag = "🌐",
-    allDialCodes = emptyList(),
+    allDialCodes = persistentListOf(),
     isCustom = true,
 )
 
@@ -131,7 +136,7 @@ class CountryRepository(private val sender: TdSender, private val res: StringRes
                     name = info.name.ifEmpty { info.englishName },
                     dialCode = "+$dial",
                     flag = isoToFlagEmoji(info.countryCode),
-                    allDialCodes = info.callingCodes.toList(),
+                    allDialCodes = info.callingCodes.toList().toImmutableList(),
                 )
             }
             .sortedBy { it.name.lowercase() }
