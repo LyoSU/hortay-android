@@ -170,6 +170,18 @@ class CustomEmojiAnimator(
         // completion handler picks up after the in-flight render finishes.
         var renderInFlight: Boolean = false,
         var pendingProgress: Float = Float.NaN,
+        // Set to true if LottieDrawable.draw() ever throws on this entry's TGS
+        // payload (TDLib hands us TGS bytes verbatim; some real-world stickers
+        // ship malformed gradients / invalid layer geometry that the platform's
+        // Shader / Canvas APIs reject — SDK 36 Shader.convertColors throws
+        // "needs >= 2 number of colors" on RadialGradient with a 1-stop
+        // gradient, which we've seen in production custom emoji). Once flipped
+        // we stop scheduling further renders for this entry; the front buffer
+        // keeps whichever frame was last successfully painted, or stays blank
+        // if the first render itself failed. Crashing the BG renderer thread
+        // instead would freeze EVERY custom emoji in the process, not just
+        // the broken one.
+        var broken: Boolean = false,
     )
 
     /**
@@ -373,6 +385,7 @@ class CustomEmojiAnimator(
      */
     private fun scheduleRender(key: EntryKey, snappedProgress: Float) {
         val entry = entries[key] ?: return
+        if (entry.broken) return
         if (entry.bitmapBack == null) {
             // No back buffer yet — consumer hasn't reported size. Skip; the
             // reportSize call itself will schedule an initial render.
@@ -398,7 +411,12 @@ class CustomEmojiAnimator(
         entry.drawable.progress = snappedProgress
         back.eraseColor(0)
         entry.drawable.setBounds(0, 0, back.width, back.height)
-        entry.drawable.draw(canvas)
+        try {
+            entry.drawable.draw(canvas)
+        } catch (t: Throwable) {
+            entry.broken = true
+            Log.w("CustomEmojiAnimator", "TGS render failed for id=${key.id}; entry marked broken", t)
+        }
         mainHandler.post { onRenderComplete(key, snappedProgress) }
     }
 

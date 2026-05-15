@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Custom-emoji TGS rendering no longer crashes the whole app on stickers with malformed gradients. SDK 36 tightened `Shader.convertColors` to throw `IllegalArgumentException: needs >= 2 number of colors` on `RadialGradient` with a 1-stop gradient — and some real-world custom emoji ship exactly that. The exception fired on the `CustomEmojiRenderer` background HandlerThread, killing it and freezing every animated emoji in the process until the next cold launch. The Lottie `draw()` call is now wrapped in a try/catch at the system boundary (TDLib TGS payload is an external API per CLAUDE.md): the offending entry is marked broken and skipped on subsequent renders, the renderer thread survives, and the rest of the emoji on screen keep animating.
+
 ### Added
 - Settings → About → "App language" / "Мова застосунку" lets you pin the UI to Ukrainian or English independently of the system locale. Default is "System default" — the existing behavior. On Android 13+ the choice also surfaces in the system per-app language picker (Settings → Apps → Hortay → Language) and survives reinstall when Android's automatic data-restore kicks in. Persisted via `AppCompatDelegate.setApplicationLocales`, declared via `app/src/main/res/xml/locales_config.xml` (`en` + `uk`). Bilingual users (Ukrainian system locale + occasional EN context, or vice-versa) no longer have to change the entire phone to switch Hortay's language.
 
