@@ -470,20 +470,27 @@ class WebRepository(
     }
 
     /**
-     * Hard wipe — used by the "Очистити кеш" button. Subscriptions deliberately
-     * survive: the user expressed intent, deleting their list would be hostile.
-     * What gets cleared: all posts (including bookmarked — opt-in destruction)
-     * and the custom-emoji resolution cache. Channel ROWS survive (so
-     * `is_subscribed = 1` stays intact and the JOIN-based feed query still
-     * recognises subscriptions), but their cached payload columns
-     * (title / avatar_url / subscribers / fetch validators / cursor) are reset
-     * so the next sweep re-populates from scratch instead of merging into
-     * potentially-stale data. Caller is expected to trigger a refresh after
-     * this returns — see [WebFeedSource.clearCacheAndRefresh].
+     * Cache wipe used by the "Clear cache" Settings row. Subscriptions ALWAYS
+     * survive — the user expressed intent by subscribing and deleting their list
+     * would be hostile. Channel ROWS survive (so `is_subscribed = 1` stays
+     * intact and the JOIN-based feed query still recognises subscriptions),
+     * but their cached payload columns (title / avatar_url / subscribers /
+     * fetch validators / cursor) are reset so the next sweep re-populates from
+     * scratch instead of merging into potentially-stale data.
+     *
+     * [preserveBookmarks] decides whether bookmarked posts survive the wipe.
+     * Default true: "clear cache" reads to a user as "remove transient stuff
+     * I can re-fetch", not "delete things I deliberately saved". The opt-in
+     * `false` path stays for callers that want a full reset (e.g. a future
+     * "factory reset" affordance).
+     *
+     * Caller is expected to trigger a refresh after this returns — see
+     * [WebFeedSource.clearCacheAndRefresh].
      */
-    suspend fun clearAllCache() = withContext(ioDispatcher) {
+    suspend fun clearAllCache(preserveBookmarks: Boolean = true) = withContext(ioDispatcher) {
         db.transaction {
-            postQueries.deleteAll()
+            if (preserveBookmarks) postQueries.deleteAllExceptBookmarked()
+            else postQueries.deleteAll()
             customEmojiQueries.deleteAll()
             channelQueries.resetCachedPayload()
         }

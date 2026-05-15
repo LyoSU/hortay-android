@@ -351,12 +351,16 @@ class AppGraph(context: Context) {
     val webFeedScheduler: WebFeedScheduler = WebFeedScheduler(
         feedSource = webFeedSource,
         foreground = lifecycleBridge.foreground,
-        // Auth-aware pause: when the user is signed in to TDLib, the web
-        // feed isn't shown ([MainActivity] routes Ready → MainScaffold),
-        // so polling t.me/s/ would burn traffic + battery for invisible
-        // content and risk a CDN-side FLOOD_WAIT. Scheduler resumes
-        // automatically on sign-out.
+        // Mode-aware pause: poll only when the user is BOTH unauthenticated to
+        // TDLib AND has explicitly opted into guest mode. [MainActivity] mounts
+        // [WebModeScaffold] under exactly that condition; matching it here
+        // means tier-2 never polls for a surface that isn't on screen. The
+        // earlier auth-only gate kept polling alive on the AuthScreen and
+        // burned traffic + battery for a UI that doesn't render the feed,
+        // with a real FLOOD_WAIT risk. Scheduler resumes automatically when
+        // the user re-enters guest mode and the app is foreground.
         authStage = tdClient.authStage,
+        isGuest = guestMode.isGuest,
         scope = appScope,
     ).also { it.bind() }
 

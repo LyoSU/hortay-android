@@ -66,6 +66,15 @@ fun SettingsScreen(
     onLogout: (() -> Unit)? = null,
     onSignIn: (() -> Unit)? = null,
     onClearWebCache: (suspend () -> Unit)? = null,
+    /**
+     * Symmetric "go guest" path for authenticated users. When non-null, an
+     * "Continue without account" row renders in the Account section that, on
+     * confirmation, signs the user out of TDLib AND flips [GuestModeStore] to
+     * true so the next routing pass lands [WebModeScaffold] instead of looping
+     * back to [AuthScreen]. Without this row the only path from auth into
+     * guest mode was a fresh install — discoverable only by accident.
+     */
+    onEnterGuest: (() -> Unit)? = null,
     autoDownload: AutoDownloadStore? = null,
 ) {
     // Sub-screen nav lives inside Settings — the auto-download list and category
@@ -106,6 +115,7 @@ fun SettingsScreen(
                 onLogout = onLogout,
                 onSignIn = onSignIn,
                 onClearWebCache = onClearWebCache,
+                onEnterGuest = onEnterGuest,
                 autoDownloadAvailable = autoDownload != null,
                 onOpenAutoDownload = { showAutoDownload = true },
             )
@@ -122,6 +132,7 @@ private fun SettingsMain(
     onLogout: (() -> Unit)?,
     onSignIn: (() -> Unit)?,
     onClearWebCache: (suspend () -> Unit)?,
+    onEnterGuest: (() -> Unit)?,
     autoDownloadAvailable: Boolean,
     onOpenAutoDownload: () -> Unit,
 ) {
@@ -130,6 +141,8 @@ private fun SettingsMain(
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var confirmLogout by remember { mutableStateOf(false) }
+    var confirmClearWebCache by remember { mutableStateOf(false) }
+    var confirmEnterGuest by remember { mutableStateOf(false) }
     var network by remember { mutableStateOf<NetworkUsage?>(null) }
     var storage by remember { mutableStateOf<StorageUsage?>(null) }
     var clearing by remember { mutableStateOf(false) }
@@ -260,13 +273,12 @@ private fun SettingsMain(
                         else R.string.web_settings_clear_cache,
                     ),
                     subtitle = stringResource(R.string.web_settings_clear_cache_helper),
-                    onClick = {
-                        if (!clearing) scope.launch {
-                            clearing = true
-                            onClearWebCache()
-                            clearing = false
-                        }
-                    },
+                    // Confirmation dialog before the destructive action — the
+                    // previous one-tap path felt like "clear cache" was a
+                    // reversible toggle, but it dropped every locally cached
+                    // post. The repository now preserves bookmarks by default,
+                    // so the dialog body is honest about what survives.
+                    onClick = { if (!clearing) confirmClearWebCache = true },
                 )
 
                 Spacer(Modifier.height(8.dp))
@@ -296,6 +308,19 @@ private fun SettingsMain(
                     title = stringResource(R.string.web_settings_signin),
                     subtitle = stringResource(R.string.web_settings_signin_helper),
                     onClick = onSignIn,
+                )
+            }
+            // Symmetric "auth → guest" path. Sits in the Account section under
+            // the Logout row so the user sees both account-state exits in one
+            // place. Confirmation dialog because the action both signs out and
+            // flips the routing flag — a one-tap silent toggle would be too
+            // easy to trigger by accident.
+            if (onEnterGuest != null) {
+                SettingsRow(
+                    symbol = "visibility",
+                    title = stringResource(R.string.settings_enter_guest_title),
+                    subtitle = stringResource(R.string.settings_enter_guest_subtitle),
+                    onClick = { confirmEnterGuest = true },
                 )
             }
 
@@ -408,6 +433,53 @@ private fun SettingsMain(
             },
             title = { Text(stringResource(R.string.settings_logout_dialog_title)) },
             text = { Text(stringResource(R.string.settings_logout_dialog_text)) },
+        )
+    }
+
+    if (confirmClearWebCache && onClearWebCache != null) {
+        AlertDialog(
+            onDismissRequest = { confirmClearWebCache = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClearWebCache = false
+                    if (!clearing) scope.launch {
+                        clearing = true
+                        onClearWebCache()
+                        clearing = false
+                    }
+                }) {
+                    Text(
+                        stringResource(R.string.web_settings_clear_cache_confirm_action),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearWebCache = false }) {
+                    Text(stringResource(R.string.web_settings_clear_cache_cancel))
+                }
+            },
+            title = { Text(stringResource(R.string.web_settings_clear_cache_confirm_title)) },
+            text = { Text(stringResource(R.string.web_settings_clear_cache_confirm_body)) },
+        )
+    }
+
+    if (confirmEnterGuest && onEnterGuest != null) {
+        AlertDialog(
+            onDismissRequest = { confirmEnterGuest = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmEnterGuest = false
+                    onEnterGuest()
+                }) { Text(stringResource(R.string.settings_enter_guest_confirm_action)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmEnterGuest = false }) {
+                    Text(stringResource(R.string.settings_logout_cancel))
+                }
+            },
+            title = { Text(stringResource(R.string.settings_enter_guest_confirm_title)) },
+            text = { Text(stringResource(R.string.settings_enter_guest_confirm_body)) },
         )
     }
 }

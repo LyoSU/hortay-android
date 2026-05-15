@@ -306,24 +306,27 @@ private fun ChannelRow(
 }
 
 /**
- * Retryable statuses are the ones where a re-fetch has a reasonable chance of
- * resolving the situation — transient network blips, server-side rate-limit
- * windows that have since expired, and parser failures that we may have fixed
- * in a newer build the user updated to. [ChannelFetchStatus.NotFound] and
- * [ChannelFetchStatus.Private] are deliberately excluded: Telegram holds these
- * states server-side, no amount of client-side retry will change them, and
- * surfacing a retry button there would teach learned helplessness ("tap retry,
- * nothing changes, must be broken"). [ChannelFetchStatus.Loading] also returns
- * true so the row keeps the same slot for a spinner mid-fetch (no layout shift
- * when the icon flips to spinner and back).
+ * Retryable means "show the refresh affordance on the row". Manual retry now
+ * covers every failure state, including [ChannelFetchStatus.NotFound] and
+ * [ChannelFetchStatus.Private]: a channel can flip back to public at any time
+ * (the original "no amount of client-side retry will change them" assumption
+ * stops holding the moment the owner toggles visibility), and the auto-retry
+ * skipper still keeps these out of the foreground sweep — only an explicit
+ * tap pokes them. One deliberate user tap per channel cannot trigger a
+ * FLOOD_WAIT, so the previous "learned helplessness" concern is outweighed by
+ * the dead-channel-forever cost.
+ *
+ * [ChannelFetchStatus.Loading] stays here so the row keeps the same slot for
+ * a spinner mid-fetch — flipping the icon between spinner and refresh without
+ * removing the trailing IconButton from the layout avoids a width recalc.
  */
 private fun ChannelFetchStatus.isRetryable(): Boolean = when (this) {
     ChannelFetchStatus.Error,
     ChannelFetchStatus.RateLimited,
     ChannelFetchStatus.ParseFailure,
-    ChannelFetchStatus.Loading -> true
     ChannelFetchStatus.NotFound,
     ChannelFetchStatus.Private,
+    ChannelFetchStatus.Loading -> true
     ChannelFetchStatus.Idle,
     ChannelFetchStatus.Ok -> false
 }

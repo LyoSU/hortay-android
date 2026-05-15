@@ -687,6 +687,18 @@ fun MainScaffold(graph: AppGraph) {
                     stats = graph.statsRepository,
                     contentPadding = padding,
                     onLogout = { scope.launch { graph.tdClient.logOut() } },
+                    // Symmetric "auth → guest" path. Flip the guest flag FIRST so
+                    // the routing pass that follows the TDLib logout settles on
+                    // [WebModeScaffold] instead of looping through [AuthScreen]
+                    // for a beat. logOut() races on its own coroutine; if we
+                    // flipped after it we could observe AuthScreen between
+                    // the two ops.
+                    onEnterGuest = {
+                        scope.launch {
+                            graph.guestMode.setGuest(true)
+                            graph.tdClient.logOut()
+                        }
+                    },
                     autoDownload = graph.autoDownloadStore,
                 )
             }

@@ -5,6 +5,7 @@ import dev.lyo.hortay.data.AuthStage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -46,6 +47,7 @@ class WebFeedScheduler(
     private val feedSource: WebFeedSource,
     private val foreground: StateFlow<Boolean>,
     private val authStage: StateFlow<AuthStage>,
+    private val isGuest: Flow<Boolean>,
     private val scope: CoroutineScope,
     private val tier2IntervalMs: Long = DEFAULT_TIER2_INTERVAL_MS,
 ) {
@@ -63,18 +65,23 @@ class WebFeedScheduler(
      * every transition and racily write `tier2Job = null`. The volatile
      * guard makes idempotency real.
      *
-     * Pause condition: tier-2 polling is suspended whenever the user is
-     * authenticated to TDLib (authStage == Ready). The web feed is hidden
-     * by [MainActivity]'s routing precedence in that mode (TDLib UI takes
-     * over), so polling t.me/s/ for invisible content burns traffic +
-     * battery and risks a t.me FLOOD_WAIT for nothing. Resumes
-     * automatically when the user signs out (authStage flips back) and
+     * Pause condition: tier-2 polling runs ONLY when the user is currently in
+     * guest mode AND the app is foreground. Auth-not-Ready alone (the previous
+     * condition) was the wrong gate — it kept the poller alive while the user
+     * sat on the auth screen, burning t.me traffic + battery and risking a
+     * FLOOD_WAIT for a UI surface that doesn't even render the web feed. The
+     * three flows here line up exactly with [MainActivity]'s routing
+     * precedence: guest UI is mounted iff `auth == Ready` is false AND
+     * `isGuest == true`. We poll iff the web UI is mounted AND visible.
+     * Resumes automatically when the user toggles back into guest mode and
      * the app is in the foreground.
      */
     fun bind() {
         if (bound) return
         bound = true
-        combine(foreground, authStage) { fg, auth -> fg && auth !is AuthStage.Ready }
+        combine(foreground, authStage, isGuest) { fg, auth, guest ->
+            fg && auth !is AuthStage.Ready && guest
+        }
             .distinctUntilChanged()
             .onEach { active ->
                 if (active) startTier2() else stopTier2()
