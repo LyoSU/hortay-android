@@ -624,17 +624,17 @@ fun TimelineScreen(
     var overlayReturnAnchor by remember(routeKey) {
         mutableStateOf<Pair<Any, Int>?>(null)
     }
+    val captureOverlayReturnAnchorState = rememberUpdatedState {
+        val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+        overlayReturnAnchor = first?.key?.let { key -> key to listState.firstVisibleItemScrollOffset }
+    }
     LaunchedEffect(coveredByOverlay) {
-        if (coveredByOverlay) {
-            val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()
-            overlayReturnAnchor = first?.key?.let { key -> key to listState.firstVisibleItemScrollOffset }
-        } else {
-            val (key, offset) = overlayReturnAnchor ?: return@LaunchedEffect
-            overlayReturnAnchor = null
-            val index = feedItems.indexOfFirst { it.key == key }
-            if (index >= 0) {
-                listState.scrollToItem(index, offset)
-            }
+        if (coveredByOverlay) return@LaunchedEffect
+        val (key, offset) = overlayReturnAnchor ?: return@LaunchedEffect
+        overlayReturnAnchor = null
+        val index = feedItems.indexOfFirst { it.key == key }
+        if (index >= 0) {
+            listState.scrollToItem(index, offset)
         }
     }
 
@@ -843,7 +843,7 @@ fun TimelineScreen(
     // user's deep-link is still pending AND (b) the column is actually mounted,
     // so the resolved index lands on a real row.
     val readyPendingTarget = pendingScrollToMessage
-        ?.takeIf { latchedUiState is TimelineUiState.Ready }
+        ?.takeIf { latchedUiState is TimelineUiState.Ready && !coveredByOverlay }
     rememberPendingScrollToMessage(
         displayedItems = feedItems,
         pendingTarget = readyPendingTarget,
@@ -1063,8 +1063,14 @@ fun TimelineScreen(
     val postsState = rememberUpdatedState(posts)
     val translationsState = rememberUpdatedState(translationsMap)
     val bookmarkedState = rememberUpdatedState(bookmarkedKeys)
-    val onChannelOpenState = rememberUpdatedState(onChannelOpen)
-    val onOpenCommentsState = rememberUpdatedState(onOpenComments)
+    val onChannelOpenState = rememberUpdatedState { chatId: Long ->
+        captureOverlayReturnAnchorState.value()
+        onChannelOpen(chatId)
+    }
+    val onOpenCommentsState = rememberUpdatedState { post: TimelinePost ->
+        captureOverlayReturnAnchorState.value()
+        onOpenComments(post)
+    }
 
     // Explicit-tap read ack: any deliberate "open this post" action (open comments,
     // open media viewer, open in Telegram) marks the post as read immediately, instead
@@ -1169,6 +1175,7 @@ fun TimelineScreen(
                         // Username-only origins (TDLib didn't include the resolved id) —
                         // route through LocalUriHandler so HortayUriHandler resolves
                         // the handle via SearchPublicChat and lands the ChannelScreen path.
+                        captureOverlayReturnAnchorState.value()
                         uriHandler.openUri("https://t.me/${sourceHandle.removePrefix("@")}")
                     }
                 }
