@@ -397,6 +397,15 @@ fun WebModeScaffold(graph: AppGraph) {
                                 markAsRead = webMarkAsRead,
                                 feedOrder = feedOrder,
                                 snapScroll = snapScroll,
+                                // Reserve room for the "Add channel" FAB that this
+                                // scaffold parks at BottomEnd. Without this the
+                                // floating "↓ N" unread pill (also BottomEnd, owned
+                                // by TimelineScreen) lands directly under the FAB
+                                // and is un-tappable. ExtendedFAB ~56.dp + 16.dp
+                                // gap → 72.dp. Only the Feed tab needs this; the
+                                // Saved-tab call below leaves the default 0.dp
+                                // because the FAB is hidden there.
+                                unreadPillExtraBottomPadding = 72.dp,
                             )
                         }
                     }

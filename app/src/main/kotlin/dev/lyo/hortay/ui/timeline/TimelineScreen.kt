@@ -230,6 +230,17 @@ fun TimelineScreen(
      * unguarded — it doesn't make TDLib RPC anyway. See [StartupCoordinator] KDoc.
      */
     startupPhase: kotlinx.coroutines.flow.StateFlow<dev.lyo.hortay.data.StartupCoordinator.Phase>? = null,
+    /**
+     * Extra space to reserve below the floating "↓ N" unread chip so it stacks
+     * above another bottom-anchored affordance that lives in the host Scaffold
+     * (e.g. guest mode's "Add channel" FAB). Scaffold's [contentPadding] does
+     * not include the FAB inset by design — content scrolls under it — so the
+     * pill, anchored to the same BottomEnd corner, would otherwise sit right
+     * under the FAB and become un-tappable. Default 0.dp matches TDLib mode
+     * where no FAB is present; the guest-mode Feed tab passes a value sized to
+     * the FAB height + a 16.dp gap.
+     */
+    unreadPillExtraBottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     // Holders read by long-lived LaunchedEffects (home-tap, scope-switch) so
     // their captures stay live across recomposition without restarting the
@@ -1755,7 +1766,10 @@ fun TimelineScreen(
                     exit = slideOutVertically(pillSpatial) { it } + fadeOut(pillEffects),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = 16.dp, bottom = pillBottomPadding),
+                        .padding(
+                            end = 16.dp,
+                            bottom = pillBottomPadding + unreadPillExtraBottomPadding,
+                        ),
                 ) {
                     UnreadCounterPill(
                         count = unreadRemaining,
