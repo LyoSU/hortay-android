@@ -22,7 +22,10 @@ enum class ThemeMode { System, Light, Dark }
  * otherwise at the bottom (= newest). The toggle is a global preference the
  * user picks once in Settings; switching mid-session reshuffles the feed
  * and TimelineScreen scrolls back to the home target so the new order has
- * a clear starting point. Default is [Newest] — matches existing behaviour.
+ * a clear starting point. Default is [OldestUnreadFirst] — matches the
+ * Telegram-channel reading idiom (open at the unread boundary, read forward
+ * in time). Users who explicitly picked a value in Settings keep it; the
+ * fallback applies only when the DataStore key is unset.
  */
 enum class FeedOrder { Newest, OldestUnreadFirst }
 
@@ -43,7 +46,7 @@ class SettingsStore(context: Context) {
     }
 
     val feedOrder: Flow<FeedOrder> = dataStore.data.map { prefs ->
-        prefs[KEY_FEED_ORDER]?.let { runCatching { FeedOrder.valueOf(it) }.getOrNull() } ?: FeedOrder.Newest
+        prefs[KEY_FEED_ORDER]?.let { runCatching { FeedOrder.valueOf(it) }.getOrNull() } ?: FeedOrder.OldestUnreadFirst
     }
 
     suspend fun setFeedOrder(order: FeedOrder) {
