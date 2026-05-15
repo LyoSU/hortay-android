@@ -480,33 +480,42 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
                     }
                 })
             }
-            // Pinch / pan: only consume the gesture when there's an active pinch
-            // (≥2 fingers) or the photo is already zoomed (pan within image).
-            // One-finger drag at scale==1 is left unconsumed so the outer
-            // `Modifier.draggable` (swipe-to-dismiss) can pick it up.
+            // Pinch / pan: consume only when there's a real pinch (≥2 fingers)
+            // or the user has dragged one finger past the touch slop while
+            // zoomed. The slop gate is what lets double-tap-to-zoom-back
+            // actually fire — without it, the inevitable sub-pixel finger
+            // wobble during a tap on a zoomed photo would land here, get
+            // consumed as a "pan", and trip `detectTapGestures`'
+            // `waitForUpOrCancellation` into the cancellation path (Compose
+            // treats any consumed motion during a tap as a drag), killing
+            // the second tap before it could complete the double-tap.
+            // One-finger drag at scale == 1 stays unconsumed so the outer
+            // `Modifier.draggable` (swipe-to-dismiss) keeps working.
             .pointerInput(item.fullscreen.fileId) {
+                val slop = viewConfiguration.touchSlop
                 awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
+                    val first = awaitFirstDown(requireUnconsumed = false)
+                    val downPos = first.position
+                    var multiFinger = false
+                    var passedSlop = false
                     do {
                         val event = awaitPointerEvent()
                         val activePointers = event.changes.count { it.pressed }
-                        val isPinchOrPan = activePointers >= 2 || scale.value > 1f
-                        if (!isPinchOrPan) continue
+                        if (activePointers >= 2) multiFinger = true
+                        // Slop gate: only count a single-finger gesture as
+                        // pan once the cursor leaves the slop circle. Pinch
+                        // engages immediately (two fingers = unambiguous).
+                        if (!multiFinger && scale.value > 1f && !passedSlop) {
+                            val cur = event.changes.firstOrNull { it.pressed }?.position
+                            if (cur != null && (cur - downPos).getDistance() > slop) {
+                                passedSlop = true
+                            }
+                        }
+                        val engaged = multiFinger || (scale.value > 1f && passedSlop)
+                        if (!engaged) continue
                         val zoom = event.calculateZoom()
                         val pan = event.calculatePan()
-                        // Only react (and consume) when there's actual movement.
-                        // A still single-finger touch on a zoomed photo would
-                        // otherwise consume the down event and starve the
-                        // double-tap detector — the user would zoom in, tap to
-                        // zoom back out, and the second tap would land in this
-                        // branch first with zoom == 1f / pan == (0, 0). The
-                        // tap-detector pointerInput runs alongside this one
-                        // and recognises double-tap from unconsumed downs, so
-                        // letting stationary events pass through is what lets
-                        // tap-back-to-1× actually fire.
-                        val moved = activePointers >= 2 || zoom != 1f ||
-                            pan.x != 0f || pan.y != 0f
-                        if (!moved) continue
+                        if (!multiFinger && zoom == 1f && pan.x == 0f && pan.y == 0f) continue
                         val newScale = (scale.value * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
                         scope.launch { scale.snapTo(newScale) }
                         if (newScale > 1f) {
