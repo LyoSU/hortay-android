@@ -620,6 +620,22 @@ fun TimelineScreen(
     ) {
         androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
     }
+    var overlayReturnAnchor by remember(routeKey) {
+        mutableStateOf<Pair<Any, Int>?>(null)
+    }
+    LaunchedEffect(coveredByOverlay) {
+        if (coveredByOverlay) {
+            val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+            overlayReturnAnchor = first?.key?.let { key -> key to listState.firstVisibleItemScrollOffset }
+        } else {
+            val (key, offset) = overlayReturnAnchor ?: return@LaunchedEffect
+            overlayReturnAnchor = null
+            val index = feedItems.indexOfFirst { it.key == key }
+            if (index >= 0) {
+                listState.scrollToItem(index, offset)
+            }
+        }
+    }
 
     // Pinned color-only scroll behavior — height transitions are owned by
     // [topBarOffsetPx] below so we don't fight two systems for the same dp.
