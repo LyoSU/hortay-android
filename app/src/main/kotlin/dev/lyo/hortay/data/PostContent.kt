@@ -551,7 +551,12 @@ enum class StickerFormat { Webp, Tgs, Webm }
 /** Metadata about who originally sent a forwarded post. */
 sealed interface ForwardOrigin {
     @Immutable
-    data class User(val userName: String) : ForwardOrigin
+    data class User(
+        val userName: String,
+        /** TDLib id of the original user sender. Null only on legacy forwards where the
+         *  origin payload lacked the user id (the renderer falls back to the static name). */
+        val userId: Long? = null,
+    ) : ForwardOrigin
     @Immutable
     data class Channel(
         val channelName: String,

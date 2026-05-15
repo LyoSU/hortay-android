@@ -581,4 +581,28 @@
 
     <!-- Accessibility label for the verified-channel badge in PostCard. -->
     <string name="cd_verified_badge">Верифіковано</string>
+    <string name="cd_premium_badge">Telegram Premium</string>
+
+    <!-- User profile sheet (UserProfileSheet) -->
+    <string name="user_profile_loading_name">Завантаження…</string>
+    <string name="user_profile_bio">Про користувача</string>
+    <string name="user_profile_bot_about">Про цього бота</string>
+    <string name="user_profile_about">Деталі</string>
+    <string name="user_profile_personal_channel">Особистий канал</string>
+    <string name="user_profile_birthday">День народження</string>
+    <string name="user_profile_groups_in_common">Спільні групи</string>
+    <string name="user_profile_action_message">Написати</string>
+    <string name="user_profile_action_copy_handle">Скопіювати @</string>
+    <string name="user_profile_handle_copied">Скопійовано</string>
+    <string name="user_profile_chip_bot">бот</string>
+    <string name="user_profile_chip_support">служба підтримки</string>
+    <string name="user_profile_status_online">у мережі</string>
+    <string name="user_profile_status_recently">був(ла) нещодавно</string>
+    <string name="user_profile_status_last_week">був(ла) цього тижня</string>
+    <string name="user_profile_status_last_month">був(ла) цього місяця</string>
+    <string name="user_profile_status_just_now">щойно був(ла) у мережі</string>
+    <string name="user_profile_status_was_minutes_ago">був(ла) %1$d хв тому</string>
+    <string name="user_profile_status_was_hours_ago">був(ла) %1$d год тому</string>
+    <string name="user_profile_status_was_days_ago">був(ла) %1$d дн тому</string>
+    <string name="user_profile_status_was_long_ago">давно не заходив(ла)</string>
 </resources>

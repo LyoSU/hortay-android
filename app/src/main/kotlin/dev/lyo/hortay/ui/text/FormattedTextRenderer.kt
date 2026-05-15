@@ -183,9 +183,11 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
         if (customEmojiIds.isNotEmpty()) customEmoji.request(customEmojiIds)
     }
 
+    val userOpener = dev.lyo.hortay.ui.users.LocalUserProfileOpener.current
+    val userMentionTap = remember(userOpener) { { uid: Long -> userOpener.open(uid) } }
     val built = remember(
         formatted, spoilerSrc, accent, codeBg, mute, onSurface,
-        revealedGroups.value, confirmMaskedLink, hashtagTap,
+        revealedGroups.value, confirmMaskedLink, hashtagTap, userMentionTap,
     ) {
         buildFromFormatted(
             formatted = formatted,
@@ -197,6 +199,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
             uriHandler = uriHandler,
             confirmMaskedLink = confirmMaskedLink,
             hashtagTap = hashtagTap,
+            userMentionTap = userMentionTap,
             revealedGroups = revealedGroups.value,
             revealAtSrcPos = revealAtSrcPos,
         )
@@ -383,6 +386,10 @@ private fun buildFromFormatted(
     uriHandler: UriHandler,
     confirmMaskedLink: (String) -> Unit,
     hashtagTap: (String) -> Unit,
+    /** Open the user-profile sheet for a `TextEntityTypeMentionName` (non-@username
+     *  inline mention with a resolved TDLib user id). `@handle` mentions still route
+     *  through the URL pipeline so the link resolver can fall back to t.me/<handle>. */
+    userMentionTap: (Long) -> Unit,
     revealedGroups: Set<Int>,
     revealAtSrcPos: (Int) -> Unit,
 ): BuiltAnnotated {
@@ -476,6 +483,21 @@ private fun buildFromFormatted(
                     addLink(LinkAnnotation.Url(url, mentionStyle, safeOpen), start, end)
                     linkRanges += LinkRange(start, end, url)
                 }
+            }
+            is FormattedText.Style.MentionName -> {
+                // Inline mention with a resolved TDLib user id (TDLib's
+                // TextEntityTypeMentionName — what Telegram clients render as a
+                // tappable blue name without a leading `@`). Routes straight to
+                // the user-profile sheet because the @handle form doesn't apply.
+                addLink(
+                    LinkAnnotation.Clickable(
+                        tag = "mention-name-$idx",
+                        styles = mentionStyle,
+                        linkInteractionListener = LinkInteractionListener { userMentionTap(s.userId) },
+                    ),
+                    start,
+                    end,
+                )
             }
             FormattedText.Style.Hashtag -> {
                 val tag = srcText.substring(srcStart, srcEnd)

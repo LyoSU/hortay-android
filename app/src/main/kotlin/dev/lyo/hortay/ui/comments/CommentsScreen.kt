@@ -510,6 +510,12 @@ private fun CommentBubble(
     modifier: Modifier = Modifier,
 ) {
     val message = row.message
+    val opener = dev.lyo.hortay.ui.users.LocalUserProfileOpener.current
+    // Tap surface for the avatar + author name → user-profile sheet. Guarded by
+    // senderUserId because comments authored by a chat (channel posting on behalf
+    // of the discussion supergroup, rare anonymous-admin case) have no human
+    // identity to render — the tap stays inert there instead of opening an empty sheet.
+    val userTap: (() -> Unit)? = message.senderUserId?.let { id -> { opener.open(id) } }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -521,6 +527,11 @@ private fun CommentBubble(
             fileId = message.avatarFileId,
             size = 36.dp,
             textStyle = MaterialTheme.typography.titleSmall,
+            modifier = if (userTap != null) {
+                Modifier
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .clickable(onClick = userTap)
+            } else Modifier,
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -531,7 +542,13 @@ private fun CommentBubble(
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .let { mod ->
+                            if (userTap != null) {
+                                mod.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = userTap)
+                            } else mod
+                        },
                 )
                 Spacer(Modifier.width(8.dp))
                 if (message.editDate > 0L) {

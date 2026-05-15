@@ -50,6 +50,9 @@ import dev.lyo.hortay.ui.text.ChatInvitePreviewDialog
 import dev.lyo.hortay.ui.timeline.ChannelScreen
 import dev.lyo.hortay.ui.timeline.LocalReadCursors
 import dev.lyo.hortay.ui.timeline.TimelineScreen
+import dev.lyo.hortay.ui.users.LocalUserProfileOpener
+import dev.lyo.hortay.ui.users.UserProfileOpener
+import dev.lyo.hortay.ui.users.UserProfileSheet
 import kotlinx.coroutines.launch
 
 /**
@@ -418,6 +421,16 @@ fun MainScaffold(graph: AppGraph) {
         graph.reportDialogs.open(ReportTarget(chatId, messageId, System.nanoTime()))
     }
 
+    // User-profile sheet pendant. Local state — unlike the report flow, no TDLib write
+    // is staged in here, so a rotation just re-fetches the profile (cheap, three cached
+    // local reads in the steady state). [UserProfileOpener] is a `fun interface` so
+    // re-providing the local on every recomposition still preserves equality identity
+    // for skippable propagation under the provider.
+    var pendingUserId by remember { mutableStateOf<Long?>(null) }
+    val userProfileOpener = remember {
+        UserProfileOpener { userId -> pendingUserId = userId }
+    }
+
     // Single predictive-back handler for the top nav-entry. Translates,
     // scales, fades the visible top layer under the user's finger; edge
     // (LEFT vs RIGHT) is forwarded because users can bind back to either
@@ -556,6 +569,7 @@ fun MainScaffold(graph: AppGraph) {
     CompositionLocalProvider(
         LocalReadCursors provides cursorHolder,
         dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,
+        LocalUserProfileOpener provides userProfileOpener,
     ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -948,6 +962,20 @@ fun MainScaffold(graph: AppGraph) {
             },
             reportRepository = graph.reportRepository,
             explainerStore = graph.reportExplainerStore,
+        )
+    }
+
+    // User profile bottom sheet — shared surface for every "tap a user" trigger
+    // (comment header, personal-author PostCard, forward-from-user chip, in-text
+    // mention with a userId). Personal-channel row routes back through pushChannel
+    // so drilling into a Premium user's linked channel feels the same as opening
+    // any other subscribed channel.
+    pendingUserId?.let { userId ->
+        UserProfileSheet(
+            userId = userId,
+            actions = graph.channelActions,
+            onDismiss = { pendingUserId = null },
+            onOpenChannel = { chatId -> pushChannel(chatId) },
         )
     }
     }

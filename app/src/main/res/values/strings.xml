@@ -570,4 +570,28 @@
 
     <!-- Accessibility label for the verified-channel badge in PostCard. -->
     <string name="cd_verified_badge">Verified</string>
+    <string name="cd_premium_badge">Telegram Premium</string>
+
+    <!-- User profile sheet (UserProfileSheet) -->
+    <string name="user_profile_loading_name">Loading…</string>
+    <string name="user_profile_bio">About</string>
+    <string name="user_profile_bot_about">About this bot</string>
+    <string name="user_profile_about">Details</string>
+    <string name="user_profile_personal_channel">Personal channel</string>
+    <string name="user_profile_birthday">Birthday</string>
+    <string name="user_profile_groups_in_common">Groups in common</string>
+    <string name="user_profile_action_message">Message</string>
+    <string name="user_profile_action_copy_handle">Copy handle</string>
+    <string name="user_profile_handle_copied">Handle copied</string>
+    <string name="user_profile_chip_bot">bot</string>
+    <string name="user_profile_chip_support">support</string>
+    <string name="user_profile_status_online">online</string>
+    <string name="user_profile_status_recently">last seen recently</string>
+    <string name="user_profile_status_last_week">last seen within a week</string>
+    <string name="user_profile_status_last_month">last seen within a month</string>
+    <string name="user_profile_status_just_now">last seen just now</string>
+    <string name="user_profile_status_was_minutes_ago">last seen %1$d min ago</string>
+    <string name="user_profile_status_was_hours_ago">last seen %1$d h ago</string>
+    <string name="user_profile_status_was_days_ago">last seen %1$d d ago</string>
+    <string name="user_profile_status_was_long_ago">last seen a long time ago</string>
 </resources>

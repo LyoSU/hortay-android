@@ -157,12 +157,20 @@ fun PostCard(
                 )
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
+            // Personal-author posts (TDLib's channel-as-user mode) route the avatar/name
+            // tap into the user-profile sheet rather than the host channel — the channel
+            // identity is already surfaced in the "у Channel" subtitle below, so making
+            // the header redundantly link to the same target would waste the affordance.
+            val userOpener = dev.lyo.hortay.ui.users.LocalUserProfileOpener.current
+            val onSenderClick: () -> Unit = post.senderUserId?.let { uid ->
+                { userOpener.open(uid) }
+            } ?: { interactions.onChannelClick(post) }
             Avatar(
                 name = post.senderName,
                 thumb = post.avatarThumb,
                 fileId = post.avatarFileId,
                 avatarUrl = post.avatarUrl,
-                onClick = { interactions.onChannelClick(post) },
+                onClick = onSenderClick,
             )
             Spacer(Modifier.width(12.dp))
             // Scope inline `#tag` taps to the post's channel when this is a channel
@@ -186,7 +194,7 @@ fun PostCard(
                     date = post.date,
                     pinned = post.isPinned,
                     verification = post.verification,
-                    onChannelClick = { interactions.onChannelClick(post) },
+                    onChannelClick = onSenderClick,
                 )
 
                 // "у Channel" subtitle for personal-author posts (TDLib's new channel mode
@@ -200,13 +208,19 @@ fun PostCard(
                     )
                 }
 
-                post.forwardOrigin?.let {
+                post.forwardOrigin?.let { origin ->
                     Spacer(Modifier.height(6.dp))
                     ForwardChip(
-                        origin = it,
-                        onClick = if (it is ForwardOrigin.Channel || it is ForwardOrigin.Chat) {
-                            { interactions.onForwardSourceClick(post) }
-                        } else null,
+                        origin = origin,
+                        onClick = when (origin) {
+                            // Forwarded from a user we can resolve → user-profile sheet.
+                            // Legacy forwards without a userId stay inert (no target to
+                            // open) — preserves the current behaviour for those.
+                            is ForwardOrigin.User -> origin.userId?.let { uid -> { userOpener.open(uid) } }
+                            is ForwardOrigin.Channel,
+                            is ForwardOrigin.Chat -> ({ interactions.onForwardSourceClick(post) })
+                            is ForwardOrigin.HiddenUser -> null
+                        },
                     )
                 }
 

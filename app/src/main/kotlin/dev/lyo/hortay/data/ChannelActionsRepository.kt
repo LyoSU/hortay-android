@@ -167,6 +167,73 @@ class ChannelActionsRepository(
     }
 
     /**
+     * Resolve a [UserProfile] bundle for the user-profile bottom sheet. Coalesces
+     * `GetUser` + `GetUserFullInfo` + (when set) `GetChat` for the linked personal
+     * channel into one suspending call so the UI fires a single coroutine and lays
+     * out when everything is in. Mirrors [channelInfo] in shape — the sheet stays
+     * visible during the loading window and fields populate inline as TDLib responds.
+     *
+     * The personal channel resolves to a [PersonalChannelLink]; subscriber count
+     * rides along when the supergroup is already in TDLib's cache, otherwise the
+     * row just renders without that subtitle line.
+     */
+    suspend fun userProfile(userId: Long): UserProfile? {
+        val user = runCatching { td.send(TdApi.GetUser(userId)) }
+            .warnUnlessCancelled(TAG, "userProfile/getUser")
+            .getOrNull() ?: return null
+        val full = runCatching { td.send(TdApi.GetUserFullInfo(userId)) }
+            .warnUnlessCancelled(TAG, "userProfile/getUserFullInfo")
+            .getOrNull()
+        val personal = full?.personalChatId?.takeIf { it != 0L }?.let { chatId ->
+            val chat = runCatching { td.send(TdApi.GetChat(chatId)) }
+                .warnUnlessCancelled(TAG, "userProfile/getChat(personal)")
+                .getOrNull() ?: return@let null
+            val sg = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId?.let { sgId ->
+                runCatching { td.send(TdApi.GetSupergroup(sgId)) }
+                    .warnUnlessCancelled(TAG, "userProfile/getSupergroup(personal)")
+                    .getOrNull()
+            }
+            PersonalChannelLink(
+                chatId = chatId,
+                title = chat.title.orEmpty(),
+                handle = sg?.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" },
+                avatarThumb = chat.photo?.minithumbnail?.data,
+                avatarFileId = chat.photo?.small?.id,
+                subscribers = sg?.memberCount?.takeIf { it > 0 },
+            )
+        }
+        val handle = user.usernames?.activeUsernames?.firstOrNull()
+        val displayName = listOfNotNull(
+            user.firstName?.takeUnless { it.isBlank() },
+            user.lastName?.takeUnless { it.isBlank() },
+        ).joinToString(" ").ifBlank { handle?.let { "@$it" } ?: "" }
+        return UserProfile(
+            userId = userId,
+            displayName = displayName,
+            handle = handle?.let { "@$it" },
+            avatarThumb = user.profilePhoto?.minithumbnail?.data,
+            avatarFileId = user.profilePhoto?.small?.id,
+            verification = user.verificationStatus?.toUserMark(),
+            isPremium = user.isPremium,
+            isBot = user.type is TdApi.UserTypeBot,
+            isSupport = user.isSupport,
+            isContact = user.isContact,
+            status = user.status.toPresence(),
+            bio = full?.bio?.text?.takeUnless { it.isNullOrBlank() },
+            // TDLib delivers only the day/month for users who hid the year — surface what
+            // came back. Year 0 is the documented "hidden" sentinel; we just suppress the
+            // year segment of the formatted line when it lands as 0.
+            birthMonth = full?.birthdate?.month?.takeIf { it in 1..12 },
+            birthDay = full?.birthdate?.day?.takeIf { it in 1..31 },
+            birthYear = full?.birthdate?.year?.takeIf { it > 0 },
+            groupsInCommon = full?.groupInCommonCount ?: 0,
+            personalChannel = personal,
+            botDescription = full?.botInfo?.shortDescription?.takeUnless { it.isNullOrBlank() }
+                ?: full?.botInfo?.description?.takeUnless { it.isNullOrBlank() },
+        )
+    }
+
+    /**
      * Preview a chat invite link via TDLib's `CheckChatInviteLink`. Returns a
      * snapshot — title, member count, chat kind — that the UI surfaces in a
      * confirmation dialog before joining. Telegram's own clients call this exact
@@ -239,3 +306,78 @@ data class ChannelInfo(
     val isMuted: Boolean,
     val isMember: Boolean,
 )
+
+/**
+ * Data bundle backing the user-profile bottom sheet. Resolved on-entry by
+ * [ChannelActionsRepository.userProfile] — three coalesced TDLib calls land here,
+ * fields are nullable when TDLib does not surface them (e.g. bot users never have a
+ * birthdate; non-Premium users with no linked channel leave [personalChannel] null).
+ */
+@androidx.compose.runtime.Immutable
+data class UserProfile(
+    val userId: Long,
+    val displayName: String,
+    /** `@username` (with leading `@`); null when the user hasn't picked a public handle. */
+    val handle: String?,
+    /** Inline JPEG (~40×40) — instant placeholder, no download. */
+    val avatarThumb: ByteArray?,
+    /** ProfilePhoto.small.id (160×160). Downloaded at avatar priority by the renderer. */
+    val avatarFileId: Int?,
+    val verification: SenderVerification?,
+    val isPremium: Boolean,
+    val isBot: Boolean,
+    val isSupport: Boolean,
+    val isContact: Boolean,
+    val status: PresenceStatus,
+    val bio: String?,
+    val birthMonth: Int?,
+    val birthDay: Int?,
+    val birthYear: Int?,
+    val groupsInCommon: Int,
+    val personalChannel: PersonalChannelLink?,
+    /** Bot description / short-description (whichever TDLib surfaces). Null for human users. */
+    val botDescription: String?,
+)
+
+/** Premium "personal channel" linked to a user profile. Tapping the row drills the
+ *  channel-overlay screen inside Hortay — same path as a regular subscribed channel. */
+@androidx.compose.runtime.Immutable
+data class PersonalChannelLink(
+    val chatId: Long,
+    val title: String,
+    val handle: String?,
+    val avatarThumb: ByteArray?,
+    val avatarFileId: Int?,
+    val subscribers: Int?,
+)
+
+/**
+ * UI-facing collapse of [TdApi.UserStatus]. Reader app: we surface the bucket Telegram
+ * shows, never the precise minute. [Offline.wasOnlineSeconds] is the original Unix
+ * timestamp from TDLib so the renderer can format "5 хв тому" / "вчора" / "10 травня"
+ * with the user's locale instead of a fixed UK string.
+ */
+sealed interface PresenceStatus {
+    object Online : PresenceStatus
+    object Recently : PresenceStatus
+    object LastWeek : PresenceStatus
+    object LastMonth : PresenceStatus
+    data class Offline(val wasOnlineSeconds: Long) : PresenceStatus
+    object Empty : PresenceStatus
+}
+
+private fun TdApi.UserStatus.toPresence(): PresenceStatus = when (this) {
+    is TdApi.UserStatusOnline -> PresenceStatus.Online
+    is TdApi.UserStatusOffline -> PresenceStatus.Offline(wasOnline.toLong())
+    is TdApi.UserStatusRecently -> PresenceStatus.Recently
+    is TdApi.UserStatusLastWeek -> PresenceStatus.LastWeek
+    is TdApi.UserStatusLastMonth -> PresenceStatus.LastMonth
+    else -> PresenceStatus.Empty
+}
+
+private fun TdApi.VerificationStatus.toUserMark(): SenderVerification? = when {
+    isVerified -> SenderVerification.Verified
+    isScam -> SenderVerification.Scam
+    isFake -> SenderVerification.Fake
+    else -> null
+}

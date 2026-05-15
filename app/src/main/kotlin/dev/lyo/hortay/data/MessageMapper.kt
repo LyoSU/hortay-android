@@ -136,6 +136,11 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
             isPinned = message.isPinned,
             verification = resolveChannelVerification(chat),
             channelContext = channelContext,
+            // Personal-author posts: surface the human's user id so the avatar/name
+            // taps route into the user-profile sheet instead of the channel sheet.
+            // Channel-as-sender posts leave this null — the chat header is the right
+            // affordance there.
+            senderUserId = (sender as? TdApi.MessageSenderUser)?.userId,
             // Per-chat report eligibility from TDLib (TdApi.Chat.canBeReported).
             // Cheaper than [TdApi.GetMessageProperties] per post — TDLib already
             // populated this field on the Chat object via chatCache updates, and
@@ -179,6 +184,7 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
             commentCount = null,
             albumMessageIds = emptyList(),
             parentId = parent,
+            senderUserId = (message.senderId as? TdApi.MessageSenderUser)?.userId,
         )
     }
 
@@ -323,6 +329,7 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
     private suspend fun mapForwardOrigin(origin: TdApi.MessageOrigin): ForwardOrigin = when (origin) {
         is TdApi.MessageOriginUser -> ForwardOrigin.User(
             userName = resolveCachedUser(origin.senderUserId).name,
+            userId = origin.senderUserId,
         )
         is TdApi.MessageOriginChat -> {
             val resolved = resolveCachedChat(origin.senderChatId)

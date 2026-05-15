@@ -87,6 +87,13 @@ data class TimelinePost(
      * needs no secondary attribution.
      */
     val channelContext: ChannelContext? = null,
+    /**
+     * Author's TDLib user id when the message was sent by a human (channel posts in
+     * "personal-author" mode + every discussion-thread comment). Null when the sender
+     * is the channel/chat itself, and null in web mode (t.me/s/ exposes no author id).
+     * Drives the avatar/name → [dev.lyo.hortay.ui.users.UserProfileSheet] tap surface.
+     */
+    val senderUserId: Long? = null,
 )
 
 /**
