@@ -592,7 +592,7 @@
     <string name="user_profile_birthday">День народження</string>
     <string name="user_profile_groups_in_common">Спільні групи</string>
     <string name="user_profile_action_message">Написати</string>
-    <string name="user_profile_action_copy_handle">Скопіювати @</string>
+    <string name="user_profile_action_copy_handle">Скопіювати</string>
     <string name="user_profile_handle_copied">Скопійовано</string>
     <string name="user_profile_chip_bot">бот</string>
     <string name="user_profile_chip_support">служба підтримки</string>

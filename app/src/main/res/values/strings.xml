@@ -581,7 +581,7 @@
     <string name="user_profile_birthday">Birthday</string>
     <string name="user_profile_groups_in_common">Groups in common</string>
     <string name="user_profile_action_message">Message</string>
-    <string name="user_profile_action_copy_handle">Copy handle</string>
+    <string name="user_profile_action_copy_handle">Copy</string>
     <string name="user_profile_handle_copied">Handle copied</string>
     <string name="user_profile_chip_bot">bot</string>
     <string name="user_profile_chip_support">support</string>
