@@ -228,6 +228,15 @@ fun ChannelScreen(
     // instead of flashing the head post at index 0 for a frame before the deep
     // link lands. On [ChannelUiState.Missing] the screen falls back to the
     // normal newest-first view and surfaces a snackbar via [onScrollMissed].
+    //
+    // Cursors snapshot is latched on (chatId, feedOrder) — the only inputs
+    // that change the boundary semantics for a single-channel feed (channel
+    // identity + sort direction). [continueReadingIndex] inside
+    // [buildChannelUiState] is one-shot per Ready latch in
+    // [rememberLatchedChannelUiState], so we don't need live cursors here;
+    // capturing once per channel open also avoids the per-recomposition
+    // `map.toMap().toPersistentMap()` allocation the inline call had.
+    val channelCursors = remember(chatId, feedOrder) { cursorHolder.snapshot() }
     val candidateChannelUiState = buildChannelUiState(
         items = displayedItems,
         historyLoading = historyLoading,
@@ -236,7 +245,7 @@ fun ChannelScreen(
         searchActive = searchActive,
         chatId = chatId,
         feedOrder = feedOrder,
-        cursors = cursorHolder.snapshot(),
+        cursors = channelCursors,
     )
     val channelUiState = rememberLatchedChannelUiState(
         candidate = candidateChannelUiState,

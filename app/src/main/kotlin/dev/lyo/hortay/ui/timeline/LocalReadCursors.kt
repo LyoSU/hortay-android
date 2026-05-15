@@ -169,7 +169,22 @@ fun rememberCursorHolder(flow: Flow<ReadCursors>): CursorHolder {
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     LaunchedEffect(holder, flow, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-            val seed: ReadCursors = persistentMapOf()
+            // Seed with the holder's CURRENT contents — not [persistentMapOf]
+            // — so the scan correctly diffs the first post-resume emission
+            // against the actual state of the SnapshotStateMap. Two
+            // motivations:
+            //   1. Removals are preserved. If upstream dropped a chat
+            //      while the lifecycle was STOPPED (logout, chat removed
+            //      from folder), the first post-resume emission omits
+            //      that key. Diffing against an empty seed would generate
+            //      only Puts for present keys — Removes for absent keys
+            //      would NOT fire, leaving stale cursors in the holder
+            //      and PostCards displaying outdated unread strips.
+            //   2. No redundant Put burst. With an empty seed, every
+            //      present entry would re-fire as a Put on resume,
+            //      causing N main-thread writes even when nothing
+            //      changed across the suspend window.
+            val seed: ReadCursors = holder.snapshot()
             flow
                 .scan<ReadCursors, Pair<ReadCursors, List<CursorChange>>>(
                     seed to emptyList(),
