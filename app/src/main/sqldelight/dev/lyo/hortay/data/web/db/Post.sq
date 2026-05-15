@@ -233,6 +233,13 @@ DELETE FROM post WHERE channel_username = :username AND is_bookmarked = 0;
 deleteAll:
 DELETE FROM post;
 
+-- Soft variant used by "Clear cache" when the user opts to keep saved posts. The
+-- partial post_bookmark_idx makes this a cheap index lookup rather than a full
+-- table scan. Channel rows are NOT touched here either: subscriptions and read
+-- cursors survive the wipe.
+deleteAllExceptBookmarked:
+DELETE FROM post WHERE is_bookmarked = 0;
+
 -- Lightweight projection used by the AddChannelSheet "channels mentioned in
 -- what you read" suggestion path. Returns just the two columns we scan client-
 -- side for @username + forwarded_from extraction; avoids the heavy

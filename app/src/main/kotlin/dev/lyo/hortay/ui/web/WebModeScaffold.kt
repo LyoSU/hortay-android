@@ -37,6 +37,7 @@ import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.DeepLink
 import dev.lyo.hortay.data.NavEntry
+import dev.lyo.hortay.data.web.WebPostAdapter
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.FloatingNavBar
 import dev.lyo.hortay.ui.main.LinkAwareScaffold
@@ -244,6 +245,40 @@ fun WebModeScaffold(graph: AppGraph) {
                 }
         }
     }
+
+    // Reverse-lookup chatId → username. WebPostAdapter.stableChatId is a stable
+    // hash of the lowercased username; reading the live channels StateFlow at
+    // tap time picks up newly-subscribed channels without needing a recomposition.
+    // O(N) per tap is fine — N caps at the user's subscription set (≤200 in
+    // practice), and the lambda only runs on a deliberate channel-name tap.
+    val resolveUsername: (Long) -> String? = { chatId ->
+        graph.webFeedSource.channels.value.firstOrNull {
+            WebPostAdapter.stableChatId(it.info.username) == chatId
+        }?.info?.username
+    }
+    // "Comments unavailable in guest mode" snackbar — TDLib mode handles the same
+    // tap via pushComments; we surface a clear reason rather than letting the tap
+    // be silently dead.
+    val commentsUnavailableMsg = stringResource(R.string.web_comments_unavailable)
+    val onGuestPostClick: (TimelinePost) -> Unit = remember(commentsUnavailableMsg, snackbarHostState) {
+        {
+            scope.launch {
+                snackbarHostState.showSnackbar(commentsUnavailableMsg)
+            }
+        }
+    }
+    // Feed → channel-name tap routes through the same WebChannelScreen overlay
+    // that the Channels tab uses. resolveUsername returns null for channels not
+    // in our subscriptions (e.g. a forwarded-from chip pointing at a stranger's
+    // channel) — fall back to opening t.me/<u> in the system browser so the tap
+    // is never silently dead.
+    val onFeedChannelOpen: (Long, Long?) -> Unit = remember(snackbarHostState) {
+        { chatId, _ ->
+            val u = resolveUsername(chatId)
+            if (u != null) pushWebChannel(u)
+            else systemUriHandler.openUri("https://t.me/")
+        }
+    }
     LinkAwareScaffold(graph) {
     CompositionLocalProvider(
         LocalReadCursors provides cursorHolder,
@@ -378,7 +413,8 @@ fun WebModeScaffold(graph: AppGraph) {
                                 bookmarks = graph.bookmarkStore,
                                 contentPadding = padding,
                                 showOnlyBookmarked = false,
-                                onChannelOpen = { _, _ -> /* no per-channel drill from feed bodies in guest mode */ },
+                                onChannelOpen = onFeedChannelOpen,
+                                onOpenComments = onGuestPostClick,
                                 homeTapTrigger = homeTapTrigger,
                                 onBrandTap = { homeTapTrigger = System.nanoTime() },
                                 onSearchClick = { searchOpen = true },
@@ -424,7 +460,8 @@ fun WebModeScaffold(graph: AppGraph) {
                         bookmarks = graph.bookmarkStore,
                         contentPadding = padding,
                         showOnlyBookmarked = true,
-                        onChannelOpen = { _, _ -> /* no-op: guest mode */ },
+                        onChannelOpen = onFeedChannelOpen,
+                        onOpenComments = onGuestPostClick,
                         onReportClick = { post ->
                             val outcome = graph.guestReportDelegator.report(
                                 channelUsername = post.senderHandle?.removePrefix("@"),
@@ -495,6 +532,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                 graph = graph,
                                 contentPadding = padding,
                                 onBack = ::popNav,
+                                onPostClick = onGuestPostClick,
                                 feedOrder = feedOrder,
                             )
                         }

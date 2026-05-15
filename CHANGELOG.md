@@ -16,6 +16,8 @@
 - Inline retry on failed guest-mode Channel rows.
 - Floating "↓ N" unread-remaining counter in `OldestUnreadFirst` — ticks down live as you scroll; tap to jump to the next unread.
 - Inline-video autoplay is now gated on (a) a new Settings → Feed toggle "Autoplay videos in feed" (default ON) and (b) the playback file actually being on disk. Short videos pulled by the user's auto-download policy still play silently as you scroll; videos that policy didn't fetch keep the static poster + play badge until tapped (no stealth downloads triggered just because a post entered the viewport).
+- Authenticated Settings now offers an explicit "Continue without account" row that signs you out of Telegram and routes the app into guest mode in one confirmed step. Previously the only way into guest mode from a signed-in session was a fresh install. Subscriptions, bookmarks and feed preferences survive the switch.
+- Guest mode now responds to a tap on a post body: instead of being silently dead (no comments backend in guest), it surfaces a snackbar explaining that comments require sign-in. Same affordance the user reaches for in TDLib mode, with an honest reason for the lack of an action.
 
 ### Changed
 - Default feed order is now `OldestUnreadFirst` (Telegram-channel chat-app idiom: oldest read posts on top, unread queue in the middle, newest at the bottom — opens at the read→unread boundary so you continue from where you left off). Existing users who explicitly picked `Newest` in Settings keep their choice; the new default only applies when the preference has never been set. Both options stay available in Settings → Feed, and the new default is now listed first there.
@@ -40,6 +42,9 @@
 - Deep-link to a channel post now shows a placeholder skeleton while the
   surrounding history loads, then snaps to the target in one frame. Previously
   the channel's head post flashed for a moment before the scroll landed.
+- Guest-mode "Clear cache" now asks for confirmation and keeps bookmarked posts. The previous one-tap row silently deleted every locally cached post, including ones the user had explicitly saved — the dialog body is honest about what survives ("Subscriptions and saved posts are kept; visible content will be refreshed from t.me") and the destructive button is tinted error-red.
+- Guest-mode channel rows now show the Retry affordance for `NotFound` and `Private` channels too, not only transient errors. A channel can flip back to public at any time (the original assumption that "no client retry will change Telegram-side state" silently broke the moment an owner toggled visibility); manual retry is one tap per channel and never reaches the auto-sweep, so it can't trigger a FLOOD_WAIT.
+- Guest-mode background polling now runs only when the user is actually in guest mode AND the app is foreground. The previous gate only checked "not signed in to TDLib", which kept the t.me/s/ poller alive on the auth screen — burning traffic and battery for a UI that doesn't even render the web feed, with a real CDN-side FLOOD_WAIT risk.
 
 ### Fixed
 - Guest mode: the floating "↓ N" unread chip is no longer obscured by the "Add channel" FAB on the Feed tab. Both are bottom-end anchored; the pill now stacks above the FAB so it stays tappable while unread posts remain.
@@ -73,6 +78,9 @@
   before snapping to the read→unread boundary. The reverse-feed `LazyColumn`
   now holds un-mounted until cursors land — boundary lands in the first
   visible frame.
+- Guest-mode single-channel screen no longer silently truncates the channel's history when the user has many subscriptions. Previously it filtered the merged 1000-post global feed by `chatId`, so a quiet channel sitting under several high-volume ones would show only a tail of its actual local history (or nothing at all). It now reads through the per-channel SQL DAO and shows every locally cached post for that channel.
+- Guest-mode single-channel screen no longer overlaps the status bar at the top. The shared `ChannelHeaderBar` ships with zero window-insets so it can be wrapped by hosts that own the system-bar inset themselves; TDLib mode wrapped it correctly, the guest variant didn't — now both use the same status-bar Spacer prefix.
+- Tapping a channel name on a post in the guest-mode feed now opens that channel in-app (same `WebChannelScreen` overlay the Channels tab uses) instead of doing nothing. Forwarded-from chips pointing at strangers' channels fall back to t.me as before.
 
 ### Performance
 - Reaction taps flip optimistically across feed / channel / post detail / comments; server reconciles via `UpdateMessageInteractionInfo`, RPC failure rolls back.

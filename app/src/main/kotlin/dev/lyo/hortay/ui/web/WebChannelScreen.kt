@@ -2,8 +2,15 @@
 
 package dev.lyo.hortay.ui.web
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -25,6 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import dev.lyo.hortay.R
@@ -61,6 +69,15 @@ import dev.lyo.hortay.ui.timeline.PostInteractions
  * Header chrome and avatar rendering are shared with the TDLib mode via
  * [ChannelHeaderBar] + [ChannelHeaderAvatar.WebUrl] — visual identity stays
  * in lockstep across modes so the user sees one consistent vocabulary.
+ *
+ * Data source: reads posts via [dev.lyo.hortay.data.web.WebRepository.observeFeedByChannel]
+ * (per-channel DAO) rather than filtering the global feed StateFlow. The global
+ * feed is `LIMIT 1000` across every subscribed channel; for a low-volume channel
+ * sitting under several high-volume ones the slice would tail off well before
+ * the channel's actual local history ended, and the user would silently see a
+ * truncated view of their own subscribed channel. Per-channel queries hit the
+ * `(channel_username, published_at_ms DESC)` composite index and return the
+ * full per-channel slice up to the same 1000-row cap.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,6 +87,12 @@ fun WebChannelScreen(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     /**
+     * Called when the user taps a post body in guest mode. Comments aren't
+     * available without a TDLib session (no [dev.lyo.hortay.data.CommentsRepository]),
+     * so the host scaffold surfaces a snackbar instead of opening a dead screen.
+     */
+    onPostClick: (dev.lyo.hortay.data.TimelinePost) -> Unit = {},
+    /**
      * Per-user feed ordering, from [dev.lyo.hortay.data.SettingsStore.feedOrder].
      * Mirrors the contract of the TDLib-mode ChannelScreen — OldestUnreadFirst
      * flips the channel into the reverse-feed layout (asc-by-date, read above
@@ -78,10 +101,11 @@ fun WebChannelScreen(
      */
     feedOrder: FeedOrder = FeedOrder.OldestUnreadFirst,
 ) {
-    val feedSource = graph.webFeedSource
     val bookmarks = graph.bookmarkStore
-    val posts by feedSource.posts.collectAsStateWithLifecycle()
-    val channels by feedSource.channels.collectAsStateWithLifecycle()
+    val perChannelPosts by remember(username) {
+        graph.webRepository.observeFeedByChannel(username)
+    }.collectAsStateWithLifecycle(initialValue = persistentListOf())
+    val channels by graph.webFeedSource.channels.collectAsStateWithLifecycle()
     val bookmarkedKeys by bookmarks.bookmarks.collectAsStateWithLifecycle(initialValue = emptySet())
     val viewer = LocalMediaViewer.current
     val uriHandler = LocalUriHandler.current
@@ -91,11 +115,12 @@ fun WebChannelScreen(
     val channelInfo = remember(channels, username) {
         channels.firstOrNull { it.info.username.equals(username, ignoreCase = true) }?.info
     }
-    // Per-channel slice, sorted by [feedOrder]. orderedFor is a pure function
-    // with no cursor dependency (see ReadCursors.kt) — passing EmptyReadCursors
+    // Already filtered at the SQL layer to channel_username = :username; just
+    // apply the user's feed order on top. orderedFor is a pure function with
+    // no cursor dependency (see ReadCursors.kt) — passing EmptyReadCursors
     // keeps the remember key small and avoids re-sorting on every cursor advance.
-    val filteredPosts = remember(posts, chatId, feedOrder) {
-        posts.filter { it.chatId == chatId }.orderedFor(feedOrder, EmptyReadCursors)
+    val orderedPosts = remember(perChannelPosts, feedOrder) {
+        perChannelPosts.orderedFor(feedOrder, EmptyReadCursors)
     }
 
     val listState = rememberLazyListState()
@@ -108,7 +133,7 @@ fun WebChannelScreen(
     // when caught up. Guest mode has no per-channel async load step, so
     // we wait only for the list to become non-empty.
     val cursorHolder = LocalReadCursors.current
-    val filteredPostsState = rememberUpdatedState(filteredPosts)
+    val orderedPostsState = rememberUpdatedState(orderedPosts)
     LaunchedEffect(chatId, feedOrder) {
         if (feedOrder != FeedOrder.OldestUnreadFirst) return@LaunchedEffect
         if (listState.firstVisibleItemIndex != 0 ||
@@ -116,25 +141,21 @@ fun WebChannelScreen(
         ) {
             return@LaunchedEffect
         }
-        snapshotFlow { filteredPostsState.value.size }.first { it > 0 }
+        snapshotFlow { orderedPostsState.value.size }.first { it > 0 }
         if (listState.isScrollInProgress) return@LaunchedEffect
         if (listState.firstVisibleItemIndex != 0 ||
             listState.firstVisibleItemScrollOffset != 0
         ) {
             return@LaunchedEffect
         }
-        val items = filteredPostsState.value
-        // .snapshot() escapes Compose read observation; this LaunchedEffect
-        // fires once per (chatId, feedOrder) and captures whatever cursors
-        // are current at that moment — matches the previous behaviour where
-        // `readCursorsStateForEntry.value` snapshot-read the live map at
-        // entry time.
+        val items = orderedPostsState.value
         val cursors = cursorHolder.snapshot()
         val boundary = items.indexOfFirst { it.isUnreadIn(cursors) }
         val target = if (boundary >= 0) boundary else items.lastIndex
         if (target > 0) listState.scrollToItem(target)
     }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
+    val onPostClickState = rememberUpdatedState(onPostClick)
 
     val interactions = remember(viewer, bookmarks, chatId, uriHandler) {
         PostInteractions(
@@ -152,6 +173,10 @@ fun WebChannelScreen(
             },
             onBookmarkClick = { post -> scope.launch { bookmarks.toggle(post) } },
             isBookmarked = { post -> bookmarkedKeys.contains("${post.chatId}:${post.id}") },
+            // Wire post-body tap through to the scaffold so it can show the
+            // "коментарі недоступні" snackbar. Without this, tapping the body
+            // is silently dead (the default no-op).
+            onPostClick = { post -> onPostClickState.value(post) },
         )
     }
 
@@ -165,17 +190,30 @@ fun WebChannelScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            ChannelHeaderBar(
-                titleText = title,
-                subtitleText = subtitle,
-                avatar = ChannelHeaderAvatar.WebUrl(
-                    url = channelInfo?.avatarUrl,
-                    name = title,
-                ),
-                onBack = onBack,
-                onTitleTap = { uriHandler.openUri("https://t.me/$username") },
-                scrollBehavior = scrollBehavior,
-            )
+            // Wrap ChannelHeaderBar with a status-bar inset strip the same way
+            // TDLib-mode ChannelScreen does. ChannelHeaderBar itself passes
+            // windowInsets = WindowInsets(0,0,0,0) so it can be hosted inside
+            // surfaces that own the system-bar inset themselves. Without this
+            // wrap the title row overlaps the status-bar clock — the "header
+            // weirdness" symptom users see in guest mode.
+            Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsTopHeight(WindowInsets.statusBars),
+                )
+                ChannelHeaderBar(
+                    titleText = title,
+                    subtitleText = subtitle,
+                    avatar = ChannelHeaderAvatar.WebUrl(
+                        url = channelInfo?.avatarUrl,
+                        name = title,
+                    ),
+                    onBack = onBack,
+                    onTitleTap = { uriHandler.openUri("https://t.me/$username") },
+                    scrollBehavior = scrollBehavior,
+                )
+            }
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
@@ -188,7 +226,7 @@ fun WebChannelScreen(
             contentPadding = mergedPadding,
             modifier = Modifier.fillMaxSize(),
         ) {
-            items(items = filteredPosts, key = { it.id }) { post ->
+            items(items = orderedPosts, key = { it.id }) { post ->
                 PostCard(post = post, interactions = interactions)
             }
         }
