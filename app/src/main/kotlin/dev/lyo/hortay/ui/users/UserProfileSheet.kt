@@ -131,10 +131,8 @@ fun UserProfileSheet(
             )
             Spacer(Modifier.height(20.dp))
 
-            ActionChips(
-                profile = profile,
+            MessageAction(
                 onMessage = { openInTelegram(it, profile, userId) },
-                onCopyHandle = { ctx, handle -> copyHandle(ctx, handle) },
             )
 
             profile?.bio?.let { bio ->
@@ -240,11 +238,22 @@ private fun ProfileHero(
                 )
             }
         }
-        profile?.handle?.let {
+        profile?.handle?.let { handle ->
+            // Handle reads like a Telegram blue link, but the action it offers ISN'T
+            // navigation — it's "copy to clipboard". Mirroring Telegram-Android: tap
+            // the @username row in a profile card and the username lands on the
+            // clipboard. Avoids the dedicated Copy button (read as visual clutter
+            // when the @handle is already on screen one row above).
+            val context = LocalContext.current
+            Spacer(Modifier.height(2.dp))
             Text(
-                text = it,
+                text = handle,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { copyHandle(context, handle) }
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
             )
         }
         val statusLine = profile?.let { presenceLabel(it.status) }
@@ -273,48 +282,30 @@ private fun ProfileHero(
     }
 }
 
+/**
+ * Sole action chip in the sheet. Was a two-button row (Message + Copy handle) — the
+ * Copy half got folded into the `@handle` row above (Telegram-Android idiom: tap the
+ * handle to copy). Single FilledTonalButton at full width is the MD3E pattern for a
+ * "one primary action" header — Telegram-X's user-info card uses the same shape.
+ */
 @Composable
-private fun ActionChips(
-    profile: UserProfile?,
-    onMessage: (Context) -> Unit,
-    onCopyHandle: (Context, String) -> Unit,
-) {
+private fun MessageAction(onMessage: (Context) -> Unit) {
     val context = LocalContext.current
-    Row(
+    FilledTonalButton(
+        onClick = { onMessage(context) },
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        FilledTonalButton(
-            onClick = { onMessage(context) },
-            modifier = Modifier.weight(1f),
-        ) {
-            Symbol(
-                // No bundled `sym_send`; the `ios_share` glyph (arrow-out-of-box) carries
-                // the same "send / outbound" semantic visually and is already in the pack.
-                name = "ios_share",
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                size = 18.dp,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.user_profile_action_message))
-        }
-        val handle = profile?.handle
-        if (handle != null) {
-            FilledTonalButton(
-                onClick = { onCopyHandle(context, handle) },
-                modifier = Modifier.weight(1f),
-            ) {
-                Symbol(
-                    name = "content_copy",
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    size = 18.dp,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.user_profile_action_copy_handle))
-            }
-        }
+        Symbol(
+            // No bundled `sym_send`; the `ios_share` glyph (arrow-out-of-box) carries
+            // the same "send / outbound" semantic visually and is already in the pack.
+            name = "ios_share",
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            size = 18.dp,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(R.string.user_profile_action_message))
     }
 }
 
