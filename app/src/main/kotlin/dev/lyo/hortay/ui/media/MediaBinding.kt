@@ -62,21 +62,29 @@ fun rememberMediaBinding(
         else MutableStateFlow(MediaState.Idle)
     }.collectAsStateWithLifecycle()
 
-    // Defensive resync on first mount of this fileId. Asks TDLib *"what is this
-    // file, really?"* via [MediaCache.resync] which routes a fresh GetFile
-    // through the reducer. Closes the user-described bug "shows not loaded
-    // until I scroll away and back": a slot can drift to a stale
-    // [MediaState.Downloading] with [activePriority] still set (lost
-    // UpdateFile, background-while-completing race, debounced cancel firing
-    // right before TDLib's tail Ready event). Without this, [ensure] would
-    // short-circuit the stale state on re-mount because `currentPriority >=
-    // priority.tdValue`. With this, the GetFile authority answer rides the
-    // same FileEvent channel as inbound UpdateFile and the reducer flips the
-    // slot to Ready on its own. Cost: one JNI roundtrip on mount per renderer
-    // (~10-50 µs), which on a 30-card viewport totals well under a millisecond.
-    // No-op in web mode (no MediaCache slot exists).
-    LaunchedEffect(fileId, isRemote) {
-        if (!isRemote) fileId?.let(cache::resync)
+    // Defensive resync, asks TDLib *"what is this file, really?"* via
+    // [MediaCache.resync] which routes a fresh GetFile through the reducer.
+    // Closes the user-described bug "shows not loaded until I scroll away
+    // and back": a slot can drift to a stale [MediaState.Downloading] with
+    // [activePriority] still set (lost UpdateFile, background-while-
+    // completing race, debounced cancel firing right before TDLib's tail
+    // Ready event). Without this, [ensure] would short-circuit the stale
+    // state on re-mount because `currentPriority >= priority.tdValue`.
+    // With this, the GetFile authority answer rides the same FileEvent
+    // channel as inbound UpdateFile and the reducer flips the slot to
+    // Ready on its own. No-op in web mode (no MediaCache slot exists).
+    //
+    // Gated on [scrollGate] alongside [ensure] below: during a fling,
+    // cards mount and unmount rapidly as they sweep through the viewport;
+    // firing resync on every transient mount used to flood the JNI bridge
+    // with cancelled GetFile calls — visible as scroll micro-jank on
+    // media-heavy stretches. With the gate, resync waits for scroll to
+    // settle, then runs for every card the user actually landed on (which
+    // is when the stale-slot recovery actually matters).
+    val gate = LocalScrollGate.current
+    val gateOpen = gate.value
+    LaunchedEffect(fileId, isRemote, gateOpen) {
+        if (gateOpen && !isRemote) fileId?.let(cache::resync)
     }
 
     // Scroll-gate-aware ensure. Re-runs on gate flips so a fling-then-settle
@@ -100,8 +108,6 @@ fun rememberMediaBinding(
     // every [LocalIsCenteredItem.value] flip so a card sliding into / out of the
     // centre re-issues `ensure` with the new priority and TDLib promotes /
     // demotes the in-flight job in place.
-    val gate = LocalScrollGate.current
-    val gateOpen = gate.value
     val isCentered = LocalIsCenteredItem.current.value
     val effectivePriority = if (isCentered && priority == DownloadPriority.VisibleMedia) {
         DownloadPriority.VisibleCenter

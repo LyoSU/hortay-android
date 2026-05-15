@@ -215,7 +215,7 @@ fun ChannelScreen(
     // EmptyReadCursors: orderedFor's cursor argument is unused (see ReadCursors.kt
     // doc) — passing the empty map avoids re-sorting on every cursor advance,
     // matching the TimelineScreen call.
-    val readCursors = LocalReadCursors.current
+    val cursorHolder = LocalReadCursors.current
     val displayedItems = remember(posts, searchActive, searchResults, feedOrder) {
         val list = if (searchActive) searchResults.map<TimelinePost, FeedItem>(FeedItem::Single)
         else groupReplies(posts.orderedFor(feedOrder, EmptyReadCursors))
@@ -236,7 +236,7 @@ fun ChannelScreen(
         searchActive = searchActive,
         chatId = chatId,
         feedOrder = feedOrder,
-        cursors = readCursors,
+        cursors = cursorHolder.snapshot(),
     )
     val channelUiState = rememberLatchedChannelUiState(
         candidate = candidateChannelUiState,
@@ -586,19 +586,25 @@ fun ChannelScreen(
 
                         // Viewport-centre priority key for the dominant card — same
                         // VisibleCenter promotion as TimelineScreen.
-                        val centeredItemKey by remember(listState) {
-                            derivedStateOf {
-                                val info = listState.layoutInfo
-                                val visible = info.visibleItemsInfo
-                                if (visible.isEmpty()) return@derivedStateOf null
-                                val viewportCenter =
-                                    (info.viewportStartOffset + info.viewportEndOffset) / 2
-                                visible.minByOrNull { item ->
-                                    val itemCenter = item.offset + item.size / 2
-                                    kotlin.math.abs(itemCenter - viewportCenter)
-                                }?.key
+                        // Kept as State<Any?> so per-item subscribers read the
+                        // value inside their own derivedStateOf — see
+                        // TimelineScreen.TimelineFeedColumn for the full
+                        // rationale (avoids invalidating every items() body
+                        // on every centre flip during fling).
+                        val centeredItemKeyState: androidx.compose.runtime.State<Any?> =
+                            remember(listState) {
+                                derivedStateOf {
+                                    val info = listState.layoutInfo
+                                    val visible = info.visibleItemsInfo
+                                    if (visible.isEmpty()) return@derivedStateOf null
+                                    val viewportCenter =
+                                        (info.viewportStartOffset + info.viewportEndOffset) / 2
+                                    visible.minByOrNull { item ->
+                                        val itemCenter = item.offset + item.size / 2
+                                        kotlin.math.abs(itemCenter - viewportCenter)
+                                    }?.key
+                                }
                             }
-                        }
 
                         // Eager prefetch: warm [CHANNEL_PREFETCH_AHEAD] posts ahead of
                         // the viewport at [DownloadPriority.Prefetch] (lane 8). Visible
@@ -641,16 +647,21 @@ fun ChannelScreen(
                                 ),
                                 modifier = Modifier.fillMaxSize(),
                             ) {
-                                items(items = displayedList, key = { it.key }) { item ->
-                                    val isCentered = remember { mutableStateOf(false) }
-                                    isCentered.value = item.key == centeredItemKey
+                                items(
+                                    items = displayedList,
+                                    key = { it.key },
+                                    contentType = { if (it is FeedItem.Thread) "thread" else "single" },
+                                ) { item ->
+                                    val isCenteredState = remember(item.key) {
+                                        derivedStateOf { centeredItemKeyState.value == item.key }
+                                    }
                                     val highlighted = highlightedPostKey?.let { (cid, mid) ->
                                         item.posts().any { p ->
                                             p.chatId == cid && (p.id == mid || mid in p.albumMessageIds)
                                         }
                                     } == true
                                     CompositionLocalProvider(
-                                        LocalIsCenteredItem provides isCentered,
+                                        LocalIsCenteredItem provides isCenteredState,
                                         LocalIsHighlightedItem provides highlighted,
                                     ) {
                                         when (item) {

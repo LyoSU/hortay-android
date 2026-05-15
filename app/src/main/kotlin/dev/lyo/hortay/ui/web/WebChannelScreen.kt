@@ -107,9 +107,8 @@ fun WebChannelScreen(
     // per [LocalReadCursors]; fallback to [List.lastIndex] = newest at bottom
     // when caught up. Guest mode has no per-channel async load step, so
     // we wait only for the list to become non-empty.
-    val readCursors = LocalReadCursors.current
+    val cursorHolder = LocalReadCursors.current
     val filteredPostsState = rememberUpdatedState(filteredPosts)
-    val readCursorsStateForEntry = rememberUpdatedState(readCursors)
     LaunchedEffect(chatId, feedOrder) {
         if (feedOrder != FeedOrder.OldestUnreadFirst) return@LaunchedEffect
         if (listState.firstVisibleItemIndex != 0 ||
@@ -125,7 +124,12 @@ fun WebChannelScreen(
             return@LaunchedEffect
         }
         val items = filteredPostsState.value
-        val cursors = readCursorsStateForEntry.value
+        // .snapshot() escapes Compose read observation; this LaunchedEffect
+        // fires once per (chatId, feedOrder) and captures whatever cursors
+        // are current at that moment — matches the previous behaviour where
+        // `readCursorsStateForEntry.value` snapshot-read the live map at
+        // entry time.
+        val cursors = cursorHolder.snapshot()
         val boundary = items.indexOfFirst { it.isUnreadIn(cursors) }
         val target = if (boundary >= 0) boundary else items.lastIndex
         if (target > 0) listState.scrollToItem(target)

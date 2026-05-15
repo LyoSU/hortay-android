@@ -43,7 +43,7 @@ import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.TimelinePost
-import dev.lyo.hortay.data.isUnreadIn
+import dev.lyo.hortay.data.isUnreadAt
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import dev.lyo.hortay.ui.icons.Symbol
@@ -115,8 +115,11 @@ fun PostCard(
     // [ChatPresence.viewMessages] flips this card's strip from full alpha to
     // zero on the same spring the navbar selection / button press / connection
     // banner use. One motion vocabulary across the app.
-    val cursors = LocalReadCursors.current
-    val isUnread = !expanded && post.parentId == null && post.isUnreadIn(cursors)
+    // Per-key cursor read: the holder's `get` registers a Compose snapshot
+    // dependency on this post's chatId only, so an UpdateChatReadInbox for
+    // a different chat does not invalidate this card.
+    val cursor = LocalReadCursors.current[post.chatId]
+    val isUnread = !expanded && post.parentId == null && post.isUnreadAt(cursor)
     val unreadAlpha by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (isUnread) 1f else 0f,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
@@ -311,13 +314,19 @@ private fun Avatar(
 }
 
 @Composable
-private fun avatarBg(name: String) = run {
-    val palette = listOf(
-        MaterialTheme.colorScheme.primaryContainer,
-        MaterialTheme.colorScheme.secondaryContainer,
-        MaterialTheme.colorScheme.tertiaryContainer,
-    )
-    palette[(name.hashCode().rem(palette.size) + palette.size) % palette.size]
+private fun avatarBg(name: String): androidx.compose.ui.graphics.Color {
+    // Palette identity is stable across recompositions for a given theme —
+    // remember on the three colour values so we don't allocate a fresh
+    // 3-element list on every avatar render. The theme reads happen in
+    // @Composable scope before the remember block (which is a regular
+    // lambda where @Composable reads are not allowed).
+    val primary = MaterialTheme.colorScheme.primaryContainer
+    val secondary = MaterialTheme.colorScheme.secondaryContainer
+    val tertiary = MaterialTheme.colorScheme.tertiaryContainer
+    val palette = remember(primary, secondary, tertiary) {
+        listOf(primary, secondary, tertiary)
+    }
+    return palette[(name.hashCode().rem(palette.size) + palette.size) % palette.size]
 }
 
 /**
