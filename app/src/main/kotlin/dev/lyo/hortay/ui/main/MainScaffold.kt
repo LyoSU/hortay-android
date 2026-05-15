@@ -621,7 +621,7 @@ fun MainScaffold(graph: AppGraph) {
                             bookmarks = graph.bookmarkStore,
                             contentPadding = padding,
                             showOnlyBookmarked = false,
-                            onChannelOpen = { id -> pushChannel(id) },
+                            onChannelOpen = { id, scrollTo -> pushChannel(id, scrollTo) },
                             onOpenComments = { post -> pushComments(post) },
                             homeTapTrigger = homeTapTrigger,
                             onBrandTap = { homeTapTrigger = System.nanoTime() },
@@ -664,11 +664,12 @@ fun MainScaffold(graph: AppGraph) {
                     bookmarks = graph.bookmarkStore,
                     contentPadding = padding,
                     showOnlyBookmarked = true,
-                    onChannelOpen = { id ->
+                    onChannelOpen = { id, scrollTo ->
                         // Tapping a channel from Saved pushes a Channel entry — Back
                         // returns the user to Saved instead of always resetting to
-                        // all-feed.
-                        pushChannel(id)
+                        // all-feed. Quote-tap on a Saved card lands the new channel
+                        // at the replied-to message (scrollTo != null).
+                        pushChannel(id, scrollTo)
                     },
                     onOpenComments = { post -> pushComments(post) },
                     homeTapTrigger = 0L,
@@ -719,7 +720,7 @@ fun MainScaffold(graph: AppGraph) {
                     channelActions = graph.channelActions,
                     contentPadding = padding,
                     onBack = ::popNav,
-                    onChannelOpen = { cid -> pushChannel(cid) },
+                    onChannelOpen = { cid, scrollTo -> pushChannel(cid, scrollTo) },
                     onOpenComments = { post -> pushComments(post) },
                     scrollToMessage = entry.scrollToMessageId
                         ?.let { entry.chatId to it }
