@@ -126,7 +126,12 @@ fun TdMediaImage(
         // timer, every visible media card in the feed pays that GPU pass
         // forever — measurable on weaker GPUs as scroll micro-jank.
         val minithumb = media.minithumbBytes
-        val showMinithumb = rememberMinithumbVisible(state)
+        // Pass the fileId so the visible-state holder resets when the
+        // underlying file changes (in-place media edit, album swipe
+        // reusing the same composable slot) — otherwise a previous file's
+        // "Ready → hide" decision would carry over and prevent the new
+        // file's minithumb from ever showing.
+        val showMinithumb = rememberMinithumbVisible(fileId, state)
         if (minithumb != null && showMinithumb) {
             // Memoise: minithumbs are stable per-post; rebuilding the request on
             // every recomposition would churn ~150 B requests through Coil's
@@ -212,15 +217,20 @@ private const val MINITHUMB_LINGER_MS = 280L
 /**
  * Drives the minithumb's composition lifetime: visible while the state is not
  * Ready, and for [MINITHUMB_LINGER_MS] *after* it flips Ready (covering the
- * Coil crossfade), then false. Keying the LaunchedEffect on `fileId` plus the
- * Ready signal restarts the timer when the underlying file changes (rare —
- * normally fileId is stable per post — but accounts for in-place media edits).
+ * Coil crossfade), then false. The holder + effect are both keyed on
+ * [fileId] so an in-place file change (rare; in-channel media edit, album
+ * swipe reusing the same composable slot) resets the linger timer and
+ * re-shows the minithumb under the new file's crossfade — without the key
+ * a previous "Ready → hide" decision would carry over and the new file
+ * would land on bare placeholder instead of its blurred preview.
  */
 @Composable
-private fun rememberMinithumbVisible(state: MediaState): Boolean {
+private fun rememberMinithumbVisible(fileId: Int?, state: MediaState): Boolean {
     val ready = state is MediaState.Ready
-    val visibleState = remember { androidx.compose.runtime.mutableStateOf(true) }
-    androidx.compose.runtime.LaunchedEffect(ready) {
+    val visibleState = androidx.compose.runtime.remember(fileId) {
+        androidx.compose.runtime.mutableStateOf(true)
+    }
+    androidx.compose.runtime.LaunchedEffect(fileId, ready) {
         if (ready) {
             kotlinx.coroutines.delay(MINITHUMB_LINGER_MS)
             visibleState.value = false

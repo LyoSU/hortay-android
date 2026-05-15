@@ -554,13 +554,17 @@ fun TimelineScreen(
     // (see [buildTimelineUiState] using items.map { it.posts().first() }), so
     // these stay in sync.
     // Per-key snapshot reads inside the derivedStateOf body: the closure
-    // touches `cursorHolder[anchor.chatId]` for each visible feed item, so
-    // Compose subscribes to exactly those chats' cursors. A
-    // dwell-ack / external sync that changes a cursor whose chat is NOT
-    // currently in view does not invalidate the derivedStateOf, and even
-    // for in-view chats `derivedStateOf` dedupes its output — downstream
-    // (homeScrollIndexState mirror) flips only when the boundary index
-    // actually moves.
+    // touches `cursorHolder[anchor.chatId]` for each [FeedItem] (this is
+    // home-tap scroll target, computed against the whole feed — NOT just
+    // visible rows — because "home" can jump from any scroll position to
+    // the read→unread boundary). Compose subscribes to exactly the
+    // per-chatId keys the closure reads (which is the union of chat ids
+    // across the feed), and `derivedStateOf` dedupes its output —
+    // downstream (homeScrollIndexState mirror) flips only when the
+    // boundary index actually moves. So an `UpdateChatReadInbox` for a
+    // chat not in the feed is a free no-op; for an in-feed chat the
+    // scan re-runs but most cursor advances don't move the integer
+    // boundary, so the mirror does not re-emit.
     val homeScrollIndex by remember(feedItems, feedOrder, cursorsHaveLanded) {
         derivedStateOf {
             when (feedOrder) {
@@ -600,16 +604,19 @@ fun TimelineScreen(
     // seed-bump LaunchedEffect could no-op when old/new boundaries collide).
     val persistentFeedItems = remember(feedItems) { feedItems.toPersistentList() }
     val routeKey = (if (showOnlyBookmarked) "saved" else "home") to feedOrder
-    // [cursorHolder.snapshot()] escapes Compose read tracking, so a cursor
-    // advance does NOT re-invoke buildTimelineUiState — the latcher
-    // ([rememberLatchedTimelineUiState]) captures the frozen reference at
-    // first Ready and refuses to swap it back. This composable still
-    // re-runs on legitimate triggers (feed identity, refreshing, feedOrder
-    // etc.) which take a fresh snapshot on each pass.
+    // Reuses [boundaryCursorsState] as the frozenCursors source: both
+    // need a snapshot of the cursor map captured at first cold-start
+    // landing + PTR completion, which is exactly what
+    // [boundaryCursorsState]'s LaunchedEffect already latches. Avoids
+    // allocating a fresh PersistentMap on every TimelineScreen
+    // recomposition via [cursorHolder.snapshot()] — for OldestUnreadFirst
+    // the latched value is what the latcher would have captured anyway;
+    // for Newest mode the state stays at [EmptyReadCursors] which the
+    // builder maps to initialIndex=0 (the correct Newest landing).
     val candidateUiState: TimelineUiState = buildTimelineUiState(
         items = persistentFeedItems,
         cursorsLanded = readCursorsLandedState.value,
-        frozenCursors = cursorHolder.snapshot(),
+        frozenCursors = boundaryCursors,
         feedOrder = feedOrder,
         refreshing = refreshing,
     )
