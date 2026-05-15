@@ -761,22 +761,22 @@ private fun FeedOrderRows(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
         FeedOrderRow(
-            symbol = "arrow_downward",
-            title = stringResource(R.string.settings_feed_order_newest_title),
-            subtitle = stringResource(R.string.settings_feed_order_newest_subtitle),
-            isSelected = current == FeedOrder.Newest,
-            index = 0,
-            count = 2,
-            onClick = { onSelect(FeedOrder.Newest) },
-        )
-        FeedOrderRow(
             symbol = "arrow_upward",
             title = stringResource(R.string.settings_feed_order_oldest_title),
             subtitle = stringResource(R.string.settings_feed_order_oldest_subtitle),
             isSelected = current == FeedOrder.OldestUnreadFirst,
-            index = 1,
+            index = 0,
             count = 2,
             onClick = { onSelect(FeedOrder.OldestUnreadFirst) },
+        )
+        FeedOrderRow(
+            symbol = "arrow_downward",
+            title = stringResource(R.string.settings_feed_order_newest_title),
+            subtitle = stringResource(R.string.settings_feed_order_newest_subtitle),
+            isSelected = current == FeedOrder.Newest,
+            index = 1,
+            count = 2,
+            onClick = { onSelect(FeedOrder.Newest) },
         )
     }
 }
