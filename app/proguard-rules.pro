@@ -3,11 +3,20 @@
 # with NoSuchMethodError or NoSuchFieldError. The TdApi.* nested classes carry our
 # request/response payloads — keep their fields and zero-arg constructors.
 -keep class org.drinkless.tdlib.** { *; }
--keep class org.drinkless.td.libcore.** { *; }
 -keepclassmembers class org.drinkless.tdlib.TdApi$* {
     <fields>;
     <init>(...);
 }
+
+# DEX layout optimization: collapse every obfuscated class into the empty package
+# so R8 can drop the per-class package-name strings from the DEX string pool.
+# Typical saving: 100–300 KB DEX on apps of this size. Doesn't affect any class
+# we explicitly -keep above (their original package names are preserved). The
+# trade-off is that stack traces in Play Console show "a.b.c" by default — Play
+# auto-deobfuscates via the bundled mapping.txt, so symbolicated traces still
+# read normally end-to-end. Direct ADB logcat reads need the mapping.txt applied
+# manually via retrace.
+-repackageclasses ''
 
 # kotlinx.serialization annotation processing relies on companion-object accessors
 # and synthetic methods that R8 strips by default.

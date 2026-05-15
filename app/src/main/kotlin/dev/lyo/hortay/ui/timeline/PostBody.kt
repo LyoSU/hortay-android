@@ -399,12 +399,10 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
         && !unplayable
         && asVideo.durationSec in 1..INLINE_AUTOPLAY_MAX_SEC
         && inlineAutoplayEnabled
-    // [asVideo] is provably non-null after [autoplayEligible] (the gate
-    // above includes an `asVideo != null` clause), so the smart-cast
-    // propagates through the short-circuit `&&` and direct member access
-    // is safe on the right-hand side.
+    // K2 smart-casts asVideo to AlbumItem.Video — autoplayEligible's chain
+    // includes `asVideo != null` and short-circuit && propagates the cast.
     val autoplayVideo = autoplayEligible && isCachedReady(
-        fileId = asVideo!!.playbackFileId,
+        fileId = asVideo.playbackFileId,
         remoteUrl = asVideo.remoteVideoUrl,
     )
     // Hide the play badge while the poster is downloading. The poster's own
@@ -451,7 +449,7 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
                 .fillMaxSize()
                 .let { if (blur > 0.dp) it.blur(blur) else it },
         )
-        if (autoplayVideo && asVideo != null) {
+        if (autoplayVideo) {
             TdVideoPlayer(
                 fileId = asVideo.playbackFileId,
                 remoteUrl = asVideo.remoteVideoUrl,

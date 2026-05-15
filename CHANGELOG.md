@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### Performance
+- Comments overlay, report sheet, and country picker recompose less often. `CommentsRepository.ThreadState.Ready.rows`, `ReportState.OptionSelection.options`, and `Country.allDialCodes` switched from platform `List<X>` to `kotlinx.collections.immutable.ImmutableList<X>`, and the parent data classes are now `@Immutable`. Strong-skipping mode (Kotlin 2.3 / Compose Compiler 2.x default) now skips these slots when the comment thread, report state, or selected country didn't actually change between recompositions — previously the platform-list field made the whole data class "unstable" and every recomposition cascaded.
+
+### Build
+- Compose Compiler stability / skippability reports are now actually generated. `composeCompiler { reportsDestination + metricsDestination }` was missing — CLAUDE.md referenced reports in `app/build/compose_compiler/` but the destination was never wired. Reports land there on every `assembleRelease` / `bundleRelease` and surface skippability regressions as `unstable` verdicts in `app-classes.txt` and as `restartable` without `skippable` in `app-composables.txt`.
+- New `compose_stability.conf` at the repo root marks `kotlinx.collections.immutable.{Persistent,Immutable}{List,Map,Set}` and `kotlinx.serialization.json.JsonElement` as stable to Compose. Platform `kotlin.collections.{List,Map,Set}` are deliberately NOT listed — the project's contract is to use `Persistent*` for any collection that reaches a `@Composable` parameter, and treating the platform types as stable would silently mask passing a mutable list at a call site.
+- R8 now collapses every obfuscated class into the empty package via `-repackageclasses ''`. Drops per-class package-name strings from the DEX string pool. Stack traces in Play Console stay readable via auto-deobfuscation against the bundled `mapping.txt`.
+- Dropped a dead `-keep class org.drinkless.td.libcore.** { *; }` ProGuard rule — that package never existed in the vendored TDLib (only `org.drinkless.tdlib` does).
+- Cleaned four K2 smart-cast leftovers in `TdVideoPlayer`, `WebmStickerPlayer`, and `PostBody`: Elvis operators on values K2 now proves non-null, and one explicit null-check K2 now proves redundant. No behaviour change — Kotlin 2.0+ improved smart-cast tracking through stored boolean conditions and short-circuit `&&`.
+
 ## [0.4.0] — 2026-05-15
 
 ### Added

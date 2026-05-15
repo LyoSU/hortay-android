@@ -89,7 +89,9 @@ fun WebmStickerPlayer(
     val readyPath = binding.readyPath
     LaunchedEffect(readyPath, fileId, remoteUrl, isRemote) {
         val uri: String = when {
-            isRemote -> remoteUrl ?: return@LaunchedEffect
+            // K2 smart-casts remoteUrl to String via the isRemote val above
+            // (`fileId == null && remoteUrl != null`).
+            isRemote -> remoteUrl
             else -> {
                 val path = readyPath ?: return@LaunchedEffect
                 "file://$path"

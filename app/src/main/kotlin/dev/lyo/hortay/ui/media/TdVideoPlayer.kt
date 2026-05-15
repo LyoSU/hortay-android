@@ -156,7 +156,9 @@ fun TdVideoPlayer(
     // mid-frame instead of restarting from zero.
     LaunchedEffect(mediaState, fileId, isRemote, remoteUrl) {
         val uri: String = if (isRemote) {
-            remoteUrl ?: return@LaunchedEffect
+            // K2 smart-casts remoteUrl to String via the isRemote val above
+            // (`fileId == 0 && remoteUrl != null`).
+            remoteUrl
         } else {
             val ready = mediaState as? MediaState.Ready ?: return@LaunchedEffect
             if (ready.path.isEmpty()) return@LaunchedEffect
