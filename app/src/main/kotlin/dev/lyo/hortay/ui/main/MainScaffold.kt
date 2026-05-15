@@ -457,7 +457,7 @@ fun MainScaffold(graph: AppGraph) {
     val cursorHolder =
         dev.lyo.hortay.ui.timeline.rememberCursorHolder(graph.postsRepository.chatReadCursors)
     val feedOrder by graph.settingsStore.feedOrder.collectAsStateWithLifecycle(
-        initialValue = dev.lyo.hortay.data.FeedOrder.Newest,
+        initialValue = dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst,
     )
     val snapScroll by graph.settingsStore.snapScroll.collectAsStateWithLifecycle(
         initialValue = false,

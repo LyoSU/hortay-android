@@ -174,7 +174,7 @@ private fun SettingsMain(
             // Generic display settings that apply to both TDLib and guest modes —
             // placed at the top so they read as "this is how the feed behaves"
             // before any mode-conditional sections.
-            val currentFeedOrder by settings.feedOrder.collectAsStateWithLifecycle(FeedOrder.Newest)
+            val currentFeedOrder by settings.feedOrder.collectAsStateWithLifecycle(FeedOrder.OldestUnreadFirst)
             val currentSnapScroll by settings.snapScroll.collectAsStateWithLifecycle(false)
             val currentInlineAutoplay by settings.inlineVideoAutoplay.collectAsStateWithLifecycle(true)
             SectionLabel(stringResource(R.string.settings_section_feed))
