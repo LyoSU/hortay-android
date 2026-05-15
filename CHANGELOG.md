@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-15
+
 ### Added
 - Fullscreen photo viewer now supports double-tap-to-zoom (toggles between 1× and 2.5×, pulls the tap point toward viewport centre — Telegram / Instagram idiom). Pinch-zoom and pan get an animatable backing so the zoom transitions ride the same Material Expressive spring as the rest of the app, and pan is clamped to viewport bounds so the image can no longer fly off-screen.
 - Fullscreen media viewer gains a Share button (system `ACTION_SEND` chooser) next to Save / Copy. Routes the file directly to any app that accepts the MIME type via a FileProvider URI — no Save-then-pick round-trip required, fast even for big videos because no copy step is needed.
