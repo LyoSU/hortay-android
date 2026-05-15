@@ -8,11 +8,18 @@
     can grant temporary read access through a ClipData / share intent
     without exposing the rest of the directory tree.
 
-    Only filesDir is exposed — we do not share databaseDirectory, cacheDir
-    or external-files paths through this provider.
+    Only filesDir is exposed — we do not share databaseDirectory or
+    external-files paths through this provider. The Coil disk-cache root
+    (cacheDir/coil) is additionally exposed for guest (web) mode where the
+    photo never reaches filesDir/tdlib-files — Coil holds the bytes there
+    and the viewer's Share / Copy actions mint a URI against the cached
+    file directly.
 -->
 <paths>
     <files-path
         name="tdlib_media"
         path="tdlib-files/" />
+    <cache-path
+        name="coil_cache"
+        path="coil/" />
 </paths>

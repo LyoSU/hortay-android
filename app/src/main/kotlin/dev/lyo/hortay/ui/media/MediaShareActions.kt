@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.annotation.StringRes
 import androidx.core.content.FileProvider
 import androidx.core.content.getSystemService
+import coil3.SingletonImageLoader
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import java.io.File
@@ -211,6 +212,58 @@ object MediaShareActions {
                 reasonResId = R.string.media_share_error_intent_failed,
                 debugDetail = t.message ?: t.javaClass.simpleName,
             )
+        }
+    }
+
+    /**
+     * Guest-mode fallback: send the source CDN URL as `text/plain`. Used by
+     * the viewer's Share button when neither TDLib nor Coil has a local copy
+     * of the bytes — most commonly for web-mode videos (Coil is image-only,
+     * so the playback file never enters its disk cache). Recipients resolve
+     * the URL back to bytes via their own HTTP stack, or just open the link.
+     */
+    fun shareUrl(context: Context, url: String): Result {
+        if (url.isBlank()) return Result.Failure(R.string.media_share_error_source_missing)
+        return try {
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, url)
+            }
+            if (send.resolveActivity(context.packageManager) == null) {
+                return Result.Failure(R.string.media_share_error_intent_failed)
+            }
+            val chooser = Intent.createChooser(send, null).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooser)
+            Result.Success
+        } catch (t: Throwable) {
+            Log.w(TAG, "shareUrl failed", t)
+            Result.Failure(
+                reasonResId = R.string.media_share_error_intent_failed,
+                debugDetail = t.message ?: t.javaClass.simpleName,
+            )
+        }
+    }
+
+    /**
+     * Resolve [url] in Coil's disk cache → absolute file path on disk, or
+     * null if Coil never loaded or evicted it. Lets the viewer route Save /
+     * Copy / Share through the existing local-file pipeline for guest-mode
+     * photos where TDLib hasn't materialised the bytes into filesDir.
+     *
+     * Snapshot is opened then immediately closed — Coil's disk cache uses
+     * journaled writes (Okio FileSystem snapshots survive past close), so
+     * the returned path remains valid until cache eviction.
+     */
+    fun coilCachePath(context: Context, url: String): String? {
+        if (url.isBlank()) return null
+        val cache = SingletonImageLoader.get(context).diskCache ?: return null
+        val snapshot = cache.openSnapshot(url) ?: return null
+        return try {
+            snapshot.data.toString()
+        } finally {
+            snapshot.close()
         }
     }
 

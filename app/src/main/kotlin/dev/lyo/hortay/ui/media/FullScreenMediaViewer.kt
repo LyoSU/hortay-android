@@ -185,11 +185,25 @@ fun FullScreenMediaViewer(
 
             val activeFileId = activeItem?.viewerFileId(qualityChoices[pagerState.currentPage]?.fileId)
             val activeState by produceMediaState(cache, activeFileId)
-            val readyPath = (activeState as? MediaState.Ready)?.path
+            val tdlibReadyPath = (activeState as? MediaState.Ready)?.path
+            // Guest (web) mode: TDLib hasn't materialised the photo into
+            // filesDir/tdlib-files — but Coil already cached the bytes for
+            // rendering the inline poster / fullscreen variant. Resolve that
+            // path so Save / Copy / Share don't silently disappear for
+            // photos that the user is actively looking at.
+            val webCachePath by produceWebCachePath(activeItem)
+            val readyPath = tdlibReadyPath ?: webCachePath
+            // Last-resort Share target for guest-mode videos: Coil is
+            // image-only so [webCachePath] is null for video / animation,
+            // but ExoPlayer streams them straight from a CDN URL. Hand that
+            // URL to ACTION_SEND text/plain — recipients open the link or
+            // resolve it via their own HTTP stack.
+            val webShareUrl: String? = activeItem?.webShareFallbackUrl()
             val showQuality = activeQualities?.hasOptions == true
-            val persistableItem = activeItem.takeIf { readyPath != null && activeFileId != null }
+            val persistableItem = activeItem.takeIf { readyPath != null }
+            val shareCapable = readyPath != null || !webShareUrl.isNullOrBlank()
 
-            if (showQuality || (persistableItem != null && readyPath != null)) {
+            if (showQuality || persistableItem != null || shareCapable) {
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -206,9 +220,9 @@ fun FullScreenMediaViewer(
                             onPick = { qualityChoices[pagerState.currentPage] = it },
                         )
                     }
+                    val chromeShape = CircleShape
                     if (persistableItem != null && readyPath != null) {
                         val activeItem = persistableItem // smart-cast bridge for lambdas
-                        val chromeShape = CircleShape
                         // Save → every Ready media kind. Toast on success / failure.
                         IconButton(
                             onClick = {
@@ -233,18 +247,28 @@ fun FullScreenMediaViewer(
                         ) {
                             Symbol(name = "download", contentDescription = saveLabel, tint = Color.White)
                         }
-                        // Share → every Ready media kind. Fires ACTION_SEND
-                        // through the system chooser so the user can route the
-                        // file into any app (Telegram, WhatsApp, Photos, Files,
-                        // …) without a Save-then-pick round-trip. Bytes stay
-                        // where TDLib put them — we mint a FileProvider URI
-                        // with read-grant, so no copy step is needed even for
-                        // big videos.
+                    }
+                    if (shareCapable) {
+                        // Share → fires ACTION_SEND through the system chooser
+                        // so the user can route the file into any app (Telegram,
+                        // WhatsApp, Photos, Files, …) without a Save-then-pick
+                        // round-trip. When we have local bytes (TDLib file or
+                        // Coil-cached web photo) we mint a FileProvider URI;
+                        // otherwise (guest-mode video / animation streaming from
+                        // a CDN URL with no local copy) we fall back to sharing
+                        // the URL as text/plain so the recipient still gets
+                        // something meaningful.
                         IconButton(
                             onClick = {
                                 scope.launch {
                                     val res = withContext(Dispatchers.IO) {
-                                        MediaShareActions.shareMedia(actionContext, activeItem, readyPath)
+                                        if (readyPath != null && activeItem != null) {
+                                            MediaShareActions.shareMedia(actionContext, activeItem, readyPath)
+                                        } else if (!webShareUrl.isNullOrBlank()) {
+                                            MediaShareActions.shareUrl(actionContext, webShareUrl)
+                                        } else {
+                                            MediaShareActions.Result.Failure(R.string.media_share_error_source_missing)
+                                        }
                                     }
                                     if (res is MediaShareActions.Result.Failure) {
                                         Toast.makeText(
@@ -263,33 +287,34 @@ fun FullScreenMediaViewer(
                         ) {
                             Symbol(name = "ios_share", contentDescription = shareLabel, tint = Color.White)
                         }
+                    }
+                    if (persistableItem != null && readyPath != null && persistableItem is AlbumItem.Photo) {
+                        val activeItem = persistableItem
                         // Copy → photo only. Nearly no Android app meaningfully
                         // accepts a video clipboard item, and a multi-MB MP4 URI
                         // on the clipboard is a UX trap (paste into WhatsApp =
                         // silent re-upload). Hidden for video / animation pages.
-                        if (activeItem is AlbumItem.Photo) {
-                            IconButton(
-                                onClick = {
-                                    scope.launch {
-                                        val res = withContext(Dispatchers.IO) {
-                                            MediaShareActions.copyToClipboard(actionContext, activeItem, readyPath)
-                                        }
-                                        val toast = when (res) {
-                                            is MediaShareActions.Result.Success -> copiedMsg
-                                            is MediaShareActions.Result.Failure ->
-                                                copyFailedMsg.format(
-                                                    actionContext.resources.getString(res.reasonResId, *res.args.toTypedArray()),
-                                                )
-                                        }
-                                        Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    val res = withContext(Dispatchers.IO) {
+                                        MediaShareActions.copyToClipboard(actionContext, activeItem, readyPath)
                                     }
-                                },
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .background(Color.Black.copy(alpha = 0.45f), chromeShape),
-                            ) {
-                                Symbol(name = "content_copy", contentDescription = copyLabel, tint = Color.White)
-                            }
+                                    val toast = when (res) {
+                                        is MediaShareActions.Result.Success -> copiedMsg
+                                        is MediaShareActions.Result.Failure ->
+                                            copyFailedMsg.format(
+                                                actionContext.resources.getString(res.reasonResId, *res.args.toTypedArray()),
+                                            )
+                                    }
+                                    Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(Color.Black.copy(alpha = 0.45f), chromeShape),
+                        ) {
+                            Symbol(name = "content_copy", contentDescription = copyLabel, tint = Color.White)
                         }
                     }
                 }
@@ -469,6 +494,19 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
                         if (!isPinchOrPan) continue
                         val zoom = event.calculateZoom()
                         val pan = event.calculatePan()
+                        // Only react (and consume) when there's actual movement.
+                        // A still single-finger touch on a zoomed photo would
+                        // otherwise consume the down event and starve the
+                        // double-tap detector — the user would zoom in, tap to
+                        // zoom back out, and the second tap would land in this
+                        // branch first with zoom == 1f / pan == (0, 0). The
+                        // tap-detector pointerInput runs alongside this one
+                        // and recognises double-tap from unconsumed downs, so
+                        // letting stationary events pass through is what lets
+                        // tap-back-to-1× actually fire.
+                        val moved = activePointers >= 2 || zoom != 1f ||
+                            pan.x != 0f || pan.y != 0f
+                        if (!moved) continue
                         val newScale = (scale.value * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
                         scope.launch { scale.snapTo(newScale) }
                         if (newScale > 1f) {
@@ -559,6 +597,51 @@ private fun AlbumItem.posterFileId(): Int? = when (this) {
 private fun produceMediaState(cache: MediaCache, fileId: Int?): State<MediaState> {
     val flow = remember(fileId) { fileId?.let(cache::observe) }
     return flow?.collectAsState() ?: remember { mutableStateOf<MediaState>(MediaState.Idle) }
+}
+
+/**
+ * Guest (web) mode bridge: resolve the active item's remote URL against
+ * Coil's disk cache → local file path. Coil already loaded the bytes for
+ * rendering the inline poster + fullscreen variant, so we can hand the
+ * cached file straight to the Save / Copy / Share pipeline without
+ * re-downloading. Returns null for video / animation kinds (Coil is
+ * image-only) and for cold cache (Coil never loaded the URL, or evicted
+ * it under disk pressure).
+ *
+ * Runs the cache lookup on IO so the open-snapshot read doesn't stall
+ * the frame; viewer chrome appears one frame after the active page
+ * resolves but well before the user can interact with it.
+ */
+@Composable
+private fun produceWebCachePath(item: AlbumItem?): State<String?> {
+    val context = LocalContext.current
+    val lookupUrl = item?.webCacheLookupUrl()
+    return produceState<String?>(initialValue = null, lookupUrl) {
+        value = if (lookupUrl.isNullOrBlank()) null
+        else withContext(Dispatchers.IO) {
+            MediaShareActions.coilCachePath(context, lookupUrl)
+        }
+    }
+}
+
+/** Coil-disk-cache key for the active item, or null when no image URL applies. */
+private fun AlbumItem.webCacheLookupUrl(): String? = when (this) {
+    is AlbumItem.Photo -> fullscreen.remoteUrl ?: media.remoteUrl
+    is AlbumItem.Video -> null
+    is AlbumItem.Animation -> null
+}
+
+/**
+ * URL handed to a text/plain Share when no local file backs the item. For
+ * web-mode video / animation that's the CDN playback URL; for guest-mode
+ * photos that's the same image URL Coil would resolve (but the Coil cache
+ * pipeline is preferred — this fallback is only used when [readyPath] is
+ * null in the chrome block above).
+ */
+private fun AlbumItem.webShareFallbackUrl(): String? = when (this) {
+    is AlbumItem.Photo -> fullscreen.remoteUrl ?: media.remoteUrl
+    is AlbumItem.Video -> remoteVideoUrl ?: media.remoteUrl
+    is AlbumItem.Animation -> remoteVideoUrl ?: media.remoteUrl
 }
 
 private const val MIN_SCALE = 1f
