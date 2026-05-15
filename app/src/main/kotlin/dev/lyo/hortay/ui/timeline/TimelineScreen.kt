@@ -2090,8 +2090,11 @@ internal fun PostContent.playbackFileIds(): List<Int> = buildList {
  * One slot in the rendered feed. A [Single] is the standard one-post-per-row case; a [Thread]
  * is a Threads-style stacked pair where a reply and the post it's replying to are merged
  * into a single LazyColumn slot. `key` powers LazyColumn's [items] keying — different
- * shapes get different prefixes so a post toggling between Single↔Thread doesn't reuse the
- * old slot's saved state (scroll position of an album row, for example).
+ * A threaded row keeps the reply post's key. That is load-bearing for scroll
+ * stability: opening a channel can backfill the parent of an already-rendered
+ * reply, turning `Single(reply)` into `Thread(parent, reply)` under the feed
+ * overlay. LazyColumn must still recognize it as the same row, otherwise Back
+ * from the channel loses the feed anchor and appears to jump to a random post.
  */
 @Immutable
 sealed interface FeedItem {
@@ -2105,7 +2108,7 @@ sealed interface FeedItem {
     @Immutable
     data class Thread(val parent: TimelinePost, val reply: TimelinePost) : FeedItem {
         override val key: String
-            get() = "thread_${parent.chatId}_${parent.id}_${reply.chatId}_${reply.id}"
+            get() = "post_${reply.chatId}_${reply.id}"
     }
 }
 
@@ -2224,4 +2227,3 @@ internal fun formatSubscribers(count: Int): String {
         else -> compact(count / 1_000_000.0, "M")
     }
 }
-

@@ -3,6 +3,7 @@ package dev.lyo.hortay.testutil
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.Reactions
+import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.TimelinePost
 
 /**
@@ -18,6 +19,7 @@ internal fun testPost(
     content: PostContent = PostContent.Text(FormattedText.Empty),
     senderName: String = "C",
     albumMessageIds: List<Long> = emptyList(),
+    reply: ReplyPreview? = null,
     parentId: Long? = null,
 ): TimelinePost = TimelinePost(
     id = id,
@@ -33,7 +35,7 @@ internal fun testPost(
     editDate = 0L,
     forwardOrigin = null,
     authorSignature = null,
-    reply = null,
+    reply = reply,
     reactions = Reactions(0, emptyList()),
     commentCount = null,
     albumMessageIds = albumMessageIds,
