@@ -165,6 +165,17 @@ class MediaAutoDownloader(
                 if (policy.photos) c.webPreview?.image?.fileId?.let { cache.ensure(it, DownloadPriority.Prefetch) }
             }
             is PostContent.PhotoAlbum -> dispatchAlbum(c, policy)
+            is PostContent.PaidMedia -> {
+                // Unlocked PaidMediaPhoto / PaidMediaVideo pieces ship the same
+                // fileIds as a regular album — prefetch them under the same
+                // policy. Locked pieces never reach `items`, so nothing to do.
+                if (c.items.isNotEmpty()) {
+                    dispatchAlbum(
+                        PostContent.PhotoAlbum(items = c.items, caption = c.caption),
+                        policy,
+                    )
+                }
+            }
             is PostContent.Video -> {
                 // Poster (the photo-thumb the feed paints behind the play badge) and
                 // playback file are SEPARATE TDLib fileIds. Gating the poster behind
@@ -204,6 +215,7 @@ class MediaAutoDownloader(
             is PostContent.Checklist,
             is PostContent.ExpiredMedia,
             is PostContent.Service,
+            is PostContent.OpenInSource,
             is PostContent.Unsupported -> Unit
         }
     }

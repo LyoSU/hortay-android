@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- Web link previews now render every `LinkPreviewType*` TDLib ships — articles, photos, videos (with cover preference over auto-extracted thumb), animations, documents, audio (album cover), embedded players (YouTube / SoundCloud), apps, sticker / sticker-set, story / story-album, web-app, gift, theme, chat / user / boost (avatar thumb), and the catch-all "external" group. Variants without an inline image get a kind-keyed icon tile instead of an empty 72.dp box. Large media flag (`showLargeMedia` / `hasLargeMedia`) is honoured: previews render full-width above or below the metadata (Telegram-X style) rather than always-compact. `displayUrl` and `author` are surfaced when distinct from the site name.
+- Telegram Stars paid posts are no longer dropped from the feed when every piece is locked. Unlocked paid media keeps the album layout but stamps a small "⭐ N" chip on the corner; fully locked posts surface a lock card with the star price that taps through to the official Telegram client.
+- Paid (⭐) reactions on channel posts now render as a star pill in the reaction row. Read-only — sending paid reactions still requires the official client's star-amount confirmation flow.
+- Invoice / Giveaway / Game / Story / Telegram Premium gift / Gift posts no longer silently disappear from the feed. They render as a small "open in Telegram" card with a topical icon (gift / invoice / game / visibility) instead of being filtered as Unsupported.
+- Document / Audio / Voice-note / Video-note cards now route a tap to "open in Telegram" — Hortay doesn't host its own download / playback path for those file kinds, but the affordance is no longer dead.
 - Feed mode `OldestUnreadFirst` (Settings → Feed): read on top, unread below, lands at boundary.
 - Snap-scroll mode (Settings → Feed).
 - Per-chat read state with unread strip on card edge.
@@ -36,6 +41,8 @@
   the channel's head post flashed for a moment before the scroll landed.
 
 ### Fixed
+- Action-sheet "Copy" and "Share" excerpts are no longer blank for poll-only / checklist / audio / document posts. Polls expose the question; checklists expose the title plus `[x] / [ ]` task lines; audio exposes title + performer; documents fall back to the filename when no caption was authored.
+- Post-card "Report" action shows a moderation glyph instead of the silent help question-mark fallback. Bundle a dedicated `sym_flag.xml` when convenient — current mapping is `shield`.
 - Reaction chips on the post-detail anchor and on comments now actually toggle; the anchor PostCard tracks the live feed entry so optimistic updates and server `UpdateMessageInteractionInfo` flow into the visible chip.
 - Fresh posts reach `OldestUnreadFirst` feed without restart.
 - Cold-start scroll-pin no longer fires on mid-session arrivals.

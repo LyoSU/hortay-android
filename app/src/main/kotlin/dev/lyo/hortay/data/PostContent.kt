@@ -78,7 +78,11 @@ sealed interface PostContent {
         val thumb: TdMedia?,
         val caption: FormattedText,
     ) : PostContent {
-        override val captionPlain: String get() = caption.text
+        // Prefer the user-authored caption, fall back to filename so the
+        // post-action sheet's Copy / Share excerpt is never empty for files
+        // whose poster didn't write a caption.
+        override val captionPlain: String
+            get() = caption.text.takeUnless { it.isBlank() } ?: fileName
     }
 
     @Immutable
@@ -87,7 +91,17 @@ sealed interface PostContent {
         val title: String,
         val performer: String,
         val durationSec: Int,
-    ) : PostContent
+    ) : PostContent {
+        // Surface track title (and performer when present) to the action sheet
+        // so Copy / Share have something to copy. The card already renders the
+        // same fields above the duration line, so the exposed text matches
+        // what's on screen.
+        override val captionPlain: String
+            get() = listOfNotNull(
+                title.takeUnless { it.isBlank() },
+                performer.takeUnless { it.isBlank() },
+            ).joinToString(" — ")
+    }
 
     @Immutable
     data class VoiceNote(
@@ -127,7 +141,11 @@ sealed interface PostContent {
         val totalVotes: Int,
         val isAnonymous: Boolean,
         val isClosed: Boolean,
-    ) : PostContent
+    ) : PostContent {
+        // The question is the only meaningful text — expose it so Copy / Share
+        // doesn't return blank for a poll-only post.
+        override val captionPlain: String get() = question
+    }
 
     @Immutable
     data class Location(
@@ -171,7 +189,17 @@ sealed interface PostContent {
         val title: FormattedText,
         val tasks: List<ChecklistItem>,
     ) : PostContent {
-        override val captionPlain: String get() = title.text
+        // Title + task lines (with simple "[x]" / "[ ]" markers) so Copy /
+        // Share gives the reader the whole list — not just the heading.
+        override val captionPlain: String
+            get() = buildString {
+                if (title.text.isNotBlank()) append(title.text)
+                tasks.forEach { task ->
+                    if (isNotEmpty()) append('\n')
+                    append(if (task.isDone) "[x] " else "[ ] ")
+                    append(task.text.text)
+                }
+            }
     }
 
     /**
@@ -181,6 +209,64 @@ sealed interface PostContent {
      */
     @Immutable
     data class ExpiredMedia(val kind: ExpiredKind) : PostContent
+
+    /**
+     * Telegram Stars paid media post.
+     *
+     * Two render states are wrapped here so the action sheet, filter, and UI
+     * all see one type:
+     *
+     *   - [items] **non-empty**: the post ships unlocked media (PaidMediaPhoto /
+     *     PaidMediaVideo). Render exactly like a [PhotoAlbum] but stamp the
+     *     "⭐ [starCount]" chip on the corner so the user knows the post is
+     *     paid (otherwise unlocked paid posts read identically to free ones).
+     *   - [items] **empty**: everything is locked behind a [PaidMediaPreview]
+     *     or [PaidMediaUnsupported]. Render a single lock card with the star
+     *     price and route the tap to the original Telegram post (Hortay does
+     *     not host the in-app unlock flow).
+     *
+     * Always carries the original [caption] / [captionAbove] so even locked
+     * posts surface their text body — important for channels that sell
+     * single-paragraph "insight" posts behind a star paywall.
+     */
+    @Immutable
+    data class PaidMedia(
+        val items: List<AlbumItem>,
+        val starCount: Long,
+        val caption: FormattedText,
+        val captionAbove: Boolean = false,
+    ) : PostContent {
+        override val captionPlain: String get() = caption.text
+        val isLocked: Boolean get() = items.isEmpty()
+    }
+
+    /**
+     * Generic "non-actionable in Hortay, tap to open the source" placeholder.
+     *
+     * Used for Telegram features Hortay deliberately doesn't reimplement —
+     * invoices, giveaways, games, story embeds, premium gift codes — but which
+     * are real *content* (not service noise), so the global feed should still
+     * surface them with an explicit affordance instead of silently dropping
+     * them via the [Unsupported] filter. Tap routes to the original post via
+     * [PostInteractions.onOpenClick], same as the file-card rows.
+     *
+     * Carries:
+     *   - [iconSymbol] — `Symbol` registry name for the leading badge.
+     *   - [title]      — short user-facing label (e.g. "Giveaway", "Invoice").
+     *   - [subtitle]   — optional secondary line (product name, game title).
+     */
+    @Immutable
+    data class OpenInSource(
+        val iconSymbol: String,
+        val title: String,
+        val subtitle: String = "",
+    ) : PostContent {
+        override val captionPlain: String
+            get() = listOfNotNull(
+                title.takeUnless { it.isBlank() },
+                subtitle.takeUnless { it.isBlank() },
+            ).joinToString(" — ")
+    }
 
     /**
      * Service / system event we want to surface in some contexts (e.g. discussion threads
@@ -374,14 +460,84 @@ data class TdMedia(
     override fun hashCode(): Int = (fileId ?: 0) * 31 + (remoteUrl?.hashCode() ?: 0)
 }
 
+/**
+ * Web link preview attached to a text message.
+ *
+ * TDLib's [org.drinkless.tdlib.TdApi.LinkPreview] carries far more than the original
+ * mapping ever surfaced — `displayUrl` (the human-friendly host), `author`, and a
+ * handful of render-hint flags that decide whether the preview is rendered as a
+ * compact Twitter-style row or a Telegram-X-style large media card. Everything is
+ * defaulted so existing callsites that only fill the original five fields keep
+ * compiling.
+ *
+ * The [kind] discriminator is what the UI uses to pick a fallback icon when no
+ * thumbnail is available — different link kinds (sticker, story, gift, document)
+ * each get a distinct glyph so the card still reads as more than "untitled link".
+ */
 @Immutable
 data class WebPreview(
     val url: String,
+    /**
+     * Human-readable URL (e.g. `youtube.com/watch?v=…` instead of the encoded
+     * canonical). Blank when TDLib didn't compute one — UI then falls back to
+     * [url] for the small label.
+     */
+    val displayUrl: String = "",
     val siteName: String,
     val title: String,
     val description: String,
+    /** Original author / byline. Distinct from [siteName] (which is the domain). */
+    val author: String = "",
     val image: TdMedia?,
+    val kind: WebPreviewKind = WebPreviewKind.Article,
+    /**
+     * True when the preview must render its media full-width above/below the
+     * card metadata instead of as a leading 72.dp thumbnail. Matches Telegram's
+     * `showLargeMedia` flag, OR'd with `hasLargeMedia` so we render the bigger
+     * variant whenever TDLib reports it's available.
+     */
+    val showLargeMedia: Boolean = false,
+    /** When [showLargeMedia] is true, render the image above the description (not below). */
+    val showMediaAboveDescription: Boolean = false,
+    /**
+     * Hint that the preview should be displayed above the message body. Stored
+     * for future layout work — the current UI always renders the preview below
+     * the text, which is fine for the feed cards (Telegram's own Android client
+     * does the same in compact threads).
+     */
+    val showAboveText: Boolean = false,
 )
+
+/**
+ * Coarse classification of a [WebPreview] kind. Drives the fallback icon when
+ * the preview has no thumbnail, and lets the UI tag chat / story / gift / etc.
+ * cards with a glyph that hints at where the link will land. The enum maps
+ * roughly 1:1 to TDLib's `LinkPreviewType*` subclasses but coalesces niche
+ * variants (chat / direct-messages-chat / video-chat / channel-boost /
+ * supergroup-boost) onto a single icon-bearing kind since they all render
+ * identically in a small preview card.
+ */
+enum class WebPreviewKind {
+    Article,
+    Photo,
+    Video,
+    Animation,
+    Audio,
+    Document,
+    Album,
+    App,
+    Chat,
+    User,
+    Sticker,
+    StickerSet,
+    Story,
+    WebApp,
+    Gift,
+    Invoice,
+    Theme,
+    External,
+    Unsupported,
+}
 
 @Immutable
 data class PollOption(
@@ -455,14 +611,27 @@ enum class ReplyMediaKind { None, Photo, Video, Animation, Document, Audio, Voic
 enum class SenderVerification { Verified, Scam, Fake }
 
 /**
- * Reaction "kind" — Telegram supports two: a unicode emoji (any user) or a custom-emoji
- * sticker (Premium / channel boost). Modeled as a sealed type so the chip renderer can
- * pick a glyph or a sticker, and so the toggle action keeps both paths one-call wide.
+ * Reaction "kind" — Telegram supports three:
+ *   - unicode emoji (any user),
+ *   - custom-emoji sticker (Premium / channel boost),
+ *   - Telegram Stars paid reaction (since 2024: each tap costs the sender ⭐;
+ *     channels with monetisation enabled aggregate the donations).
+ *
+ * Modeled as a sealed type so the chip renderer can pick a glyph, a sticker
+ * or the star pill, and so the toggle action keeps every path one-call wide.
  */
 @Immutable
 sealed interface ReactionKind {
     @Immutable data class Emoji(val text: String) : ReactionKind
     @Immutable data class CustomEmoji(val customEmojiId: Long) : ReactionKind
+    /**
+     * Paid star reaction. Has no payload (the chip count is the star total —
+     * Telegram doesn't split per-sender amounts on the channel side). The
+     * toggle action is currently inert; we never send paid reactions from
+     * this client, but we render incoming counts so channels with monetised
+     * posts don't show empty reaction rows.
+     */
+    @Immutable data object Paid : ReactionKind
 }
 
 /** Stable key for a reaction bucket — used by lazy lists / animations to dedupe across ticks. */
@@ -470,6 +639,7 @@ val ReactionKind.stableKey: String
     get() = when (this) {
         is ReactionKind.Emoji -> "e:$text"
         is ReactionKind.CustomEmoji -> "c:$customEmojiId"
+        is ReactionKind.Paid -> "p"
     }
 
 /** Single reaction bucket: emoji or custom-emoji sticker plus a usage count. */

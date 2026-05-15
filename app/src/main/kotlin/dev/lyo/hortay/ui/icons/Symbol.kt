@@ -81,6 +81,11 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
     // card_giftcard / place / poll were renamed in Material Symbols — map old names
     // to the modern glyph so call sites don't have to chase the rename.
     "card_giftcard" -> R.drawable.sym_redeem
+    // The "report a post" action sheet asks for `flag`. Until a dedicated
+    // `sym_flag.xml` is bundled, route to `shield` — the closest moderation
+    // glyph in the existing pack. The previous silent `sym_help` fallback
+    // landed a question-mark icon on the Report row.
+    "flag" -> R.drawable.sym_shield
     "chat_bubble" -> R.drawable.sym_chat_bubble
     "check_box" -> R.drawable.sym_check_box
     "check_box_outline_blank" -> R.drawable.sym_check_box_outline_blank

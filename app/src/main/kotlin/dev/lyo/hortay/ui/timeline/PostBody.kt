@@ -43,6 +43,7 @@ import dev.lyo.hortay.data.isSecret
 import dev.lyo.hortay.data.isUnplayableVideo
 import androidx.compose.foundation.clickable
 import dev.lyo.hortay.data.WebPreview
+import dev.lyo.hortay.data.WebPreviewKind
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay
@@ -76,6 +77,14 @@ fun PostBody(
      * location…) ignore the translation — they have nothing to translate.
      */
     translation: FormattedText? = null,
+    /**
+     * Tap on a non-playable card (document, audio, voice / video note) — Hortay
+     * doesn't host its own download / playback UI for those file kinds, so a tap
+     * routes the user to the original Telegram post via [PostInteractions.onOpenClick].
+     * Default is a no-op so callers that don't have a post context (preview surfaces,
+     * tests) can still mount [PostBody] without wiring.
+     */
+    onOpenInSource: () -> Unit = {},
 ) {
     val textLimit = if (expanded) Int.MAX_VALUE else 18
     val captionLimit = if (expanded) Int.MAX_VALUE else 12
@@ -94,10 +103,10 @@ fun PostBody(
                 is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick, captionLimit, translation)
                 is PostContent.Video -> VideoBlock(content, onMediaClick, captionLimit, translation)
                 is PostContent.Animation -> AnimationBlock(content, onMediaClick, captionLimit, translation)
-                is PostContent.Document -> DocumentBlock(content, captionLimit, translation)
-                is PostContent.Audio -> AudioBlock(content)
-                is PostContent.VoiceNote -> VoiceNoteBlock(content)
-                is PostContent.VideoNote -> VideoNoteBlock(content)
+                is PostContent.Document -> DocumentBlock(content, captionLimit, translation, onOpenInSource)
+                is PostContent.Audio -> AudioBlock(content, onOpenInSource)
+                is PostContent.VoiceNote -> VoiceNoteBlock(content, onOpenInSource)
+                is PostContent.VideoNote -> VideoNoteBlock(content, onOpenInSource)
                 is PostContent.Sticker -> StickerBlock(content)
                 is PostContent.Poll -> PollBlock(content)
                 is PostContent.Location -> LocationBlock(content)
@@ -107,6 +116,8 @@ fun PostBody(
                 is PostContent.Checklist -> ChecklistBlock(content, captionLimit)
                 is PostContent.ExpiredMedia -> ExpiredMediaBlock(content)
                 is PostContent.Service -> ServiceBlock(content)
+                is PostContent.PaidMedia -> PaidMediaBlock(content, onMediaClick, captionLimit, translation, onOpenInSource)
+                is PostContent.OpenInSource -> OpenInSourceBlock(content, onOpenInSource)
                 is PostContent.Unsupported -> UnsupportedBlock(content)
             }
         }
@@ -640,101 +651,53 @@ private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<A
 }
 
 @Composable
-private fun DocumentBlock(content: PostContent.Document, maxLines: Int, translation: FormattedText?) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconBadge("description")
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = content.fileName.ifBlank { stringResource(R.string.document_unnamed) },
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            val sizeUnits = stringArrayResource(R.array.size_units)
-            Text(
-                text = formatFileSize(content.sizeBytes, sizeUnits),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+private fun DocumentBlock(
+    content: PostContent.Document,
+    maxLines: Int,
+    translation: FormattedText?,
+    onOpenInSource: () -> Unit,
+) {
+    NonPlayableFileRow(
+        symbol = "description",
+        primary = content.fileName.ifBlank { stringResource(R.string.document_unnamed) },
+        secondary = formatFileSize(content.sizeBytes, stringArrayResource(R.array.size_units)),
+        onClick = onOpenInSource,
+    )
     // Documents never carry the caption-above flag (Telegram only exposes that toggle for
     // photo/video/animation/paid-media), so we always render below.
     MediaCaption(translation ?: content.caption, maxLines, above = false, show = true)
 }
 
 @Composable
-private fun AudioBlock(content: PostContent.Audio) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconBadge("audio_file")
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = content.title.ifBlank { "Audio" },
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = listOfNotNull(
-                    content.performer.takeUnless { it.isBlank() },
-                    formatDuration(content.durationSec),
-                ).joinToString(" · "),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+private fun AudioBlock(content: PostContent.Audio, onOpenInSource: () -> Unit) {
+    NonPlayableFileRow(
+        symbol = "audio_file",
+        primary = content.title.ifBlank { stringResource(R.string.content_audio_fallback) },
+        secondary = listOfNotNull(
+            content.performer.takeUnless { it.isBlank() },
+            formatDuration(content.durationSec),
+        ).joinToString(" · "),
+        onClick = onOpenInSource,
+    )
 }
 
 @Composable
-private fun VoiceNoteBlock(content: PostContent.VoiceNote) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconBadge("mic")
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.voice_message),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = formatDuration(content.durationSec),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+private fun VoiceNoteBlock(content: PostContent.VoiceNote, onOpenInSource: () -> Unit) {
+    NonPlayableFileRow(
+        symbol = "mic",
+        primary = stringResource(R.string.voice_message),
+        secondary = formatDuration(content.durationSec),
+        onClick = onOpenInSource,
+        shape = MaterialTheme.shapes.large,
+    )
 }
 
 @Composable
-private fun VideoNoteBlock(content: PostContent.VideoNote) {
+private fun VideoNoteBlock(content: PostContent.VideoNote, onOpenInSource: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenInSource),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -763,6 +726,60 @@ private fun VideoNoteBlock(content: PostContent.VideoNote) {
         Symbol(
             name = "video_camera_front",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * Shared layout for non-playable file cards (document, audio, voice note).
+ *
+ * Hortay doesn't host an in-app download / playback path for these kinds — the
+ * file lives on Telegram's CDN and decoding it here would replicate Telegram's
+ * own player. Instead, the whole row is a `clickable` affordance that routes
+ * the tap to [PostInteractions.onOpenClick], which deep-links into the official
+ * Telegram client. The visual is identical to what was there before; only the
+ * action wiring is new.
+ */
+@Composable
+private fun NonPlayableFileRow(
+    symbol: String,
+    primary: String,
+    secondary: String,
+    onClick: () -> Unit,
+    shape: androidx.compose.ui.graphics.Shape = MaterialTheme.shapes.medium,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconBadge(symbol)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = primary,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (secondary.isNotBlank()) {
+                Text(
+                    text = secondary,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Symbol(
+            name = "open_in_new",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            size = 18.dp,
         )
     }
 }
@@ -907,6 +924,73 @@ private fun DiceBlock(content: PostContent.Dice) {
     }
 }
 
+/**
+ * Card for [PostContent.PaidMedia].
+ *
+ * Two layouts share this block:
+ *
+ *   - **Locked** (no items): render a single "⭐ N stars · Open in Telegram"
+ *     card via [NonPlayableFileRow]. Tap leaves the app to the source post,
+ *     where the user can complete the unlock flow in the official client.
+ *   - **Unlocked** (items present): render the items exactly like a
+ *     [PhotoAlbum] but stamp a small "⭐ N" chip on the top edge so the user
+ *     knows the post is paid (otherwise it reads identically to a free album).
+ *     The caption follows [captionAbove] in either case.
+ */
+@Composable
+private fun PaidMediaBlock(
+    content: PostContent.PaidMedia,
+    onMediaClick: (List<AlbumItem>, Int) -> Unit,
+    maxLines: Int,
+    translation: FormattedText?,
+    onOpenInSource: () -> Unit,
+) {
+    val caption = translation ?: content.caption
+    val starsLabel = stringResource(R.string.content_paid_stars, content.starCount)
+    if (content.isLocked) {
+        NonPlayableFileRow(
+            symbol = "lock",
+            primary = stringResource(R.string.content_paid_locked),
+            secondary = "$starsLabel · ${stringResource(R.string.content_open_in_telegram)}",
+            onClick = onOpenInSource,
+        )
+        MediaCaption(caption, maxLines, above = false, show = true)
+        return
+    }
+    MediaCaption(caption, maxLines, above = true, show = content.captionAbove)
+    Box(modifier = Modifier.fillMaxWidth()) {
+        if (content.items.size == 1) {
+            SingleMedia(content.items.first(), onClick = { onMediaClick(content.items, 0) })
+        } else {
+            AlbumRow(content.items, onItemClick = { idx -> onMediaClick(content.items, idx) })
+        }
+        DurationChip(
+            text = starsLabel,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(12.dp),
+        )
+    }
+    MediaCaption(caption, maxLines, above = false, show = !content.captionAbove)
+}
+
+/**
+ * Card for [PostContent.OpenInSource] — invoice / giveaway / story / game /
+ * gift code. Hortay doesn't reimplement these flows in-app, but they're real
+ * channel posts (not service noise) so we surface a labelled affordance with
+ * an "Open in Telegram" chevron. Tap routes via [onOpenInSource] which lifts
+ * to [PostInteractions.onOpenClick] in PostCard.
+ */
+@Composable
+private fun OpenInSourceBlock(content: PostContent.OpenInSource, onOpenInSource: () -> Unit) {
+    NonPlayableFileRow(
+        symbol = content.iconSymbol,
+        primary = content.title,
+        secondary = content.subtitle.ifBlank { stringResource(R.string.content_open_in_telegram) },
+        onClick = onOpenInSource,
+    )
+}
+
 @Composable
 private fun UnsupportedBlock(content: PostContent.Unsupported) {
     Text(
@@ -916,58 +1000,259 @@ private fun UnsupportedBlock(content: PostContent.Unsupported) {
     )
 }
 
+/**
+ * Web link preview card — Twitter / Telegram-X style.
+ *
+ * Three render modes, picked from the [preview] payload:
+ *
+ *   1. Compact + image — leading 72.dp thumbnail, metadata column on the right.
+ *      Used for plain article links and any preview with `showLargeMedia=false`.
+ *   2. Compact + no image — a 48.dp icon tile keyed off [WebPreviewKind] takes
+ *      the thumbnail slot, so chat / sticker / gift / story / etc. previews
+ *      still read as more than "untitled link" with an empty box.
+ *   3. Large media — image rendered full-width above or below the metadata
+ *      (`showMediaAboveDescription` flips the order). Aspect ratio comes from
+ *      the image payload, clamped to a readable range so extreme verticals
+ *      don't take over the feed.
+ *
+ * Tap anywhere on the card opens [WebPreview.url] in the system handler. No
+ * separate media-open path — link previews are link affordances, not media
+ * affordances, even when they ship a video thumbnail. The user's expectation
+ * is "tap → leave the app to the source", same as Telegram-Android's own
+ * link-preview behaviour.
+ */
 @Composable
 private fun WebPreviewCard(preview: WebPreview) {
     val uriHandler = LocalUriHandler.current
+    val onClick = {
+        if (preview.url.isNotBlank()) runCatching { uriHandler.openUri(preview.url) }
+        Unit
+    }
+    val showLarge = preview.image != null && preview.showLargeMedia
+    if (showLarge) {
+        LargeWebPreview(preview, onClick = onClick)
+    } else {
+        CompactWebPreview(preview, onClick = onClick)
+    }
+}
+
+@Composable
+private fun CompactWebPreview(preview: WebPreview, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(enabled = preview.url.isNotBlank()) {
-                runCatching { uriHandler.openUri(preview.url) }
-            }
+            .clickable(enabled = preview.url.isNotBlank(), onClick = onClick)
             .padding(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        preview.image?.let {
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(MaterialTheme.shapes.small),
-            ) {
-                TdMediaImage(media = it, contentDescription = null, modifier = Modifier.fillMaxSize())
-            }
-            Spacer(Modifier.width(12.dp))
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            if (preview.siteName.isNotBlank()) {
-                Text(
-                    text = preview.siteName,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            if (preview.title.isNotBlank()) {
-                Text(
-                    text = preview.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (preview.description.isNotBlank()) {
-                Text(
-                    text = preview.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+        WebPreviewLeading(preview)
+        Spacer(Modifier.width(12.dp))
+        WebPreviewMetadata(preview, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun LargeWebPreview(preview: WebPreview, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(enabled = preview.url.isNotBlank(), onClick = onClick)
+            .padding(12.dp),
+    ) {
+        val media = @Composable { LargeWebPreviewMedia(preview) }
+        val meta = @Composable { WebPreviewMetadata(preview, modifier = Modifier.fillMaxWidth()) }
+        if (preview.showMediaAboveDescription) {
+            media()
+            Spacer(Modifier.height(10.dp))
+            meta()
+        } else {
+            meta()
+            Spacer(Modifier.height(10.dp))
+            media()
         }
     }
+}
+
+@Composable
+private fun LargeWebPreviewMedia(preview: WebPreview) {
+    val image = preview.image
+    if (image == null) {
+        // Defensive: showLargeMedia=true but no image — fall back to icon
+        // tile sized like the large slot so layout doesn't collapse.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(MaterialTheme.shapes.small)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            WebPreviewIcon(preview.kind, size = 48.dp, onContainer = true)
+        }
+        return
+    }
+    val ratio = webPreviewLargeAspect(image.width, image.height)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(ratio)
+            .clip(MaterialTheme.shapes.small),
+    ) {
+        TdMediaImage(
+            media = image,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+        )
+        // Kind-specific badge (play badge for video / animation) so the user
+        // knows what tap will open.
+        WebPreviewKindBadge(preview.kind)
+    }
+}
+
+@Composable
+private fun WebPreviewLeading(preview: WebPreview) {
+    val image = preview.image
+    if (image != null) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(MaterialTheme.shapes.small),
+        ) {
+            TdMediaImage(
+                media = image,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    } else {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(MaterialTheme.shapes.small)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            WebPreviewIcon(preview.kind, size = 22.dp, onContainer = true)
+        }
+    }
+}
+
+@Composable
+private fun WebPreviewMetadata(preview: WebPreview, modifier: Modifier = Modifier) {
+    val label = preview.siteName.ifBlank { preview.displayUrl }.ifBlank { preview.url }
+    Column(modifier = modifier) {
+        if (label.isNotBlank()) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (preview.title.isNotBlank()) {
+            Text(
+                text = preview.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (preview.description.isNotBlank()) {
+            Text(
+                text = preview.description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        // Author rendered as a tertiary label only when it carries new info
+        // (i.e., distinct from siteName) — Telegram occasionally ships
+        // `author == siteName` for blog posts and rendering both would
+        // visually duplicate the host line.
+        if (preview.author.isNotBlank() && !preview.author.equals(preview.siteName, ignoreCase = true)) {
+            Text(
+                text = preview.author,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WebPreviewIcon(kind: WebPreviewKind, size: Dp = 22.dp, onContainer: Boolean = false) {
+    Symbol(
+        name = webPreviewSymbol(kind),
+        tint = if (onContainer) MaterialTheme.colorScheme.onPrimaryContainer
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        size = size,
+    )
+}
+
+@Composable
+private fun BoxScope.WebPreviewKindBadge(kind: WebPreviewKind) {
+    when (kind) {
+        WebPreviewKind.Video, WebPreviewKind.Animation -> Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.55f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Symbol(name = "play_circle", tint = Color.White, size = 36.dp)
+        }
+        else -> Unit
+    }
+}
+
+/**
+ * Map a [WebPreviewKind] to a [Symbol] name that already exists in the icon
+ * registry. Falls back to `info` for unsupported kinds — `info` is mapped in
+ * [dev.lyo.hortay.ui.icons.Symbol], so we avoid the silent `sym_help`
+ * fallback that would otherwise mark every unknown preview with a question
+ * mark.
+ */
+private fun webPreviewSymbol(kind: WebPreviewKind): String = when (kind) {
+    WebPreviewKind.Article -> "open_in_new"
+    WebPreviewKind.Photo -> "image"
+    WebPreviewKind.Video -> "play_circle"
+    WebPreviewKind.Animation -> "gif_box"
+    WebPreviewKind.Audio -> "audio_file"
+    WebPreviewKind.Document -> "description"
+    WebPreviewKind.Album -> "image"
+    WebPreviewKind.App -> "open_in_new"
+    WebPreviewKind.Chat -> "forum"
+    WebPreviewKind.User -> "person"
+    WebPreviewKind.Sticker, WebPreviewKind.StickerSet -> "image"
+    WebPreviewKind.Story -> "visibility"
+    WebPreviewKind.WebApp -> "open_in_new"
+    WebPreviewKind.Gift -> "card_giftcard"
+    WebPreviewKind.Invoice -> "description"
+    WebPreviewKind.Theme -> "image"
+    WebPreviewKind.External -> "open_in_new"
+    WebPreviewKind.Unsupported -> "info"
+}
+
+/**
+ * Clamp the large-media aspect ratio. Below `4/3` and above `21/9` the card
+ * starts to dominate the feed (extreme verticals push the next post out of
+ * sight, extreme horizontals leave the metadata orphaned in a thin strip).
+ * Default `16/10` when TDLib didn't ship dimensions.
+ */
+private fun webPreviewLargeAspect(width: Int, height: Int): Float {
+    if (width <= 0 || height <= 0) return 16f / 10f
+    val raw = width.toFloat() / height.toFloat()
+    return raw.coerceIn(4f / 3f, 21f / 9f)
 }
 
 @Composable

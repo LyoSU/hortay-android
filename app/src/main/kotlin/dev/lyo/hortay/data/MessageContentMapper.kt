@@ -205,22 +205,52 @@ internal object MessageContentMapper {
         is TdApi.MessageChatSetBackground,
         is TdApi.MessageChatSetMessageAutoDeleteTime -> PostContent.Service(ServiceEvent.Other)
 
-        is TdApi.MessageInvoice -> PostContent.Unsupported("Invoice: ${content.productInfo?.title.orEmpty()}")
-        is TdApi.MessageGiveaway -> PostContent.Unsupported("🎁 Giveaway")
-        is TdApi.MessageGiveawayCompleted -> PostContent.Unsupported(res.getString(R.string.content_giveaway_completed))
-        is TdApi.MessageGiveawayWinners -> PostContent.Unsupported(res.getString(R.string.content_giveaway_winners))
-        is TdApi.MessageGame -> PostContent.Unsupported("🎮 Game: ${content.game?.title.orEmpty()}")
-        is TdApi.MessageStory -> PostContent.Unsupported("📰 Story")
+        is TdApi.MessageInvoice -> PostContent.OpenInSource(
+            iconSymbol = "description",
+            title = res.getString(R.string.content_invoice),
+            subtitle = content.productInfo?.title.orEmpty(),
+        )
+        is TdApi.MessageGiveaway -> PostContent.OpenInSource(
+            iconSymbol = "card_giftcard",
+            title = res.getString(R.string.content_giveaway),
+        )
+        is TdApi.MessageGiveawayCompleted -> PostContent.OpenInSource(
+            iconSymbol = "card_giftcard",
+            title = res.getString(R.string.content_giveaway_completed),
+        )
+        is TdApi.MessageGiveawayWinners -> PostContent.OpenInSource(
+            iconSymbol = "card_giftcard",
+            title = res.getString(R.string.content_giveaway_winners),
+        )
+        is TdApi.MessageGame -> PostContent.OpenInSource(
+            iconSymbol = "info",
+            title = res.getString(R.string.content_game),
+            subtitle = content.game?.title.orEmpty(),
+        )
+        is TdApi.MessageStory -> PostContent.OpenInSource(
+            iconSymbol = "visibility",
+            title = res.getString(R.string.content_story),
+        )
+        is TdApi.MessagePremiumGiftCode -> PostContent.OpenInSource(
+            iconSymbol = "card_giftcard",
+            title = res.getString(R.string.content_premium_gift),
+        )
+        is TdApi.MessageGift -> PostContent.OpenInSource(
+            iconSymbol = "card_giftcard",
+            title = res.getString(R.string.content_gift),
+        )
         is TdApi.MessagePaidMedia -> mapPaidMedia(content, res)
         else -> PostContent.Unsupported(content::class.java.simpleName)
     }
 
     /**
-     * Paid posts can mix photos and videos under the same star-cost lock. We unwrap into the
-     * generic [PostContent.PhotoAlbum] so the existing album renderer handles both — videos
-     * surface with their thumbnail and a play badge, identical to a free album. The "⭐"
-     * intent is captured by the price, but we don't render a star bar yet (would need an
-     * unlock interaction we don't support); the post still reads as media.
+     * Paid posts can mix unlocked photos/videos with locked [TdApi.PaidMediaPreview]
+     * placeholders. We surface this as [PostContent.PaidMedia] regardless: the model
+     * carries the starCount so the UI can stamp a "⭐ N" chip on unlocked posts and
+     * render a lock card with the price when everything is gated. Previously we
+     * either dropped the starCount (rendering paid posts as free albums) or, when
+     * every media piece was locked, downgraded to [Unsupported] — which the feed
+     * filter then deleted, silently hiding the post from the user.
      */
     private fun mapPaidMedia(content: TdApi.MessagePaidMedia, res: StringResolver): PostContent {
         val items = content.media.orEmpty().mapNotNull { piece ->
@@ -243,12 +273,19 @@ internal object MessageContentMapper {
                         qualities = qualities,
                     )
                 }
+                // Locked PaidMediaPreview / PaidMediaUnsupported pieces don't ship
+                // an AlbumItem we can render. They still count toward "the post is
+                // paid and at least partially locked" — the wrapper's starCount
+                // surfaces that. Reaching the UI as null entries just trims the
+                // unlocked album.
                 else -> null
             }
         }
-        return if (items.isEmpty()) PostContent.Unsupported(res.getString(R.string.content_paid))
-        else PostContent.PhotoAlbum(
+        @Suppress("UNUSED_PARAMETER")
+        res // Reserved for future localised lock labels; intentionally untouched.
+        return PostContent.PaidMedia(
             items = items,
+            starCount = content.starCount,
             caption = mapFormattedText(content.caption),
             captionAbove = content.showCaptionAboveMedia,
         )
@@ -270,9 +307,10 @@ internal object MessageContentMapper {
     fun mapReactions(reactions: TdApi.MessageReactions?): Reactions {
         val list = reactions?.reactions.orEmpty()
         if (list.isEmpty()) return Reactions(0, emptyList())
-        // Keep order TDLib gave us — it ranks by frequency. Both reaction kinds are
-        // mapped: unicode emoji renders as a glyph chip, custom-emoji renders the sticker
-        // resolved through CustomEmojiRepository. Buckets with unknown reaction types
+        // Keep order TDLib gave us — it ranks by frequency. All three reaction kinds
+        // are mapped: unicode emoji renders as a glyph chip, custom-emoji renders the
+        // sticker resolved through CustomEmojiRepository, and Telegram Stars paid
+        // reactions render as a star pill. Buckets with unknown reaction types
         // (forward-compat) are dropped so the total stays consistent with what's drawn.
         val items = list.mapNotNull { r ->
             val kind = when (val t = r.type) {
@@ -285,6 +323,7 @@ internal object MessageContentMapper {
                     if (t.customEmojiId == 0L) return@mapNotNull null
                     ReactionKind.CustomEmoji(t.customEmojiId)
                 }
+                is TdApi.ReactionTypePaid -> ReactionKind.Paid
                 else -> return@mapNotNull null
             }
             ReactionItem(kind, r.totalCount, r.isChosen)
@@ -313,24 +352,159 @@ internal object MessageContentMapper {
         else -> null
     }
 
+    /**
+     * Map [TdApi.LinkPreview] to UI-facing [WebPreview]. Exhaustive over the
+     * 38 `LinkPreviewType*` subclasses TDLib currently ships — every variant
+     * yields a [WebPreviewKind] (so the UI can pick a fallback icon when no
+     * photo is attached) and, where the payload carries one, a thumbnail in
+     * the preview tier (≈`m`, 320 px).
+     *
+     * Link-preview thumbs render in a small leading box (compact mode) or a
+     * full-width media card (large mode, gated on [WebPreview.showLargeMedia])
+     * and never open into a zoomable viewer — the tap opens the URL. Preview
+     * tier is sized accordingly: it covers the rendered size at any phone
+     * density without burning the bytes / decode CPU of the inline / `w`
+     * variants.
+     */
     private fun mapWebPreview(p: TdApi.LinkPreview): WebPreview = WebPreview(
         url = p.url.orEmpty(),
+        displayUrl = p.displayUrl.orEmpty(),
         siteName = p.siteName.orEmpty(),
         title = p.title.orEmpty(),
         description = p.description?.text.orEmpty(),
-        image = p.type?.let { type ->
-            // Link-preview thumbs render in a 64-96 dp box and never open into a
-            // zoomable viewer — the tap opens the URL. Preview tier (≈`m`,
-            // 320 px) covers the rendered size at any phone density without
-            // burning the bytes / decode CPU of the inline / `w` variants.
-            when (type) {
-                is TdApi.LinkPreviewTypeArticle -> type.photo?.toMedia(PHOTO_TARGET_PREVIEW_PX)
-                is TdApi.LinkPreviewTypePhoto -> type.photo.toMedia(PHOTO_TARGET_PREVIEW_PX)
-                is TdApi.LinkPreviewTypeVideo -> type.video?.thumbnail?.toMedia()
-                else -> null
-            }
-        },
+        author = p.author.orEmpty(),
+        image = mapWebPreviewImage(p.type),
+        kind = mapWebPreviewKind(p.type),
+        // hasLargeMedia means "a larger variant exists", showLargeMedia means
+        // "TDLib's renderer would actually pick it". The OR makes our card
+        // marginally more generous than vanilla Telegram — when a server says
+        // the large variant exists at all, we show it; the alternative
+        // ("the small thumb plus tiny description column") rarely reads well
+        // for video / animation / album previews.
+        showLargeMedia = p.showLargeMedia || p.hasLargeMedia,
+        showMediaAboveDescription = p.showMediaAboveDescription,
+        showAboveText = p.showAboveText,
     )
+
+    /**
+     * Pick a [WebPreviewKind] for the preview's TDLib type. Visible to tests
+     * as `internal` so [dev.lyo.hortay.data.MessageContentMapperWebPreviewTest]
+     * can guard the mapping without spinning up a full [TdApi.LinkPreview] for
+     * every kind.
+     */
+    internal fun mapWebPreviewKind(type: TdApi.LinkPreviewType?): WebPreviewKind = when (type) {
+        null -> WebPreviewKind.Article
+        is TdApi.LinkPreviewTypeArticle,
+        is TdApi.LinkPreviewTypeMessage -> WebPreviewKind.Article
+        is TdApi.LinkPreviewTypePhoto -> WebPreviewKind.Photo
+        is TdApi.LinkPreviewTypeVideo,
+        is TdApi.LinkPreviewTypeVideoNote,
+        is TdApi.LinkPreviewTypeEmbeddedVideoPlayer -> WebPreviewKind.Video
+        is TdApi.LinkPreviewTypeAnimation,
+        is TdApi.LinkPreviewTypeEmbeddedAnimationPlayer -> WebPreviewKind.Animation
+        is TdApi.LinkPreviewTypeAudio,
+        is TdApi.LinkPreviewTypeVoiceNote,
+        is TdApi.LinkPreviewTypeEmbeddedAudioPlayer -> WebPreviewKind.Audio
+        is TdApi.LinkPreviewTypeDocument,
+        is TdApi.LinkPreviewTypeBackground -> WebPreviewKind.Document
+        is TdApi.LinkPreviewTypeAlbum -> WebPreviewKind.Album
+        is TdApi.LinkPreviewTypeApp -> WebPreviewKind.App
+        is TdApi.LinkPreviewTypeChat,
+        is TdApi.LinkPreviewTypeDirectMessagesChat,
+        is TdApi.LinkPreviewTypeVideoChat,
+        is TdApi.LinkPreviewTypeChannelBoost,
+        is TdApi.LinkPreviewTypeSupergroupBoost,
+        is TdApi.LinkPreviewTypeGroupCall,
+        is TdApi.LinkPreviewTypeShareableChatFolder -> WebPreviewKind.Chat
+        is TdApi.LinkPreviewTypeUser -> WebPreviewKind.User
+        is TdApi.LinkPreviewTypeSticker -> WebPreviewKind.Sticker
+        is TdApi.LinkPreviewTypeStickerSet -> WebPreviewKind.StickerSet
+        is TdApi.LinkPreviewTypeStory,
+        is TdApi.LinkPreviewTypeStoryAlbum,
+        is TdApi.LinkPreviewTypeLiveStory -> WebPreviewKind.Story
+        is TdApi.LinkPreviewTypeWebApp,
+        is TdApi.LinkPreviewTypeRequestManagedBot -> WebPreviewKind.WebApp
+        is TdApi.LinkPreviewTypeGiftAuction,
+        is TdApi.LinkPreviewTypeGiftCollection,
+        is TdApi.LinkPreviewTypeUpgradedGift,
+        is TdApi.LinkPreviewTypePremiumGiftCode -> WebPreviewKind.Gift
+        is TdApi.LinkPreviewTypeInvoice -> WebPreviewKind.Invoice
+        is TdApi.LinkPreviewTypeTheme -> WebPreviewKind.Theme
+        is TdApi.LinkPreviewTypeExternalAudio,
+        is TdApi.LinkPreviewTypeExternalVideo -> WebPreviewKind.External
+        is TdApi.LinkPreviewTypeUnsupported -> WebPreviewKind.Unsupported
+        else -> WebPreviewKind.Unsupported
+    }
+
+    /**
+     * Pick a thumbnail [TdMedia] for the preview. Returns null when the type
+     * carries no image payload (giveaway, invoice, group-call, etc.) — UI then
+     * renders an icon-only tile based on [WebPreviewKind].
+     */
+    internal fun mapWebPreviewImage(type: TdApi.LinkPreviewType?): TdMedia? = when (type) {
+        null -> null
+        is TdApi.LinkPreviewTypeArticle -> type.photo?.toMedia(PHOTO_TARGET_PREVIEW_PX)
+        is TdApi.LinkPreviewTypePhoto -> type.photo.toMedia(PHOTO_TARGET_PREVIEW_PX)
+        is TdApi.LinkPreviewTypeVideo ->
+            type.cover?.toMedia(PHOTO_TARGET_PREVIEW_PX) ?: type.video?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeAnimation -> type.animation?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeApp -> type.photo?.toMedia(PHOTO_TARGET_PREVIEW_PX)
+        is TdApi.LinkPreviewTypeAudio -> type.audio?.albumCoverThumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeDocument -> type.document?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeEmbeddedAnimationPlayer ->
+            type.thumbnail?.toMedia(PHOTO_TARGET_PREVIEW_PX)
+                ?: type.animation?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeEmbeddedAudioPlayer ->
+            type.thumbnail?.toMedia(PHOTO_TARGET_PREVIEW_PX)
+                ?: type.audio?.albumCoverThumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeEmbeddedVideoPlayer ->
+            type.thumbnail?.toMedia(PHOTO_TARGET_PREVIEW_PX)
+                ?: type.video?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeBackground -> type.document?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeChannelBoost -> type.photo?.toMedia()
+        is TdApi.LinkPreviewTypeSupergroupBoost -> type.photo?.toMedia()
+        is TdApi.LinkPreviewTypeChat -> type.photo?.toMedia()
+        is TdApi.LinkPreviewTypeDirectMessagesChat -> type.photo?.toMedia()
+        is TdApi.LinkPreviewTypeUser -> type.photo?.toMedia()
+        is TdApi.LinkPreviewTypeVideoChat -> type.photo?.toMedia()
+        is TdApi.LinkPreviewTypeSticker -> type.sticker?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeStickerSet -> type.stickers?.firstOrNull()?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeStoryAlbum ->
+            type.photoIcon?.toMedia(PHOTO_TARGET_PREVIEW_PX)
+                ?: type.videoIcon?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeWebApp -> type.photo?.toMedia(PHOTO_TARGET_PREVIEW_PX)
+        is TdApi.LinkPreviewTypeTheme -> type.documents?.firstOrNull()?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeAlbum -> firstAlbumMediaThumb(type.media)
+        is TdApi.LinkPreviewTypeGiftAuction -> type.gift?.sticker?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeGiftCollection ->
+            type.icons?.firstOrNull()?.thumbnail?.toMedia()
+        is TdApi.LinkPreviewTypeUpgradedGift -> null
+        // Variants without any inline image payload — UI falls back to an
+        // icon tile derived from the kind.
+        is TdApi.LinkPreviewTypeExternalAudio,
+        is TdApi.LinkPreviewTypeExternalVideo,
+        is TdApi.LinkPreviewTypeGroupCall,
+        is TdApi.LinkPreviewTypeInvoice,
+        is TdApi.LinkPreviewTypeLiveStory,
+        is TdApi.LinkPreviewTypeMessage,
+        is TdApi.LinkPreviewTypePremiumGiftCode,
+        is TdApi.LinkPreviewTypeRequestManagedBot,
+        is TdApi.LinkPreviewTypeShareableChatFolder,
+        is TdApi.LinkPreviewTypeStory,
+        is TdApi.LinkPreviewTypeVideoNote,
+        is TdApi.LinkPreviewTypeVoiceNote,
+        is TdApi.LinkPreviewTypeUnsupported -> null
+        else -> null
+    }
+
+    private fun firstAlbumMediaThumb(media: Array<TdApi.LinkPreviewAlbumMedia>?): TdMedia? {
+        val first = media?.firstOrNull() ?: return null
+        return when (first) {
+            is TdApi.LinkPreviewAlbumMediaPhoto -> first.photo?.toMedia(PHOTO_TARGET_PREVIEW_PX)
+            is TdApi.LinkPreviewAlbumMediaVideo -> first.video?.thumbnail?.toMedia()
+            else -> null
+        }
+    }
 
     private fun mapStickerFormat(format: TdApi.StickerFormat?): StickerFormat = when (format) {
         is TdApi.StickerFormatTgs -> StickerFormat.Tgs
@@ -440,6 +614,46 @@ internal fun TdApi.Thumbnail.toMedia(): TdMedia = TdMedia(
     height = height,
     minithumbBytes = null,
 )
+
+/**
+ * Map a [TdApi.ChatPhoto] (the full payload TDLib delivers for a user/channel
+ * profile photo) to a [TdMedia]. Used by [WebPreview] mapping for chat / user
+ * / boost / video-chat link kinds — where the link's "thumbnail" is actually
+ * the target chat's avatar.
+ *
+ * ChatPhoto carries the same `sizes: PhotoSize[]` pyramid as the regular
+ * [TdApi.Photo], so the same nearest-target picker applies. The default
+ * target ([PHOTO_TARGET_PREVIEW_PX]) lines up with what the preview card
+ * paints in the 64-96 dp leading slot — full-screen avatar viewing isn't
+ * something link previews ever do.
+ */
+internal fun TdApi.ChatPhoto.toMedia(targetMaxSidePx: Int = PHOTO_TARGET_PREVIEW_PX): TdMedia {
+    val list = sizes
+    val pick = list?.let { array ->
+        if (array.isEmpty()) return@let null
+        var best: TdApi.PhotoSize? = null
+        var largest: TdApi.PhotoSize = array[0]
+        for (s in array) {
+            val side = maxOf(s.width, s.height)
+            if (side >= targetMaxSidePx) {
+                val curBest = best
+                if (curBest == null || maxOf(s.width, s.height) < maxOf(curBest.width, curBest.height)) {
+                    best = s
+                }
+            }
+            if (maxOf(s.width, s.height) > maxOf(largest.width, largest.height)) {
+                largest = s
+            }
+        }
+        best ?: largest
+    }
+    return TdMedia(
+        fileId = pick?.photo?.id,
+        width = pick?.width ?: 0,
+        height = pick?.height ?: 0,
+        minithumbBytes = minithumbnail?.data,
+    )
+}
 
 /**
  * Synthesise a [VideoQualities] tree for a [TdApi.MessageVideo]. Original is the

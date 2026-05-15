@@ -12,6 +12,7 @@ import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.VideoQualities
 import dev.lyo.hortay.data.VideoQuality
 import dev.lyo.hortay.data.WebPreview as TdWebPreview
+import dev.lyo.hortay.data.WebPreviewKind
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
@@ -491,9 +492,14 @@ object WebPostAdapter {
 
     private fun tdWebPreviewFrom(p: WebPreview): TdWebPreview = TdWebPreview(
         url = p.url,
+        // Guest mode has no separate "display" URL — t.me/s/ ships a single
+        // anchor href. Reuse [url] so the UI's small-label fallback path is
+        // exercised identically to TDLib mode.
+        displayUrl = p.url,
         siteName = p.siteName.orEmpty(),
         title = p.title.orEmpty(),
         description = p.description.orEmpty(),
+        author = "",
         // The previous implementation dropped `it` (the parsed URL) and returned
         // a TdMedia with no fileId AND no remoteUrl — Coil had nothing to fetch
         // and `WebPreviewCard` rendered an empty 72dp box where the thumbnail
@@ -502,6 +508,14 @@ object WebPostAdapter {
         image = p.imageUrl?.let { url ->
             TdMedia(fileId = null, width = 0, height = 0, remoteUrl = url)
         },
+        // Guest parser has no kind discriminator on the link — t.me/s/ just
+        // ships title + description + optional og:image, so every preview
+        // gets the generic Article treatment. UI falls through to the
+        // image-or-icon fallback the same way TDLib article cards do.
+        kind = WebPreviewKind.Article,
+        showLargeMedia = false,
+        showMediaAboveDescription = false,
+        showAboveText = false,
     )
 
     private fun WebReaction.toReactionItem(): ReactionItem {

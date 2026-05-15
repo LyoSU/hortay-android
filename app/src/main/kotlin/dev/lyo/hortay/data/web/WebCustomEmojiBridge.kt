@@ -133,6 +133,7 @@ class WebCustomEmojiBridge(
                 is PostContent.Video -> c.caption.spans
                 is PostContent.Animation -> c.caption.spans
                 is PostContent.Document -> c.caption.spans
+                is PostContent.PaidMedia -> c.caption.spans
                 else -> emptyList()
             }
             for (span in captionSpans) {

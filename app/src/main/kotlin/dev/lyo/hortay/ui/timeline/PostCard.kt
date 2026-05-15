@@ -228,6 +228,7 @@ fun PostCard(
                     onMediaClick = { _, idx -> interactions.onMediaClick(post, idx) },
                     expanded = expanded,
                     translation = translation,
+                    onOpenInSource = { interactions.onOpenClick(post) },
                 )
 
                 if (post.views > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty()) {
@@ -684,7 +685,13 @@ private fun ActionRow(
             }
             reactions.items.forEachIndexed { idx, item ->
                 if (idx > 0) Spacer(Modifier.width(6.dp))
-                ReactionChip(item, onClick = { onReactionTap(item) })
+                // Paid (⭐) reactions are read-only in this client — sending one
+                // requires a star-amount confirmation flow we don't host. Render
+                // the count without a click handler so the chip stays informational.
+                val tapHandler: (() -> Unit)? =
+                    if (item.kind is ReactionKind.Paid) null
+                    else ({ onReactionTap(item) })
+                ReactionChip(item, onClick = tapHandler)
             }
         }
     }
@@ -775,6 +782,12 @@ internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
                 modifier = Modifier.size(20.dp),
                 tintColor = tintForCustom,
                 contentDescription = null,
+            )
+            // Paid star reaction — Telegram renders a small ⭐ pill, no count
+            // separator needed because the count is already the star total.
+            is ReactionKind.Paid -> Text(
+                text = "⭐",
+                style = MaterialTheme.typography.titleMedium,
             )
         }
         Spacer(Modifier.width(6.dp))

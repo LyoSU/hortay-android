@@ -71,6 +71,13 @@ class ChannelActionsRepository(
     private fun ReactionKind.toTd(): TdApi.ReactionType = when (this) {
         is ReactionKind.Emoji -> TdApi.ReactionTypeEmoji(text)
         is ReactionKind.CustomEmoji -> TdApi.ReactionTypeCustomEmoji(customEmojiId)
+        // Paid reactions require AddPendingPaidMessageReaction (a flow with
+        // star-amount confirmation), not AddMessageReaction. We render incoming
+        // paid counts but never send our own — passing the same constructor
+        // would crash on the server. The toggle call upstream is already
+        // gated, so reaching this branch in production would be a bug;
+        // surface it as an IllegalStateException for the crash reporter.
+        is ReactionKind.Paid -> error("Paid reactions are read-only in this client")
     }
 
     /**

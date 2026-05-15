@@ -260,6 +260,16 @@
     <!-- Post body content -->
     <string name="document_unnamed">Документ</string>
     <string name="voice_message">Голосове повідомлення</string>
+    <string name="content_audio_fallback">Аудіо</string>
+    <string name="content_invoice">Інвойс</string>
+    <string name="content_giveaway">Розіграш</string>
+    <string name="content_game">Гра</string>
+    <string name="content_story">Сторіс</string>
+    <string name="content_premium_gift">Подарунок Telegram Premium</string>
+    <string name="content_gift">Подарунок</string>
+    <string name="content_paid_locked">Платний контент</string>
+    <string name="content_paid_stars">%1$d ⭐</string>
+    <string name="content_open_in_telegram">Відкрити в Telegram</string>
     <string name="poll_anonymous">Анонімне опитування</string>
     <string name="poll_title">Опитування</string>
     <string name="poll_total_votes">%1$d голосів</string>

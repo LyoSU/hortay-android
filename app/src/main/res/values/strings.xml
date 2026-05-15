@@ -248,6 +248,16 @@
     <!-- Post body content -->
     <string name="document_unnamed">Document</string>
     <string name="voice_message">Voice message</string>
+    <string name="content_audio_fallback">Audio track</string>
+    <string name="content_invoice">Invoice</string>
+    <string name="content_giveaway">Giveaway</string>
+    <string name="content_game">Game</string>
+    <string name="content_story">Story</string>
+    <string name="content_premium_gift">Telegram Premium gift</string>
+    <string name="content_gift">Gift</string>
+    <string name="content_paid_locked">Locked paid media</string>
+    <string name="content_paid_stars">%1$d stars</string>
+    <string name="content_open_in_telegram">Open in Telegram</string>
     <string name="poll_anonymous">Anonymous poll</string>
     <string name="poll_title">Poll</string>
     <string name="poll_total_votes">%1$d votes</string>
