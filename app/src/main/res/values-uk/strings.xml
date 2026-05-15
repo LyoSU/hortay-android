@@ -475,12 +475,14 @@
     <string name="action_search">Пошук</string>
     <string name="action_save_to_gallery">Зберегти в галерею</string>
     <string name="action_copy_image">Копіювати зображення</string>
-    <!-- Тост, що з\'являється після збереження / копіювання в повноекранному перегляді. -->
+    <string name="action_share_media">Поділитися</string>
+    <!-- Тост, що з\'являється після збереження / копіювання / поширення в повноекранному перегляді. -->
     <string name="media_saved_photo">Фото збережено в галерею</string>
     <string name="media_saved_video">Відео збережено в галерею</string>
     <string name="media_save_failed">Не вдалося зберегти: %1$s</string>
     <string name="media_copied">Зображення скопійовано</string>
     <string name="media_copy_failed">Не вдалося скопіювати: %1$s</string>
+    <string name="media_share_failed">Не вдалося поділитися: %1$s</string>
     <!-- Інлайн-позначки біля поста. -->
     <string name="post_badge_edited">Відредаговано</string>
     <string name="post_badge_pinned">Закріплено</string>
@@ -557,6 +559,7 @@
     <string name="media_share_error_clipboard_unavailable">Буфер обміну недоступний</string>
     <string name="media_share_error_insert_failed">Не вдалося зберегти в галерею</string>
     <string name="media_share_error_mkdir">Не вдалося створити теку %1$s</string>
+    <string name="media_share_error_intent_failed">Жоден застосунок не може прийняти це</string>
 
     <!-- WebTelegramClient.lookupChannel timed out (no rate-limit gate). -->
     <string name="web_lookup_timed_out">Перевищено час очікування</string>

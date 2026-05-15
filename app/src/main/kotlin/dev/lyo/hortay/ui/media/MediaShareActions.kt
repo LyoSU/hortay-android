@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -163,6 +164,51 @@ object MediaShareActions {
             Log.w(TAG, "copyToClipboard failed", t)
             Result.Failure(
                 reasonResId = R.string.media_share_error_clipboard_unavailable,
+                debugDetail = t.message ?: t.javaClass.simpleName,
+            )
+        }
+    }
+
+    /**
+     * Hands the file at [localPath] to the system share sheet via
+     * `Intent.ACTION_SEND`. Bytes stay where TDLib put them; we mint a
+     * FileProvider URI (same authority as [copyToClipboard]) and rely on the
+     * chooser-grant `FLAG_GRANT_READ_URI_PERMISSION` so the picked target app
+     * can read through ContentResolver — no copy step, fast for big videos.
+     */
+    fun shareMedia(
+        context: Context,
+        item: AlbumItem,
+        localPath: String,
+    ): Result {
+        val src = File(localPath)
+        if (!src.exists()) return Result.Failure(R.string.media_share_error_source_missing)
+        val mime = item.guessMimeType()
+
+        return try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                context.packageName + ".fileprovider",
+                src,
+            )
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = mime
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(send, null).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            if (send.resolveActivity(context.packageManager) == null) {
+                return Result.Failure(R.string.media_share_error_intent_failed)
+            }
+            context.startActivity(chooser)
+            Result.Success
+        } catch (t: Throwable) {
+            Log.w(TAG, "shareMedia failed", t)
+            Result.Failure(
+                reasonResId = R.string.media_share_error_intent_failed,
                 debugDetail = t.message ?: t.javaClass.simpleName,
             )
         }

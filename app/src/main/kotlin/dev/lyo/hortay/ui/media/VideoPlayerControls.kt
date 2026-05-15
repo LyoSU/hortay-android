@@ -104,6 +104,20 @@ fun VideoPlayerControls(
         player.addListener(listener)
         awaitDispose { player.removeListener(listener) }
     }
+    // STATE_ENDED requires special-cased Play: ExoPlayer's `play()` is a no-op
+    // when position is already past `duration`, so the centre button must
+    // `seekTo(0)` before resuming or the user sees a dead tap. Looping
+    // (`REPEAT_MODE_ONE`) handles this automatically — this branch only
+    // matters for finite-playback videos in fullscreen.
+    val isEnded by produceState(player.playbackState == Player.STATE_ENDED, player) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                value = state == Player.STATE_ENDED
+            }
+        }
+        player.addListener(listener)
+        awaitDispose { player.removeListener(listener) }
+    }
     val durationMs by produceState(player.duration.coerceAtLeast(0L), player) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
@@ -235,7 +249,14 @@ fun VideoPlayerControls(
                 CenterPlayPauseButton(
                     isPlaying = isPlaying,
                     onClick = {
-                        if (isPlaying) player.pause() else player.play()
+                        when {
+                            isEnded -> {
+                                player.seekTo(0L)
+                                player.play()
+                            }
+                            isPlaying -> player.pause()
+                            else -> player.play()
+                        }
                         showControls()
                     },
                     modifier = Modifier.align(Alignment.Center),
