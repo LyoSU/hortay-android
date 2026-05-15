@@ -407,6 +407,21 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
         fileId = asVideo!!.playbackFileId,
         remoteUrl = asVideo.remoteVideoUrl,
     )
+    // Hide the play badge while the poster is downloading. The poster's own
+    // [MediaLoadingOverlay] spinner sits in the same centred slot, so showing
+    // both gave the user "two circles" stacked on top of each other. Once the
+    // badge is gone the spinner reads cleanly as "loading, hold on".
+    //
+    // The outer Box still owns the click handler (see `.clickable` below), so
+    // the area remains tappable during the download: a tap mounts
+    // [TdVideoPlayer] which immediately ensures the playback file and
+    // crossfades over the poster. We only probe TDLib state here — guest-mode
+    // posters fetch through Coil and have no MediaCache slot to observe, so
+    // we keep the badge visible for them (Coil's HTTP fetch is fast and we
+    // don't have a state signal to drive the hide).
+    val posterLoading = !autoplayVideo &&
+        revealed &&
+        isPosterDownloading(item.media.fileId)
     // Blur regime:
     //   • spoiler / sensitive: heavy blur until the user reveals — same as TDLib mode.
     //   • unplayable video: light blur as a visual "this is a preview, you'll need to
@@ -451,7 +466,7 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
                 modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
             )
         } else {
-            MediaOverlay(item)
+            MediaOverlay(item, hidePlayBadge = posterLoading)
         }
         if (!revealed) {
             SpoilerOverlay(
@@ -464,10 +479,10 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
 }
 
 @Composable
-private fun BoxScope.MediaOverlay(item: AlbumItem) {
+private fun BoxScope.MediaOverlay(item: AlbumItem, hidePlayBadge: Boolean = false) {
     when (item) {
         is AlbumItem.Video -> {
-            PlayBadge(item.durationSec)
+            PlayBadge(item.durationSec, hideCircle = hidePlayBadge)
             // Unplayable videos route the tap to Telegram — telegraph that
             // explicitly so the user understands where the tap is going
             // before they make it. A silent app-switch is jarring without
@@ -1256,20 +1271,26 @@ private fun webPreviewLargeAspect(width: Int, height: Int): Float {
 }
 
 @Composable
-private fun BoxScope.PlayBadge(durationSec: Int) {
-    Box(
-        modifier = Modifier
-            .align(Alignment.Center)
-            .size(56.dp)
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.55f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Symbol(
-            name = "play_circle",
-            tint = Color.White,
-            size = 36.dp,
-        )
+private fun BoxScope.PlayBadge(durationSec: Int, hideCircle: Boolean = false) {
+    // [hideCircle] suppresses only the centred play glyph — the duration chip
+    // stays so the user still has the "this is a video, N seconds long" cue
+    // even while the poster spinner is up. The outer Box's `.clickable` is
+    // unaffected: tapping the slot still mounts the player.
+    if (!hideCircle) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.55f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Symbol(
+                name = "play_circle",
+                tint = Color.White,
+                size = 36.dp,
+            )
+        }
     }
     // durationSec == 0 marks an unplayable video (currently only guest-mode
     // "Media is too big" posts where t.me strips `<video src>`). Showing a
@@ -1436,6 +1457,26 @@ private fun isCachedReady(fileId: Int?, remoteUrl: String?): Boolean {
         .collectAsStateWithLifecycle()
     LaunchedEffect(fileId) { cache.resync(fileId) }
     return state is MediaState.Ready
+}
+
+/**
+ * Read-only probe into [dev.lyo.hortay.data.MediaCache] that answers "is the
+ * poster file actively downloading right now?" — used by [MediaWithSpoiler]
+ * to suppress the centred play badge while [TdMediaImage]'s own progress
+ * overlay is on screen, so the user never sees the two stacked circles.
+ *
+ * Returns false for:
+ *   - null / 0 fileIds (guest mode, no MediaCache slot to observe).
+ *   - any non-Downloading state (Idle / Ready / Failed) — the badge surfaces
+ *     normally and the user can tap to play / open the viewer.
+ */
+@Composable
+private fun isPosterDownloading(fileId: Int?): Boolean {
+    if (fileId == null || fileId == 0) return false
+    val cache = LocalMediaCache.current
+    val state by remember(fileId) { cache.observe(fileId) }
+        .collectAsStateWithLifecycle()
+    return state is MediaState.Downloading
 }
 
 private fun formatFileSize(bytes: Long, units: Array<String>): String {
