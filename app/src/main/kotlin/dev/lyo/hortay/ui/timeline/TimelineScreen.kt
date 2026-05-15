@@ -78,6 +78,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 // FlowPreview opt-in stays: Flow.debounce(Long) is still preview-marked in
 // kotlinx-coroutines 1.10.1 even though Flow.debounce(Duration) graduated.
@@ -1685,21 +1686,43 @@ fun TimelineScreen(
                         // Ack only scope-visible pending; archive / other-folder pending
                         // stays unread for those tabs.
                         overlayBlockedPendingKeys = emptySet()
-                        vm.acceptIds(scopedPendingNew.map { it.chatId to it.id })
+                        val ackedKeys = scopedPendingNew.map { it.chatId to it.id }
+                        vm.acceptIds(ackedKeys)
                         // Scroll target mirrors the pill anchor — both in row-space
                         // because LazyColumn renders FeedItem rows, not raw posts:
                         //   - Newest pill (top): home target = index 0
                         //     (freshest, top of feed).
-                        //   - OldestUnreadFirst pill (bottom): tail of list =
-                        //     the just-arrived posts user opted to see, which
-                        //     sort to the very end (asc by date). After ack,
-                        //     [feedItems] grows; request the new lastIndex via
-                        //     a snapshot read at dispatch time.
+                        //   - OldestUnreadFirst pill (bottom): land at the FIRST
+                        //     of the just-accepted posts (smallest row index in
+                        //     the asc-by-date sort = oldest among the arrivals)
+                        //     so the user can read the new batch top → down,
+                        //     matching the canonical chat-app "New messages"
+                        //     jump (Telegram / Slack / Discord).
+                        //
+                        // [vm.acceptIds] flips a StateFlow synchronously, but the
+                        // [feedItems] capture in this lambda is the PRE-ack
+                        // snapshot. Reading its `lastIndex` here returned the row
+                        // immediately BEFORE the new arrivals (the visible "lands
+                        // on a post before the new post" symptom). Resolve via
+                        // [feedItemsState] (live) once the recomposition that
+                        // merges the new posts lands; cap the wait so a refresh
+                        // storm doesn't deadlock the scroll.
                         scope.launch {
                             val target = if (pillAtTop) {
-                                homeScrollIndex
+                                homeScrollIndexState.intValue
                             } else {
-                                (feedItems.lastIndex).coerceAtLeast(0)
+                                val ackedSet = ackedKeys.toHashSet()
+                                val resolved = withTimeoutOrNull(800L) {
+                                    androidx.compose.runtime.snapshotFlow {
+                                        feedItemsState.value.indexOfFirst { fi ->
+                                            fi.posts().any { p ->
+                                                (p.chatId to p.id) in ackedSet
+                                            }
+                                        }
+                                    }.first { it >= 0 }
+                                }
+                                resolved
+                                    ?: feedItemsState.value.lastIndex.coerceAtLeast(0)
                             }
                             listState.smartScrollTo(target)
                         }
@@ -1745,10 +1768,16 @@ fun TimelineScreen(
                             // boundary (homeScrollIndex) if everything visible
                             // happens to be live-read in the race between this
                             // click and a refresh.
-                            val live = feedItems.indexOfFirst { item ->
+                            //
+                            // Read through [feedItemsState] (live) so a feed
+                            // refresh / new-post arrival that lands between this
+                            // composition and the click doesn't leave us indexing
+                            // a stale captured list.
+                            val items = feedItemsState.value
+                            val live = items.indexOfFirst { item ->
                                 item.posts().any { it.isUnreadAt(cursorHolder[it.chatId]) }
                             }
-                            val target = if (live >= 0) live else homeScrollIndex
+                            val target = if (live >= 0) live else homeScrollIndexState.intValue
                             scope.launch { listState.smartScrollTo(target) }
                         },
                     )
