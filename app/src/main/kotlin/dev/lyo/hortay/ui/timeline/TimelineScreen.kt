@@ -204,6 +204,14 @@ fun TimelineScreen(
      */
     snapScroll: Boolean = false,
     /**
+     * True while a channel/comments nav overlay covers this feed. The feed stays
+     * mounted so Back is instant and scroll state is retained, but viewport-driven
+     * background effects must pause: under an overlay the user is not actually
+     * looking at these rows, so auto-accepting new posts or dwell-acking read
+     * state would mutate the feed behind their back.
+     */
+    coveredByOverlay: Boolean = false,
+    /**
      * Process-wide cold-start gate, TDLib mode only. While in
      * [StartupCoordinator.Phase.Booting] the comments-thread prefetch
      * collector silently skips its work to keep the TDLib RPC pipe clear for
@@ -848,6 +856,17 @@ fun TimelineScreen(
     val scopedPendingNew = remember(pendingNew, scopePredicate) {
         pendingNew.filter(scopePredicate)
     }
+    var overlayBlockedPendingKeys by remember {
+        mutableStateOf<Set<Pair<Long, Long>>>(emptySet())
+    }
+    LaunchedEffect(coveredByOverlay, scopedPendingNew) {
+        val pendingKeys = scopedPendingNew.mapTo(HashSet()) { it.chatId to it.id }
+        overlayBlockedPendingKeys = if (coveredByOverlay) {
+            overlayBlockedPendingKeys + pendingKeys
+        } else {
+            overlayBlockedPendingKeys.intersect(pendingKeys)
+        }
+    }
     val scopedPendingChannels = remember(scopedPendingNew) {
         scopedPendingNew
             .groupBy { it.chatId }
@@ -894,15 +913,20 @@ fun TimelineScreen(
     val bootstrapped by remember {
         derivedStateOf { posts.isNotEmpty() && !refreshing }
     }
-    LaunchedEffect(atTop, atBottom, scopedPendingNew, feedOrder, bootstrapped) {
+    LaunchedEffect(atTop, atBottom, scopedPendingNew, feedOrder, bootstrapped, coveredByOverlay) {
         if (scopedPendingNew.isEmpty()) return@LaunchedEffect
         if (!bootstrapped) return@LaunchedEffect
+        if (coveredByOverlay) return@LaunchedEffect
+        val autoAcceptable = scopedPendingNew
+            .map { it.chatId to it.id }
+            .filterNot { it in overlayBlockedPendingKeys }
+        if (autoAcceptable.isEmpty()) return@LaunchedEffect
         val atFreshnessEdge = when (feedOrder) {
             dev.lyo.hortay.data.FeedOrder.Newest -> atTop
             dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> atBottom
         }
         if (atFreshnessEdge) {
-            vm.acceptIds(scopedPendingNew.map { it.chatId to it.id })
+            vm.acceptIds(autoAcceptable)
         }
     }
 
@@ -915,7 +939,7 @@ fun TimelineScreen(
     // storm. commentCount > 0 (not just != null) skips the typical "0 replies
     // forever" case that would otherwise burn 2 wasted RPCs per post on the
     // dominant share of first-launch volume.
-    if (commentsRepo != null) {
+    if (commentsRepo != null && !coveredByOverlay) {
         rememberCommentsPrefetch(
             listState = listState,
             displayedItems = feedItems,
@@ -953,7 +977,7 @@ fun TimelineScreen(
         listState = listState,
         displayedItems = feedItems,
         ackKey = markAsRead,
-        markAsRead = markAsRead,
+        markAsRead = if (coveredByOverlay) null else markAsRead,
         scope = scope,
         dwellMs = READ_DWELL_MS,
     )
@@ -973,7 +997,7 @@ fun TimelineScreen(
     //
     // Cleanup: try/finally with NonCancellable on the close so a fast screen exit
     // still flushes CloseChat.
-    if (tdlibRepo != null) {
+    if (tdlibRepo != null && !coveredByOverlay) {
         LaunchedEffect(listState, tdlibRepo) {
             var opened: Long? = null
             try {
@@ -1587,6 +1611,7 @@ fun TimelineScreen(
                     onClick = {
                         // Ack only scope-visible pending; archive / other-folder pending
                         // stays unread for those tabs.
+                        overlayBlockedPendingKeys = emptySet()
                         vm.acceptIds(scopedPendingNew.map { it.chatId to it.id })
                         // Scroll target mirrors the pill anchor — both in row-space
                         // because LazyColumn renders FeedItem rows, not raw posts:

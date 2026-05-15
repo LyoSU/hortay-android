@@ -590,9 +590,10 @@ fun MainScaffold(graph: AppGraph) {
                     //   - Scroll position is owned by [rememberLazyListState],
                     //     never serialised through SaveableStateProvider's
                     //     unmount→remount cycle. The shared `_posts` flow can
-                    //     mutate (loadChannelHistory backfills, refresh streams,
-                    //     auto-accepted arrivals) while the user is in the channel
-                    //     overlay; on close the feed is right where they left it.
+                    //     mutate (loadChannelHistory backfills, refresh streams)
+                    //     while the user is in the channel overlay; viewport-driven
+                    //     side effects are paused via coveredByOverlay, so on close
+                    //     the feed is right where they left it.
                     //   - One source of subscriptions (avatars, comment prefetch,
                     //     dwell-ack focus tracking) instead of a re-init burst on
                     //     every drill-back.
@@ -632,6 +633,7 @@ fun MainScaffold(graph: AppGraph) {
                             markAsRead = tdlibMarkAsRead,
                             feedOrder = feedOrder,
                             snapScroll = snapScroll,
+                            coveredByOverlay = stack.isNotEmpty(),
                         )
                     }
                 }
@@ -667,6 +669,7 @@ fun MainScaffold(graph: AppGraph) {
                     markAsRead = tdlibMarkAsRead,
                     feedOrder = feedOrder,
                     snapScroll = snapScroll,
+                    coveredByOverlay = stack.isNotEmpty(),
                 )
                 NavTab.Profile -> SettingsScreen(
                     settings = graph.settingsStore,
