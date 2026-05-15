@@ -593,6 +593,7 @@ fun TimelineScreen(
         candidate = candidateUiState,
         refreshing = refreshing,
         routeKey = routeKey,
+        preserveReady = coveredByOverlay,
     )
 
     // Cold-start positioning is owned by the `LazyListState(initialIndex, 0)`

@@ -105,7 +105,11 @@ internal fun reduceTimelineUiState(
     previous: TimelineUiState?,
     candidate: TimelineUiState,
     refreshJustCompleted: Boolean,
+    preserveReady: Boolean = false,
 ): TimelineUiState {
+    if (preserveReady && previous is TimelineUiState.Ready && candidate !is TimelineUiState.Ready) {
+        return previous
+    }
     if (previous is TimelineUiState.Ready && candidate is TimelineUiState.Ready) {
         return candidate.copy(
             initialIndex = previous.initialIndex,
@@ -129,6 +133,7 @@ internal fun rememberLatchedTimelineUiState(
     candidate: TimelineUiState,
     refreshing: Boolean,
     routeKey: Any,
+    preserveReady: Boolean = false,
 ): TimelineUiState {
     val effective = remember(routeKey) {
         mutableStateOf<TimelineUiState>(TimelineUiState.Loading)
@@ -136,13 +141,14 @@ internal fun rememberLatchedTimelineUiState(
     val previousRefreshing = remember(routeKey) {
         mutableStateOf(false)
     }
-    LaunchedEffect(candidate, refreshing, routeKey) {
+    LaunchedEffect(candidate, refreshing, routeKey, preserveReady) {
         val refreshJustCompleted = previousRefreshing.value && !refreshing
         previousRefreshing.value = refreshing
         effective.value = reduceTimelineUiState(
             previous = effective.value,
             candidate = candidate,
             refreshJustCompleted = refreshJustCompleted,
+            preserveReady = preserveReady,
         )
     }
     return effective.value

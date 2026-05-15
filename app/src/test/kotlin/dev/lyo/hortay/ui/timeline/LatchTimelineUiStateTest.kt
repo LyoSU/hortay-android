@@ -77,4 +77,16 @@ class LatchTimelineUiStateTest {
         val out = reduceTimelineUiState(previous = first, candidate = TimelineUiState.Empty, refreshJustCompleted = false)
         assertSame(TimelineUiState.Empty, out)
     }
+
+    @Test
+    fun `preserveReady keeps Ready during covered overlay transient Loading`() {
+        val first = ready(items = listOf(item(1L)), initialIndex = 3)
+        val out = reduceTimelineUiState(
+            previous = first,
+            candidate = TimelineUiState.Loading,
+            refreshJustCompleted = false,
+            preserveReady = true,
+        )
+        assertSame(first, out)
+    }
 }
