@@ -109,24 +109,30 @@ fun TdMediaImage(
         // 26-30 Compose silently no-ops the blur, and the bilinear up-scale of
         // the 40×40 minithumb still reads as a soft placeholder.
         //
-        // **Stays composed even after [MediaState.Ready] lands.** An earlier version
-        // gated this branch on `state !is Ready`, which yanked the minithumb the
-        // instant the [MediaCache] reducer flipped Ready — but that's our
-        // *download-completed* signal, NOT our *Coil-rendered-the-pixels* signal.
-        // Coil's `.crossfade(220)` on the Ready-path AsyncImage below fades the
-        // file image in from alpha 0 over 220 ms; if the minithumb is gone, that
-        // entire window paints [placeholderColor] (typically `surfaceContainerHigh`),
-        // producing a sharp grey blink between the soft minithumb and the full
-        // photo — the symptom users describe as "блимок" / "наче не дуже
-        // обробляє завантажене". Keeping the minithumb mounted under the
-        // crossfading file image lets it bleed through during the fade and get
-        // covered naturally as the file image reaches full opacity. Render
-        // cost is negligible: the minithumb bitmap is in Coil's memory cache
-        // after first decode, so what stays composed is one bitmap blit + one
-        // RenderEffect blur per visible card per frame — under the noise of the
-        // surrounding LazyColumn layout pass.
+        // **Stays composed THROUGH the Coil crossfade after [MediaState.Ready]**,
+        // then drops out [MINITHUMB_LINGER_MS] after Ready lands — long enough
+        // for Coil's `.crossfade(CROSSFADE_MS)` on the Ready-path AsyncImage to
+        // run to completion. An earlier version gated this branch on
+        // `state !is Ready` directly, which yanked the minithumb the instant
+        // the [MediaCache] reducer flipped Ready (= our download-completed
+        // signal, NOT our Coil-rendered-the-pixels signal). Coil fades the
+        // file image in from alpha 0 over CROSSFADE_MS; with no minithumb
+        // underneath, that fade window paints [placeholderColor] (typically
+        // surfaceContainerHigh), producing a sharp grey blink — the "блимок"
+        // symptom users described. The timer-drop preserves the crossfade
+        // bleed-through invariant while ending the steady-state GPU cost
+        // (one bitmap blit + one RenderEffect blur per visible media card
+        // per frame) once the full image has actually painted. Without the
+        // timer, every visible media card in the feed pays that GPU pass
+        // forever — measurable on weaker GPUs as scroll micro-jank.
         val minithumb = media.minithumbBytes
-        if (minithumb != null) {
+        // Pass the fileId so the visible-state holder resets when the
+        // underlying file changes (in-place media edit, album swipe
+        // reusing the same composable slot) — otherwise a previous file's
+        // "Ready → hide" decision would carry over and prevent the new
+        // file's minithumb from ever showing.
+        val showMinithumb = rememberMinithumbVisible(fileId, state)
+        if (minithumb != null && showMinithumb) {
             // Memoise: minithumbs are stable per-post; rebuilding the request on
             // every recomposition would churn ~150 B requests through Coil's
             // queue once per visible card per frame during scroll.
@@ -198,3 +204,39 @@ fun TdMediaImage(
 
 private val MINITHUMB_BLUR_RADIUS = 20.dp
 private const val CROSSFADE_MS = 220
+
+/**
+ * How long the blurred minithumb stays composed after [MediaState.Ready] lands.
+ * Must comfortably exceed [CROSSFADE_MS] so the Coil crossfade on the Ready-path
+ * AsyncImage runs to completion against the minithumb underneath — preventing
+ * the grey-blink symptom when the placeholderColor would otherwise show through
+ * a half-faded image. A small extra margin absorbs scheduling jitter.
+ */
+private const val MINITHUMB_LINGER_MS = 280L
+
+/**
+ * Drives the minithumb's composition lifetime: visible while the state is not
+ * Ready, and for [MINITHUMB_LINGER_MS] *after* it flips Ready (covering the
+ * Coil crossfade), then false. The holder + effect are both keyed on
+ * [fileId] so an in-place file change (rare; in-channel media edit, album
+ * swipe reusing the same composable slot) resets the linger timer and
+ * re-shows the minithumb under the new file's crossfade — without the key
+ * a previous "Ready → hide" decision would carry over and the new file
+ * would land on bare placeholder instead of its blurred preview.
+ */
+@Composable
+private fun rememberMinithumbVisible(fileId: Int?, state: MediaState): Boolean {
+    val ready = state is MediaState.Ready
+    val visibleState = androidx.compose.runtime.remember(fileId) {
+        androidx.compose.runtime.mutableStateOf(true)
+    }
+    androidx.compose.runtime.LaunchedEffect(fileId, ready) {
+        if (ready) {
+            kotlinx.coroutines.delay(MINITHUMB_LINGER_MS)
+            visibleState.value = false
+        } else {
+            visibleState.value = true
+        }
+    }
+    return visibleState.value
+}

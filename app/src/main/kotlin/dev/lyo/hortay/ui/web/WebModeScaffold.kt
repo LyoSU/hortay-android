@@ -210,7 +210,10 @@ fun WebModeScaffold(graph: AppGraph) {
         selectedTab = NavTab.Feed
     }
 
-    val readCursors by graph.webFeedSource.chatReadCursors.collectAsStateWithLifecycle()
+    // See MainScaffold.kt for the holder-vs-PersistentMap rationale — guest
+    // mode applies the same diff-apply pattern over its own cursor flow.
+    val cursorHolder =
+        dev.lyo.hortay.ui.timeline.rememberCursorHolder(graph.webFeedSource.chatReadCursors)
     val feedOrder by graph.settingsStore.feedOrder.collectAsStateWithLifecycle(
         initialValue = dev.lyo.hortay.data.FeedOrder.Newest,
     )
@@ -243,7 +246,7 @@ fun WebModeScaffold(graph: AppGraph) {
     }
     LinkAwareScaffold(graph) {
     CompositionLocalProvider(
-        LocalReadCursors provides readCursors,
+        LocalReadCursors provides cursorHolder,
         dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,
     ) {
     Scaffold(

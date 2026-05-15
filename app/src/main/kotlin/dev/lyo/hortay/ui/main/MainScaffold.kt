@@ -445,7 +445,17 @@ fun MainScaffold(graph: AppGraph) {
     // URL against the Telegram link resolver before falling back to the OS. One
     // interceptor wired here is cheaper than wrapping every Text call-site individually
     // and guarantees no path leaks straight to ACTION_VIEW.
-    val readCursors by graph.postsRepository.chatReadCursors.collectAsStateWithLifecycle()
+    // Live cursor holder collected once, mutated in place via diff-apply so
+    // per-key Compose snapshot subscribers (PostCard, ↓N counter, boundary
+    // derivedStateOf) are invalidated only when their own chat's cursor
+    // changes. The previous `collectAsStateWithLifecycle()` over a
+    // PersistentMap-typed flow swapped a fresh map identity into the
+    // `staticCompositionLocalOf<ReadCursors>` on every put — which
+    // invalidated the entire CompositionLocalProvider subtree (including
+    // the feed LazyColumn) for every dwell-ack and external read sync,
+    // producing the per-frame jank the user reported during scroll.
+    val cursorHolder =
+        dev.lyo.hortay.ui.timeline.rememberCursorHolder(graph.postsRepository.chatReadCursors)
     val feedOrder by graph.settingsStore.feedOrder.collectAsStateWithLifecycle(
         initialValue = dev.lyo.hortay.data.FeedOrder.Newest,
     )
@@ -500,7 +510,7 @@ fun MainScaffold(graph: AppGraph) {
     val canReportPost = remember { { post: TimelinePost -> post.canReportChat } }
     LinkAwareScaffold(graph) {
     CompositionLocalProvider(
-        LocalReadCursors provides readCursors,
+        LocalReadCursors provides cursorHolder,
         dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,
     ) {
     Scaffold(

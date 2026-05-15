@@ -9,25 +9,47 @@ import kotlinx.collections.immutable.persistentMapOf
  * the highest post id they've dwelt on (guest / web mode). A post is **unread**
  * when its `id` is strictly greater than the cursor for its chat.
  *
- * Why a separate observable map (not a field on [TimelinePost]):
- *   - The cursor advances on viewport dwell (~1 s per visible post) and on
- *     external acks (TDLib emits `UpdateChatReadInbox` whenever the user reads
- *     in the official Telegram client). Folding either into [TimelinePost] would
- *     re-emit the entire feed list — `PersistentList` softens the cost but the
- *     dependents (TimelineViewModel.visiblePosts, autodownloader, snapshot
- *     persister) still re-run their filters / coalescers for nothing.
- *   - Storing cursors on the side lets PostCard recompose only when the cursor
- *     for *its* chat changes (via [LocalReadCursors] + Compose snapshot
- *     tracking on the map's identity).
+ * This typealias is the **snapshot** form: data-layer flows
+ * ([PostsRepository.chatReadCursors], [WebFeedSource.chatReadCursors]) emit
+ * a fresh PersistentMap on each cursor advance, and snapshot-style consumers
+ * (TimelineUiState.frozenCursors, ChannelUiState boundary picker, the
+ * cold-start "Непрочитане" rule) hold a frozen reference latched on discrete
+ * events. PersistentMap structural sharing keeps put cost at O(log N) — a
+ * full O(N) copy would chew through cold-start when TDLib's first
+ * UpdateChatReadInbox burst lands hundreds of entries.
  *
- * Persistent map (not plain Map) so consumers can rely on `@Immutable` semantics
- * — the kotlinx.collections.immutable contract guarantees structural sharing on
- * `put` so per-cursor advances cost O(log N) instead of O(N) copy, and Compose
- * treats the type as stable for skippability.
+ * The **live** form for UI subscribers (PostCard unread strip, ↓N counter,
+ * boundary derivedStateOf) is [dev.lyo.hortay.ui.timeline.CursorHolder] —
+ * a process-wide [SnapshotStateMap]-backed holder that lets each consumer
+ * register a Compose snapshot dependency on just *its* `chatId` key, so an
+ * UpdateChatReadInbox for chat Y can't invalidate PostCard X. The previous
+ * `staticCompositionLocalOf<ReadCursors>` provider invalidated its whole
+ * subtree on every put because static composition locals don't track
+ * per-reader subscriptions and PersistentMap puts swap root identity. See
+ * `LocalReadCursors.kt` for the holder API; this snapshot type stays for
+ * tests, data-layer signatures, and the explicit-freeze use cases.
  */
 typealias ReadCursors = PersistentMap<Long, Long>
 
 val EmptyReadCursors: ReadCursors = persistentMapOf()
+
+/**
+ * Per-key variant of [isUnreadIn] for callers that already have the cursor
+ * for this post's chat in hand (e.g. PostCard reading
+ * `CursorHolder[post.chatId]`). The snapshot variant takes the whole map and
+ * does its own `cursors[chatId]` lookup — splitting the lookup out lets the
+ * Compose snapshot system register the read on just one key.
+ *
+ * Same album-aware semantics as [isUnreadIn]: returns true while the cursor
+ * sits below the highest album-member id, so an external ack landing
+ * mid-album doesn't prematurely flip the card to "read".
+ */
+fun TimelinePost.isUnreadAt(cursor: Long?): Boolean {
+    if (parentId != null) return false
+    if (cursor == null) return false
+    val highestId = albumMessageIds.maxOrNull() ?: id
+    return highestId > cursor
+}
 
 /**
  * Returns `true` when [TimelinePost.id] is strictly greater than the cursor for

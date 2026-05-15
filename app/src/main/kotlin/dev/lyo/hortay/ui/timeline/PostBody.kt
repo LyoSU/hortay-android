@@ -374,17 +374,28 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
     // ExoPlayer streams from the URL directly; the [inlineAutoplayEnabled]
     // toggle is the only off-switch in that mode.
     val asVideo = item as? AlbumItem.Video
-    val cached = isCachedReady(
-        fileId = asVideo?.playbackFileId,
-        remoteUrl = asVideo?.remoteVideoUrl,
-    )
-    val autoplayVideo = revealed
+    // Cheap gates first; the cache-presence probe ([isCachedReady]) goes
+    // LAST because it spins up a per-mount [StateFlow] collector and a
+    // [LaunchedEffect] resync. Probing every video slot eagerly — including
+    // ones where autoplay is anyway impossible (global toggle off,
+    // unplayable, oversize, hidden under spoiler) — used to fire those
+    // effects on every PostBody mount in the feed, which surfaced as
+    // micro-jank on video-heavy stretches. Short-circuit `&&` here means
+    // only candidate-eligible videos pay the probe cost.
+    val autoplayEligible = revealed
         && isActive
         && asVideo != null
         && !unplayable
         && asVideo.durationSec in 1..INLINE_AUTOPLAY_MAX_SEC
         && inlineAutoplayEnabled
-        && cached
+    // [asVideo] is provably non-null after [autoplayEligible] (the gate
+    // above includes an `asVideo != null` clause), so the smart-cast
+    // propagates through the short-circuit `&&` and direct member access
+    // is safe on the right-hand side.
+    val autoplayVideo = autoplayEligible && isCachedReady(
+        fileId = asVideo!!.playbackFileId,
+        remoteUrl = asVideo.remoteVideoUrl,
+    )
     // Blur regime:
     //   • spoiler / sensitive: heavy blur until the user reveals — same as TDLib mode.
     //   • unplayable video: light blur as a visual "this is a preview, you'll need to

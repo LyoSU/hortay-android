@@ -44,6 +44,7 @@ import dev.lyo.hortay.data.isUnplayableVideo
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
 import androidx.compose.ui.text.font.FontWeight
+import dev.lyo.hortay.data.isUnreadAt
 import dev.lyo.hortay.data.isUnreadIn
 import dev.lyo.hortay.data.orderedFor
 import dev.lyo.hortay.data.CommentsRepository
@@ -424,16 +425,15 @@ fun TimelineScreen(
         }
     }
 
-    // Live cursor map from LocalReadCursors — drives the UnreadStrip fade
-    // per visible card, the [UnreadCounterPill] counter, and the cold-start
-    // scroll target. The sort itself is independent of cursors (strict
-    // ascending by date for OldestUnreadFirst), so cursor-arrival never
-    // re-orders the list.
+    // Live cursor holder from LocalReadCursors — drives the UnreadStrip fade
+    // per visible card (PostCard reads `holder[post.chatId]`), the
+    // [UnreadCounterPill] counter, and the cold-start scroll target. The
+    // sort itself is independent of cursors (strict ascending by date for
+    // OldestUnreadFirst), so cursor-arrival never re-orders the list.
     //
     // The [dev.lyo.hortay.ui.timeline.UnreadBoundaryRow] divider does NOT
-    // read this live map — see [boundaryCursorsState] below for why.
-    val readCursors = LocalReadCursors.current
-    val cursorsState = rememberUpdatedState(readCursors)
+    // read this live holder — see [boundaryCursorsState] below for why.
+    val cursorHolder = LocalReadCursors.current
 
     val visiblePosts = remember(filteredPosts, feedOrder) {
         filteredPosts.orderedFor(feedOrder, dev.lyo.hortay.data.EmptyReadCursors)
@@ -458,8 +458,8 @@ fun TimelineScreen(
             return@LaunchedEffect
         }
         val cursorsArrived = async {
-            androidx.compose.runtime.snapshotFlow { cursorsState.value }
-                .first { it.isNotEmpty() }
+            androidx.compose.runtime.snapshotFlow { cursorHolder.cursorsHaveLanded }
+                .first { it }
         }
         val timeoutFallback = async {
             // Wait for refresh to complete first, then a small grace for the
@@ -521,7 +521,11 @@ fun TimelineScreen(
         // then in nearly every path) AND it's true the instant a
         // pull-to-refresh round-trip ends.
         if (!refreshing) {
-            boundaryCursorsState.value = cursorsState.value
+            // .snapshot() reads under Snapshot.withoutReadObservation, so
+            // this LaunchedEffect does NOT subscribe to subsequent cursor
+            // advances — the frozen reference only refreshes when the
+            // effect re-keys (cold-start landing, refresh idle, feed swap).
+            boundaryCursorsState.value = cursorHolder.snapshot()
         }
     }
     val boundaryCursors = boundaryCursorsState.value
@@ -533,8 +537,14 @@ fun TimelineScreen(
     // back into individual TimelinePost entries.
     val feedItems = remember(visiblePosts) { groupReplies(visiblePosts) }
     // Keep the forward-declared holder current so the home-tap LaunchedEffect
-    // can read the latest list without capturing a stale reference.
-    feedItemsForEffectsState.value = feedItems
+    // can read the latest list without capturing a stale reference. Wrapped
+    // in [SideEffect] so the snapshot mutation happens after composition
+    // completes — writing State during composition is an antipattern that
+    // can confuse the snapshot system and trip "State was modified during
+    // composition" diagnostics under aggressive recomposition timing.
+    androidx.compose.runtime.SideEffect {
+        feedItemsForEffectsState.value = feedItems
+    }
 
     // Row-space scroll target for user-initiated jumps (home tap, scope switch,
     // ↑ N / ↓ N pills). MUST be computed against [feedItems] — the LazyColumn
@@ -543,7 +553,19 @@ fun TimelineScreen(
     // of the target. The latcher's own [Ready.initialIndex] is also row-space
     // (see [buildTimelineUiState] using items.map { it.posts().first() }), so
     // these stay in sync.
-    val homeScrollIndex by remember(feedItems, readCursors, feedOrder, cursorsHaveLanded) {
+    // Per-key snapshot reads inside the derivedStateOf body: the closure
+    // touches `cursorHolder[anchor.chatId]` for each [FeedItem] (this is
+    // home-tap scroll target, computed against the whole feed — NOT just
+    // visible rows — because "home" can jump from any scroll position to
+    // the read→unread boundary). Compose subscribes to exactly the
+    // per-chatId keys the closure reads (which is the union of chat ids
+    // across the feed), and `derivedStateOf` dedupes its output —
+    // downstream (homeScrollIndexState mirror) flips only when the
+    // boundary index actually moves. So an `UpdateChatReadInbox` for a
+    // chat not in the feed is a free no-op; for an in-feed chat the
+    // scan re-runs but most cursor advances don't move the integer
+    // boundary, so the mirror does not re-emit.
+    val homeScrollIndex by remember(feedItems, feedOrder, cursorsHaveLanded) {
         derivedStateOf {
             when (feedOrder) {
                 dev.lyo.hortay.data.FeedOrder.Newest -> 0
@@ -551,10 +573,10 @@ fun TimelineScreen(
                     if (feedItems.isEmpty()) 0
                     else if (!cursorsHaveLanded) 0
                     else {
-                        val anchorPosts = feedItems.map { it.posts().first() }
-                        val boundary = dev.lyo.hortay.data.continueReadingIndex(
-                            feedOrder, anchorPosts, readCursors,
-                        )
+                        val boundary = feedItems.indexOfFirst { item ->
+                            val anchor = item.posts().first()
+                            anchor.isUnreadAt(cursorHolder[anchor.chatId])
+                        }
                         if (boundary >= 0) boundary else feedItems.lastIndex.coerceAtLeast(0)
                     }
                 }
@@ -582,10 +604,19 @@ fun TimelineScreen(
     // seed-bump LaunchedEffect could no-op when old/new boundaries collide).
     val persistentFeedItems = remember(feedItems) { feedItems.toPersistentList() }
     val routeKey = (if (showOnlyBookmarked) "saved" else "home") to feedOrder
+    // Reuses [boundaryCursorsState] as the frozenCursors source: both
+    // need a snapshot of the cursor map captured at first cold-start
+    // landing + PTR completion, which is exactly what
+    // [boundaryCursorsState]'s LaunchedEffect already latches. Avoids
+    // allocating a fresh PersistentMap on every TimelineScreen
+    // recomposition via [cursorHolder.snapshot()] — for OldestUnreadFirst
+    // the latched value is what the latcher would have captured anyway;
+    // for Newest mode the state stays at [EmptyReadCursors] which the
+    // builder maps to initialIndex=0 (the correct Newest landing).
     val candidateUiState: TimelineUiState = buildTimelineUiState(
         items = persistentFeedItems,
         cursorsLanded = readCursorsLandedState.value,
-        frozenCursors = readCursors,
+        frozenCursors = boundaryCursors,
         feedOrder = feedOrder,
         refreshing = refreshing,
     )
@@ -1502,19 +1533,27 @@ fun TimelineScreen(
                         // slot first regardless of LIFO ordering inside lane 16.
                         // `derivedStateOf` skips recomposition when the centre
                         // hasn't actually changed across snapshot reads.
-                        val centeredItemKey by remember(listState) {
-                            derivedStateOf {
-                                val info = listState.layoutInfo
-                                val visible = info.visibleItemsInfo
-                                if (visible.isEmpty()) return@derivedStateOf null
-                                val viewportCenter =
-                                    (info.viewportStartOffset + info.viewportEndOffset) / 2
-                                visible.minByOrNull { item ->
-                                    val itemCenter = item.offset + item.size / 2
-                                    kotlin.math.abs(itemCenter - viewportCenter)
-                                }?.key
+                        // Kept as a [State] (not unwrapped via `by`) so the read
+                        // of the centre-key value happens INSIDE each item's
+                        // per-item `derivedStateOf { state.value == myKey }`
+                        // rather than at the items() lambda level. Reading
+                        // `.value` directly here would mark this whole branch
+                        // as a centre-key reader, invalidating the entire
+                        // CompositionLocalProvider subtree on every fling.
+                        val centeredItemKeyState: androidx.compose.runtime.State<Any?> =
+                            remember(listState) {
+                                derivedStateOf {
+                                    val info = listState.layoutInfo
+                                    val visible = info.visibleItemsInfo
+                                    if (visible.isEmpty()) return@derivedStateOf null
+                                    val viewportCenter =
+                                        (info.viewportStartOffset + info.viewportEndOffset) / 2
+                                    visible.minByOrNull { item ->
+                                        val itemCenter = item.offset + item.size / 2
+                                        kotlin.math.abs(itemCenter - viewportCenter)
+                                    }?.key
+                                }
                             }
-                        }
 
                         // Snap-fling: when [snapScroll] is enabled, fling gestures settle
                         // on the nearest item start (`SnapPosition.Start`) — Reels-style
@@ -1567,7 +1606,7 @@ fun TimelineScreen(
                                 bottomPadding = contentPadding.calculateBottomPadding(),
                                 feedItems = state.items,
                                 unreadBoundaryKey = unreadBoundaryKey,
-                                centeredItemKey = centeredItemKey,
+                                centeredItemKeyState = centeredItemKeyState,
                                 highlightedPostKey = highlightedPostKey,
                                 interactions = interactions,
                                 modifier = Modifier.fillMaxSize(),
@@ -1674,7 +1713,7 @@ fun TimelineScreen(
             if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst && !showOnlyBookmarked) {
                 val unreadRemaining by remember(visiblePosts, feedOrder) {
                     derivedStateOf {
-                        visiblePosts.count { it.isUnreadIn(cursorsState.value) }
+                        visiblePosts.count { it.isUnreadAt(cursorHolder[it.chatId]) }
                     }
                 }
                 AnimatedVisibility(
@@ -1697,7 +1736,7 @@ fun TimelineScreen(
                             // happens to be live-read in the race between this
                             // click and a refresh.
                             val live = feedItems.indexOfFirst { item ->
-                                item.posts().any { it.isUnreadIn(cursorsState.value) }
+                                item.posts().any { it.isUnreadAt(cursorHolder[it.chatId]) }
                             }
                             val target = if (live >= 0) live else homeScrollIndex
                             scope.launch { listState.smartScrollTo(target) }
@@ -1725,7 +1764,7 @@ private fun TimelineFeedColumn(
     bottomPadding: androidx.compose.ui.unit.Dp,
     feedItems: List<FeedItem>,
     unreadBoundaryKey: Any?,
-    centeredItemKey: Any?,
+    centeredItemKeyState: androidx.compose.runtime.State<Any?>,
     highlightedPostKey: Pair<Long, Long>?,
     interactions: PostInteractions,
     modifier: Modifier = Modifier,
@@ -1739,29 +1778,45 @@ private fun TimelineFeedColumn(
         ),
         modifier = modifier,
     ) {
-        items(items = feedItems, key = { it.key }) { item ->
+        items(
+            items = feedItems,
+            key = { it.key },
+            // Single vs Thread have different composition / layout
+            // shapes, so distinct contentTypes let the LazyColumn reuse
+            // pool serve each kind from its own slot — Single rows
+            // entering view don't pay the cost of a slot that just held
+            // a Thread (or vice versa).
+            contentType = { if (it is FeedItem.Thread) "thread" else "single" },
+        ) { item ->
             // "Unread starts here" divider rendered above the first
             // item that contains an unread post (OldestUnreadFirst
             // only). Composed at the start of the item lambda so it
             // sticks to the same FeedItem in LazyColumn — pull-to-
-            // refresh updates the boundary by reassigning [readCursors]
-            // and the rule moves naturally with the new snapshot.
+            // refresh updates the boundary cursors and the rule moves
+            // naturally with the new snapshot.
             if (item.key == unreadBoundaryKey) {
                 UnreadBoundaryRow()
             }
-            // Per-item State so a centre flip recomposes
-            // only the two affected items (old centre →
-            // false, new centre → true) instead of the
-            // whole feed.
-            val isCentered = remember { mutableStateOf(false) }
-            isCentered.value = item.key == centeredItemKey
+            // Per-item [derivedStateOf] reads [centeredItemKeyState]
+            // INSIDE its lambda, not at the items() body level — so the
+            // centre-flip stream invalidates only the two items whose
+            // boolean output actually changed (old centre → false, new
+            // centre → true). The previous `mutableStateOf` + write-
+            // during-composition pattern was an antipattern (state
+            // mutation in composition phase) and didn't even achieve
+            // the localised-recomposition it claimed: every items()
+            // lambda read centeredItemKey directly, so all visible item
+            // lambdas re-ran on every centre flip during scroll.
+            val isCenteredState = remember(item.key) {
+                derivedStateOf { centeredItemKeyState.value == item.key }
+            }
             val highlighted = highlightedPostKey?.let { (cid, mid) ->
                 item.posts().any { p ->
                     p.chatId == cid && (p.id == mid || mid in p.albumMessageIds)
                 }
             } == true
             CompositionLocalProvider(
-                LocalIsCenteredItem provides isCentered,
+                LocalIsCenteredItem provides isCenteredState,
                 LocalIsHighlightedItem provides highlighted,
             ) {
                 when (item) {

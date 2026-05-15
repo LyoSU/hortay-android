@@ -238,15 +238,23 @@ fun TdVideoPlayer(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
+                // [exoPlayer] is `remember`'d once for this TdVideoPlayer
+                // instance (see acquire block above), so the texture bind
+                // is a one-time setup — repeating it from `update` on
+                // every recomposition (parent emit, centred-flip, mute
+                // toggle) thrashed `setVideoTextureView` even though the
+                // texture identity never changed. The aspect-ratio update
+                // legitimately depends on the live [videoAspect] state
+                // and stays in [update].
+                val texture = TextureView(ctx).apply { isOpaque = false }
+                exoPlayer.setVideoTextureView(texture)
                 AspectRatioFrameLayout(ctx).apply {
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    addView(TextureView(ctx).apply { isOpaque = false })
+                    addView(texture)
                 }
             },
             update = { frame ->
-                val texture = frame.getChildAt(0) as TextureView
-                exoPlayer.setVideoTextureView(texture)
                 if (videoAspect > 0f) frame.setAspectRatio(videoAspect)
             },
             onRelease = { frame ->

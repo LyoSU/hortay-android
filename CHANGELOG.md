@@ -66,6 +66,41 @@
 
 ### Performance
 - Reaction taps flip optimistically across feed / channel / post detail / comments; server reconciles via `UpdateMessageInteractionInfo`, RPC failure rolls back.
+- Feed scroll jank rework. Removes per-frame work that accumulated as the
+  app grew, surfacing as micro-stutter on media-heavy stretches and on
+  accounts with active dwell-ack traffic. Six load-bearing fixes ship in
+  one pass:
+  (1) Read cursors propagate through a `SnapshotStateMap`-backed
+  `CursorHolder` (not `staticCompositionLocalOf<ReadCursors>` over a
+  PersistentMap). Per-key snapshot tracking — a cursor advance for chat X
+  invalidates only PostCards in chat X, not the whole MainScaffold
+  subtree. Was: every dwell-ack / external `UpdateChatReadInbox`
+  recomposed everything under the scaffold provider, including the
+  LazyColumn body.
+  (2) Viewport-centre key (used for VisibleCenter download priority
+  promotion) propagates as `State<Any?>` rather than a value read at the
+  `items()` lambda level. Per-item `derivedStateOf` lets a centre flip
+  invalidate only the two affected items instead of every visible card.
+  (3) Feed `LazyColumn` now distinguishes `FeedItem.Single` vs
+  `FeedItem.Thread` via `contentType`, so the reuse pool serves each
+  shape from its own slot.
+  (4) Per-post inline-autoplay cache probe (`isCachedReady`) runs only
+  after the cheap gates (global autoplay toggle, duration, revealed,
+  active, !unplayable) all pass. Was: every video card mounted a
+  `StateFlow` collector + `LaunchedEffect` resync even when autoplay
+  was anyway impossible.
+  (5) `MediaCache.resync` from `rememberMediaBinding` is now gated on
+  `LocalScrollGate.value` so flings stop firing per-mount JNI calls for
+  cards that sweep through the viewport without settling.
+  (6) `TdMediaImage` minithumb (with its `RenderEffect` blur GPU pass)
+  drops out 280 ms after `MediaState.Ready` lands — long enough for the
+  Coil 220 ms crossfade to hide the "блимок" symptom the eager-drop
+  had, then ends the steady-state per-frame GPU cost on stable media.
+- `TdVideoPlayer` texture attach moved from `AndroidView.update` into
+  `factory`; only the aspect-ratio update stays in `update`. The
+  `exoPlayer` reference is `remember`'d per player instance, so binding
+  the texture is a one-time setup — repeating it on every recomposition
+  was a wasted `setVideoTextureView` call per centred-flip / parent emit.
 
 ### Architecture
 - `ReactionTogglePolicy` + `PostsRepository.applyOptimisticReaction` + `CommentsRepository` per-thread override map merged into the single-collector update fan-in.
