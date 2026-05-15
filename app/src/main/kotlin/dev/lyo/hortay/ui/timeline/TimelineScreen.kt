@@ -1698,6 +1698,7 @@ fun TimelineScreen(
                         // stays unread for those tabs.
                         overlayBlockedPendingKeys = emptySet()
                         val ackedKeys = scopedPendingNew.map { it.chatId to it.id }
+                        val preTotal = listState.layoutInfo.totalItemsCount
                         vm.acceptIds(ackedKeys)
                         // Scroll target mirrors the pill anchor — both in row-space
                         // because LazyColumn renders FeedItem rows, not raw posts:
@@ -1710,30 +1711,45 @@ fun TimelineScreen(
                         //     matching the canonical chat-app "New messages"
                         //     jump (Telegram / Slack / Discord).
                         //
-                        // [vm.acceptIds] flips a StateFlow synchronously, but the
-                        // [feedItems] capture in this lambda is the PRE-ack
-                        // snapshot. Reading its `lastIndex` here returned the row
-                        // immediately BEFORE the new arrivals (the visible "lands
-                        // on a post before the new post" symptom). Resolve via
-                        // [feedItemsState] (live) once the recomposition that
-                        // merges the new posts lands; cap the wait so a refresh
-                        // storm doesn't deadlock the scroll.
+                        // Two staleness traps on this path, both load-bearing:
+                        //   1. `[feedItems]` captured by this lambda is the
+                        //      PRE-ack snapshot — read through [feedItemsState]
+                        //      (live) below.
+                        //   2. `feedItems` / `feedItemsState` update one
+                        //      Compose frame BEFORE the latched
+                        //      [TimelineUiState.Ready.items] that backs the
+                        //      LazyColumn (the latcher runs through a
+                        //      `LaunchedEffect`). [scrollToItem] CLAMPS to the
+                        //      column's current `totalItemsCount` — if we
+                        //      scroll while the latched render is still on the
+                        //      OLD list, target row N gets clamped down to
+                        //      OLD lastIndex (= the post immediately BEFORE
+                        //      the new arrivals — the "lands on the post
+                        //      above the new post" symptom).
+                        // Wait on [listState.layoutInfo.totalItemsCount]:
+                        // the LazyColumn's actually-laid-out count, downstream
+                        // of BOTH the feedItems recomposition AND the latched
+                        // UiState `LaunchedEffect`, and the same number
+                        // `scrollToItem` clamps against. Cap the wait so a
+                        // refresh storm can't deadlock the scroll.
                         scope.launch {
+                            withTimeoutOrNull(800L) {
+                                androidx.compose.runtime.snapshotFlow {
+                                    listState.layoutInfo.totalItemsCount
+                                }.first { it > preTotal }
+                            }
                             val target = if (pillAtTop) {
                                 homeScrollIndexState.intValue
                             } else {
                                 val ackedSet = ackedKeys.toHashSet()
-                                val resolved = withTimeoutOrNull(800L) {
-                                    androidx.compose.runtime.snapshotFlow {
-                                        feedItemsState.value.indexOfFirst { fi ->
-                                            fi.posts().any { p ->
-                                                (p.chatId to p.id) in ackedSet
-                                            }
-                                        }
-                                    }.first { it >= 0 }
+                                val items = feedItemsState.value
+                                val firstNew = items.indexOfFirst { fi ->
+                                    fi.posts().any { p ->
+                                        (p.chatId to p.id) in ackedSet
+                                    }
                                 }
-                                resolved
-                                    ?: feedItemsState.value.lastIndex.coerceAtLeast(0)
+                                if (firstNew >= 0) firstNew
+                                else items.lastIndex.coerceAtLeast(0)
                             }
                             listState.smartScrollTo(target)
                         }
