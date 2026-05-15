@@ -213,6 +213,50 @@ fun MainScaffold(graph: AppGraph) {
         PublicHandleKind.Unknown -> R.string.link_unsupported_other
     }
 
+    /**
+     * Gated channel-open for in-app gestures (forward-source chip, cross-channel
+     * quote-tap, post-channel-name tap when it differs from the host). Mirrors the
+     * type-gate the deep-link dispatcher above already runs against
+     * [DeepLink.PublicChannel] / [DeepLink.PrivateChannel] / [DeepLink.Message] —
+     * non-channel targets (supergroup-chat, basic group, 1:1 user / bot) used to
+     * slip through these gestures, push a [NavEntry.Channel] onto the nav stack,
+     * and land the user on a [ChannelScreen] whose
+     * [PostsRepository.loadChannelHistory] short-circuits on `!chat.isChannel()`
+     * → empty hero. Hortay's product scope is broadcast channels only, so the
+     * right answer for non-channel sources is "open this in Telegram, not here".
+     *
+     * Resolution outcomes ([PostsRepository.resolveChatKind]):
+     *   • [PublicHandleResult.Channel]     — broadcast channel; push as before.
+     *   • [PublicHandleResult.Unsupported] — supergroup-chat / basic group / 1:1 /
+     *                                        bot. Snackbar uses the same
+     *                                        kind-keyed string the deep-link path
+     *                                        uses ([unsupportedHandleMessageId]).
+     *   • [PublicHandleResult.NotFound]    — TDLib has no record (revoked access,
+     *                                        transient GetChat fail). "Link not
+     *                                        found" snackbar, same as deep-link.
+     *
+     * The DeepLink dispatcher keeps its own inline gate because it has the
+     * `link.originalUrl` to hand off to the OS chooser — this helper covers the
+     * in-app gesture surface, where no canonical external URL is available; the
+     * snackbar alone is the affordance.
+     */
+    fun safelyOpenChannel(chatId: Long, scrollTo: Long? = null) {
+        scope.launch {
+            when (val resolved = graph.postsRepository.resolveChatKind(chatId)) {
+                is PublicHandleResult.Channel -> pushChannel(resolved.chatId, scrollTo)
+                is PublicHandleResult.Unsupported -> {
+                    graph.userMessages.post(
+                        res.getString(unsupportedHandleMessageId(resolved.kind)),
+                        UserMessageBus.Severity.Info,
+                    )
+                }
+                is PublicHandleResult.NotFound -> {
+                    graph.userMessages.post(res.getString(R.string.link_not_found))
+                }
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         graph.deepLinkRouter.events.collect { link ->
             try {
@@ -621,7 +665,7 @@ fun MainScaffold(graph: AppGraph) {
                             bookmarks = graph.bookmarkStore,
                             contentPadding = padding,
                             showOnlyBookmarked = false,
-                            onChannelOpen = { id, scrollTo -> pushChannel(id, scrollTo) },
+                            onChannelOpen = { id, scrollTo -> safelyOpenChannel(id, scrollTo) },
                             onOpenComments = { post -> pushComments(post) },
                             homeTapTrigger = homeTapTrigger,
                             onBrandTap = { homeTapTrigger = System.nanoTime() },
@@ -668,8 +712,11 @@ fun MainScaffold(graph: AppGraph) {
                         // Tapping a channel from Saved pushes a Channel entry — Back
                         // returns the user to Saved instead of always resetting to
                         // all-feed. Quote-tap on a Saved card lands the new channel
-                        // at the replied-to message (scrollTo != null).
-                        pushChannel(id, scrollTo)
+                        // at the replied-to message (scrollTo != null). Gated through
+                        // [safelyOpenChannel] so a Saved card from a since-converted
+                        // supergroup / private-no-access source doesn't dump the
+                        // user on an empty ChannelScreen.
+                        safelyOpenChannel(id, scrollTo)
                     },
                     onOpenComments = { post -> pushComments(post) },
                     homeTapTrigger = 0L,
@@ -732,7 +779,7 @@ fun MainScaffold(graph: AppGraph) {
                     channelActions = graph.channelActions,
                     contentPadding = padding,
                     onBack = ::popNav,
-                    onChannelOpen = { cid, scrollTo -> pushChannel(cid, scrollTo) },
+                    onChannelOpen = { cid, scrollTo -> safelyOpenChannel(cid, scrollTo) },
                     onOpenComments = { post -> pushComments(post) },
                     scrollToMessage = entry.scrollToMessageId
                         ?.let { entry.chatId to it }

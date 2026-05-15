@@ -10,6 +10,8 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -151,46 +154,95 @@ class ChannelViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     init {
-        // First-load: deep-dive channel history so the single-channel view has more
-        // than the one post per channel that the global cold-start harvest provides.
-        // Runs in the VM scope so it survives composition changes. historyLoading
-        // clears regardless of outcome — an inaccessible channel shows the empty hero,
-        // not a frozen skeleton.
+        // OpenChat for the lifetime of this VM, with the history loads issued
+        // inside the open window. Per TDLib (Aliaksei Levin /
+        // [tdlib/td#2937] + the [TdApi.OpenChat] docstring):
+        //
+        //   "Informs TDLib that the chat is opened by the user. Many useful
+        //    activities depend on the chat being opened or closed (e.g., in
+        //    supergroups and channels all updates are received only for
+        //    opened chats)."
+        //
+        // Without [PostsRepository.openChat], [TdApi.GetChatHistory] for a
+        // channel the user hasn't viewed before is served from a cold local
+        // cache and returns an empty list even though the server has posts —
+        // the symptom was an "empty channel" hero on first entry. OpenChat
+        // (a) primes TDLib's server-side history sync for [chatId] so the
+        // very next GetChatHistory hits a warm cache, and (b) flips this chat
+        // into the "updates streamed here" set so new posts arrive live while
+        // the user reads (UpdateNewMessage / UpdateMessageInteractionInfo).
+        //
+        // [PostsRepository.openChat] / [closeChat] route through [ChatPresence],
+        // which refcounts per [chatId] so a concurrent open from elsewhere
+        // (TimelineScreen's focus-chat tracker, CommentsRepository.withOpenChat
+        // on a comments thread anchored here) safely overlaps. The merged-feed
+        // focus tracker is gated by `MainScaffold.coveredByOverlay`, so it
+        // releases its OpenChat the moment ChannelScreen is mounted — Levin's
+        // canonical "usually one chat opened" invariant (tdlib/td#2695) is
+        // preserved.
+        //
+        // [CloseChat] runs under [NonCancellable] so a fast back-press still
+        // flushes the close — same discipline TimelineScreen's focus tracker
+        // and CommentsRepository use.
+        //
+        // History note: the pre-refactor TimelineScreen did this dance inline
+        // (LaunchedEffect: openChat → loadChannelHistory → awaitCancellation
+        // → closeChat); commit d2e3509 extracted the screen but dropped the
+        // open/close pair. This block restores it.
         viewModelScope.launch {
+            repo.openChat(chatId)
             try {
-                repo.loadChannelHistory(chatId)
-            } finally {
-                _historyLoading.value = false
-            }
-        }
-        // Deep-link around-load: if the caller supplied a scrollToMessageId, check
-        // whether the target is already in the global feed slice (from the cold-start
-        // harvest). If not, issue loadHistoryAround exactly once. The repo returns
-        // `true` when the around-window landed (the target post should reach the
-        // posts flow shortly), `false` when the chat is inaccessible / FLOOD_WAIT
-        // exhausted / permission revoked — no point waiting on a post that will
-        // never come, so skip the timeout and flip [_attemptedAround] immediately
-        // so [buildChannelUiState] can transition to Missing.
-        if (scrollToMessageId != null) {
-            viewModelScope.launch {
-                val initialMatch = posts.value.any { p ->
-                    p.id == scrollToMessageId || scrollToMessageId in p.albumMessageIds
+                // First-load: deep-dive channel history so the single-channel
+                // view has more than the one post per channel that the global
+                // cold-start harvest provides. `historyLoading` clears
+                // regardless of outcome — an inaccessible channel shows the
+                // empty hero, not a frozen skeleton.
+                launch {
+                    try {
+                        repo.loadChannelHistory(chatId)
+                    } finally {
+                        _historyLoading.value = false
+                    }
                 }
-                if (!initialMatch) {
-                    val landed = runCatching {
-                        repo.loadHistoryAround(chatId, scrollToMessageId)
-                    }.getOrDefault(false)
-                    if (landed) {
-                        withTimeoutOrNull(1_500L) {
-                            posts.first { ps ->
-                                ps.any { p ->
-                                    p.id == scrollToMessageId || scrollToMessageId in p.albumMessageIds
+                // Deep-link around-load: if the caller supplied a
+                // scrollToMessageId, check whether the target is already in
+                // the global feed slice (from the cold-start harvest). If
+                // not, issue loadHistoryAround exactly once. The repo returns
+                // `true` when the around-window landed (the target post
+                // should reach the posts flow shortly), `false` when the chat
+                // is inaccessible / FLOOD_WAIT exhausted / permission revoked
+                // — no point waiting on a post that will never come, so skip
+                // the timeout and flip [_attemptedAround] immediately so
+                // [buildChannelUiState] can transition to Missing.
+                if (scrollToMessageId != null) {
+                    launch {
+                        val initialMatch = posts.value.any { p ->
+                            p.id == scrollToMessageId || scrollToMessageId in p.albumMessageIds
+                        }
+                        if (!initialMatch) {
+                            val landed = runCatching {
+                                repo.loadHistoryAround(chatId, scrollToMessageId)
+                            }.getOrDefault(false)
+                            if (landed) {
+                                withTimeoutOrNull(1_500L) {
+                                    posts.first { ps ->
+                                        ps.any { p ->
+                                            p.id == scrollToMessageId || scrollToMessageId in p.albumMessageIds
+                                        }
+                                    }
                                 }
                             }
                         }
+                        _attemptedAround.value = true
                     }
                 }
-                _attemptedAround.value = true
+                // Hold OpenChat for the screen's lifetime — TDLib keeps
+                // streaming updates until CloseChat. The two history launches
+                // above complete on their own; awaitCancellation lets them
+                // finish then suspends here until viewModelScope is cancelled.
+                awaitCancellation()
+            } finally {
+                withContext(NonCancellable) { repo.closeChat(chatId) }
             }
         }
         // Channel title: watch the post stream for a post whose senderName / channelContext
