@@ -455,9 +455,13 @@ fun ChannelScreen(
             },
             onQuotedSourceClick = { post ->
                 post.reply?.let { r ->
+                    // `replyToChatId` is normalised at the mapping boundary
+                    // ([MessageMapper.mapReply]): TDLib's "unknown chat"
+                    // sentinel `chat_id = 0` for same-chat replies is rewritten
+                    // to the host post's own chatId before it reaches the UI.
                     if (r.replyToChatId == chatId) {
                         // Same channel: queue an in-place scroll to the target message.
-                        pendingScrollToMessage = r.replyToChatId to r.replyToMessageId
+                        pendingScrollToMessage = chatId to r.replyToMessageId
                     } else {
                         // Different channel: drill in WITH the replied-to messageId
                         // baked into the new NavEntry.Channel — the freshly mounted

@@ -827,6 +827,11 @@ fun MainScaffold(graph: AppGraph) {
                         // resolver lands at the target and pulses there. The feed
                         // beneath is untouched (same discipline TimelineScreen /
                         // ChannelScreen use for their own quote-tap path).
+                        // `replyToChatId` is already normalised at the mapping
+                        // boundary ([MessageMapper.mapReply]) — TDLib's
+                        // "unknown chat" sentinel `chat_id = 0` is rewritten to
+                        // the host post's own chatId for the same-chat case,
+                        // so we pass it through verbatim here.
                         post.reply?.let { r ->
                             safelyOpenChannel(r.replyToChatId, r.replyToMessageId)
                         }

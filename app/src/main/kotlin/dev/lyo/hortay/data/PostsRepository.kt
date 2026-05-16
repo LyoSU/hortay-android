@@ -701,6 +701,21 @@ class PostsRepository(
             ?: return false
         if (!chat.isChannel()) return false
 
+        // Prime TDLib's local cache for the anchor BEFORE the history fetch. Per
+        // Aliaksei Levin on tdlib/td#702: when TDLib has `have_full_history = true`
+        // locally but the anchor isn't in the local DB,
+        // `GetChatHistory(fromMessageId = anchor)` enters the "Have a gap near
+        // message to get chat history from" loop and returns just the read-cursor
+        // message — the anchor itself is silently missing from the response, the
+        // around-load lands empty, and the deep-link UI falls through to Missing.
+        // `GetMessage` forces the daemon to fetch the specific message into local
+        // DB (or returns it from cache if already present); the subsequent
+        // `GetChatHistory` then has a valid iterator point to walk back from.
+        // Cheap when the anchor is already cached (offline lookup), one server
+        // round-trip when it isn't.
+        runCatching { td.send(TdApi.GetMessage(chatId, anchorMessageId)) }
+            .warnUnlessCancelled(TAG, "loadHistoryAround/getMessage($chatId, $anchorMessageId)")
+
         val history = runCatching {
             td.send(TdApi.GetChatHistory(chatId, anchorMessageId, -(limit / 2), limit, false))
         }

@@ -369,7 +369,31 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
 
     private suspend fun mapReply(replyTo: TdApi.MessageReplyTo?, chatId: Long): ReplyPreview? {
         val reply = replyTo as? TdApi.MessageReplyToMessage ?: return null
-        val key = reply.chatId to reply.messageId
+        // Normalise TDLib's "unknown chat" sentinel at the mapping boundary so every
+        // downstream consumer (feed grouping, channel/comments quote-tap navigation,
+        // album-anchor threading) reads a usable chat id without per-site fallbacks.
+        // Per [TdApi.MessageReplyToMessage.chat_id] docstring:
+        //   "The identifier of the chat to which the message belongs; may be 0 if
+        //    the replied message is in unknown chat."
+        // And Aliaksei Levin on tdlib/td#2855: `InputMessageReplyToMessage.chat_id = 0`
+        // is the canonical "same chat as the SendMessage target" signal on the
+        // INPUT side, and clients that pass it through unchanged surface
+        // round-tripped `messageReplyToMessage { chat_id = 0, message_id = 0 }` on
+        // the OUTPUT side. The "truly unknown chat" case (TDLib has no record of
+        // the replied chat) sets BOTH fields to 0, in which case there's no
+        // useful navigation target — we still surface the quote card (author /
+        // excerpt / thumb travel via the embedded snapshot) but the
+        // `replyToChatId/replyToMessageId` pair stays zero and consumer
+        // navigation taps land on a "link not found" snackbar, the right
+        // behaviour for that branch.
+        // Bias for the ambiguous middle case (`chat_id = 0` with
+        // `message_id != 0`): treat it as "same chat as the host post" — that's
+        // the dominant client-bug shape per tdlib/td#2855 and matches
+        // Telegram-Android's own quote-card behaviour.
+        val effectiveReplyChatId = if (reply.chatId != 0L) reply.chatId
+        else if (reply.messageId != 0L) chatId
+        else 0L
+        val key = effectiveReplyChatId to reply.messageId
 
         // Resolve author + thumbnail + kind + caption-fallback once and cache the bundle.
         //
@@ -384,13 +408,13 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
         // Either way the result is cached per (chatId, messageId), so a busy feed with
         // many posts referencing the same parent pays the cost at most once.
         val ctx = replyContextCache[key] ?: run {
-            val needsFetch = reply.content == null
+            val needsFetch = reply.content == null && effectiveReplyChatId != 0L && reply.messageId != 0L
             val refMsg = if (needsFetch) {
-                runCatching { td.send(TdApi.GetMessage(reply.chatId, reply.messageId)) }
+                runCatching { td.send(TdApi.GetMessage(effectiveReplyChatId, reply.messageId)) }
                     .getOrNull()
             } else null
             val author = refMsg?.let { resolveSender(it.senderId).name }
-                ?: resolveCachedChat(reply.chatId).name
+                ?: if (effectiveReplyChatId != 0L) resolveCachedChat(effectiveReplyChatId).name else ""
             val effectiveContent: TdApi.MessageContent? = refMsg?.content ?: reply.content
             val (thumb, kind) = extractReplyMedia(effectiveContent)
             val fallback = extractTextOrCaption(effectiveContent)
@@ -408,7 +432,7 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
             authorName = ctx.authorName,
             excerpt = excerpt,
             isQuote = reply.quote != null,
-            replyToChatId = reply.chatId,
+            replyToChatId = effectiveReplyChatId,
             replyToMessageId = reply.messageId,
             mediaThumb = ctx.mediaThumb,
             mediaKind = ctx.mediaKind,

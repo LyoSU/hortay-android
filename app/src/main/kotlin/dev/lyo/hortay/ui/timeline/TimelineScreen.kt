@@ -1221,6 +1221,8 @@ fun TimelineScreen(
                 // resolver would also scroll the feed underneath the overlay and flash
                 // a highlight there, which the user reads as "the feed jumped under me"
                 // (see bug: tap reply → channel opens AND feed highlights the post).
+                // `replyToChatId` is already normalised at the mapping boundary —
+                // see [MessageMapper.mapReply] for the rationale.
                 post.reply?.let { r ->
                     onChannelOpenState.value(r.replyToChatId, r.replyToMessageId)
                 }
@@ -2344,6 +2346,10 @@ internal fun groupReplies(
         if (key in consumed) continue
         val replyTo = post.reply
         val parent = if (replyTo != null) {
+            // `replyToChatId` is normalised at the mapping boundary
+            // ([MessageMapper.mapReply]): TDLib's "unknown chat" sentinel
+            // `chat_id = 0` is rewritten to the host post's own chat for
+            // the same-chat case, so the lookup hits the real parent.
             byKey[replyTo.replyToChatId to replyTo.replyToMessageId]
         } else null
         // Same-channel only: cross-channel replies stay as Single with the quote preview
