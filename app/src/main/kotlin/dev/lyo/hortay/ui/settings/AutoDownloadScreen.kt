@@ -589,7 +589,7 @@ private fun DataSaverBanner(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Symbol(
-            name = "data_saver_off",
+            name = "data_saver_on",
             tint = MaterialTheme.colorScheme.onTertiaryContainer,
             size = 22.dp,
         )
