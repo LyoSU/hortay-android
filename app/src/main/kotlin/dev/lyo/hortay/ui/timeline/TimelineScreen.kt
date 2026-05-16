@@ -673,23 +673,6 @@ fun TimelineScreen(
     ) {
         androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
     }
-    var overlayReturnAnchor by remember(routeKey) {
-        mutableStateOf<Pair<Any, Int>?>(null)
-    }
-    val captureOverlayReturnAnchorState = rememberUpdatedState {
-        val first = listState.layoutInfo.visibleItemsInfo.firstOrNull()
-        overlayReturnAnchor = first?.key?.let { key -> key to listState.firstVisibleItemScrollOffset }
-    }
-    LaunchedEffect(coveredByOverlay) {
-        if (coveredByOverlay) return@LaunchedEffect
-        val (key, offset) = overlayReturnAnchor ?: return@LaunchedEffect
-        overlayReturnAnchor = null
-        val index = feedItems.indexOfFirst { it.key == key }
-        if (index >= 0) {
-            listState.scrollToItem(index, offset)
-        }
-    }
-
     // Pinned color-only scroll behavior — height transitions are owned by
     // [topBarOffsetPx] below so we don't fight two systems for the same dp.
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
@@ -1116,11 +1099,9 @@ fun TimelineScreen(
     val translationsState = rememberUpdatedState(translationsMap)
     val bookmarkedState = rememberUpdatedState(bookmarkedKeys)
     val onChannelOpenState = rememberUpdatedState { chatId: Long, scrollTo: Long? ->
-        captureOverlayReturnAnchorState.value()
         onChannelOpen(chatId, scrollTo)
     }
     val onOpenCommentsState = rememberUpdatedState { post: TimelinePost ->
-        captureOverlayReturnAnchorState.value()
         onOpenComments(post)
     }
 
@@ -1227,7 +1208,6 @@ fun TimelineScreen(
                         // Username-only origins (TDLib didn't include the resolved id) —
                         // route through LocalUriHandler so HortayUriHandler resolves
                         // the handle via SearchPublicChat and lands the ChannelScreen path.
-                        captureOverlayReturnAnchorState.value()
                         uriHandler.openUri("https://t.me/${sourceHandle.removePrefix("@")}")
                     }
                 }
