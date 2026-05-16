@@ -97,6 +97,25 @@ fun CommentsScreen(
     onDismiss: () -> Unit,
     onChannelClick: (TimelinePost) -> Unit = {},
     /**
+     * Fired when the user taps a non-anonymous author header that resolves to a
+     * different chat than the post's host channel (TDLib's foreign
+     * [MessageSenderChat] case — admin posting "as one of my other channels", or a
+     * comment authored "on behalf of" some chat in the discussion supergroup).
+     * Default no-op; MainScaffold wires this to [safelyOpenChannel] so groups /
+     * users / private chats surface the kind-keyed snackbar instead of an empty
+     * ChannelScreen.
+     */
+    onAuthorChatClick: (chatId: Long) -> Unit = {},
+    /**
+     * Fired when the user taps the inline reply quote card on the pinned anchor
+     * post. Default no-op preserves the previous behaviour; production wiring in
+     * MainScaffold routes this through [safelyOpenChannel] with the replied-to
+     * messageId baked into the new NavEntry so the new screen lands at the target
+     * and pulses the highlight there. The feed beneath is never scrolled — same
+     * discipline as [TimelineScreen]'s own `onQuotedSourceClick`.
+     */
+    onQuotedSourceClick: (TimelinePost) -> Unit = {},
+    /**
      * Fired when the user taps a reaction chip — either on the pinned anchor post
      * (chatId = channel chat id, messageId = album anchor id) or on a comment
      * (chatId = linked discussion supergroup, messageId = comment id). The caller
@@ -150,10 +169,22 @@ fun CommentsScreen(
     }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
 
     val viewer = LocalMediaViewer.current
-    val pinnedPostInteractions = remember(viewer, onChannelClick, onReactionToggle, onPollVote) {
+    val pinnedPostInteractions = remember(
+        viewer,
+        onChannelClick,
+        onAuthorChatClick,
+        onQuotedSourceClick,
+        onReactionToggle,
+        onPollVote,
+    ) {
         PostInteractions(
             onMediaClick = { p, idx -> viewer.openFor(p.content, idx) },
             onChannelClick = onChannelClick,
+            onAuthorChatClick = onAuthorChatClick,
+            // Anchor post (and any tappable inline preview the user gets to via the
+            // post-detail screen) — the reply quote card now drills into the original
+            // instead of being a dead surface.
+            onQuotedSourceClick = onQuotedSourceClick,
             // Album anchor: Telegram pins reaction state to the FIRST message of an
             // album (the carrier the rest of the members link back to). Mirrors the
             // wiring in [TimelineScreen] — keep the two surfaces consistent so a

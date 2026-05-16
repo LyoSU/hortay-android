@@ -1584,12 +1584,20 @@ class PostsRepository(
         chatCache.compute(update.chatId) { _, old ->
             old?.also { it.title = update.title }
         }
+        val newTitle = update.title.orEmpty()
         _posts.update { current ->
             current.mutate { list ->
                 for (i in list.indices) {
                     val post = list[i]
-                    if (post.chatId == update.chatId) {
-                        list[i] = post.copy(senderName = update.title.orEmpty())
+                    if (post.chatId != update.chatId) continue
+                    // Channel-as-sender post: senderName IS the channel name → refresh
+                    // it. Non-anonymous post (channelContext != null): senderName is the
+                    // admin / foreign chat — leave it alone, but update the
+                    // "у Channel" subtitle so the host channel rename surfaces there.
+                    list[i] = if (post.channelContext == null) {
+                        post.copy(senderName = newTitle)
+                    } else {
+                        post.copy(channelContext = post.channelContext.copy(name = newTitle))
                     }
                 }
             }
@@ -1608,8 +1616,23 @@ class PostsRepository(
             current.mutate { list ->
                 for (i in list.indices) {
                     val post = list[i]
-                    if (post.chatId == update.chatId) {
-                        list[i] = post.copy(avatarThumb = newThumb, avatarFileId = newFileId)
+                    if (post.chatId != update.chatId) continue
+                    // Same channel-as-sender vs personal-author split as
+                    // [handleChatTitle]: only the channel-as-sender row's `avatar*`
+                    // fields belong to this chat. Non-anonymous posts carry the
+                    // admin / foreign-chat avatar in `avatar*` — we must not
+                    // overwrite that with the host channel's new photo. The host
+                    // channel identity lives in `channelContext` and IS this update's
+                    // target.
+                    list[i] = if (post.channelContext == null) {
+                        post.copy(avatarThumb = newThumb, avatarFileId = newFileId)
+                    } else {
+                        post.copy(
+                            channelContext = post.channelContext.copy(
+                                avatarThumb = newThumb,
+                                avatarFileId = newFileId,
+                            ),
+                        )
                     }
                 }
             }

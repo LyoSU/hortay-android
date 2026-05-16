@@ -141,6 +141,14 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
             // Channel-as-sender posts leave this null — the chat header is the right
             // affordance there.
             senderUserId = (sender as? TdApi.MessageSenderUser)?.userId,
+            // Foreign-chat-as-sender (case 3): admin posted on behalf of one of their
+            // OTHER channels. Header surfaces that foreign chat; tap routes into it
+            // through [safelyOpenChannel] (same kind-gate the deep-link dispatcher uses).
+            // Skip the trivial case where the chat sender IS the host channel — that's
+            // case 1 and the avatar/name already point at the host, no separate target.
+            senderChatId = (sender as? TdApi.MessageSenderChat)
+                ?.chatId
+                ?.takeUnless { it == chat.id },
             // Per-chat report eligibility from TDLib (TdApi.Chat.canBeReported).
             // Cheaper than [TdApi.GetMessageProperties] per post — TDLib already
             // populated this field on the Chat object via chatCache updates, and
@@ -185,6 +193,12 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
             albumMessageIds = emptyList(),
             parentId = parent,
             senderUserId = (message.senderId as? TdApi.MessageSenderUser)?.userId,
+            // Comment authored on behalf of a channel (rare anonymous-admin case where
+            // the admin replies "as the channel" inside the linked discussion group).
+            // The thread's hosting chat IS the discussion supergroup, so there is no
+            // host/foreign discriminator here — every chat-sender id is "foreign" to
+            // the human reader and worth a tap target. Null for human commenters.
+            senderChatId = (message.senderId as? TdApi.MessageSenderChat)?.chatId,
         )
     }
 

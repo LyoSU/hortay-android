@@ -817,6 +817,20 @@ fun MainScaffold(graph: AppGraph) {
                     feedRepo = graph.postsRepository,
                     onDismiss = ::popNav,
                     onChannelClick = { p -> pushChannel(p.chatId) },
+                    // Same kind-gate as every other in-app gesture: a foreign
+                    // sender chat that's actually a group / 1:1 / bot surfaces
+                    // the kind-keyed snackbar instead of an empty ChannelScreen.
+                    onAuthorChatClick = { id -> safelyOpenChannel(id, null) },
+                    onQuotedSourceClick = { post ->
+                        // Reply on the pinned anchor — drill into the replied-to
+                        // chat with the messageId baked into the new entry so the
+                        // resolver lands at the target and pulses there. The feed
+                        // beneath is untouched (same discipline TimelineScreen /
+                        // ChannelScreen use for their own quote-tap path).
+                        post.reply?.let { r ->
+                            safelyOpenChannel(r.replyToChatId, r.replyToMessageId)
+                        }
+                    },
                     onReactionToggle = { chatId, messageId, snapshot, kind, wasChosen ->
                         // Tap origin is encoded in [chatId]: the anchor's chat is the
                         // channel post's chatId; comments live in the linked discussion

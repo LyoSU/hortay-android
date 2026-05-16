@@ -94,6 +94,15 @@ data class TimelinePost(
      * Drives the avatar/name → [dev.lyo.hortay.ui.users.UserProfileSheet] tap surface.
      */
     val senderUserId: Long? = null,
+    /**
+     * Foreign chat id when the message was sent on behalf of another chat (TDLib's
+     * `MessageSenderChat(chatId != hostChat.id)` — admin posting "as their other
+     * channel" in the personal-author mode). The author header shows that foreign
+     * chat's name/avatar; tapping it should drill into that channel rather than the
+     * host. Null when sender is the host channel itself (case 1) or a human user
+     * (case 2 — covered by [senderUserId]), and null in web mode.
+     */
+    val senderChatId: Long? = null,
 )
 
 /**

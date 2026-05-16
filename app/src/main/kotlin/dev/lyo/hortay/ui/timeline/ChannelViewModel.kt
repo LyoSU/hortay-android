@@ -260,12 +260,18 @@ class ChannelViewModel(
                 // which is warm after UpdateNewChat has fired for this chat.
                 _channelTitle.value = repo.chatTitle(chatId)
             }
-            // Avatar minithumb/fileId from the same anchor when present. TimelinePost
-            // already carries them (populated by the channel-info hook at ingest); a
-            // channel post's sender IS the channel, so these are the channel's own
-            // avatar. Falls back to a [chatAvatar] one-shot for the cold-link case
-            // where loadChannelHistory hasn't materialised the first post yet.
-            val avatarFromPosts = anchor?.let { it.avatarFileId to it.avatarThumb }
+            // Avatar minithumb/fileId from the same anchor when present. Non-anonymous
+            // posts (admin posting under their own identity, or as one of their other
+            // channels) carry the AUTHOR's avatar in [avatarThumb]/[avatarFileId]; the
+            // host channel's avatar lives in [channelContext]. Prefer the channelContext
+            // when set so a channel where the latest post happens to be non-anonymous
+            // doesn't surface the admin's photo as the channel's own header avatar.
+            // Falls back to [chatAvatar] one-shot for the cold-link case where
+            // loadChannelHistory hasn't materialised the first post yet.
+            val avatarFromPosts = anchor?.let {
+                (it.channelContext?.avatarFileId ?: it.avatarFileId) to
+                    (it.channelContext?.avatarThumb ?: it.avatarThumb)
+            }
             if (avatarFromPosts != null && (avatarFromPosts.first != null || avatarFromPosts.second != null)) {
                 _channelAvatarFileId.value = avatarFromPosts.first
                 _channelAvatarThumb.value = avatarFromPosts.second
@@ -281,17 +287,31 @@ class ChannelViewModel(
             // Keep title AND avatar up-to-date as posts arrive (e.g. non-subscribed
             // channel whose first post lands after loadChannelHistory completes,
             // or a profile-photo change pushed via UpdateChatPhoto downstream).
+            //
+            // Anchor preference: scan for ANY post whose channelContext is populated so
+            // a string of non-anonymous posts at the head doesn't drag the channel
+            // header into showing one admin's avatar. Within a channel, every
+            // channelContext refers to this same chat, so picking the first hit is
+            // equivalent to picking the most recent — and it lets a single
+            // channel-as-sender post anywhere in the slice anchor the header.
             posts.collect { channelPosts ->
                 val anchor = channelPosts.firstOrNull() ?: return@collect
-                val resolvedName = anchor.channelContext?.name ?: anchor.senderName
+                val channelLike = channelPosts.firstNotNullOfOrNull { it.channelContext }
+                val resolvedName = channelLike?.name ?: anchor.senderName
                 if (resolvedName != _channelTitle.value) {
                     _channelTitle.value = resolvedName
                 }
-                if (anchor.avatarFileId != _channelAvatarFileId.value) {
-                    _channelAvatarFileId.value = anchor.avatarFileId
+                val resolvedFileId = channelLike?.avatarFileId
+                    ?: anchor.channelContext?.avatarFileId
+                    ?: anchor.avatarFileId
+                val resolvedThumb = channelLike?.avatarThumb
+                    ?: anchor.channelContext?.avatarThumb
+                    ?: anchor.avatarThumb
+                if (resolvedFileId != _channelAvatarFileId.value) {
+                    _channelAvatarFileId.value = resolvedFileId
                 }
-                if (anchor.avatarThumb !== _channelAvatarThumb.value) {
-                    _channelAvatarThumb.value = anchor.avatarThumb
+                if (resolvedThumb !== _channelAvatarThumb.value) {
+                    _channelAvatarThumb.value = resolvedThumb
                 }
             }
         }

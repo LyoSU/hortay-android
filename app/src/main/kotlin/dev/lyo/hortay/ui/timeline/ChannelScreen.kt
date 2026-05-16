@@ -426,6 +426,12 @@ fun ChannelScreen(
                 // Same-channel tap: already here, no-op. Different-channel: drill in.
                 if (post.chatId != chatId) onChannelOpenState.value(post.chatId, null)
             },
+            onAuthorChatClick = { id ->
+                // Foreign-chat-as-sender header tap. Same-id is impossible (the
+                // mapper only sets `senderChatId` when it differs from the host),
+                // but stay defensive — drill in only when distinct.
+                if (id != chatId) onChannelOpenState.value(id, null)
+            },
             onForwardSourceClick = { post ->
                 val origin = post.forwardOrigin
                 val sourceId = when (origin) {

@@ -1187,6 +1187,7 @@ fun TimelineScreen(
                 }
             },
             onChannelClick = { post -> onChannelOpenState.value(post.chatId, null) },
+            onAuthorChatClick = { id -> onChannelOpenState.value(id, null) },
             onForwardSourceClick = { post ->
                 val origin = post.forwardOrigin
                 val sourceId = when (origin) {

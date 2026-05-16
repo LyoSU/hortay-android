@@ -157,14 +157,30 @@ fun PostCard(
                 )
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
-            // Personal-author posts (TDLib's channel-as-user mode) route the avatar/name
-            // tap into the user-profile sheet rather than the host channel — the channel
-            // identity is already surfaced in the "у Channel" subtitle below, so making
-            // the header redundantly link to the same target would waste the affordance.
+            // Header tap routing — three branches, in priority order:
+            //   1. [senderUserId] (personal-author mode, admin posting under their own
+            //      identity, OR every discussion-thread comment) → user-profile sheet.
+            //      The host channel is already surfaced as the "у Channel" subtitle,
+            //      so making the header redundantly link there would waste the affordance.
+            //   2. [senderChatId] (admin posting "as one of my other channels" —
+            //      TDLib's foreign MessageSenderChat case) → drill into THAT chat
+            //      through [onAuthorChatClick]. Without this branch the tap would
+            //      land on the host channel, which the user can already reach via
+            //      the subtitle chip — and the foreign chat would have no in-app
+            //      entry surface at all.
+            //   3. Channel-as-sender post → open the host channel filter.
             val userOpener = dev.lyo.hortay.ui.users.LocalUserProfileOpener.current
-            val onSenderClick: () -> Unit = post.senderUserId?.let { uid ->
-                { userOpener.open(uid) }
-            } ?: { interactions.onChannelClick(post) }
+            val onSenderClick: () -> Unit = when {
+                post.senderUserId != null -> {
+                    val uid = post.senderUserId
+                    ({ userOpener.open(uid) })
+                }
+                post.senderChatId != null -> {
+                    val cid = post.senderChatId
+                    ({ interactions.onAuthorChatClick(cid) })
+                }
+                else -> ({ interactions.onChannelClick(post) })
+            }
             Avatar(
                 name = post.senderName,
                 thumb = post.avatarThumb,

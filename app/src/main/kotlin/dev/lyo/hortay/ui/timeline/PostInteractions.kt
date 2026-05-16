@@ -14,6 +14,16 @@ class PostInteractions(
     val onPostClick: (post: TimelinePost) -> Unit = {},
     val onMediaClick: (post: TimelinePost, index: Int) -> Unit = { _, _ -> },
     val onChannelClick: (post: TimelinePost) -> Unit = {},
+    /**
+     * User tapped a non-anonymous author header that resolves to ANOTHER chat —
+     * TDLib's [TdApi.MessageSenderChat] case where `chatId != hostChannel.id` (admin
+     * posting "as one of my other channels"). The default is a no-op so the screens
+     * that never see this kind of post keep their current behaviour; production
+     * wiring lives in MainScaffold and goes through [safelyOpenChannel] for the
+     * same kind-gate the deep-link dispatcher uses (group / user / private →
+     * snackbar instead of empty ChannelScreen).
+     */
+    val onAuthorChatClick: (chatId: Long) -> Unit = {},
     /** User tapped the "Переслано від …" chip — open the source channel if resolvable. */
     val onForwardSourceClick: (post: TimelinePost) -> Unit = {},
     /**
