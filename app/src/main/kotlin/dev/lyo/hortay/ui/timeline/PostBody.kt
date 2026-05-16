@@ -85,6 +85,14 @@ fun PostBody(
      * tests) can still mount [PostBody] without wiring.
      */
     onOpenInSource: () -> Unit = {},
+    /**
+     * Poll voting handler. When non-null, the [PollBlock] wires its option rows / Vote button
+     * to call this with the user's selection (0-based [PollOption.index] array). Empty array
+     * means "retract vote" — regular polls only. Defaults to null so callers that don't wire
+     * voting (preview surfaces, tests, guest-mode where polls are read-only) get a passive
+     * results-only render.
+     */
+    pollVoting: PollVoting? = null,
 ) {
     val textLimit = if (expanded) Int.MAX_VALUE else 18
     val captionLimit = if (expanded) Int.MAX_VALUE else 12
@@ -108,7 +116,7 @@ fun PostBody(
                 is PostContent.VoiceNote -> VoiceNoteBlock(content, onOpenInSource)
                 is PostContent.VideoNote -> VideoNoteBlock(content, onOpenInSource)
                 is PostContent.Sticker -> StickerBlock(content)
-                is PostContent.Poll -> PollBlock(content)
+                is PostContent.Poll -> PollBlock(content, pollVoting, onOpenInSource)
                 is PostContent.Location -> LocationBlock(content)
                 is PostContent.Contact -> ContactBlock(content)
                 is PostContent.Dice -> DiceBlock(content)
@@ -814,67 +822,6 @@ private fun StickerBlock(content: PostContent.Sticker) {
             format = content.format,
             contentDescription = content.emoji,
             modifier = Modifier.fillMaxSize(),
-        )
-    }
-}
-
-@Composable
-private fun PollBlock(content: PostContent.Poll) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Symbol(
-                name = "poll",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 18.dp,
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = stringResource(if (content.isAnonymous) R.string.poll_anonymous else R.string.poll_title),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = content.question,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(12.dp))
-        content.options.forEach { option ->
-            Spacer(Modifier.height(8.dp))
-            Row {
-                Text(
-                    text = option.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "${option.percent}%",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.height(4.dp))
-            LinearProgressIndicator(
-                progress = { option.percent / 100f },
-                modifier = Modifier.fillMaxWidth().height(4.dp),
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.poll_total_votes, content.totalVotes),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

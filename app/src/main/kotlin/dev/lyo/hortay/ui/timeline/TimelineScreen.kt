@@ -1272,6 +1272,22 @@ fun TimelineScreen(
                 markPostReadState.value(post)
                 onOpenCommentsState.value(post)
             },
+            // Optimistic poll vote: flip the local poll state (chosen rows light up, shimmer
+            // ride the result bars) BEFORE the RPC, then dispatch SetPollAnswer. The eventual
+            // `UpdateMessageContent` from TDLib carries the authoritative percentages and
+            // overwrites our guess via [PostsRepository.handleContentChanged]; on RPC failure
+            // [PostsRepository.clearPollPending] with revert=true undoes the local flip.
+            onPollVote = { post, indices ->
+                val ca = channelActions ?: return@PostInteractions
+                val repo = tdlibRepo ?: return@PostInteractions
+                val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
+                repo.applyOptimisticPollAnswer(post.chatId, target, indices)
+                scope.launch {
+                    val ok = ca.setPollAnswer(post.chatId, target, indices)
+                    repo.clearPollPending(post.chatId, target, revert = !ok)
+                }
+            },
+            pollVotingEnabled = channelActions != null && tdlibRepo != null,
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedState.value },
             onReportClick = onReportClick,
             canReport = canReport,

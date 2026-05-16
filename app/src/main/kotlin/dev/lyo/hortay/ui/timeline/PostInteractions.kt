@@ -45,6 +45,20 @@ class PostInteractions(
     /** Toggle the user's reaction (emoji or custom-emoji) on the given post. */
     val onReactionToggle: (post: TimelinePost, item: ReactionItem) -> Unit = { _, _ -> },
     /**
+     * Cast a poll vote against [post]. [chosenIndices] is the post-tap selection set keyed
+     * off [dev.lyo.hortay.data.PollOption.index]: empty = retract (regular polls only),
+     * single = single-choice / quiz commit, multi = multi-answer regular commit. Default
+     * no-op so non-TDLib surfaces (guest mode, previews, tests) get a passive results-only
+     * render — see [pollVotingEnabled] for the discriminator.
+     */
+    val onPollVote: (post: TimelinePost, chosenIndices: IntArray) -> Unit = { _, _ -> },
+    /**
+     * Whether [PollBlock] should wire its option taps to [onPollVote]. False in guest mode
+     * (no TDLib session, no `SetPollAnswer` RPC), so option rows render non-interactively
+     * and only show settled results. True in auth-mode TDLib feed.
+     */
+    val pollVotingEnabled: Boolean = false,
+    /**
      * User tapped "Report" in the post action sheet. In auth mode, [MainScaffold]
      * wires this to open [dev.lyo.hortay.ui.report.ReportFlowSheet] for the resolved
      * (chatId, messageId). In guest mode, [WebModeScaffold] wires it to

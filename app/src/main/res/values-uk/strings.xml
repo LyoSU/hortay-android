@@ -283,6 +283,22 @@
     <string name="poll_anonymous">Анонімне опитування</string>
     <string name="poll_title">Опитування</string>
     <string name="poll_total_votes">%1$d голосів</string>
+    <string name="poll_type_regular">Опитування</string>
+    <string name="poll_type_quiz">Вікторина</string>
+    <string name="poll_state_closed">Завершене опитування</string>
+    <string name="poll_anonymous_short">Анонімне</string>
+    <string name="poll_countdown_finished">Завершується…</string>
+    <string name="poll_total_votes_empty">Ще ніхто не голосував</string>
+    <plurals name="poll_total_votes_plural">
+        <item quantity="one">%1$d голос</item>
+        <item quantity="few">%1$d голоси</item>
+        <item quantity="many">%1$d голосів</item>
+        <item quantity="other">%1$d голосу</item>
+    </plurals>
+    <string name="poll_action_vote">Проголосувати</string>
+    <string name="poll_action_retract">Скасувати голос</string>
+    <string name="poll_action_view_explanation">Пояснення</string>
+    <string name="poll_action_add_option">Запропонувати варіант</string>
     <string name="content_giveaway_completed">🎁 Giveaway завершено</string>
     <string name="content_giveaway_winners">🎁 Giveaway · переможці</string>
     <string name="content_paid">⭐ Платний контент</string>
@@ -447,6 +463,8 @@
     <string name="op_load_channel">завантажити канал</string>
     <string name="op_load_older">завантажити старіші пости</string>
     <string name="op_change_reaction">змінити реакцію</string>
+    <string name="op_vote_in_poll">проголосувати в опитуванні</string>
+    <string name="op_close_poll">закрити опитування</string>
     <string name="op_mute">вимкнути сповіщення</string>
     <string name="op_unmute">увімкнути сповіщення</string>
     <string name="op_join_channel">приєднатися до каналу</string>

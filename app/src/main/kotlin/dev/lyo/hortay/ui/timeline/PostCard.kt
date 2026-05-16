@@ -237,12 +237,22 @@ fun PostCard(
                     TranslationChip(onDismiss = { interactions.onClearTranslationClick(post) })
                     Spacer(Modifier.height(8.dp))
                 }
+                // Capture (post → onPollVote(post, …)) once so PollBlock keeps its
+                // [PollVoting] handler stable across recompositions (Immutable holder, no
+                // skippability hit). Null in surfaces that don't wire voting — see
+                // [PostInteractions.pollVotingEnabled].
+                val pollVoting = remember(post.id, post.chatId, interactions) {
+                    if (interactions.pollVotingEnabled) {
+                        PollVoting { indices -> interactions.onPollVote(post, indices) }
+                    } else null
+                }
                 PostBody(
                     content = post.content,
                     onMediaClick = { _, idx -> interactions.onMediaClick(post, idx) },
                     expanded = expanded,
                     translation = translation,
                     onOpenInSource = { interactions.onOpenClick(post) },
+                    pollVoting = pollVoting,
                 )
 
                 if (post.views > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty()) {

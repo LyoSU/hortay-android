@@ -1,6 +1,8 @@
 package dev.lyo.hortay.data
 
 import dev.lyo.hortay.R
+import kotlinx.collections.immutable.toImmutableList
+import kotlinx.collections.immutable.toPersistentList
 import org.drinkless.tdlib.TdApi
 
 /**
@@ -94,19 +96,7 @@ internal object MessageContentMapper {
                 format = mapStickerFormat(s.format),
             )
         }
-        is TdApi.MessagePoll -> PostContent.Poll(
-            question = content.poll.question?.text.orEmpty(),
-            options = content.poll.options.orEmpty().map { opt ->
-                PollOption(
-                    text = opt.text?.text.orEmpty(),
-                    voterCount = opt.voterCount,
-                    percent = opt.votePercentage,
-                )
-            },
-            totalVotes = content.poll.totalVoterCount,
-            isAnonymous = content.poll.isAnonymous,
-            isClosed = content.poll.isClosed,
-        )
+        is TdApi.MessagePoll -> mapPoll(content)
         is TdApi.MessageLocation -> PostContent.Location(
             latitude = content.location.latitude,
             longitude = content.location.longitude,
@@ -510,6 +500,88 @@ internal object MessageContentMapper {
         is TdApi.StickerFormatTgs -> StickerFormat.Tgs
         is TdApi.StickerFormatWebm -> StickerFormat.Webm
         else -> StickerFormat.Webp
+    }
+
+    /**
+     * Map a TDLib [TdApi.MessagePoll] to [PostContent.Poll].
+     *
+     * Honours `Poll.optionOrder`: when non-empty, TDLib wants us to render options in
+     * that sequence (admins can shuffle display order without changing the underlying 0-based
+     * ids `SetPollAnswer` expects). [PollOption.index] keeps the original 0-based id so voting
+     * stays correct regardless of render order.
+     *
+     * The new "Polls 2.0" schema (TDLib master, May 2026) extends polls with [description],
+     * [headerMedia], [canAddOption], and per-option media. We surface what's renderable inline
+     * (photo banner + per-option photo thumb) and let the rest tap through to Telegram.
+     */
+    private fun mapPoll(msg: TdApi.MessagePoll): PostContent.Poll {
+        val poll = msg.poll
+        val rawOptions = poll.options.orEmpty()
+        val mapped = rawOptions.mapIndexed { idx, opt ->
+            PollOption(
+                index = idx,
+                text = mapFormattedText(opt.text),
+                voterCount = opt.voterCount,
+                percent = opt.votePercentage,
+                isChosen = opt.isChosen,
+                isBeingChosen = opt.isBeingChosen,
+                thumb = pollMediaThumb(opt.media),
+            )
+        }
+        // optionOrder is a permutation of indices; when present, render in that sequence.
+        // Empty/malformed → fall back to natural order.
+        val order: IntArray? = poll.optionOrder
+        val ordered = if (order != null && order.isNotEmpty() && order.size == mapped.size) {
+            val reordered = order.asList().mapNotNull { mapped.getOrNull(it) }
+            if (reordered.size == mapped.size) reordered else mapped
+        } else {
+            mapped
+        }
+        val kind = when (val t = poll.type) {
+            is TdApi.PollTypeQuiz -> PollKind.Quiz(
+                correctOptionIds = (t.correctOptionIds ?: IntArray(0)).toList().toImmutableList(),
+                explanation = mapFormattedText(t.explanation),
+            )
+            else -> {
+                // PollTypeRegular and any future subtypes — Regular is the safe default.
+                val reg = poll.type as? TdApi.PollTypeRegular
+                PollKind.Regular(
+                    allowsMultipleAnswers = poll.allowsMultipleAnswers,
+                    allowsRevoting = reg != null && poll.allowsRevoting,
+                )
+            }
+        }
+        return PostContent.Poll(
+            id = poll.id,
+            question = mapFormattedText(poll.question),
+            options = ordered.toPersistentList(),
+            totalVotes = poll.totalVoterCount,
+            isAnonymous = poll.isAnonymous,
+            isClosed = poll.isClosed,
+            kind = kind,
+            closeDate = poll.closeDate,
+            openPeriod = poll.openPeriod,
+            hasVoted = ordered.any { it.isChosen },
+            description = mapFormattedText(msg.description),
+            headerMedia = pollMediaThumb(msg.media),
+            canAddOption = msg.canAddOption,
+            recentVoterCount = poll.recentVoterIds?.size ?: 0,
+        )
+    }
+
+    /**
+     * Extract a static [TdMedia] preview from a TDLib poll-attached media payload. Only photo /
+     * video / animation / sticker carry a usable still-image thumbnail; venue / location have
+     * no thumb in TDLib's payload (they ship coordinates only) so we skip them. Returns null
+     * for null input or unsupported variants — caller treats null as "no inline preview, fall
+     * back to plain layout".
+     */
+    private fun pollMediaThumb(media: TdApi.MessageContent?): TdMedia? = when (media) {
+        is TdApi.MessagePhoto -> media.photo.toMedia(PHOTO_TARGET_INLINE_PX)
+        is TdApi.MessageVideo -> media.video.toThumbMedia()
+        is TdApi.MessageAnimation -> media.animation.toThumbMedia()
+        is TdApi.MessageSticker -> media.sticker.thumbnail?.toMedia()
+        else -> null
     }
 }
 

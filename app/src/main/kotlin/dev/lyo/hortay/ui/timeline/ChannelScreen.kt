@@ -505,6 +505,17 @@ fun ChannelScreen(
                 markPostReadState.value(post)
                 onOpenCommentsState.value(post)
             },
+            // See [TimelineScreen.onPollVote] for the full rationale of the optimistic-flip
+            // → RPC → clearPending pattern.
+            onPollVote = { post, indices ->
+                val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
+                repo.applyOptimisticPollAnswer(post.chatId, target, indices)
+                scope.launch {
+                    val ok = channelActions.setPollAnswer(post.chatId, target, indices)
+                    repo.clearPollPending(post.chatId, target, revert = !ok)
+                }
+            },
+            pollVotingEnabled = true,
             isBookmarked = { post -> post.bookmarkKey() in bookmarkedState.value },
             onReportClick = onReportClick,
             canReport = canReport,

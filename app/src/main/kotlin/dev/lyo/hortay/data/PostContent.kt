@@ -1,6 +1,8 @@
 package dev.lyo.hortay.data
 
 import androidx.compose.runtime.Immutable
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 
 /**
  * Rich content model decoupled from TdApi.* types. Mirrors the subset of Telegram message
@@ -136,15 +138,58 @@ sealed interface PostContent {
 
     @Immutable
     data class Poll(
-        val question: String,
-        val options: List<PollOption>,
+        /** TDLib poll id — stable across [UpdateMessageContent] revisions; used for telemetry only. */
+        val id: Long,
+        /** [FormattedText] is supported on questions for custom-emoji entities only (TDLib enforces). */
+        val question: FormattedText,
+        val options: ImmutableList<PollOption>,
         val totalVotes: Int,
         val isAnonymous: Boolean,
         val isClosed: Boolean,
+        /** Regular vs Quiz mode + its associated bits (multi-answer, revoting, correct-options, etc.). */
+        val kind: PollKind,
+        /**
+         * Unix timestamp when the poll auto-closes; 0 if open indefinitely. Combined with
+         * [openPeriod] the UI renders a countdown chip in the header (Telegram-style).
+         */
+        val closeDate: Int,
+        /** Original poll duration in seconds; 0 if open indefinitely. */
+        val openPeriod: Int,
+        /**
+         * True once the user has cast at least one vote. Mirrors `any { it.isChosen }` but is
+         * cached so the UI can branch on "pre-vote choose options view" vs "post-vote results
+         * view" without recomputing on every recomposition.
+         */
+        val hasVoted: Boolean,
+        /**
+         * Description authored alongside the poll — Telegram Premium "Polls 2.0" feature where
+         * the question is short ("Best framework?") and the description carries the prose
+         * ("Best for SSR, vote below"). Rendered as a small body block under the question.
+         */
+        val description: FormattedText = FormattedText("", emptyList()),
+        /**
+         * Optional photo attached to the poll itself (top banner, above the question). Null if
+         * the poll has no media. Only photo medias are surfaced — TDLib also allows
+         * animation/video/sticker/venue/location attachments on the new poll schema, but those
+         * surfaces tap-through to Telegram (Hortay treats poll media as a header thumbnail).
+         */
+        val headerMedia: TdMedia? = null,
+        /**
+         * True iff the author marked this poll as "let viewers propose new options". Hortay is a
+         * reader app — we surface the affordance as "Запропонувати варіант" that taps through
+         * to the official Telegram client (no AddPollOption RPC sent from this client).
+         */
+        val canAddOption: Boolean = false,
+        /**
+         * Count of recent voters returned by TDLib for non-anonymous polls. Used to render a
+         * small "X та інші проголосували" label under the total votes; avatars are not loaded
+         * to keep the feed light, but the count gives social proof.
+         */
+        val recentVoterCount: Int = 0,
     ) : PostContent {
         // The question is the only meaningful text — expose it so Copy / Share
         // doesn't return blank for a poll-only post.
-        override val captionPlain: String get() = question
+        override val captionPlain: String get() = question.text
     }
 
     @Immutable
@@ -541,10 +586,57 @@ enum class WebPreviewKind {
 
 @Immutable
 data class PollOption(
-    val text: String,
+    /**
+     * 0-based identifier passed to `SetPollAnswer.optionIds`. Stable across `UpdateMessageContent`
+     * revisions — TDLib never reorders the array even when `Poll.optionOrder` tells us to render
+     * a different sequence on screen (we apply the order at render time, not here).
+     */
+    val index: Int,
+    /** Option label as [FormattedText] — TDLib accepts custom-emoji entities here. */
+    val text: FormattedText,
     val voterCount: Int,
     val percent: Int,
+    /** True if the local user picked this option (post-vote results view). */
+    val isChosen: Boolean = false,
+    /** True while a `SetPollAnswer` RPC is in flight — UI renders a progress shimmer on the row. */
+    val isBeingChosen: Boolean = false,
+    /**
+     * Optional thumbnail rendered alongside the option label — TDLib's "Polls 2.0" extended
+     * options support attached media (photo / sticker / venue thumb). Only the static
+     * preview is exposed; animation / video options tap through to Telegram.
+     */
+    val thumb: TdMedia? = null,
 )
+
+/** Regular polls (single- or multi-vote) vs quiz polls (single correct answer + explanation). */
+@Immutable
+sealed interface PollKind {
+    @Immutable
+    data class Regular(
+        val allowsMultipleAnswers: Boolean,
+        /**
+         * True iff TDLib lets the user retract or change their vote on a regular poll. Quiz
+         * polls always reject retraction (TDLib enforces it server-side), so [Quiz] does not
+         * carry this bit. UI conditions the "Retract vote" affordance on this.
+         */
+        val allowsRevoting: Boolean,
+    ) : PollKind
+
+    @Immutable
+    data class Quiz(
+        /** 0-based indices of the correct option(s). Empty until the user has answered. */
+        val correctOptionIds: ImmutableList<Int>,
+        /** Per-poll explanation shown after the user answers (or taps the lamp). Empty when absent. */
+        val explanation: FormattedText,
+    ) : PollKind {
+        companion object {
+            val Unanswered: Quiz = Quiz(
+                correctOptionIds = persistentListOf(),
+                explanation = FormattedText("", emptyList()),
+            )
+        }
+    }
+}
 
 enum class StickerFormat { Webp, Tgs, Webm }
 

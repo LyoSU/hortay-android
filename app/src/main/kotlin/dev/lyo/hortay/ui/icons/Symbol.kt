@@ -100,7 +100,9 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
     "forum" -> R.drawable.sym_forum
     "hide_image" -> R.drawable.sym_hide_image
     "home" -> R.drawable.sym_home
+    "how_to_vote" -> R.drawable.sym_how_to_vote
     "info" -> R.drawable.sym_info
+    "lightbulb" -> R.drawable.sym_lightbulb
     "ios_share" -> R.drawable.sym_ios_share
     "lock" -> R.drawable.sym_lock
     "login" -> R.drawable.sym_login
@@ -129,6 +131,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
     "smartphone" -> R.drawable.sym_smartphone
     "storage" -> R.drawable.sym_storage
     "sync" -> R.drawable.sym_sync
+    "timer" -> R.drawable.sym_timer
     "translate" -> R.drawable.sym_translate
     "verified" -> R.drawable.sym_verified
     "video_call" -> R.drawable.sym_video_call

@@ -271,6 +271,21 @@
     <string name="poll_anonymous">Anonymous poll</string>
     <string name="poll_title">Poll</string>
     <string name="poll_total_votes">%1$d votes</string>
+    <!-- New MD3E poll card chips / actions -->
+    <string name="poll_type_regular">Poll</string>
+    <string name="poll_type_quiz">Quiz</string>
+    <string name="poll_state_closed">Final results</string>
+    <string name="poll_anonymous_short">Anonymous</string>
+    <string name="poll_countdown_finished">Closing…</string>
+    <string name="poll_total_votes_empty">No votes yet</string>
+    <plurals name="poll_total_votes_plural">
+        <item quantity="one">%1$d vote</item>
+        <item quantity="other">%1$d votes</item>
+    </plurals>
+    <string name="poll_action_vote">Vote</string>
+    <string name="poll_action_retract">Retract vote</string>
+    <string name="poll_action_view_explanation">Why?</string>
+    <string name="poll_action_add_option">Propose an option</string>
     <string name="content_giveaway_completed">🎁 Giveaway completed</string>
     <string name="content_giveaway_winners">🎁 Giveaway · winners</string>
     <string name="content_paid">⭐ Paid content</string>
@@ -433,6 +448,8 @@
     <string name="op_load_channel">load the channel</string>
     <string name="op_load_older">load older posts</string>
     <string name="op_change_reaction">change reaction</string>
+    <string name="op_vote_in_poll">vote in the poll</string>
+    <string name="op_close_poll">close the poll</string>
     <string name="op_mute">mute notifications</string>
     <string name="op_unmute">unmute notifications</string>
     <string name="op_join_channel">join the channel</string>

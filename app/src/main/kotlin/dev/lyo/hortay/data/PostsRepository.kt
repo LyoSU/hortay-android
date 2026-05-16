@@ -1456,6 +1456,68 @@ class PostsRepository(
         }
     }
 
+    /**
+     * Optimistic poll-vote flip. The UI marks selected rows with [PollOption.isBeingChosen]
+     * BEFORE the RPC, so the tap feels instant (a Material progress shimmer rides the row).
+     * The eventual `UpdateMessageContent` from TDLib overwrites the local guess with server
+     * truth via [handleContentChanged] — percentages and counts settle there. On RPC failure
+     * the caller invokes [clearPollPending] with `revert=true` to undo the flip.
+     *
+     * [chosenIndices] is the post-tap selection set keyed off [PollOption.index]:
+     *   * `[]` → user is retracting (regular polls only — quiz rejects server-side);
+     *   * `[i]` → single-answer poll, or one pick in a multi-answer commit;
+     *   * `[i, j, …]` → multi-answer poll commit.
+     */
+    fun applyOptimisticPollAnswer(
+        chatId: Long,
+        messageId: Long,
+        chosenIndices: IntArray,
+    ) {
+        val selection: Set<Int> = chosenIndices.toHashSet()
+        updateOnePostByAnyMemberId(chatId, messageId) { post ->
+            val poll = post.content as? PostContent.Poll ?: return@updateOnePostByAnyMemberId post
+            val newOptions = poll.options.map { opt ->
+                opt.copy(
+                    isChosen = opt.index in selection,
+                    isBeingChosen = opt.index in selection,
+                )
+            }
+            post.copy(
+                content = poll.copy(
+                    options = newOptions.toPersistentList(),
+                    hasVoted = newOptions.any { it.isChosen },
+                ),
+            )
+        }
+    }
+
+    /**
+     * Drop [PollOption.isBeingChosen] shimmer set by [applyOptimisticPollAnswer]. Called from
+     * the action repository's coroutine when the SetPollAnswer RPC settles — on success the
+     * eventual `UpdateMessageContent` carries the final percentages so we just drop the
+     * shimmer. On failure ([revert]=true) we also reset `isChosen` on previously-being-chosen
+     * rows so the visible flip is undone.
+     */
+    fun clearPollPending(chatId: Long, messageId: Long, revert: Boolean) {
+        updateOnePostByAnyMemberId(chatId, messageId) { post ->
+            val poll = post.content as? PostContent.Poll ?: return@updateOnePostByAnyMemberId post
+            if (poll.options.none { it.isBeingChosen }) return@updateOnePostByAnyMemberId post
+            val newOptions = poll.options.map { opt ->
+                if (!opt.isBeingChosen) opt
+                else opt.copy(
+                    isBeingChosen = false,
+                    isChosen = if (revert) false else opt.isChosen,
+                )
+            }
+            post.copy(
+                content = poll.copy(
+                    options = newOptions.toPersistentList(),
+                    hasVoted = newOptions.any { it.isChosen },
+                ),
+            )
+        }
+    }
+
     private fun handleIsPinnedChanged(update: TdApi.UpdateMessageIsPinned) {
         // Pin badge: TDLib pins one specific message; for an album in our timeline that
         // can be any sibling (Telegram typically pins the caption-carrier, but admins

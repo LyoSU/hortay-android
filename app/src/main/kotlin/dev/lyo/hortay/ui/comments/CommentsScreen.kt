@@ -109,6 +109,14 @@ fun CommentsScreen(
      * `ChannelActionsRepository.toggleReaction` with revert-on-failure.
      */
     onReactionToggle: (chatId: Long, messageId: Long, snapshot: Reactions, kind: ReactionKind, isChosen: Boolean) -> Unit = { _, _, _, _, _ -> },
+    /**
+     * Fired when the user votes on the pinned anchor post's poll. Default no-op so the
+     * screen stays self-contained in previews/tests; production wiring lives in
+     * [MainScaffold] and routes to `PostsRepository.applyOptimisticPollAnswer` +
+     * `ChannelActionsRepository.setPollAnswer` with revert-on-failure. Empty array =
+     * retract (regular polls only).
+     */
+    onPollVote: (chatId: Long, messageId: Long, chosenIndices: IntArray) -> Unit = { _, _, _ -> },
     backProgress: Float = 0f,
     backSwipeEdge: Int = BackEventCompat.EDGE_LEFT,
 ) {
@@ -142,7 +150,7 @@ fun CommentsScreen(
     }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
 
     val viewer = LocalMediaViewer.current
-    val pinnedPostInteractions = remember(viewer, onChannelClick, onReactionToggle) {
+    val pinnedPostInteractions = remember(viewer, onChannelClick, onReactionToggle, onPollVote) {
         PostInteractions(
             onMediaClick = { p, idx -> viewer.openFor(p.content, idx) },
             onChannelClick = onChannelClick,
@@ -155,6 +163,15 @@ fun CommentsScreen(
                 val target = p.albumMessageIds.firstOrNull() ?: p.id
                 onReactionToggle(p.chatId, target, p.reactions, item.kind, item.isChosen)
             },
+            // Poll votes on the pinned post follow the same pattern as the feed — the
+            // album-anchor convention applies, but in practice polls never share a
+            // media-group (TDLib only groups photo/video into albums) so the .firstOrNull
+            // is just defensive.
+            onPollVote = { p, indices ->
+                val target = p.albumMessageIds.firstOrNull() ?: p.id
+                onPollVote(p.chatId, target, indices)
+            },
+            pollVotingEnabled = true,
         )
     }
 

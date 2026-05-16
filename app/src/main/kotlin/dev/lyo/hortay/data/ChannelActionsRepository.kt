@@ -68,6 +68,53 @@ class ChannelActionsRepository(
         return outcome.isSuccess
     }
 
+    /**
+     * Cast (or retract) a vote on a poll. [optionIds] is the 0-based [PollOption.index]
+     * array TDLib expects in [TdApi.SetPollAnswer.optionIds]:
+     *   * empty array → retract any existing vote (regular polls with `allowsRevoting`);
+     *   * length 1 → single-answer poll, or one of several choices in a multi-answer poll;
+     *   * length > 1 → multi-answer poll commit.
+     *
+     * The UI applies an optimistic local flip via [PostsRepository.applyOptimisticPollAnswer]
+     * BEFORE this call; the eventual [TdApi.UpdateMessageContent] from TDLib carries the
+     * authoritative new poll state and overwrites our guess via the existing
+     * [PostsRepository.handleContentChanged] update path. On RPC failure callers invoke
+     * the optimistic helper a second time with the original state to roll back the visible
+     * change — same pattern as [toggleReaction].
+     *
+     * Quiz polls reject retraction server-side; the UI hides the "Retract vote" affordance
+     * for quizzes so we never reach this with an empty array for a quiz in practice.
+     */
+    suspend fun setPollAnswer(
+        chatId: Long,
+        messageId: Long,
+        optionIds: IntArray,
+    ): Boolean {
+        val outcome = runCatching {
+            td.send(TdApi.SetPollAnswer(chatId, messageId, optionIds))
+        }
+            .warnUnlessCancelled(TAG, "setPollAnswer(chat=$chatId msg=$messageId, n=${optionIds.size})")
+            .onFailure { it.surfaceTo(userMessages, res, R.string.op_vote_in_poll, connection.value) }
+        return outcome.isSuccess
+    }
+
+    /**
+     * Mark a poll as closed (chat admin / poll author only). Returns true on success.
+     *
+     * Hortay UI does not currently surface a "Close poll" button — readers can't author
+     * polls in this app — but we keep the suspend wrapper here because anyone admin-listed
+     * for the source channel reaches this same client process, and a future "manage your
+     * channel" surface would call this method without further wiring.
+     */
+    suspend fun stopPoll(chatId: Long, messageId: Long): Boolean {
+        val outcome = runCatching {
+            td.send(TdApi.StopPoll(chatId, messageId, /* replyMarkup */ null))
+        }
+            .warnUnlessCancelled(TAG, "stopPoll($chatId, $messageId)")
+            .onFailure { it.surfaceTo(userMessages, res, R.string.op_close_poll, connection.value) }
+        return outcome.isSuccess
+    }
+
     private fun ReactionKind.toTd(): TdApi.ReactionType = when (this) {
         is ReactionKind.Emoji -> TdApi.ReactionTypeEmoji(text)
         is ReactionKind.CustomEmoji -> TdApi.ReactionTypeCustomEmoji(customEmojiId)

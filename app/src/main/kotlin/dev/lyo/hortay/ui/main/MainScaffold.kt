@@ -851,6 +851,16 @@ fun MainScaffold(graph: AppGraph) {
                             }
                         }
                     },
+                    onPollVote = { chatId, messageId, indices ->
+                        // Optimistic flip on the anchor's poll → SetPollAnswer → clear pending.
+                        // The pinned post in CommentsScreen is always the feed's anchor; the
+                        // anchor lives in `PostsRepository`, not `CommentsRepository`.
+                        graph.postsRepository.applyOptimisticPollAnswer(chatId, messageId, indices)
+                        scope.launch {
+                            val ok = graph.channelActions.setPollAnswer(chatId, messageId, indices)
+                            graph.postsRepository.clearPollPending(chatId, messageId, revert = !ok)
+                        }
+                    },
                     backProgress = if (isCurrent) navBackProgress.value else 0f,
                     backSwipeEdge = navBackEdge,
                 )
