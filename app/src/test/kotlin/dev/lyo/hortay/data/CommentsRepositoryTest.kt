@@ -2,11 +2,14 @@ package dev.lyo.hortay.data
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -80,9 +83,84 @@ class CommentsRepositoryTest {
         assertEquals(100L, ready.rows.single().message.id)
     }
 
+    @Test
+    fun `UpdateNewMessage from a foreign thread in the same discussion chat is ignored`() = runTest {
+        // Regression: a single discussion supergroup hosts every thread for the
+        // channel. UpdateNewMessage carries the SAME chatId for every thread; the
+        // discriminator is Message.topicId = MessageTopicThread(messageThreadId).
+        // Before the fix, applyUpdate() filtered only by chatId — comments authored
+        // on a different post (different messageThreadId, same discussion chat)
+        // were spliced into the live list of whichever thread the user was
+        // currently viewing.
+        val chatId = 123L
+        val anchor = 7L
+        val threadChatId = 9999L
+        val rootId = 7L
+        val otherThreadRoot = 42L
+
+        val testScope = TestScope(StandardTestDispatcher(testScheduler))
+        val td = FakeTdSender().apply {
+            onNext { _ ->
+                TdApi.MessageThreadInfo().apply {
+                    this.chatId = threadChatId
+                    this.messageThreadId = rootId
+                }
+            }
+            onNext { _ -> TdApi.Ok() }
+            onNext { _ ->
+                TdApi.Messages().apply {
+                    messages = arrayOf(
+                        message(id = rootId, threadChatId, fromUserId = 11L, topicRoot = rootId),
+                    )
+                    totalCount = 1
+                }
+            }
+            onAny("CloseChat") { _ -> TdApi.Ok() }
+            // Subsequent thread-history pages — progressive emit may keep filling.
+            onAny("GetMessageThreadHistory") { _ ->
+                TdApi.Messages().apply { messages = emptyArray(); totalCount = 0 }
+            }
+        }
+        val repo = CommentsRepository(td, fakeMapper(td), testScope, FakeStrings)
+
+        val collected = mutableListOf<CommentsRepository.ThreadState>()
+        val job = testScope.launch {
+            repo.observeThread(chatId, listOf(anchor)).collect { collected += it }
+        }
+        advanceUntilIdle()
+
+        // Foreign-thread comment in the same discussion chat — must NOT appear.
+        td.emitUpdate(
+            TdApi.UpdateNewMessage(
+                message(id = 200L, threadChatId, fromUserId = 22L, topicRoot = otherThreadRoot),
+            ),
+        )
+        advanceUntilIdle()
+
+        // Our-thread comment — must appear.
+        td.emitUpdate(
+            TdApi.UpdateNewMessage(
+                message(id = 201L, threadChatId, fromUserId = 22L, topicRoot = rootId),
+            ),
+        )
+        advanceUntilIdle()
+
+        val final = collected.last() as CommentsRepository.ThreadState.Ready
+        val visibleIds = final.rows.map { it.message.id }.toSet()
+        assertFalse(200L in visibleIds, "foreign-thread comment must not be visible")
+        assertTrue(201L in visibleIds, "our-thread comment must appear")
+
+        job.cancel()
+    }
+
     private fun fakeMapper(td: TdSender): MessageMapper = MessageMapper(td, FakeStrings)
 
-    private fun message(id: Long, chatId: Long, fromUserId: Long): TdApi.Message {
+    private fun message(
+        id: Long,
+        chatId: Long,
+        fromUserId: Long,
+        topicRoot: Long? = null,
+    ): TdApi.Message {
         // Minimal Message — only the fields the mapper + tree builder touch.
         return TdApi.Message().apply {
             this.id = id
@@ -90,6 +168,7 @@ class CommentsRepositoryTest {
             this.senderId = TdApi.MessageSenderUser(fromUserId)
             this.date = 1700000000
             this.content = TdApi.MessageText(TdApi.FormattedText("hi", emptyArray()), null, null)
+            if (topicRoot != null) this.topicId = TdApi.MessageTopicThread(topicRoot)
         }
     }
 }

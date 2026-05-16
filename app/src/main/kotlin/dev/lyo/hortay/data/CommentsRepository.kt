@@ -454,7 +454,17 @@ class CommentsRepository(
     ): Boolean = when (upd) {
         is TdApi.UpdateNewMessage -> {
             val m = upd.message
+            // Discussion supergroup hosts every thread for the channel in a single
+            // chat — every channel post's comments fan out as separate threads
+            // inside the same `threadChatId`. Filtering only by chatId would
+            // splice a comment authored under post B into the live list of the
+            // thread the user is currently reading on post A. TDLib disambiguates
+            // by `Message.topicId = MessageTopicThread(messageThreadId)`, where
+            // `messageThreadId` equals the discussion-side mirror id (== our
+            // `anchor.rootId`). Drop everything that isn't authored under our
+            // root.
             if (m.chatId != anchor.threadChatId) false
+            else if (!belongsToThread(m, anchor)) false
             else if (!seenIds.add(m.id)) false
             else { live += m; true }
         }
@@ -485,6 +495,11 @@ class CommentsRepository(
         is TdApi.UpdateDeleteMessages -> {
             if (upd.chatId != anchor.threadChatId || !upd.isPermanent) false
             else {
+                // Delete fan-in is naturally thread-safe: the only mutation is
+                // `live.removeAll { it.id in ids }`, so messages from foreign
+                // threads (different `messageThreadId`, same discussion chat)
+                // can never be in `live` in the first place (UpdateNewMessage
+                // gates them out above) and are silent no-ops here.
                 val ids = upd.messageIds.toHashSet()
                 val before = live.size
                 live.removeAll { it.id in ids }
@@ -495,6 +510,32 @@ class CommentsRepository(
             }
         }
         else -> false
+    }
+
+    /**
+     * Whether [message] belongs to the thread we are currently observing.
+     *
+     * Canonical signal is `Message.topicId = MessageTopicThread(messageThreadId)` where
+     * `messageThreadId` equals the discussion-side mirror id of the channel post — i.e.
+     * our [ResolvedAnchor.rootId]. Forum supergroups carry `MessageTopicForum` instead,
+     * and Telegram does not let a forum supergroup also be a channel's linked discussion
+     * group, so anything that isn't a `MessageTopicThread` matching our root is foreign
+     * traffic and must be rejected.
+     *
+     * Defensive fallback for `topicId == null`: walk the reply chain — every comment in
+     * a discussion thread either replies to the mirror root directly or to another
+     * comment in the same thread. If the immediate `replyTo` points at our root we
+     * accept; otherwise we reject. This branch should only fire on extremely old TDLib
+     * cache entries — current TDLib (any 1.8.x+) always populates `topicId` for
+     * non-forum supergroup messages.
+     */
+    private fun belongsToThread(message: TdApi.Message, anchor: ResolvedAnchor): Boolean {
+        val topic = message.topicId
+        if (topic != null) {
+            return (topic as? TdApi.MessageTopicThread)?.messageThreadId == anchor.rootId
+        }
+        val replyTo = message.replyTo as? TdApi.MessageReplyToMessage ?: return false
+        return replyTo.messageId == anchor.rootId
     }
 
     private suspend fun buildReady(
