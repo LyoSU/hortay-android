@@ -99,6 +99,33 @@ class NavStack {
         return top
     }
 
+    /**
+     * Atomically pop the top entry and push [entry] in its place. Single
+     * [_stack] update = single emission to subscribers — no transient
+     * `stack.size - 1` intermediate state where the "below" entry briefly
+     * becomes the top (which would otherwise fire a recomposition with the
+     * top-entry graphicsLayer modifier flipping on, the layer underneath
+     * unmounting / re-mounting because [MainScaffold.visibleEntries] takes
+     * the last 2 items, and any per-`isTop` side effects firing twice).
+     *
+     * Used by "go to original" affordances on overlay surfaces: tapping a
+     * reply quote card / a channel name / an author chat in a Comments
+     * overlay drills into that destination instead of stacking it on top of
+     * the conversation the user just finished reading. Telegram-X / Twitter
+     * / Reddit all treat the reply-card tap as a NAVIGATION (replaces the
+     * current detail view), not a stacked drill — Hortay follows the same
+     * idiom here.
+     *
+     * If the stack is empty, falls back to a plain push so the call is
+     * defensive against unusual call-site state.
+     */
+    fun replaceTop(entry: NavEntry) {
+        _stack.update { current ->
+            if (current.isEmpty()) current.add(entry)
+            else current.removeAt(current.lastIndex).add(entry)
+        }
+    }
+
     fun clear() {
         _stack.value = persistentListOf()
     }

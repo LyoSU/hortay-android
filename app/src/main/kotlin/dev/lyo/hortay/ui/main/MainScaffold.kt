@@ -260,6 +260,66 @@ fun MainScaffold(graph: AppGraph) {
         }
     }
 
+    /**
+     * Same kind-gate as [safelyOpenChannel], but for "go to original" affordances
+     * on overlay surfaces (pinned-anchor reply card / channel chip / author-chat
+     * header in [CommentsScreen]): on success, replaces the current top entry
+     * in-place via [NavStack.replaceTop] instead of stacking a new entry on top
+     * of it.
+     *
+     * Why replace, not stack:
+     *   • Product idiom — the reply card / channel chip in a post-detail view is
+     *     a NAVIGATION ("go to the original"), not a stacked drill. Telegram-X /
+     *     Twitter / Reddit all collapse the originating detail view when the user
+     *     taps these. Back from the destination returns to the surface BELOW the
+     *     comments view (the originating channel feed), not back to the
+     *     comments view the user already finished reading.
+     *   • Layout — [MainScaffold] only mounts `stack.takeLast(2)`, so stacking a
+     *     third layer would unmount the originating channel underneath. Backing
+     *     out of the destination would then re-mount it (fresh ViewModelStore,
+     *     fresh OpenChat refcount swing, scroll-position re-derivation) — the
+     *     "throws to target, bounces back" flicker the user reported.
+     *
+     * Atomicity: [resolveChatKind] is cheap (chatCache hit) for the common case
+     * — the user is replying to a post in a channel they're already viewing — so
+     * the coroutine completes inline on [Dispatchers.Main.immediate]. The
+     * subsequent [NavStack.replaceTop] is a SINGLE [_stack] write (no intermediate
+     * `stack.size - 1` state), which means Compose subscribers see exactly one
+     * recomposition: `[Channel-A, Comments(X)] → [Channel-A, Channel-A(Y)]`. The
+     * Channel-A entry at index 0 keeps its identity across the transition (same
+     * `entryId`), so its NavEntryHost / ViewModelStore / OpenChat refcount /
+     * LazyListState all stay intact.
+     *
+     * Cold path (chatCache miss, requires `GetChat` round-trip): the launched
+     * coroutine suspends; UI continues showing the originating overlay until
+     * the resolve lands, then atomically replaces. Same UX, just with a small
+     * wait at the start instead of an instant transition.
+     */
+    fun safelyReplaceTopWithChannel(chatId: Long, scrollTo: Long? = null) {
+        scope.launch {
+            when (val resolved = graph.postsRepository.resolveChatKind(chatId)) {
+                is PublicHandleResult.Channel ->
+                    graph.nav.replaceTop(
+                        NavEntry.Channel(
+                            chatId = resolved.chatId,
+                            scrollToMessageId = scrollTo,
+                        ),
+                    )
+                is PublicHandleResult.Unsupported -> {
+                    graph.nav.pop()
+                    graph.userMessages.post(
+                        res.getString(unsupportedHandleMessageId(resolved.kind)),
+                        UserMessageBus.Severity.Info,
+                    )
+                }
+                is PublicHandleResult.NotFound -> {
+                    graph.nav.pop()
+                    graph.userMessages.post(res.getString(R.string.link_not_found))
+                }
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         graph.deepLinkRouter.events.collect { link ->
             try {
@@ -835,45 +895,54 @@ fun MainScaffold(graph: AppGraph) {
                     repo = graph.commentsRepository,
                     feedRepo = graph.postsRepository,
                     onDismiss = ::popNav,
-                    onChannelClick = { p -> pushChannel(p.chatId) },
-                    // Same kind-gate as every other in-app gesture: a foreign
-                    // sender chat that's actually a group / 1:1 / bot surfaces
-                    // the kind-keyed snackbar instead of an empty ChannelScreen.
-                    onAuthorChatClick = { id -> safelyOpenChannel(id, null) },
+                    // The three "leave this detail view for somewhere else" hooks
+                    // below — channel-chip tap, foreign-author header tap, reply
+                    // quote-card tap — all route through [safelyReplaceTopWithChannel]
+                    // for the same two reasons:
+                    //
+                    //   1. UX — every one of them is a "go to the original / go to
+                    //      that channel" affordance, not a stacked drill. Back
+                    //      from the destination should return to the surface below
+                    //      this Comments view (the originating feed / channel), not
+                    //      to the post detail the user already finished reading.
+                    //      Telegram-X / Twitter / Reddit all collapse the
+                    //      originating detail view on these taps.
+                    //
+                    //   2. Layout — [MainScaffold] only renders `stack.takeLast(2)`,
+                    //      so stacking a third layer on top of Comments would push
+                    //      the originating channel (at stack[-3]) out of the
+                    //      visible window. Its [NavEntryHost] disposes, its
+                    //      [ViewModelStore] clears, its `OpenChat` refcount drops.
+                    //      Backing out of the destination then RE-mounts it (fresh
+                    //      VM, fresh OpenChat, scroll-position re-derivation,
+                    //      momentary skeleton) — the "throws to target, bounces
+                    //      back to the original post" flicker the user reported.
+                    //      [NavStack.replaceTop] keeps the originating channel
+                    //      pinned at index 0 of the visible pair across the whole
+                    //      transition.
+                    //
+                    // The atomicity argument also matters: [replaceTop] is a
+                    // SINGLE [_stack] update, so Compose subscribers see exactly
+                    // one transition `[Channel-A, Comments(X)] →
+                    // [Channel-A, <destination>]`. A pop-then-push pair would emit
+                    // two values, which on a non-`Main.immediate` continuation
+                    // would interleave a recomposition with `[Channel-A]` alone —
+                    // briefly flipping Channel-A's `isTop` flag (with the
+                    // graphicsLayer modifier on the back-progress overlay) and any
+                    // per-`isTop` side effect.
+                    onChannelClick = { p -> safelyReplaceTopWithChannel(p.chatId, null) },
+                    onAuthorChatClick = { id -> safelyReplaceTopWithChannel(id, null) },
                     onQuotedSourceClick = { post ->
-                        // Reply on the pinned anchor — close THIS Comments overlay
-                        // first, then drill into the replied-to chat with the
-                        // messageId baked into the new entry so the new
-                        // ChannelScreen lands at the target and pulses the
-                        // highlight there.
-                        //
-                        // Pop-then-push (vs. just push on top of Comments) for two
-                        // reasons:
-                        //   1. UX — the reply card is a "go to the original"
-                        //      affordance. Telegram-X / Twitter / Reddit all treat
-                        //      it as a navigation, not a stacked drill. Back from
-                        //      the new screen returns the user to the channel
-                        //      below where they were before tapping the post, not
-                        //      to the post detail they already finished reading.
-                        //   2. Layout — leaving Comments mounted underneath
-                        //      pushed `visibleEntries = stack.takeLast(2)` past
-                        //      the originally-mounted ChannelScreen for the SAME
-                        //      chatId (it disappeared from the visible window),
-                        //      which fired its [NavEntryHost] dispose, cancelled
-                        //      its [ViewModelStore], and led to an
-                        //      openChat/closeChat refcount swing that the user
-                        //      read as a "throws to target, bounces back" flicker.
-                        //      Closing Comments first keeps the originating
-                        //      ChannelScreen mounted at index 0 of the
-                        //      newly-pushed pair.
                         // `replyToChatId` is already normalised at the mapping
                         // boundary ([MessageMapper.mapReply]) — TDLib's
                         // "unknown chat" sentinel `chat_id = 0` is rewritten to
-                        // the host post's own chatId for the same-chat case,
-                        // so we pass it through verbatim here.
+                        // the host post's own chatId for the same-chat case, so
+                        // we pass it through verbatim here. Same-channel and
+                        // cross-channel replies share the path: the new entry's
+                        // `scrollToMessageId` lands the destination at the
+                        // replied-to message and pulses the highlight there.
                         post.reply?.let { r ->
-                            popNav()
-                            safelyOpenChannel(r.replyToChatId, r.replyToMessageId)
+                            safelyReplaceTopWithChannel(r.replyToChatId, r.replyToMessageId)
                         }
                     },
                     onReactionToggle = { chatId, messageId, snapshot, kind, wasChosen ->
