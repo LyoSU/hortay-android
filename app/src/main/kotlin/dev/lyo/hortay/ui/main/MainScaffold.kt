@@ -582,42 +582,61 @@ fun MainScaffold(graph: AppGraph) {
             // Hide the nav-bar while a nav-overlay is visible (Telegram /
             // Twitter / Instagram all do this for drilled-in screens — the
             // overlay owns the bottom edge so the last row of content isn't
-            // occluded). Animated through M3E motion springs:
-            // height-shrinks + fades so the surrounding Scaffold content
-            // padding eases instead of snapping.
-            androidx.compose.animation.AnimatedVisibility(
-                visible = topEntry == null,
-                enter = androidx.compose.animation.expandVertically(
-                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                ) + androidx.compose.animation.fadeIn(
-                    MaterialTheme.motionScheme.defaultEffectsSpec(),
-                ),
-                exit = androidx.compose.animation.shrinkVertically(
-                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                ) + androidx.compose.animation.fadeOut(
-                    MaterialTheme.motionScheme.defaultEffectsSpec(),
-                ),
-            ) {
-            FloatingNavBar(
-                selected = selectedTab,
-                onSelect = { tab ->
-                    // Three distinct cases when the user taps the Home pill while
-                    // selectedTab is already Feed. Telegram-Android / Twitter / X all
-                    // settle on the same rule, surfaced explicitly here:
-                    //  (a) User on Feed AND re-tapping the active Home tab.
-                    //      Canonical "tap home twice" gesture: bump homeTapTrigger
-                    //      so TimelineScreen scrolls to top (or refreshes if already
-                    //      there).
-                    //  (b) User on a different tab. Just switch tabs.
-                    // (Home-tap-while-drilled is unreachable here because the
-                    // nav-bar is hidden in that state — see the early return
-                    // above.)
-                    val reselectingActiveFeed =
-                        tab == NavTab.Feed && tab == selectedTab
-                    if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
-                    selectedTab = tab
-                },
+            // occluded).
+            //
+            // Reserved-slot animation, NOT height-collapse: we keep the bar's
+            // measured height stable across the show/hide transition and
+            // visually slide-and-fade its content via `graphicsLayer`. The
+            // earlier [AnimatedVisibility] form used `expandVertically /
+            // shrinkVertically`, which animates the Scaffold's bottomBar slot
+            // height — that propagates through [PaddingValues] into
+            // TimelineScreen's `contentPadding.bottom` and re-lays out the
+            // LazyColumn every frame of the animation. Stable
+            // `firstVisibleItemIndex` keeps the top edge anchored, but the
+            // bottom-padding delta shifts which rows fit in the viewport — read
+            // by the user as a small scroll jitter on overlay return. The
+            // overlay covers the full screen anyway, so the reserved space
+            // sitting behind it is invisible during the navigation window.
+            val navBarVisible = topEntry == null
+            val navBarAlpha by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (navBarVisible) 1f else 0f,
+                animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+                label = "navbar-alpha",
             )
+            val navBarSlide by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (navBarVisible) 0f else 1f,
+                animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                label = "navbar-slide",
+            )
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier.graphicsLayer {
+                    alpha = navBarAlpha
+                    // `navBarSlide = 1f` translates the content fully off the
+                    // bottom edge of its own slot — the measured slot height
+                    // stays at the bar's natural value either way.
+                    translationY = navBarSlide * size.height
+                },
+            ) {
+                FloatingNavBar(
+                    selected = selectedTab,
+                    onSelect = { tab ->
+                        // Three distinct cases when the user taps the Home pill while
+                        // selectedTab is already Feed. Telegram-Android / Twitter / X all
+                        // settle on the same rule, surfaced explicitly here:
+                        //  (a) User on Feed AND re-tapping the active Home tab.
+                        //      Canonical "tap home twice" gesture: bump homeTapTrigger
+                        //      so TimelineScreen scrolls to top (or refreshes if already
+                        //      there).
+                        //  (b) User on a different tab. Just switch tabs.
+                        // (Home-tap-while-drilled is unreachable here because the
+                        // nav-bar is hidden in that state — see the early return
+                        // above.)
+                        val reselectingActiveFeed =
+                            tab == NavTab.Feed && tab == selectedTab
+                        if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
+                        selectedTab = tab
+                    },
+                )
             }
         },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -822,17 +841,38 @@ fun MainScaffold(graph: AppGraph) {
                     // the kind-keyed snackbar instead of an empty ChannelScreen.
                     onAuthorChatClick = { id -> safelyOpenChannel(id, null) },
                     onQuotedSourceClick = { post ->
-                        // Reply on the pinned anchor — drill into the replied-to
-                        // chat with the messageId baked into the new entry so the
-                        // resolver lands at the target and pulses there. The feed
-                        // beneath is untouched (same discipline TimelineScreen /
-                        // ChannelScreen use for their own quote-tap path).
+                        // Reply on the pinned anchor — close THIS Comments overlay
+                        // first, then drill into the replied-to chat with the
+                        // messageId baked into the new entry so the new
+                        // ChannelScreen lands at the target and pulses the
+                        // highlight there.
+                        //
+                        // Pop-then-push (vs. just push on top of Comments) for two
+                        // reasons:
+                        //   1. UX — the reply card is a "go to the original"
+                        //      affordance. Telegram-X / Twitter / Reddit all treat
+                        //      it as a navigation, not a stacked drill. Back from
+                        //      the new screen returns the user to the channel
+                        //      below where they were before tapping the post, not
+                        //      to the post detail they already finished reading.
+                        //   2. Layout — leaving Comments mounted underneath
+                        //      pushed `visibleEntries = stack.takeLast(2)` past
+                        //      the originally-mounted ChannelScreen for the SAME
+                        //      chatId (it disappeared from the visible window),
+                        //      which fired its [NavEntryHost] dispose, cancelled
+                        //      its [ViewModelStore], and led to an
+                        //      openChat/closeChat refcount swing that the user
+                        //      read as a "throws to target, bounces back" flicker.
+                        //      Closing Comments first keeps the originating
+                        //      ChannelScreen mounted at index 0 of the
+                        //      newly-pushed pair.
                         // `replyToChatId` is already normalised at the mapping
                         // boundary ([MessageMapper.mapReply]) — TDLib's
                         // "unknown chat" sentinel `chat_id = 0` is rewritten to
                         // the host post's own chatId for the same-chat case,
                         // so we pass it through verbatim here.
                         post.reply?.let { r ->
+                            popNav()
                             safelyOpenChannel(r.replyToChatId, r.replyToMessageId)
                         }
                     },
