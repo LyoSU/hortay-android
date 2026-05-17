@@ -3,7 +3,7 @@ package dev.lyo.hortay.ui.timeline
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.lyo.hortay.data.BookmarkStore
-import dev.lyo.hortay.data.PostsRepository
+import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf

@@ -38,7 +38,7 @@ import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.PostContent
-import dev.lyo.hortay.data.PostsRepository
+import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.bookmarkKey
 import dev.lyo.hortay.ui.actions.PostActions
@@ -165,7 +165,7 @@ fun TimelineScreen(
     /**
      * Mode-agnostic read-state ack. Fires once per posts batch the viewport
      * dwell collector promotes from "in view" to "read". TDLib mode bridges to
-     * [dev.lyo.hortay.data.PostsRepository.viewMessages] (advances
+     * [dev.lyo.hortay.data.posts.PostsRepository.viewMessages] (advances
      * `lastReadInboxMessageId` server-side and bumps view counters); guest
      * mode bridges to [dev.lyo.hortay.data.web.WebRepository.markChannelRead]
      * (advances the local `channel_read_cursor` row). Null disables the ack —

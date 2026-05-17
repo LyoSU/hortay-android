@@ -50,7 +50,7 @@ import dev.lyo.hortay.data.EmptyReadCursors
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.data.IgnoredChannelsStore
-import dev.lyo.hortay.data.PostsRepository
+import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.bookmarkKey

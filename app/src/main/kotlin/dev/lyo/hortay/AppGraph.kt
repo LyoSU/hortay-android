@@ -21,7 +21,7 @@ import dev.lyo.hortay.data.MediaAutoDownloader
 import dev.lyo.hortay.data.MediaCache
 import dev.lyo.hortay.data.MessageMapper
 import dev.lyo.hortay.data.NavStack
-import dev.lyo.hortay.data.PostsRepository
+import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StartupCoordinator
 import dev.lyo.hortay.data.StatsRepository

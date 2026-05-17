@@ -34,7 +34,7 @@ import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.CommentsRepository
-import dev.lyo.hortay.data.PostsRepository
+import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.Reactions

@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import dev.lyo.hortay.data.posts.suspendUntilOrTimeout
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest

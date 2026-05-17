@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import dev.lyo.hortay.data.posts.foldRawIntoCurrent
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
 import org.junit.jupiter.api.Assertions.assertEquals

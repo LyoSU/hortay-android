@@ -8,7 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.widget.Toast
 import androidx.core.net.toUri
-import dev.lyo.hortay.data.PostsRepository
+import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 
 /**

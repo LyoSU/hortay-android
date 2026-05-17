@@ -4,7 +4,7 @@ import dev.lyo.hortay.data.ConnectionStatus
 import dev.lyo.hortay.data.FakeStrings
 import dev.lyo.hortay.data.FakeTdSender
 import dev.lyo.hortay.data.MessageMapper
-import dev.lyo.hortay.data.PostsRepository
+import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.UserMessageBus
 import kotlinx.coroutines.CoroutineScope

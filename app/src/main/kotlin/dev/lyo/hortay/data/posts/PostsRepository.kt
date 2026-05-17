@@ -1,6 +1,24 @@
-package dev.lyo.hortay.data
+package dev.lyo.hortay.data.posts
 
-import android.util.Log
+import dev.lyo.hortay.data.ChatPresence
+import dev.lyo.hortay.data.ConnectionStatus
+import dev.lyo.hortay.data.FeedSource
+import dev.lyo.hortay.data.IgnoredChannelsStore
+import dev.lyo.hortay.data.MessageContentMapper
+import dev.lyo.hortay.data.MessageMapper
+import dev.lyo.hortay.data.PostContent
+import dev.lyo.hortay.data.PostFilterStrategy
+import dev.lyo.hortay.data.ReactionKind
+import dev.lyo.hortay.data.ReactionTogglePolicy
+import dev.lyo.hortay.data.Reactions
+import dev.lyo.hortay.data.StringResolver
+import dev.lyo.hortay.data.TdClient
+import dev.lyo.hortay.data.TdSender
+import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.data.TimelineSnapshotStore
+import dev.lyo.hortay.data.UserMessageBus
+import dev.lyo.hortay.data.surfaceTo
+import dev.lyo.hortay.data.warnUnlessCancelled
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.persistentListOf
@@ -14,7 +32,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -69,6 +86,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * Cold-start rework rationale: see
  * `docs/superpowers/specs/2026-05-11-tdlib-cold-start-lastmessage-only-design.md`.
+ *
+ * File organisation. The class lives here; orthogonal helpers split out to keep this
+ * file focused on the mutable-state surface:
+ *   • [applyChatTitleToFeed] / [applyChatPhotoToFeed] in `ChannelMetadataSync.kt`
+ *     own the per-row decision logic for `UpdateChatTitle` / `UpdateChatPhoto`
+ *     (channel-as-sender vs personal-author split).
+ *   • [foldRawIntoCurrent] and [suspendUntilOrTimeout] in `SnapshotRestorer.kt`
+ *     hold the canonical raw → feed fold (partial-album guard) and the
+ *     cold-start `UpdateNewChat` wait helper. Both unit-tested in isolation.
  */
 class PostsRepository(
     private val td: TdSender,
@@ -1615,23 +1641,9 @@ class PostsRepository(
             old?.also { it.title = update.title }
         }
         val newTitle = update.title.orEmpty()
-        _posts.update { current ->
-            current.mutate { list ->
-                for (i in list.indices) {
-                    val post = list[i]
-                    if (post.chatId != update.chatId) continue
-                    // Channel-as-sender post: senderName IS the channel name → refresh
-                    // it. Non-anonymous post (channelContext != null): senderName is the
-                    // admin / foreign chat — leave it alone, but update the
-                    // "у Channel" subtitle so the host channel rename surfaces there.
-                    list[i] = if (post.channelContext == null) {
-                        post.copy(senderName = newTitle)
-                    } else {
-                        post.copy(channelContext = post.channelContext.copy(name = newTitle))
-                    }
-                }
-            }
-        }
+        // Per-row decision logic (channel-as-sender vs personal-author) lives in
+        // [applyChatTitleToFeed] in `ChannelMetadataSync.kt`.
+        _posts.update { current -> applyChatTitleToFeed(current, update.chatId, newTitle) }
     }
 
     private fun handleChatPhoto(update: TdApi.UpdateChatPhoto) {
@@ -1642,31 +1654,8 @@ class PostsRepository(
         }
         val newThumb = update.photo?.minithumbnail?.data
         val newFileId = update.photo?.small?.id
-        _posts.update { current ->
-            current.mutate { list ->
-                for (i in list.indices) {
-                    val post = list[i]
-                    if (post.chatId != update.chatId) continue
-                    // Same channel-as-sender vs personal-author split as
-                    // [handleChatTitle]: only the channel-as-sender row's `avatar*`
-                    // fields belong to this chat. Non-anonymous posts carry the
-                    // admin / foreign-chat avatar in `avatar*` — we must not
-                    // overwrite that with the host channel's new photo. The host
-                    // channel identity lives in `channelContext` and IS this update's
-                    // target.
-                    list[i] = if (post.channelContext == null) {
-                        post.copy(avatarThumb = newThumb, avatarFileId = newFileId)
-                    } else {
-                        post.copy(
-                            channelContext = post.channelContext.copy(
-                                avatarThumb = newThumb,
-                                avatarFileId = newFileId,
-                            ),
-                        )
-                    }
-                }
-            }
-        }
+        // Per-row decision logic in [applyChatPhotoToFeed] (`ChannelMetadataSync.kt`).
+        _posts.update { current -> applyChatPhotoToFeed(current, update.chatId, newThumb, newFileId) }
     }
 
     private fun reactionsFromUpdate(reactions: TdApi.MessageReactions): Reactions =
@@ -1921,90 +1910,9 @@ class PostsRepository(
     }
 }
 
-private fun TdApi.Chat.isChannel(): Boolean {
+internal fun TdApi.Chat.isChannel(): Boolean {
     val type = this.type
     return type is TdApi.ChatTypeSupergroup && type.isChannel
-}
-
-/**
- * Album-aware fold of a fresh per-message batch into the live feed snapshot.
- *
- * Canonical merge for every code path that ingests a [TdApi.GetChatHistory] /
- * [TdApi.SearchChatMessages] result into [PostsRepository._posts]: full-feed
- * refresh, single-channel deep load, and pagination. They all share two hazards.
- *
- *  1. **Partial-album downgrade.** [raw] is the per-message expansion of an
- *     album: 5 [TimelinePost]s with [TimelinePost.mediaAlbumId] set, each
- *     carrying a 1-item [PostContent.PhotoAlbum]. [PostsRepository.coalesceAlbumFragments]
- *     normally plugs members lost to the GetChatHistory window edge, but its
- *     surround fetch can come up short — TDLib FLOOD_WAIT, transient network
- *     blip, or members aged out of the local store. The naive merge ("drop any
- *     current entry that overlaps raw, re-run PostFilterStrategy") then replaces
- *     a known-complete 5-photo merged anchor with a single raw fragment;
- *     mergeAlbumMembers passes a 1-member group through unchanged and the user
- *     sees a 1-photo card. A subsequent [PostsRepository.saveSnapshotNow]
- *     persists `albumMessageIds=[]`, the next cold start restores 1 message and
- *     never re-discovers the siblings — stable corruption.
- *
- *  2. **Album duplication on append.** Pagination paths used to drop only
- *     entries whose `(chatId, id)` matched something in `current`, but `current`
- *     only carries the anchor's id. Other album members slipped through, and
- *     PostFilterStrategy would mergeAlbumMembers([merged-anchor (5 items), M2,
- *     M3, M4, M5]) → 5 items flat-mapped from anchor + 1 each from M2..M5 = 9
- *     items with duplicates.
- *
- * Strategy:
- *  - For every (chatId, mediaAlbumId) raw covers, count members against the
- *    known [TimelinePost.albumMessageIds] size on the existing merged anchor.
- *    Strictly fewer raw members than known size → partial → drop the raw
- *    fragment, preserve the anchor.
- *  - Drop existing entries whose anchor.id OR any albumMessageIds member is in
- *    raw's per-message id set, so a raw batch covering the full album cleanly
- *    replaces the anchor instead of stacking on top of it.
- *  - Run [PostFilterStrategy.apply] on the union; it re-merges album members,
- *    drops Unsupported, and resorts.
- */
-internal fun foldRawIntoCurrent(
-    current: PersistentList<TimelinePost>,
-    raw: List<TimelinePost>,
-    maxFeedSize: Int,
-): PersistentList<TimelinePost> {
-    val rawByAlbum = raw
-        .filter { it.mediaAlbumId != 0L }
-        .groupBy { it.chatId to it.mediaAlbumId }
-    val knownAlbumSizes = current
-        .filter { it.albumMessageIds.size > 1 }
-        .associate { (it.chatId to it.mediaAlbumId) to it.albumMessageIds.size }
-    val partialAlbumKeys = rawByAlbum.entries
-        .mapNotNullTo(HashSet()) { (key, members) ->
-            val knownSize = knownAlbumSizes[key]
-            if (knownSize != null && members.size < knownSize) key else null
-        }
-    if (partialAlbumKeys.isNotEmpty()) {
-        // Surface this — partial coverage is the symptom of an album that's
-        // either aging out of the channel's window or hitting transient
-        // FLOOD_WAIT in coalesceAlbumFragments. Either way the existing merged
-        // anchor is the more reliable rendering and we skip the raw fragment;
-        // the next refresh that catches the album whole will overwrite cleanly.
-        // runCatching keeps the helper unit-testable on the JVM where the
-        // android.util.Log static stubs throw "not mocked" by default.
-        runCatching {
-            Log.w("PostsRepository", "preserving ${partialAlbumKeys.size} merged album(s) over partial raw batch")
-        }
-    }
-    val rawSafe = if (partialAlbumKeys.isEmpty()) raw
-        else raw.filterNot { (it.chatId to it.mediaAlbumId) in partialAlbumKeys }
-
-    val freshKeys = rawSafe.mapTo(HashSet()) { it.chatId to it.id }
-    val keptOld = current.filterNot { post ->
-        // Match against EVERY member id, not just the anchor — otherwise a raw
-        // batch that contains the album's non-anchor members slips past the
-        // de-dup and PostFilterStrategy ends up merging the existing anchor
-        // with raw fragments of itself, doubling the items list.
-        val keys = post.albumMessageIds.ifEmpty { listOf(post.id) }
-        keys.any { id -> (post.chatId to id) in freshKeys }
-    }
-    return PostFilterStrategy.apply(rawSafe + keptOld).take(maxFeedSize).toPersistentList()
 }
 
 /** Result of [PostsRepository.resolvePublicHandle]. See its KDoc for semantics. */
@@ -2016,31 +1924,3 @@ sealed interface PublicHandleResult {
 
 /** Kind discriminator carried by [PublicHandleResult.Unsupported]. */
 enum class PublicHandleKind { User, Group, Unknown }
-
-/**
- * Poll [predicate] every [pollIntervalMs] until it returns true OR [timeoutMs] elapses.
- * Returns true on success, false on timeout. Predicate is checked once synchronously
- * before any delay, so a pre-satisfied condition costs zero suspensions.
- *
- * Assumes [predicate] is monotonic / one-shot — once it has been observed true, callers
- * expect that fact to stay true. The function returns at the first observed true and
- * does not re-poll; a flip-flop predicate would yield a snapshot value that may not
- * hold by the time the caller acts on it.
- *
- * Lives at file scope rather than inside [PostsRepository] so the unit test can call it
- * without standing up the full repository graph. `internal` (not file-private) because
- * Kotlin top-level `private` is file-scoped, and the test lives in a separate file in
- * the same package; `internal` is the minimum visibility that allows that access.
- */
-internal suspend fun suspendUntilOrTimeout(
-    timeoutMs: Long,
-    pollIntervalMs: Long,
-    predicate: () -> Boolean,
-): Boolean {
-    if (predicate()) return true
-    return withTimeoutOrNull(timeoutMs) {
-        while (!predicate()) delay(pollIntervalMs)
-        true
-    } ?: false
-}
-

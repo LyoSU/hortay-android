@@ -139,7 +139,7 @@ class WebFeedSource(
 
     /**
      * Per-channel read cursors mirrored from the local `channel_read_cursor`
-     * table. Direct parallel to [dev.lyo.hortay.data.PostsRepository.chatReadCursors]
+     * table. Direct parallel to [dev.lyo.hortay.data.posts.PostsRepository.chatReadCursors]
      * — drives the [dev.lyo.hortay.ui.timeline.UnreadStrip] on PostCard in guest
      * mode by feeding [dev.lyo.hortay.ui.timeline.LocalReadCursors]. Cursors are
      * advanced through [WebRepository.markChannelRead] from the same 1-second

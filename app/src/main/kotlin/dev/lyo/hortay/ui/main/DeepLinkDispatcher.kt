@@ -15,8 +15,8 @@ import dev.lyo.hortay.data.DeepLink
 import dev.lyo.hortay.data.DeepLinkRouter
 import dev.lyo.hortay.data.InviteLinkKind
 import dev.lyo.hortay.data.LinkDialogState
-import dev.lyo.hortay.data.PublicHandleKind
-import dev.lyo.hortay.data.PublicHandleResult
+import dev.lyo.hortay.data.posts.PublicHandleKind
+import dev.lyo.hortay.data.posts.PublicHandleResult
 import dev.lyo.hortay.data.UserMessageBus
 
 /**

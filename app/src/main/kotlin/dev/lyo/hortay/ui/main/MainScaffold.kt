@@ -23,7 +23,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.NavEntry
-import dev.lyo.hortay.data.PublicHandleResult
+import dev.lyo.hortay.data.posts.PublicHandleResult
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.report.ReportTarget

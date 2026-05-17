@@ -3,7 +3,7 @@ package dev.lyo.hortay.data.web
 import android.util.Log
 import dev.lyo.hortay.data.AuthStage
 import dev.lyo.hortay.data.ChannelActionsRepository
-import dev.lyo.hortay.data.PostsRepository
+import dev.lyo.hortay.data.posts.PostsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
