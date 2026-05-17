@@ -242,6 +242,17 @@ class CommentsRepository(
             // and any other coincidental repeats fold into one entry.
             val live = mutableListOf<TdApi.Message>()
             val seenIds = HashSet<Long>().apply { add(anchor.rootId) }
+            // mediaAlbumId of the root mirror's album when the channel post itself is an
+            // album. TDLib mirrors a channel-post album into the linked discussion
+            // supergroup as N messages with the same mediaAlbumId, all sharing
+            // topicId=MessageTopicThread(rootId). The single-id seenIds.add(anchor.rootId)
+            // above only excludes ONE of those N; the remaining (N-1) used to leak into
+            // the thread as phantom "comments" (especially visible on photo-album posts).
+            // We capture this album id the first time a batch contains the rootId mirror,
+            // then exclude all its siblings from `live` for the rest of the session.
+            // Stored in an outer-scope `var` (captured by the `collect` lambda below)
+            // so live UpdateNewMessage redelivery during a reconnect is also filtered.
+            var rootAlbumId = 0L
             var fromId = 0L
             while (live.size < limit) {
                 val batch = runCatching {
@@ -249,8 +260,28 @@ class CommentsRepository(
                 }.warnUnlessCancelled(TAG, "threadHistory(${anchor.threadChatId})").getOrNull() ?: break
                 val msgs = batch.messages.orEmpty()
                 if (msgs.isEmpty()) break
+                // Capture rootAlbumId lazily — once a batch contains the root mirror
+                // with a non-zero mediaAlbumId, every sibling in this page (and every
+                // sibling re-delivered later) is filtered. Scanning the whole batch
+                // first is required because GetMessageThreadHistory walks id-desc and
+                // the root mirror is the LOWEST member of its own album; siblings
+                // (higher ids) appear earlier in the batch iteration order.
+                if (rootAlbumId == 0L) {
+                    msgs.firstOrNull { it.id == anchor.rootId }
+                        ?.takeIf { it.mediaAlbumId != 0L }
+                        ?.let { rootAlbumId = it.mediaAlbumId }
+                }
                 var appended = 0
-                for (m in msgs) if (seenIds.add(m.id)) { live += m; appended++ }
+                for (m in msgs) {
+                    if (rootAlbumId != 0L && m.mediaAlbumId == rootAlbumId) {
+                        // Root mirror or one of its album siblings. Track in seenIds so
+                        // a later UpdateNewMessage re-deliver during a reconnect stays a
+                        // silent no-op.
+                        seenIds.add(m.id)
+                        continue
+                    }
+                    if (seenIds.add(m.id)) { live += m; appended++ }
+                }
                 fromId = msgs.last().id
                 if (appended > 0) emit(buildReady(live, anchor))
                 // No new messages in this page (only the boundary repeat) → end of thread.
@@ -290,7 +321,7 @@ class CommentsRepository(
                 .buffer(capacity = UPDATE_BUFFER_CAPACITY)
                 .collect { ev ->
                     val changed = when (ev) {
-                        is ThreadEvent.Tdlib -> applyUpdate(ev.update, anchor, live, seenIds)
+                        is ThreadEvent.Tdlib -> applyUpdate(ev.update, anchor, rootAlbumId, live, seenIds)
                         ThreadEvent.OptimisticInvalidate -> true
                     }
                     if (changed) emit(buildReady(live, anchor))
@@ -449,6 +480,7 @@ class CommentsRepository(
     private fun applyUpdate(
         upd: TdApi.Update,
         anchor: ResolvedAnchor,
+        rootAlbumId: Long,
         live: MutableList<TdApi.Message>,
         seenIds: HashSet<Long>,
     ): Boolean = when (upd) {
@@ -465,6 +497,16 @@ class CommentsRepository(
             // root.
             if (m.chatId != anchor.threadChatId) false
             else if (!belongsToThread(m, anchor)) false
+            // Root-mirror album re-deliver during a reconnect — discard. The
+            // pagination loop above already filtered the original deliveries
+            // and added every member id to seenIds, but TDLib has been observed
+            // to re-emit UpdateNewMessage for previously-seen messages after a
+            // socket re-handshake; without the explicit mediaAlbumId match a
+            // re-delivered sibling that wasn't yet in seenIds (rare race during
+            // the very first batch) would still leak through.
+            else if (rootAlbumId != 0L && m.mediaAlbumId == rootAlbumId) {
+                seenIds.add(m.id); false
+            }
             else if (!seenIds.add(m.id)) false
             else { live += m; true }
         }
@@ -616,20 +658,49 @@ class CommentsRepository(
         // The override map is consulted (not the message's TdApi reactions) when present so
         // the chip flips instantly on tap and stays flipped until the server's
         // `UpdateMessageInteractionInfo` clears the override.
-        val mapped: Map<Long, TimelinePost> = messages.associate { msg ->
+        val mappedPosts: List<TimelinePost> = messages.map { msg ->
             val base = mapper.toThreadComment(msg)
             val override = optimisticOverrides[anchor.threadChatId to msg.id]
-            val withOverride = if (override != null) base.copy(reactions = override) else base
-            msg.id to withOverride
+            if (override != null) base.copy(reactions = override) else base
         }
+
+        // Merge album members posted AS COMMENTS via the same helper the feed uses —
+        // a user/admin posting an album in the discussion thread produces N
+        // TdApi.Messages with the same mediaAlbumId, each mapping to a 1-item
+        // PhotoAlbum. Without merging the thread used to render those as N stacked
+        // single-photo bubbles, with caption + reactions on only the first member
+        // (tdlib/td#2312 — interactionInfo only on the first album id).
+        // Standalones (mediaAlbumId == 0) pass through unchanged.
+        val merged: List<TimelinePost> = PostFilterStrategy.mergeAlbums(mappedPosts)
+
+        // After merge, the canonical anchor of a multi-member album is the lowest-id
+        // member; other member ids no longer appear in `merged`. A reply pointing at
+        // a mid-album member id (Telegram-UX reroutes "reply" to the canonical
+        // member, but the server-side API accepts any sibling) would fall out of the
+        // parent-lookup and collapse to depth 0. Redirect every member id to its
+        // canonical merged-anchor id.
+        val redirect: Map<Long, Long> = buildMap {
+            for (p in merged) {
+                if (p.albumMessageIds.isNotEmpty()) {
+                    for (memberId in p.albumMessageIds) put(memberId, p.id)
+                } else {
+                    put(p.id, p.id)
+                }
+            }
+        }
+
+        val mapped: Map<Long, TimelinePost> = merged.associateBy { it.id }
 
         // Group by parent. The conversation root (the channel-post mirror) becomes the
         // virtual depth-0 parent; ids that no longer exist in the thread (deleted /
         // out-of-window) collapse under it too.
-        val children: Map<Long, List<TimelinePost>> = messages.groupBy { msg ->
-            val replyId = (msg.replyTo as? TdApi.MessageReplyToMessage)?.messageId
-            if (replyId != null && replyId != rootMessageId && replyId in mapped) replyId else 0L
-        }.mapValues { entry -> entry.value.mapNotNull { mapped[it.id] } }
+        val children: Map<Long, List<TimelinePost>> = merged.groupBy { post ->
+            val rawReplyId = post.parentId
+            val canonicalReplyId = rawReplyId?.let { redirect[it] ?: it }
+            if (canonicalReplyId != null && canonicalReplyId != rootMessageId && canonicalReplyId in mapped) {
+                canonicalReplyId
+            } else 0L
+        }
 
         val rows = mutableListOf<ThreadRow>()
         fun walk(parentId: Long, depth: Int) {

@@ -32,7 +32,14 @@ object PostFilterStrategy {
         // disappeared and came back lower" in the UI.
         .sortedWith(compareByDescending<TimelinePost> { it.date }.thenByDescending { it.id })
 
-    private fun mergeAlbums(posts: List<TimelinePost>): List<TimelinePost> {
+    /**
+     * Group by `(chatId, mediaAlbumId)` and collapse each non-trivial group into one
+     * [TimelinePost]. `internal` so [CommentsRepository.buildTree] can reuse it: a
+     * discussion thread carries the same `mediaAlbumId`-marked siblings whenever a user
+     * posts an album AS A COMMENT (Telegram-Android renders those as one bubble with N
+     * photos, not N stacked bubbles). Single source of truth for album merging.
+     */
+    internal fun mergeAlbums(posts: List<TimelinePost>): List<TimelinePost> {
         val standalones = posts.filter { it.mediaAlbumId == 0L }
         val grouped = posts
             .filter { it.mediaAlbumId != 0L }
