@@ -1,6 +1,7 @@
 package dev.lyo.hortay
 
 import android.app.Application
+import android.content.Context
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -8,11 +9,21 @@ import coil3.disk.DiskCache
 import coil3.disk.directory
 import coil3.memory.MemoryCache
 import coil3.request.crossfade
+import dev.lyo.hortay.data.LocaleStore
 
 class HortayApp : Application(), SingletonImageLoader.Factory {
 
     lateinit var graph: AppGraph
         private set
+
+    // Wrap application context with the user-picked locale on API 26-32. Strings reached
+    // through `applicationContext.resources` (TDLib error toasts, Coil error messages,
+    // some Compose stringResource calls that resolve via the application config) need
+    // this wrap; without it, only the activity-scoped lookups would localise. No-op on
+    // API 33+ — see [LocaleStore].
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(LocaleStore.wrap(base))
+    }
 
     override fun onCreate() {
         super.onCreate()

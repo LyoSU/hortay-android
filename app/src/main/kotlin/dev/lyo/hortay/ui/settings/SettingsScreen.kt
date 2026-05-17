@@ -36,6 +36,7 @@ import dev.lyo.hortay.data.AutoDownloadStore
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.IgnoredChannelsStore
+import dev.lyo.hortay.data.LocaleStore
 import dev.lyo.hortay.data.NetworkUsage
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StatsRepository
@@ -1215,30 +1216,32 @@ private fun HideOnlineStatusRow(
 }
 
 /**
- * Per-app language row. Reads / writes through [AppCompatDelegate.setApplicationLocales],
- * which is the canonical androidx bridge to the Android 13+ system per-app language
- * picker: on API 33+ the call propagates into the platform's
- * `LocaleManager.setApplicationLocales` (so the choice also surfaces in
- * Settings → System → Languages → Hortay), on API 26-32 AppCompat persists the
- * tag in shared prefs and re-applies it on next Activity create. The locales
- * declared in `xml/locales_config.xml` (`en`, `uk`) are the universe that
- * Android's system picker offers as well — the in-app row simply mirrors that
- * choice so the user discovers it without leaving the app.
+ * Per-app language row. Reads / writes through [LocaleStore], which bridges Hortay's
+ * Compose-only, ComponentActivity-based setup to Android's per-app language picker.
  *
- * Empty [LocaleListCompat] = "follow system" (the API 33+ "App default" option).
+ * On API 33+ the platform [android.app.LocaleManager] is the source of truth — the
+ * system Settings → Apps → Hortay → Language picker writes here too, and the system
+ * recreates the activity stack on change.
  *
- * The recreation that picks up the new locale happens inside AppCompat: setting
- * a non-empty list on API 33+ triggers an Activity recreate via LocaleManager;
- * on older API it schedules a recreate through AppCompatDelegate. Either way
- * the user sees the UI flip languages within a frame of dismissing the dialog —
- * no manual `Activity.recreate()` plumbing required.
+ * On API 26-32 the choice is persisted in a small SharedPrefs file and the activity
+ * is recreated explicitly so [MainActivity.attachBaseContext] can wrap the base context
+ * with the new [java.util.Locale] before resources resolve.
+ *
+ * The locales offered must stay aligned with `res/xml/locales_config.xml` (`en`, `uk`).
+ *
+ * Why not [androidx.appcompat.app.AppCompatDelegate.setApplicationLocales]: it dispatches
+ * through an internal `sActivityDelegates` set populated only by `AppCompatActivity`, so
+ * with a plain `ComponentActivity` (CLAUDE.md pins us here) the call is a no-op on every
+ * API level — symptom was "pick a language, dialog dismisses, nothing else happens".
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun LanguageRow(index: Int, count: Int) {
+    val context = LocalContext.current
     var showDialog by remember { mutableStateOf(false) }
-    val current = androidx.appcompat.app.AppCompatDelegate.getApplicationLocales()
-    val activeTag = if (current.isEmpty) null else current[0]?.language
+    // Re-read on every dialog open so the row reflects an out-of-band change (e.g. the
+    // user flipped the language via the system per-app picker on API 33+ and came back).
+    val activeTag = remember(showDialog) { LocaleStore.read(context) }
     val summary = when (activeTag) {
         "uk" -> stringResource(R.string.settings_language_summary_uk)
         "en" -> stringResource(R.string.settings_language_summary_en)
@@ -1258,13 +1261,15 @@ private fun LanguageRow(index: Int, count: Int) {
             activeTag = activeTag,
             onDismiss = { showDialog = false },
             onSelect = { tag ->
-                val list = if (tag == null) {
-                    androidx.core.os.LocaleListCompat.getEmptyLocaleList()
-                } else {
-                    androidx.core.os.LocaleListCompat.forLanguageTags(tag)
-                }
-                androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(list)
                 showDialog = false
+                if (tag == activeTag) return@LanguageDialog
+                LocaleStore.write(context, tag)
+                // On API 33+ the platform LocaleManager recreates the activity stack
+                // itself; on older API levels we have to do it so attachBaseContext
+                // re-wraps with the new locale.
+                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+                    (context as? android.app.Activity)?.recreate()
+                }
             },
         )
     }

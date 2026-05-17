@@ -1,5 +1,6 @@
 package dev.lyo.hortay
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.data.AuthStage
+import dev.lyo.hortay.data.LocaleStore
 import dev.lyo.hortay.ui.auth.AuthScreen
 import dev.lyo.hortay.ui.main.MainScaffold
 import dev.lyo.hortay.ui.media.LocalCustomEmoji
@@ -28,6 +30,15 @@ import dev.lyo.hortay.ui.web.WebModeScaffold
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
+    // API 26-32 path for the in-app language picker. AppCompatDelegate.setApplicationLocales
+    // is a no-op without an AppCompatActivity in the process (it dispatches through an
+    // internal sActivityDelegates set), so LocaleStore wraps the base context with the
+    // user-chosen locale before resources resolve. API 33+ is handled by the platform
+    // LocaleManager and this wrap is a no-op there. See LocaleStore for the rationale.
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleStore.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
