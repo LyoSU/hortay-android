@@ -67,6 +67,7 @@ import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
 import dev.lyo.hortay.ui.media.TdAvatar
+import dev.lyo.hortay.ui.media.rememberDeferredLoading
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
 import kotlinx.collections.immutable.toPersistentList
@@ -617,9 +618,38 @@ fun ChannelScreen(
                     ChannelUiState.Resolving -> displayedItems
                 }
                 val isResolving = channelUiState is ChannelUiState.Resolving
+                // [rememberDeferredLoading] short-circuits "fast open" cases.
+                // Most channel entries land Ready in 100-400 ms (per-channel
+                // history is local-cache served by TDLib when the channel has
+                // ever surfaced in the merged feed) — without a grace window,
+                // [SkeletonFeed] paints for one or two frames, then unmounts
+                // as Ready takes over. That's read as a flicker: "скелет при
+                // відкритті каналу швидкому все одно є". The grace keeps the
+                // skeleton off-screen during the common-case sub-grace
+                // resolve. Anything past 600 ms is a slow open that genuinely
+                // needs feedback (cold-cache deep-link, FLOOD_WAIT, post-DC
+                // migration) — skeleton paints then. Shared
+                // [LOADING_OVERLAY_GRACE_MS] (600 ms) keeps the threshold
+                // identical to the comments overlay and media indicators —
+                // one app-wide contract for "slow enough to surface".
+                val showSkeleton = rememberDeferredLoading(
+                    pending = isResolving,
+                    key = chatId,
+                )
                 when {
-                    isResolving -> {
+                    showSkeleton -> {
                         SkeletonFeed(modifier = Modifier.fillMaxSize())
+                    }
+                    isResolving -> {
+                        // Inside the grace window: hold the body blank rather
+                        // than flashing [SkeletonFeed] or falling through to
+                        // [ChannelEmptyState]. The header has already painted
+                        // (title + subtitle reserve their slot regardless of
+                        // resolve state), so the user sees a continuous
+                        // "channel is opening" frame, not a flash of the wrong
+                        // affordance. If resolve completes before the grace
+                        // elapses the body transitions straight to Ready.
+                        Box(modifier = Modifier.fillMaxSize())
                     }
                     displayedList.isEmpty() && !refreshing -> {
                         when {
