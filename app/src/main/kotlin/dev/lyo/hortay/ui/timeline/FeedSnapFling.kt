@@ -21,10 +21,10 @@ import kotlin.math.abs
  * Three reported failures all share the well-known anti-pattern of CSS
  * `scroll-snap-type: y mandatory` for variable-height content (MDN, CSS-Tricks):
  *
- *   1. **Tall posts become unreadable.** Any micro-fling started from inside a
- *      post bigger than the viewport snaps either back to the post's top or
- *      forward to the next post's top — there's no way to settle the viewport
- *      on the middle of a long post to read a paragraph.
+ *   1. **Tall posts become unreadable on small flings.** Any micro-fling started
+ *      from inside a post bigger than the viewport snaps either back to the
+ *      post's top or forward to the next post's top — there's no way to settle
+ *      the viewport on the middle of a long post to read a paragraph.
  *   2. **"Snap-back" on gentle flings.** With the default approach + nearest-
  *      target snap, a forward fling whose decay undershoots the next item
  *      gets yanked *back* to the current item. The user reads this as "the
@@ -34,47 +34,45 @@ import kotlin.math.abs
  *      for a chat-style feed where each post is a deliberate stopping point.
  *
  * This helper applies the discrete-swipe / paginator model — the same idiom
- * Telegram-Android and Twitter use when they want "each fling advances one
- * post":
+ * Instagram applies to its main feed when snap-scroll is on:
  *
- *   • Tall anchor (post height ≥ [tallPostThreshold] × viewport): no snap.
- *     The user is reading, not paging. Default decay-fling settles wherever
- *     physics lands; snap resumes on the next fling that starts inside a
- *     shorter post.
  *   • Below [minSnapVelocityDp]: no snap. Treats very gentle drag-releases
- *     as position nudges, not advance-intent. Default decay-fling handles them.
- *   • Otherwise: directional one-item commit. Forward velocity always
- *     advances exactly one item, backward velocity retreats exactly one.
- *     No snap-back, no multi-item skipping.
+ *     as position nudges, not advance-intent. Default decay-fling handles them
+ *     so the user can read mid-post or finely position the viewport.
+ *   • Otherwise: directional one-step commit through [DirectionalSnapInfoProvider].
+ *     On a shorter post, forward velocity advances to the next post's top,
+ *     backward retreats one. On a *tall* post (anchor doesn't have a visible
+ *     successor in the layout window), forward velocity scrolls "anchor.bottom
+ *     to viewport.top" — the page-down idiom — advancing exactly one viewport
+ *     within the post; the next fling commits the next post once it appears
+ *     in the layout's visible-items window. No snap-back, no multi-item
+ *     overshoots regardless of fling strength.
  *
  * Drag scrolling stays free regardless; only the fling animation is affected.
  *
  * `★ Why a delegating FlingBehavior over a single custom SnapLayoutInfoProvider`
- * The tall-post and low-velocity gates need to fall through to a *decay-fling*
- * (no snap animation at all), not a snap-fling with zero offset. A snap
- * fling with calculateSnapOffset = 0 still animates "to current position"
- * (eats the inertia immediately), which feels grabbed. A real decay fling
- * carries the gesture's energy through to a natural settle. Picking the
- * whole fling-behavior at gesture start is one branch, no shared state.
+ * The low-velocity gate needs to fall through to a *decay-fling* (no snap
+ * animation at all), not a snap-fling with zero offset. A snap fling with
+ * calculateSnapOffset = 0 still animates "to current position" (eats the
+ * inertia immediately), which feels grabbed. A real decay fling carries the
+ * gesture's energy through to a natural settle. Picking the whole fling-
+ * behavior at gesture start is one branch, no shared state.
  */
 @Composable
 fun rememberFeedSnapFlingBehavior(
     lazyListState: LazyListState,
     minSnapVelocityDp: Float = MIN_SNAP_VELOCITY_DP,
-    tallPostThreshold: Float = TALL_POST_VIEWPORT_RATIO,
 ): FlingBehavior {
     val provider = remember(lazyListState) { DirectionalSnapInfoProvider(lazyListState) }
     val snapFling = rememberSnapFlingBehavior(snapLayoutInfoProvider = provider)
     val defaultFling = ScrollableDefaults.flingBehavior()
     val minVelocityPx = with(LocalDensity.current) { minSnapVelocityDp.dp.toPx() }
 
-    return remember(snapFling, defaultFling, lazyListState, minVelocityPx, tallPostThreshold) {
+    return remember(snapFling, defaultFling, minVelocityPx) {
         FeedSnapFlingBehavior(
             snapFling = snapFling,
             defaultFling = defaultFling,
-            lazyListState = lazyListState,
             minVelocityPx = minVelocityPx,
-            tallPostThreshold = tallPostThreshold,
         )
     }
 }
@@ -82,25 +80,20 @@ fun rememberFeedSnapFlingBehavior(
 private class FeedSnapFlingBehavior(
     private val snapFling: FlingBehavior,
     private val defaultFling: FlingBehavior,
-    private val lazyListState: LazyListState,
     private val minVelocityPx: Float,
-    private val tallPostThreshold: Float,
 ) : FlingBehavior {
     override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
-        val behavior = if (shouldSnap(initialVelocity)) snapFling else defaultFling
+        // Velocity gate is the only fallthrough: below intent-level threshold,
+        // settle naturally (default decay); above it, commit through snap.
+        // Tall-post handling lives inside [DirectionalSnapInfoProvider] — its
+        // forward-snap fallback ("scroll anchor's bottom to viewport top") is
+        // the page-down idiom: a strong fling inside a tall post advances
+        // exactly one viewport, not several posts. The earlier tall-post
+        // bypass here let strong flings escape to free decay and pole-vault
+        // over 4-5 posts on hard flicks, which broke the snap-scroll contract
+        // (one swipe = one logical step).
+        val behavior = if (abs(initialVelocity) >= minVelocityPx) snapFling else defaultFling
         return with(behavior) { performFling(initialVelocity) }
-    }
-
-    private fun shouldSnap(initialVelocity: Float): Boolean {
-        if (abs(initialVelocity) < minVelocityPx) return false
-        val layout = lazyListState.layoutInfo
-        val viewport = layout.viewportEndOffset - layout.viewportStartOffset
-        if (viewport <= 0) return true
-        val viewportTop = layout.viewportStartOffset
-        val anchor = layout.visibleItemsInfo.firstOrNull { item ->
-            item.offset <= viewportTop && item.offset + item.size > viewportTop
-        } ?: layout.visibleItemsInfo.firstOrNull() ?: return true
-        return anchor.size < viewport * tallPostThreshold
     }
 }
 
@@ -178,13 +171,3 @@ private class DirectionalSnapInfoProvider(
  * "no phantom snaps on accidental nudges".
  */
 private const val MIN_SNAP_VELOCITY_DP = 400f
-
-/**
- * Anchor-size cutoff (as a fraction of viewport height) above which the post
- * is "too tall to page" and snap is skipped for that fling. 0.9 is deliberately
- * just below 1.0 — at exactly 1× viewport the post fits but with zero room
- * for the user to scroll within it, which still reads as "snap stole my
- * scroll". Snap resumes on the very next fling once the viewport has crossed
- * into a shorter post.
- */
-private const val TALL_POST_VIEWPORT_RATIO = 0.9f
