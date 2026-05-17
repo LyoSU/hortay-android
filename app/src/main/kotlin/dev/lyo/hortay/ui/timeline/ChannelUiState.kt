@@ -139,6 +139,25 @@ internal fun reduceChannelUiState(
 /**
  * Composable wrapper for [ChannelUiState] latching. Reset on [routeKey] change
  * (e.g. user navigates to a different channel).
+ *
+ * Initial value is seeded from the first [candidate] the composable receives
+ * — NOT a static [ChannelUiState.Resolving] sentinel. The previous shape
+ * unconditionally initialised the latch as Resolving and relied on
+ * [LaunchedEffect] to overwrite it with the real candidate after the commit
+ * phase — but [LaunchedEffect] runs on the NEXT frame, so the first
+ * composition always rendered as Resolving regardless of what the caller
+ * passed in. With the wait-for-content preload populating the per-channel
+ * slice before [ChannelScreen] mounts, that one-frame stall surfaced as a
+ * white card "карточка пост появляється з затримкою, спочатку біле" — the
+ * Scaffold painted its surface background under a blank body for one frame,
+ * then the latch caught up and the LazyColumn paints over it.
+ *
+ * Seeding from the first candidate makes Ready a frame-one state when the
+ * upstream pipeline ([primeChannelForOpen] + the [ChannelViewModel.posts]
+ * StateFlow's synchronous initial value) already has a warm slice. The
+ * [LaunchedEffect] keeps doing its job on subsequent emissions — passing
+ * `reduceChannelUiState(previous, candidate)` preserves the latched
+ * initialIndex through Ready→Ready transitions exactly as before.
  */
 @Composable
 internal fun rememberLatchedChannelUiState(
@@ -146,7 +165,7 @@ internal fun rememberLatchedChannelUiState(
     routeKey: Any,
 ): ChannelUiState {
     val effective = remember(routeKey) {
-        mutableStateOf<ChannelUiState>(ChannelUiState.Resolving)
+        mutableStateOf<ChannelUiState>(candidate)
     }
     LaunchedEffect(candidate, routeKey) {
         effective.value = reduceChannelUiState(effective.value, candidate)
