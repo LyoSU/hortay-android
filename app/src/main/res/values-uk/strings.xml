@@ -62,6 +62,7 @@
     <string name="web_settings_clear_cache_confirm_action">Очистити</string>
     <string name="web_settings_clear_cache_cancel">Скасувати</string>
     <string name="web_comments_unavailable">Коментарі недоступні в гостьовому режимі. Увійдіть, щоб читати відповіді</string>
+    <string name="web_comments_unavailable_title">Коментарі недоступні</string>
     <string name="settings_enter_guest_title">Продовжити без акаунту</string>
     <string name="settings_enter_guest_subtitle">Вийти і читати публічні канали анонімно через t.me</string>
     <string name="settings_enter_guest_confirm_title">Перейти у гостьовий режим?</string>

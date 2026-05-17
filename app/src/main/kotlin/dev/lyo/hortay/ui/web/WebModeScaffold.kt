@@ -256,16 +256,26 @@ fun WebModeScaffold(graph: AppGraph) {
             WebPostAdapter.stableChatId(it.info.username) == chatId
         }?.info?.username
     }
-    // "Comments unavailable in guest mode" snackbar — TDLib mode handles the same
-    // tap via pushComments; we surface a clear reason rather than letting the tap
-    // be silently dead.
-    val commentsUnavailableMsg = stringResource(R.string.web_comments_unavailable)
-    val onGuestPostClick: (TimelinePost) -> Unit = remember(commentsUnavailableMsg, snackbarHostState) {
-        {
-            scope.launch {
-                snackbarHostState.showSnackbar(commentsUnavailableMsg)
-            }
-        }
+    // Post-tap in guest mode opens the same post-detail surface TDLib mode
+    // uses — [CommentsScreen] with the frozen anchor pinned at the top — but
+    // with an empty-state hero in place of the thread body explaining why
+    // replies aren't reachable here. Reuses the auth-mode [NavEntry.Comments]
+    // entry: same nav-stack mechanics (predictive back, saveable state holder),
+    // same screen, just a [CommentsDisabledOverride] supplied below so the
+    // screen short-circuits its repository wiring. Previous behaviour was a
+    // bare snackbar with the same copy — kept the user from getting to the
+    // post detail at all.
+    val commentsDisabledTitle = stringResource(R.string.web_comments_unavailable_title)
+    val commentsDisabledBody = stringResource(R.string.web_comments_unavailable)
+    val webCommentsOverride = remember(commentsDisabledTitle, commentsDisabledBody) {
+        dev.lyo.hortay.ui.comments.CommentsDisabledOverride(
+            symbol = "chat_bubble",
+            title = commentsDisabledTitle,
+            body = commentsDisabledBody,
+        )
+    }
+    val onGuestPostClick: (TimelinePost) -> Unit = remember(graph) {
+        { post -> graph.nav.push(NavEntry.Comments(anchor = post)) }
     }
     // Feed → channel-name tap routes through the same WebChannelScreen overlay
     // that the Channels tab uses. resolveUsername returns null for channels not
@@ -502,7 +512,14 @@ fun WebModeScaffold(graph: AppGraph) {
             val navStateHolder = rememberSaveableStateHolder()
             visibleEntries.forEachIndexed { idx, entry ->
                 val isTop = idx == visibleEntries.lastIndex
-                if (entry !is NavEntry.WebChannel) return@forEachIndexed
+                // Guest mode pushes WebChannel for channel drills and Comments
+                // for post-detail; the auth-mode Channel variant never reaches
+                // this scaffold (MainScaffold owns it). A defensive `else`
+                // skip keeps the code total over [NavEntry] so a future variant
+                // doesn't silently overlay-render here.
+                if (entry !is NavEntry.WebChannel && entry !is NavEntry.Comments) {
+                    return@forEachIndexed
+                }
                 key(entry.entryId) {
                     navStateHolder.SaveableStateProvider(key = entry.entryId) {
                         Box(
@@ -527,14 +544,35 @@ fun WebModeScaffold(graph: AppGraph) {
                                     },
                                 ),
                         ) {
-                            WebChannelScreen(
-                                username = entry.username,
-                                graph = graph,
-                                contentPadding = padding,
-                                onBack = ::popNav,
-                                onPostClick = onGuestPostClick,
-                                feedOrder = feedOrder,
-                            )
+                            when (entry) {
+                                is NavEntry.WebChannel -> WebChannelScreen(
+                                    username = entry.username,
+                                    graph = graph,
+                                    contentPadding = padding,
+                                    onBack = ::popNav,
+                                    onPostClick = onGuestPostClick,
+                                    feedOrder = feedOrder,
+                                )
+                                is NavEntry.Comments -> dev.lyo.hortay.ui.comments.CommentsScreen(
+                                    post = entry.anchor,
+                                    // Guest mode has no TDLib session → no
+                                    // CommentsRepository, no PostsRepository.posts
+                                    // to live-sync the anchor against. The screen
+                                    // renders the frozen NavEntry snapshot and
+                                    // shows the [webCommentsOverride] empty-state
+                                    // hero in place of the thread body.
+                                    repo = null,
+                                    feedRepo = null,
+                                    onDismiss = ::popNav,
+                                    disabledOverride = webCommentsOverride,
+                                    // Predictive-back transform is owned by the
+                                    // outer Box.graphicsLayer above (same recipe
+                                    // WebChannelScreen rides), so the screen's
+                                    // own backProgress stays at 0f to avoid
+                                    // double-transform.
+                                )
+                                else -> Unit
+                            }
                         }
                     }
                 }

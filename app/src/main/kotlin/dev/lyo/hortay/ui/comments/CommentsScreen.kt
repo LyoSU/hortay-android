@@ -66,6 +66,23 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /**
+ * Disabled-state copy + glyph used when the screen renders without a live thread
+ * source — currently the guest-mode "comments unavailable, sign in to read"
+ * surface, but any future "comments locked / channel migrated / etc." reason
+ * can drop into the same shape. When non-null, the screen short-circuits
+ * `repo.observeThread` and renders [CommentsEmptyState] directly under the
+ * pinned anchor post; the rest of the shell (top bar, back-progress transform,
+ * pinned PostCard) is identical to the live-thread path so the user reads it
+ * as the same "post detail" surface.
+ */
+@androidx.compose.runtime.Immutable
+data class CommentsDisabledOverride(
+    val symbol: String,
+    val title: String,
+    val body: String,
+)
+
+/**
  * Reddit/Twitter-style discussion overlay with live updates. While this screen is on top
  * we tell TDLib that the linked discussion chat is "open" so view counts register and new
  * messages stream in via the shared updates flow.
@@ -76,12 +93,18 @@ import kotlinx.coroutines.launch
  * edge so the screen feels "pinned" to the user's thumb while the opposite edge recedes.
  * MainScaffold owns the [Animatable] driving these values; we receive a plain Float so
  * this composable stays trivially testable and reusable from other entry points.
+ *
+ * [repo] / [feedRepo] are nullable so the same screen renders in guest (web) mode where
+ * there's no TDLib session and therefore no [CommentsRepository] / no
+ * [PostsRepository.posts] flow to subscribe to. In that mode the caller passes a
+ * [disabledOverride] and the screen renders the pinned anchor + a single empty-state
+ * hero explaining the situation, reusing every visual primitive the live path uses.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommentsScreen(
     post: TimelinePost,
-    repo: CommentsRepository,
+    repo: CommentsRepository?,
     /**
      * Live feed source so the pinned anchor PostCard reflects the same reactions,
      * view counts and comment counts the user would see in the feed below. Without
@@ -92,9 +115,22 @@ fun CommentsScreen(
      * longer in the feed window (deep-link to an evicted post, fresh deep-link
      * before ingest), this falls through and the frozen snapshot stays — the
      * chip just won't animate on tap until the post lands in `_posts`.
+     *
+     * Null in guest (web) mode: there's no [PostsRepository] there, so live
+     * sync simply isn't available — the anchor renders from the frozen
+     * snapshot and reaction taps are no-ops via the default `onReactionToggle`.
      */
-    feedRepo: PostsRepository,
+    feedRepo: PostsRepository?,
     onDismiss: () -> Unit,
+    /**
+     * When non-null, the screen skips `repo.observeThread` entirely and renders a
+     * single [CommentsEmptyState] hero under the pinned anchor post with the
+     * supplied copy/glyph. Used by guest mode where the thread source isn't
+     * reachable; could be reused for any future "thread isn't available for
+     * this post" reason. Passing this with a live [repo] simply suppresses the
+     * thread — the override wins.
+     */
+    disabledOverride: CommentsDisabledOverride? = null,
     onChannelClick: (TimelinePost) -> Unit = {},
     /**
      * Fired when the user taps a non-anonymous author header that resolves to a
@@ -152,11 +188,21 @@ fun CommentsScreen(
     // is still drawable.
     val anchorChatId = post.chatId
     val anchorId = post.id
-    val liveAnchor: TimelinePost? by remember(feedRepo, anchorChatId, anchorId) {
-        feedRepo.posts.map { list ->
-            list.firstOrNull { it.chatId == anchorChatId && it.id == anchorId }
-        }
-    }.collectAsStateWithLifecycle(initialValue = null)
+    // Skip the live-anchor subscription when there's no PostsRepository to read
+    // from (guest mode). The frozen NavEntry snapshot is the only truth there;
+    // reactions / view counts can't move because the underlying flow doesn't
+    // exist, and Telegram's t.me/s/ rendering doesn't report interaction info
+    // we could refresh from anyway.
+    val liveAnchor: TimelinePost? = if (feedRepo != null) {
+        val collected by remember(feedRepo, anchorChatId, anchorId) {
+            feedRepo.posts.map { list ->
+                list.firstOrNull { it.chatId == anchorChatId && it.id == anchorId }
+            }
+        }.collectAsStateWithLifecycle(initialValue = null)
+        collected
+    } else {
+        null
+    }
     val anchor = liveAnchor ?: post
 
     // For an album, all sibling ids are candidates — the thread carrier may be any of
@@ -164,8 +210,18 @@ fun CommentsScreen(
     val candidateIds = remember(post.id, post.albumMessageIds) {
         post.albumMessageIds.ifEmpty { listOf(post.id) }
     }
-    val state by remember(post.chatId, candidateIds) {
-        repo.observeThread(post.chatId, candidateIds)
+    // Short-circuit the thread subscription when an override is supplied or no
+    // repository is available — Loading is the right default in both cases
+    // because the `when` arm below picks up the override directly. Keeps the
+    // viewport-dwell ack effect dormant for the same reason (no thread to ack
+    // against).
+    val threadDisabled = disabledOverride != null || repo == null
+    val state by remember(post.chatId, candidateIds, threadDisabled, repo) {
+        if (threadDisabled || repo == null) {
+            kotlinx.coroutines.flow.flowOf(CommentsRepository.ThreadState.Loading)
+        } else {
+            repo.observeThread(post.chatId, candidateIds)
+        }
     }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
 
     val viewer = LocalMediaViewer.current
@@ -250,23 +306,31 @@ fun CommentsScreen(
     // a 30 s linger), and TDLib advances read state automatically for opened chats.
     val ackedRead = remember { HashSet<Long>() }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(listState, repo, post.chatId) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? Long } }
-            .distinctUntilChanged()
-            .collectLatest { ids ->
-                if (ids.isEmpty()) return@collectLatest
-                delay(COMMENT_READ_DWELL_MS)
-                val ready = state as? CommentsRepository.ThreadState.Ready ?: return@collectLatest
-                val fresh = ids.filter { it !in ackedRead }
-                if (fresh.isEmpty()) return@collectLatest
-                // Populate ackedRead BEFORE dispatching, and detach the suspending ack
-                // into [scope] so a fresh viewport emission cancelling this collector
-                // doesn't take the in-flight call with it. Mirrors TimelineScreen's
-                // read-mark effect — same reasoning applies for the discussion
-                // thread's lastReadInboxMessageId.
-                fresh.forEach { ackedRead.add(it) }
-                scope.launch { repo.viewMessages(ready.threadChatId, fresh) }
-            }
+    // Skip the dwell-ack effect when there's no live thread to ack against —
+    // guest mode + override branches both fall here. The empty-state body has
+    // no comment rows whose ids could land in `visibleItemsInfo` anyway, so
+    // the only cost saved is the snapshotFlow subscription itself, but the
+    // contract is clearer this way.
+    if (!threadDisabled && repo != null) {
+        val liveRepo = repo
+        LaunchedEffect(listState, liveRepo, post.chatId) {
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? Long } }
+                .distinctUntilChanged()
+                .collectLatest { ids ->
+                    if (ids.isEmpty()) return@collectLatest
+                    delay(COMMENT_READ_DWELL_MS)
+                    val ready = state as? CommentsRepository.ThreadState.Ready ?: return@collectLatest
+                    val fresh = ids.filter { it !in ackedRead }
+                    if (fresh.isEmpty()) return@collectLatest
+                    // Populate ackedRead BEFORE dispatching, and detach the suspending ack
+                    // into [scope] so a fresh viewport emission cancelling this collector
+                    // doesn't take the in-flight call with it. Mirrors TimelineScreen's
+                    // read-mark effect — same reasoning applies for the discussion
+                    // thread's lastReadInboxMessageId.
+                    fresh.forEach { ackedRead.add(it) }
+                    scope.launch { liveRepo.viewMessages(ready.threadChatId, fresh) }
+                }
+        }
     }
 
     // Material 3 predictive-back transform. Pivot lives at the swipe edge so the screen
@@ -291,7 +355,11 @@ fun CommentsScreen(
     // contract). Keyed on (chatId, anchorKey) so navigating to a different
     // post starts a fresh grace window.
     val showLoadingOverlay = rememberDeferredLoading(
-        pending = state is CommentsRepository.ThreadState.Loading,
+        // Suppress the deferred spinner in the disabled / no-repo path —
+        // `state` is pinned at Loading there but we never resolve to Ready,
+        // so without this gate the spinner would unconditionally land after
+        // the 600 ms grace and sit on top of the empty-state hero forever.
+        pending = !threadDisabled && state is CommentsRepository.ThreadState.Loading,
         key = post.chatId to (candidateIds.minOrNull() ?: post.id),
     )
 
@@ -399,6 +467,21 @@ fun CommentsScreen(
             // grace window matches [LOADING_OVERLAY_GRACE_MS] used by media
             // overlays, so the entire app shares one "what counts as a slow load
             // worth surfacing?" threshold.
+            // Override short-circuit: same empty-state hero shape as the live
+            // disabled/empty branches, just with caller-supplied copy. Wins over
+            // the live thread state so callers without a repository never have
+            // to construct a stub flow.
+            if (disabledOverride != null) {
+                val override = disabledOverride
+                item(key = "override") {
+                    CommentsEmptyState(
+                        symbol = override.symbol,
+                        title = override.title,
+                        body = override.body,
+                    )
+                }
+                return@LazyColumn
+            }
             when (val s = state) {
                 CommentsRepository.ThreadState.Loading -> if (showLoadingOverlay) {
                     item(key = "loading") {
