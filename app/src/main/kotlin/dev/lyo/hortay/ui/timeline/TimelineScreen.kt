@@ -1570,15 +1570,20 @@ fun TimelineScreen(
                                 }
                             }
 
-                        // Snap-fling: when [snapScroll] is enabled, fling gestures settle
-                        // on the nearest item start (`SnapPosition.Start`) — Reels-style
-                        // "click into place" without forking LazyColumn into a Pager. Drag
-                        // scrolling stays free; only fling inertia is snapped.
+                        // Snap-fling: when [snapScroll] is enabled, route flings through
+                        // [rememberFeedSnapFlingBehavior]. The stock
+                        // `rememberSnapFlingBehavior(snapPosition = Start)` is the Reels
+                        // idiom — great for fixed-height paginators, hostile to a feed
+                        // with mixed-height posts (long posts can't be read mid-way;
+                        // gentle flings snap back instead of advancing). Our wrapper
+                        // does the discrete-swipe / paginator model: one post per fling
+                        // in the gesture direction, with tall-post and low-velocity
+                        // bypass that falls through to a free decay-fling. Reference:
+                        // Instagram's main feed (not Reels), Twitter and Telegram
+                        // channels all skip snap entirely on mixed-height feeds for
+                        // exactly these reasons.
                         val flingBehavior = if (snapScroll) {
-                            androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior(
-                                lazyListState = listState,
-                                snapPosition = androidx.compose.foundation.gestures.snapping.SnapPosition.Start,
-                            )
+                            rememberFeedSnapFlingBehavior(lazyListState = listState)
                         } else {
                             ScrollableDefaults.flingBehavior()
                         }
