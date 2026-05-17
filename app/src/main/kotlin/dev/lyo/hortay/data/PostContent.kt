@@ -511,6 +511,19 @@ data class TdMedia(
     override fun equals(other: Any?): Boolean =
         other is TdMedia && other.fileId == fileId && other.remoteUrl == remoteUrl
     override fun hashCode(): Int = (fileId ?: 0) * 31 + (remoteUrl?.hashCode() ?: 0)
+
+    /**
+     * Aspect ratio (`width / height`) for sizing surfaces that need a seed
+     * before the playback decoder reports its real frame size — TDLib delivers
+     * `width` / `height` on the original message content (poster geometry),
+     * which is the same shape as the video stream in steady state.
+     *
+     * Returns `0f` when either dimension is missing — the conventional sentinel
+     * for "unknown — fill parent until something authoritative reports a size"
+     * used across the inline media surfaces (see `TdVideoPlayer.initialAspect`).
+     */
+    val aspectRatio: Float
+        get() = if (width > 0 && height > 0) width.toFloat() / height.toFloat() else 0f
 }
 
 /**

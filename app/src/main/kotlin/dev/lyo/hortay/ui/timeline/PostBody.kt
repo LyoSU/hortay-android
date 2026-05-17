@@ -466,6 +466,12 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
                 autoLoop = true,
                 showControls = false,
                 muted = true,
+                // Seed the player's [AspectRatioFrameLayout] with the poster's
+                // geometry so the first layout pass already matches the outer
+                // [SingleMedia] [Modifier.aspectRatio]. Without it the texture
+                // fills the parent box until [Player.Listener.onVideoSizeChanged]
+                // fires, visible as a brief stretch-then-snap on autoplay mount.
+                initialAspect = asVideo.media.aspectRatio,
                 modifier = Modifier.fillMaxSize(),
             )
             DurationChip(
@@ -658,6 +664,11 @@ private fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<A
                 autoLoop = true,
                 showControls = false,
                 muted = true,
+                // Same seed-before-decoder pattern as the inline video branch
+                // above; the GIF's [TdMedia.width] / [TdMedia.height] match the
+                // animation stream so the poster and the player layout in a
+                // single frame.
+                initialAspect = content.media.aspectRatio,
                 modifier = Modifier.fillMaxSize(),
             )
             DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
