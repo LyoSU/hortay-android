@@ -83,14 +83,42 @@ fun MainScaffold(graph: AppGraph) {
     val stack by graph.nav.stack.collectAsStateWithLifecycle()
     val topEntry = stack.lastOrNull()
 
+    val scope = rememberCoroutineScope()
+
     // Nav helpers route through [AppGraph.nav]. The active tab is NOT
     // touched on push — under the nav-overlay the user's originating tab
     // (Channels, Saved, …) keeps rendering, so a predictive-back swipe
     // reveals the right content underneath. Pop just removes the top
     // overlay layer; tab restoration is automatic because we never moved
     // away from it.
+    //
+    // Wait-for-content pattern: every channel push routes through
+    // [PostsRepository.primeChannelForOpen] with a short ([CHANNEL_PRELOAD_TIMEOUT_MS])
+    // grace window. The single-flight `loadChannelHistory` it kicks off is
+    // the same job [ChannelViewModel.init] would have awaited anyway —
+    // doing it here just shifts the wait to the source view so the target
+    // mounts with content already populated. Telegram-iOS / iOS Messages
+    // idiom: a brief "tap registered, content arriving" hold on the source
+    // beats a fresh-mounted target that flashes a skeleton. When the grace
+    // elapses the target is pushed with [preloadTimedOut = true] so its
+    // skeleton paints immediately (no further grace stacking) — at that
+    // point the user has already waited the source-side grace and another
+    // wait reads as a freeze. The slice's [loadChannelHistory] keeps
+    // running in repo scope, so when the target mounts and
+    // [ChannelViewModel] awaits the same Deferred it gets the result for
+    // free, no second round-trip.
     val pushChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
-        graph.nav.push(NavEntry.Channel(chatId = chatId, scrollToMessageId = scrollTo))
+        scope.launch {
+            val warm = graph.postsRepository.primeChannelForOpen(chatId)
+            graph.nav.push(
+                NavEntry.Channel(
+                    chatId = chatId,
+                    scrollToMessageId = scrollTo,
+                    preloadTimedOut = !warm,
+                ),
+            )
+        }
+        Unit
     }
     val pushComments: (TimelinePost) -> Unit = { post ->
         graph.nav.push(NavEntry.Comments(anchor = post))
@@ -100,7 +128,6 @@ fun MainScaffold(graph: AppGraph) {
     // Monotonic counter: each re-tap on Home (or brand) bumps it once. The Feed observes the
     // value and decides scroll-to-top vs refresh based on its own scroll position.
     var homeTapTrigger by remember { mutableLongStateOf(0L) }
-    val scope = rememberCoroutineScope()
     val connection by graph.tdClient.connection.collectAsStateWithLifecycle()
     val floodWaitUntilMs by graph.tdClient.floodWaitUntilMs.collectAsStateWithLifecycle()
 
@@ -170,13 +197,16 @@ fun MainScaffold(graph: AppGraph) {
     val safelyReplaceTopWithChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
         scope.launch {
             when (val resolved = graph.postsRepository.resolveChatKind(chatId)) {
-                is PublicHandleResult.Channel ->
+                is PublicHandleResult.Channel -> {
+                    val warm = graph.postsRepository.primeChannelForOpen(resolved.chatId)
                     graph.nav.replaceTop(
                         NavEntry.Channel(
                             chatId = resolved.chatId,
                             scrollToMessageId = scrollTo,
+                            preloadTimedOut = !warm,
                         ),
                     )
+                }
                 is PublicHandleResult.Unsupported -> {
                     graph.nav.pop()
                     graph.userMessages.post(

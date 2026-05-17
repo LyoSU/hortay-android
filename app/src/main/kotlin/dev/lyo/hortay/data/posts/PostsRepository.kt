@@ -731,6 +731,41 @@ class PostsRepository(
      * longer triggers a fresh GetChatHistory each time. Failed loads skip the cooldown
      * mark so the next entry retries.
      */
+    /**
+     * Pre-warm the per-channel slice ahead of a navigation push.
+     *
+     * Returns `true` once `_posts` contains at least one row from [chatId] —
+     * either because the merged feed already had a slice (fast path; the
+     * common case for any channel the user has seen in the feed since the
+     * session warmed), or because [loadChannelHistory] resolved inside
+     * [timeoutMs]. Returns `false` when neither condition was satisfied
+     * within the grace window — the caller pushes anyway (the user already
+     * paid a perceptible wait; further blocking the source view past
+     * [timeoutMs] reads as "tap didn't register").
+     *
+     * The launched [loadChannelHistory] is single-flight via [deepLoadJobs],
+     * so when the user lands on [ChannelScreen] and [ChannelViewModel] runs
+     * its own `loadChannelHistory(chatId)` call, it awaits the SAME
+     * Deferred. No duplicate `GetChatHistory` round-trip, no extra
+     * FLOOD_WAIT pressure.
+     *
+     * This is the "wait-for-content navigation" pattern (Apple HIG / iOS
+     * Messages / Telegram-iOS): tap → brief source-side preload → mount
+     * target with content already populated, so the LazyColumn renders
+     * Ready in its first frame instead of flashing a skeleton. The
+     * companion contract on the target side: when this returns `false`,
+     * [ChannelScreen] must show its skeleton immediately (no further grace)
+     * — the user already waited [timeoutMs] on the source, stacking grace
+     * windows would surface as a long blank that reads as a freeze.
+     */
+    suspend fun primeChannelForOpen(chatId: Long, timeoutMs: Long = 300L): Boolean {
+        if (_posts.value.any { it.chatId == chatId }) return true
+        kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+            loadChannelHistory(chatId)
+        }
+        return _posts.value.any { it.chatId == chatId }
+    }
+
     suspend fun loadChannelHistory(chatId: Long, limit: Int = 80): Result<Unit> {
         val now = System.currentTimeMillis()
         deepLoadCooldownUntilMs[chatId]?.let { until ->

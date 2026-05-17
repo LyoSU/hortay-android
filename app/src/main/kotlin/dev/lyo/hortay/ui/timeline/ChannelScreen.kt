@@ -158,6 +158,16 @@ fun ChannelScreen(
      * would otherwise bypass that budget. Null = unguarded (guest mode / tests).
      */
     startupPhase: kotlinx.coroutines.flow.StateFlow<dev.lyo.hortay.data.StartupCoordinator.Phase>? = null,
+    /**
+     * Signal from the push-site that the wait-for-content preload exceeded
+     * its grace window. When true, the resolving-state skeleton paints
+     * immediately (no [rememberDeferredLoading] grace) — the user already
+     * waited the source-side grace, so stacking another wait on the target
+     * reads as a freeze. When false, the standard 600 ms grace applies so a
+     * fast resolve (deep-link target landing within that window) doesn't
+     * flash a skeleton.
+     */
+    instantSkeleton: Boolean = false,
 ) {
     // Per-channel VM. viewModel() keys the instance by (class, key), so each chatId
     // gets its own VM rather than sharing the all-feed TimelineViewModel. The factory is
@@ -632,10 +642,18 @@ fun ChannelScreen(
                 // [LOADING_OVERLAY_GRACE_MS] (600 ms) keeps the threshold
                 // identical to the comments overlay and media indicators —
                 // one app-wide contract for "slow enough to surface".
-                val showSkeleton = rememberDeferredLoading(
+                //
+                // [instantSkeleton] overrides the grace: when the push-site
+                // already burned the wait-for-content preload window
+                // (`primeChannelForOpen` timed out) the user has already
+                // waited 300 ms on the source view, so stacking another grace
+                // on the target would surface as a freeze. The skeleton
+                // paints on the first Resolving frame in that case.
+                val deferredSkeleton = rememberDeferredLoading(
                     pending = isResolving,
                     key = chatId,
                 )
+                val showSkeleton = isResolving && (instantSkeleton || deferredSkeleton)
                 when {
                     showSkeleton -> {
                         SkeletonFeed(modifier = Modifier.fillMaxSize())
