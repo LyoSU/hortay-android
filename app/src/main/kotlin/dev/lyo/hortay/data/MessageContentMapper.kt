@@ -79,7 +79,19 @@ internal object MessageContentMapper {
             waveform = content.voiceNote.waveform,
         )
         is TdApi.MessageVideoNote -> PostContent.VideoNote(
+            // TDLib videoNote source is always square — `length` is the side in pixels
+            // (TDLib caps capture at 384, default is 240). Both axes use it so the
+            // playback player's AspectRatioFrameLayout letterboxes correctly on the
+            // first layout pass, before the decoder reports the real frame size.
             thumb = content.videoNote.thumbnail?.toMedia(),
+            video = content.videoNote.video?.let { file ->
+                TdMedia(
+                    fileId = file.id,
+                    width = content.videoNote.length,
+                    height = content.videoNote.length,
+                    minithumbBytes = content.videoNote.minithumbnail?.data,
+                )
+            },
             durationSec = content.videoNote.duration,
         )
         is TdApi.MessageSticker -> {

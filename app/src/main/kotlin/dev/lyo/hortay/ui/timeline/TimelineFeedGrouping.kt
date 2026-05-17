@@ -51,6 +51,9 @@ internal fun PostContent.posterFileIds(): List<Int> = buildList {
             content.sticker?.fileId?.let(::add)
         }
         is PostContent.VideoNote -> content.thumb?.fileId?.let(::add)
+        // Video-note playback fileIds intentionally NOT added here — they are warmed
+        // via [playbackFileIds] below alongside the autoplay-prewarm pass, where the
+        // duration gate matches the actual autoplay eligibility.
         // Text/Audio/VoiceNote/Poll/Location/Contact/Dice/Checklist/Service/Expired/
         // Unsupported — no still preview to warm.
         else -> Unit
@@ -76,6 +79,12 @@ internal fun PostContent.playbackFileIds(): List<Int> = buildList {
             if (!content.hasSpoiler && !content.isSecret) {
                 add(content.playbackFileId)
             }
+        }
+        is PostContent.VideoNote -> {
+            // Round video messages are Telegram-capped at 60 s of square 240/384 source,
+            // so the typical playback file is ≤ 5 MB — well within the speculative budget
+            // [INLINE_PREFETCH_MAX_DURATION_SEC] guards for long-form video. Always prewarm.
+            content.video?.fileId?.let(::add)
         }
         is PostContent.PhotoAlbum -> content.items.forEach { item ->
             when (item) {

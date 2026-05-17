@@ -115,9 +115,17 @@ sealed interface PostContent {
         override fun hashCode(): Int = fileId.hashCode()
     }
 
+    /**
+     * Telegram "round video message" (`messageVideoNote`). Source is always square
+     * (TDLib caps capture at 384×384; default is 240×240), so the renderer clips to a
+     * circle. [video] is the playable MP4 — separate TDLib fileId from [thumb] (the
+     * poster). [video] may be null on rare hydration paths that only saw the thumbnail;
+     * the mapper always populates it when TDLib delivered the message normally.
+     */
     @Immutable
     data class VideoNote(
         val thumb: TdMedia?,
+        val video: TdMedia?,
         val durationSec: Int,
     ) : PostContent
 

@@ -440,6 +440,7 @@
     <string name="reply_kind_audio">Audio</string>
     <string name="reply_kind_voice">Voice message</string>
     <string name="reply_kind_video_note">Video message</string>
+    <string name="content_description_video_note">Round video message. Tap to toggle sound.</string>
     <string name="reply_kind_sticker">Sticker</string>
     <string name="reply_kind_poll">Poll</string>
 

@@ -204,10 +204,22 @@ class MediaAutoDownloader(
                 // Stickers/animated emoji ride the [CustomEmojiRepository] batched path
                 // and aren't user-configurable; skipping here is correct.
             }
+            is PostContent.VideoNote -> {
+                // Round video messages are by-protocol short (≤ 60 s) and small
+                // (typical 1-3 MB, hard ceiling ~12 MB). Telegram-Android
+                // prefetches them under the videos policy and autoplays silently
+                // in the feed — we mirror that. Poster rides [policy.photos]
+                // like any inline still; playback file rides [policy.videos]
+                // but bypasses the [videoMaxBytes] cap: the cap exists to keep
+                // multi-tens-of-MB long videos from saturating mobile data,
+                // applying it to a ≤ 12 MB round bubble would just leave it as
+                // a static thumb for no policy gain.
+                c.thumb?.let { prefetchPoster(it, policy) }
+                c.video?.fileId?.let { dispatchVideoNote(it, policy) }
+            }
             is PostContent.Document,
             is PostContent.Audio,
             is PostContent.VoiceNote,
-            is PostContent.VideoNote,
             is PostContent.Poll,
             is PostContent.Location,
             is PostContent.Contact,
@@ -257,6 +269,22 @@ class MediaAutoDownloader(
         // ensure() will start the download on demand.
         if (sizeBytes <= 0L) return
         if (sizeBytes > policy.videoMaxBytes) return
+        cache.ensure(fileId, DownloadPriority.Prefetch)
+    }
+
+    /**
+     * Like [dispatchVideo], but for round video messages: respects [policy.videos]
+     * (the user's "yes, pull videos on this network" toggle) and skips the
+     * [videoMaxBytes] cap. Video notes are by-protocol bounded to ≤ 60 s of
+     * 240/384-square source — typical ~1-3 MB, hard ceiling ~12 MB — so the cap
+     * (default 10 MB on Wi-Fi) would block the long tail of legitimately tiny
+     * round bubbles for no real bytes saved. Mobile / Roaming still skips them
+     * via [resolveActivePolicy] which clamps [policy.videos] to false on
+     * non-Wi-Fi, identical to long-form video.
+     */
+    private suspend fun dispatchVideoNote(fileId: Int, policy: AutoDownloadPolicy) {
+        if (!policy.videos) return
+        if (fileId == 0) return
         cache.ensure(fileId, DownloadPriority.Prefetch)
     }
 

@@ -455,6 +455,7 @@
     <string name="reply_kind_audio">Аудіо</string>
     <string name="reply_kind_voice">Голосове повідомлення</string>
     <string name="reply_kind_video_note">Відеоповідомлення</string>
+    <string name="content_description_video_note">Кругле відеоповідомлення. Торкніться, щоб увімкнути або вимкнути звук.</string>
     <string name="reply_kind_sticker">Стікер</string>
     <string name="reply_kind_poll">Опитування</string>
 
