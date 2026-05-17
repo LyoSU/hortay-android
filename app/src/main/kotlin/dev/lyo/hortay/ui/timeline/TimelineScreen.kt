@@ -619,25 +619,48 @@ fun TimelineScreen(
         preserveReady = coveredByOverlay,
     )
 
-    // Cold-start positioning is owned by the `LazyListState(initialIndex, 0)`
-    // constructor arg: the seed is derived SYNCHRONOUSLY from [latchedUiState]
-    // at the [rememberSaveable] call site. When the latcher flips to
-    // [TimelineUiState.Ready(initialIndex = N)], the very next composition pass
-    // re-keys the saver bundle and instantiates a fresh [LazyListState] at
-    // index N — first paint of the LazyColumn lands at the correct row in one
-    // frame. No `LaunchedEffect → MutableIntState → re-key` chain → no
-    // one-frame paint at index 0 before the seed updates. Mirrors the pattern
-    // [ChannelScreen] uses (see ChannelScreen.kt around line 294).
+    // Cold-start positioning AND scroll preservation across tab swaps share
+    // the same saver bundle — the trick is to make the `rememberSaveable` key
+    // STABLE per route across re-entries, so a moved boundary doesn't yank the
+    // saver bundle out from under the restoration path.
     //
-    // [LazyListState.Saver] still persists `firstVisibleItemIndex` across tab
-    // swaps within a process (the SaveableStateProvider in MainScaffold /
-    // WebModeScaffold scopes saved state per route), so drilling into a
-    // channel and popping back retains the user's scroll. Process death is
-    // handled implicitly: the seed re-evaluates from 0 on restore, jumps to
-    // its real value on the next Ready transition, and the column mounts
-    // pre-positioned. We don't try to bridge scroll across process death —
-    // see the "Cold launch always lands on Home top-of-feed" guarantee.
-    val readySeed = (latchedUiState as? TimelineUiState.Ready)?.initialIndex ?: 0
+    // The naive `rememberSaveable(routeKey, readySeed, saver)` pattern keyed
+    // on the LIVE boundary index. That gives the right cold-start landing
+    // (first Ready → key changes → fresh LazyListState seeded at boundary) at
+    // the cost of losing scroll on every tab swap where the boundary moved
+    // while the user was on another tab: the bundle was saved under
+    // `(route, oldBoundary)` but on re-entry the key is `(route, newBoundary)`
+    // — Compose treats it as a fresh slot and re-seeds at index N instead of
+    // restoring `firstVisibleItemIndex`.
+    //
+    // [pinnedSeed] captures the FIRST boundary we ever see for this route
+    // and persists it across tab swaps + process death via [rememberSaveable].
+    // Subsequent boundary movements (cursor advances, new arrivals) do NOT
+    // update it — the seed is a one-shot "where to land cold-start", not a
+    // live signal. The [LaunchedEffect] mutates it after composition, so the
+    // FIRST Ready-frame still gets the candidate value directly (via the
+    // `?:` fallback) — meaning no one-frame paint at index 0 before the
+    // saver re-keys.
+    //
+    // Result: cold-start lands at boundary in one frame (same as before);
+    // tab swap restores the user's scroll via [LazyListState.Saver]'s
+    // built-in `firstVisibleItemIndex` persistence (no manual snapshot/replay
+    // — pure Compose machinery); process-death restore re-evaluates the seed
+    // from scratch and lands at the new boundary.
+    val pinnedSeed = rememberSaveable(routeKey) {
+        androidx.compose.runtime.mutableIntStateOf(-1)
+    }
+    val candidateInitialIndex = (latchedUiState as? TimelineUiState.Ready)?.initialIndex
+    LaunchedEffect(routeKey, candidateInitialIndex) {
+        if (pinnedSeed.intValue < 0 && candidateInitialIndex != null) {
+            pinnedSeed.intValue = candidateInitialIndex
+        }
+    }
+    val readySeed = when {
+        pinnedSeed.intValue >= 0 -> pinnedSeed.intValue
+        candidateInitialIndex != null -> candidateInitialIndex
+        else -> 0
+    }
     val listState = rememberSaveable(
         routeKey, readySeed,
         saver = androidx.compose.foundation.lazy.LazyListState.Saver,

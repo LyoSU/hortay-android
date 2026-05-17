@@ -296,16 +296,30 @@ fun ChannelScreen(
     // tap. [rememberPendingScrollToMessage] resolves the target and clears it.
     var pendingScrollToMessage by remember(chatId) { mutableStateOf<Pair<Long, Long>?>(null) }
 
-    // Scroll state. The LazyColumn mounts via [LazyListState(initialIndex, 0)] on
-    // the first Ready transition, so first paint lands at the correct row in one
-    // frame — no scroll-pin loop, no animate-through index 0. [rememberSaveable]
-    // keyed on (chatId, initialIndex) preserves scroll across drill-out/drill-in
-    // within the parent SaveableStateProvider(key = "feed-channel:<chatId>") in
-    // MainScaffold; a route-key change discards the saver bundle and re-seeds
-    // from the fresh [initialIndex]. The cold-entry scroll-pin effect for
-    // OldestUnreadFirst is now folded into [buildChannelUiState] so the boundary
-    // index is type-level, not a snapshotFlow + scrollToItem race.
-    val initialIndexSeed = (channelUiState as? ChannelUiState.Ready)?.initialIndex ?: 0
+    // Scroll state. First paint lands at the correct row in one frame
+    // (cold-start landing) AND drill-out/drill-in preserves user scroll, even
+    // when boundary moved while the user was elsewhere. The trick: pin the
+    // seed at the FIRST Ready transition via [rememberSaveable], use it as
+    // both the [LazyListState] constructor arg and the [rememberSaveable] key
+    // — so subsequent boundary movements don't yank the saver bundle out from
+    // under the restoration path. The previous design keyed on the LIVE
+    // boundary, which lost scroll on drill-back if cursors had moved while
+    // the user was inside another channel. See the matching pattern in
+    // [TimelineScreen]'s home-feed listState — same problem, same shape.
+    val pinnedChannelSeed = rememberSaveable(chatId) {
+        androidx.compose.runtime.mutableIntStateOf(-1)
+    }
+    val candidateInitialIndex = (channelUiState as? ChannelUiState.Ready)?.initialIndex
+    LaunchedEffect(chatId, candidateInitialIndex) {
+        if (pinnedChannelSeed.intValue < 0 && candidateInitialIndex != null) {
+            pinnedChannelSeed.intValue = candidateInitialIndex
+        }
+    }
+    val initialIndexSeed = when {
+        pinnedChannelSeed.intValue >= 0 -> pinnedChannelSeed.intValue
+        candidateInitialIndex != null -> candidateInitialIndex
+        else -> 0
+    }
     val listState = rememberSaveable(
         chatId, initialIndexSeed,
         saver = androidx.compose.foundation.lazy.LazyListState.Saver,
