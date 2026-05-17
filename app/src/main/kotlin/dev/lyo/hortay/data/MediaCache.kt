@@ -904,6 +904,16 @@ class MediaCache(
      * database. In practice every observer will already be in the middle
      * of being torn down because the UI is in transition to AuthScreen
      * anyway.
+     *
+     * **Load-bearing: do NOT close [fileEvents] here.** The reducer-loop in
+     * [init] is intentionally process-lifetime — it lives on [scope] which is
+     * [AppGraph.appScope] (cancelled only on process death). [MediaCache] is
+     * a process-singleton owned by the graph, so the same instance survives
+     * logout → login flips and must keep its single-writer reducer alive
+     * across them. Closing the channel here would exit the reducer's
+     * `for (event in fileEvents)` loop permanently, and the next account's
+     * UpdateFile stream would `send()` into a closed channel — every download
+     * silently dropped. Resetting state ≠ tearing down the actor.
      */
     fun clear() {
         states.clear()

@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import kotlin.coroutines.resume
@@ -429,7 +430,7 @@ class TdClient private constructor(
     }
 
     /**
-     * Suspend-style wrapper around [Client.send]. Wraps two cross-cutting concerns
+     * Suspend-style wrapper around [Client.send]. Wraps three cross-cutting concerns
      * around the bare JNI call:
      *
      *   • **FLOOD_WAIT throttle.** Before sending, await any outstanding rate-limit
@@ -438,17 +439,27 @@ class TdClient private constructor(
      *     deadline forward. We do NOT auto-retry — the failed call still throws
      *     and the caller decides; all we guarantee is that the *next* send waits.
      *   • Result/error translation into [TdException], same as before.
+     *   • **Defense-in-depth timeout.** [withTimeout] guards against a hung JNI
+     *     callback (daemon livelock / native crash mid-call) leaking a permanently
+     *     suspended coroutine. 60s is generous enough that legitimately slow calls
+     *     (e.g. `GetMessageThreadHistory` on a cold cache, large `SearchMessages`)
+     *     have headroom; well past that, the daemon is the problem, not the call.
+     *     [suspendCancellableCoroutine] is cancellation-aware, so timeout
+     *     propagates correctly — the callback from TDLib will still fire eventually
+     *     but `cont.resume` becomes a no-op once the cont completed via cancel.
      */
     override suspend fun <T : TdApi.Object> send(query: TdApi.Function<T>): T {
         awaitFloodGate()
         return try {
-            suspendCancellableCoroutine { cont ->
-                client.send(query) { result ->
-                    if (result is TdApi.Error) {
-                        cont.resumeWith(Result.failure(TdException(result.code, result.message)))
-                    } else {
-                        @Suppress("UNCHECKED_CAST")
-                        cont.resume(result as T)
+            withTimeout(SEND_TIMEOUT_MS) {
+                suspendCancellableCoroutine { cont ->
+                    client.send(query) { result ->
+                        if (result is TdApi.Error) {
+                            cont.resumeWith(Result.failure(TdException(result.code, result.message)))
+                        } else {
+                            @Suppress("UNCHECKED_CAST")
+                            cont.resume(result as T)
+                        }
                     }
                 }
             }
@@ -619,6 +630,14 @@ class TdClient private constructor(
         // parses at "error" level which would clutter production crashlog tooling.
         private val LOG_VERBOSITY = if (BuildConfig.DEBUG) 1 else 0
         private const val TAG = "TdClient"
+
+        // Defense-in-depth ceiling for a single [send] call. Generous enough that
+        // legitimately slow TDLib operations (cold-cache GetMessageThreadHistory,
+        // SearchMessages against large corpora) complete with headroom. Past 60s
+        // the daemon is the problem, not the call — fail the coroutine instead of
+        // leaking it. See [send]'s KDoc for the full rationale.
+        private const val SEND_TIMEOUT_MS = 60_000L
+
         private const val OPTIMIZE_INTERVAL_MS = 24L * 60 * 60 * 1000 // once per day
 
         // Skip OptimizeStorage's file-table walk when usage is below this threshold.

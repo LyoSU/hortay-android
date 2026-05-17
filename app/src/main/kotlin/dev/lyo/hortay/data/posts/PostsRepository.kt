@@ -115,6 +115,26 @@ class PostsRepository(
     private val ignoredChannels: IgnoredChannelsStore? = null,
 ) : FeedSource {
 
+    /**
+     * Serialises the *batch* refresh paths (cold-start fan-out, pull-to-refresh,
+     * snapshot restore) against each other and against [clear]. Only the
+     * read-side ingest path (live TDLib updates: `UpdateNewMessage`,
+     * `UpdateMessageInteractionInfo`, `UpdateMessageContent`, `UpdateDeleteMessages`,
+     * `UpdateChatPhoto`, `UpdateChatTitle`, the optimistic-reaction overlay, etc.)
+     * runs OUTSIDE this mutex and relies on the CAS-loop semantics of
+     * [MutableStateFlow.update] for atomicity.
+     *
+     * **CAS-loop invariant (load-bearing — do not "fix" with a mutex):**
+     * Every lambda passed to `_posts.update { current -> ... }` MUST be a pure
+     * function of `current`. No side-effects outside the closure; no reads of
+     * unrelated mutable state whose change between retry attempts could shift
+     * the computed result. CAS-loop re-runs the lambda on a fresh snapshot when
+     * a concurrent writer wins the race — so the second writer naturally sees
+     * (and preserves) the first writer's mutation. Wrapping the read-side path
+     * in [refreshMutex] would serialise every TDLib update into the refresh
+     * critical section, blocking the user-facing feed for ~hundreds of ms during
+     * cold-start RPC storms. The non-mutex design is intentional.
+     */
     private val refreshMutex = Mutex()
     private val chatCache = ConcurrentHashMap<Long, TdApi.Chat>()
 

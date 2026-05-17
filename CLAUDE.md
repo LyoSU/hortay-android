@@ -42,12 +42,12 @@ DI built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(applicatio
 | TDLib two-stage update pipeline | `data/TdClient.kt:71-89` | UNLIMITED Channel → SharedFlow(64). |
 | MediaCache single-coroutine reducer | `data/MediaCache.kt:125-138` | `fileEvents` Channel = one writer. |
 | MediaCache stall watchdog | `data/MediaCache.kt:149-178` | 3 regimes; skip under `WaitingForNetwork`. |
-| PostsRepository concurrency | `data/PostsRepository.kt:32-49` | `refreshMutex` + `PersistentList` + album coalescing. |
-| PostsRepository cold-start contract | `data/PostsRepository.kt:refreshLocked` | Harvest `Chat.lastMessage` from `chatCache`. **Don't reintroduce `GetChat × N` / `GetChatHistory × N`** — FLOOD_WAIT class. |
+| PostsRepository concurrency | `data/posts/PostsRepository.kt` (refreshMutex KDoc) | `refreshMutex` serialises batch refresh; live ingest runs OUTSIDE mutex via `MutableStateFlow.update` CAS-loop. Lambdas to `_posts.update {}` MUST be pure functions of the snapshot. |
+| PostsRepository cold-start contract | `data/posts/PostsRepository.kt:refreshLocked` | Harvest `Chat.lastMessage` from `chatCache`. **Don't reintroduce `GetChat × N` / `GetChatHistory × N`** — FLOOD_WAIT class. |
 | Compose stability chain | `data/PostContent.kt`, `TimelinePost.kt` | `@Immutable` end-to-end. |
 | Cold-start snapshot | `data/TimelineSnapshotStore.kt` + `TimelineViewModel:59-66` | Restore → parallel `refreshIfStale`. |
 | FLOOD_WAIT global gate | `data/TdClient.kt:100-113` | Single `AtomicLong` deadline. Recognise **both 420 and 429**. |
-| TDLib quirks (album sync, stall) | `data/MediaCache.kt:55-71` + `PostsRepository.kt:67-74` | `tdlib/td#2523`, `tdlib/td#2585`. |
+| TDLib quirks (album sync, stall) | `data/MediaCache.kt:55-71` + `data/posts/PostsRepository.kt:67-74` | `tdlib/td#2523`, `tdlib/td#2585`. |
 | Web-mode SQL portability | `app/src/main/sqldelight/.../web/db/*.sq` | All upserts via `INSERT OR IGNORE` + `UPDATE` — **not** `ON CONFLICT DO UPDATE`. Android 8/9 SQLite < 3.24. FTS5 skipped. |
 | Web-mode media TTL | `data/web/Post.sq` + `WebFeedSource.DEFAULT_MEDIA_TTL_MS` | t.me/s/ CDN URLs live 1–4 h. |
 | Guest-mode routing | `MainActivity.kt` | `auth.Ready → MainScaffold` → `isGuest → WebModeScaffold` → `AuthScreen`. |
