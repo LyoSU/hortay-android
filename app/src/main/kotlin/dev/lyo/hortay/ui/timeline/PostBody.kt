@@ -13,7 +13,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -716,27 +715,20 @@ private fun VoiceNoteBlock(content: PostContent.VoiceNote, onOpenInSource: () ->
 }
 
 /**
- * Telegram "round video message" rendered as a self-contained circular bubble.
+ * Telegram "round video message" — dispatcher.
  *
- * Behaviour mirrors the official client:
- *   • Poster paints under the player; player crossfades in once its file is local
- *     (the cache-presence gate is the same [isCachedReady] inline short videos use,
- *     so we never side-step the user's auto-download policy by stealth-pulling the
- *     playback file just because the post entered the viewport).
- *   • Silent autoplay on viewport entry, looped — `muted = true` is the canonical
- *     default for round bubbles in a feed.
- *   • Tap toggles the audio. Re-keying the `TdVideoPlayer` on `muted` re-acquires
- *     the right pool slot (muted players are built without an audio renderer
- *     entirely; toggling can't be done by volume because the renderer isn't there
- *     to ramp). The pool keeps both regimes warm so a toggle is the same cost as a
- *     normal scroll-into-view acquisition. Position resets to 0; round videos loop
- *     and average ~10-20 s, so the user rarely notices.
- *   • Duration chip sits at the bottom-trailing corner, mute / audio glyph at the
- *     top-trailing corner. Both float over the circle with a soft scrim so they
- *     stay legible against any poster.
+ * Two render paths:
+ *   • Playback file is on disk *and* the user's autoplay toggle is on →
+ *     delegate to [VideoNotePlayerBubble], which owns its own [ExoPlayer]
+ *     for the progress ring, remaining-time chip, pause / play tap and
+ *     mute toggle.
+ *   • Otherwise → static poster + centred play glyph; tap routes to
+ *     Telegram via [onOpenInSource]. Same affordance the rest of the feed
+ *     uses for "not yet cache-ready" inline video.
  *
- * Falls back to a static poster + tap-routes-to-Telegram when the playback file
- * is unavailable (rare hydration path where TDLib delivered just the thumbnail).
+ * The cache-ready gate is the same [isCachedReady] inline short videos use,
+ * so we never side-step the user's auto-download policy by stealth-pulling
+ * the playback file just because the post entered the viewport.
  */
 @Composable
 private fun VideoNoteBlock(content: PostContent.VideoNote, onOpenInSource: () -> Unit) {
@@ -745,143 +737,77 @@ private fun VideoNoteBlock(content: PostContent.VideoNote, onOpenInSource: () ->
     val inlineAutoplayEnabled = LocalInlineVideoAutoplay.current
     val cacheReady = hasPlayback && inlineAutoplayEnabled &&
         isCachedReady(fileId = videoFileId, remoteUrl = null)
-    // Muted at first paint — Telegram's idiom for round videos in a feed.
-    // [videoFileId] keys the reset so scrolling away and back drops the audio
-    // state, matching Telegram-Android's "swipe away resets" behaviour.
-    var muted by remember(videoFileId) { mutableStateOf(true) }
 
-    val bubbleLabel = stringResource(R.string.content_description_video_note)
+    // [cacheReady] is `true` only when [videoFileId] is non-null and non-zero
+    // (via the [hasPlayback] guard); K2 propagates the smart-cast here.
+    if (cacheReady) {
+        VideoNotePlayerBubble(content = content, fileId = videoFileId)
+    } else {
+        VideoNoteStaticBubble(
+            content = content,
+            hasPlayback = hasPlayback,
+            onOpenInSource = onOpenInSource,
+        )
+    }
+}
+
+/**
+ * Static round-poster fallback when the playback file isn't on disk yet
+ * (autoplay disabled in Settings, auto-download skipped this file, or it's
+ * mid-prefetch) or unavailable entirely (rare hydration path where TDLib
+ * delivered only the thumbnail).
+ */
+@Composable
+private fun VideoNoteStaticBubble(
+    content: PostContent.VideoNote,
+    hasPlayback: Boolean,
+    onOpenInSource: () -> Unit,
+) {
+    val a11y = stringResource(R.string.content_description_video_note)
     Box(
         modifier = Modifier
-            // Soft elevation shadow so the bubble reads as a discrete object
-            // on top of the post background — same affordance the official
-            // client uses to separate round messages from the surrounding chat.
             .shadow(elevation = 2.dp, shape = CircleShape, clip = false)
             .size(VIDEO_NOTE_DIAMETER)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(
-                onClickLabel = bubbleLabel,
+                onClickLabel = a11y,
                 role = androidx.compose.ui.semantics.Role.Button,
-                onClick = {
-                    when {
-                        cacheReady -> muted = !muted
-                        // Playback not yet cache-ready (auto-download skipped,
-                        // mid-flight, or autoplay disabled in Settings) — fall
-                        // through to Telegram so the user can watch it there.
-                        else -> onOpenInSource()
-                    }
-                },
+                onClick = onOpenInSource,
             ),
     ) {
-        // Poster — always renders. Stays visible behind the player's transparent
-        // TextureView during prepare/buffer, so the bubble never goes black.
         content.thumb?.let {
             TdMediaImage(
                 media = it,
                 contentDescription = null,
-                // Suppress the poster's own spinner once the player is on top
-                // of it — the player has its own loading affordance for the
-                // playback file, stacking spinners reads as "two circles".
-                showProgress = !cacheReady,
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        if (cacheReady) {
-            // [cacheReady] implies [hasPlayback] (a null fileId can never be Ready
-            // in MediaCache) — K2 smart-casts videoFileId to non-null inside this
-            // branch via the [hasPlayback] guard above.
-            key(muted) {
-                TdVideoPlayer(
-                    fileId = videoFileId,
-                    autoPlay = true,
-                    autoLoop = true,
-                    showControls = false,
-                    muted = muted,
-                    // Square source by Telegram protocol — seed the aspect so
-                    // the texture letterboxes correctly on the first layout
-                    // pass, before [onVideoSizeChanged] fires.
-                    initialAspect = 1f,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            // Audio state chip — top-end. Subtle scrim disc so the glyph stays
-            // legible against any poster brightness.
-            VideoNoteAudioChip(
-                muted = muted,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp),
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(if (hasPlayback) 56.dp else 48.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.55f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Symbol(
+                name = if (hasPlayback) "play_arrow" else "video_camera_front",
+                tint = Color.White,
+                size = if (hasPlayback) 32.dp else 26.dp,
+                filled = hasPlayback,
             )
-        } else if (hasPlayback) {
-            // Playback file exists but isn't cache-ready (autoplay off in
-            // Settings, auto-download skipped, or mid-prefetch). Show the same
-            // centred glyph the rest of the app uses for "tap to play".
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.55f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Symbol(
-                    name = "play_arrow",
-                    tint = Color.White,
-                    size = 32.dp,
-                    filled = true,
-                )
-            }
-        } else {
-            // No playback file at all (rare hydration path). The bubble is a
-            // static poster + duration chip. Tap still routes to Telegram via
-            // the clickable above.
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.55f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Symbol(
-                    name = "video_camera_front",
-                    tint = Color.White,
-                    size = 26.dp,
-                )
-            }
         }
-        // Duration chip — bottom-trailing. Hidden for zero-duration sentinels
-        // (same convention as [PlayBadge]).
         if (content.durationSec > 0) {
             DurationChip(
                 text = formatDuration(content.durationSec),
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(8.dp),
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 12.dp),
             )
         }
     }
 }
-
-@Composable
-private fun VideoNoteAudioChip(muted: Boolean, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(28.dp)
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.55f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Symbol(
-            name = if (muted) "volume_off" else "volume_up",
-            tint = Color.White,
-            size = 16.dp,
-        )
-    }
-}
-
-private val VIDEO_NOTE_DIAMETER = 220.dp
 
 /**
  * Shared layout for non-playable file cards (document, audio, voice note).
