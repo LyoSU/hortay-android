@@ -72,9 +72,28 @@ class ChannelViewModel(
     // @Immutable reference. Service and ExpiredMedia rows are kept — the channel view
     // IS the scope, so we never drop posts the user explicitly asked to see (same
     // rationale as the old `channelFilter != null` path in TimelineScreen).
+    //
+    // Initial value is seeded SYNCHRONOUSLY from [repo.posts.value] at VM
+    // construction time, not the conventional empty `persistentListOf()`. That
+    // matters because of the wait-for-content navigation path: [MainScaffold]
+    // runs `primeChannelForOpen(chatId)` BEFORE pushing [NavEntry.Channel], so
+    // by the time this VM is constructed the per-channel slice is already in
+    // `_posts` for any channel the merged feed has touched (or just successfully
+    // pre-warmed). A stale empty initial would have [ChannelScreen]'s first
+    // composition read `items = emptyList()` → `buildChannelUiState` returns
+    // Resolving → the Scaffold renders its background colour over a blank body
+    // until upstream's first WhileSubscribed emission lands one frame later, at
+    // which point the LazyColumn paints over it — visible as "спочатку біле
+    // бачу, а потім зявляється пост". Seeding the StateFlow with the live
+    // snapshot lets the first composition see the items the preload already
+    // populated, and the LazyColumn paints content on frame one.
     val posts: StateFlow<PersistentList<TimelinePost>> = repo.posts
         .map { all -> all.filter { it.chatId == chatId }.toPersistentList() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+            repo.posts.value.filter { it.chatId == chatId }.toPersistentList(),
+        )
 
     // First-load guard: true from init until [loadChannelHistory] resolves — drives
     // [ChannelPreviewSkeleton]. Reset to false regardless of success/failure so an
