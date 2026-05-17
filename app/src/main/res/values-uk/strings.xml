@@ -327,6 +327,10 @@
     <string name="channels_mute">Вимкнути сповіщення</string>
     <string name="channels_leave">Покинути канал</string>
     <string name="channels_join">Підписатися</string>
+    <string name="channels_hide_from_feed">Не показувати в стрічці</string>
+    <string name="channels_unhide_from_feed">Показувати в стрічці</string>
+    <string name="channels_hide_from_feed_for">Сховати %1$s зі стрічки</string>
+    <string name="channels_unhide_from_feed_for">Показувати %1$s у стрічці</string>
     <string name="channels_empty_title">Каналів немає</string>
     <string name="channels_empty_helper">Підпишіться на канали в Telegram, і вони зʼявляться тут</string>
 
@@ -623,4 +627,20 @@
     <string name="user_profile_status_was_hours_ago">був(ла) %1$d год тому</string>
     <string name="user_profile_status_was_days_ago">був(ла) %1$d дн тому</string>
     <string name="user_profile_status_was_long_ago">давно не заходив(ла)</string>
+
+    <!-- Приховані канали (виключення зі стрічки) -->
+    <string name="settings_hidden_channels_title">Приховані канали</string>
+    <string name="settings_hidden_channels_subtitle_empty">Сховайте окремі канали з головної стрічки</string>
+    <plurals name="settings_hidden_channels_count">
+        <item quantity="one">%d канал сховано зі стрічки</item>
+        <item quantity="few">%d канали сховано зі стрічки</item>
+        <item quantity="many">%d каналів сховано зі стрічки</item>
+        <item quantity="other">%d каналів сховано зі стрічки</item>
+    </plurals>
+    <string name="hidden_channels_title">Приховані канали</string>
+    <string name="hidden_channels_empty_title">Нічого не приховано</string>
+    <string name="hidden_channels_empty_body">Пости з прихованих каналів не показуються в головній стрічці. Ви все одно бачите їх, коли заходите на канал напряму.</string>
+    <string name="hidden_channels_unknown">Прихований канал</string>
+    <string name="hidden_channels_id_placeholder">id %1$d</string>
+    <string name="hidden_channels_unhide_for">Показувати %1$s у стрічці</string>
 </resources>

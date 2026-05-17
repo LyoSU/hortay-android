@@ -498,6 +498,27 @@ fun WebModeScaffold(graph: AppGraph) {
                         // content immediately, not an empty feed waiting for
                         // the next tier-2 sweep. Subscriptions survive.
                         onClearWebCache = { graph.webFeedSource.clearCacheAndRefresh() },
+                        ignoredChannels = graph.ignoredChannels,
+                        // Guest-mode resolver: walk the in-memory channels
+                        // list for a row whose username hashes to the given
+                        // chatId. Cheap — typical subscription set is < 200,
+                        // resolution happens once per hidden chatId on screen
+                        // entry, and the StateFlow is already a snapshot the
+                        // composable holds.
+                        webChannelByChatId = { chatId ->
+                            graph.webFeedSource.channels.value
+                                .firstOrNull {
+                                    dev.lyo.hortay.data.web.WebPostAdapter.stableChatId(
+                                        it.info.username,
+                                    ) == chatId
+                                }
+                                ?.let {
+                                    dev.lyo.hortay.ui.settings.WebChannelDescriptor(
+                                        title = it.info.title,
+                                        username = it.info.username,
+                                    )
+                                }
+                        },
                     )
                 }
                 }

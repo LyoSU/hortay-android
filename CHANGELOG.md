@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- Hide individual channels from the home feed without unsubscribing — useful for technical or noisy channels you want to keep on your account but not see in the merged timeline. Toggle from Channel info → "Hide from feed" (TDLib mode), or via the eye icon on each row in the Channels tab (guest mode). Manage the full list at Settings → Hidden channels — the row count surfaces inline ("N channels hidden from feed") and tapping it opens a dedicated screen with one-tap un-hide per row. The filter is a single `IgnoredChannelsStore` keyed on `Long` chat ids, applied on the read side of both `PostsRepository.subscribedPosts` and `WebFeedSource.posts` (filtered through `combine(...)` so un-hiding restores prior posts in one frame without a refresh round-trip — dropping at ingest would have forced a pull-to-refresh after every un-hide). Cross-mode by design: guest-mode chat ids come from `WebPostAdapter.stableChatId(username)` so a channel hidden under TDLib mode stays hidden if the user falls back to guest, and vice versa. Hidden channels are still reachable via channel-drill, comments, and deep links — the filter only applies to the merged feed surfaces. Preference survives the auth ↔ guest routing flip and reinstall via DataStore.
+
 ## [0.5.0] — 2026-05-17
 
 ### Fixed

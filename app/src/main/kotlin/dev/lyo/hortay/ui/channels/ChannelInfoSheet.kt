@@ -24,6 +24,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChannelInfo
+import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -64,10 +69,25 @@ fun ChannelInfoSheet(
      * because the dynamic option flow requires TDLib).
      */
     onReport: (() -> Unit)? = null,
+    /**
+     * Hidden-channels store. When non-null, the sheet renders a "Hide from feed"
+     * toggle that flips the channel's membership in the ignore set. Null hides
+     * the row entirely — kept optional so call sites that haven't been wired
+     * yet (or test harnesses) still compile.
+     */
+    ignoredChannels: IgnoredChannelsStore? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var info by remember(chatId) { mutableStateOf<ChannelInfo?>(null) }
+
+    // Live "is this channel hidden from the feed" state. Reads through to the
+    // DataStore Flow so toggling from elsewhere (Settings → Hidden Channels)
+    // reflects here within one emit. Null store → flow of empty set so the
+    // derived `isIgnored` is false and the row is hidden via `if`-gate below.
+    val ignoredFlow: Flow<Set<Long>> = ignoredChannels?.ignored ?: flowOf(persistentSetOf())
+    val ignored by ignoredFlow.collectAsStateWithLifecycle(initialValue = persistentSetOf())
+    val isIgnored = chatId in ignored
 
     // First open or chatId switch → fetch fresh.
     LaunchedEffect(chatId) {
@@ -133,6 +153,22 @@ fun ChannelInfoSheet(
                     scope.launch { actions.setMuted(chatId, target) }
                 },
             )
+            // "Hide from feed" row. Mute silences notifications but the
+            // channel still scrolls past in the merged timeline; this toggle
+            // hides those posts entirely. Two different user intents, two
+            // rows. Kept above the destructive "Leave" row so a tap landing
+            // here while reaching for Leave is the less-destructive
+            // out-of-bounds.
+            if (ignoredChannels != null) {
+                ActionRow(
+                    symbol = if (isIgnored) "visibility" else "visibility_off",
+                    label = stringResource(
+                        if (isIgnored) R.string.channels_unhide_from_feed
+                        else R.string.channels_hide_from_feed,
+                    ),
+                    onClick = { scope.launch { ignoredChannels.toggle(chatId) } },
+                )
+            }
             if (current.isMember) {
                 ActionRow(
                     symbol = "logout",

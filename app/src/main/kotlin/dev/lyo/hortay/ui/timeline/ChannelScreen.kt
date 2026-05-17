@@ -49,6 +49,7 @@ import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.EmptyReadCursors
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.ForwardOrigin
+import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TranslationsStore
@@ -132,6 +133,12 @@ fun ChannelScreen(
      * accepts a channel-level report against the whole chat). Null hides the row.
      */
     onReportChannel: (() -> Unit)? = null,
+    /**
+     * Hidden-channels store. When non-null, propagated to [ChannelInfoSheet]
+     * which renders a "Hide from feed" toggle row. Optional so the screen
+     * still composes from call sites that haven't been wired yet.
+     */
+    ignoredChannels: IgnoredChannelsStore? = null,
     /**
      * Per-user feed ordering, from [dev.lyo.hortay.data.SettingsStore.feedOrder]. Mirrors
      * the same setting [TimelineScreen] respects on the all-feed: [FeedOrder.Newest]
@@ -725,6 +732,7 @@ fun ChannelScreen(
             actions = channelActions,
             onDismiss = { infoSheetVisible = false },
             onReport = onReportChannel,
+            ignoredChannels = ignoredChannels,
         )
     }
 }

@@ -52,7 +52,9 @@ import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.web.ChannelEntry
 import dev.lyo.hortay.data.web.ChannelFetchStatus
+import dev.lyo.hortay.data.web.WebPostAdapter
 import dev.lyo.hortay.ui.components.HortayTopBar
+import kotlinx.collections.immutable.persistentSetOf
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
@@ -76,6 +78,13 @@ fun WebChannelsScreen(
     onAddChannel: () -> Unit = {},
 ) {
     val channels by graph.webFeedSource.channels.collectAsStateWithLifecycle()
+    // Hidden chatIds for the inline "hide from feed" toggle on each row. Same
+    // store as TDLib mode; chatIds for guest channels come from the username
+    // hash so a channel hidden in TDLib mode stays hidden if the user falls
+    // back to guest, and vice versa.
+    val hiddenChatIds by graph.ignoredChannels.ignored.collectAsStateWithLifecycle(
+        initialValue = persistentSetOf(),
+    )
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         rememberTopAppBarState(),
@@ -121,12 +130,17 @@ fun WebChannelsScreen(
             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
         ) {
             itemsIndexed(subscribed, key = { _, it -> it.info.username }) { index, entry ->
+                val chatId = remember(entry.info.username) {
+                    WebPostAdapter.stableChatId(entry.info.username)
+                }
                 ChannelRow(
                     entry = entry,
                     index = index,
                     count = subscribed.size,
+                    isHidden = chatId in hiddenChatIds,
                     onClick = { onChannelClick(entry.info.username) },
                     onRetryClick = { graph.webFeedSource.retry(entry.info.username) },
+                    onHideToggle = { scope.launch { graph.ignoredChannels.toggle(chatId) } },
                     onUnsubscribeClick = { pendingUnsubscribe = entry },
                 )
             }
@@ -223,8 +237,10 @@ private fun ChannelRow(
     entry: ChannelEntry,
     index: Int,
     count: Int,
+    isHidden: Boolean,
     onClick: () -> Unit,
     onRetryClick: () -> Unit,
+    onHideToggle: () -> Unit,
     onUnsubscribeClick: () -> Unit,
 ) {
     val shapes = ListItemDefaults.segmentedShapes(
@@ -264,6 +280,22 @@ private fun ChannelRow(
                             )
                         }
                     }
+                }
+                IconButton(onClick = onHideToggle) {
+                    // Hide-from-feed toggle. Tinted primary when active so the
+                    // user can scan a long list and see at a glance which
+                    // channels they've muted out of the merged feed.
+                    Symbol(
+                        name = if (isHidden) "visibility_off" else "visibility",
+                        contentDescription = stringResource(
+                            if (isHidden) R.string.channels_unhide_from_feed_for
+                            else R.string.channels_hide_from_feed_for,
+                            entry.info.title,
+                        ),
+                        tint = if (isHidden) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        size = 20.dp,
+                    )
                 }
                 IconButton(onClick = onUnsubscribeClick) {
                     // Channel-aware Talkback label. "Unsubscribe" alone gave a

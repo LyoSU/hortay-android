@@ -826,6 +826,8 @@ fun MainScaffold(graph: AppGraph) {
                     settings = graph.settingsStore,
                     stats = graph.statsRepository,
                     contentPadding = padding,
+                    ignoredChannels = graph.ignoredChannels,
+                    channelActions = graph.channelActions,
                     onLogout = { scope.launch { graph.tdClient.logOut() } },
                     // Symmetric "auth → guest" path. Flip the guest flag FIRST so
                     // the routing pass that follows the TDLib logout settles on
@@ -870,6 +872,7 @@ fun MainScaffold(graph: AppGraph) {
                     bookmarks = graph.bookmarkStore,
                     translations = graph.translations,
                     channelActions = graph.channelActions,
+                    ignoredChannels = graph.ignoredChannels,
                     contentPadding = padding,
                     onBack = ::popNav,
                     onChannelOpen = { cid, scrollTo -> safelyOpenChannel(cid, scrollTo) },

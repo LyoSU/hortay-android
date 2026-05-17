@@ -16,6 +16,7 @@ import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.CountryRepository
 import dev.lyo.hortay.data.CustomEmojiRepository
 import dev.lyo.hortay.data.DeepLinkRouter
+import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.MediaAutoDownloader
 import dev.lyo.hortay.data.MediaCache
 import dev.lyo.hortay.data.MessageMapper
@@ -112,6 +113,14 @@ class AppGraph(context: Context) {
     // appearing as a feed post AND as a thread reply hits the cache twice.
     private val messageMapper: MessageMapper = MessageMapper(tdClient, res)
 
+    /**
+     * Channels the user has chosen to hide from the merged feed. See
+     * [IgnoredChannelsStore] KDoc for the cross-mode contract. Wired before
+     * [postsRepository] / [webFeedSource] because both consume it for the
+     * read-side filter applied to their respective merged-feed flows.
+     */
+    val ignoredChannels: IgnoredChannelsStore = IgnoredChannelsStore(context)
+
     val postsRepository: PostsRepository = PostsRepository(
         td = tdClient,
         mapper = messageMapper,
@@ -121,6 +130,7 @@ class AppGraph(context: Context) {
         snapshotStore = timelineSnapshotStore,
         foreground = lifecycleBridge.foreground,
         res = res,
+        ignoredChannels = ignoredChannels,
     )
 
     val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope, res)
@@ -338,6 +348,7 @@ class AppGraph(context: Context) {
         repository = webRepository,
         subscriptions = webSubscriptions,
         scope = appScope,
+        ignoredChannels = ignoredChannels,
     )
 
     /**

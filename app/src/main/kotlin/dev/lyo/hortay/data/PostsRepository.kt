@@ -79,6 +79,14 @@ class PostsRepository(
     private val snapshotStore: TimelineSnapshotStore,
     private val foreground: kotlinx.coroutines.flow.StateFlow<Boolean>,
     private val res: StringResolver,
+    /**
+     * Channels the user has hidden from the merged feed. Optional so tests +
+     * historical call sites that don't care about the filter can keep
+     * constructing a repository without wiring a DataStore. When null, the
+     * filter is a no-op and [subscribedPosts] behaves identically to the
+     * pre-feature implementation.
+     */
+    private val ignoredChannels: IgnoredChannelsStore? = null,
 ) : FeedSource {
 
     private val refreshMutex = Mutex()
@@ -149,10 +157,17 @@ class PostsRepository(
     // first access is from TimelineViewModel.init through `repo.subscribedPosts`,
     // long after PostsRepository's constructor returns.
     override val subscribedPosts: StateFlow<PersistentList<TimelinePost>> by lazy {
-        combine(_posts, _mainChatIds, _archivedChatIds) { all, mainIds, archivedIds ->
-            if (mainIds.isEmpty() && archivedIds.isEmpty()) all
+        // `ignored` participates in the same `combine` as the chat-list gates so
+        // an un-hide propagates in a single coherent emission — no transient
+        // frame where the chat is un-hidden but the filter hasn't recomputed.
+        // No store wired (legacy callers) → empty set, filter is a no-op.
+        val ignoredFlow = ignoredChannels?.ignored
+            ?: kotlinx.coroutines.flow.flowOf(kotlinx.collections.immutable.persistentSetOf())
+        combine(_posts, _mainChatIds, _archivedChatIds, ignoredFlow) { all, mainIds, archivedIds, ignored ->
+            val subscribed = if (mainIds.isEmpty() && archivedIds.isEmpty()) all
             else all.filter { it.chatId in mainIds || it.chatId in archivedIds }
-                .toPersistentList()
+            if (ignored.isEmpty()) subscribed.toPersistentList()
+            else subscribed.filter { it.chatId !in ignored }.toPersistentList()
         }
             .stateIn(scope, SharingStarted.Eagerly, persistentListOf())
     }
