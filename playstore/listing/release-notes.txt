@@ -18,7 +18,7 @@ Each language max 500 chars. Plain text only — no HTML / Markdown.
 <en-US>
 First public release of Hortay — an independent reader for Telegram channels.
 
-A social-feed view: no chat clutter, no ads, no analytics. Reactions, threaded comments, rich formatting, animated emojis.
+A social-feed view: no chat clutter, no ads, no analytics. Reactions, comment threads, rich formatting, animated emojis.
 
 Sign in with Telegram, or read public channels in guest mode without an account. Cross-channel local search, cache controls, Material 3 design.
 </en-US>
@@ -26,7 +26,7 @@ Sign in with Telegram, or read public channels in guest mode without an account.
 <uk-UA>
 Перший публічний реліз Hortay — незалежна читалка Telegram-каналів.
 
-Стрічка як соцмережа: без чатів, реклами й аналітики. Реакції, threaded-коментарі, форматований текст, анімовані емодзі.
+Стрічка як соцмережа: без чатового шуму, реклами й аналітики. Реакції, гілки коментарів, форматований текст, анімовані емодзі.
 
-Увійдіть через Telegram або читайте публічні канали без входу — у гостьовому режимі. Локальний пошук по підписках, керування кешем, Material 3 дизайн.
+Увійдіть через Telegram або читайте публічні канали в гостьовому режимі без акаунта. Локальний пошук у підписках, керування кешем, дизайн Material 3.
 </uk-UA>

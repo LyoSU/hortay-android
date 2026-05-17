@@ -291,7 +291,7 @@ class AppGraph(context: Context) {
      */
     val webDatabase: WebDatabase = WebDatabaseProvider.create(context)
 
-    val webRepository: WebRepository = WebRepository(webDatabase)
+    val webRepository: WebRepository = WebRepository(webDatabase, res)
 
     /**
      * Anonymous web-mode HTTP client. Reads public channel previews via
@@ -535,4 +535,3 @@ class AppGraph(context: Context) {
         runCatching { nav.clear() }
     }
 }
-

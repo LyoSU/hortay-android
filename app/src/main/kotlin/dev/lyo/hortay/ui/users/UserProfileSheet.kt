@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,7 +75,7 @@ import java.util.concurrent.TimeUnit
  *
  * Visual structure (top → bottom):
  *   1. **Hero header** — 88dp avatar centred on a tonal disc, name + verification mark,
- *      `@handle` (tap to copy), presence line ("у мережі" / "був(ла) недавно" / "був(ла) Х").
+ *      `@handle` (tap to copy), presence line ("у мережі" / "нещодавно в мережі" / "у мережі Х тому").
  *   2. **Action chips row** — Material 3 `FilledTonalButton` pair. "Написати" opens the
  *      official Telegram app on a `tg://user?id=…` deep link (falls back to https://t.me/<handle>
  *      if the handle is set, or to the raw `tg://user` URL on the rare handle-less user).
@@ -535,15 +536,15 @@ private fun formatOfflineLabel(wasOnlineSec: Long): String {
             stringResource(R.string.user_profile_status_just_now)
         delta < TimeUnit.HOURS.toSeconds(1) -> {
             val mins = TimeUnit.SECONDS.toMinutes(delta).toInt().coerceAtLeast(1)
-            stringResource(R.string.user_profile_status_was_minutes_ago, mins)
+            pluralStringResource(R.plurals.user_profile_status_was_minutes_ago, mins, mins)
         }
         delta < TimeUnit.DAYS.toSeconds(1) -> {
             val hours = TimeUnit.SECONDS.toHours(delta).toInt().coerceAtLeast(1)
-            stringResource(R.string.user_profile_status_was_hours_ago, hours)
+            pluralStringResource(R.plurals.user_profile_status_was_hours_ago, hours, hours)
         }
         delta < TimeUnit.DAYS.toSeconds(7) -> {
             val days = TimeUnit.SECONDS.toDays(delta).toInt().coerceAtLeast(1)
-            stringResource(R.string.user_profile_status_was_days_ago, days)
+            pluralStringResource(R.plurals.user_profile_status_was_days_ago, days, days)
         }
         else -> stringResource(R.string.user_profile_status_was_long_ago)
     }
@@ -584,4 +585,3 @@ private fun copyHandle(context: Context, handle: String) {
         ).show()
     }
 }
-

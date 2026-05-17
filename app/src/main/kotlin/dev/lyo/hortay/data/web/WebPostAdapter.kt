@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data.web
 
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.ForwardOrigin
@@ -7,6 +8,7 @@ import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.Reactions
+import dev.lyo.hortay.data.StringResolver
 import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.VideoQualities
@@ -66,11 +68,12 @@ object WebPostAdapter {
         channelUsername: String,
         channelTitle: String,
         channelAvatarUrl: String?,
+        strings: StringResolver,
     ): TimelinePost {
         val publishedMs = parseIso(publishedAtIso)
         val formatted = htmlToFormatted(textHtml)
         val tdWebPreview = webPreview?.let { tdWebPreviewFrom(it) }
-        val content = buildContent(formatted, mediaList, tdWebPreview)
+        val content = buildContent(formatted, mediaList, tdWebPreview, strings)
         return TimelinePost(
             id = seq,
             chatId = stableChatId(channelUsername),
@@ -123,6 +126,7 @@ object WebPostAdapter {
         text: FormattedText,
         media: List<WebMedia>,
         webPreview: TdWebPreview?,
+        strings: StringResolver,
     ): PostContent {
         if (media.isEmpty()) return PostContent.Text(formatted = text, webPreview = webPreview)
         val photoVideoItems = media.mapNotNull { it.toAlbumItem() }
@@ -131,7 +135,7 @@ object WebPostAdapter {
         }
         // Pure non-photo/video media (sticker / voice / document only). Fall back to
         // the text body with a media-kind badge — better than dropping the post.
-        val badge = media.joinToString(" ") { mediaPlaceholder(it.kind) }
+        val badge = media.joinToString(" ") { mediaPlaceholder(it.kind, strings) }
         val combined = if (text.text.isBlank()) badge else "${text.text}\n\n$badge"
         return PostContent.Text(formatted = FormattedText(combined, text.spans), webPreview = webPreview)
     }
@@ -554,13 +558,13 @@ object WebPostAdapter {
         return (value * multiplier).toInt()
     }
 
-    private fun mediaPlaceholder(kind: WebMedia.Kind): String = when (kind) {
-        WebMedia.Kind.Photo -> "[зображення]"
-        WebMedia.Kind.Video -> "[відео]"
-        WebMedia.Kind.RoundVideo -> "[відеокружок]"
-        WebMedia.Kind.Voice -> "[голосове]"
-        WebMedia.Kind.Document -> "[документ]"
-        WebMedia.Kind.Sticker -> "[стікер]"
-        WebMedia.Kind.Gif -> "[GIF]"
+    private fun mediaPlaceholder(kind: WebMedia.Kind, strings: StringResolver): String = when (kind) {
+        WebMedia.Kind.Photo -> strings.getString(R.string.web_media_placeholder_photo)
+        WebMedia.Kind.Video -> strings.getString(R.string.web_media_placeholder_video)
+        WebMedia.Kind.RoundVideo -> strings.getString(R.string.web_media_placeholder_round_video)
+        WebMedia.Kind.Voice -> strings.getString(R.string.web_media_placeholder_voice)
+        WebMedia.Kind.Document -> strings.getString(R.string.web_media_placeholder_document)
+        WebMedia.Kind.Sticker -> strings.getString(R.string.web_media_placeholder_sticker)
+        WebMedia.Kind.Gif -> strings.getString(R.string.web_media_placeholder_gif)
     }
 }

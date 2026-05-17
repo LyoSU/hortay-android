@@ -5,6 +5,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import dev.lyo.hortay.data.ReadCursors
+import dev.lyo.hortay.data.StringResolver
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.web.db.ChannelQueries
 import dev.lyo.hortay.data.web.db.ChannelReadCursorQueries
@@ -46,6 +47,7 @@ import kotlinx.serialization.json.Json
  */
 class WebRepository(
     private val db: WebDatabase,
+    private val strings: StringResolver,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
@@ -561,6 +563,7 @@ class WebRepository(
             channelUsername = channel_username,
             channelTitle = channel_title,
             channelAvatarUrl = channel_avatar,
+            strings = strings,
         )
     }
 

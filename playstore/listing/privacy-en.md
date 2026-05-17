@@ -108,7 +108,7 @@ Hortay **does not request** access to your contacts, microphone, camera, locatio
 
 ## Sharing with third parties
 
-We **do not share** your data with anyone, because we do not have it. The only "third party" is Telegram, to which you knowingly connect — either by signing in with your phone number (authenticated mode) or by opening a public channel preview (guest mode, the same as visiting `t.me/<channel>` in a browser).
+We **do not share** your data with anyone, because we do not have it. The only external service the app connects to is Telegram: you either sign in with your phone number or open a public channel preview (guest mode, the same as visiting `t.me/<channel>` in a browser).
 
 ---
 
