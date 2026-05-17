@@ -104,8 +104,28 @@ fun rememberPendingScrollToMessage(
 }
 
 /**
- * Viewport-stable read-ack dwell. Waits [dwellMs] of viewport stability, then
- * dispatches [markAsRead] for the visible posts that haven't already been acked.
+ * Viewport-stable read-ack dwell. Waits [dwellMs] of viewport stability with the
+ * list **idle**, then dispatches [markAsRead] for the posts that are *fully* on
+ * screen and haven't already been acked.
+ *
+ * "Fully on screen" = the post's bounds sit entirely inside
+ * `[viewportStartOffset, viewportEndOffset]`. Loosely-visible items (the row
+ * peeking 5–20% out the bottom edge after a `smartScrollTo`, the row just sliding
+ * off the top during a flick) are excluded — counting them as "read" caused the
+ * "tap ↓ N → next tap skips a post" symptom: the scroll landed on X, the next
+ * row X+1 got dwell-acked while still partially visible, so the next jump
+ * resolved to X+2 instead of X+1.
+ *
+ * "List idle" = [LazyListState.isScrollInProgress] is false. Mirrors
+ * Telegram-Android's `SCROLL_STATE_IDLE` gate before `messages.readHistory`. A
+ * fully-visible row during a slow drag would otherwise satisfy the dwell window
+ * even though the user is on their way past it; an active fling that drops out
+ * mid-screen would do the same. Gating on idle defers the timer until motion
+ * settles, matching the user-intent reading of "I stopped here".
+ *
+ * Posts taller than the viewport can never satisfy strict containment — they get
+ * a fallback: counted as visible while at least half the viewport is occupied by
+ * the post. Without it, long-form posts would never get marked read.
  *
  * @param listState Drives the viewport snapshotFlow.
  * @param displayedItems Current LazyColumn data source; read through
@@ -143,10 +163,44 @@ fun rememberReadAckDwell(
             // dwell-by-index would then mark-as-read posts the user never
             // actually saw. Key-based lookup keeps the ack honest: a key that's
             // no longer in the rendered list silently drops out.
-            snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.key } }
+            snapshotFlow {
+                val info = listState.layoutInfo
+                // Tighten the bounds by the LazyColumn's contentPadding so the
+                // user-visible items area is what we measure against — not
+                // Compose's wider "any item that overlaps the container".
+                // Hortay's feed runs under a floating bottom NavBar whose
+                // height is reflected as the LazyColumn's afterContentPadding;
+                // without this trim, a post whose bottom edge has scrolled into
+                // the NavBar's reserved slot would still satisfy strict
+                // containment (its bottom is `<= viewportEndOffset`, which
+                // doesn't subtract afterContentPadding) even though that slice
+                // of the post is visually hidden behind the bar.
+                val vStart = info.viewportStartOffset + info.beforeContentPadding
+                val vEnd = info.viewportEndOffset - info.afterContentPadding
+                val viewportSize = (vEnd - vStart).coerceAtLeast(1)
+                val scrolling = listState.isScrollInProgress
+                val keys = info.visibleItemsInfo.mapNotNull { item ->
+                    val itemEnd = item.offset + item.size
+                    val fullyVisible = item.offset >= vStart && itemEnd <= vEnd
+                    // Posts taller than the viewport can never satisfy strict
+                    // containment. Allow them through once they occupy at least
+                    // half of the viewport — otherwise long-form posts would
+                    // never get marked read.
+                    val visibleSpan =
+                        (minOf(itemEnd, vEnd) - maxOf(item.offset, vStart))
+                            .coerceAtLeast(0)
+                    val dominatesViewport =
+                        item.size >= viewportSize && visibleSpan * 2 >= viewportSize
+                    if (fullyVisible || dominatesViewport) item.key else null
+                }
+                keys to scrolling
+            }
                 .distinctUntilChanged()
-                .collectLatest { keys ->
-                    if (keys.isEmpty()) return@collectLatest
+                .collectLatest { (keys, scrolling) ->
+                    // Skip while motion is in progress; the next emission once
+                    // the list settles will re-arm the dwell with the
+                    // post-settle fully-visible set.
+                    if (keys.isEmpty() || scrolling) return@collectLatest
                     delay(dwellMs)
                     val snapshot = itemsState.value
                     if (snapshot.isEmpty()) return@collectLatest
