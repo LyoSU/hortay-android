@@ -108,8 +108,15 @@ class ChannelViewModel(
     private val _channelTitle = MutableStateFlow<String?>(null)
     val channelTitle: StateFlow<String?> = _channelTitle.asStateFlow()
 
-    // Subscriber count: one-shot TDLib cache hit; populated after init.
-    private val _channelSubscribers = MutableStateFlow<Int?>(null)
+    // Subscriber count: seeded SYNCHRONOUSLY from [PostsRepository]'s in-memory
+    // [TdApi.UpdateSupergroup] mirror so the [ChannelHeaderBar] subtitle paints
+    // with the count on its first frame instead of as a null that recomposes a
+    // beat later. For channels the user has already seen in the merged feed
+    // (every non-deep-link entry point) both the chat and supergroup updates
+    // have landed by the time this VM is constructed, so the synchronous read
+    // returns the live count immediately. The cold-cache fallback (deep-link
+    // into a never-seen channel) is handled by the [init] launcher below.
+    private val _channelSubscribers = MutableStateFlow(repo.channelSubscribersCached(chatId))
     val channelSubscribers: StateFlow<Int?> = _channelSubscribers.asStateFlow()
 
     // Channel avatar source for the top-bar TdAvatar — same minithumb / fileId pair
@@ -315,9 +322,15 @@ class ChannelViewModel(
                 }
             }
         }
-        // Subscriber count: one-shot, TDLib serves from local supergroup cache.
-        viewModelScope.launch {
-            _channelSubscribers.value = repo.channelSubscribers(chatId)
+        // Subscriber count cold-cache fallback. The synchronous seed above
+        // covers every channel the merged feed has already touched; this
+        // launcher runs the suspend variant only when that returned null
+        // (deep-link into a never-seen channel; freshly joined channel whose
+        // [TdApi.UpdateSupergroup] is still in flight).
+        if (_channelSubscribers.value == null) {
+            viewModelScope.launch {
+                _channelSubscribers.value = repo.channelSubscribers(chatId)
+            }
         }
     }
 

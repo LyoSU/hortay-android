@@ -139,12 +139,34 @@ class PostsRepository(
     private val chatCache = ConcurrentHashMap<Long, TdApi.Chat>()
 
     /**
+     * Supergroup metadata mirror, fed by [TdApi.UpdateSupergroup]. TDLib emits
+     * one update per cached supergroup on cold-start session warm-up (when
+     * `useChatInfoDatabase = true`, which we set in [TdClient]) and on every
+     * live change to a field on the [TdApi.Supergroup] object — including
+     * [TdApi.Supergroup.memberCount].
+     *
+     * Caching the full [TdApi.Supergroup] (not just the count) costs ~200B per
+     * channel, lets every supergroup-derived read short-circuit the
+     * [TdApi.GetSupergroup] RPC, and keeps the mirror future-proof for other
+     * fields ([status], [hasLinkedChat], [isVerified], …) without a re-shape.
+     *
+     * Read by [channelSubscribers] for the [ChannelHeaderBar] subtitle (the
+     * delay-on-channel-entry that prompted this cache) and by anything else
+     * that ever needs supergroup-shape data synchronously.
+     */
+    private val supergroupCache = ConcurrentHashMap<Long, TdApi.Supergroup>()
+
+    /**
      * Test-only accessor. Exposes the internal chat cache so unit tests can verify that
      * UpdateNewChat / UpdateChatLastMessage listeners populate it correctly. Not annotated
      * @VisibleForTesting because that requires an extra androidx dependency on this module;
      * the `ForTest` suffix is the convention used elsewhere in this codebase.
      */
     internal fun chatCacheForTest(chatId: Long): TdApi.Chat? = chatCache[chatId]
+
+    /** Test-only mirror of [chatCacheForTest] for the supergroup cache. */
+    internal fun supergroupCacheForTest(supergroupId: Long): TdApi.Supergroup? =
+        supergroupCache[supergroupId]
 
     // Stamped on successful refreshLocked completion. refreshIfStale uses it to skip
     // re-opening the app from hammering 200+ TDLib calls when the feed is still warm.
@@ -312,10 +334,22 @@ class PostsRepository(
             .onEach { mapper.invalidateUser(it.user.id) }
             .launchIn(scope)
 
-        // Supergroup metadata changed (handle/username) — invalidate so resolveChannelHandle
-        // refetches next call.
+        // Supergroup metadata changed.
+        //   1. Invalidate the mapper's handle/username cache so resolveChannelHandle
+        //      refetches next call — that path consults SupergroupFullInfo, not this
+        //      lightweight object, so invalidation (not population) is the right
+        //      shape there.
+        //   2. Mirror the [TdApi.Supergroup] object into [supergroupCache] so reads
+        //      that only need this lightweight shape (subscriber count today;
+        //      potentially status / verification flags later) can resolve
+        //      synchronously without an RPC. TDLib emits one update per cached
+        //      supergroup on session warm-up — so by the time a channel that the
+        //      merged feed already showed is opened, its memberCount is in memory.
         td.updates.filterIsInstance<TdApi.UpdateSupergroup>()
-            .onEach { mapper.invalidateSupergroup(it.supergroup.id) }
+            .onEach { update ->
+                mapper.invalidateSupergroup(update.supergroup.id)
+                supergroupCache[update.supergroup.id] = update.supergroup
+            }
             .launchIn(scope)
 
         // Brand-new chat appeared. We deliberately DO NOT issue GetChatHistory here:
@@ -924,18 +958,63 @@ class PostsRepository(
     }
 
     /**
-     * Subscriber count for a channel chat. Returns null when the chat is not a supergroup
-     * (private 1:1, basic group) or TDLib reports an unknown count. Cheap — TDLib serves
-     * this from its local supergroup cache; no network round-trip in steady state.
+     * Synchronous subscriber count read for a channel chat. Returns `null` when
+     * either the [chatCache] or [supergroupCache] mirror is missing the chat /
+     * supergroup, or the chat is not a supergroup, or TDLib has not yet delivered
+     * a positive count for it.
+     *
+     * Why a separate function from [channelSubscribers]: this one is called from
+     * [ChannelViewModel]`.init` to seed [ChannelViewModel.channelSubscribers]'s
+     * [StateFlow] **before** the first composition collects it — which is the
+     * only way to make the subtitle paint with the count already populated
+     * instead of as a `null` for one frame followed by a recomposition once
+     * the suspend variant resolves. The suspend variant is then launched as a
+     * fallback for the cold-cache case.
+     *
+     * For any channel that has surfaced in the merged feed at least once this
+     * session (the common case for every non-deep-link entry point) both
+     * mirrors are warm and this returns the count immediately.
+     */
+    fun channelSubscribersCached(chatId: Long): Int? {
+        val chat = chatCache[chatId] ?: return null
+        val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
+        return supergroupCache[supergroupId]?.memberCount?.takeIf { it > 0 }
+    }
+
+    /**
+     * Subscriber count for a channel chat. Returns `null` when the chat is not a
+     * supergroup (private 1:1, basic group) or TDLib reports an unknown count.
+     *
+     * Resolution order, fast → slow:
+     *   1. [channelSubscribersCached] — synchronous mirror read; common case
+     *      because [TdApi.UpdateNewChat] / [TdApi.UpdateSupergroup] populate
+     *      both mirrors eagerly on session warm-up.
+     *   2. [TdApi.GetSupergroup] RPC fallback — for the rare cold-cache case
+     *      (channel opened via deep-link before any feed refresh; freshly
+     *      joined channel whose Supergroup update is still in flight). Served
+     *      from TDLib's own local cache in steady state, so even this branch
+     *      avoids the network in the common case.
      */
     suspend fun channelSubscribers(chatId: Long): Int? {
-        val chat = runCatching { td.send(TdApi.GetChat(chatId)) }
-            .warnUnlessCancelled(TAG, "channelSubscribers/getChat")
-            .getOrNull() ?: return null
-        val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
+        channelSubscribersCached(chatId)?.let { return it }
+        // Cold-cache fallback. Skip [GetChat] when the cached Chat already
+        // yielded the supergroupId — only [GetSupergroup] is missing.
+        val cachedChat = chatCache[chatId]
+        val supergroupId = (cachedChat?.type as? TdApi.ChatTypeSupergroup)?.supergroupId
+            ?: run {
+                val chat = runCatching { td.send(TdApi.GetChat(chatId)) }
+                    .warnUnlessCancelled(TAG, "channelSubscribers/getChat")
+                    .getOrNull() ?: return null
+                chatCache[chatId] = chat
+                (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
+            }
         val sg = runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }
             .warnUnlessCancelled(TAG, "channelSubscribers/getSupergroup")
             .getOrNull() ?: return null
+        // Mirror into [supergroupCache] so subsequent reads (re-entry into the
+        // same channel within this session) hit the fast path even when the
+        // [TdApi.UpdateSupergroup] burst was missed at session start.
+        supergroupCache[supergroupId] = sg
         return sg.memberCount.takeIf { it > 0 }
     }
 
@@ -1809,6 +1888,7 @@ class PostsRepository(
         refreshMutex.withLock {
             _posts.value = persistentListOf()
             chatCache.clear()
+            supergroupCache.clear()
             _chatReadCursors.value = persistentMapOf()
             pendingInteractionInfo.clear()
             interactionFlushScheduled.set(false)
