@@ -6,8 +6,6 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -75,9 +73,11 @@ internal fun customCountryEntry(res: StringResolver): Country = Country(
  * the splash → auth handoff we don't fire unnecessary RPCs while TDLib is still bringing
  * up its DC connection.
  */
-class CountryRepository(private val sender: TdSender, private val res: StringResolver) {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+class CountryRepository(
+    private val sender: TdSender,
+    private val res: StringResolver,
+    private val scope: CoroutineScope,
+) {
 
     private val _countries = MutableStateFlow<List<Country>>(emptyList())
     val countries: StateFlow<List<Country>> = _countries.asStateFlow()

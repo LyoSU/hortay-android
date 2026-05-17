@@ -708,12 +708,13 @@ private fun ActionRow(
         // yet. Both read as "nothing to see" to the user, so we collapse them into
         // one branch and only surface the pill when the count is meaningfully > 0 —
         // mirrors the empty-state contract on CommentsScreen (no "0 replies" subtitle).
-        val hasComments = (commentCount ?: 0) > 0
+        val safeCommentCount = commentCount ?: 0
+        val hasComments = safeCommentCount > 0
         if (hasComments) {
             if (views > 0) Spacer(Modifier.width(14.dp))
             StatPill(
                 symbol = "chat_bubble",
-                text = formatViews(commentCount!!),
+                text = formatViews(safeCommentCount),
                 onClick = onCommentsClick,
             )
         }

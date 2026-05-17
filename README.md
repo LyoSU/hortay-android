@@ -2,16 +2,16 @@
 
 Стрічка Telegram-каналів у форматі Twitter. Прототип на TDLib + Kotlin + Jetpack Compose + Material 3.
 
-## Стек (квітень 2026)
+## Стек (травень 2026)
 
 | Шар | Що | Версія |
 |---|---|---|
 | Build | AGP | 9.2.0 |
-| Build | Gradle | 8.14 |
+| Build | Gradle | 9.4.1 |
 | Lang | Kotlin | 2.3.10 |
 | UI | Compose BOM | 2026.04.01 |
-| UI | Material 3 | 1.4 (через BOM) |
-| Compat | minSdk / targetSdk / compileSdk | 26 / 36 / 36 |
+| UI | Material 3 | 1.5.0-alpha19 (explicit pin поверх BOM, для Expressive) |
+| Compat | minSdk / targetSdk / compileSdk | 26 / 36 / 37 |
 | Telegram | TDLib (self-built, `:libtdlib`) | див. `scripts/tdlib-version.txt` |
 | Async | Coroutines | 1.10.1 |
 | Images | Coil 3 | 3.3.0 |

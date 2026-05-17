@@ -139,18 +139,26 @@ fun SettingsScreen(
         label = "settings-nav",
     ) { section ->
         when (section) {
-            SettingsSection.AutoDownload -> AutoDownloadHost(
-                store = autoDownload!!,
-                contentPadding = contentPadding,
-                onBack = { showAutoDownload = false },
-            )
-            SettingsSection.HiddenChannels -> HiddenChannelsScreen(
-                store = ignoredChannels!!,
-                contentPadding = contentPadding,
-                onBack = { showHiddenChannels = false },
-                channelActions = channelActions,
-                webChannelByChatId = webChannelByChatId,
-            )
+            // The non-null guard is in `current` above. `?.let` here keeps a transient
+            // null during AnimatedContent's outgoing fade from crashing — render-nothing
+            // is preferable to NPE during the few frames the lambda is invoked with the
+            // pre-transition section while the upstream nullable just flipped.
+            SettingsSection.AutoDownload -> autoDownload?.let { store ->
+                AutoDownloadHost(
+                    store = store,
+                    contentPadding = contentPadding,
+                    onBack = { showAutoDownload = false },
+                )
+            }
+            SettingsSection.HiddenChannels -> ignoredChannels?.let { store ->
+                HiddenChannelsScreen(
+                    store = store,
+                    contentPadding = contentPadding,
+                    onBack = { showHiddenChannels = false },
+                    channelActions = channelActions,
+                    webChannelByChatId = webChannelByChatId,
+                )
+            }
             SettingsSection.Main -> SettingsMain(
                 settings = settings,
                 stats = stats,

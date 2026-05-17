@@ -126,9 +126,8 @@ class WebCustomEmojiResolver(
         if (emojiIds.isEmpty()) return@coroutineScope emptyMap()
         emojiIds
             .map { id -> id to async { resolve(id) } }
-            .associate { (id, deferred) -> id to deferred.await() }
-            .filterValues { it != null }
-            .mapValues { (_, value) -> value!! }
+            .mapNotNull { (id, deferred) -> deferred.await()?.let { id to it } }
+            .toMap()
     }
 
     private fun parseResponse(response: Response, emojiId: String): ResolvedEmoji? {

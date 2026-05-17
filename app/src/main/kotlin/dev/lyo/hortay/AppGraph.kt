@@ -193,7 +193,7 @@ class AppGraph(context: Context) {
     val channelActions: ChannelActionsRepository =
         ChannelActionsRepository(tdClient, userMessages, tdClient.connection, res)
 
-    val countries: CountryRepository = CountryRepository(tdClient, res)
+    val countries: CountryRepository = CountryRepository(tdClient, res, appScope)
 
     // Custom-emoji resolver for inline emojis in formatted text and for custom-emoji
     // reaction buckets. Uses GetCustomEmojiStickers in batches of up to 200 ids; the
