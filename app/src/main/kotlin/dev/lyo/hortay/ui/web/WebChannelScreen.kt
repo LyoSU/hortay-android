@@ -36,7 +36,6 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import dev.lyo.hortay.R
-import dev.lyo.hortay.data.EmptyReadCursors
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.isUnreadIn
 import dev.lyo.hortay.data.orderedFor
@@ -116,11 +115,9 @@ fun WebChannelScreen(
         channels.firstOrNull { it.info.username.equals(username, ignoreCase = true) }?.info
     }
     // Already filtered at the SQL layer to channel_username = :username; just
-    // apply the user's feed order on top. orderedFor is a pure function with
-    // no cursor dependency (see ReadCursors.kt) — passing EmptyReadCursors
-    // keeps the remember key small and avoids re-sorting on every cursor advance.
+    // apply the user's feed order on top.
     val orderedPosts = remember(perChannelPosts, feedOrder) {
-        perChannelPosts.orderedFor(feedOrder, EmptyReadCursors)
+        perChannelPosts.orderedFor(feedOrder)
     }
 
     val listState = rememberLazyListState()

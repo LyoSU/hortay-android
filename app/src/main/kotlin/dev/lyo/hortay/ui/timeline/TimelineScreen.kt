@@ -49,8 +49,6 @@ import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.async
-import kotlinx.coroutines.selects.select
 import androidx.compose.foundation.gestures.ScrollableDefaults
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -436,19 +434,29 @@ fun TimelineScreen(
     val cursorHolder = LocalReadCursors.current
 
     val visiblePosts = remember(filteredPosts, feedOrder) {
-        filteredPosts.orderedFor(feedOrder, dev.lyo.hortay.data.EmptyReadCursors)
+        filteredPosts.orderedFor(feedOrder)
     }
 
-    // Cold-start "cursors usable for the boundary picker" signal. Two
-    // sources count as ready:
-    //   1. TDLib's first UpdateChatReadInbox burst — usually 200–800 ms
-    //      after AuthorizationStateReady, sometimes later on slow networks.
-    //   2. A grace timeout after refresh completes. For brand-new accounts
-    //      or chats the user has never opened, TDLib seeds the cursor map
-    //      only when `lastReadInboxMessageId > 0` ([PostsRepository.kt]
-    //      ~line 274), so the map can stay empty indefinitely. Without
-    //      the timeout the cold-start pin would never settle the LazyColumn
-    //      at a meaningful target.
+    // Cold-start "cursors usable for the boundary picker" signal.
+    //
+    // Gated on `refresh idle + COLD_START_CURSOR_GRACE_MS` only — NOT on
+    // "first cursor put landed", which was a race: `cursorsHaveLanded` would
+    // flip true the moment ANY chat's `UpdateChatReadInbox` arrived, but the
+    // boundary picker then ran against a partially-seeded cursor map. Chats
+    // whose `UpdateNewChat` hadn't been processed yet had `cursor == null` and
+    // looked "read" per [isUnreadIn] — so an early-flipping cursor could pin
+    // the LazyColumn at the wrong [items] row, and the latcher would freeze
+    // that wrong landing for the rest of the session.
+    //
+    // `refreshLocked` drains [TdApi.LoadChats] for `ChatListMain` before it
+    // harvests `Chat.lastMessage`, and `UpdateNewChat` (which seeds the
+    // cursor for every chat with `lastReadInboxMessageId > 0`) flushes before
+    // the harvest's `awaitAll`. So by the time `refreshing` falls true →
+    // false, the cursor map is as complete as TDLib will get it for this
+    // cold-start window. The grace delay covers in-flight
+    // `UpdateChatReadInbox` deltas the daemon sends just after `LoadChats`
+    // resolves. Refs: tdlib/td#1369 (state via updates, not getChats
+    // response), #1034 (`unreadCount` ↔ `lastReadInboxMessageId` invariant).
     val cursorsHaveLandedState = remember(feed, feedOrder) {
         androidx.compose.runtime.mutableStateOf(false)
     }
@@ -457,24 +465,8 @@ fun TimelineScreen(
             cursorsHaveLandedState.value = true
             return@LaunchedEffect
         }
-        val cursorsArrived = async {
-            androidx.compose.runtime.snapshotFlow { cursorHolder.cursorsHaveLanded }
-                .first { it }
-        }
-        val timeoutFallback = async {
-            // Wait for refresh to complete first, then a small grace for the
-            // cursor pipeline; if cursors haven't arrived by then, treat as
-            // "ready anyway" — better to render the feed at its natural
-            // landing than to hang on a Spacer forever.
-            androidx.compose.runtime.snapshotFlow { refreshing }.first { !it }
-            kotlinx.coroutines.delay(COLD_START_CURSOR_GRACE_MS)
-        }
-        select<Unit> {
-            cursorsArrived.onAwait { it; Unit }
-            timeoutFallback.onAwait { Unit }
-        }
-        cursorsArrived.cancel()
-        timeoutFallback.cancel()
+        androidx.compose.runtime.snapshotFlow { refreshing }.first { !it }
+        kotlinx.coroutines.delay(COLD_START_CURSOR_GRACE_MS)
         cursorsHaveLandedState.value = true
     }
     val cursorsHaveLanded = cursorsHaveLandedState.value

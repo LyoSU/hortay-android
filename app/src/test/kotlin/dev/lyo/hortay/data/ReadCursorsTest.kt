@@ -85,14 +85,13 @@ class ReadCursorsTest {
 
     @Test
     fun `Newest order is a no-op on already-chronological input`() {
-        val cursors = persistentMapOf(CHAT_ID to 50L)
         val newestFirst = listOf(
             post(id = 70L, date = 700L), // unread, newest
             post(id = 60L, date = 600L), // unread
             post(id = 40L, date = 400L), // read
             post(id = 30L, date = 300L), // read, oldest
         )
-        val ordered = newestFirst.orderedFor(FeedOrder.Newest, cursors)
+        val ordered = newestFirst.orderedFor(FeedOrder.Newest)
         assertEquals(listOf(70L, 60L, 40L, 30L), ordered.map { it.id })
     }
 
@@ -102,46 +101,14 @@ class ReadCursorsTest {
         // in time. Read / unread state doesn't affect the sort (would have
         // lifted a newer read post above an older unread post in the old
         // block model — reads as a broken sort in a reverse feed).
-        val cursors = persistentMapOf(CHAT_ID to 50L)
         val newestFirst = listOf(
             post(id = 70L, date = 700L), // unread, newest
             post(id = 60L, date = 600L), // unread
             post(id = 40L, date = 400L), // read
             post(id = 30L, date = 300L), // read, oldest
         )
-        val ordered = newestFirst.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
+        val ordered = newestFirst.orderedFor(FeedOrder.OldestUnreadFirst)
         assertEquals(listOf(30L, 40L, 60L, 70L), ordered.map { it.id })
-    }
-
-    @Test
-    fun `OldestUnreadFirst sort is independent of cursor state`() {
-        // Same input, same output across (a) empty cursors, (b) caught up,
-        // (c) all unread — the sort doesn't peek at the cursor map at all.
-        val newestFirst = listOf(
-            post(id = 70L, date = 700L),
-            post(id = 60L, date = 600L),
-            post(id = 40L, date = 400L),
-            post(id = 30L, date = 300L),
-        )
-        val expected = listOf(30L, 40L, 60L, 70L)
-        assertEquals(
-            expected,
-            newestFirst.orderedFor(FeedOrder.OldestUnreadFirst, EmptyReadCursors).map { it.id },
-        )
-        assertEquals(
-            expected,
-            newestFirst.orderedFor(
-                FeedOrder.OldestUnreadFirst,
-                persistentMapOf(CHAT_ID to 1_000L), // caught up
-            ).map { it.id },
-        )
-        assertEquals(
-            expected,
-            newestFirst.orderedFor(
-                FeedOrder.OldestUnreadFirst,
-                persistentMapOf(CHAT_ID to 0L), // all unread
-            ).map { it.id },
-        )
     }
 
     @Test
@@ -149,13 +116,12 @@ class ReadCursorsTest {
         // Telegram emits album members with the same whole-second date, and
         // PostFilterStrategy already anchors albums on a deterministic id.
         // The asc-by-date sort must not disturb that ordering.
-        val cursors = persistentMapOf(CHAT_ID to 0L)
         val posts = listOf(
             post(id = 10L, date = 500L),
             post(id = 11L, date = 500L),
             post(id = 12L, date = 500L),
         )
-        val ordered = posts.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
+        val ordered = posts.orderedFor(FeedOrder.OldestUnreadFirst)
         assertEquals(listOf(10L, 11L, 12L), ordered.map { it.id })
     }
 
@@ -164,14 +130,13 @@ class ReadCursorsTest {
         // New posts via UpdateNewMessage carry the highest date, so they
         // sort to the bottom of the asc-by-date list — the canonical
         // "newest at the bottom" position in a reverse feed.
-        val cursors = persistentMapOf(CHAT_ID to 50L)
         val initial = listOf(
-            post(id = 60L, date = 600L), // unread
-            post(id = 70L, date = 700L), // unread
-            post(id = 40L, date = 400L), // read
+            post(id = 60L, date = 600L),
+            post(id = 70L, date = 700L),
+            post(id = 40L, date = 400L),
         )
         val withArrival = listOf(post(id = 80L, date = 800L)) + initial
-        val ordered = withArrival.orderedFor(FeedOrder.OldestUnreadFirst, cursors)
+        val ordered = withArrival.orderedFor(FeedOrder.OldestUnreadFirst)
         assertEquals(listOf(40L, 60L, 70L, 80L), ordered.map { it.id })
     }
 

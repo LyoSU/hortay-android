@@ -99,6 +99,42 @@ class PostsRepositoryRefreshTest {
     }
 
     @Test
+    fun `refresh skips caught-up chats (unreadCount == 0) from cold-start harvest`() = runTest {
+        // Server-authoritative caught-up filter — prevents an ancient
+        // lastMessage from sitting at `items[0]` of the OldestUnreadFirst
+        // (asc-by-date) feed and being mistaken for "where the user left
+        // off". Covers admin-owned channels (outgoing posts don't bump
+        // unreadCount) and dormant subscriptions the user finished reading
+        // in another client. Live `UpdateNewMessage` arrivals are
+        // unaffected — this is purely cold-start initialisation.
+        // Refs: tdlib/td#1034 (unreadCount invariant), #1419 (admin/own
+        // channel inbox-vs-outbox cursor divergence).
+        val harness = PostsRepositoryTestHarness(this)
+        val caughtUp = harness.fakeChannel(
+            id = -7000L,
+            lastMessage = harness.fakeChannelMessage(-7000L, 700L),
+            unreadCount = 0,
+        )
+        val active = harness.fakeChannel(
+            id = -7001L,
+            lastMessage = harness.fakeChannelMessage(-7001L, 701L),
+            unreadCount = 3,
+        )
+        harness.td.emitUpdate(TdApi.UpdateNewChat(caughtUp))
+        harness.td.emitUpdate(TdApi.UpdateNewChat(active))
+        harness.advanceUntilIdle()
+        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
+        harness.td.onAny("GetChats") { TdApi.Chats(2, longArrayOf(-7000L, -7001L)) }
+
+        harness.repo.refresh()
+        harness.advanceUntilIdle()
+
+        val postIds = harness.repo.posts.value.map { it.id }
+        assertEquals(listOf(701L), postIds,
+            "only the active channel (unreadCount > 0) contributes; caught-up skipped")
+    }
+
+    @Test
     fun `refresh skips chats whose lastMessage is null and does not crash`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
         val emptyChannel = harness.fakeChannel(id = -4000L, lastMessage = null)

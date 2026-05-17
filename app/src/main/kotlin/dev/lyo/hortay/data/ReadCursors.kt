@@ -106,16 +106,8 @@ fun firstUnreadIndex(posts: List<TimelinePost>, cursors: ReadCursors): Int =
  * it does NOT influence the sort. The previous design ran a stable sort with
  * a read/unread compound key, which could lift a newer read post above an
  * older unread post and read as "broken sort" in a reverse-feed.
- *
- * The [cursors] parameter is unused by the sort; kept in the signature so
- * the call site doesn't have to branch on feed order to decide whether to
- * pass it.
  */
-@Suppress("UNUSED_PARAMETER")
-fun List<TimelinePost>.orderedFor(
-    order: FeedOrder,
-    cursors: ReadCursors,
-): List<TimelinePost> = when (order) {
+fun List<TimelinePost>.orderedFor(order: FeedOrder): List<TimelinePost> = when (order) {
     FeedOrder.Newest -> this
     // Tie-break by id ascending so same-date posts hold a deterministic
     // position across re-sorts. PostFilterStrategy emits same-date posts in

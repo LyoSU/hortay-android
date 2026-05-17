@@ -46,7 +46,6 @@ import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.DownloadPriority
-import dev.lyo.hortay.data.EmptyReadCursors
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.ForwardOrigin
 import dev.lyo.hortay.data.IgnoredChannelsStore
@@ -221,13 +220,10 @@ fun ChannelScreen(
     // user-selected [feedOrder] is honoured here so OldestUnreadFirst flips the
     // channel into the reverse-feed layout exactly like TimelineScreen does on
     // the all-feed — search results stay in their RPC relevance order regardless.
-    // EmptyReadCursors: orderedFor's cursor argument is unused (see ReadCursors.kt
-    // doc) — passing the empty map avoids re-sorting on every cursor advance,
-    // matching the TimelineScreen call.
     val cursorHolder = LocalReadCursors.current
     val displayedItems = remember(posts, searchActive, searchResults, feedOrder) {
         val list = if (searchActive) searchResults.map<TimelinePost, FeedItem>(FeedItem::Single)
-        else groupReplies(posts.orderedFor(feedOrder, EmptyReadCursors))
+        else groupReplies(posts.orderedFor(feedOrder))
         list.toPersistentList()
     }
 

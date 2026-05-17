@@ -1758,12 +1758,27 @@ class PostsRepository(
         //   - dedups against the existing feed
         // Sem = REFRESH_CONCURRENCY (4) bounds the concurrent album-coalesce probes;
         // for non-album chats ingest is pure in-memory and never blocks.
+        //
+        // Skip caught-up chats (`unreadCount == 0`). Server-authoritative
+        // signal per tdlib/td#1034: `unreadCount == 0 ⟺ lastMessage.id ≤
+        // lastReadInboxMessageId`. Surfacing those into the cold-start feed
+        // was the trigger for "reverse-feed lands on an ancient post" — in
+        // OldestUnreadFirst (asc-by-date) a dormant channel's years-old
+        // lastMessage sat at `items[0]` and, when it happened to be unread
+        // per the cursor map, the boundary picker stranded the user there.
+        // Admin-owned channels are a natural special-case of this filter:
+        // own posts are outgoing and don't bump `unreadCount`, so harvest
+        // drops the admin's last broadcast cleanly. Live ingest of brand-
+        // new posts (UpdateNewMessage / UpdateChatLastMessage) is unaffected
+        // — this is purely a cold-start initialisation filter.
         val semaphore = Semaphore(REFRESH_CONCURRENCY)
         coroutineScope {
             chatIds.map { chatId ->
                 async {
                     semaphore.withPermit {
-                        val msg = chatCache[chatId]?.lastMessage ?: return@withPermit
+                        val chat = chatCache[chatId] ?: return@withPermit
+                        if (chat.unreadCount == 0) return@withPermit
+                        val msg = chat.lastMessage ?: return@withPermit
                         ingest(chatId, listOf(msg))
                     }
                 }
