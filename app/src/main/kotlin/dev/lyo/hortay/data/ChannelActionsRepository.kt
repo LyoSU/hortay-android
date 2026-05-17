@@ -65,7 +65,9 @@ class ChannelActionsRepository(
         }
             .warnUnlessCancelled(TAG, "toggleReaction(${kind.stableKey}, isChosen=$isChosen)")
             .onFailure { it.surfaceTo(userMessages, res, R.string.op_change_reaction, connection.value) }
-        return outcome.isSuccess
+        // TDLib code 406 = "silent no-op, do not display, wait for UpdateMessageInteractionInfo".
+        // Treat as success so the caller does not revert the optimistic chip flip.
+        return outcome.isSuccess || outcome.exceptionOrNull().isTdSilent()
     }
 
     /**
@@ -95,7 +97,13 @@ class ChannelActionsRepository(
         }
             .warnUnlessCancelled(TAG, "setPollAnswer(chat=$chatId msg=$messageId, n=${optionIds.size})")
             .onFailure { it.surfaceTo(userMessages, res, R.string.op_vote_in_poll, connection.value) }
-        return outcome.isSuccess
+        // TDLib code 406 = silent no-op per the documented `error` contract — typically fires
+        // when the local poll mirror already matches the requested selection (the canonical
+        // "every tap shows error 406" repro for channel polls). The eventual
+        // UpdateMessageContent carries the authoritative percentages; surfacing failure here
+        // would (a) flash a snackbar TDLib forbids, (b) trigger clearPollPending(revert=true)
+        // and undo the chosen-row chip even though the vote will land.
+        return outcome.isSuccess || outcome.exceptionOrNull().isTdSilent()
     }
 
     /**
