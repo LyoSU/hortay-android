@@ -51,6 +51,19 @@ sealed interface ChannelUiState {
  * result has reached the posts flow (or timed out). Until then we stay in
  * Resolving — never fall through to Ready with a wrong index.
  *
+ * Resolving while [historyLoading] is true is gated on [items] being empty.
+ * `ChannelViewModel` always issues `loadChannelHistory` on init, even when
+ * the merged-feed's cold-start harvest (or a prior visit this session) has
+ * already populated 1+ posts in the per-channel slice — blocking the
+ * LazyColumn behind a SkeletonFeed during that round-trip rendered the
+ * placeholder for one frame before the real content swapped in, visible
+ * as the "skeleton блимає навіть коли пости швидкі" symptom. When the
+ * slice already has content the deeper history merges into the live
+ * [PostsRepository.posts] flow without bouncing the UI through Resolving.
+ * Deep-link paths still gate correctly: the `scrollToMessageId` branch
+ * below returns Resolving when the target hasn't landed in `items` yet
+ * regardless of `historyLoading`, so we never paint a wrong-index Ready.
+ *
  * [searchActive] suppresses deep-link landing — search results need their
  * own context, not a deep-link anchor.
  *
@@ -77,7 +90,7 @@ internal fun buildChannelUiState(
     feedOrder: FeedOrder = FeedOrder.Newest,
     cursors: ReadCursors = EmptyReadCursors,
 ): ChannelUiState {
-    if (historyLoading) return ChannelUiState.Resolving
+    if (historyLoading && items.isEmpty()) return ChannelUiState.Resolving
     if (scrollToMessageId == null || searchActive) {
         val initialIndex = if (feedOrder == FeedOrder.OldestUnreadFirst && items.isNotEmpty()) {
             val anchorPosts = items.map { it.posts().first() }

@@ -134,15 +134,24 @@ internal fun ChannelHeaderBar(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (subtitleText != null) {
-                        Text(
-                            text = subtitleText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                    // Always render the subtitle slot, even when the value
+                    // hasn't arrived yet — an empty Text still occupies one
+                    // line of the bodySmall style, so the title row's
+                    // intrinsic height stays constant across the
+                    // null → subscriber-count transition. Without this, the
+                    // Column is single-line until [channelSubscribers]
+                    // resolves; the M3 Compact TopAppBar then centers that
+                    // single line vertically inside the 64 dp slot and
+                    // visibly shifts the title upward the moment the
+                    // subscriber count lands ("назва по центру а потім
+                    // зміщається через це"). Reserved slot kills the CLS.
+                    Text(
+                        text = subtitleText.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         },

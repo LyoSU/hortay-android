@@ -16,11 +16,54 @@ class ChannelUiStateBuilderTest {
         FeedItem.Single(testPost(id = id, chatId = 1L, date = id, albumMessageIds = album))
 
     @Test
-    fun `Resolving while history loading regardless of items`() {
+    fun `Resolving while history loading and slice empty`() {
+        // Cold first-entry with no prior cold-start harvest for this chatId:
+        // historyLoading=true, items empty → SkeletonFeed gate is correct.
         val s = buildChannelUiState(
             items = persistentListOf(),
             historyLoading = true,
             scrollToMessageId = 200L,
+            attemptedAround = false,
+            searchActive = false,
+            chatId = 1L,
+        )
+        assertTrue(s is ChannelUiState.Resolving)
+    }
+
+    @Test
+    fun `Ready when slice already populated even if history still loading`() {
+        // Channel was in the merged feed's cold-start harvest, so `posts`
+        // already had this slice before `loadChannelHistory` resolved. Don't
+        // flash a skeleton over real content — the deeper history merges
+        // into the live posts flow as it arrives.
+        val items = listOf(item(100L), item(99L)).toPersistentList()
+        val s = buildChannelUiState(
+            items = items,
+            historyLoading = true,
+            scrollToMessageId = null,
+            attemptedAround = false,
+            searchActive = false,
+            chatId = 1L,
+        )
+        assertTrue(s is ChannelUiState.Ready)
+        s as ChannelUiState.Ready
+        assertEquals(0, s.initialIndex)
+        assertNull(s.highlightedMessageId)
+    }
+
+    @Test
+    fun `Resolving with non-empty slice still gated on deep-link target landing`() {
+        // historyLoading=true but slice has content — yet the deep-link
+        // target hasn't materialised. We must NOT fall through to Ready at
+        // the head post; the initialIndex would latch through
+        // reduceChannelUiState before the around-load completes and the
+        // user would briefly see the wrong row. Stay in Resolving until
+        // either the target shows up or the around-load attempt finishes.
+        val items = listOf(item(100L), item(99L)).toPersistentList()
+        val s = buildChannelUiState(
+            items = items,
+            historyLoading = true,
+            scrollToMessageId = 999L,
             attemptedAround = false,
             searchActive = false,
             chatId = 1L,
