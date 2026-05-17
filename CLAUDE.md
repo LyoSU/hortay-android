@@ -33,6 +33,8 @@ Single-process, single-Activity. `MainActivity` routes: `auth.Ready → MainScaf
 
 DI built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(application as HortayApp).graph`. Heavy singletons (`MediaCache`, `CustomEmoji`, `ExoPlayerPool`, `ReadCursors`) injected via CompositionLocal in `MainActivity`.
 
+**Modularization trigger.** Stay single-`:app` until any of: > 300 Kotlin files in `:app/src/main`, cold build > 60 s on dev hardware, or > 1 active contributor. Cut lines are already encoded by packages — `data/web/*` → `:data-web`, `ui/timeline/*` + `ui/main/*` → `:feature-timeline`, `ui/theme/*` + `ui/components/*` → `:core-ui`. Until then, enforce boundaries with `internal` visibility, not separate modules.
+
 ## Load-bearing — don't change without reading the rationale in place
 
 | What | Rationale lives in | TL;DR |
@@ -67,13 +69,15 @@ DI built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(applicatio
 
 ### Architecture & DI
 
-- ❌ Hilt / Dagger / Koin — settled, rejected. DI is manual (`AppGraph`).
-- ❌ Firebase / Crashlytics / Sentry / analytics / phone-home. INTERNET is for TDLib + anonymous `t.me/s/` only.
-- ❌ Room — kapt overhead; SQLDelight replaced it.
-- ❌ OkHttp / Retrofit / Ktor as general HTTP client. Coil pulls `coil-network-okhttp` for images — that's enough.
-- ❌ FCM / push — TDLib `RegisterDevice` + `UpdateNotification`.
-- ❌ ViewBinding / Fragments. Compose-only, single-Activity.
-- ❌ Compose Navigation typed routes. String-based + `MainScaffold` switch is enough.
+Each `❌` carries a **Revisit:** clause — the concrete condition that would justify reopening the decision. Without that condition, the answer is no.
+
+- ❌ Hilt / Dagger / Koin. DI is manual (`AppGraph`). **Revisit:** > 1 active contributor, or `AppGraph` > 60 properties, or multi-module split lands.
+- ❌ Firebase / Crashlytics / Sentry / analytics / phone-home. INTERNET is for TDLib + anonymous `t.me/s/` only. **Revisit:** never — privacy-as-feature.
+- ❌ Room. SQLDelight 2.3 owns `web.db`; TDLib owns its own. **Revisit:** never (no shared scope).
+- ❌ OkHttp / Retrofit / Ktor as a general HTTP client. Coil pulls `coil-network-okhttp` for images, OkHttp is declared directly only for the web-mode `t.me/s/` pipeline + custom-emoji JSON. **Revisit:** if a typed REST backend joins the stack (none planned).
+- ❌ FCM / push. TDLib `RegisterDevice` + `UpdateNotification`. **Revisit:** if TDLib push proves unreliable in field reports.
+- ❌ ViewBinding / Fragments. Compose-only, single-Activity. **Revisit:** never.
+- ❌ Compose Navigation typed routes. Current overlay-heavy nav (`NavStack` + polymorphic `NavEntry` sealed) covers ~6 destinations. **Revisit:** back-stack past ~8 destinations, or recurring need for type-safe args, or `androidx.navigation` ships overlay-destination primitives that subsume `NavStack`.
 - ✅ SQLDelight 2.3 for `web.db` only. TDLib mode runs without a DB.
 
 ### TDLib usage
