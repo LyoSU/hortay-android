@@ -100,6 +100,26 @@ fun buildTimelineUiState(
  *
  * Live cursor advances (dwell-acks) and post arrivals must not trigger
  * auto-scroll — they only update [items].
+ *
+ * [preserveReady] freezes the latched Ready in its entirety — including its
+ * [items] — while a nav overlay (Comments / ChannelScreen) covers the feed.
+ * Rationale: opening a channel from the feed mounts a [ChannelViewModel] whose
+ * `init` block issues `loadChannelHistory(chatId)` against [PostsRepository],
+ * which writes the deepened slice into the SAME global posts flow that
+ * [TimelineScreen] is subscribed to. Without the freeze, the candidate built
+ * downstream arrives as a new Ready with a regrouped [items] list — a reply
+ * parent surfaced by the deep-dive can promote a `Single` row into a `Thread`
+ * member, and new arrivals in Newest mode shift indices. The feed's LazyColumn
+ * under the overlay would reconcile that keyed dataset, and when the
+ * previously-first-visible key vanished through regrouping its scroll lost the
+ * anchor and reset off-position — what the user saw on overlay pop as "back
+ * from the channel lands at the start of the feed". Freezing under overlay
+ * keeps `firstVisibleItemKey` stable; on dismissal [preserveReady] flips false
+ * and the next live emission flows through the normal Ready→Ready branch below
+ * — [items] adopt the candidate's, scroll anchor stays at the user's actual
+ * position via the [initialIndex] preservation rule. Matches the parallel
+ * "read-acks pause under overlay" contract (`markAsRead = null` in
+ * [TimelineScreen]) — same "feed is frozen while user is elsewhere" principle.
  */
 internal fun reduceTimelineUiState(
     previous: TimelineUiState?,
@@ -107,7 +127,7 @@ internal fun reduceTimelineUiState(
     refreshJustCompleted: Boolean,
     preserveReady: Boolean = false,
 ): TimelineUiState {
-    if (preserveReady && previous is TimelineUiState.Ready && candidate !is TimelineUiState.Ready) {
+    if (preserveReady && previous is TimelineUiState.Ready) {
         return previous
     }
     if (previous is TimelineUiState.Ready && candidate is TimelineUiState.Ready) {
