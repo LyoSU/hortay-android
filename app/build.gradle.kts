@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.baselineprofile)
     alias(libs.plugins.sqldelight)
+    alias(libs.plugins.detekt)
 }
 
 val telegramProps = Properties().apply {
@@ -224,6 +225,40 @@ composeCompiler {
     )
 }
 
+// Detekt — opt-in static analysis. Deliberately NOT wired into `check` /
+// `assemble` (heavy on dev hardware; per CLAUDE.md → Verifying rules the gate
+// is `lintRelease` for translations + Compose Compiler reports for stability).
+// Invoke as `./gradlew :app:detekt`; CI adds it explicitly. The Compose ruleset
+// from nlopez/compose-rules is loaded via the `detektPlugins(...)` configuration
+// below; it surfaces Modifier ordering, stable-param checks, lambda parameter
+// naming/position and other Compose-specific smells that vanilla detekt misses.
+detekt {
+    buildUponDefaultConfig = true
+    parallel = true
+    config.setFrom(rootProject.file("config/detekt/detekt.yml"))
+    baseline = rootProject.file("config/detekt/baseline.xml")
+    // Skip the SQLDelight-generated DAO sources and the build/ tree — neither is
+    // hand-authored. Detekt's default source-set discovery includes Kotlin under
+    // src/main and src/test; we add the SQLDelight output dir to the exclusion
+    // list via the task config below to avoid noise on every regenerated DAO.
+}
+
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    jvmTarget = "17"
+    // Exclude SQLDelight-generated sources + build outputs from analysis.
+    exclude("**/build/**", "**/generated/**", "**/sqldelight/**")
+    reports {
+        html.required.set(true)
+        xml.required.set(true)
+        sarif.required.set(false)
+        md.required.set(false)
+        txt.required.set(false)
+    }
+}
+tasks.withType<io.gitlab.arturbosch.detekt.DetektCreateBaselineTask>().configureEach {
+    jvmTarget = "17"
+}
+
 // Anonymous web-mode database. Schema files live under
 // app/src/main/sqldelight/dev/lyo/hortay/data/web/db/*.sq; SQLDelight generates
 // typed DAO sources at build time. Migrations sit alongside as `<n>.sqm`.
@@ -362,6 +397,10 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // Compose-specific detekt rules (nlopez/compose-rules). Loaded into detekt's
+    // own classpath only — never reaches the APK.
+    detektPlugins(libs.detekt.rules.compose)
 }
 
 tasks.withType<Test>().configureEach {

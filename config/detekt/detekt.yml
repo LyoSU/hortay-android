@@ -1,0 +1,176 @@
+# Detekt configuration — deltas over the bundled defaults.
+# `buildUponDefaultConfig = true` in app/build.gradle.kts means every key here
+# is merged on top of detekt-formatting's shipped defaults; only call out
+# rules whose project-specific verdict differs from upstream.
+
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+
+config:
+  validation: true
+  warningsAsErrors: false
+  # Allow keys from third-party rule sets (nlopez/compose-rules ships under
+  # `Compose:`) without detekt complaining about unknown properties.
+  checkExhaustiveness: false
+  excludes: ''
+
+# ------------------------------------------------------------------------------
+# Default ruleset deltas
+# ------------------------------------------------------------------------------
+
+style:
+  # Bulk-line / wildcard / newline rules are noisy in a Compose-heavy codebase
+  # where DSL builders run wide and `import androidx.compose.material3.*` is
+  # idiomatic. The project's load-bearing rationale comments also routinely
+  # cross 120 cols.
+  MaxLineLength:
+    active: false
+  WildcardImport:
+    active: false
+  NewLineAtEndOfFile:
+    active: false
+  # Header KDoc on data classes (`@Immutable` / `@Stable`) and DI graph nodes
+  # carry "tried X, broke Y" notes that are deliberately long. ForbiddenComment
+  # would otherwise flag the TODO/FIXME-like phrases inside those.
+  ForbiddenComment:
+    active: true
+    values: ['FIXME:', 'STOPSHIP:']
+  # MagicNumber fires on every `tween(220)` / `dp(16)` and would drown out the
+  # actually-suspicious literals. Re-enable selectively if it ever stabilises.
+  MagicNumber:
+    active: false
+  ReturnCount:
+    active: false
+  UnusedPrivateMember:
+    active: true
+    allowedNames: '(_|ignored|expected|serialVersionUID)'
+
+complexity:
+  # The project carries load-bearing reducers (PostsRepository, MediaCache,
+  # TimelineViewModel) whose length is rationale-driven — splitting them would
+  # fragment the single-coroutine guarantees their KDoc headers describe.
+  # Re-enable once the architecture stabilises.
+  LongMethod:
+    active: false
+  LongParameterList:
+    active: false
+  CyclomaticComplexMethod:
+    active: false
+  TooManyFunctions:
+    active: false
+  NestedBlockDepth:
+    active: false
+  ComplexCondition:
+    active: false
+
+naming:
+  # Composable functions are PascalCase by convention (Compose docs); detekt's
+  # default already accepts this. Keep the package naming pattern permissive
+  # for SQLDelight's generated `dev.lyo.hortay.data.web.db` output.
+  PackageNaming:
+    active: true
+    packagePattern: '[a-z]+(\.[a-z][A-Za-z0-9_]*)*'
+  FunctionNaming:
+    active: true
+    functionPattern: '[a-zA-Z][a-zA-Z0-9]*'
+  TopLevelPropertyNaming:
+    active: true
+    constantPattern: '[A-Z][_A-Z0-9]*'
+    propertyPattern: '[A-Za-z][_A-Za-z0-9]*'
+
+performance:
+  # SpreadOperator fires on TDLib varargs builders; we use them deliberately.
+  SpreadOperator:
+    active: false
+
+potential-bugs:
+  # Compose `LaunchedEffect(Unit)` is an explicit "run once" idiom; the rule's
+  # heuristic flags it as a smell. Keep the rest of the ruleset on.
+  UnnecessaryNotNullOperator:
+    active: true
+
+# ------------------------------------------------------------------------------
+# nlopez/compose-rules
+# ------------------------------------------------------------------------------
+# All rules live under the `Compose:` top-level key. Sensible defaults are
+# active: true unless they fight project conventions.
+Compose:
+  ComposableAnnotationNaming:
+    active: true
+  ComposableNaming:
+    active: true
+  ComposableParamOrder:
+    active: true
+  CompositionLocalAllowlist:
+    # The project ships a small set of hand-rolled CompositionLocals
+    # (LocalMediaCache, LocalCustomEmoji, LocalExoPlayerPool, LocalReadCursors,
+    # LocalUserProfileOpener, LocalScrollGate). Enforce the allowlist so a new
+    # one requires deliberate update to this file + CLAUDE.md.
+    active: true
+    allowedCompositionLocals:
+      - LocalMediaCache
+      - LocalCustomEmoji
+      - LocalExoPlayerPool
+      - LocalReadCursors
+      - LocalUserProfileOpener
+      - LocalScrollGate
+  CompositionLocalNaming:
+    active: true
+  ContentEmitterReturningValues:
+    active: true
+  ContentTrailingLambda:
+    active: true
+  DefaultsVisibility:
+    active: true
+  LambdaParameterEventTrailing:
+    active: true
+  LambdaParameterInRestartableEffect:
+    active: true
+  Material2:
+    active: true
+  ModifierClickableOrder:
+    active: true
+  ModifierComposable:
+    active: true
+  ModifierComposed:
+    active: true
+  ModifierMissing:
+    active: true
+  ModifierNaming:
+    active: true
+  ModifierNotUsedAtRoot:
+    active: true
+  ModifierReused:
+    active: true
+  ModifierWithoutDefault:
+    active: true
+  MultipleEmitters:
+    active: true
+  MutableParams:
+    active: true
+  MutableStateAutoboxing:
+    active: true
+  MutableStateParam:
+    active: true
+  ParameterNaming:
+    active: true
+  PreviewAnnotationNaming:
+    active: true
+  PreviewNaming:
+    active: false
+  PreviewPublic:
+    active: true
+  RememberContentMissing:
+    active: true
+  RememberMissing:
+    active: true
+  UnstableCollections:
+    # PersistentList / ImmutableList from kotlinx.collections.immutable are
+    # the project's contract for collections that reach Compose; this rule
+    # surfaces every accidental platform List/Map/Set leak.
+    active: true
+  ViewModelForwarding:
+    active: true
+  ViewModelInjection:
+    active: false

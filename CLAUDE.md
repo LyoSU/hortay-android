@@ -144,6 +144,7 @@ Toolchain: JDK 17, Gradle 9.4.1, AGP 9.2.0, Kotlin 2.3.10 (K2). Compose Compiler
 - **Compose skippability** — Compose Compiler stability reports are wired via the Kotlin Compose plugin; check `app/build/compose_compiler/` after a build. New `@Stable`/`@Immutable` regressions show up as "unstable" classes in the graph.
 - **Translations parity** — `./gradlew :app:lintRelease` flags `MissingTranslation`. CI gate.
 - **Cold-start budget** — `:baselineprofile` macrobenchmark + `adb logcat -s PostsRepository` (look for `GetChat`/`GetChatHistory` storms).
+- **Static analysis (Compose stability + Kotlin smells)** — `./gradlew :app:detekt` (config: `config/detekt/detekt.yml`, baseline: `config/detekt/baseline.xml`). Not bundled into `lintRelease` — heavy on dev hardware; CI gate adds it explicitly. Compose rules from `nlopez/compose-rules` surface `Modifier` ordering, `UnstableCollections` (platform `List`/`Map` reaching Composables), `CompositionLocalAllowlist` and the rest of the Compose-specific smells. Run `./gradlew :app:detektBaseline` once after enabling to seed the baseline; commit the regenerated file.
 
 ## Setup delta on top of README
 
