@@ -2,8 +2,13 @@ package dev.lyo.hortay.data.web
 
 import android.util.Log
 import dev.lyo.hortay.data.FeedSource
+import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.TimelinePost
 import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.collections.immutable.toPersistentList
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -57,6 +62,14 @@ class WebFeedSource(
     private val repository: WebRepository,
     private val subscriptions: SubscriptionsStore,
     private val scope: CoroutineScope,
+    /**
+     * Same cross-mode hidden-channels store wired into TDLib's PostsRepository.
+     * Optional so existing tests that construct a WebFeedSource without a
+     * DataStore still compile and behave identically (filter is a no-op).
+     * See [IgnoredChannelsStore] KDoc for the rationale on a single Long-keyed
+     * store across both modes.
+     */
+    private val ignoredChannels: IgnoredChannelsStore? = null,
     private val maxConcurrentFetches: Int = DEFAULT_CONCURRENCY,
     private val stalenessWindowMs: Long = DEFAULT_STALENESS_WINDOW_MS,
     private val mediaTtlMs: Long = DEFAULT_MEDIA_TTL_MS,
@@ -96,7 +109,21 @@ class WebFeedSource(
      * WebFeedEntry list that needs per-item adaptation downstream.
      */
     override val posts: StateFlow<PersistentList<TimelinePost>> =
-        repository.observeFeed()
+        combine(
+            repository.observeFeed(),
+            // Read-side filter for hidden channels. The merged guest feed is
+            // capped at 1000 rows so the additional `filter` is trivial; the
+            // alternative — pushing exclusion into the SQL `selectFeed` query —
+            // would force a SQLDelight migration (`channel.is_ignored INTEGER`)
+            // for a feature whose primary cost is a tiny in-memory set test.
+            // chatId comparison (not username) so the same hidden set works
+            // unchanged across TDLib + guest modes (see [IgnoredChannelsStore]
+            // for the cross-mode chatId design).
+            ignoredChannels?.ignored ?: flowOf(persistentSetOf()),
+        ) { feed, ignored ->
+            if (ignored.isEmpty()) feed
+            else feed.filter { it.chatId !in ignored }.toPersistentList()
+        }
             // WhileSubscribed(5s) instead of Eagerly so authenticated users
             // who never enter guest mode don't pay for the SQL query at
             // AppGraph construction time. 5s grace matches the rest of the

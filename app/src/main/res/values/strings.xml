@@ -311,6 +311,10 @@
     <string name="channels_mute">Mute notifications</string>
     <string name="channels_leave">Leave channel</string>
     <string name="channels_join">Join</string>
+    <string name="channels_hide_from_feed">Hide from feed</string>
+    <string name="channels_unhide_from_feed">Show in feed</string>
+    <string name="channels_hide_from_feed_for">Hide %1$s from feed</string>
+    <string name="channels_unhide_from_feed_for">Show %1$s in feed</string>
     <string name="channels_empty_title">No channels yet</string>
     <string name="channels_empty_helper">Subscribe to channels in Telegram and they\'ll show up here</string>
 
@@ -610,4 +614,18 @@
     <string name="user_profile_status_was_hours_ago">last seen %1$d h ago</string>
     <string name="user_profile_status_was_days_ago">last seen %1$d d ago</string>
     <string name="user_profile_status_was_long_ago">last seen a long time ago</string>
+
+    <!-- Hidden channels (feed exclusion list) -->
+    <string name="settings_hidden_channels_title">Hidden channels</string>
+    <string name="settings_hidden_channels_subtitle_empty">Hide specific channels from the home feed</string>
+    <plurals name="settings_hidden_channels_count">
+        <item quantity="one">%d channel hidden from feed</item>
+        <item quantity="other">%d channels hidden from feed</item>
+    </plurals>
+    <string name="hidden_channels_title">Hidden channels</string>
+    <string name="hidden_channels_empty_title">Nothing hidden</string>
+    <string name="hidden_channels_empty_body">Posts from channels you hide here won\'t show up in the home feed. You\'ll still see them when you open the channel directly.</string>
+    <string name="hidden_channels_unknown">Hidden channel</string>
+    <string name="hidden_channels_id_placeholder">id %1$d</string>
+    <string name="hidden_channels_unhide_for">Show %1$s in feed</string>
 </resources>

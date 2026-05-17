@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import coil3.SingletonImageLoader
 import androidx.compose.ui.draw.clip
@@ -32,7 +33,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import dev.lyo.hortay.BuildConfig
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AutoDownloadStore
+import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.FeedOrder
+import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.NetworkUsage
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StatsRepository
@@ -77,13 +80,33 @@ fun SettingsScreen(
      */
     onEnterGuest: (() -> Unit)? = null,
     autoDownload: AutoDownloadStore? = null,
+    /**
+     * Hidden-channels store. Surfaces a "Hidden channels (N)" row + manage
+     * sub-screen. Optional so a test harness or a stripped build can drop it
+     * without rewiring the call sites.
+     */
+    ignoredChannels: IgnoredChannelsStore? = null,
+    /**
+     * TDLib resolver for the Hidden Channels sub-screen — resolves channel
+     * title / handle for each hidden chatId. Null in guest mode (the
+     * web-channel resolver below covers that path).
+     */
+    channelActions: ChannelActionsRepository? = null,
+    /**
+     * Guest-mode resolver for the Hidden Channels sub-screen. Looks up a
+     * channel by its stable hash-derived chatId from
+     * [dev.lyo.hortay.data.web.WebPostAdapter.stableChatId]. Null in TDLib mode.
+     */
+    webChannelByChatId: ((Long) -> WebChannelDescriptor?)? = null,
 ) {
     // Sub-screen nav lives inside Settings — the auto-download list and category
     // screens are conceptually "deeper" pages of the same tab. Using AnimatedContent
     // keeps the bottom navigation visible (TG-style) and Material's shared-x slide
     // gives the user a clear sense of depth.
     var showAutoDownload by rememberSaveable { mutableStateOf(false) }
+    var showHiddenChannels by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = showAutoDownload) { showAutoDownload = false }
+    BackHandler(enabled = showHiddenChannels) { showHiddenChannels = false }
 
     // M3E shared-axis-X via MotionScheme: spatial spring for the slide, effects
     // spring for the crossfade. Same physics as MaterialTheme reads on every Material
@@ -92,24 +115,42 @@ fun SettingsScreen(
     // because AnimatedContent.transitionSpec is a non-composable lambda.
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
     val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    // Three sub-screens (Main, AutoDownload, HiddenChannels) share one
+    // AnimatedContent so the forward/back shared-axis-X slide reads the
+    // same regardless of which depth-1 page the user is on. Enum target
+    // lets the transitionSpec compute slide direction from a stable depth
+    // ordering — main = 0, deeper pages = 1 — so any depth-0↔depth-1 move
+    // animates as "go deeper / come back" rather than two unrelated
+    // crossfades.
+    val current = when {
+        showAutoDownload && autoDownload != null -> SettingsSection.AutoDownload
+        showHiddenChannels && ignoredChannels != null -> SettingsSection.HiddenChannels
+        else -> SettingsSection.Main
+    }
     AnimatedContent(
-        targetState = showAutoDownload,
+        targetState = current,
         transitionSpec = {
-            val forward = targetState && !initialState
+            val forward = targetState.depth > initialState.depth
             val direction = if (forward) SlideDirection.Left else SlideDirection.Right
             (slideIntoContainer(direction, spatialSpec) + fadeIn(effectsSpec)) togetherWith
                 (slideOutOfContainer(direction, spatialSpec) + fadeOut(effectsSpec))
         },
         label = "settings-nav",
-    ) { autoDownloadShown ->
-        if (autoDownloadShown && autoDownload != null) {
-            AutoDownloadHost(
-                store = autoDownload,
+    ) { section ->
+        when (section) {
+            SettingsSection.AutoDownload -> AutoDownloadHost(
+                store = autoDownload!!,
                 contentPadding = contentPadding,
                 onBack = { showAutoDownload = false },
             )
-        } else {
-            SettingsMain(
+            SettingsSection.HiddenChannels -> HiddenChannelsScreen(
+                store = ignoredChannels!!,
+                contentPadding = contentPadding,
+                onBack = { showHiddenChannels = false },
+                channelActions = channelActions,
+                webChannelByChatId = webChannelByChatId,
+            )
+            SettingsSection.Main -> SettingsMain(
                 settings = settings,
                 stats = stats,
                 contentPadding = contentPadding,
@@ -119,9 +160,22 @@ fun SettingsScreen(
                 onEnterGuest = onEnterGuest,
                 autoDownloadAvailable = autoDownload != null,
                 onOpenAutoDownload = { showAutoDownload = true },
+                ignoredChannels = ignoredChannels,
+                onOpenHiddenChannels = { showHiddenChannels = true },
             )
         }
     }
+}
+
+/**
+ * Settings depth-aware page tag. `depth` drives the AnimatedContent slide
+ * direction so every depth-0 → depth-1 traversal slides left, every back
+ * slides right, regardless of which sub-screen we're entering / leaving.
+ */
+private enum class SettingsSection(val depth: Int) {
+    Main(0),
+    AutoDownload(1),
+    HiddenChannels(1),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,6 +190,8 @@ private fun SettingsMain(
     onEnterGuest: (() -> Unit)?,
     autoDownloadAvailable: Boolean,
     onOpenAutoDownload: () -> Unit,
+    ignoredChannels: IgnoredChannelsStore?,
+    onOpenHiddenChannels: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -216,6 +272,33 @@ private fun SettingsMain(
                     }
                 },
             )
+
+            // ---- Hidden channels: per-user feed-exclusion list ----------------------
+            // Rendered as part of the Feed section because hiding a channel is a
+            // feed-shaping decision (same vocabulary as feed order, snap-scroll,
+            // autoplay). Single row that surfaces the count and drills into a
+            // dedicated manage sub-screen. Hidden when the store wasn't wired —
+            // mirrors the conditional rendering of the auto-download entry row.
+            if (ignoredChannels != null) {
+                val hidden by ignoredChannels.ignored.collectAsStateWithLifecycle(
+                    initialValue = kotlinx.collections.immutable.persistentSetOf(),
+                )
+                SettingsRow(
+                    symbol = "visibility_off",
+                    title = stringResource(R.string.settings_hidden_channels_title),
+                    subtitle = if (hidden.isEmpty()) {
+                        stringResource(R.string.settings_hidden_channels_subtitle_empty)
+                    } else {
+                        pluralStringResource(
+                            R.plurals.settings_hidden_channels_count,
+                            hidden.size,
+                            hidden.size,
+                        )
+                    },
+                    chevron = true,
+                    onClick = onOpenHiddenChannels,
+                )
+            }
 
             // ---- TDLib-mode-only: traffic & storage cards backed by StatsRepository ----
             if (stats != null) {
