@@ -342,6 +342,9 @@
     <string name="settings_snap_scroll_subtitle">Each post clicks into place when you fling — TikTok/Reels feel</string>
     <string name="settings_inline_autoplay_title">Autoplay videos in feed</string>
     <string name="settings_inline_autoplay_subtitle">Short videos already in cache play silently as you scroll. Tap to open full-screen with sound.</string>
+    <string name="settings_section_privacy">Privacy</string>
+    <string name="settings_hide_online_title">Invisible reading</string>
+    <string name="settings_hide_online_subtitle">Don\'t show as online to your Telegram contacts while you read Hortay. Last seen still ticks normally when you open the official Telegram client. This setting only affects Hortay\'s sessions.</string>
     <string name="timeline_unread_boundary">Unread</string>
     <string name="settings_section_traffic">Traffic</string>
     <string name="settings_section_storage">Storage</string>

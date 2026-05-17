@@ -24,10 +24,19 @@ import org.drinkless.tdlib.TdApi
  * the pattern Telegram-Android (Telegram X) uses around its TDLib daemon.
  *
  * Design notes:
- *   - The `online` flag tracks [ProcessLifecycleOwner] ON_START / ON_STOP, gated on
- *     [AuthStage.Ready]. We combine those two signals into a single "active" boolean
- *     so cold-start (auth not ready when ON_START fires) and runtime transitions are
- *     handled by the same edge-trigger.
+ *   - The `online` option tracks [ProcessLifecycleOwner] ON_START / ON_STOP, gated on
+ *     [AuthStage.Ready] AND on the user's [SettingsStore.hideOnlineStatus] preference
+ *     (invisible-reading mode). We combine those three signals into a single "active"
+ *     boolean so cold-start (auth not ready when ON_START fires), runtime transitions
+ *     and a mid-session invisible-mode toggle are all handled by the same edge-trigger.
+ *     Per Aliaksei Levin in tdlib/td#3144: *"`online` option is about the user, not the
+ *     network"* — TDLib maps it 1:1 to `account.updateStatus`, the single signal that
+ *     drives Telegram's last-seen / green-dot. Suppressing it (invisible mode ON)
+ *     reliably hides presence WITHOUT breaking content updates, because chat updates
+ *     ride [TdApi.SetNetworkType] + per-chat [TdApi.OpenChat] which we keep wired up
+ *     unconditionally. Invisible mode does NOT touch the server-side `privacy.lastSeen`
+ *     setting — that's a global property of the Telegram account and stays under the
+ *     official client's control.
  *   - [TdApi.SetNetworkType] always reflects the actual current network. We deliberately
  *     never push [TdApi.NetworkTypeNone] from the lifecycle observer — Telegram X does
  *     not, and forcing None on background would break FCM if push is added later (TDLib
@@ -41,6 +50,7 @@ class TdLifecycleBridge(
     private val td: TdClient,
     context: Context,
     private val scope: CoroutineScope,
+    private val settings: SettingsStore,
 ) {
 
     private val appContext = context.applicationContext
@@ -114,7 +124,21 @@ class TdLifecycleBridge(
         _networkType.value = classifyNetwork()
         cm.registerDefaultNetworkCallback(networkCallback)
 
-        combine(td.authStage, foreground) { auth, fg -> auth is AuthStage.Ready && fg }
+        // Three-way derivation of "should the user be presented as online to Telegram":
+        //   authStage = Ready  AND  foreground = true  AND  invisible-mode = false.
+        //
+        // The boolean is the SAME source of truth that drove the previous two-input combine,
+        // so existing edges (cold-start finishes auth → goOnline; ON_STOP → goOffline) keep
+        // their semantics. The new third input layers in cleanly: a mid-session
+        // invisible-mode flip while the app is foreground emits exactly one transition
+        // (true → false → goOffline, or false → true → goOnline) thanks to
+        // distinctUntilChanged. A flip while backgrounded is a no-op because the combine
+        // result stays false either way — the toggle takes effect next time the user
+        // brings Hortay back to the foreground, which is the correct presence semantics
+        // (we're already offline to Telegram while backgrounded).
+        combine(td.authStage, foreground, settings.hideOnlineStatus) { auth, fg, hide ->
+            auth is AuthStage.Ready && fg && !hide
+        }
             .distinctUntilChanged()
             .onEach { active ->
                 if (active) goOnline() else goOffline()

@@ -357,6 +357,9 @@
     <string name="settings_snap_scroll_subtitle">Кожен пост клацає на місце при змахуванні — як у TikTok/Reels</string>
     <string name="settings_inline_autoplay_title">Автозапуск відео у стрічці</string>
     <string name="settings_inline_autoplay_subtitle">Короткі відео, які вже в кеші, тихо програються під час прокручування. Тапніть, щоб відкрити на весь екран зі звуком.</string>
+    <string name="settings_section_privacy">Приватність</string>
+    <string name="settings_hide_online_title">Невидиме читання</string>
+    <string name="settings_hide_online_subtitle">Не показувати вас «у мережі» контактам Telegram, поки ви читаєте Hortay. У офіційному застосунку Telegram онлайн-статус працює як завжди. Цей перемикач діє лише на сесії Hortay.</string>
     <string name="timeline_unread_boundary">Непрочитане</string>
     <string name="settings_section_traffic">Трафік</string>
     <string name="settings_section_storage">Сховище</string>

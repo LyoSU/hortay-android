@@ -247,6 +247,7 @@ private fun SettingsMain(
             val currentFeedOrder by settings.feedOrder.collectAsStateWithLifecycle(FeedOrder.OldestUnreadFirst)
             val currentSnapScroll by settings.snapScroll.collectAsStateWithLifecycle(false)
             val currentInlineAutoplay by settings.inlineVideoAutoplay.collectAsStateWithLifecycle(true)
+            val currentHideOnline by settings.hideOnlineStatus.collectAsStateWithLifecycle(false)
             SectionLabel(stringResource(R.string.settings_section_feed))
             FeedOrderRows(
                 current = currentFeedOrder,
@@ -405,6 +406,29 @@ private fun SettingsMain(
                     title = stringResource(R.string.settings_enter_guest_title),
                     subtitle = stringResource(R.string.settings_enter_guest_subtitle),
                     onClick = { confirmEnterGuest = true },
+                )
+            }
+
+            // ---- Privacy section: local presence toggles (TDLib-mode only) -----------
+            // TDLib's `online` option is what drives Telegram's green dot / last-seen
+            // (per Aliaksei Levin in tdlib/td#3144: "online option is about the user,
+            // not the network"). Hortay sits between ProcessLifecycleOwner and TDLib
+            // via TdLifecycleBridge, so toggling this row simply removes one factor
+            // from the "should we present the user as online" combine — content
+            // updates continue to flow over OpenChat + SetNetworkType. Hidden in
+            // guest mode because TDLib isn't running there, and the server-side
+            // privacy.lastSeen knob stays under the official client's control either
+            // way.
+            if (stats != null) {
+                Spacer(Modifier.height(8.dp))
+                SectionLabel(stringResource(R.string.settings_section_privacy))
+                HideOnlineStatusRow(
+                    enabled = currentHideOnline,
+                    onToggle = { next ->
+                        if (next != currentHideOnline) {
+                            scope.launch { settings.setHideOnlineStatus(next) }
+                        }
+                    },
                 )
             }
 
@@ -1116,6 +1140,73 @@ private fun InlineAutoplayRow(
         content = {
             Text(
                 text = stringResource(R.string.settings_inline_autoplay_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+    )
+}
+
+/**
+ * Standalone [SegmentedListItem] for invisible-reading mode. When ON, the user
+ * is not presented as online to their Telegram contacts while reading Hortay —
+ * [TdLifecycleBridge] omits the `SetOption("online", true)` from its foreground
+ * activation step, which is the single signal TDLib uses to drive
+ * `account.updateStatus` (per Aliaksei Levin in `tdlib/td#3144`). Independent of
+ * [SnapScrollRow] and [InlineAutoplayRow] in the layout — this is a privacy
+ * concern orthogonal to feed presentation — so it sits in its own single-row
+ * segment (`segmentedShapes(0, 1)`) inside the Privacy section.
+ *
+ * The icon flips between `visibility_off` (ON — actively hiding) and
+ * `visibility` (OFF — showing as online) so a quick glance at the row tells
+ * the user the current state without reading the title.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun HideOnlineStatusRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = 0,
+        count = 1,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        onClick = { onToggle(!enabled) },
+        shapes = shapes,
+        leadingContent = {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(
+                        if (enabled) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Symbol(
+                    name = if (enabled) "visibility_off" else "visibility",
+                    tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 22.dp,
+                )
+            }
+        },
+        supportingContent = {
+            Text(
+                text = stringResource(R.string.settings_hide_online_subtitle),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        trailingContent = {
+            Switch(checked = enabled, onCheckedChange = onToggle)
+        },
+        content = {
+            Text(
+                text = stringResource(R.string.settings_hide_online_title),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )

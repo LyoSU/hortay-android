@@ -91,7 +91,7 @@ class AppGraph(context: Context) {
     // stall watchdog while the user isn't looking. Held by the graph to keep the listener
     // alive for the process lifetime.
     private val lifecycleBridge: TdLifecycleBridge =
-        TdLifecycleBridge(tdClient, context, appScope).also { it.bind() }
+        TdLifecycleBridge(tdClient, context, appScope, settingsStore).also { it.bind() }
 
     // MediaCache reads tdClient.connection so the stall watchdog skips reissue ticks
     // while we're WaitingForNetwork — TDLib resumes downloads itself when the link

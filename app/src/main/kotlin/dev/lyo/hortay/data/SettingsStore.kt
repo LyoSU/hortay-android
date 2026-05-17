@@ -97,6 +97,38 @@ class SettingsStore(context: Context) {
     }
 
     /**
+     * Invisible reading mode. When enabled, [TdLifecycleBridge] stops issuing
+     * `SetOption("online", true)` on foreground — so contacts no longer see a
+     * green dot / "online" while the user reads Hortay. TDLib's network type,
+     * `OpenChat` for active surfaces, and reaction RPCs continue as before;
+     * only the explicit presence signal is suppressed.
+     *
+     * Scope notes:
+     *   - Local-only. Does NOT touch the server-side privacy.lastSeen
+     *     setting — that's a global property of the Telegram account
+     *     configured in the official client and applies across every
+     *     logged-in session.
+     *   - Per Aliaksei Levin (`tdlib/td#3144`): the `online` option is
+     *     "about the user, not the network" and the Telegram server only
+     *     bumps last-seen on `account.updateStatus`, which TDLib derives
+     *     1:1 from this option. Suppressing the option therefore reliably
+     *     hides the green dot without breaking content updates.
+     *   - Does NOT apply in guest (anonymous) mode — TDLib is not running,
+     *     so the toggle has nothing to gate. The Settings row hides itself
+     *     when [stats] is null.
+     *
+     * Default is `false` so existing users keep their familiar behaviour;
+     * the toggle is opt-in.
+     */
+    val hideOnlineStatus: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[KEY_HIDE_ONLINE_STATUS] ?: false
+    }
+
+    suspend fun setHideOnlineStatus(enabled: Boolean) {
+        dataStore.edit { it[KEY_HIDE_ONLINE_STATUS] = enabled }
+    }
+
+    /**
      * Epoch-ms of the last successful TDLib [TdApi.OptimizeStorage] sweep. Read by
      * [TdClient] to throttle the cleanup to once per [STORAGE_OPTIMIZE_INTERVAL_MS] —
      * scanning a multi-GB tdlib-files directory on every cold start used to add real
@@ -115,6 +147,7 @@ class SettingsStore(context: Context) {
         val KEY_FEED_ORDER = stringPreferencesKey("feed_order")
         val KEY_SNAP_SCROLL = booleanPreferencesKey("snap_scroll")
         val KEY_INLINE_VIDEO_AUTOPLAY = booleanPreferencesKey("inline_video_autoplay")
+        val KEY_HIDE_ONLINE_STATUS = booleanPreferencesKey("hide_online_status")
     }
 }
 
