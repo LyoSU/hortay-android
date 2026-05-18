@@ -275,6 +275,13 @@ fun TimelineScreen(
     val fullFoldersMap: Map<Int, org.drinkless.tdlib.TdApi.ChatFolder> = folders?.fullFolders
         ?.collectAsStateWithLifecycle()?.value
         ?: emptyMap()
+    // Per-folder resolved chat-id sets (TDLib applies the rule, we just consume the answer).
+    // Used by the tab-visibility check below to hide folders that contain none of the
+    // currently-subscribed channels — same UX as before, just sourced from TDLib instead of
+    // an in-process rule reimplementation.
+    val folderChatIdsMap: Map<Int, Set<Long>> = folders?.folderChatIds
+        ?.collectAsStateWithLifecycle()?.value
+        ?: emptyMap()
     val archivedChatIds: Set<Long> = tdlibRepo?.archivedChatIds
         ?.collectAsStateWithLifecycle()?.value
         ?: emptySet()
@@ -354,59 +361,32 @@ fun TimelineScreen(
             else -> FilterScope.All
         }
     }
-    // Pinned + included member ids for the active folder (null when not a Folder scope).
-    var folderMemberIds by remember(scope_filter) { mutableStateOf<Set<Long>?>(null) }
-    var folderIncludesAllChannels by remember(scope_filter) { mutableStateOf(false) }
-    var folderExcludedIds by remember(scope_filter) { mutableStateOf<Set<Long>>(emptySet()) }
-    // Real Telegram folder rules can hide archived chats; mirror that here so a folder
-    // with excludeArchived=true doesn't leak archived channels into its tab. The other
-    // exclude_* flags (excludeMuted, excludeRead) only meaningfully apply to user/group
-    // chats — channels rarely have actionable mute or unread state, and Hortay scopes
-    // its feed to channels only.
-    var folderExcludeArchived by remember(scope_filter) { mutableStateOf(false) }
+    // Membership for the active folder, resolved by TDLib via GetChats(ChatListFolder).
+    // We deliberately do NOT re-evaluate the include/exclude/excludeArchived/etc. rules in
+    // process — TDLib already applies them and reimplementing them silently drifted any
+    // time Telegram added a new exclude_* flag. `null` means the membership hasn't landed
+    // yet (cold start, or non-Folder scope); the scope predicate treats that as "show
+    // nothing folder-scoped" so the user doesn't see a flash of unfiltered posts under a
+    // folder tab.
+    val folderChatIdsForScope: Set<Long>? = (scope_filter as? FilterScope.Folder)
+        ?.let { folderChatIdsMap[it.id] }
     LaunchedEffect(scope_filter) {
-        val folderScope = scope_filter as? FilterScope.Folder
-        if (folderScope == null) {
-            folderMemberIds = null
-            folderIncludesAllChannels = false
-            folderExcludedIds = emptySet()
-            folderExcludeArchived = false
-            return@LaunchedEffect
-        }
-        val full = folders?.fullFolder(folderScope.id)
-        if (full == null) {
-            folderMemberIds = emptySet()
-            folderIncludesAllChannels = false
-            folderExcludedIds = emptySet()
-            folderExcludeArchived = false
-        } else {
-            folderMemberIds = (full.pinnedChatIds?.toSet().orEmpty() + full.includedChatIds?.toSet().orEmpty())
-            folderIncludesAllChannels = full.includeChannels
-            folderExcludedIds = full.excludedChatIds?.toSet().orEmpty()
-            folderExcludeArchived = full.excludeArchived
-        }
+        val folderScope = scope_filter as? FilterScope.Folder ?: return@LaunchedEffect
+        // Suspend-prime the cache so a freshly-selected folder tab gets its membership
+        // populated even if the eager warm-up in ChatFoldersRepository hasn't completed.
+        runCatching { folders?.folderChatIds(folderScope.id) }
     }
 
     // Scope predicate shared by the visible feed and the "X нових постів" pill — so the
     // pill can't surface pending posts the user can't actually see (e.g. archived chats
     // while the user is in "Усі", or out-of-folder channels while a folder is active).
-    val scopePredicate = remember(
-        scope_filter, archivedChatIds, folderMemberIds, folderIncludesAllChannels,
-        folderExcludedIds, folderExcludeArchived,
-    ) {
+    val scopePredicate = remember(scope_filter, archivedChatIds, folderChatIdsForScope) {
         { p: TimelinePost ->
             val isArchived = p.chatId in archivedChatIds
             when (scope_filter) {
                 FilterScope.All -> !isArchived
                 FilterScope.Archive -> isArchived
-                is FilterScope.Folder -> {
-                    if (folderExcludeArchived && isArchived) false
-                    else {
-                        val included = folderMemberIds?.contains(p.chatId) == true ||
-                            folderIncludesAllChannels
-                        included && p.chatId !in folderExcludedIds
-                    }
-                }
+                is FilterScope.Folder -> folderChatIdsForScope?.contains(p.chatId) == true
             }
         }
     }
@@ -1413,15 +1393,20 @@ fun TimelineScreen(
                     val visibleChatIds = remember(posts) {
                         posts.asSequence().map { it.chatId }.toSet()
                     }
-                    val tabs = remember(foldersList, fullFoldersMap, visibleChatIds, folders) {
+                    val tabs = remember(foldersList, fullFoldersMap, folderChatIdsMap, visibleChatIds, folders) {
                         val repo = folders
                         foldersList.mapNotNull { info ->
                             val full = fullFoldersMap[info.id]
+                            val ids = folderChatIdsMap[info.id]
                             val keep = when {
                                 full == null || repo == null -> true
                                 repo.isEquivalentToAll(full) -> false
+                                // Membership not yet resolved — keep the tab so it doesn't
+                                // briefly drop out between UpdateChatFolders and the eager
+                                // folderChatIds warm-up landing.
+                                ids == null -> true
                                 visibleChatIds.isEmpty() -> true
-                                else -> visibleChatIds.any { repo.isChannelInFolder(full, it) }
+                                else -> visibleChatIds.any { it in ids }
                             }
                             if (keep) FolderTab(info.id, info.name?.text?.text.orEmpty()) else null
                         }

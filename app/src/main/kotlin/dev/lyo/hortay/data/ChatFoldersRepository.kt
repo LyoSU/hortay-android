@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
 
@@ -27,6 +29,21 @@ import java.util.concurrent.ConcurrentHashMap
  * is rare (only when the user creates / renames / reorders folders in any client),
  * so doing a parallel `GetChatFolder × N` once per emission is well within the
  * FLOOD_WAIT budget — TDLib serves from local state when it can.
+ *
+ * Per-folder *membership* (which concrete chat ids match the folder rule right now)
+ * is delegated to TDLib via `LoadChats(ChatListFolder)` + `GetChats(ChatListFolder)`:
+ * TDLib documents these as offline-when-not-a-bot and already applies every
+ * include/exclude/pinned/excludeArchived/excludeMuted/excludeRead rule itself.
+ * Reimplementing the rule evaluator in-process would silently drift if Telegram
+ * ever adds a new exclude_* flag (it has shipped several in TDLib history) — by
+ * round-tripping the resolved id list we always agree with the official client.
+ *
+ * The id-set cache is evicted on:
+ *   • [TdApi.UpdateChatFolders] — folder structure or rule changed; every cached
+ *     set is now potentially stale.
+ *   • [TdApi.UpdateChatAddedToList] / [TdApi.UpdateChatRemovedFromList] targeting
+ *     a [TdApi.ChatListFolder] — a single membership flipped; just evict that
+ *     folder's set so the next read repopulates.
  */
 class ChatFoldersRepository(
     private val td: TdSender,
@@ -40,6 +57,13 @@ class ChatFoldersRepository(
 
     private val fullFoldersCache = ConcurrentHashMap<Int, TdApi.ChatFolder>()
 
+    private val _folderChatIds = MutableStateFlow<Map<Int, Set<Long>>>(emptyMap())
+    val folderChatIds: StateFlow<Map<Int, Set<Long>>> = _folderChatIds.asStateFlow()
+
+    // Serialise the drain+get pair per folder so two concurrent callers don't both
+    // pay the LoadChats round-trip when the answer is already in flight.
+    private val folderChatIdsMutex = ConcurrentHashMap<Int, Mutex>()
+
     init {
         // TDLib emits an UpdateChatFolders shortly after auth, then again whenever the user
         // creates / renames / reorders folders in any client. Keep our state mirror in sync;
@@ -52,7 +76,27 @@ class ChatFoldersRepository(
                 _folders.value = list
                 fullFoldersCache.clear()
                 _fullFolders.value = emptyMap()
+                _folderChatIds.value = emptyMap()
                 scope.launch { resolveAll(list) }
+            }
+            .launchIn(scope)
+
+        // Live membership flips: when the user pins/excludes a chat in any client TDLib
+        // emits Update{Added,Removed}ToList for the affected ChatListFolder. Evict the
+        // cached id set so the next reader sees the new membership.
+        td.updates
+            .filterIsInstance<TdApi.UpdateChatAddedToList>()
+            .onEach { update ->
+                val folderId = (update.chatList as? TdApi.ChatListFolder)?.chatFolderId ?: return@onEach
+                _folderChatIds.value = _folderChatIds.value - folderId
+            }
+            .launchIn(scope)
+
+        td.updates
+            .filterIsInstance<TdApi.UpdateChatRemovedFromList>()
+            .onEach { update ->
+                val folderId = (update.chatList as? TdApi.ChatListFolder)?.chatFolderId ?: return@onEach
+                _folderChatIds.value = _folderChatIds.value - folderId
             }
             .launchIn(scope)
     }
@@ -73,6 +117,12 @@ class ChatFoldersRepository(
         _fullFolders.value = resolved
             .mapNotNull { (id, full) -> full?.let { id to it } }
             .toMap()
+        // Warm the membership cache so the tab bar can hide empty folders on the
+        // first composition that sees [fullFolders] populated — without this the
+        // visibility check has nothing to test against and falls back to "keep".
+        list.forEach { info ->
+            scope.launch { runCatching { folderChatIds(info.id) } }
+        }
     }
 
     /**
@@ -92,17 +142,41 @@ class ChatFoldersRepository(
     }
 
     /**
-     * Membership predicate for a channel post's chat. We only show channels in this app, so
-     * the include* booleans collapse to a single check on `includeChannels`. A chat is in
-     * the folder when it is explicitly pinned / included, OR the folder includes channels
-     * by rule — minus anything explicitly excluded. Mirrors what the official Telegram
-     * client does for the chat list.
+     * Resolve the chat-id set that belongs to [folderId] right now, delegating the rule
+     * evaluation (include/exclude/pinned/excludeArchived/excludeMuted/excludeRead, plus
+     * the include* category flags) to TDLib. Pattern mirrors `PostsRepository.refreshLocked`
+     * for [TdApi.ChatListMain]: drain via [TdApi.LoadChats] until TDLib stops paging,
+     * then snapshot via [TdApi.GetChats]. Cached and evicted as documented on the class.
      */
-    fun isChannelInFolder(folder: TdApi.ChatFolder, chatId: Long): Boolean {
-        if (folder.excludedChatIds?.let { chatId in it } == true) return false
-        val pinned = folder.pinnedChatIds?.let { chatId in it } == true
-        val included = folder.includedChatIds?.let { chatId in it } == true
-        return pinned || included || folder.includeChannels
+    suspend fun folderChatIds(folderId: Int): Set<Long> {
+        _folderChatIds.value[folderId]?.let { return it }
+        val mutex = folderChatIdsMutex.getOrPut(folderId) { Mutex() }
+        return mutex.withLock {
+            _folderChatIds.value[folderId]?.let { return@withLock it }
+            val list = TdApi.ChatListFolder(folderId)
+            drainChatList(list)
+            val ids: Set<Long> = runCatching { td.send(TdApi.GetChats(list, Int.MAX_VALUE)) }
+                .warnUnlessCancelled(TAG, "folderChatIds($folderId)")
+                .getOrNull()
+                ?.chatIds
+                ?.toHashSet()
+                ?: emptySet()
+            _folderChatIds.value = _folderChatIds.value + (folderId to ids)
+            ids
+        }
+    }
+
+    /**
+     * Drain `LoadChats(ChatListFolder)` until TDLib runs out of pages — same shape as
+     * `PostsRepository.drainChatList`. 404 → no more chats, terminate. Other errors get
+     * retried for a bounded number of iterations.
+     */
+    private suspend fun drainChatList(list: TdApi.ChatList) {
+        repeat(MAX_LOAD_CHATS_PAGES) {
+            val res = runCatching { td.send(TdApi.LoadChats(list, CHAT_LIST_HINT)) }
+            val err = res.exceptionOrNull()
+            if (err is TdClient.TdException && err.code == 404) return
+        }
     }
 
     /**
@@ -134,7 +208,13 @@ class ChatFoldersRepository(
         _folders.value = emptyList()
         _fullFolders.value = emptyMap()
         fullFoldersCache.clear()
+        _folderChatIds.value = emptyMap()
+        folderChatIdsMutex.clear()
     }
 
-    private companion object { const val TAG = "ChatFoldersRepository" }
+    private companion object {
+        const val TAG = "ChatFoldersRepository"
+        const val CHAT_LIST_HINT = 200
+        const val MAX_LOAD_CHATS_PAGES = 10
+    }
 }
