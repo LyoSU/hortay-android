@@ -30,10 +30,12 @@ import dev.lyo.hortay.data.FormattedText
  * indentation. AnnotatedString can colour text but cannot draw a bar that wraps across
  * lines, so quoted ranges have to leave the inline flow and become their own composables.
  *
- * The function falls through to [TextRenderer] when the text contains no BlockQuote spans
- * — that path keeps the cheap maxLines + expand-toggle behaviour. The segmented path
- * never collapses (quotes are rare and usually short, so expand-on-overflow there would
- * be more friction than value).
+ * The segmented path runs ONLY on detail surfaces ([maxLines] == [Int.MAX_VALUE]). On feed
+ * surfaces (any finite [maxLines]) we fall through to the inline path even when quote
+ * spans exist — otherwise a long post / caption with even one quote span would bypass
+ * the [maxLines] clamp and the "Показати більше" toggle. Inline quote ranges still read
+ * as quotes through the muted-colour SpanStyle from FormattedTextRenderer; the 2dp bar
+ * is reserved for detail surfaces where the user has committed to reading the full post.
  */
 @Composable
 fun RichText(
@@ -43,7 +45,7 @@ fun RichText(
     renderer: (@Composable (dev.lyo.hortay.ui.text.RenderableText, TextStyle, Int) -> Unit),
 ) {
     val quoteRanges = remember(formatted) { formatted.blockQuoteRanges() }
-    if (quoteRanges.isEmpty()) {
+    if (quoteRanges.isEmpty() || maxLines != Int.MAX_VALUE) {
         renderer(rememberRenderableText(formatted), style, maxLines)
         return
     }
