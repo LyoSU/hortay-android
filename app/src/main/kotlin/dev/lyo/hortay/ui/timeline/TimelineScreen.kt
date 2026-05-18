@@ -1753,10 +1753,12 @@ fun TimelineScreen(
                 )
             }
 
-            // Ambient "↓ N" unread-remaining chip, OldestUnreadFirst-only.
-            // Lives at BottomEnd so it never collides with the centred
-            // NewPostsPill — different role (ambient progress vs. alert),
-            // different anchor.
+            // Ambient unread-remaining FAB, OldestUnreadFirst-only.
+            // Circle silhouette + BottomEnd anchor keep it Gestalt-disjoint
+            // from the centred stadium-shaped NewPostsPill, so when both
+            // fire at once they read as distinct affordances even though
+            // both carry an arrow_downward glyph. See UnreadCounterPill KDoc
+            // for the silhouette-based hierarchy rationale.
             //
             // Count uses LIVE readCursors (via `cursorsState`), not the
             // frozen sort snapshot — so the number ticks down as
