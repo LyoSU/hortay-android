@@ -361,6 +361,21 @@ fun TimelineScreen(
             else -> FilterScope.All
         }
     }
+    // Stable string identity for the active scope. Used as part of [routeKey]
+    // so every piece of scene-level state (latcher, pinnedScrollSeedKeys,
+    // LazyListState.Saver bundle) re-keys on scope swap — that makes the
+    // swap behave like a mini cold-start: composition produces a fresh
+    // initialIndex for the new scope, LazyListState mounts at it on the
+    // SAME frame, no LaunchedEffect-scrolled second-frame flash. We key
+    // on the folder `id` only (not the title) so a TDLib `UpdateChatFolders`
+    // emit with a translated name doesn't invalidate the scene by mistake.
+    val scopeKey = remember(scope_filter) {
+        when (val s = scope_filter) {
+            FilterScope.All -> "all"
+            FilterScope.Archive -> "archive"
+            is FilterScope.Folder -> "folder:${s.id}"
+        }
+    }
     // Membership for the active folder, resolved by TDLib via GetChats(ChatListFolder).
     // We deliberately do NOT re-evaluate the include/exclude/excludeArchived/etc. rules in
     // process — TDLib already applies them and reimplementing them silently drifted any
@@ -596,7 +611,16 @@ fun TimelineScreen(
     // (the latched initialIndex would otherwise be preserved across the flip and a
     // seed-bump LaunchedEffect could no-op when old/new boundaries collide).
     val persistentFeedItems = remember(feedItems) { feedItems.toPersistentList() }
-    val routeKey = (if (showOnlyBookmarked) "saved" else "home") to feedOrder
+    // Scene-level identity. Includes [scopeKey] so a scope swap (Archive ↔
+    // All ↔ Folder) re-keys the latcher, the VM pinned-anchor map, AND the
+    // LazyListState saver bundle in one shot. The LazyColumn then mounts
+    // at the new scope's `Ready.initialIndex` on the SAME frame the
+    // composition produced it — no LaunchedEffect-scrolled second-frame
+    // flash, no `layoutInfo`-vs-`feedItems` race. Scroll within a scope is
+    // still preserved (saver bundle keyed on the same triple stays
+    // intact), and switching back to a previously-visited scope restores
+    // the captured anchor via [TimelineViewModel.pinnedScrollSeedKey].
+    val routeKey = Triple(if (showOnlyBookmarked) "saved" else "home", feedOrder, scopeKey)
     // Reuses [boundaryCursorsState] as the frozenCursors source: both
     // need a snapshot of the cursor map captured at first cold-start
     // landing + PTR completion, which is exactly what
@@ -806,65 +830,20 @@ fun TimelineScreen(
         }
     }
 
-    // Switching folders jumps to the top of the feed — "show me the top of this
-    // folder" is the expected behaviour. The gotcha: `LaunchedEffect(scope_filter)`
-    // by itself fires on every TimelineScreen REMOUNT (drilling into a channel
-    // then popping back unmounts/remounts this Composable; the new LaunchedEffect
-    // has no memory of the old key's value, so it fires even when the scope
-    // didn't actually change). That yanked the user to the top of the feed
-    // whenever they returned from a channel, regardless of where they were
-    // scrolled when they drilled in. Fix: track the previously-observed scope
-    // as a `rememberSaveable` String key — only scroll when the new key DIFFERS
-    // from the saved prior value AND a prior value exists (so initial mount
-    // does NOT scroll).
-    val scopeKey = remember(scope_filter) {
-        when (val s = scope_filter) {
-            FilterScope.All -> "all"
-            FilterScope.Archive -> "archive"
-            is FilterScope.Folder -> "folder:${s.id}"
-        }
-    }
-    var lastScopeKey by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(scopeKey) {
-        val previous = lastScopeKey
-        lastScopeKey = scopeKey
-        if (previous == null || previous == scopeKey) return@LaunchedEffect
-        // Mode-aware "home" — same target as the NavBar Home tap. In
-        // OldestUnreadFirst this lands at the first-unread boundary, not
-        // the oldest read post.
-        //
-        // Two consecutive races have to be defused here, both visible to
-        // the user as "Archive → All jumps me to the top of the feed":
-        //
-        //   1. Mirror state ordering. [homeScrollIndexState] is written by
-        //      a separate LaunchedEffect; Compose doesn't order concurrent
-        //      effects firing in the same frame. Read [homeScrollIndex]
-        //      directly here so we never pick up the previous scope's
-        //      stale mirror (typically 0 when Archive is empty).
-        //
-        //   2. LazyColumn layout lag. `feedItems` updates synchronously
-        //      during composition, but [LazyListState.layoutInfo] reflects
-        //      the most recent measurement — i.e. the PREVIOUS scope's
-        //      item count until the next measure pass commits.
-        //      `scrollToItem(N)` reads layoutInfo to validate the target;
-        //      if N exceeds the stale count it silently clamps (often to
-        //      the previous scope's lastIndex = 0 for an empty Archive),
-        //      so the scroll lands at the top instead of the new
-        //      boundary. Wait for `totalItemsCount` to catch up to the
-        //      new collection size before issuing the scroll. The 400 ms
-        //      cap is a safety net — a single frame is enough on real
-        //      devices, but we'd rather drop the auto-scroll than hang
-        //      the LaunchedEffect on a pathological remeasure stall.
-        //      Mirrors the pattern the pendingNew → newPostsPill scroll
-        //      already uses just below in this file.
-        val expected = feedItems.size
-        if (expected == 0) return@LaunchedEffect
-        withTimeoutOrNull(SCOPE_SWAP_LAYOUT_TIMEOUT_MS) {
-            androidx.compose.runtime.snapshotFlow { listState.layoutInfo.totalItemsCount }
-                .first { it >= expected }
-        }
-        listState.smartScrollTo(homeScrollIndex)
-    }
+    // Scope-swap landing is handled by composition, not by a LaunchedEffect:
+    // [scopeKey] is part of [routeKey], so a swap re-keys the latcher AND the
+    // LazyListState saver bundle in one shot. `Ready.initialIndex` for the
+    // new scope is computed during composition (via [buildTimelineUiState]
+    // with the same recency floor the cold-start latcher uses), and
+    // LazyColumn mounts at that index on the very first paint — no
+    // intermediate frame at the previous scope's `firstVisibleItemIndex`.
+    //
+    // The earlier LaunchedEffect-driven `smartScrollTo` flashed visibly on
+    // Archive → All because Compose dispatches LaunchedEffect bodies on the
+    // frame AFTER the one that drew the new collection with the stale
+    // listState index. Re-keying lifts the landing into the same frame as
+    // the collection change, where it belongs.
+
 
     // LaunchedEffect's block freezes its captures on the keys-last-changed composition
     // (Compose's [remember] under the hood holds the original lambda), so subsequent
@@ -1917,15 +1896,6 @@ private const val COLD_START_CURSOR_GRACE_MS = 800L
  * read-edge for display, not the landing target.
  */
 private const val BOUNDARY_RECENCY_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
-
-/**
- * Safety cap for the LazyColumn remeasure wait on a scope swap. A single
- * frame (~16 ms) is enough on real hardware, but if remeasure stalls (heavy
- * cards, GC pause, hidden recomposition pressure) we'd rather drop the
- * auto-scroll than hang the LaunchedEffect forever and leave the user
- * looking at the still-running coroutine doing nothing.
- */
-private const val SCOPE_SWAP_LAYOUT_TIMEOUT_MS = 400L
 
 /** Avatars in the "X нових постів" pill — same cap as the original VM-side limit. */
 private const val MAX_PILL_BADGES = 3
