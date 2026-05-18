@@ -47,10 +47,10 @@ import dev.lyo.hortay.ui.theme.asComposeShape
  *
  * Pairs with [UnreadCounterPill] in `OldestUnreadFirst` mode: this is the ALERT
  * (stadium silhouette, BottomCenter, primary) for arrivals sitting *outside* the
- * feed; the other is the AMBIENT (circle FAB silhouette, BottomEnd, secondary)
- * for unread *inside* the feed. Silhouette-disjoint Gestalt clusters keep the
- * two readable as distinct affordances even when both fire at once and both
- * carry an `arrow_downward` glyph.
+ * feed; the other is the AMBIENT M3 Expressive FAB (Circle→Burst press morph,
+ * BottomEnd, secondary) for unread *inside* the feed. Silhouette-disjoint
+ * Gestalt clusters keep the two readable as distinct affordances even when both
+ * fire at once and both carry an `arrow_downward` glyph.
  */
 @Composable
 fun NewPostsPill(
