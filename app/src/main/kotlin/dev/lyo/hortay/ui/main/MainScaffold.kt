@@ -92,35 +92,28 @@ fun MainScaffold(graph: AppGraph) {
     // overlay layer; tab restoration is automatic because we never moved
     // away from it.
     //
-    // Wait-for-content pattern: every channel push routes through
-    // [PostsRepository.primeChannelForOpen] with a short ([CHANNEL_PRELOAD_TIMEOUT_MS])
-    // grace window. The single-flight `loadChannelHistory` it kicks off is
-    // the same job [ChannelViewModel.init] would have awaited anyway —
-    // doing it here just shifts the wait to the source view so the target
-    // mounts with content already populated. Telegram-iOS / iOS Messages
-    // idiom: a brief "tap registered, content arriving" hold on the source
-    // beats a fresh-mounted target that flashes a skeleton. When the grace
-    // elapses the target is pushed with [preloadTimedOut = true] so its
-    // skeleton paints immediately (no further grace stacking) — at that
-    // point the user has already waited the source-side grace and another
-    // wait reads as a freeze. The slice's [loadChannelHistory] keeps
-    // running in repo scope, so when the target mounts and
-    // [ChannelViewModel] awaits the same Deferred it gets the result for
-    // free, no second round-trip.
+    // Parallel-prefetch contract: the push is instant — the destination
+    // enters its transition animation in the same frame as the tap. In
+    // parallel, [PostsRepository.primeChannelForOpen] kicks off the
+    // single-flight `loadChannelHistory` so its result is already in
+    // [_posts] (or arriving) by the time [ChannelViewModel] mounts and
+    // awaits the same Deferred. The screen-side anti-flicker grace
+    // ([SCREEN_MOUNT_GRACE_MS]) decides whether a skeleton paints —
+    // never a source-side timer. Animation = free runway for the
+    // prefetch, not a deadline; on warm cache the destination lands
+    // populated with no skeleton, on cold cache the skeleton appears
+    // briefly after the grace.
     val pushChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
-        scope.launch {
-            val warm = graph.postsRepository.primeChannelForOpen(chatId)
-            graph.nav.push(
-                NavEntry.Channel(
-                    chatId = chatId,
-                    scrollToMessageId = scrollTo,
-                    preloadTimedOut = !warm,
-                ),
-            )
-        }
-        Unit
+        graph.postsRepository.primeChannelForOpen(chatId)
+        graph.nav.push(NavEntry.Channel(chatId = chatId, scrollToMessageId = scrollTo))
     }
+    // Same parallel-prefetch contract as [pushChannel], applied to the
+    // comments overlay. [primeCommentsForOpen] kicks off [prefetchThread]
+    // so the anchor resolve and one batch of history land in TDLib's
+    // local DB. The screen-side grace decides whether to paint the
+    // loading overlay.
     val pushComments: (TimelinePost) -> Unit = { post ->
+        graph.commentsRepository.primeCommentsForOpen(post)
         graph.nav.push(NavEntry.Comments(anchor = post))
     }
     val popNav: () -> Unit = { graph.nav.pop() }
@@ -155,6 +148,13 @@ fun MainScaffold(graph: AppGraph) {
     // route `PublicHandleResult.User` straight to the in-app sheet — same surface as
     // an in-text `TextEntityTypeMentionName` tap, no Telegram-client bounce.
     var pendingUserId by remember { mutableStateOf<Long?>(null) }
+    // Soft-gated by design — the sheet renders with `null` profile and the
+    // seed name / avatar from the trigger (PostCard sender row, in-text
+    // mention, forward chip), so it's never blank on first frame. The
+    // sheet's own `LaunchedEffect(userId)` then runs `GetUser` +
+    // `GetUserFullInfo`; bio / personal-channel rows fade in as fields
+    // populate. No push-side prefetch — the sheet enters its animation
+    // and fetches in parallel, like every other tap target in the app.
     val userProfileOpener = remember {
         UserProfileOpener { userId -> pendingUserId = userId }
     }
@@ -212,12 +212,11 @@ fun MainScaffold(graph: AppGraph) {
         scope.launch {
             when (val resolved = graph.postsRepository.resolveChatKind(chatId)) {
                 is PublicHandleResult.Channel -> {
-                    val warm = graph.postsRepository.primeChannelForOpen(resolved.chatId)
+                    graph.postsRepository.primeChannelForOpen(resolved.chatId)
                     graph.nav.replaceTop(
                         NavEntry.Channel(
                             chatId = resolved.chatId,
                             scrollToMessageId = scrollTo,
-                            preloadTimedOut = !warm,
                         ),
                     )
                 }

@@ -344,22 +344,24 @@ fun CommentsScreen(
     val backOriginX = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 0f else 1f
 
     // A hot LRU hit on a previously-opened thread or a fast cold-path resolve
-    // (cached anchor + small / empty thread) lands Ready inside ~100-300 ms.
-    // Without a grace window the LoadingIndicator paints for one frame, then
-    // unmounts as the empty-state hero takes over — reads as a flicker even
-    // though both states are correct. [rememberDeferredLoading] short-circuits
-    // the first half of that race: stays false until the loading state has
-    // persisted past [LOADING_OVERLAY_GRACE_MS] (600 ms — same threshold the
-    // media overlays use, so the whole app shares one "slow enough to surface"
-    // contract). Keyed on (chatId, anchorKey) so navigating to a different
+    // (cached anchor + small / empty thread) lands Ready inside ~50-200 ms,
+    // helped along by [CommentsRepository.primeCommentsForOpen] which kicks
+    // off in parallel with the push. Without a grace window the
+    // LoadingIndicator paints for one frame and then unmounts as the empty-
+    // state hero takes over — reads as a flicker. [rememberDeferredLoading]
+    // gates it on [SCREEN_MOUNT_GRACE_MS] (120 ms) so fast loads paint zero
+    // skeleton; only genuinely slow threads cross the threshold and surface
+    // feedback. Keyed on (chatId, anchorKey) so navigating to a different
     // post starts a fresh grace window.
+    //
+    // Suppress the deferred spinner in the disabled / no-repo path —
+    // `state` is pinned at Loading there but we never resolve to Ready,
+    // so without this gate the spinner would unconditionally land after
+    // the grace and sit on top of the empty-state hero forever.
     val showLoadingOverlay = rememberDeferredLoading(
-        // Suppress the deferred spinner in the disabled / no-repo path —
-        // `state` is pinned at Loading there but we never resolve to Ready,
-        // so without this gate the spinner would unconditionally land after
-        // the 600 ms grace and sit on top of the empty-state hero forever.
         pending = !threadDisabled && state is CommentsRepository.ThreadState.Loading,
         key = post.chatId to (candidateIds.minOrNull() ?: post.id),
+        graceMs = dev.lyo.hortay.data.SCREEN_MOUNT_GRACE_MS,
     )
 
     Scaffold(

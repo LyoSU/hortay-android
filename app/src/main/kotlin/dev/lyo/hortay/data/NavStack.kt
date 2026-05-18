@@ -45,21 +45,17 @@ sealed interface NavEntry {
      * `t.me/<chan>/<msg>` push the channel pre-targeted at a specific post;
      * the screen consumes it once and scrolls on first composition.
      *
-     * [preloadTimedOut] is set by the push-site when a "wait-for-content"
-     * preload exceeded its grace window. When true, [ChannelScreen] paints
-     * the skeleton immediately instead of running the standard
-     * `rememberDeferredLoading` grace — the user already waited the
-     * push-side grace, so an additional grace inside the screen would
-     * stack two waits ("blocked source view, then blank target view"). When
-     * false, the channel slice is already warm on mount and the standard
-     * grace applies for residual cases (e.g. deep-link around-load still
-     * resolving the exact target row).
+     * No push-side preload flag: the destination's own
+     * [SCREEN_MOUNT_GRACE_MS] anti-flicker grace decides whether a
+     * skeleton paints, based on whether [ChannelViewModel] has resolved
+     * to Ready by then. Push happens in parallel with prefetch — see
+     * [PostsRepository.primeChannelForOpen] for the parallel-not-blocking
+     * contract.
      */
     @Immutable
     data class Channel(
         val chatId: Long,
         val scrollToMessageId: Long? = null,
-        val preloadTimedOut: Boolean = false,
         override val entryId: String = UUID.randomUUID().toString(),
     ) : NavEntry
 

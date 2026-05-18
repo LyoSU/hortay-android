@@ -308,6 +308,12 @@ private fun humanizeBytes(bytes: Long, units: Array<String>): Pair<String, Strin
  *
  * Anything still loading past [graceMs] gets the full overlay — at that point the user is
  * looking at a slow file and *needs* feedback (and a tap-to-cancel affordance).
+ *
+ * The grace is scaled by the system animator-duration-scale via
+ * [dev.lyo.hortay.data.effectiveSkeletonGrace] — `0` when animations are
+ * disabled (accessibility / developer options) so the spinner paints
+ * immediately when there's no transition to hide behind, and proportional
+ * when the user has set x0.5 / x2 animation speed.
  */
 @Composable
 fun rememberDeferredLoading(
@@ -315,9 +321,13 @@ fun rememberDeferredLoading(
     key: Any?,
     graceMs: Long = LOADING_OVERLAY_GRACE_MS,
 ): Boolean {
-    val visible by produceState(initialValue = false, pending, key) {
+    val effective = remember(graceMs) { dev.lyo.hortay.data.effectiveSkeletonGrace(graceMs) }
+    val visible by produceState(
+        initialValue = pending && effective == 0L,
+        pending, key, effective,
+    ) {
         value = if (pending) {
-            delay(graceMs)
+            if (effective > 0L) delay(effective)
             true
         } else {
             false

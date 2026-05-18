@@ -208,10 +208,6 @@ private fun RenderNavEntry(
             onReportChannel = { onOpenReport(entry.chatId, null) },
             feedOrder = feedOrder,
             startupPhase = graph.startupCoordinator.phase,
-            // Source-side preload exceeded its grace window — the user
-            // already waited there, so skip the screen-side skeleton grace
-            // (would otherwise stack two waits on a slow open).
-            instantSkeleton = entry.preloadTimedOut,
         )
         is NavEntry.Comments -> CommentsScreen(
             post = entry.anchor,

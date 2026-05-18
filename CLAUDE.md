@@ -54,6 +54,7 @@ DI built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(applicatio
 | StartupCoordinator | `data/StartupCoordinator.kt` | `Booting → Active` gates speculative work. |
 | Channel-drill as overlay | `ui/main/MainScaffold.kt` | `channelStack` is `remember`; AnimatedVisibility over always-mounted feed. |
 | ReadCursors / OldestUnreadFirst | `data/ReadCursors.kt`, `ui/timeline/LocalReadCursors.kt` | `PersistentMap` + CompositionLocal; snapshot frozen at refresh boundaries. |
+| Tap-navigation contract | `data/TapNavigation.kt` (`SCREEN_MOUNT_GRACE_MS`, `effectiveSkeletonGrace`) | Push is instant; prefetch fire-and-forget in parallel; **screen-side** anti-flicker grace (120 ms × `ValueAnimator.getDurationScale()`) decides skeleton. **No push-side timer** — `withTimeoutOrNull` around `nav.push` adds lag for zero UX gain. |
 
 ## Critical identifiers
 
@@ -97,10 +98,14 @@ Each `❌` carries a **Revisit:** clause — the concrete condition that would j
 - ❌ Stripping `@Immutable` from `TimelinePost` / `PostContent` graph. Silent skippability regression.
 - ❌ Substituting `PersistentList` / `PersistentMap` with `List` / `Map` "for simplicity".
 - ❌ Passing heavy singletons as Composable params (caused constructor explosion on 600-row PostCard). Use CompositionLocal.
+- ❌ Blocking the tap → push transition on a prefetch (`withTimeoutOrNull(N) { prefetch }; nav.push`). Source-side timer = lag for zero UX win. **Push is instant; prefetch is fire-and-forget; the destination's own anti-flicker grace decides skeleton.** See `data/TapNavigation.kt` + the `prime*ForOpen` helpers in `PostsRepository` / `CommentsRepository`.
+- ❌ Hardcoding a skeleton-grace number per screen. Screen-mount loading states use `rememberDeferredLoading(graceMs = SCREEN_MOUNT_GRACE_MS)` (120 ms, anti-flicker); media file-IO uses the default `LOADING_OVERLAY_GRACE_MS` (600 ms, longer latency budget). Two calibrated constants, not knobs to retune ad-hoc.
+- ❌ Push-side flags on `NavEntry` that override screen-side loading (e.g. `preloadTimedOut`, `instantSkeleton`). They leak push logic into the model and turn one decision into two — the screen already has all the data it needs (its own state) to decide.
 - ✅ Material 3 Expressive: `MaterialExpressiveTheme` + `MotionScheme.expressive()`.
 - ✅ Predictive back: `PredictiveBackHandler` + `Animatable` + `graphicsLayer`. Only one handler `enabled = true` at any time.
 - ✅ Lambdas in `LazyColumn`/`LazyRow` items wrapped in `remember(...)` with stable keys. Inline `{ … }` capturing non-stable scope breaks skipping under scroll.
 - ✅ Read state: `ReadCursors` is the single source of truth, consumed via `LocalReadCursors`. Cursors are monotonic — clamp on every seed/update (`if (new > existing) put`) to survive logout/login races.
+- ✅ `rememberDeferredLoading` scales its grace by `ValueAnimator.getDurationScale()` via `effectiveSkeletonGrace` — reduced motion (system / developer options) collapses the grace to 0 and paints the skeleton on the first Loading frame.
 
 ### i18n & a11y
 

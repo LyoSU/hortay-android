@@ -158,16 +158,6 @@ fun ChannelScreen(
      * would otherwise bypass that budget. Null = unguarded (guest mode / tests).
      */
     startupPhase: kotlinx.coroutines.flow.StateFlow<dev.lyo.hortay.data.StartupCoordinator.Phase>? = null,
-    /**
-     * Signal from the push-site that the wait-for-content preload exceeded
-     * its grace window. When true, the resolving-state skeleton paints
-     * immediately (no [rememberDeferredLoading] grace) — the user already
-     * waited the source-side grace, so stacking another wait on the target
-     * reads as a freeze. When false, the standard 600 ms grace applies so a
-     * fast resolve (deep-link target landing within that window) doesn't
-     * flash a skeleton.
-     */
-    instantSkeleton: Boolean = false,
 ) {
     // Per-channel VM. viewModel() keys the instance by (class, key), so each chatId
     // gets its own VM rather than sharing the all-feed TimelineViewModel. The factory is
@@ -657,32 +647,26 @@ fun ChannelScreen(
                     ChannelUiState.Resolving -> displayedItems
                 }
                 val isResolving = channelUiState is ChannelUiState.Resolving
-                // [rememberDeferredLoading] short-circuits "fast open" cases.
-                // Most channel entries land Ready in 100-400 ms (per-channel
-                // history is local-cache served by TDLib when the channel has
-                // ever surfaced in the merged feed) — without a grace window,
-                // [SkeletonFeed] paints for one or two frames, then unmounts
-                // as Ready takes over. That's read as a flicker: "скелет при
-                // відкритті каналу швидкому все одно є". The grace keeps the
-                // skeleton off-screen during the common-case sub-grace
-                // resolve. Anything past 600 ms is a slow open that genuinely
-                // needs feedback (cold-cache deep-link, FLOOD_WAIT, post-DC
-                // migration) — skeleton paints then. Shared
-                // [LOADING_OVERLAY_GRACE_MS] (600 ms) keeps the threshold
-                // identical to the comments overlay and media indicators —
-                // one app-wide contract for "slow enough to surface".
-                //
-                // [instantSkeleton] overrides the grace: when the push-site
-                // already burned the wait-for-content preload window
-                // (`primeChannelForOpen` timed out) the user has already
-                // waited 300 ms on the source view, so stacking another grace
-                // on the target would surface as a freeze. The skeleton
-                // paints on the first Resolving frame in that case.
-                val deferredSkeleton = rememberDeferredLoading(
+                // Anti-flicker grace for the resolving-state skeleton. Most
+                // channel entries land Ready in 50-200 ms — local-cache
+                // history when the channel has surfaced in the merged feed,
+                // helped by [PostsRepository.primeChannelForOpen] which the
+                // push-site fires in parallel. Without a grace window
+                // [SkeletonFeed] paints for one or two frames and unmounts
+                // — read as flicker. Gated on [SCREEN_MOUNT_GRACE_MS]
+                // (120 ms) so fast resolves paint zero skeleton; only
+                // genuinely slow opens (cold deep-link, FLOOD_WAIT, post-DC
+                // migration) cross the threshold and surface feedback.
+                // Animation-duration-scale aware via
+                // [effectiveSkeletonGrace] inside `rememberDeferredLoading`:
+                // when the user has disabled animations the grace becomes 0
+                // and the skeleton paints on the first Resolving frame —
+                // there's no transition to hide behind.
+                val showSkeleton = isResolving && rememberDeferredLoading(
                     pending = isResolving,
                     key = chatId,
+                    graceMs = dev.lyo.hortay.data.SCREEN_MOUNT_GRACE_MS,
                 )
-                val showSkeleton = isResolving && (instantSkeleton || deferredSkeleton)
                 when {
                     showSkeleton -> {
                         SkeletonFeed(modifier = Modifier.fillMaxSize())

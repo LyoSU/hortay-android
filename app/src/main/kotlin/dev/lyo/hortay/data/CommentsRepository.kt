@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -178,6 +179,34 @@ class CommentsRepository(
                 // retry-after-error per affected anchor.
                 .onFailure { prefetchedAnchors.remove(anchorKey) }
         }
+    }
+
+    /**
+     * Fire-and-forget pre-warm of a thread ahead of a navigation push
+     * (tap-driven, foreground). Returns immediately — does NOT block the
+     * caller.
+     *
+     * Kicks off [prefetchThread] in this repository's own scope: resolves
+     * the anchor and primes TDLib's local DB with one batch of thread
+     * history. When [CommentsScreen] mounts and [observeThread] runs its
+     * bootstrap, the same `GetMessageThreadHistory` call returns from
+     * local cache instead of paying a server round-trip — the screen
+     * lands Ready in one frame instead of paging in.
+     *
+     * `prefetchThread` is self-deduping via [prefetchedAnchors] +
+     * [inflightAnchors], so a viewport-stable warm-up already in flight
+     * (or already completed) makes this a cheap no-op.
+     *
+     * Architectural contract: the push happens in parallel with this
+     * prefetch, not after it. Whether a loading overlay paints on the
+     * destination is the destination's own decision — driven by whether
+     * thread state is still Loading when its [SCREEN_MOUNT_GRACE_MS]
+     * anti-flicker grace elapses.
+     */
+    fun primeCommentsForOpen(post: TimelinePost) {
+        val candidateIds = post.albumMessageIds.ifEmpty { listOf(post.id) }
+        if (candidateIds.isEmpty()) return
+        scope.launch { prefetchThread(post.chatId, candidateIds) }
     }
 
     /**

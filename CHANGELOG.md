@@ -11,7 +11,8 @@
 
 ### Changed
 - Posts now mark as read after 500 ms of viewport-stable dwell, down from 1 s.
-- Channel navigation waits up to 300 ms for content before pushing, so the destination mounts populated instead of flashing a skeleton.
+- Opening a channel, comments thread, or user profile is instant — the destination enters its transition animation in the same frame as the tap, prefetch runs in parallel, and fast loads paint zero skeleton; only opens still loading past 120 ms surface a skeleton.
+- Skeleton anti-flicker grace tracks the system animator-duration-scale, so users who disabled animations see feedback immediately and users on x2 animation speed get a proportionally longer grace.
 - Tapping the forwarded-from author on a forward chip drills into the source channel AT the original post, not just at its newest entry.
 - Auto-download settings (Wi-Fi / Cellular / Roaming) now sync across Telegram clients via your account.
 - Tapping an `@username` mention in a post opens the in-app user profile sheet instead of bouncing out to Telegram.
