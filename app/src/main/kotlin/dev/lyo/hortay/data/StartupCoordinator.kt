@@ -14,18 +14,31 @@ import kotlinx.coroutines.withTimeoutOrNull
 /**
  * Process-wide "is the TDLib client past its first-render storm yet?" signal.
  *
- * Why this exists. On the FIRST [AuthorizationStateReady] of a session the
- * TDLib local DB is empty: every `GetChat`, `GetChatHistory`, `GetMessageThread`
- * we issue is a real server round-trip rather than a cache hit, and TDLib's own
- * internal sync (UpdateNewChat × every chat, UpdateUser × every contact,
- * UpdateSupergroup × every channel) is competing for the same per-DC active-
- * slot pool we are. Stacking speculative work on top of that — auto-download
- * for every newly-arrived post, comments-thread prefetch for every dwell-
- * stable viewport — was the empirical cause of "FLOOD_WAIT one minute after I
- * just logged in." Per tdlib/td#786 the active-slot pool is small (~4 on
- * mobile, ~10 on Wi-Fi) and per tdlib/td#3019 the RPC queue is per-client and
- * serialised, so an unbounded burst doesn't go faster — it just queues up
- * behind the user's eventual interactive tap.
+ * Why this still exists after the cold-start rework. As of the 2026-05-11
+ * lastMessage-only refactor, [PostsRepository.refreshLocked] no longer fans
+ * out `GetChat × N` + `GetChatHistory × N` on cold-start — it drives
+ * `LoadChats(ChatListMain)` and harvests `Chat.lastMessage` from the resulting
+ * `UpdateNewChat` bursts. The per-channel RPC fan-out that originally
+ * motivated this gate is gone.
+ *
+ * What remains is bounded but not zero:
+ *   • TDLib's own initial sync on the first [AuthStage.Ready] still produces
+ *     a burst of `UpdateNewChat × every chat`, `UpdateUser × every contact`,
+ *     `UpdateSupergroup × every channel`, plus the auth-side `getMe`, push-
+ *     token register, notification-settings sync. Per tdlib/td#786 the
+ *     active-slot pool is small (~4 mobile, ~10 Wi-Fi) and per tdlib/td#3019
+ *     the RPC queue is per-client and serialised — even with our own fan-out
+ *     gone, layering speculative `DownloadFile` + `GetMessageThread` on top
+ *     of TDLib's own sync chatter still races for the same slots.
+ *   • The `lastMessage` harvest itself fans out [PostsRepository] `ingest`
+ *     calls, some of which probe album siblings via `GetMessage`. Bounded
+ *     at concurrency 4, but live during the same window.
+ *
+ * Speculative consumers (auto-download for newly-arrived posts, comments-
+ * thread prefetch for dwell-stable viewports) are non-interactive — the user
+ * isn't waiting on either. Holding them back during the first few seconds
+ * keeps the active-slot pool reserved for the work that produces the visible
+ * feed.
  *
  * The coordinator exposes [phase] which speculative subsystems consult before
  * dispatching:
@@ -42,9 +55,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  *      perceptual definition of "feed loaded") OR [BOOT_TIMEOUT_MS] elapsed
  *      since auth.Ready (escape hatch — a brand-new account with zero
  *      subscriptions must still eventually activate).
- *   2. A further [SETTLE_MS] elapsed, giving TDLib's own
- *      sync chatter and our `refreshLocked` per-channel `GetChatHistory` fan-
- *      out room to drain before speculative consumers re-enter the pipe.
+ *   2. A further [SETTLE_MS] elapsed, giving TDLib's initial-sync update
+ *      stream and our lastMessage-harvest `ingest` calls room to drain
+ *      before speculative consumers re-enter the pipe.
  *
  * Transition `Ready → !Ready` (logout, connection-close-and-recover, or a
  * fresh login flow) resets to [Phase.Booting] so the next sign-in starts a
@@ -55,7 +68,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * Consumers (current):
  *   • [MediaAutoDownloader.dispatchAsync] — skip while Booting.
- *   • [ui.timeline.TimelineScreen] comments-thread prefetch — skip while Booting.
+ *   • [ui.timeline.TimelineScreen] / [ui.timeline.ChannelScreen]
+ *     comments-thread prefetch — skip while Booting.
  *
  * Consumers (deliberately NOT gated):
  *   • [PostsRepository.refreshLocked] — this is what the user is waiting to see;
@@ -135,12 +149,15 @@ class StartupCoordinator(
         const val BOOT_TIMEOUT_MS = 8_000L
 
         /**
-         * Buffer between "feed populated" and "speculative work allowed." Sized
-         * to cover the tail of `refreshLocked`'s per-channel fan-out at
-         * concurrency=4: 200 channels × ~50 ms RTT ÷ 4 ≈ 2.5 s total, of which
-         * the first ~1 s is spent reaching the 20-post threshold. The
-         * remaining ~1.5 s is the window we want to keep clear of speculative
-         * load.
+         * Buffer between "feed populated" and "speculative work allowed." With
+         * the per-channel `GetChatHistory` fan-out gone (2026-05-11), this
+         * window now covers TDLib's own initial-sync drain: the
+         * `UpdateNewChat`/`UpdateUser`/`UpdateSupergroup` burst that follows
+         * `LoadChats(ChatListMain)`, plus the tail of our lastMessage-harvest
+         * `ingest` (concurrency=4, album-sibling `GetMessage` probes per
+         * album-tail chat). Empirically the 8-post threshold is reached well
+         * before this drains; 1.5 s keeps speculative `DownloadFile` /
+         * `GetMessageThread` out of the way until the active-slot pool frees.
          */
         const val SETTLE_MS = 1_500L
     }
