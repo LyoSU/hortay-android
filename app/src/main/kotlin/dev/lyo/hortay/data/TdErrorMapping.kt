@@ -23,6 +23,14 @@ enum class TdErrorKind {
     NotFound,       // 404 — chat/message/file deleted or never existed for this account.
     ServerError,    // 500..599 — Telegram side, transient.
     Cancelled,      // Coroutine cancellation; not a real error to surface.
+    // TDLib's documented "silent" sentinel — see classtd_1_1td__api_1_1error.html: "If the
+    // error code is 406, the error message must not be processed in any way and must not be
+    // displayed to the user." It surfaces for operations TDLib decided are no-ops at the
+    // local layer (e.g. SetPollAnswer / AddMessageReaction when the requested state already
+    // matches the local mirror, edit-with-no-change, processPushNotification fast-paths).
+    // Callers that flip optimistic UI on a Boolean return treat this as success — an
+    // authoritative UpdateMessageContent / UpdateMessageInteractionInfo will reconcile.
+    Silent,
     Unknown,        // Anything we haven't categorised yet.
 }
 
@@ -58,6 +66,9 @@ fun Throwable.toUserFacing(
         code == 401 -> TdErrorKind.AccessDenied to res.getString(R.string.err_unauthorized)
         code == 403 -> TdErrorKind.AccessDenied to res.getString(R.string.err_forbidden, operation)
         code == 404 -> TdErrorKind.NotFound to res.getString(R.string.err_not_found, operation)
+        // 406 — TDLib's "do not surface" sentinel. The empty message intentionally
+        // satisfies the docstring contract; surfaceTo discards Silent without reading it.
+        code == 406 -> TdErrorKind.Silent to ""
         code in 500..599 -> TdErrorKind.ServerError to res.getString(R.string.err_server)
         // 0 covers non-TdException throwables (timeouts, JNI quirks, IO exceptions). The
         // underlying cause is usually a network blip — call it that explicitly so the
@@ -105,6 +116,10 @@ fun Throwable.surfaceTo(
     } catch (e: kotlinx.coroutines.CancellationException) { throw e }
     when {
         kind == TdErrorKind.Cancelled -> return
+        // TDLib's 406 contract: never display the error message. The bus stays silent and
+        // the caller decides whether to revert optimistic UI (see ChannelActionsRepository
+        // for the SetPollAnswer / AddMessageReaction "treat as success" wiring).
+        kind == TdErrorKind.Silent -> return
         kind == TdErrorKind.Network && connection == ConnectionStatus.WaitingForNetwork -> return
         else -> bus.post(msg, severityFor(kind))
     }
@@ -115,3 +130,12 @@ private fun severityFor(kind: TdErrorKind): UserMessageBus.Severity = when (kind
     TdErrorKind.Network -> UserMessageBus.Severity.Info
     else -> UserMessageBus.Severity.Error
 }
+
+/**
+ * True when this throwable is TDLib's documented silent-no-op sentinel (code 406). Callers
+ * with optimistic UI (poll vote, reaction toggle) treat a 406 outcome as success so the
+ * authoritative `UpdateMessageContent` / `UpdateMessageInteractionInfo` is what flips the
+ * chip — never a snackbar that TDLib explicitly forbids.
+ */
+internal fun Throwable?.isTdSilent(): Boolean =
+    (this as? TdClient.TdException)?.code == 406
