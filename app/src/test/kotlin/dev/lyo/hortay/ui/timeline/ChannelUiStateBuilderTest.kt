@@ -31,11 +31,14 @@ class ChannelUiStateBuilderTest {
     }
 
     @Test
-    fun `Ready when slice already populated even if history still loading`() {
-        // Channel was in the merged feed's cold-start harvest, so `posts`
-        // already had this slice before `loadChannelHistory` resolved. Don't
-        // flash a skeleton over real content — the deeper history merges
-        // into the live posts flow as it arrives.
+    fun `Resolving while history loading even when slice has cold-harvest posts`() {
+        // The merged feed's cold-start harvest populates exactly ONE post per
+        // channel (from Chat.lastMessage). On first channel open from a feed
+        // post the slice is "non-empty" by virtue of that single harvest
+        // artifact, but the deep load is still in flight and will back-fill
+        // older posts above the visible row mid-scroll. Stay in Resolving so
+        // the LazyColumn only mounts once with the full slice at the correct
+        // index — no jarring "one-post-then-pop-in" jump.
         val items = listOf(item(100L), item(99L)).toPersistentList()
         val s = buildChannelUiState(
             items = items,
@@ -45,10 +48,7 @@ class ChannelUiStateBuilderTest {
             searchActive = false,
             chatId = 1L,
         )
-        assertTrue(s is ChannelUiState.Ready)
-        s as ChannelUiState.Ready
-        assertEquals(0, s.initialIndex)
-        assertNull(s.highlightedMessageId)
+        assertTrue(s is ChannelUiState.Resolving)
     }
 
     @Test

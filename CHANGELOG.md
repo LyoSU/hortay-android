@@ -18,6 +18,7 @@
 - Tapping an `@username` mention in a post opens the in-app user profile sheet instead of bouncing out to Telegram.
 
 ### Fixed
+- Opening a channel from a feed post no longer shows a single post that suddenly grows into the full history mid-scroll; the screen waits for the deeper load and mounts the list in one frame at the right anchor.
 - Returning from a channel to the feed no longer jumps to a different post when an album-tailed channel hydrates in the background.
 - Channel scroll-up no longer hits an invisible "loading limit"; pagination now triggers near the older edge instead of running away on cold entry in OldestUnreadFirst mode.
 - Scroll position is preserved on return from a channel and while scrolling inside a channel; reply chains no longer collapse into a Thread row, so LazyColumn's keyed anchor stays put through every ingest.

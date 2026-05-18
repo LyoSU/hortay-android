@@ -51,15 +51,29 @@ sealed interface ChannelUiState {
  * result has reached the posts flow (or timed out). Until then we stay in
  * Resolving — never fall through to Ready with a wrong index.
  *
- * Resolving while [historyLoading] is true is gated on [items] being empty.
- * `ChannelViewModel` always issues `loadChannelHistory` on init, even when
- * the merged-feed's cold-start harvest (or a prior visit this session) has
- * already populated 1+ posts in the per-channel slice — blocking the
- * LazyColumn behind a SkeletonFeed during that round-trip rendered the
- * placeholder for one frame before the real content swapped in, visible
- * as the "skeleton блимає навіть коли пости швидкі" symptom. When the
- * slice already has content the deeper history merges into the live
- * [PostsRepository.posts] flow without bouncing the UI through Resolving.
+ * Resolving while [historyLoading] is true is the cold-entry gate. The
+ * cold-start [dev.lyo.hortay.data.posts.PostsRepository.refreshLocked]
+ * harvest populates exactly ONE post per channel (from `Chat.lastMessage`,
+ * for the home feed). Without this gate, opening that channel from a feed
+ * post mounted the LazyColumn with that single post, and ~300-800 ms later
+ * the head-load result merged in above (asc-by-date sort). The LazyColumn's
+ * key-anchor preserved the visible row while a wall of older content popped
+ * in above it — visible to the user as a jarring jump right after open.
+ * Gating on `historyLoading` keeps the channel in Resolving until the deep
+ * load has landed, so the LazyColumn mounts ONCE with the full slice at
+ * the correct index.
+ *
+ * Two mechanisms keep this from flashing a skeleton on warm/fast paths:
+ *   - [dev.lyo.hortay.ui.timeline.ChannelViewModel] seeds `_historyLoading`
+ *     synchronously from
+ *     [dev.lyo.hortay.data.posts.PostsRepository.hasWarmChannelHistory],
+ *     so warm re-entries (cooldown active = full slice already in memory)
+ *     start with `historyLoading = false` and land Ready on frame one.
+ *   - The screen-side [dev.lyo.hortay.data.SCREEN_MOUNT_GRACE_MS] (120 ms)
+ *     anti-flicker grace in [ChannelScreen] suppresses the SkeletonFeed for
+ *     sub-120 ms Resolving→Ready transitions, so even cold paths only paint
+ *     a skeleton on genuinely slow loads.
+ *
  * Deep-link paths still gate correctly: the `scrollToMessageId` branch
  * below returns Resolving when the target hasn't landed in `items` yet
  * regardless of `historyLoading`, so we never paint a wrong-index Ready.
@@ -90,7 +104,7 @@ internal fun buildChannelUiState(
     feedOrder: FeedOrder = FeedOrder.Newest,
     cursors: ReadCursors = EmptyReadCursors,
 ): ChannelUiState {
-    if (historyLoading && items.isEmpty()) return ChannelUiState.Resolving
+    if (historyLoading) return ChannelUiState.Resolving
     if (scrollToMessageId == null || searchActive) {
         val initialIndex = if (feedOrder == FeedOrder.OldestUnreadFirst && items.isNotEmpty()) {
             val anchorPosts = items.map { it.posts().first() }
