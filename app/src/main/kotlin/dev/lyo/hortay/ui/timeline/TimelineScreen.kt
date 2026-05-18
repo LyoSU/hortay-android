@@ -831,10 +831,20 @@ fun TimelineScreen(
         if (previous != null && previous != scopeKey) {
             // Mode-aware "home" — same target as the NavBar Home tap. In
             // OldestUnreadFirst this lands at the first-unread boundary, not
-            // the oldest read post. Route through [smartScrollTo] so short
-            // distances animate while large jumps hard-cut, matching the
-            // home-tap and deep-link landing behaviour.
-            listState.smartScrollTo(homeScrollIndexState.intValue)
+            // the oldest read post. Read [homeScrollIndex] DIRECTLY here,
+            // not through [homeScrollIndexState] — the mirror is written by
+            // a separate LaunchedEffect and Compose does not order
+            // concurrent effects firing in the same frame. On scope swap
+            // (Archive → All in particular) this effect can run before the
+            // mirror writer, so the mirror still holds the previous scope's
+            // value — typically 0 when the previous scope was empty (a
+            // user with no archived chats sees `homeScrollIndex = 0` while
+            // on the Archive tab). The user-visible symptom is "switching
+            // back to All jumps me to the top of the feed". The State<Int>
+            // backing [homeScrollIndex] updates synchronously when
+            // `feedItems` changes (via derivedStateOf), so reading it
+            // directly here always reflects the current scope's target.
+            listState.smartScrollTo(homeScrollIndex)
         }
     }
 

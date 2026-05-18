@@ -47,6 +47,7 @@
 - Cold-start anchor no longer lands on a self-authored post in an admin / outgoing-only channel — the `0 / 0` cursor shape (TDLib invariant for channels with no incoming reads) is no longer interpreted as "everything unread".
 - Switching folder tabs no longer auto-scrolls onto a weeks-old dormant unread; the same 7-day recency floor that protects the cold-start landing now applies to every scope jump (folder switch, NavBar home re-tap, ↓N pill fallback).
 - Returning to the feed from a deep drill (channel → comments → back-back) no longer lands on a post that loaded into the background while the overlay was up; the cold-start anchor is now pinned to the post identity instead of its row index, so ingested history above it can't shift the anchor onto a different row.
+- Switching from Archive back to All no longer jumps to the top of the feed; the scope-swap scroll target now reads the boundary directly instead of through a mirror state that could still hold the empty-Archive value when the swap fired.
 
 ## [0.5.0] — 2026-05-17
 
