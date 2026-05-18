@@ -136,6 +136,43 @@ class PostsRepository(
      * cold-start RPC storms. The non-mutex design is intentional.
      */
     private val refreshMutex = Mutex()
+
+    /**
+     * Chat metadata mirror, fed by [TdApi.UpdateNewChat]. Three load-bearing
+     * reasons this cache is kept even after [MessageMapper] dropped its own
+     * `User`/`Chat`/`Supergroup` mirrors (Wave 1: mapper now reads through
+     * direct `td.send(GetUser/GetChat/GetSupergroup)`, which are offline calls
+     * per TDLib docs):
+     *
+     *   1. **Cold-start harvest** ([refreshLocked]). The per-chat-id loop reads
+     *      `chatCache[chatId].lastMessage` for ~200 chats. Replacing this with
+     *      `td.send(GetChat)` reintroduces `GetChat × N` — the FLOOD_WAIT-class
+     *      regression CLAUDE.md's "Load-bearing" table explicitly forbids.
+     *   2. **`UpdateChatLastMessage` gate** (see this file's
+     *      `td.updates.filterIsInstance<UpdateChatLastMessage>()` listener).
+     *      Containment check short-circuits before the chat is resolved; without
+     *      it, the per-update fallback to `GetChat` re-creates the same fanout
+     *      during cold-start update storms.
+     *   3. **Cold-start sync barrier** ([suspendUntilOrTimeout] over
+     *      `chatCache.containsKey(it)` in [refreshLocked]). The cache is the
+     *      observable for `UpdateNewChat` arrivals — there is no other signal
+     *      that `LoadChats` has drained for a given id. A `GetChat` lookup here
+     *      would always succeed (TDLib resolves it locally) and we'd never know
+     *      whether the chat-list page actually loaded.
+     *
+     * Steady-state reads ([chatTitle], [chatAvatar], [resolveChatKind],
+     * [loadChannelHistoryLocked], [searchInChannel], …) could in principle
+     * suspend on `GetChat` directly post-Wave-1, but they still benefit from
+     * the cache: skipping the JNI hop avoids contention with the same
+     * `td.send` queue that handles user-driven RPCs during scroll. Cost is
+     * trivial (one Chat POJO per subscribed channel, ~hundreds of bytes).
+     *
+     * Invariant maintenance: [handleChatTitle] / [handleChatPhoto] evict
+     * (`remove`) on the corresponding update instead of in-place mutation —
+     * the shared POJO would otherwise be read mid-write by a concurrent
+     * worker. Consumers that miss the cache fall back to `td.send(GetChat)`
+     * and re-populate.
+     */
     private val chatCache = ConcurrentHashMap<Long, TdApi.Chat>()
 
     /**
@@ -146,13 +183,21 @@ class PostsRepository(
      * [TdApi.Supergroup.memberCount].
      *
      * Caching the full [TdApi.Supergroup] (not just the count) costs ~200B per
-     * channel, lets every supergroup-derived read short-circuit the
-     * [TdApi.GetSupergroup] RPC, and keeps the mirror future-proof for other
-     * fields ([status], [hasLinkedChat], [isVerified], …) without a re-shape.
+     * channel and lets every supergroup-derived read short-circuit the
+     * [TdApi.GetSupergroup] RPC.
      *
-     * Read by [channelSubscribers] for the [ChannelHeaderBar] subtitle (the
-     * delay-on-channel-entry that prompted this cache) and by anything else
-     * that ever needs supergroup-shape data synchronously.
+     * **Why this stays after Wave 1** (mapper dropped its parallel
+     * `User`/`Chat`/`Supergroup` caches in favour of direct `td.send`): the
+     * sole load-bearing reader is [channelSubscribersCached], called from
+     * [dev.lyo.hortay.ui.timeline.ChannelViewModel]`.init` to seed the
+     * subscribers `StateFlow` *before* the first frame. A suspending
+     * variant ([channelSubscribers]) is provided too, but the cached read
+     * is what makes the [ChannelHeaderBar] subtitle paint a count on the
+     * first frame instead of `null` followed by a recomposition once the
+     * suspend resolves (see the CHANGELOG fix "Channel header subscriber
+     * count appears on the first frame instead of with a delay"). The
+     * suspending fallback could call `td.send(GetSupergroup)` directly,
+     * but the cache is the only synchronous path.
      */
     private val supergroupCache = ConcurrentHashMap<Long, TdApi.Supergroup>()
 
@@ -174,10 +219,35 @@ class PostsRepository(
     private var lastRefreshAtMs: Long = 0L
 
     // Album coalescing: TDLib emits one UpdateNewMessage per album member with no
-    // "album complete" signal (issue tdlib/td#2523). We buffer members per (chatId,
-    // mediaAlbumId) and flush once the burst quietens — same approach as the official
-    // Telegram client. Without this, an album posts as "1 photo" → "2 photos" → … and
-    // can leave a stale single-member card in the feed if later members lag.
+    // "album complete" signal — confirmed upstream by tdlib/td#1482 (closed 2021
+    // with "use a timeout") and reiterated in tdlib/td#2523 (closed 2023 with the
+    // same verdict). The wire-level gap is permanent, so we treat album reassembly
+    // as a layered defence with three independent rescue paths, each addressing a
+    // different timing window:
+    //
+    //   1. `albumBuffers` + `albumDebounce` (this pair) — silence-based debounce
+    //      on the live `UpdateNewMessage` burst. Members arriving within
+    //      [ALBUM_DEBOUNCE_MS] of each other flush as one group. Cheap; first line.
+    //   2. [coalesceAlbumFragments] — surround `GetChatHistory` fetch invoked from
+    //      every refresh / pagination / deep-load / snapshot-restore path that
+    //      maps raw messages, so an under-sized album group at the response
+    //      boundary (cold-start lastMessage harvest, window edge on
+    //      `loadOlderLocked`) reaches the mapper whole. Second line — costs an
+    //      RPC per under-sized group, bounded by distinct album ids in the batch.
+    //   3. [SnapshotRestorer.foldRawIntoCurrent] + [upgradeDegradedAlbums] —
+    //      partial-album-downgrade guard + per-member-id GetMessage rescue from
+    //      the persisted snapshot, so a degraded card (anchor present but
+    //      siblings dropped) cannot poison the on-disk snapshot AND a degraded
+    //      anchor on cold restart upgrades to the full card via the
+    //      last-known-good member ids saved in the previous session. Third line
+    //      — works even when the chat-history hydration race makes layers 1+2
+    //      come up short.
+    //
+    // Removing any one of these reopens a corresponding CHANGELOG bug: "1 photo
+    // → 2 photos → ..." flicker (layer 1), partial album on PTR or deep-load
+    // (layer 2), "5-photo album restore on relaunch" / "Snapshot preserves
+    // saved album siblings" / "Editing an album caption no longer collapses"
+    // (layer 3).
     private val albumBuffers = ConcurrentHashMap<Pair<Long, Long>, MutableList<TdApi.Message>>()
     private val albumDebounce = ConcurrentHashMap<Pair<Long, Long>, Job>()
 
