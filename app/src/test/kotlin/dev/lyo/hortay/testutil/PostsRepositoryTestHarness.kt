@@ -129,10 +129,12 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
         id: Long,
         title: String = "Channel $id",
         lastMessage: TdApi.Message? = null,
-        // Default = 1 mirrors "active subscription with at least one unread post"
-        // — the common case `refreshLocked` is designed for. Tests that want to
-        // exercise the caught-up skip path (`unreadCount == 0`) pass 0 explicitly.
+        // Default = 1 mirrors "active subscription with at least one unread post".
+        // Harvest no longer filters on this — every channel chat with a non-null
+        // lastMessage contributes — but the value is still exercised by other
+        // tests (cursor seeding, etc.) so the parameter stays.
         unreadCount: Int = 1,
+        lastReadInboxMessageId: Long = 0L,
     ): TdApi.Chat = TdApi.Chat().apply {
         this.id = id
         this.title = title
@@ -141,6 +143,7 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
         this.positions = emptyArray()
         this.permissions = TdApi.ChatPermissions()
         this.unreadCount = unreadCount
+        this.lastReadInboxMessageId = lastReadInboxMessageId
     }
 
     /**

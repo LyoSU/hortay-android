@@ -427,20 +427,20 @@ class PostsRepository(
         td.updates.filterIsInstance<TdApi.UpdateNewChat>()
             .onEach { update ->
                 chatCache[update.chat.id] = update.chat
-                // Seed the read cursor from the chat's server-side state so cards
-                // entering the feed during cold-start render with the correct
-                // unread/read decoration immediately — without this, every visible
-                // post would flash "unread" for the first frame after auth.
+                // Seed the read cursor from server-side state — including the
+                // never-read sentinel `0`. The previous gate (`> 0L`) omitted
+                // those chats, leaving `cursors[chatId] == null`, which
+                // [isUnreadIn] treats as "read"; the symptom was a freshly-
+                // joined / never-opened channel whose posts silently lost the
+                // unread strip and never qualified as a boundary candidate.
                 val cursor = update.chat.lastReadInboxMessageId
-                if (cursor > 0L) {
-                    // Monotonic clamp: a stale UpdateNewChat arriving after a fresh
-                    // UpdateChatReadInbox must NOT roll the cursor backwards, else
-                    // already-read posts re-appear as unread.
-                    _chatReadCursors.update { current ->
-                        val existing = current[update.chat.id] ?: 0L
-                        if (cursor <= existing) current
-                        else current.put(update.chat.id, cursor)
-                    }
+                _chatReadCursors.update { current ->
+                    val existing = current[update.chat.id]
+                    // Monotonic clamp: a stale UpdateNewChat arriving after a
+                    // fresh UpdateChatReadInbox must NOT roll the cursor
+                    // backwards, else already-read posts re-appear as unread.
+                    if (existing != null && cursor <= existing) current
+                    else current.put(update.chat.id, cursor)
                 }
             }
             .launchIn(scope)
@@ -1919,25 +1919,23 @@ class PostsRepository(
         // Sem = REFRESH_CONCURRENCY (4) bounds the concurrent album-coalesce probes;
         // for non-album chats ingest is pure in-memory and never blocks.
         //
-        // Skip caught-up chats (`unreadCount == 0`). Server-authoritative
-        // signal per tdlib/td#1034: `unreadCount == 0 ⟺ lastMessage.id ≤
-        // lastReadInboxMessageId`. Surfacing those into the cold-start feed
-        // was the trigger for "reverse-feed lands on an ancient post" — in
-        // OldestUnreadFirst (asc-by-date) a dormant channel's years-old
-        // lastMessage sat at `items[0]` and, when it happened to be unread
-        // per the cursor map, the boundary picker stranded the user there.
-        // Admin-owned channels are a natural special-case of this filter:
-        // own posts are outgoing and don't bump `unreadCount`, so harvest
-        // drops the admin's last broadcast cleanly. Live ingest of brand-
-        // new posts (UpdateNewMessage / UpdateChatLastMessage) is unaffected
-        // — this is purely a cold-start initialisation filter.
+        // Harvest is *complete*: every channel chat with a non-null lastMessage
+        // contributes a post, regardless of read state. The previous version
+        // skipped chats with `unreadCount == 0` to prevent ancient lastMessages
+        // from sitting at `items[0]` of the OldestUnreadFirst (asc-by-date) feed
+        // and being mistaken for "where the user left off", but the same filter
+        // emptied the Newest feed of every caught-up channel and made the
+        // OldestUnreadFirst landing land on the only-remaining unread post —
+        // which is often itself ancient if the surviving channels are dormant.
+        // The fix moved upstack: boundary picking now applies a recency floor
+        // to the unread set (see [continueReadingIndex]), so dormant unread
+        // can't strand the landing while read posts still anchor the feed.
         val semaphore = Semaphore(REFRESH_CONCURRENCY)
         coroutineScope {
             chatIds.map { chatId ->
                 async {
                     semaphore.withPermit {
                         val chat = chatCache[chatId] ?: return@withPermit
-                        if (chat.unreadCount == 0) return@withPermit
                         val msg = chat.lastMessage ?: return@withPermit
                         ingest(chatId, listOf(msg))
                     }

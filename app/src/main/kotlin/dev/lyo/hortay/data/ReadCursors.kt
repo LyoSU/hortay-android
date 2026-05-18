@@ -133,12 +133,30 @@ fun List<TimelinePost>.orderedFor(order: FeedOrder): List<TimelinePost> = when (
  * Returns `-1` when nothing is unread — TimelineScreen's caller falls back
  * to `lastIndex` (= newest, at the bottom of the asc-by-date sort) for the
  * canonical "you're caught up, here's the latest" landing.
+ *
+ * Recency floor ([minUnreadDate]). An aggregated feed across 100+ channels
+ * has a different problem from a single-chat unread queue: a dormant
+ * channel with a single weeks-old unread post sits at the top of the
+ * asc-by-date sort, and `indexOfFirst { isUnread }` strands the user on
+ * it — the symptom is "I open the feed, it lands on an old post".
+ * Callers pass the minimum date an unread post must carry to qualify as
+ * a landing target. Older unread posts are still rendered (the user can
+ * scroll up to them), they just don't pull the cold-start anchor. The
+ * default `0L` disables the floor — appropriate for single-channel
+ * landings where the user opened a specific chat intentionally and the
+ * chronology IS the entry point.
  */
 fun continueReadingIndex(
     order: FeedOrder,
     posts: List<TimelinePost>,
     cursors: ReadCursors,
-): Int = when (order) {
-    FeedOrder.Newest -> posts.indexOfLast { it.isUnreadIn(cursors) }
-    FeedOrder.OldestUnreadFirst -> posts.indexOfFirst { it.isUnreadIn(cursors) }
+    minUnreadDate: Long = 0L,
+): Int {
+    val qualifies: (TimelinePost) -> Boolean =
+        if (minUnreadDate <= 0L) ({ it.isUnreadIn(cursors) })
+        else ({ it.isUnreadIn(cursors) && it.date >= minUnreadDate })
+    return when (order) {
+        FeedOrder.Newest -> posts.indexOfLast(qualifies)
+        FeedOrder.OldestUnreadFirst -> posts.indexOfFirst(qualifies)
+    }
 }

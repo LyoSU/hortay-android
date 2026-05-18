@@ -181,6 +181,71 @@ class ReadCursorsTest {
         assertEquals(2, continueReadingIndex(FeedOrder.OldestUnreadFirst, displayed, cursors))
     }
 
+    @Test
+    fun `OldestUnreadFirst recency floor skips dormant unread and lands on the next fresh unread`() {
+        // Aggregated feed with a dormant channel: a single weeks-old unread
+        // post at the top of asc-by-date sort, and a fresh unread post below
+        // it. With minUnreadDate between the two dates, the picker ignores
+        // the dormant post and lands on the fresh one — the user opens the
+        // feed and is taken to recent reading, not into the dormant tail.
+        val cursors = persistentMapOf(CHAT_ID to 50L, CHAT_ID + 1 to 50L)
+        val displayed = listOf(
+            post(id = 60L, chatId = CHAT_ID, date = 100L),         // dormant unread
+            post(id = 70L, chatId = CHAT_ID + 1, date = 600L),     // fresh unread
+            post(id = 80L, chatId = CHAT_ID + 1, date = 700L),     // fresh unread
+        )
+        assertEquals(
+            1,
+            continueReadingIndex(FeedOrder.OldestUnreadFirst, displayed, cursors, minUnreadDate = 500L),
+        )
+    }
+
+    @Test
+    fun `OldestUnreadFirst recency floor returns -1 when every unread is dormant`() {
+        // Only ancient unread exists. Caller (TimelineUiState) maps -1 to
+        // lastIndex = newest, so the user lands "caught up on anything
+        // recent". Dormant unread remains in the feed for the user to
+        // scroll up to.
+        val cursors = persistentMapOf(CHAT_ID to 50L)
+        val displayed = listOf(
+            post(id = 60L, date = 100L), // dormant unread
+            post(id = 70L, date = 200L), // dormant unread
+        )
+        assertEquals(
+            -1,
+            continueReadingIndex(FeedOrder.OldestUnreadFirst, displayed, cursors, minUnreadDate = 500L),
+        )
+    }
+
+    @Test
+    fun `Newest recency floor scopes the oldest-unread anchor to recent posts`() {
+        // Newest order: oldest unread = LAST unread in iteration order
+        // (newest-first input). With the floor, the picker still wants the
+        // oldest unread *within the recent window* — so it lands just above
+        // the read tail rather than going back weeks for a dormant unread.
+        val cursors = persistentMapOf(CHAT_ID to 50L, CHAT_ID + 1 to 50L)
+        val newestFirst = listOf(
+            post(id = 90L, chatId = CHAT_ID + 1, date = 900L),     // fresh unread
+            post(id = 80L, chatId = CHAT_ID + 1, date = 800L),     // fresh unread — boundary
+            post(id = 60L, chatId = CHAT_ID, date = 100L),         // dormant unread (skipped)
+            post(id = 40L, chatId = CHAT_ID, date = 90L),          // read
+        )
+        assertEquals(
+            1,
+            continueReadingIndex(FeedOrder.Newest, newestFirst, cursors, minUnreadDate = 500L),
+        )
+    }
+
+    @Test
+    fun `zero or negative minUnreadDate disables the floor`() {
+        // Default and explicit 0 must match the pre-floor behaviour exactly.
+        val cursors = persistentMapOf(CHAT_ID to 50L)
+        val posts = listOf(post(id = 60L, date = 100L)) // dormant unread
+        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, posts, cursors))
+        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, posts, cursors, minUnreadDate = 0L))
+        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, posts, cursors, minUnreadDate = -1L))
+    }
+
     private companion object {
         const val CHAT_ID = -1001L
     }

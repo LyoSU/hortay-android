@@ -41,6 +41,9 @@
 - Comments load in one chronological pass instead of revealing the newest first and then squeezing older comments in above.
 - Long posts and media captions now collapse with "Показати більше" even when they contain a quote block.
 - Tapping the channel chip from a post opened from the feed and swiping back now returns to the post instead of the feed; tapping a channel that's already one swipe-back away pops to it instead of stacking a duplicate.
+- Cold-start feed now includes every subscribed channel's latest post, not only channels with an unread one — read context is back in Newest mode and `OldestUnreadFirst` no longer collapses to a tiny unread-only list.
+- `OldestUnreadFirst` no longer lands on a weeks-old dormant unread when fresh unread exists; the cold-start anchor picks within a 7-day recency window and falls through to the newest post when nothing recent is unread.
+- Never-opened / freshly-joined channels show the unread strip on their posts instead of silently appearing read until the user opens the chat.
 
 ## [0.5.0] — 2026-05-17
 

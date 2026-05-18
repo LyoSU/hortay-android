@@ -588,12 +588,19 @@ fun TimelineScreen(
     // the latched value is what the latcher would have captured anyway;
     // for Newest mode the state stays at [EmptyReadCursors] which the
     // builder maps to initialIndex=0 (the correct Newest landing).
+    // Recency floor for the OldestUnreadFirst landing — see
+    // [BOUNDARY_RECENCY_WINDOW_MS]. Captured once per mount so the cutoff is
+    // stable across recompositions; on re-entry (tab swap / cold start) it
+    // re-samples, which is correct because the floor IS "recent relative to
+    // when the user opened the feed".
+    val recencyCutoffMs = remember { System.currentTimeMillis() - BOUNDARY_RECENCY_WINDOW_MS }
     val candidateUiState: TimelineUiState = buildTimelineUiState(
         items = persistentFeedItems,
         cursorsLanded = readCursorsLandedState.value,
         frozenCursors = boundaryCursors,
         feedOrder = feedOrder,
         refreshing = refreshing,
+        minUnreadDate = recencyCutoffMs,
     )
     val latchedUiState = rememberLatchedTimelineUiState(
         candidate = candidateUiState,
@@ -602,47 +609,37 @@ fun TimelineScreen(
     )
 
     // Cold-start positioning AND scroll preservation across tab swaps share
-    // the same saver bundle — the trick is to make the `rememberSaveable` key
-    // STABLE per route across re-entries, so a moved boundary doesn't yank the
-    // saver bundle out from under the restoration path.
+    // the same saver bundle — the trick is to keep the `rememberSaveable` key
+    // (`routeKey, readySeed`) STABLE per route within a process so a moved
+    // boundary doesn't yank the bundle out from under the restoration path.
     //
-    // The naive `rememberSaveable(routeKey, readySeed, saver)` pattern keyed
+    // The naive `rememberSaveable(routeKey, liveBoundary, saver)` pattern keys
     // on the LIVE boundary index. That gives the right cold-start landing
     // (first Ready → key changes → fresh LazyListState seeded at boundary) at
     // the cost of losing scroll on every tab swap where the boundary moved
     // while the user was on another tab: the bundle was saved under
-    // `(route, oldBoundary)` but on re-entry the key is `(route, newBoundary)`
-    // — Compose treats it as a fresh slot and re-seeds at index N instead of
+    // `(route, oldBoundary)` but on re-entry the key is `(route, newBoundary)`,
+    // so Compose treats it as a fresh slot and re-seeds at index N instead of
     // restoring `firstVisibleItemIndex`.
     //
-    // [pinnedSeed] captures the FIRST boundary we ever see for this route
-    // and persists it across tab swaps + process death via [rememberSaveable].
-    // Subsequent boundary movements (cursor advances, new arrivals) do NOT
-    // update it — the seed is a one-shot "where to land cold-start", not a
-    // live signal. The [LaunchedEffect] mutates it after composition, so the
-    // FIRST Ready-frame still gets the candidate value directly (via the
-    // `?:` fallback) — meaning no one-frame paint at index 0 before the
-    // saver re-keys.
+    // The seed lives in [TimelineViewModel.pinnedScrollSeeds] — a per-route
+    // one-shot capture of the first boundary the screen ever saw. ViewModel
+    // lifetime is exactly right: stable across tab swaps within a process,
+    // discarded on process death (so cold launch re-evaluates the boundary
+    // against the freshly-landed refresh + cursors rather than restoring a
+    // stale index from the previous session's SavedState).
     //
-    // Result: cold-start lands at boundary in one frame (same as before);
-    // tab swap restores the user's scroll via [LazyListState.Saver]'s
-    // built-in `firstVisibleItemIndex` persistence (no manual snapshot/replay
-    // — pure Compose machinery); process-death restore re-evaluates the seed
-    // from scratch and lands at the new boundary.
-    val pinnedSeed = rememberSaveable(routeKey) {
-        androidx.compose.runtime.mutableIntStateOf(-1)
-    }
+    // The [LaunchedEffect] writes to the VM after composition, so the FIRST
+    // Ready-frame still gets the candidate value directly via the `?:`
+    // fallback — no one-frame paint at index 0 before the saver re-keys.
+    val pinnedSeed: Int? = vm.pinnedScrollSeed(routeKey)
     val candidateInitialIndex = (latchedUiState as? TimelineUiState.Ready)?.initialIndex
     LaunchedEffect(routeKey, candidateInitialIndex) {
-        if (pinnedSeed.intValue < 0 && candidateInitialIndex != null) {
-            pinnedSeed.intValue = candidateInitialIndex
+        if (pinnedSeed == null && candidateInitialIndex != null) {
+            vm.capturePinnedScrollSeed(routeKey, candidateInitialIndex)
         }
     }
-    val readySeed = when {
-        pinnedSeed.intValue >= 0 -> pinnedSeed.intValue
-        candidateInitialIndex != null -> candidateInitialIndex
-        else -> 0
-    }
+    val readySeed = pinnedSeed ?: candidateInitialIndex ?: 0
     val listState = rememberSaveable(
         routeKey, readySeed,
         saver = androidx.compose.foundation.lazy.LazyListState.Saver,
@@ -1848,6 +1845,25 @@ private const val SEARCH_DEBOUNCE_MS = 300L
  * stall.
  */
 private const val COLD_START_CURSOR_GRACE_MS = 800L
+
+/**
+ * Recency floor for cold-start landing in [dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst].
+ *
+ * The aggregated feed across 100+ subscriptions can have a single dormant channel
+ * whose only unread post is weeks old; in asc-by-date sort that post sits at the
+ * top, and the naive `indexOfFirst { isUnread }` boundary picker strands the user
+ * there ("I open the feed, it shows an old post"). With this floor, only unread
+ * posts dated within the window pull the landing — older unread is still rendered
+ * above the boundary so the user can scroll up to it, it just doesn't anchor the
+ * cold-start view. If nothing unread qualifies, the picker falls through to the
+ * caught-up landing (newest, at the bottom).
+ *
+ * 7 days covers "back from a long weekend" comfortably while filtering out
+ * months-old dormant unread that almost certainly isn't where the user wants to
+ * resume. The boundary divider above this floor is unaffected — it tracks the
+ * read-edge for display, not the landing target.
+ */
+private const val BOUNDARY_RECENCY_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
 
 /** Avatars in the "X нових постів" pill — same cap as the original VM-side limit. */
 private const val MAX_PILL_BADGES = 3

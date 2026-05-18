@@ -63,6 +63,7 @@ fun buildTimelineUiState(
     frozenCursors: ReadCursors,
     feedOrder: FeedOrder,
     refreshing: Boolean,
+    minUnreadDate: Long = 0L,
 ): TimelineUiState {
     if (items.isEmpty()) {
         return if (refreshing) TimelineUiState.Loading else TimelineUiState.Empty
@@ -72,9 +73,11 @@ fun buildTimelineUiState(
     }
     // continueReadingIndex operates on TimelinePost; for albums the anchor
     // post drives the unread check. Flatten items → first post per item, then
-    // compute the boundary in row-space.
+    // compute the boundary in row-space. [minUnreadDate] is the recency floor
+    // for what counts as a landing-eligible unread post — see the function's
+    // KDoc for the dormant-channel rationale.
     val anchorPosts = items.map { it.posts().first() }
-    val boundary = continueReadingIndex(feedOrder, anchorPosts, frozenCursors)
+    val boundary = continueReadingIndex(feedOrder, anchorPosts, frozenCursors, minUnreadDate)
     val initialIndex = when (feedOrder) {
         FeedOrder.Newest -> if (boundary >= 0) boundary else 0
         FeedOrder.OldestUnreadFirst -> if (boundary >= 0) boundary else items.lastIndex.coerceAtLeast(0)

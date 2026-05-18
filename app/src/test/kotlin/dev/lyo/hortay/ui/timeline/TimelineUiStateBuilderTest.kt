@@ -126,4 +126,53 @@ class TimelineUiStateBuilderTest {
         s as TimelineUiState.Ready
         assertEquals(2, s.initialIndex) // lastIndex of 3-element list
     }
+
+    @Test
+    fun `OldestUnreadFirst with recency floor lands past the dormant unread`() {
+        // Aggregated feed: dormant channel A has a weeks-old unread post,
+        // active channel B has fresh unread. With minUnreadDate between the
+        // two dates, the builder skips the dormant post and lands on the
+        // fresh one — the cold-start protection against "I open the feed,
+        // it lands on a weeks-old post".
+        val items = listOf(
+            item(60L, chatId = 1L, date = 100L),  // dormant unread
+            item(70L, chatId = 2L, date = 600L),  // fresh unread — target
+            item(80L, chatId = 2L, date = 700L),  // fresh unread
+        ).toPersistentList()
+        val cursors = persistentMapOf(1L to 50L, 2L to 50L)
+        val s = buildTimelineUiState(
+            items = items,
+            cursorsLanded = true,
+            frozenCursors = cursors,
+            feedOrder = FeedOrder.OldestUnreadFirst,
+            refreshing = false,
+            minUnreadDate = 500L,
+        )
+        assertTrue(s is TimelineUiState.Ready)
+        s as TimelineUiState.Ready
+        assertEquals(1, s.initialIndex)
+    }
+
+    @Test
+    fun `OldestUnreadFirst with recency floor falls back to newest when every unread is dormant`() {
+        // Only ancient unread exists. The fallback is `lastIndex` (= newest,
+        // bottom of asc-by-date), which reads as "you're caught up on
+        // anything recent". The dormant post itself stays in the feed.
+        val items = listOf(
+            item(60L, date = 100L),
+            item(70L, date = 200L),
+        ).toPersistentList()
+        val cursors = persistentMapOf(1L to 50L)
+        val s = buildTimelineUiState(
+            items = items,
+            cursorsLanded = true,
+            frozenCursors = cursors,
+            feedOrder = FeedOrder.OldestUnreadFirst,
+            refreshing = false,
+            minUnreadDate = 500L,
+        )
+        assertTrue(s is TimelineUiState.Ready)
+        s as TimelineUiState.Ready
+        assertEquals(1, s.initialIndex)
+    }
 }

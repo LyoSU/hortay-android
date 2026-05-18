@@ -1,6 +1,8 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.lyo.hortay.data.BookmarkStore
@@ -129,6 +131,33 @@ class TimelineViewModel(
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
+    /**
+     * Per-route cold-start scroll seed for [TimelineScreen]'s LazyColumn. Captured
+     * once per (routeKey) the first time the screen renders a [TimelineUiState.Ready]
+     * for it, then held constant across tab swaps so the LazyListState saver bundle
+     * key (`routeKey, readySeed`) stays stable and `firstVisibleItemIndex` restores
+     * cleanly when the user returns to the tab.
+     *
+     * Why a VM-resident map instead of `rememberSaveable`: the seed must survive tab
+     * swaps within a process (TimelineScreen disposes between Home and Saved) but
+     * MUST NOT survive process death — a stale cold-start index from the previous
+     * process is almost always wrong by the time refresh + cursor map land in the
+     * new process. ViewModel lifetime matches this requirement exactly: scoped to
+     * the Activity ViewModelStore (alive through configuration changes and tab
+     * swaps), discarded when the process ends.
+     *
+     * `mutableStateMapOf` so Composable reads subscribe to per-key changes —
+     * setting an entry triggers exactly the recomposition that wants it.
+     */
+    private val pinnedScrollSeeds: SnapshotStateMap<Any, Int> = mutableStateMapOf()
+
+    fun pinnedScrollSeed(routeKey: Any): Int? = pinnedScrollSeeds[routeKey]
+
+    /** One-shot capture — subsequent boundary movements never override the seed. */
+    fun capturePinnedScrollSeed(routeKey: Any, index: Int) {
+        if (routeKey !in pinnedScrollSeeds) pinnedScrollSeeds[routeKey] = index
+    }
 
     init {
         // Bootstrap: first stable emission seeds [seenHighWater] for every chatId in

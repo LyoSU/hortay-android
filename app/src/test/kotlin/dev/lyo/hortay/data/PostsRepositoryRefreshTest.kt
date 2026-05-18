@@ -99,16 +99,16 @@ class PostsRepositoryRefreshTest {
     }
 
     @Test
-    fun `refresh skips caught-up chats (unreadCount == 0) from cold-start harvest`() = runTest {
-        // Server-authoritative caught-up filter — prevents an ancient
-        // lastMessage from sitting at `items[0]` of the OldestUnreadFirst
-        // (asc-by-date) feed and being mistaken for "where the user left
-        // off". Covers admin-owned channels (outgoing posts don't bump
-        // unreadCount) and dormant subscriptions the user finished reading
-        // in another client. Live `UpdateNewMessage` arrivals are
-        // unaffected — this is purely cold-start initialisation.
-        // Refs: tdlib/td#1034 (unreadCount invariant), #1419 (admin/own
-        // channel inbox-vs-outbox cursor divergence).
+    fun `refresh brings every channel into the feed regardless of read state`() = runTest {
+        // Cold-start harvest is *complete*: every channel chat with a non-null
+        // lastMessage contributes a post, including caught-up chats
+        // (`unreadCount == 0`). The previous version skipped caught-up to keep
+        // ancient lastMessages out of the OldestUnreadFirst landing pick —
+        // that protection moved upstack into [continueReadingIndex]'s recency
+        // floor, which keeps dormant unread out of the landing without
+        // emptying the feed of read context. The Newest mode in particular
+        // DEPENDS on this completeness: a freshly-read channel's lastMessage
+        // is part of "what's recent" for the user, not noise.
         val harness = PostsRepositoryTestHarness(this)
         val caughtUp = harness.fakeChannel(
             id = -7000L,
@@ -129,9 +129,59 @@ class PostsRepositoryRefreshTest {
         harness.repo.refresh()
         harness.advanceUntilIdle()
 
-        val postIds = harness.repo.posts.value.map { it.id }
-        assertEquals(listOf(701L), postIds,
-            "only the active channel (unreadCount > 0) contributes; caught-up skipped")
+        val postIds = harness.repo.posts.value.map { it.id }.toSet()
+        assertEquals(setOf(700L, 701L), postIds,
+            "both caught-up and active channels contribute their lastMessage")
+    }
+
+    @Test
+    fun `UpdateNewChat seeds cursor even when lastReadInboxMessageId is zero`() = runTest {
+        // Never-read channels (lastReadInboxMessageId == 0) MUST land in the
+        // cursor map — otherwise [isUnreadIn] falls into the
+        // `cursors[chatId] == null → read` branch and every post of the
+        // channel silently loses the unread strip. Was visible as a freshly-
+        // joined / never-opened channel whose posts never qualified as
+        // unread even though no read ack ever crossed them.
+        val harness = PostsRepositoryTestHarness(this)
+        val neverRead = harness.fakeChannel(
+            id = -8000L,
+            lastMessage = harness.fakeChannelMessage(-8000L, 800L),
+            unreadCount = 5,
+            lastReadInboxMessageId = 0L,
+        )
+        harness.td.emitUpdate(TdApi.UpdateNewChat(neverRead))
+        harness.advanceUntilIdle()
+
+        val cursors = harness.repo.chatReadCursors.value
+        assertTrue(-8000L in cursors,
+            "never-read channel must be present in the cursor map with the zero sentinel")
+        assertEquals(0L, cursors[-8000L])
+    }
+
+    @Test
+    fun `UpdateNewChat does not roll cursor backwards`() = runTest {
+        // Monotonic clamp: a stale UpdateNewChat arriving after a fresh
+        // UpdateChatReadInbox (or a higher prior seed) must NOT downgrade
+        // the cursor, else already-read posts re-appear as unread.
+        val harness = PostsRepositoryTestHarness(this)
+        val freshlyRead = harness.fakeChannel(
+            id = -8001L,
+            lastMessage = harness.fakeChannelMessage(-8001L, 810L),
+            unreadCount = 0,
+            lastReadInboxMessageId = 810L,
+        )
+        val staleResend = harness.fakeChannel(
+            id = -8001L,
+            lastMessage = harness.fakeChannelMessage(-8001L, 810L),
+            unreadCount = 5,
+            lastReadInboxMessageId = 800L, // older than the previous seed
+        )
+        harness.td.emitUpdate(TdApi.UpdateNewChat(freshlyRead))
+        harness.td.emitUpdate(TdApi.UpdateNewChat(staleResend))
+        harness.advanceUntilIdle()
+
+        assertEquals(810L, harness.repo.chatReadCursors.value[-8001L],
+            "monotonic clamp must preserve the higher cursor")
     }
 
     @Test
