@@ -47,7 +47,7 @@
 - Cold-start anchor no longer lands on a self-authored post in an admin / outgoing-only channel — the `0 / 0` cursor shape (TDLib invariant for channels with no incoming reads) is no longer interpreted as "everything unread".
 - Switching folder tabs no longer auto-scrolls onto a weeks-old dormant unread; the same 7-day recency floor that protects the cold-start landing now applies to every scope jump (folder switch, NavBar home re-tap, ↓N pill fallback).
 - Returning to the feed from a deep drill (channel → comments → back-back) no longer lands on a post that loaded into the background while the overlay was up; the cold-start anchor is now pinned to the post identity instead of its row index, so ingested history above it can't shift the anchor onto a different row.
-- Switching scope (Archive ↔ All, folder ↔ folder) no longer flashes the previous scope's row for a frame before settling on the new boundary; the scope is now part of the scene identity, so LazyColumn mounts at the correct row on the first paint rather than being scrolled into place a frame later by a separate effect.
+- Switching scope (Archive ↔ All, folder ↔ folder) no longer flashes the previous scope's row OR a skeleton for a frame before settling; the scope is now part of the scene identity, and the UI-state latcher initialises directly with the freshly-built Ready value, so LazyColumn mounts at the correct row on the very first paint.
 - Video stickers loop cleanly from the start on every cycle instead of getting stuck replaying just the last fragment after the first pass.
 
 ## [0.5.0] — 2026-05-17

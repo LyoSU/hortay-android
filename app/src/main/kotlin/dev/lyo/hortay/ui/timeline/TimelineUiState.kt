@@ -139,8 +139,18 @@ internal fun rememberLatchedTimelineUiState(
     refreshing: Boolean,
     routeKey: Any,
 ): TimelineUiState {
+    // Initialise with the current [candidate], NOT a hardcoded Loading. The
+    // hardcoded variant flashed a one-frame Skeleton on every scope swap
+    // (Archive ↔ All, folder ↔ folder) because `scopeKey` is part of
+    // [routeKey]: a swap resets this `remember`, the composition paints
+    // Loading immediately, and the LaunchedEffect-driven reducer only
+    // writes the real Ready value on the NEXT frame. Seeding the state
+    // with `candidate` lets the first frame paint Ready directly when
+    // the builder already produced one — which it does as soon as
+    // `cursorsHaveLanded` is true for the route (and on a scope swap
+    // that gate is already long-stable).
     val effective = remember(routeKey) {
-        mutableStateOf<TimelineUiState>(TimelineUiState.Loading)
+        mutableStateOf(candidate)
     }
     val previousRefreshing = remember(routeKey) {
         mutableStateOf(false)
