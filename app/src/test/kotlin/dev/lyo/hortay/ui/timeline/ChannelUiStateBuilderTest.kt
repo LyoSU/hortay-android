@@ -2,6 +2,7 @@ package dev.lyo.hortay.ui.timeline
 
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.testutil.testPost
+import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toPersistentList
@@ -15,13 +16,16 @@ class ChannelUiStateBuilderTest {
     private fun item(id: Long, album: List<Long> = emptyList()): FeedItem =
         FeedItem(testPost(id = id, chatId = 1L, date = id, albumMessageIds = album))
 
+    private fun loaded(items: PersistentList<FeedItem>): ChannelData =
+        ChannelData.Loaded(items.map { it.post }.toPersistentList())
+
     @Test
-    fun `Resolving while history loading and slice empty`() {
-        // Cold first-entry with no prior cold-start harvest for this chatId:
-        // historyLoading=true, items empty → SkeletonFeed gate is correct.
+    fun `Resolving while data is Loading`() {
+        // Cold first-entry: data is still loading, items is empty (or
+        // about to be replaced atomically). Skeleton gate is correct.
         val s = buildChannelUiState(
+            data = ChannelData.Loading,
             items = persistentListOf(),
-            historyLoading = true,
             scrollToMessageId = 200L,
             attemptedAround = false,
             searchActive = false,
@@ -31,18 +35,16 @@ class ChannelUiStateBuilderTest {
     }
 
     @Test
-    fun `Resolving while history loading even when slice has cold-harvest posts`() {
-        // The merged feed's cold-start harvest populates exactly ONE post per
-        // channel (from Chat.lastMessage). On first channel open from a feed
-        // post the slice is "non-empty" by virtue of that single harvest
-        // artifact, but the deep load is still in flight and will back-fill
-        // older posts above the visible row mid-scroll. Stay in Resolving so
-        // the LazyColumn only mounts once with the full slice at the correct
-        // index — no jarring "one-post-then-pop-in" jump.
+    fun `Resolving even when items is non-empty under Loading state`() {
+        // [ChannelData.Loading] means the deep slice has not yet landed.
+        // Even if some stray items (e.g. live UpdateNewMessage arrivals)
+        // appear in [items] during the load, the UI must stay in
+        // Resolving so the LazyColumn doesn't paint with a sparse
+        // pre-load slice that will be back-filled by older posts.
         val items = listOf(item(100L), item(99L)).toPersistentList()
         val s = buildChannelUiState(
+            data = ChannelData.Loading,
             items = items,
-            historyLoading = true,
             scrollToMessageId = null,
             attemptedAround = false,
             searchActive = false,
@@ -52,17 +54,18 @@ class ChannelUiStateBuilderTest {
     }
 
     @Test
-    fun `Resolving with non-empty slice still gated on deep-link target landing`() {
-        // historyLoading=true but slice has content — yet the deep-link
-        // target hasn't materialised. We must NOT fall through to Ready at
+    fun `Resolving with Loaded data still gated on deep-link target landing`() {
+        // [ChannelData.Loaded] but the deep-link target hasn't
+        // materialised in [items]. We must NOT fall through to Ready at
         // the head post; the initialIndex would latch through
         // reduceChannelUiState before the around-load completes and the
         // user would briefly see the wrong row. Stay in Resolving until
-        // either the target shows up or the around-load attempt finishes.
+        // either the target shows up or the around-load attempt
+        // finishes.
         val items = listOf(item(100L), item(99L)).toPersistentList()
         val s = buildChannelUiState(
+            data = loaded(items),
             items = items,
-            historyLoading = true,
             scrollToMessageId = 999L,
             attemptedAround = false,
             searchActive = false,
@@ -75,8 +78,8 @@ class ChannelUiStateBuilderTest {
     fun `Ready at zero when no scrollToMessageId`() {
         val items = listOf(item(100L), item(99L)).toPersistentList()
         val s = buildChannelUiState(
+            data = loaded(items),
             items = items,
-            historyLoading = false,
             scrollToMessageId = null,
             attemptedAround = false,
             searchActive = false,
@@ -92,8 +95,8 @@ class ChannelUiStateBuilderTest {
     fun `Ready at target index when scrollToMessageId resolved`() {
         val items = listOf(item(300L), item(200L), item(100L)).toPersistentList()
         val s = buildChannelUiState(
+            data = loaded(items),
             items = items,
-            historyLoading = false,
             scrollToMessageId = 200L,
             attemptedAround = false,
             searchActive = false,
@@ -109,8 +112,8 @@ class ChannelUiStateBuilderTest {
     fun `Resolving when scrollToMessageId not yet found and not attempted`() {
         val items = listOf(item(100L)).toPersistentList()
         val s = buildChannelUiState(
+            data = loaded(items),
             items = items,
-            historyLoading = false,
             scrollToMessageId = 999L,
             attemptedAround = false,
             searchActive = false,
@@ -123,8 +126,8 @@ class ChannelUiStateBuilderTest {
     fun `Missing when scrollToMessageId not found after around-load attempt`() {
         val items = listOf(item(100L)).toPersistentList()
         val s = buildChannelUiState(
+            data = loaded(items),
             items = items,
-            historyLoading = false,
             scrollToMessageId = 999L,
             attemptedAround = true,
             searchActive = false,
@@ -140,8 +143,8 @@ class ChannelUiStateBuilderTest {
             item(200L, album = listOf(200L, 201L, 202L)),
         ).toPersistentList()
         val s = buildChannelUiState(
+            data = loaded(items),
             items = items,
-            historyLoading = false,
             scrollToMessageId = 202L,
             attemptedAround = false,
             searchActive = false,
@@ -154,12 +157,13 @@ class ChannelUiStateBuilderTest {
 
     @Test
     fun `OldestUnreadFirst lands at first-unread boundary when no deep-link`() {
-        // Asc-by-date layout: ids 100..103, cursor at 101 means 100/101 read,
-        // 102/103 unread. Boundary = index 2 (first FeedItem containing unread).
+        // Asc-by-date layout: ids 100..103, cursor at 101 means 100/101
+        // read, 102/103 unread. Boundary = index 2 (first FeedItem
+        // containing unread).
         val items = listOf(item(100L), item(101L), item(102L), item(103L)).toPersistentList()
         val s = buildChannelUiState(
+            data = loaded(items),
             items = items,
-            historyLoading = false,
             scrollToMessageId = null,
             attemptedAround = false,
             searchActive = false,
@@ -175,13 +179,14 @@ class ChannelUiStateBuilderTest {
 
     @Test
     fun `Search mode suppresses deep-link landing`() {
-        // When user activates in-channel search, the deep-link anchor doesn't
-        // apply — search results are their own context. Builder returns Ready
-        // at index 0 with no highlight even when scrollToMessageId is set.
+        // When user activates in-channel search, the deep-link anchor
+        // doesn't apply — search results are their own context. Builder
+        // returns Ready at index 0 with no highlight even when
+        // scrollToMessageId is set.
         val items = listOf(item(300L), item(200L), item(100L)).toPersistentList()
         val s = buildChannelUiState(
+            data = loaded(items),
             items = items,
-            historyLoading = false,
             scrollToMessageId = 200L,
             attemptedAround = false,
             searchActive = true,

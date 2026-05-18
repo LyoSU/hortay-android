@@ -8,8 +8,39 @@ import androidx.compose.runtime.remember
 import dev.lyo.hortay.data.EmptyReadCursors
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.ReadCursors
+import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.continueReadingIndex
 import kotlinx.collections.immutable.PersistentList
+
+/**
+ * Channel data state — single source of truth for what the channel screen
+ * renders. Sealed union, exposed by [ChannelViewModel.data] as a SINGLE
+ * StateFlow so Compose can only ever observe a consistent snapshot. The
+ * previous design exposed two flows (`posts` and `historyLoading`) and a
+ * Choreographer frame could land between their updates, painting Ready
+ * with a stale single-cold-harvest slice for one frame before the deep
+ * slice propagated. With a sealed union the inconsistent state is not
+ * representable: `Loaded` carries its own posts list, and you can't be
+ * `Loading` while also having data.
+ *
+ * Transitions:
+ *   - [Loading] → [Loaded] once
+ *     [dev.lyo.hortay.data.posts.PostsRepository.loadChannelHistory]
+ *     completes (cold first entry). The transition is a single atomic
+ *     write to the underlying MutableStateFlow, sliced from
+ *     [dev.lyo.hortay.data.posts.PostsRepository.posts] at the same instant.
+ *   - [Loaded] → [Loaded] on every live ingest (UpdateNewMessage,
+ *     interaction updates) — same state-class, new `posts` list.
+ *   - No [Loaded] → [Loading]. PTR / refresh failures keep the stale
+ *     content visible; a separate `refreshing` flag drives the PTR ring.
+ */
+@Immutable
+sealed interface ChannelData {
+    @Immutable data object Loading : ChannelData
+
+    @Immutable
+    data class Loaded(val posts: PersistentList<TimelinePost>) : ChannelData
+}
 
 /**
  * State for a single-channel screen. Discriminated union:
@@ -51,52 +82,55 @@ sealed interface ChannelUiState {
  * result has reached the posts flow (or timed out). Until then we stay in
  * Resolving — never fall through to Ready with a wrong index.
  *
- * Resolving while [historyLoading] is true is the cold-entry gate. The
- * cold-start [dev.lyo.hortay.data.posts.PostsRepository.refreshLocked]
- * harvest populates exactly ONE post per channel (from `Chat.lastMessage`,
- * for the home feed). Without this gate, opening that channel from a feed
- * post mounted the LazyColumn with that single post, and ~300-800 ms later
- * the head-load result merged in above (asc-by-date sort). The LazyColumn's
- * key-anchor preserved the visible row while a wall of older content popped
- * in above it — visible to the user as a jarring jump right after open.
- * Gating on `historyLoading` keeps the channel in Resolving until the deep
- * load has landed, so the LazyColumn mounts ONCE with the full slice at
- * the correct index.
+ * Resolving while [data] is [ChannelData.Loading] is the cold-entry gate.
+ * The cold-start
+ * [dev.lyo.hortay.data.posts.PostsRepository.refreshLocked] harvest
+ * populates exactly ONE post per channel (from `Chat.lastMessage`, for the
+ * home feed). Without this gate, opening that channel from a feed post
+ * mounted the LazyColumn with that single post, and ~300-800 ms later the
+ * head-load result merged in above (asc-by-date sort). The LazyColumn's
+ * key-anchor preserved the visible row while a wall of older content
+ * popped in above it — visible to the user as a jarring jump right after
+ * open. Routing through the [ChannelData] sealed union means the channel
+ * stays in Resolving until the slice has landed, so the LazyColumn mounts
+ * ONCE with the full items at the correct index.
  *
  * Two mechanisms keep this from flashing a skeleton on warm/fast paths:
- *   - [dev.lyo.hortay.ui.timeline.ChannelViewModel] seeds `_historyLoading`
+ *   - [dev.lyo.hortay.ui.timeline.ChannelViewModel] seeds [data]
  *     synchronously from
  *     [dev.lyo.hortay.data.posts.PostsRepository.hasWarmChannelHistory],
  *     so warm re-entries (cooldown active = full slice already in memory)
- *     start with `historyLoading = false` and land Ready on frame one.
+ *     start as [ChannelData.Loaded] and land Ready on frame one.
  *   - The screen-side [dev.lyo.hortay.data.SCREEN_MOUNT_GRACE_MS] (120 ms)
- *     anti-flicker grace in [ChannelScreen] suppresses the SkeletonFeed for
- *     sub-120 ms Resolving→Ready transitions, so even cold paths only paint
- *     a skeleton on genuinely slow loads.
+ *     anti-flicker grace in [ChannelScreen] suppresses the SkeletonFeed
+ *     for sub-120 ms Resolving→Ready transitions, so even cold paths only
+ *     paint a skeleton on genuinely slow loads.
  *
  * Deep-link paths still gate correctly: the `scrollToMessageId` branch
  * below returns Resolving when the target hasn't landed in `items` yet
- * regardless of `historyLoading`, so we never paint a wrong-index Ready.
+ * regardless of [data], so we never paint a wrong-index Ready.
  *
  * [searchActive] suppresses deep-link landing — search results need their
  * own context, not a deep-link anchor.
  *
- * [chatId] is the owning channel's id, used by [resolveTargetIndex] to match
- * posts in [items]. Pass the VM's [ChannelViewModel.chatId] — required, no default,
- * so the call site can't accidentally fall through to `0L` when [items] is empty
- * (which would silently miss every deep-link target).
+ * [chatId] is the owning channel's id, used by [resolveTargetIndex] to
+ * match posts in [items]. Pass the VM's [ChannelViewModel.chatId] —
+ * required, no default, so the call site can't accidentally fall through
+ * to `0L` when [items] is empty (which would silently miss every
+ * deep-link target).
  *
  * [feedOrder] + [cursors] drive the cold-entry boundary for
- * [FeedOrder.OldestUnreadFirst]: in that mode, with no deep-link target and
- * outside search, [Ready.initialIndex] lands at the first FeedItem containing
- * an unread post (asc-by-date sort = oldest unread at the top of the unread
- * block, chat-app idiom). Falls back to `lastIndex` ("caught up, here's the
- * latest") when nothing is unread. Default [cursors] = [EmptyReadCursors]
- * keeps the Newest-mode call sites unchanged.
+ * [FeedOrder.OldestUnreadFirst]: in that mode, with no deep-link target
+ * and outside search, [Ready.initialIndex] lands at the first FeedItem
+ * containing an unread post (asc-by-date sort = oldest unread at the top
+ * of the unread block, chat-app idiom). Falls back to `lastIndex`
+ * ("caught up, here's the latest") when nothing is unread. Default
+ * [cursors] = [EmptyReadCursors] keeps the Newest-mode call sites
+ * unchanged.
  */
 internal fun buildChannelUiState(
+    data: ChannelData,
     items: PersistentList<FeedItem>,
-    historyLoading: Boolean,
     scrollToMessageId: Long?,
     attemptedAround: Boolean,
     searchActive: Boolean,
@@ -104,10 +138,10 @@ internal fun buildChannelUiState(
     feedOrder: FeedOrder = FeedOrder.Newest,
     cursors: ReadCursors = EmptyReadCursors,
 ): ChannelUiState {
-    if (historyLoading) return ChannelUiState.Resolving
+    if (data is ChannelData.Loading) return ChannelUiState.Resolving
     if (scrollToMessageId == null || searchActive) {
         val initialIndex = if (feedOrder == FeedOrder.OldestUnreadFirst && items.isNotEmpty()) {
-            val anchorPosts = items.map { it.posts().first() }
+            val anchorPosts: List<TimelinePost> = items.map { it.posts().first() }
             val boundary = continueReadingIndex(feedOrder, anchorPosts, cursors)
             if (boundary >= 0) boundary else items.lastIndex.coerceAtLeast(0)
         } else {
@@ -151,28 +185,17 @@ internal fun reduceChannelUiState(
 }
 
 /**
- * Composable wrapper for [ChannelUiState] latching. Reset on [routeKey] change
- * (e.g. user navigates to a different channel).
+ * Composable wrapper for [ChannelUiState] latching. Reset on [routeKey]
+ * change (e.g. user navigates to a different channel).
  *
- * Initial value is seeded from the first [candidate] the composable receives
- * — NOT a static [ChannelUiState.Resolving] sentinel. The previous shape
- * unconditionally initialised the latch as Resolving and relied on
- * [LaunchedEffect] to overwrite it with the real candidate after the commit
- * phase — but [LaunchedEffect] runs on the NEXT frame, so the first
- * composition always rendered as Resolving regardless of what the caller
- * passed in. With the wait-for-content preload populating the per-channel
- * slice before [ChannelScreen] mounts, that one-frame stall surfaced as a
- * white card "карточка пост появляється з затримкою, спочатку біле" — the
- * Scaffold painted its surface background under a blank body for one frame,
- * then the latch caught up and the LazyColumn paints over it.
- *
- * Seeding from the first candidate makes Ready a frame-one state when the
- * upstream pipeline (the push-site `pushChannel` awaiting
- * [PostsRepository.loadChannelHistory] + the [ChannelViewModel.posts]
- * StateFlow's synchronous initial value) already has a warm slice. The
- * [LaunchedEffect] keeps doing its job on subsequent emissions — passing
- * `reduceChannelUiState(previous, candidate)` preserves the latched
- * initialIndex through Ready→Ready transitions exactly as before.
+ * Initial value is seeded from the first [candidate] the composable
+ * receives — NOT a static [ChannelUiState.Resolving] sentinel. With
+ * [ChannelViewModel.data] starting as [ChannelData.Loaded] on warm
+ * re-entry, the first candidate is already Ready and the LazyColumn
+ * paints content on frame one. The [LaunchedEffect] keeps doing its job
+ * on subsequent emissions — passing `reduceChannelUiState(previous,
+ * candidate)` preserves the latched initialIndex through Ready→Ready
+ * transitions exactly as before.
  */
 @Composable
 internal fun rememberLatchedChannelUiState(

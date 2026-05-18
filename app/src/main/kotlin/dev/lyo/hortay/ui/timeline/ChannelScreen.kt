@@ -171,8 +171,16 @@ fun ChannelScreen(
         },
     )
 
-    val posts by vm.posts.collectAsStateWithLifecycle()
-    val historyLoading by vm.historyLoading.collectAsStateWithLifecycle()
+    // Single-state read: `data` is the channel's `Loading | Loaded(posts)`
+    // sealed union. `posts` is derived from `data` inside the same Compose
+    // snapshot, so consumers can never observe an inconsistent (posts,
+    // loading) pair across two state updates — see [ChannelData] KDoc for
+    // the race the previous two-flow design exposed.
+    val data by vm.data.collectAsStateWithLifecycle()
+    val posts = when (val d = data) {
+        is ChannelData.Loaded -> d.posts
+        ChannelData.Loading -> kotlinx.collections.immutable.persistentListOf()
+    }
     val attemptedAround by vm.attemptedAround.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val channelTitle by vm.channelTitle.collectAsStateWithLifecycle()
@@ -235,8 +243,8 @@ fun ChannelScreen(
     // `map.toMap().toPersistentMap()` allocation the inline call had.
     val channelCursors = remember(chatId, feedOrder) { cursorHolder.snapshot() }
     val candidateChannelUiState = buildChannelUiState(
+        data = data,
         items = displayedItems,
-        historyLoading = historyLoading,
         scrollToMessageId = vm.scrollToMessageId,
         attemptedAround = attemptedAround,
         searchActive = searchActive,
@@ -676,10 +684,10 @@ fun ChannelScreen(
                         Box(modifier = Modifier.fillMaxSize())
                     }
                     displayedList.isEmpty() && !refreshing -> {
-                        // [historyLoading] is exhausted by the Resolving gate above —
-                        // when this branch fires the channel has resolved Ready with
-                        // an empty slice (genuinely empty channel / search miss),
-                        // never a load-in-flight state.
+                        // [ChannelData.Loading] is exhausted by the Resolving gate
+                        // above — when this branch fires the channel has resolved
+                        // Ready with an empty slice (genuinely empty channel /
+                        // search miss), never a load-in-flight state.
                         when {
                             searchActive && searchQuery.isNotBlank() -> ChannelSearchEmpty()
                             else -> ChannelEmptyState()
