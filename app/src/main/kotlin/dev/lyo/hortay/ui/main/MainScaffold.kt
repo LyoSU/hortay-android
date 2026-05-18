@@ -161,82 +161,61 @@ fun MainScaffold(graph: AppGraph) {
 
     /**
      * Gated channel-open for in-app gestures (forward-source chip, cross-channel
-     * quote-tap, post-channel-name tap when it differs from the host). Mirrors the
-     * type-gate the deep-link dispatcher runs against [dev.lyo.hortay.data.DeepLink].
-     * Non-channel targets (basic group, supergroup-chat) surface a kind-keyed
-     * snackbar; 1:1 user / bot targets open the in-app user-profile sheet, matching
-     * how `@username` mentions resolve. Hortay's product scope is broadcast channels
-     * only, so the right answer for groups is the snackbar — same as the deep-link
-     * path.
+     * quote-tap, post-channel-name tap when it differs from the host, channel /
+     * author-chip / reply-quote affordances inside a Comments overlay). Mirrors
+     * the type-gate the deep-link dispatcher runs against
+     * [dev.lyo.hortay.data.DeepLink]. Non-channel targets (basic group,
+     * supergroup-chat) surface a kind-keyed snackbar; 1:1 user / bot targets
+     * open the in-app user-profile sheet, matching how `@username` mentions
+     * resolve. Hortay's product scope is broadcast channels only, so the right
+     * answer for groups is the snackbar — same as the deep-link path.
+     *
+     * Smart back-stack shortcut: when the destination matches the [NavEntry.Channel]
+     * directly below the current top and no scroll target is requested, this acts
+     * as a pop instead of a push. The user is asking to return to a channel that
+     * is already one swipe-back away — stacking a duplicate would force a
+     * double-back to exit AND remount the original (the `stack.takeLast(2)` window
+     * in [NavOverlayRenderer] would evict it). Pop preserves both the existing
+     * entry's scroll / ViewModel and natural back semantics. Two surfaces hit
+     * this uniformly: tap-channel-chip / tap-author-header inside a Comments
+     * overlay anchored at a post of its own channel, and tap-forward-source
+     * inside Channel-B for a post originally from Channel-A when A sits directly
+     * below in the stack.
+     *
+     * The shortcut is gated on `scrollTo == null`: a reply-quote tap with an
+     * explicit `replyToMessageId` needs a fresh entry to honour the target —
+     * the already-mounted channel below holds its own scroll state and won't
+     * react to a different anchor. The redundant duplicate is the lesser evil
+     * there (back-swipe sequence is still correct).
+     *
+     * User-case overlay collapse: when the resolved kind is a 1:1 user / bot
+     * AND we're currently inside a Comments overlay, pop it before surfacing
+     * the user-profile sheet — the "go to original" promise can't resolve to a
+     * channel screen, so the overlay has nothing left to show. For feed /
+     * channel surfaces the top isn't Comments and the overlay stays put.
      */
     val safelyOpenChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
         scope.launch {
             when (val resolved = graph.postsRepository.resolveChatKind(chatId)) {
-                is PublicHandleResult.Channel -> pushChannel(resolved.chatId, scrollTo)
-                is PublicHandleResult.User -> userProfileOpener.open(resolved.userId)
-                is PublicHandleResult.Unsupported -> {
-                    graph.userMessages.post(
-                        res.getString(unsupportedHandleMessageId(resolved.kind)),
-                        UserMessageBus.Severity.Info,
-                    )
-                }
-                is PublicHandleResult.NotFound -> {
-                    graph.userMessages.post(res.getString(R.string.link_not_found))
-                }
-            }
-        }
-        Unit
-    }
-
-    /**
-     * Same kind-gate as [safelyOpenChannel], but for "go to original" affordances
-     * on overlay surfaces (pinned-anchor reply card / channel chip / author-chat
-     * header in CommentsScreen): on success, replaces the current top entry
-     * in-place via [dev.lyo.hortay.data.NavStack.replaceTop] instead of stacking
-     * a new entry on top of it.
-     *
-     * Why replace, not stack:
-     *   - Product idiom — the reply card / channel chip in a post-detail view is
-     *     a NAVIGATION ("go to the original"), not a stacked drill.
-     *   - Layout — [MainScaffold] only mounts `stack.takeLast(2)`, so stacking a
-     *     third layer would unmount the originating channel underneath. Backing
-     *     out of the destination would then re-mount it (fresh ViewModelStore,
-     *     fresh OpenChat refcount swing, scroll-position re-derivation).
-     *
-     * Atomicity: [resolveChatKind] is cheap (chatCache hit) for the common case;
-     * [replaceTop] is a SINGLE [_stack] write — Compose subscribers see exactly
-     * one recomposition. The Channel entry at index 0 keeps its identity across
-     * the transition (same `entryId`).
-     */
-    val safelyReplaceTopWithChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
-        scope.launch {
-            when (val resolved = graph.postsRepository.resolveChatKind(chatId)) {
                 is PublicHandleResult.Channel -> {
-                    graph.postsRepository.primeChannelForOpen(resolved.chatId)
-                    graph.nav.replaceTop(
-                        NavEntry.Channel(
-                            chatId = resolved.chatId,
-                            scrollToMessageId = scrollTo,
-                        ),
-                    )
+                    val below = graph.nav.stack.value.dropLast(1).lastOrNull()
+                    val matchesBelow = scrollTo == null &&
+                        below is NavEntry.Channel &&
+                        below.chatId == resolved.chatId
+                    if (matchesBelow) graph.nav.pop()
+                    else pushChannel(resolved.chatId, scrollTo)
                 }
                 is PublicHandleResult.User -> {
-                    // The "go to original" affordance landed on a 1:1 user / bot
-                    // (rare — a reply quote authored by a personal account). Pop
-                    // the originating overlay, then surface the in-app sheet so
-                    // the action still resolves to *something* the user can act on.
-                    graph.nav.pop()
+                    if (graph.nav.top is NavEntry.Comments) graph.nav.pop()
                     userProfileOpener.open(resolved.userId)
                 }
                 is PublicHandleResult.Unsupported -> {
-                    graph.nav.pop()
                     graph.userMessages.post(
                         res.getString(unsupportedHandleMessageId(resolved.kind)),
                         UserMessageBus.Severity.Info,
                     )
                 }
                 is PublicHandleResult.NotFound -> {
-                    graph.nav.pop()
                     graph.userMessages.post(res.getString(R.string.link_not_found))
                 }
             }
@@ -504,7 +483,6 @@ fun MainScaffold(graph: AppGraph) {
                         onPushChannel = pushChannel,
                         onPushComments = pushComments,
                         onSafelyOpenChannel = safelyOpenChannel,
-                        onSafelyReplaceTopWithChannel = safelyReplaceTopWithChannel,
                         onOpenReport = openReport,
                         onPostReportClick = onPostReportClick,
                         canReportPost = canReportPost,

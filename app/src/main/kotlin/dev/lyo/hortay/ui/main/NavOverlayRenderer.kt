@@ -100,7 +100,6 @@ internal fun NavOverlayRenderer(
     onPushChannel: (chatId: Long, scrollTo: Long?) -> Unit,
     onPushComments: (TimelinePost) -> Unit,
     onSafelyOpenChannel: (chatId: Long, scrollTo: Long?) -> Unit,
-    onSafelyReplaceTopWithChannel: (chatId: Long, scrollTo: Long?) -> Unit,
     onOpenReport: (chatId: Long, messageId: Long?) -> Unit,
     onPostReportClick: (TimelinePost) -> Unit,
     canReportPost: (TimelinePost) -> Boolean,
@@ -147,7 +146,6 @@ internal fun NavOverlayRenderer(
                             onPushChannel = onPushChannel,
                             onPushComments = onPushComments,
                             onSafelyOpenChannel = onSafelyOpenChannel,
-                            onSafelyReplaceTopWithChannel = onSafelyReplaceTopWithChannel,
                             onOpenReport = onOpenReport,
                             onPostReportClick = onPostReportClick,
                             canReportPost = canReportPost,
@@ -179,7 +177,6 @@ private fun RenderNavEntry(
     onPushChannel: (chatId: Long, scrollTo: Long?) -> Unit,
     onPushComments: (TimelinePost) -> Unit,
     onSafelyOpenChannel: (chatId: Long, scrollTo: Long?) -> Unit,
-    onSafelyReplaceTopWithChannel: (chatId: Long, scrollTo: Long?) -> Unit,
     onOpenReport: (chatId: Long, messageId: Long?) -> Unit,
     onPostReportClick: (TimelinePost) -> Unit,
     canReportPost: (TimelinePost) -> Boolean,
@@ -216,41 +213,29 @@ private fun RenderNavEntry(
             onDismiss = onPopNav,
             // The three "leave this detail view for somewhere else" hooks
             // below — channel-chip tap, foreign-author header tap, reply
-            // quote-card tap — all route through [safelyReplaceTopWithChannel]
-            // for the same two reasons:
+            // quote-card tap — all route through [onSafelyOpenChannel],
+            // which keeps the regular back-stack semantics every other
+            // surface uses: forward push, back-swipe returns to this
+            // Comments overlay, swipe again returns to whatever was
+            // underneath.
             //
-            //   1. UX — every one of them is a "go to the original / go to
-            //      that channel" affordance, not a stacked drill. Back
-            //      from the destination should return to the surface below
-            //      this Comments view (the originating feed / channel), not
-            //      to the post detail the user already finished reading.
-            //      Telegram-X / Twitter / Reddit all collapse the
-            //      originating detail view on these taps.
+            // The helper carries a smart-pop shortcut for the case where
+            // the destination matches the entry directly below the
+            // current top (Comments anchored at a post of the channel
+            // that's right below us in the stack). It pops the overlay
+            // instead of stacking a duplicate Channel-A on top of
+            // [Channel-A, Comments]. That preserves the existing
+            // Channel-A's scroll / ViewModel and avoids the
+            // double-back-to-exit a duplicate would force.
             //
-            //   2. Layout — [MainScaffold] only renders `stack.takeLast(2)`,
-            //      so stacking a third layer on top of Comments would push
-            //      the originating channel (at stack[-3]) out of the
-            //      visible window. Its [NavEntryHost] disposes, its
-            //      [ViewModelStore] clears, its `OpenChat` refcount drops.
-            //      Backing out of the destination then RE-mounts it (fresh
-            //      VM, fresh OpenChat, scroll-position re-derivation,
-            //      momentary skeleton) — the "throws to target, bounces
-            //      back to the original post" flicker the user reported.
-            //      [NavStack.replaceTop] keeps the originating channel
-            //      pinned at index 0 of the visible pair across the whole
-            //      transition.
-            //
-            // The atomicity argument also matters: [replaceTop] is a
-            // SINGLE [_stack] update, so Compose subscribers see exactly
-            // one transition `[Channel-A, Comments(X)] →
-            // [Channel-A, <destination>]`. A pop-then-push pair would emit
-            // two values, which on a non-`Main.immediate` continuation
-            // would interleave a recomposition with `[Channel-A]` alone —
-            // briefly flipping Channel-A's `isTop` flag (with the
-            // graphicsLayer modifier on the back-progress overlay) and any
-            // per-`isTop` side effect.
-            onChannelClick = { p -> onSafelyReplaceTopWithChannel(p.chatId, null) },
-            onAuthorChatClick = { id -> onSafelyReplaceTopWithChannel(id, null) },
+            // The earlier `replaceTop` design optimised for the same
+            // deep-stack case but at the cost of the shallow one (feed →
+            // Comments → tap channel): collapsing Comments meant
+            // back-swipe from the destination skipped the post detail
+            // the user just opened, landing on the feed instead. The
+            // smart-pop variant fixes both.
+            onChannelClick = { p -> onSafelyOpenChannel(p.chatId, null) },
+            onAuthorChatClick = { id -> onSafelyOpenChannel(id, null) },
             onQuotedSourceClick = { post ->
                 // `replyToChatId` is already normalised at the mapping
                 // boundary ([MessageMapper.mapReply]) — TDLib's
@@ -260,8 +245,12 @@ private fun RenderNavEntry(
                 // cross-channel replies share the path: the new entry's
                 // `scrollToMessageId` lands the destination at the
                 // replied-to message and pulses the highlight there.
+                // The non-null `scrollToMessageId` also opts out of the
+                // smart-pop shortcut in [safelyOpenChannel] — an
+                // already-mounted channel below would keep its own
+                // scroll state and ignore the new anchor.
                 post.reply?.let { r ->
-                    onSafelyReplaceTopWithChannel(r.replyToChatId, r.replyToMessageId)
+                    onSafelyOpenChannel(r.replyToChatId, r.replyToMessageId)
                 }
             },
             onReactionToggle = { chatId, messageId, snapshot, kind, wasChosen ->

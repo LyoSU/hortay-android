@@ -37,6 +37,7 @@
 - Deep-link to an old post no longer surfaces "link not found" on a busy feed; the merged-feed size cap is removed so the just-fetched anchor isn't evicted before the resolver sees it.
 - Comments load in one chronological pass instead of revealing the newest first and then squeezing older comments in above.
 - Long posts and media captions now collapse with "Показати більше" even when they contain a quote block.
+- Tapping the channel chip from a post opened from the feed and swiping back now returns to the post instead of the feed; tapping a channel that's already one swipe-back away pops to it instead of stacking a duplicate.
 
 ## [0.5.0] — 2026-05-17
 
