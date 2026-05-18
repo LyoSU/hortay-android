@@ -676,6 +676,12 @@ sealed interface ForwardOrigin {
         val authorSignature: String?,
         val sourceChatId: Long,
         val sourceHandle: String?,
+        /** Message id of the original post in the source channel. Drives the
+         *  forward-chip tap so it lands AT the original post instead of the
+         *  channel's newest entry. `TdApi.MessageOriginChannel.message_id` is
+         *  non-zero for real channel forwards; the field is nullable only for
+         *  the legacy fallback path in [MessageMapper.mapForwardOrigin]. */
+        val sourceMessageId: Long?,
     ) : ForwardOrigin
     @Immutable
     data class HiddenUser(val senderName: String) : ForwardOrigin

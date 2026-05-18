@@ -90,11 +90,16 @@ object WebPostAdapter {
             date = publishedMs,
             editDate = 0L,
             forwardOrigin = forwarded?.let {
+                // Guest-mode web feed has no per-message permalink for forwards —
+                // t.me/s/ surfaces the source channel link but not the source
+                // message id. Leave sourceMessageId null; the forward chip will
+                // still drill into the channel, just at its newest entry.
                 ForwardOrigin.Channel(
                     channelName = it.channelName,
                     authorSignature = null,
                     sourceChatId = stableChatId(it.channelLink.substringAfterLast('/')),
                     sourceHandle = null,
+                    sourceMessageId = null,
                 )
             },
             authorSignature = null,

@@ -362,6 +362,7 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
                 authorSignature = origin.authorSignature?.takeUnless { it.isNullOrBlank() },
                 sourceChatId = origin.chatId,
                 sourceHandle = resolved.handle,
+                sourceMessageId = origin.messageId.takeIf { it != 0L },
             )
         }
         else -> ForwardOrigin.HiddenUser("")

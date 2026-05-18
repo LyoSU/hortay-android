@@ -1197,16 +1197,26 @@ fun TimelineScreen(
                     is dev.lyo.hortay.data.ForwardOrigin.Chat -> origin.sourceHandle
                     else -> null
                 }
+                // Only Channel origins carry a permalink message id — group/chat
+                // forwards have no per-message anchor on the TDLib side.
+                val sourceMessageId =
+                    (origin as? dev.lyo.hortay.data.ForwardOrigin.Channel)?.sourceMessageId
                 // Always open the channel when we know the chatId — ChannelScreen owns
                 // the preview/skeleton while TDLib loads the history for non-subscribed
-                // channels.
+                // channels. With sourceMessageId set, the destination lands at the
+                // original post instead of the channel's newest entry.
                 when {
-                    sourceId != null -> onChannelOpenState.value(sourceId, null)
+                    sourceId != null -> onChannelOpenState.value(sourceId, sourceMessageId)
                     !sourceHandle.isNullOrBlank() -> {
                         // Username-only origins (TDLib didn't include the resolved id) —
                         // route through LocalUriHandler so HortayUriHandler resolves
                         // the handle via SearchPublicChat and lands the ChannelScreen path.
-                        uriHandler.openUri("https://t.me/${sourceHandle.removePrefix("@")}")
+                        // Append the message id when available so the resolver can drill
+                        // straight to the original post.
+                        val handle = sourceHandle.removePrefix("@")
+                        val url = if (sourceMessageId != null) "https://t.me/$handle/$sourceMessageId"
+                            else "https://t.me/$handle"
+                        uriHandler.openUri(url)
                     }
                 }
             },
