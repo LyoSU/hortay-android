@@ -48,9 +48,11 @@ sealed interface NavEntry {
      * No push-side preload flag: the destination's own
      * [SCREEN_MOUNT_GRACE_MS] anti-flicker grace decides whether a
      * skeleton paints, based on whether [ChannelViewModel] has resolved
-     * to Ready by then. Push happens in parallel with prefetch — see
-     * [PostsRepository.primeChannelForOpen] for the parallel-not-blocking
-     * contract.
+     * to Ready by then. The MainScaffold's `pushChannel` awaits
+     * [PostsRepository.loadChannelHistory] with a short timeout before
+     * actually mounting [Channel], so warm/local-cache opens land
+     * populated and only genuinely slow loads cross the threshold to a
+     * skeleton.
      */
     @Immutable
     data class Channel(

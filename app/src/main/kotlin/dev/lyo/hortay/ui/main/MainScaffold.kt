@@ -42,6 +42,21 @@ import kotlinx.coroutines.launch
 private const val EXIT_PROGRESS = 2f
 
 /**
+ * How long a channel-open tap is allowed to wait for
+ * [PostsRepository.loadChannelHistory] before pushing [NavEntry.Channel]
+ * anyway. See the KDoc on `pushChannel` for the rationale on awaiting the
+ * prefetch instead of pushing in parallel.
+ *
+ * 400 ms sits inside the "feels responsive" perceptual band (under 500 ms is
+ * not consciously read as lag), but well above the typical local-cache /
+ * Wi-Fi RPC time for `GetChatHistory` (~100-250 ms in steady state). The
+ * common case is the tap looks instant; only slow paths cross the timeout,
+ * and the destination's [ChannelUiState.Resolving] gate paints a skeleton
+ * once mounted so the user gets visible feedback rather than a hanging tap.
+ */
+private const val CHANNEL_PUSH_PREFETCH_TIMEOUT_MS = 400L
+
+/**
  * Top-level container that owns nav-tab state, the global channel filter and the comments
  * overlay, then dispatches the four primary surfaces.
  *
@@ -92,20 +107,46 @@ fun MainScaffold(graph: AppGraph) {
     // overlay layer; tab restoration is automatic because we never moved
     // away from it.
     //
-    // Parallel-prefetch contract: the push is instant — the destination
-    // enters its transition animation in the same frame as the tap. In
-    // parallel, [PostsRepository.primeChannelForOpen] kicks off the
-    // single-flight `loadChannelHistory` so its result is already in
-    // [_posts] (or arriving) by the time [ChannelViewModel] mounts and
-    // awaits the same Deferred. The screen-side anti-flicker grace
-    // ([SCREEN_MOUNT_GRACE_MS]) decides whether a skeleton paints —
-    // never a source-side timer. Animation = free runway for the
-    // prefetch, not a deadline; on warm cache the destination lands
-    // populated with no skeleton, on cold cache the skeleton appears
-    // briefly after the grace.
+    // Await-prefetch contract for channel-opens. The push waits for the
+    // deep history load to settle (up to [CHANNEL_PUSH_PREFETCH_TIMEOUT_MS])
+    // before mounting [NavEntry.Channel]. On warm re-entry the cooldown
+    // short-circuit inside [PostsRepository.loadChannelHistory] returns
+    // immediately, so the tap → push transition is still effectively
+    // instant. On cold first entry — the case where
+    // [PostsRepository.refreshLocked]'s cold-start harvest has populated
+    // exactly one post per channel from `Chat.lastMessage` — the wait
+    // ensures the [_posts] slice is full BEFORE the destination mounts.
+    // Otherwise the user would see the LazyColumn lay out with one post,
+    // then 79 older posts merge in above mid-frame; in OldestUnreadFirst
+    // (asc-by-date, newer at the bottom) the visible row reads as
+    // "stretching" while older history pops in over the top — the
+    // user-reported "стрімає, посто двигається" symptom.
+    //
+    // The timeout is a safety: slow networks / FLOOD_WAIT can stall
+    // loadChannelHistory past the perceptible-lag threshold, and a
+    // tap that hangs forever is worse than a brief skeleton. After
+    // [CHANNEL_PUSH_PREFETCH_TIMEOUT_MS] we push regardless, and the
+    // destination's existing [ChannelUiState.Resolving] gate paints
+    // the skeleton until the load finally lands.
+    //
+    // This deliberately walks back the "push is instant; prefetch is
+    // fire-and-forget" rule from the earlier tap-navigation contract
+    // (see [data/TapNavigation.kt]). The earlier rationale assumed the
+    // destination-side anti-flicker grace alone was enough — it is for
+    // Newest sort where the single cold-harvest post happens to sit at
+    // the LazyColumn's lastIndex and 79 history posts merge in below
+    // the viewport, invisible. In OldestUnreadFirst the geometry
+    // inverts: the cold-harvest post sits at the bottom (newest) of
+    // an asc-sort, and history insertions land above — squarely in
+    // the user's field of view.
     val pushChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
-        graph.postsRepository.primeChannelForOpen(chatId)
-        graph.nav.push(NavEntry.Channel(chatId = chatId, scrollToMessageId = scrollTo))
+        scope.launch {
+            kotlinx.coroutines.withTimeoutOrNull(CHANNEL_PUSH_PREFETCH_TIMEOUT_MS) {
+                graph.postsRepository.loadChannelHistory(chatId)
+            }
+            graph.nav.push(NavEntry.Channel(chatId = chatId, scrollToMessageId = scrollTo))
+        }
+        Unit
     }
     // Same parallel-prefetch contract as [pushChannel], applied to the
     // comments overlay. [primeCommentsForOpen] kicks off [prefetchThread]

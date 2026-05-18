@@ -76,12 +76,14 @@ class ChannelViewModel(
     //
     // Initial value is seeded SYNCHRONOUSLY from [repo.posts.value] at VM
     // construction time, not the conventional empty `persistentListOf()`. That
-    // matters because of the wait-for-content navigation path: [MainScaffold]
-    // runs `primeChannelForOpen(chatId)` BEFORE pushing [NavEntry.Channel], so
-    // by the time this VM is constructed the per-channel slice is already in
-    // `_posts` for any channel the merged feed has touched (or just successfully
-    // pre-warmed). A stale empty initial would have [ChannelScreen]'s first
-    // composition read `items = emptyList()` → `buildChannelUiState` returns
+    // matters because of the wait-for-content navigation path: [MainScaffold]'s
+    // `pushChannel` awaits [repo.loadChannelHistory] (with a short timeout)
+    // BEFORE pushing [NavEntry.Channel], so by the time this VM is constructed
+    // the per-channel slice is already in `_posts` for any channel that has
+    // surfaced in the merged feed (or just successfully pre-warmed by the
+    // awaited prefetch). A stale empty initial would have [ChannelScreen]'s
+    // first composition read `items = emptyList()` → `buildChannelUiState`
+    // returns
     // Resolving → the Scaffold renders its background colour over a blank body
     // until upstream's first WhileSubscribed emission lands one frame later, at
     // which point the LazyColumn paints over it — visible as "спочатку біле
