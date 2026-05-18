@@ -1,12 +1,11 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -20,15 +19,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
 
 /**
- * Ambient "↓ N" jump-to-next-unread chip, bottom-end anchored. Mirrors
- * Telegram-Android's in-chat scroll-to-bottom FAB semantics, repurposed for
- * the [dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst] queue:
+ * Ambient jump-to-next-unread chip, bottom-end anchored, in **Telegram-Android's
+ * in-chat scroll-to-bottom FAB silhouette** — a 56 dp circular Surface holding
+ * the `↓` glyph centred, with a corner-anchored Badge carrying the live count.
+ * Bound to [dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst]:
  *
  *   - Count is the LIVE remaining-unread total in the visible feed
  *     (driven by [LocalReadCursors], not the frozen sort snapshot), so it
@@ -37,18 +39,25 @@ import dev.lyo.hortay.ui.icons.Symbol
  *     live cursor (skipping past posts the snapshot still has in the
  *     unread block but the live cursor has already acked).
  *
- * Visual hierarchy contrast with [NewPostsPill]:
- *   - NewPostsPill = ALERT (primary container, BottomCenter, plural label,
- *     opt-in to NEW arrivals).
- *   - UnreadCounterPill = AMBIENT (secondaryContainer, BottomEnd, compact
- *     "↓ N" form, always present while unread > 0). Different role = different
- *     anchor = no visual conflict when both fire at once.
+ * Silhouette-based hierarchy contrast with [NewPostsPill]:
+ *   - [NewPostsPill] = ALERT — horizontal stadium with avatar stack +
+ *     plural label, BottomCenter, `primary` container. Opt-in to NEW arrivals
+ *     sitting *outside* the feed (`scopedPendingNew`).
+ *   - [UnreadCounterPill] = AMBIENT — round FAB + corner badge, BottomEnd,
+ *     `secondaryContainer`. Reports unread *inside* the feed; always present
+ *     while count > 0.
+ *
+ * The two share an `arrow_downward` glyph but **the silhouettes are
+ * Gestalt-disjoint** (stadium vs circle), so when both fire at once on
+ * different anchors the user reads them as distinct affordances instead of
+ * "two ↓ buttons that do similar things". A11y echoes this: the FAB has a
+ * single merged `contentDescription`, so TalkBack announces one button per
+ * pill, not a count and a label as separate nodes.
  *
  * Spring entrance keyed on `count > 0` (not on the count itself), same idiom
- * NewPostsPill uses — chip pops once on enter, then count updates without
+ * [NewPostsPill] uses — chip pops once on enter, then count updates without
  * re-springing on every dwell-ack.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun UnreadCounterPill(
     count: Int,
@@ -66,39 +75,58 @@ fun UnreadCounterPill(
     )
     val ctx = LocalContext.current
     val label = unreadRemainingLabel(ctx.resources, count)
-    Surface(
-        onClick = onClick,
-        modifier = modifier.scale(scale),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        tonalElevation = 3.dp,
-        shadowElevation = 4.dp,
+    BadgedBox(
+        // mergeDescendants collapses the Surface + Symbol + Badge into a single
+        // accessibility node so TalkBack reads "12 непрочитаних лишилось" once
+        // instead of stuttering through the badge digits and the icon label.
+        modifier = modifier
+            .scale(scale)
+            .semantics(mergeDescendants = true) { contentDescription = label },
+        badge = {
+            Badge(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ) {
+                Text(
+                    text = countText(count),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        },
     ) {
-        Row(
-            modifier = Modifier.padding(start = 12.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Surface(
+            onClick = onClick,
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            tonalElevation = 3.dp,
+            shadowElevation = 4.dp,
+            modifier = Modifier.size(FAB_SIZE),
         ) {
-            Symbol(
-                name = "arrow_downward",
-                size = 18.dp,
-                contentDescription = label,
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = countText(count),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(FAB_SIZE),
+            ) {
+                Symbol(
+                    name = "arrow_downward",
+                    size = 24.dp,
+                    // Decorative — the merged contentDescription above carries
+                    // the human label; surfacing the icon as its own a11y node
+                    // would duplicate the announcement.
+                    contentDescription = null,
+                )
+            }
         }
     }
 }
 
 /**
  * Plural-aware semantic label for screen readers / talkback ("12 непрочитаних
- * лишилось"). The visible chip only shows the bare number — short for
- * glanceability, matching Telegram's pattern — but `contentDescription`
- * carries the full localised phrase so a11y users get the same meaning.
+ * лишилось"). The visible badge only shows the bare number — short for
+ * glanceability, matching Telegram's pattern — but the FAB's merged
+ * `contentDescription` carries the full localised phrase so a11y users get
+ * the same meaning.
  */
 private fun unreadRemainingLabel(res: android.content.res.Resources, n: Int): String {
     if (n > 99) return res.getString(R.string.unread_remaining_overflow)
@@ -106,3 +134,11 @@ private fun unreadRemainingLabel(res: android.content.res.Resources, n: Int): St
 }
 
 private fun countText(n: Int): String = if (n > 99) "99+" else n.toString()
+
+/**
+ * Standard M3 FAB diameter. Big enough for a comfortable thumb target on the
+ * BottomEnd corner without crowding the centred [NewPostsPill] when both are
+ * visible — a 56 dp circle at the right edge + a stadium chip at centre leaves
+ * ~24 dp of breathing room on a 360 dp-width phone.
+ */
+private val FAB_SIZE = 56.dp

@@ -44,6 +44,13 @@ import dev.lyo.hortay.ui.theme.asComposeShape
  *    the count ticks up. Subsequent count changes use the existing AnimatedContent label
  *    swap upstream — separating "pill enters" from "pill updates" keeps the motion
  *    legible: only one expressive cue per state change.
+ *
+ * Pairs with [UnreadCounterPill] in `OldestUnreadFirst` mode: this is the ALERT
+ * (stadium silhouette, BottomCenter, primary) for arrivals sitting *outside* the
+ * feed; the other is the AMBIENT (circle FAB silhouette, BottomEnd, secondary)
+ * for unread *inside* the feed. Silhouette-disjoint Gestalt clusters keep the
+ * two readable as distinct affordances even when both fire at once and both
+ * carry an `arrow_downward` glyph.
  */
 @Composable
 fun NewPostsPill(
