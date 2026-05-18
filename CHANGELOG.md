@@ -16,6 +16,7 @@
 
 ### Fixed
 - Returning from a channel to the feed no longer jumps to a different post when an album-tailed channel hydrates in the background.
+- Channel scroll-up no longer hits an invisible "loading limit"; pagination now triggers near the older edge instead of running away on cold entry in OldestUnreadFirst mode.
 - Scroll position is preserved on return from a channel and while scrolling inside a channel; reply chains no longer collapse into a Thread row, so LazyColumn's keyed anchor stays put through every ingest.
 - Poll voting works — TDLib code 406 is treated as a silent no-op instead of surfacing as an error and reverting the vote.
 - Channel cards paint on the first frame of entry; no white flash before the post appears.
