@@ -66,9 +66,13 @@ enum class DownloadPriority(val tdValue: Int) {
  *
  *   • **Stall watchdog.** TDLib's docs say the only signal of completion is a stream of
  *     [TdApi.UpdateFile]. In practice, a network glitch mid-chunk leaves the file with
- *     `is_downloading_active=true` and TDLib goes silent — see tdlib/td#2585. The naive
- *     "subscribe and wait" loop hangs forever. We periodically check active downloads and
- *     reissue [TdApi.DownloadFile] when no progress has been observed for [STALL_THRESHOLD_MS].
+ *     `is_downloading_active=true` indefinitely — Levin's stance in tdlib/td#2585 (still
+ *     open as of TDLib 1.8.63): *"There are no 'stalled' downloads. The download is in
+ *     progress and it should eventually succeed"*. From the app's POV the naive
+ *     "subscribe and wait" loop hangs forever on poor networks. We periodically check
+ *     active downloads and reissue [TdApi.DownloadFile] when no progress has been
+ *     observed for [STALL_THRESHOLD_FIRST_BYTE_MS] / [STALL_THRESHOLD_FOREGROUND_MS]
+ *     (graduated by visibility and bytes-seen — see [checkStalled]).
  *
  *   • **Debounced cancel.** A LazyColumn item disposed-and-remounted in the same frame races
  *     [cancelDeferred] against the next [ensure]. Both run on the IO dispatcher in
@@ -202,9 +206,10 @@ class MediaCache(
         //     loop still wakes occasionally so a fresh ensure() that started just after
         //     the last empty-check is picked up promptly — at this cadence the wake-up
         //     cost is negligible while still feeling responsive on the very first stall.
-        //   • Foreground + active downloads → tick every WATCHDOG_TICK_MS (2 s). At the
-        //     STALL_THRESHOLD_MS (15 s) of silence the next tick reissues; worst-case
-        //     recovery is ~17 s. Reissue is free for TDLib (treated as "kick the queue",
+        //   • Foreground + active downloads → tick every WATCHDOG_TICK_MS (2 s). At
+        //     STALL_THRESHOLD_FIRST_BYTE_MS (4 s) / STALL_THRESHOLD_FOREGROUND_MS (6 s)
+        //     of silence the next tick reissues; worst-case recovery is ~8 s on the
+        //     first-byte path. Reissue is free for TDLib (treated as "kick the queue",
         //     not "restart"), and real progress resets the timer — so a slow-but-moving
         //     transfer never trips the watchdog.
         scope.launch(ioDispatcher) {
@@ -737,7 +742,8 @@ class MediaCache(
      * would set up a 400ms poll loop until rename happens. We let the reducer's
      * Ready/Failed transition clear the registration instead — this means subsequent
      * Downloading(1.0) emits during the same completion sequence are no-ops, and the
-     * watchdog (`STALL_THRESHOLD_MS`) is the next escalation if rename never lands.
+     * watchdog ([STALL_THRESHOLD_FOREGROUND_MS] for the bytes-seen path that completion
+     * walks through) is the next escalation if rename never lands.
      *
      * Why lazy start + putIfAbsent: gives us a clean "first writer wins" race without
      * a separate `containsKey` check that would itself be racy. The losers' jobs are
@@ -938,14 +944,7 @@ class MediaCache(
         // wait 30s for the next sweep. 5s keeps wake-ups cheap (12/min when truly
         // idle) while making first-stall detection feel instant.
         const val IDLE_TICK_MS = 5_000L
-        // Historical "any active download stalled this long" threshold. No
-        // longer drives reissue (we now skip the watchdog kick entirely for
-        // non-user-facing files; see [checkStalled]), but the constant survives
-        // because the [post-completion-resync] doc references it as the next
-        // escalation step if TDLib's rename never lands. 15 s aligns with
-        // TDLib's session-reconnect window.
-        const val STALL_THRESHOLD_MS = 15_000L
-        // Tighter threshold for files the user is actively staring at
+        // Threshold for files the user is actively staring at
         // (Foreground/VisibleMedia priorities) once bytes have started flowing. Server-side
         // stalls in the 5-15s window are common per TDLib #2585; without this, a "довго
         // грузилось" feeling persists up to 15s before the watchdog kicks. 6s is below
@@ -960,9 +959,13 @@ class MediaCache(
         // window, so we always have a chance to either dislodge the request or hand
         // off to TDLib's reconnect-driven recovery.
         const val STALL_THRESHOLD_FIRST_BYTE_MS = 4_000L
-        // After three reissues with no progress we surface Failed (~60s total). One
-        // more retry than before, since a single flaky DC-migration window can eat
-        // the first reissue cycle without that being a permanent failure.
+        // After three reissues with no progress we surface Failed. With the current
+        // graduated thresholds (4 s first-byte / 6 s mid-stream) plus a 2 s tick cadence,
+        // that's ~18-24 s of unmoving bytes before the user sees a tap-to-retry — well
+        // inside TDLib's 7-44 s session-reconnect window (#2585 thread), so a single
+        // DC-migration hiccup doesn't burn the whole retry budget. Bumping above 3 made
+        // failed slots feel "stuck on spinner forever" to the user; below 3 surfaced
+        // Failed during legitimate slow-but-recovering DC reconnects.
         const val MAX_STALL_RETRIES = 3
         // Wi-Fi window during which a re-mount can rescue a queued cancel. 250ms
         // covers a LazyColumn dispose-and-remount cycle (one frame at 60fps + slack)
