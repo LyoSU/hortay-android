@@ -1,58 +1,33 @@
 package dev.lyo.hortay.data
 
 import dev.lyo.hortay.R
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import org.drinkless.tdlib.TdApi
-import java.util.Collections
 
 /**
  * Async layer over [MessageContentMapper] that resolves real channel handles, forward
- * author names, reply preview authors, and discussion-comment sender info. Holds
- * session-scoped caches so each user / supergroup is fetched at most once per repository
- * instance.
+ * author names, reply preview authors, and discussion-comment sender info.
  *
  * Single mapper per session: PostsRepository (channel feed) and CommentsRepository
- * (discussion threads) share an instance — that means the same author resolved once for
- * a feed post is reused when their reply shows up in comments, and vice versa.
+ * (discussion threads) share an instance — the resolver methods here drive author /
+ * handle / verification badges for both surfaces, so they share the same TDLib path.
  *
- * Bounded LRU caches: a long session can otherwise accumulate thousands of resolved
- * users/chats and never evict — particularly when the user browses many channels with
- * lots of unique commenters. LinkedHashMap with accessOrder=true + removeEldestEntry
- * gives true LRU semantics; wrapped in `Collections.synchronizedMap` because the maps
- * are touched from several coroutines (refreshLocked, handle* update collectors,
- * Update* invalidations).
+ * No in-process LRU. Per TDLib docs:
+ *
+ *   "getUser / getChat / getSupergroup — This is an offline method if the current
+ *    user is not a bot."
+ *
+ * With `useChatInfoDatabase = true` TDLib keeps Users / Chats / Supergroups in its
+ * own local store and re-emits `updateUser` / `updateNewChat` / `updateSupergroup`
+ * BEFORE returning any id that references them, so by the time we hold a
+ * `userId` / `chatId` / `supergroupId` the upstream cache is already warm. Layering
+ * our own `LinkedHashMap` LRU on top added microseconds of "win" and a steady supply
+ * of stale-rename / stale-avatar bugs whenever an UpdateUser / UpdateSupergroup
+ * arrived while a row was already on screen.
  */
 class MessageMapper(private val td: TdSender, private val res: StringResolver) {
 
     private val defaultUserName: String get() = res.getString(R.string.user_default_name)
     private val defaultChannelName: String get() = res.getString(R.string.channel_default_name)
-
-
-    private val userCache = boundedLru<Long, ResolvedSender>(MAX_RESOLVER_CACHE)
-    private val chatCache = boundedLru<Long, ResolvedSender>(MAX_RESOLVER_CACHE)
-    private val supergroupUsernameCache = boundedLru<Long, String>(MAX_RESOLVER_CACHE) // username, "" = none
-    // Verification mark per supergroup. We cache the *string* of the enum (or "") so the
-    // map can serve "definitely no badge" without materialising a Kotlin null.
-    private val supergroupVerificationCache = boundedLru<Long, String>(MAX_RESOLVER_CACHE)
-
-    // Reply previews sometimes hit the same source post repeatedly — same channel
-    // referenced by multiple posts, or the same conversation thread visible across a
-    // refresh. We cache the full resolved context (author, thumbnail, kind, plus a
-    // fallback caption/text) so a second mapping never round-trips. The single GetMessage
-    // we'd already pay for the author also fills in thumbnail and kind, which TDLib's
-    // [MessageReplyToMessage.content] snapshot leaves null in many channel-post pathways.
-    private val replyContextCache = boundedLru<Pair<Long, Long>, ReplyContext>(MAX_RESOLVER_CACHE)
-
-    private data class ReplyContext(
-        val authorName: String,
-        val mediaThumb: TdMedia?,
-        val mediaKind: ReplyMediaKind,
-        val fallbackExcerpt: String,
-    )
 
     /**
      * Map a channel feed post.
@@ -203,112 +178,33 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
     }
 
     suspend fun resolveSender(senderId: TdApi.MessageSender): ResolvedSender = when (senderId) {
-        is TdApi.MessageSenderUser -> resolveCachedUser(senderId.userId)
-        is TdApi.MessageSenderChat -> resolveCachedChat(senderId.chatId)
+        is TdApi.MessageSenderUser -> fetchUser(senderId.userId)
+        is TdApi.MessageSenderChat -> fetchChat(senderId.chatId)
         else -> ResolvedSender("—", null, null, null)
     }
 
     /**
-     * Pre-warm the supergroup handle / verification caches for a batch of channel
-     * chats. During [PostsRepository.refreshLocked] every per-channel mapping path
-     * touches [resolveChannelHandle], which fires a [TdApi.GetSupergroup] on cache
-     * miss; serialised through the per-channel concurrency semaphore that's
-     * already saturated by [TdApi.GetChatHistory] requests, those handle lookups
-     * stack at the tail of the refresh and add hundreds of milliseconds to "first
-     * post is fully resolved".
-     *
-     * Firing them in parallel here, with their own concurrency budget, means the
-     * caches are warm by the time the per-channel mappers run — they hit the
-     * `userCache` / `supergroupUsernameCache` fast path and never round-trip.
-     *
-     * Idempotent: skips supergroups already cached, so repeated calls (e.g.
-     * pull-to-refresh) cost a few HashMap probes and nothing else.
-     */
-    suspend fun prewarmChannels(chats: List<TdApi.Chat>) {
-        val needsFetch = chats.mapNotNull { chat ->
-            val sgId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return@mapNotNull null
-            if (supergroupUsernameCache[sgId] != null) null else sgId
-        }
-        if (needsFetch.isEmpty()) return
-        val semaphore = Semaphore(PREWARM_CONCURRENCY)
-        coroutineScope {
-            needsFetch.map { sgId ->
-                async {
-                    semaphore.withPermit {
-                        val sg = runCatching { td.send(TdApi.GetSupergroup(sgId)) }.getOrNull() ?: return@withPermit
-                        val handle = sg.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" }
-                        supergroupUsernameCache.putIfAbsent(sgId, handle.orEmpty())
-                        supergroupVerificationCache.putIfAbsent(
-                            sgId,
-                            sg.verificationStatus?.toMark()?.name.orEmpty(),
-                        )
-                    }
-                }
-            }.awaitAll()
-        }
-    }
-
-    /**
-     * Wipe every resolver cache. Called from [AppGraph]'s logout handler so
-     * author identities resolved for account A's view don't surface in
-     * account B's feed after a re-sign-in. Cheap — caches re-warm on the
-     * first refresh against the new account.
+     * No-op kept on the type surface because [AppGraph] still calls it from its
+     * logout handler. The mapper holds no session-scoped state of its own — every
+     * resolver round-trips to TDLib, which clears its own User / Chat / Supergroup
+     * caches on logout. Leaving this here as `{}` is cheaper than threading a
+     * conditional through `AppGraph` for a hot path that runs at most once per
+     * session.
      */
     fun clear() {
-        userCache.clear()
-        chatCache.clear()
-        supergroupUsernameCache.clear()
-        supergroupVerificationCache.clear()
-        replyContextCache.clear()
-    }
-
-    /** Drop a stale entry — call when TDLib emits UpdateUser / UpdateSupergroup. */
-    fun invalidateUser(userId: Long) { userCache.remove(userId) }
-    fun invalidateChat(chatId: Long) { chatCache.remove(chatId) }
-    fun invalidateSupergroup(supergroupId: Long) {
-        supergroupUsernameCache.remove(supergroupId)
-        supergroupVerificationCache.remove(supergroupId)
-    }
-
-    // computeIfAbsent on a synchronizedMap is atomic but blocks the bucket, and our
-    // fetch lambdas are suspend. Pattern: optimistic read → fetch outside the map →
-    // putIfAbsent and return whichever value won the race. Slightly redundant fetch on
-    // first-touch contention, but no race + suspend-friendly.
-    private suspend fun resolveCachedUser(userId: Long): ResolvedSender {
-        userCache[userId]?.let { return it }
-        val resolved = fetchUser(userId)
-        return userCache.putIfAbsent(userId, resolved) ?: resolved
-    }
-
-    private suspend fun resolveCachedChat(chatId: Long): ResolvedSender {
-        chatCache[chatId]?.let { return it }
-        val resolved = fetchChat(chatId)
-        return chatCache.putIfAbsent(chatId, resolved) ?: resolved
+        // Intentionally empty — see KDoc.
     }
 
     private suspend fun resolveChannelHandle(chat: TdApi.Chat): String? {
         val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
-        supergroupUsernameCache[supergroupId]?.let { return it.takeUnless { s -> s.isEmpty() } }
-        // Single GetSupergroup call seeds BOTH the username and verification caches —
-        // avoids a second round-trip when the post is then asked for its badge.
         val sg = runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }.getOrNull()
-        val handle = sg?.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" }
-        // "" = "no username" sentinel so the cache hit path can distinguish unfetched
-        // from definitely-no-username without nullability gymnastics.
-        supergroupUsernameCache.putIfAbsent(supergroupId, handle.orEmpty())
-        supergroupVerificationCache.putIfAbsent(supergroupId, sg?.verificationStatus?.toMark()?.name.orEmpty())
-        return handle
+        return sg?.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" }
     }
 
     private suspend fun resolveChannelVerification(chat: TdApi.Chat): SenderVerification? {
         val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
-        // Hit the username path first — it primes the verification cache as a side effect.
-        // Most posts already trigger handle resolution before we land here, so this is
-        // usually a free read.
-        if (supergroupId !in supergroupVerificationCache) resolveChannelHandle(chat)
-        return supergroupVerificationCache[supergroupId]
-            ?.takeUnless { it.isEmpty() }
-            ?.let { runCatching { SenderVerification.valueOf(it) }.getOrNull() }
+        val sg = runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }.getOrNull()
+        return sg?.verificationStatus?.toMark()
     }
 
     private suspend fun fetchUser(userId: Long): ResolvedSender {
@@ -342,11 +238,11 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
 
     private suspend fun mapForwardOrigin(origin: TdApi.MessageOrigin): ForwardOrigin = when (origin) {
         is TdApi.MessageOriginUser -> ForwardOrigin.User(
-            userName = resolveCachedUser(origin.senderUserId).name,
+            userName = fetchUser(origin.senderUserId).name,
             userId = origin.senderUserId,
         )
         is TdApi.MessageOriginChat -> {
-            val resolved = resolveCachedChat(origin.senderChatId)
+            val resolved = fetchChat(origin.senderChatId)
             ForwardOrigin.Chat(
                 chatName = resolved.name,
                 authorSignature = origin.authorSignature?.takeUnless { it.isNullOrBlank() },
@@ -356,7 +252,7 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
         }
         is TdApi.MessageOriginHiddenUser -> ForwardOrigin.HiddenUser(origin.senderName.orEmpty())
         is TdApi.MessageOriginChannel -> {
-            val resolved = resolveCachedChat(origin.chatId)
+            val resolved = fetchChat(origin.chatId)
             ForwardOrigin.Channel(
                 channelName = resolved.name,
                 authorSignature = origin.authorSignature?.takeUnless { it.isNullOrBlank() },
@@ -394,49 +290,41 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
         val effectiveReplyChatId = if (reply.chatId != 0L) reply.chatId
         else if (reply.messageId != 0L) chatId
         else 0L
-        val key = effectiveReplyChatId to reply.messageId
 
-        // Resolve author + thumbnail + kind + caption-fallback once and cache the bundle.
-        //
         // Round-trip policy:
         //   • TDLib gave us a non-null content snapshot → we have everything we need
-        //     (kind, thumb, caption text); skip the fetch and use the chat-name cache for
-        //     author. Fast path; covers most public channel posts.
-        //   • Snapshot is null → fall back to GetMessage to get content + author. This is
-        //     the path where TDLib doesn't preload reply content (most channel-side
-        //     reply-to-channel-post pathways), and is the only case that costs a server
-        //     round-trip.
-        // Either way the result is cached per (chatId, messageId), so a busy feed with
-        // many posts referencing the same parent pays the cost at most once.
-        val ctx = replyContextCache[key] ?: run {
-            val needsFetch = reply.content == null && effectiveReplyChatId != 0L && reply.messageId != 0L
-            val refMsg = if (needsFetch) {
-                runCatching { td.send(TdApi.GetMessage(effectiveReplyChatId, reply.messageId)) }
-                    .getOrNull()
-            } else null
-            val author = refMsg?.let { resolveSender(it.senderId).name }
-                ?: if (effectiveReplyChatId != 0L) resolveCachedChat(effectiveReplyChatId).name else ""
-            val effectiveContent: TdApi.MessageContent? = refMsg?.content ?: reply.content
-            val (thumb, kind) = extractReplyMedia(effectiveContent)
-            val fallback = extractTextOrCaption(effectiveContent)
-            val resolved = ReplyContext(author, thumb, kind, fallback)
-            replyContextCache.putIfAbsent(key, resolved) ?: resolved
-        }
+        //     (kind, thumb, caption text); skip GetMessage and resolve the author from
+        //     the chat. Fast path; covers most public channel posts.
+        //   • Snapshot is null → fall back to GetMessage to get content + author. This
+        //     is the path where TDLib doesn't preload reply content (most channel-side
+        //     reply-to-channel-post pathways). `GetMessage` is local-cache-first
+        //     when `useMessageDatabase = true` — no network round-trip when the parent
+        //     is already in the message DB.
+        val needsFetch = reply.content == null && effectiveReplyChatId != 0L && reply.messageId != 0L
+        val refMsg = if (needsFetch) {
+            runCatching { td.send(TdApi.GetMessage(effectiveReplyChatId, reply.messageId)) }
+                .getOrNull()
+        } else null
+        val author = refMsg?.let { resolveSender(it.senderId).name }
+            ?: if (effectiveReplyChatId != 0L) fetchChat(effectiveReplyChatId).name else ""
+        val effectiveContent: TdApi.MessageContent? = refMsg?.content ?: reply.content
+        val (thumb, kind) = extractReplyMedia(effectiveContent)
+        val fallback = extractTextOrCaption(effectiveContent)
 
         // Excerpt priority:
         //   1. Explicit user-selected quote (Telegram's quote-text feature).
         //   2. The parent's own text or caption (resolved via GetMessage above).
         //   3. Empty — the kind label takes over in the UI.
-        val excerpt = reply.quote?.text?.text.orEmpty().ifBlank { ctx.fallbackExcerpt }
+        val excerpt = reply.quote?.text?.text.orEmpty().ifBlank { fallback }
 
         return ReplyPreview(
-            authorName = ctx.authorName,
+            authorName = author,
             excerpt = excerpt,
             isQuote = reply.quote != null,
             replyToChatId = effectiveReplyChatId,
             replyToMessageId = reply.messageId,
-            mediaThumb = ctx.mediaThumb,
-            mediaKind = ctx.mediaKind,
+            mediaThumb = thumb,
+            mediaKind = kind,
         )
     }
 
@@ -505,14 +393,6 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
         val avatarThumb: ByteArray?,
         val avatarFileId: Int?,
     )
-
-    private companion object {
-        const val MAX_RESOLVER_CACHE = 512
-        // Bigger than refresh's per-channel concurrency (4) because GetSupergroup is
-        // strictly local-cache-or-API-cache fetches, much cheaper than GetChatHistory.
-        // 16 saturates the local DB without spawning more than TDLib comfortably handles.
-        const val PREWARM_CONCURRENCY = 16
-    }
 }
 
 private fun TdApi.VerificationStatus.toMark(): SenderVerification? = when {
@@ -521,8 +401,3 @@ private fun TdApi.VerificationStatus.toMark(): SenderVerification? = when {
     isFake -> SenderVerification.Fake
     else -> null
 }
-
-private fun <K, V> boundedLru(maxSize: Int): MutableMap<K, V> =
-    Collections.synchronizedMap(object : LinkedHashMap<K, V>(16, 0.75f, /* accessOrder */ true) {
-        override fun removeEldestEntry(eldest: Map.Entry<K, V>): Boolean = size > maxSize
-    })

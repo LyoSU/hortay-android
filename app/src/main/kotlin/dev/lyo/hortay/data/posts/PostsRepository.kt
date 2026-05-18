@@ -328,26 +328,21 @@ class PostsRepository(
             .onEach { update -> handleChatPhoto(update) }
             .launchIn(scope)
 
-        // User profile changed (rename, avatar). Drop our resolver cache so future renders
-        // re-fetch — most posts already have their author baked in, so this is rare hot-path.
-        td.updates.filterIsInstance<TdApi.UpdateUser>()
-            .onEach { mapper.invalidateUser(it.user.id) }
-            .launchIn(scope)
+        // UpdateUser arrives whenever a user's profile (name, avatar, username) changes.
+        // The mapper no longer holds a parallel User cache — every resolveSender hits
+        // TDLib's own local cache via GetUser (offline read), so a rename surfaces on the
+        // next mapping without any per-update bookkeeping here. The listener is kept off
+        // the wire entirely.
 
-        // Supergroup metadata changed.
-        //   1. Invalidate the mapper's handle/username cache so resolveChannelHandle
-        //      refetches next call — that path consults SupergroupFullInfo, not this
-        //      lightweight object, so invalidation (not population) is the right
-        //      shape there.
-        //   2. Mirror the [TdApi.Supergroup] object into [supergroupCache] so reads
-        //      that only need this lightweight shape (subscriber count today;
-        //      potentially status / verification flags later) can resolve
-        //      synchronously without an RPC. TDLib emits one update per cached
-        //      supergroup on session warm-up — so by the time a channel that the
-        //      merged feed already showed is opened, its memberCount is in memory.
+        // Supergroup metadata changed: mirror the [TdApi.Supergroup] object into
+        // [supergroupCache] so reads that only need this lightweight shape (subscriber
+        // count today; potentially status / verification flags later) can resolve
+        // synchronously without an RPC. TDLib emits one update per cached supergroup on
+        // session warm-up — so by the time a channel that the merged feed already showed
+        // is opened, its memberCount is in memory. Handle / verification lookups in the
+        // mapper read through TDLib's own GetSupergroup cache, so no invalidation needed.
         td.updates.filterIsInstance<TdApi.UpdateSupergroup>()
             .onEach { update ->
-                mapper.invalidateSupergroup(update.supergroup.id)
                 supergroupCache[update.supergroup.id] = update.supergroup
             }
             .launchIn(scope)
@@ -1752,15 +1747,14 @@ class PostsRepository(
     }
 
     private fun handleChatTitle(update: TdApi.UpdateChatTitle) {
-        // Don't mutate the existing TdApi.Chat in-place — multiple workers read
-        // chatCache[chatId] concurrently (refreshLocked, ingest, coalesceAlbum…),
-        // and TdApi.Chat is a Java POJO without internal synchronisation, so a
-        // mid-flight reader could see torn fields (e.g. fresh title paired with
-        // stale photo). compute(): atomic replace of the map slot — readers either
-        // see the old object whole or the new one whole, never half of each.
-        chatCache.compute(update.chatId) { _, old ->
-            old?.also { it.title = update.title }
-        }
+        // Drop the cached TdApi.Chat instead of mutating its `title` in place.
+        // Multiple workers read chatCache[chatId] concurrently (refreshLocked,
+        // ingest, coalesceAlbum…) and TdApi.Chat is a plain Java POJO without
+        // internal synchronisation — a mid-flight reader could otherwise see
+        // torn fields (fresh title paired with stale photo). The next reader
+        // falls back to `td.send(GetChat(...))`, which is an offline read off
+        // TDLib's own local cache and returns a fully-constructed new object.
+        chatCache.remove(update.chatId)
         val newTitle = update.title.orEmpty()
         // Per-row decision logic (channel-as-sender vs personal-author) lives in
         // [applyChatTitleToFeed] in `ChannelMetadataSync.kt`.
@@ -1768,11 +1762,9 @@ class PostsRepository(
     }
 
     private fun handleChatPhoto(update: TdApi.UpdateChatPhoto) {
-        // See [handleChatTitle] for why we use compute() instead of direct
-        // mutation — bucket-lock keeps concurrent compute()s ordered.
-        chatCache.compute(update.chatId) { _, old ->
-            old?.also { it.photo = update.photo }
-        }
+        // See [handleChatTitle] — same rationale for invalidating the entry
+        // rather than mutating it in place.
+        chatCache.remove(update.chatId)
         val newThumb = update.photo?.minithumbnail?.data
         val newFileId = update.photo?.small?.id
         // Per-row decision logic in [applyChatPhotoToFeed] (`ChannelMetadataSync.kt`).
