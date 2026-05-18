@@ -17,7 +17,7 @@
 - Tapping the forwarded-from author on a forward chip drills into the source channel AT the original post, not just at its newest entry.
 - Auto-download settings (Wi-Fi / Cellular / Roaming) now sync across Telegram clients via your account.
 - Tapping an `@username` mention in a post opens the in-app user profile sheet instead of bouncing out to Telegram.
-- The "↓ N unread" affordance in `OldestUnreadFirst` mode is now a circular scroll-to-bottom FAB with a count badge that softly bursts on press; tap jumps to the newest unread (down the queue), so the ↓ glyph always tells the truth and the pill stops looking like a twin of the "X new posts" alert when both surface at once.
+- The "↓ N unread" affordance in `OldestUnreadFirst` mode is now a circular scroll-to-bottom FAB with a count badge that softly bursts on press; tap returns you to the boundary where you left off reading, and the pill stops looking like a twin of the "X new posts" alert when both surface at once.
 
 ### Fixed
 - Opening a channel from a feed post no longer shows a single post that suddenly grows into the full history mid-scroll; the screen waits for the deeper load and mounts the list in one frame at the right anchor.

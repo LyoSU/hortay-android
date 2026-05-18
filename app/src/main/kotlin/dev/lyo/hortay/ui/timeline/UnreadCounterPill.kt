@@ -39,12 +39,15 @@ import dev.lyo.hortay.ui.theme.MorphShape
  *   - Count is the LIVE remaining-unread total in the visible feed
  *     (driven by [LocalReadCursors], not the frozen sort snapshot), so it
  *     ticks down as viewport-dwell acks land.
- *   - Tap → scroll the LazyColumn to the NEWEST still-unread post per the
- *     live cursor — Telegram-chat ↓ FAB idiom. `indexOfLast` (not first) so
- *     the jump always travels downward, matching the `arrow_downward`
- *     glyph's promise in every reading state. Falls back to the feed's
- *     newest entry on a click-vs-refresh race where every visible post is
- *     already live-read.
+ *   - Tap → scroll the LazyColumn to the FIRST still-unread post per the
+ *     live cursor — "continue where you left off" semantic. The target is
+ *     the boundary between the read block and the unread queue, not the
+ *     newest unread at the bottom. Conscious tradeoff against the literal
+ *     `arrow_downward` glyph direction: the boundary is the load-bearing
+ *     UX anchor in OldestUnreadFirst, so the pill restores reading
+ *     position rather than dumping the user at the bottom of the feed.
+ *     See the `onClick` body in TimelineScreen.kt for the full rationale,
+ *     including why `indexOfLast` was tried and reverted.
  *
  * Silhouette-based hierarchy contrast with [NewPostsPill]:
  *   - [NewPostsPill] = ALERT — horizontal stadium with avatar stack +
