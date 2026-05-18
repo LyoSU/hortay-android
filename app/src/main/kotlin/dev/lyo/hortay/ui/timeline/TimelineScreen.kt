@@ -828,24 +828,42 @@ fun TimelineScreen(
     LaunchedEffect(scopeKey) {
         val previous = lastScopeKey
         lastScopeKey = scopeKey
-        if (previous != null && previous != scopeKey) {
-            // Mode-aware "home" — same target as the NavBar Home tap. In
-            // OldestUnreadFirst this lands at the first-unread boundary, not
-            // the oldest read post. Read [homeScrollIndex] DIRECTLY here,
-            // not through [homeScrollIndexState] — the mirror is written by
-            // a separate LaunchedEffect and Compose does not order
-            // concurrent effects firing in the same frame. On scope swap
-            // (Archive → All in particular) this effect can run before the
-            // mirror writer, so the mirror still holds the previous scope's
-            // value — typically 0 when the previous scope was empty (a
-            // user with no archived chats sees `homeScrollIndex = 0` while
-            // on the Archive tab). The user-visible symptom is "switching
-            // back to All jumps me to the top of the feed". The State<Int>
-            // backing [homeScrollIndex] updates synchronously when
-            // `feedItems` changes (via derivedStateOf), so reading it
-            // directly here always reflects the current scope's target.
-            listState.smartScrollTo(homeScrollIndex)
+        if (previous == null || previous == scopeKey) return@LaunchedEffect
+        // Mode-aware "home" — same target as the NavBar Home tap. In
+        // OldestUnreadFirst this lands at the first-unread boundary, not
+        // the oldest read post.
+        //
+        // Two consecutive races have to be defused here, both visible to
+        // the user as "Archive → All jumps me to the top of the feed":
+        //
+        //   1. Mirror state ordering. [homeScrollIndexState] is written by
+        //      a separate LaunchedEffect; Compose doesn't order concurrent
+        //      effects firing in the same frame. Read [homeScrollIndex]
+        //      directly here so we never pick up the previous scope's
+        //      stale mirror (typically 0 when Archive is empty).
+        //
+        //   2. LazyColumn layout lag. `feedItems` updates synchronously
+        //      during composition, but [LazyListState.layoutInfo] reflects
+        //      the most recent measurement — i.e. the PREVIOUS scope's
+        //      item count until the next measure pass commits.
+        //      `scrollToItem(N)` reads layoutInfo to validate the target;
+        //      if N exceeds the stale count it silently clamps (often to
+        //      the previous scope's lastIndex = 0 for an empty Archive),
+        //      so the scroll lands at the top instead of the new
+        //      boundary. Wait for `totalItemsCount` to catch up to the
+        //      new collection size before issuing the scroll. The 400 ms
+        //      cap is a safety net — a single frame is enough on real
+        //      devices, but we'd rather drop the auto-scroll than hang
+        //      the LaunchedEffect on a pathological remeasure stall.
+        //      Mirrors the pattern the pendingNew → newPostsPill scroll
+        //      already uses just below in this file.
+        val expected = feedItems.size
+        if (expected == 0) return@LaunchedEffect
+        withTimeoutOrNull(SCOPE_SWAP_LAYOUT_TIMEOUT_MS) {
+            androidx.compose.runtime.snapshotFlow { listState.layoutInfo.totalItemsCount }
+                .first { it >= expected }
         }
+        listState.smartScrollTo(homeScrollIndex)
     }
 
     // LaunchedEffect's block freezes its captures on the keys-last-changed composition
@@ -1899,6 +1917,15 @@ private const val COLD_START_CURSOR_GRACE_MS = 800L
  * read-edge for display, not the landing target.
  */
 private const val BOUNDARY_RECENCY_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
+
+/**
+ * Safety cap for the LazyColumn remeasure wait on a scope swap. A single
+ * frame (~16 ms) is enough on real hardware, but if remeasure stalls (heavy
+ * cards, GC pause, hidden recomposition pressure) we'd rather drop the
+ * auto-scroll than hang the LaunchedEffect forever and leave the user
+ * looking at the still-running coroutine doing nothing.
+ */
+private const val SCOPE_SWAP_LAYOUT_TIMEOUT_MS = 400L
 
 /** Avatars in the "X нових постів" pill — same cap as the original VM-side limit. */
 private const val MAX_PILL_BADGES = 3
