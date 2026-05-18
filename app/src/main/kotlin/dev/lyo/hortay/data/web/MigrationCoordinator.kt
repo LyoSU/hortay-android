@@ -194,21 +194,16 @@ class MigrationCoordinator(
                         Log.w(TAG, "migration: subscriptions.remove($username) failed: ${err.message}")
                     }
             }
-            // JoinChat tells TDLib we're a member; UpdateNewChat eventually surfaces the
-            // chat in the main list, but GetChatHistory for the freshly-joined channels
-            // never runs unless we ask for it. Without this refresh, [PostsRepository]'s
-            // _posts shows whatever was loaded *before* the migration — typically a
-            // sparse / empty feed — until the user cold-starts the app and the
-            // ViewModel's init-time refreshIfStale picks the new chats up. Triggering
-            // a full refresh here closes the gap so the feed updates in the same
-            // session the user authenticated in.
-            try {
-                postsRepository.refresh()
-            } catch (cancellation: kotlinx.coroutines.CancellationException) {
-                throw cancellation
-            } catch (t: Throwable) {
-                Log.w(TAG, "migration: post-join refresh failed: ${t.message}")
-            }
+            // No manual refresh after JoinChat: TDLib emits UpdateNewChat with
+            // chat.lastMessage populated, followed by UpdateChatAddedToList
+            // (ChatListMain), and [PostsRepository]'s live listeners ingest both
+            // — the freshly-joined channels surface in `_posts` without any
+            // extra RPC. The previous explicit refresh() existed for the legacy
+            // cold-start path (`GetChat × N` / `GetChatHistory × N`); the
+            // current `drainChatList(ChatListMain)` + `Chat.lastMessage`
+            // harvest in `refreshLocked` makes that redundant, and re-running
+            // it right after a 50-channel batch JoinChat would amplify
+            // FLOOD_WAIT risk during the post-auth storm window for no gain.
         }
         // Only suppress future proposals when EVERY requested handle either
         // succeeded (in `migrated`) or was conclusively a no-op (null without
