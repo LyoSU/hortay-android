@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -24,7 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
@@ -68,17 +66,6 @@ fun PostCard(
     interactions: PostInteractions = PostInteractions.Noop,
     clickable: Boolean = true,
     expanded: Boolean = false,
-    /**
-     * When false, the bottom HorizontalDivider is omitted. Used by [ThreadedPostPair] so the
-     * parent post visually flows into the reply without a divider between them.
-     */
-    showDivider: Boolean = true,
-    /**
-     * When true, the inline `ReplyBlock` blockquote is hidden. Used by [ThreadedPostPair] for
-     * the reply post — its parent is rendered as a full card above, so the small blockquote
-     * preview would just duplicate that.
-     */
-    suppressInlineReply: Boolean = false,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
 
@@ -240,11 +227,9 @@ fun PostCard(
                     )
                 }
 
-                if (!suppressInlineReply) {
-                    post.reply?.let {
-                        Spacer(Modifier.height(8.dp))
-                        ReplyBlock(it, onClick = { interactions.onQuotedSourceClick(post) })
-                    }
+                post.reply?.let {
+                    Spacer(Modifier.height(8.dp))
+                    ReplyBlock(it, onClick = { interactions.onQuotedSourceClick(post) })
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -285,11 +270,9 @@ fun PostCard(
             }
         }
 
-        if (showDivider) {
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-            )
-        }
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+        )
     }
 
     if (sheetOpen) {
@@ -984,68 +967,3 @@ private fun formatViews(count: Int): String = when {
     else -> "%.1fM".format(count / 1_000_000.0).trimEnd('0').trimEnd('.')
 }
 
-/**
- * Threads-style stacked pair: [parent] post on top, [reply] post below, joined by a thin
- * vertical connector line aligned with the avatar column. Used by the feed when a post
- * replies to another post that's also present in the loaded feed — TimelineScreen merges
- * them into a single LazyColumn slot and suppresses the parent's standalone entry.
- *
- * Why drawBehind + onSizeChanged instead of `Modifier.height(IntrinsicSize.Min)` with a
- * `weight(1f)` filler line in a left rail: PostBody contains a LazyRow (album gallery),
- * and LazyRow does not support intrinsic measurement — IntrinsicSize.Min would crash.
- * The connector positions are deterministic from PostCard's known padding (16.dp horizontal,
- * 14.dp vertical) and avatar size (40.dp), so we just measure the parent's row height once
- * and draw the line in the wrapping column's draw layer.
- */
-@Composable
-fun ThreadedPostPair(
-    parent: TimelinePost,
-    reply: TimelinePost,
-    interactions: PostInteractions = PostInteractions.Noop,
-) {
-    var parentHeightPx by remember { mutableIntStateOf(0) }
-    val lineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .drawBehind {
-                if (parentHeightPx == 0) return@drawBehind
-                // Avatar geometry mirrors PostCard's outer Row:
-                //   horizontal padding 16.dp, then a 40.dp avatar at row start
-                //   → avatar centerX = 16 + 20 = 36.dp
-                //   vertical padding 14.dp top → avatar bottom = 14 + 40 = 54.dp from row top
-                // We pull the line ends 6.dp inside the avatars so the line doesn't quite
-                // touch the circular edge — looks crisper at 1× DPI.
-                val avatarCenterX = THREAD_AVATAR_CENTER_X.toPx()
-                val parentAvatarBottom = (THREAD_ROW_VERTICAL + THREAD_AVATAR_SIZE + THREAD_LINE_INSET).toPx()
-                val replyAvatarTop = parentHeightPx.toFloat() +
-                    (THREAD_ROW_VERTICAL - THREAD_LINE_INSET).toPx()
-                drawLine(
-                    color = lineColor,
-                    start = Offset(avatarCenterX, parentAvatarBottom),
-                    end = Offset(avatarCenterX, replyAvatarTop),
-                    strokeWidth = THREAD_LINE_WIDTH.toPx(),
-                )
-            },
-    ) {
-        Box(modifier = Modifier.onSizeChanged { parentHeightPx = it.height }) {
-            PostCard(
-                post = parent,
-                interactions = interactions,
-                showDivider = false,
-            )
-        }
-        PostCard(
-            post = reply,
-            interactions = interactions,
-            suppressInlineReply = true,
-        )
-    }
-}
-
-private val THREAD_ROW_VERTICAL = 14.dp
-private val THREAD_AVATAR_SIZE = 40.dp
-private val THREAD_AVATAR_CENTER_X = 36.dp // 16.dp horizontal padding + 20.dp avatar half-width
-private val THREAD_LINE_INSET = 6.dp
-private val THREAD_LINE_WIDTH = 2.dp

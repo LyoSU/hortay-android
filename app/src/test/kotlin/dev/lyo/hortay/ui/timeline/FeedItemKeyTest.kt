@@ -3,34 +3,9 @@ package dev.lyo.hortay.ui.timeline
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.testutil.testPost
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
-class GroupRepliesKeyTest {
-
-    @Test
-    fun `thread row keeps reply key when parent backfills later`() {
-        val reply = testPost(
-            chatId = 1L,
-            id = 200L,
-            date = 2_000L,
-            reply = ReplyPreview(
-                authorName = "channel",
-                excerpt = "parent",
-                isQuote = false,
-                replyToChatId = 1L,
-                replyToMessageId = 100L,
-            ),
-        )
-        val parent = testPost(chatId = 1L, id = 100L, date = 1_500L)
-
-        val before = groupReplies(listOf(reply))
-        val after = groupReplies(listOf(reply, parent))
-
-        assertEquals("post_1_200", before.single().key)
-        assertTrue(after.single() is FeedItem.Thread)
-        assertEquals(before.single().key, after.single().key)
-    }
+class FeedItemKeyTest {
 
     @Test
     fun `album key stays stable across anchor flip after loadChannelHistory completes`() {
@@ -67,8 +42,8 @@ class GroupRepliesKeyTest {
             albumMessageIds = listOf(1L, 2L, 3L, 4L, 5L),
         )
 
-        val beforeKey = FeedItem.Single(coldStartFragment).key
-        val afterKey = FeedItem.Single(afterFullLoad).key
+        val beforeKey = FeedItem(coldStartFragment).key
+        val afterKey = FeedItem(afterFullLoad).key
 
         // The id flipped (5 → 1) but the album identity didn't.
         assertEquals("album_1_42", beforeKey)
@@ -76,11 +51,39 @@ class GroupRepliesKeyTest {
     }
 
     @Test
-    fun `non-album single keeps id-based key`() {
-        // Sanity check that standalone (non-album) posts continue to key on
-        // `post.id` — they have no mediaAlbumId to fall back to, and the
-        // post id IS the stable identity for a single message.
+    fun `non-album post keeps id-based key`() {
+        // Standalone (non-album) posts key on `post.id` — they have no mediaAlbumId
+        // to fall back to, and the post id IS the stable identity for a single message.
         val post = testPost(chatId = 1L, id = 200L)
-        assertEquals("post_1_200", FeedItem.Single(post).key)
+        assertEquals("post_1_200", FeedItem(post).key)
+    }
+
+    @Test
+    fun `reply post keeps own id key regardless of parent presence in feed`() {
+        // Regression: the previous design grouped same-channel parent ↔ reply into
+        // a stacked Thread row keyed on `reply.id`. That reshape made the row's key
+        // depend on whether a SIBLING post happened to be in the visible list. When
+        // a backfill brought the parent (or removed it), the row's identity flipped,
+        // LazyColumn lost its `firstVisibleItemKey`, and scroll fell back to the raw
+        // integer index — visible as "thrown to the start of the feed" on channel
+        // return, and "thrown to the start of the channel" on live reply arrivals.
+        //
+        // With one post = one row, the reply's key is always `post_<chat>_<reply.id>`,
+        // regardless of what else lives in the surrounding list. The inline
+        // [ReplyBlock] on the reply's card still conveys the conversational link to
+        // the parent.
+        val reply = testPost(
+            chatId = 1L,
+            id = 200L,
+            date = 2_000L,
+            reply = ReplyPreview(
+                authorName = "channel",
+                excerpt = "parent",
+                isQuote = false,
+                replyToChatId = 1L,
+                replyToMessageId = 100L,
+            ),
+        )
+        assertEquals("post_1_200", FeedItem(reply).key)
     }
 }

@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test
 
 class ChannelUiStateBuilderTest {
 
-    private fun item(id: Long, album: List<Long> = emptyList()): FeedItem.Single =
-        FeedItem.Single(testPost(id = id, chatId = 1L, date = id, albumMessageIds = album))
+    private fun item(id: Long, album: List<Long> = emptyList()): FeedItem =
+        FeedItem(testPost(id = id, chatId = 1L, date = id, albumMessageIds = album))
 
     @Test
     fun `Resolving while history loading and slice empty`() {

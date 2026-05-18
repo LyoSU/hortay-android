@@ -108,57 +108,60 @@ internal fun PostContent.playbackFileIds(): List<Int> = buildList {
 }
 
 /**
- * One slot in the rendered feed. A [Single] is the standard one-post-per-row case; a [Thread]
- * is a Threads-style stacked pair where a reply and the post it's replying to are merged
- * into a single LazyColumn slot. `key` powers LazyColumn's [items] keying — different
- * shapes share the same row identity whenever the underlying *message* is the same.
+ * One slot in a Compose `LazyColumn` of posts (feed, channel, or search results). A feed
+ * item is a 1:1 wrapper around a [TimelinePost] — there is intentionally NO Single/Thread
+ * sealed split. Reply continuity is conveyed by the inline reply-quote block (`ReplyBlock`)
+ * on the reply's card, NOT by collapsing parent + reply into a stacked Thread row.
  *
- * Two scroll-stability invariants are encoded in [key]:
+ * Why "one post = one row" is load-bearing for scroll stability:
  *
- *  1. **Single → Thread reshape**: a threaded row keeps the reply post's id as its
- *     key. Opening a channel can backfill the parent of an already-rendered reply,
- *     turning `Single(reply)` into `Thread(parent, reply)` under the feed overlay.
- *     LazyColumn must still recognize it as the same row, otherwise Back from the
- *     channel loses the feed anchor and appears to jump to a random post.
+ *   The previous design ran a `groupReplies` pass that promoted same-channel parent ↔
+ *   reply pairs into a stacked Thread row keyed on `reply.id`. That reshape was the
+ *   dominant cause of two distinct "scroll jumps to the start" reports:
  *
- *  2. **Album anchor flip**: album cards key on `(chatId, mediaAlbumId)`, NOT on
- *     `post.id`. Reason: when the cold-start harvest ingests `Chat.lastMessage`
- *     and the surround-fetch in `coalesceAlbumFragments` fails (FLOOD_WAIT,
- *     transient network, message aged out of the local store), the feed renders
- *     a 1-fragment card whose `post.id` is `chat.lastMessage.id` — typically
- *     the *highest* album member id (TDLib stamps `lastMessage` as the most
- *     recent message id, and album members are sent sequentially so the last
- *     sibling has the highest id). When the user later opens that channel,
- *     `loadChannelHistory` returns the full album and `foldRawIntoCurrent` /
- *     `PostFilterStrategy.mergeAlbumMembers` rebuild the card with
- *     `anchor.id` = the *lowest* member id (intentional; the lowest id is the
- *     only carrier of `replyInfo` / `reactions` per tdlib/td#2312, and it's
- *     stable across interaction-info updates). With a `post.id`-based key the
- *     row's identity would flip on that rebuild — `LazyColumn` couldn't anchor
- *     by the saved `firstVisibleItemKey`, fell back to the integer
- *     `firstVisibleItemIndex`, and the user saw the feed "throw them onto" a
- *     different post (one of the newly-folded older history rows that happened
- *     to land at that index). Keying albums on the TDLib-assigned
- *     `mediaAlbumId` makes both renderings of the same conceptual album share
- *     a row identity, so the LazyColumn scroll-anchor survives the rebuild.
- *     `mediaAlbumId` is per-session but `LazyListState.Saver` only persists
- *     raw index + offset across process death, so we never need it to be
- *     globally unique — only stable for the duration of one app process,
- *     which it is.
+ *     1. Returning to the feed from a channel: `loadChannelHistory(A)` writes channel A's
+ *        80-message slice into `_posts`. If the user's anchor row was a standalone parent
+ *        P of channel A and the backfilled batch carried its reply R, grouping promoted
+ *        `Single(P, key=P.id)` into `Thread(P, R, key=R.id)` — the anchor row's key
+ *        disappeared from the new list, `LazyColumn`'s `firstVisibleItemKey` lookup
+ *        missed, scroll fell back to the saved `firstVisibleItemIndex`, and the integer
+ *        index pointed at a freshly-inserted channel-A row — exactly the user-reported
+ *        "feed throws me onto an old post of that channel" symptom.
+ *
+ *     2. Scrolling inside a channel: a fresh same-channel reply arriving via
+ *        `UpdateNewMessage` (or `loadOlder` paginating older history that included a
+ *        chain) would re-run grouping; the visible parent's key would flip the same way
+ *        and the channel's own LazyColumn would jump.
+ *
+ *   The cleanest fix is to remove the reshape entirely. There is no Thread variant, no
+ *   `groupReplies` pass, no `THREAD_FRESH_WINDOW_MS` / "consecutive" heuristic — every
+ *   row is keyed off its single backing [TimelinePost] for the lifetime of that post,
+ *   regardless of what siblings appear around it later. The threaded VISUAL it replaced
+ *   was a UX-nice-to-have; reply continuity is preserved by the inline reply-quote card.
+ *
+ * **Album anchor flip** invariant on [key]: album cards key on `(chatId, mediaAlbumId)`,
+ * NOT on `post.id`. When the cold-start harvest ingests `Chat.lastMessage` and the
+ * surround-fetch in `coalesceAlbumFragments` fails (FLOOD_WAIT, transient network,
+ * message aged out of the local store), the feed renders a 1-fragment card whose
+ * `post.id` is `chat.lastMessage.id` — typically the *highest* album member id (TDLib
+ * stamps `lastMessage` as the most recent message id, and album members are sent
+ * sequentially so the last sibling has the highest id). When the user later opens that
+ * channel, `loadChannelHistory` returns the full album and `foldRawIntoCurrent` /
+ * `PostFilterStrategy.mergeAlbumMembers` rebuild the card with `anchor.id` = the
+ * *lowest* member id (intentional; the lowest id is the only carrier of `replyInfo` /
+ * `reactions` per tdlib/td#2312, and it's stable across interaction-info updates). With
+ * a `post.id`-based key the row's identity would flip on that rebuild — `LazyColumn`
+ * couldn't anchor by the saved `firstVisibleItemKey`, fell back to the integer
+ * `firstVisibleItemIndex`, and the user saw the feed "throw them onto" a different post.
+ * Keying albums on the TDLib-assigned `mediaAlbumId` makes both renderings of the same
+ * conceptual album share a row identity, so the LazyColumn scroll-anchor survives the
+ * rebuild. `mediaAlbumId` is per-session but `LazyListState.Saver` only persists raw
+ * index + offset across process death, so we never need it to be globally unique — only
+ * stable for the duration of one app process, which it is.
  */
 @Immutable
-sealed interface FeedItem {
-    val key: String
-
-    @Immutable
-    data class Single(val post: TimelinePost) : FeedItem {
-        override val key: String get() = feedItemKey(post)
-    }
-
-    @Immutable
-    data class Thread(val parent: TimelinePost, val reply: TimelinePost) : FeedItem {
-        override val key: String get() = feedItemKey(reply)
-    }
+data class FeedItem(val post: TimelinePost) {
+    val key: String get() = feedItemKey(post)
 }
 
 /**
@@ -170,112 +173,13 @@ private fun feedItemKey(post: TimelinePost): String =
     if (post.mediaAlbumId != 0L) "album_${post.chatId}_${post.mediaAlbumId}"
     else "post_${post.chatId}_${post.id}"
 
-/** Flatten a feed slot into its constituent posts (1 for Single, 2 for Thread). */
-internal fun FeedItem.posts(): List<TimelinePost> = when (this) {
-    is FeedItem.Single -> listOf(post)
-    is FeedItem.Thread -> listOf(parent, reply)
-}
-
 /**
- * Two-pass grouping that collapses *fresh, consecutive* self-replies into [FeedItem.Thread]
- * pairs and leaves everything else as [FeedItem.Single] (with the existing inline quote
- * preview). The Threads-style stacked thread is reserved for the case it actually feels
- * like a continuation; older callbacks render as a regular post with a Twitter-style
- * quote pointing back to the original — which itself stays in the feed where it lives,
- * NOT consumed by the reply. The user reaches the original by tapping the quote.
- *
- * Two signals must both fire to thread:
- *   1. **Consecutive** — no other post of the same channel sits between the reply and the
- *      parent in the visible feed. A channel that posts unrelated B in the middle, then
- *      replies to old A, is doing a callback, not extending a thread.
- *   2. **Fresh** — `reply.date - parent.date ≤ THREAD_FRESH_WINDOW_MS` (1 h). Two-week-old
- *      parents thread with their replies looks like archaeology, not conversation.
- *
- * Cross-channel replies (parent in another channel) intentionally never thread — that's
- * a quote relationship, semantically a citation. They render as Single with the quote
- * preview pointing at the parent post.
- *
- * The feed is ordered newest-first; reply iterates BEFORE its parent. When threading
- * fires we consume both keys so the parent's later iteration is a no-op skip. When we
- * decide NOT to thread we leave the parent unconsumed — it shows as its own Single later,
- * unchanged, exactly where its date placed it.
- *
- * Long chains (A ← B ← C, all fresh & consecutive): iteration hits C first, consumes B as
- * its parent → Thread(B, C). A is then iterated and emitted as Single. B's inline quote
- * preview of A still renders inside the threaded slot (parent in a thread keeps its own
- * inline reply), giving a natural three-step visual without a triple-card stack.
+ * Compatibility shim for downstream call sites that derive a [TimelinePost] from a feed
+ * row. After the Thread variant was removed there is always exactly one post per item,
+ * but call sites that iterate visible-row → post lists still read better as
+ * `item.posts().first()` than `item.post`.
  */
-internal fun groupReplies(
-    posts: List<TimelinePost>,
-    freshWindowMs: Long = THREAD_FRESH_WINDOW_MS,
-): List<FeedItem> {
-    if (posts.size < 2) return posts.map(FeedItem::Single)
-    // Index posts by every messageId they "own" — the canonical post.id PLUS every album
-    // member id. Telegram albums are merged into a single TimelinePost whose id is the
-    // oldest member's id, but a reply may target ANY member of the album (e.g. the 3rd
-    // photo). Without indexing all member ids the lookup misses and the thread doesn't
-    // form. This was the dominant cause of early "не ворк" reports for media-heavy channels.
-    val byKey = HashMap<Pair<Long, Long>, TimelinePost>(posts.size * 2)
-    val indexOf = HashMap<Pair<Long, Long>, Int>(posts.size * 2)
-    for ((idx, p) in posts.withIndex()) {
-        byKey[p.chatId to p.id] = p
-        indexOf[p.chatId to p.id] = idx
-        for (mid in p.albumMessageIds) {
-            byKey[p.chatId to mid] = p
-            indexOf[p.chatId to mid] = idx
-        }
-    }
-    val consumed = HashSet<Pair<Long, Long>>(posts.size)
-    val out = ArrayList<FeedItem>(posts.size)
-    for ((idx, post) in posts.withIndex()) {
-        val key = post.chatId to post.id
-        if (key in consumed) continue
-        val replyTo = post.reply
-        val parent = if (replyTo != null) {
-            // `replyToChatId` is normalised at the mapping boundary
-            // ([MessageMapper.mapReply]): TDLib's "unknown chat" sentinel
-            // `chat_id = 0` is rewritten to the host post's own chat for
-            // the same-chat case, so the lookup hits the real parent.
-            byKey[replyTo.replyToChatId to replyTo.replyToMessageId]
-        } else null
-        // Same-channel only: cross-channel replies stay as Single with the quote preview
-        // pointing at the parent — that's a citation, not a thread.
-        if (parent != null && parent.chatId == post.chatId) {
-            val parentKey = parent.chatId to parent.id
-            if (parentKey != key && parentKey !in consumed) {
-                val parentIdx = indexOf[parentKey] ?: -1
-                val fresh = (post.date - parent.date) in 0..freshWindowMs
-                // "Consecutive" = no other post of the same channel between reply (idx) and
-                // parent (parentIdx > idx, since posts are newest-first). Posts of other
-                // channels in between are fine; the user's experience is per-channel.
-                val consecutive = parentIdx > idx && run {
-                    var ok = true
-                    for (i in (idx + 1) until parentIdx) {
-                        if (posts[i].chatId == post.chatId) { ok = false; break }
-                    }
-                    ok
-                }
-                if (fresh && consecutive) {
-                    out.add(FeedItem.Thread(parent = parent, reply = post))
-                    consumed.add(parentKey)
-                    consumed.add(key)
-                    continue
-                }
-            }
-        }
-        out.add(FeedItem.Single(post))
-        consumed.add(key)
-    }
-    return out
-}
-
-/**
- * How recent a parent must be (relative to the reply) to qualify as a "fresh thread".
- * Older parents render as a quote-card on the reply (Twitter-style), with the parent
- * staying as its own Single entry where its date placed it. 1 h matches the typical
- * news-channel cadence — anything slower than that reads as a callback, not continuation.
- */
-private const val THREAD_FRESH_WINDOW_MS = 60L * 60L * 1000L
+internal fun FeedItem.posts(): List<TimelinePost> = listOf(post)
 
 /**
  * Compact subscriber count formatter — Telegram convention. 12 345 → "12.3K", 1 050 000

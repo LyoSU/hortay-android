@@ -225,17 +225,16 @@ fun ChannelScreen(
     // affordance never become hidden gestures.
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
 
-    // Source-of-truth for what the LazyColumn renders. While search is active
-    // we render the raw results list (no threading). Outside search we apply the
-    // Threads-style grouping from groupReplies, same as the all-feed path. The
-    // user-selected [feedOrder] is honoured here so OldestUnreadFirst flips the
-    // channel into the reverse-feed layout exactly like TimelineScreen does on
-    // the all-feed — search results stay in their RPC relevance order regardless.
+    // Source-of-truth for what the LazyColumn renders. One TimelinePost → one
+    // [FeedItem] row — see [FeedItem] for why row identity is kept 1:1 with the
+    // backing post instead of folding reply chains into stacked Thread slots.
+    // [feedOrder] is honoured here so OldestUnreadFirst flips the channel into
+    // the reverse-feed layout exactly like TimelineScreen does on the all-feed;
+    // search results stay in their RPC relevance order regardless.
     val cursorHolder = LocalReadCursors.current
     val displayedItems = remember(posts, searchActive, searchResults, feedOrder) {
-        val list = if (searchActive) searchResults.map<TimelinePost, FeedItem>(FeedItem::Single)
-        else groupReplies(posts.orderedFor(feedOrder))
-        list.toPersistentList()
+        val source = if (searchActive) searchResults else posts.orderedFor(feedOrder)
+        source.map(::FeedItem).toPersistentList()
     }
 
     // [ChannelUiState] is the single source of truth for what gets mounted on
@@ -749,31 +748,20 @@ fun ChannelScreen(
                                 items(
                                     items = displayedList,
                                     key = { it.key },
-                                    contentType = { if (it is FeedItem.Thread) "thread" else "single" },
+                                    contentType = { "post" },
                                 ) { item ->
                                     val isCenteredState = remember(item.key) {
                                         derivedStateOf { centeredItemKeyState.value == item.key }
                                     }
+                                    val post = item.post
                                     val highlighted = highlightedPostKey?.let { (cid, mid) ->
-                                        item.posts().any { p ->
-                                            p.chatId == cid && (p.id == mid || mid in p.albumMessageIds)
-                                        }
+                                        post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
                                     } == true
                                     CompositionLocalProvider(
                                         LocalIsCenteredItem provides isCenteredState,
                                         LocalIsHighlightedItem provides highlighted,
                                     ) {
-                                        when (item) {
-                                            is FeedItem.Single -> PostCard(
-                                                post = item.post,
-                                                interactions = interactions,
-                                            )
-                                            is FeedItem.Thread -> ThreadedPostPair(
-                                                parent = item.parent,
-                                                reply = item.reply,
-                                                interactions = interactions,
-                                            )
-                                        }
+                                        PostCard(post = post, interactions = interactions)
                                     }
                                 }
                             }

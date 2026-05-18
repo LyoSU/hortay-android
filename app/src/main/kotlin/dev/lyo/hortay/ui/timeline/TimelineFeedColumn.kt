@@ -65,12 +65,7 @@ internal fun TimelineFeedColumn(
         items(
             items = feedItems,
             key = { it.key },
-            // Single vs Thread have different composition / layout
-            // shapes, so distinct contentTypes let the LazyColumn reuse
-            // pool serve each kind from its own slot — Single rows
-            // entering view don't pay the cost of a slot that just held
-            // a Thread (or vice versa).
-            contentType = { if (it is FeedItem.Thread) "thread" else "single" },
+            contentType = { "post" },
         ) { item ->
             // "Unread starts here" divider rendered above the first
             // item that contains an unread post (OldestUnreadFirst
@@ -94,26 +89,15 @@ internal fun TimelineFeedColumn(
             val isCenteredState = remember(item.key) {
                 derivedStateOf { centeredItemKeyState.value == item.key }
             }
+            val post = item.post
             val highlighted = highlightedPostKey?.let { (cid, mid) ->
-                item.posts().any { p ->
-                    p.chatId == cid && (p.id == mid || mid in p.albumMessageIds)
-                }
+                post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
             } == true
             CompositionLocalProvider(
                 LocalIsCenteredItem provides isCenteredState,
                 LocalIsHighlightedItem provides highlighted,
             ) {
-                when (item) {
-                    is FeedItem.Single -> PostCard(
-                        post = item.post,
-                        interactions = interactions,
-                    )
-                    is FeedItem.Thread -> ThreadedPostPair(
-                        parent = item.parent,
-                        reply = item.reply,
-                        interactions = interactions,
-                    )
-                }
+                PostCard(post = post, interactions = interactions)
             }
         }
     }

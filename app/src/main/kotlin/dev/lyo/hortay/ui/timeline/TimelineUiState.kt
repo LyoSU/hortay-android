@@ -99,37 +99,19 @@ fun buildTimelineUiState(
  * to move via [smartScrollTo] from an explicit user intent (home tap, pill).
  *
  * Live cursor advances (dwell-acks) and post arrivals must not trigger
- * auto-scroll — they only update [items].
- *
- * [preserveReady] freezes the latched Ready in its entirety — including its
- * [items] — while a nav overlay (Comments / ChannelScreen) covers the feed.
- * Rationale: opening a channel from the feed mounts a [ChannelViewModel] whose
- * `init` block issues `loadChannelHistory(chatId)` against [PostsRepository],
- * which writes the deepened slice into the SAME global posts flow that
- * [TimelineScreen] is subscribed to. Without the freeze, the candidate built
- * downstream arrives as a new Ready with a regrouped [items] list — a reply
- * parent surfaced by the deep-dive can promote a `Single` row into a `Thread`
- * member, and new arrivals in Newest mode shift indices. The feed's LazyColumn
- * under the overlay would reconcile that keyed dataset, and when the
- * previously-first-visible key vanished through regrouping its scroll lost the
- * anchor and reset off-position — what the user saw on overlay pop as "back
- * from the channel lands at the start of the feed". Freezing under overlay
- * keeps `firstVisibleItemKey` stable; on dismissal [preserveReady] flips false
- * and the next live emission flows through the normal Ready→Ready branch below
- * — [items] adopt the candidate's, scroll anchor stays at the user's actual
- * position via the [initialIndex] preservation rule. Matches the parallel
- * "read-acks pause under overlay" contract (`markAsRead = null` in
- * [TimelineScreen]) — same "feed is frozen while user is elsewhere" principle.
+ * auto-scroll — they only update [items]. LazyColumn's keyed-scroll
+ * preservation handles the visual anchor: every feed row is keyed through
+ * [FeedItem.key] which is stable across every ingest path
+ * ([PostsRepository.loadChannelHistory] backfills, [TdApi.UpdateNewMessage]
+ * arrivals, album coalesce upgrades), so the previous-emission's
+ * `firstVisibleItemKey` reliably resolves in the new emission and the user's
+ * scroll position stays anchored without any overlay-window freeze.
  */
 internal fun reduceTimelineUiState(
     previous: TimelineUiState?,
     candidate: TimelineUiState,
     refreshJustCompleted: Boolean,
-    preserveReady: Boolean = false,
 ): TimelineUiState {
-    if (preserveReady && previous is TimelineUiState.Ready) {
-        return previous
-    }
     if (previous is TimelineUiState.Ready && candidate is TimelineUiState.Ready) {
         return candidate.copy(
             initialIndex = previous.initialIndex,
@@ -153,7 +135,6 @@ internal fun rememberLatchedTimelineUiState(
     candidate: TimelineUiState,
     refreshing: Boolean,
     routeKey: Any,
-    preserveReady: Boolean = false,
 ): TimelineUiState {
     val effective = remember(routeKey) {
         mutableStateOf<TimelineUiState>(TimelineUiState.Loading)
@@ -161,14 +142,13 @@ internal fun rememberLatchedTimelineUiState(
     val previousRefreshing = remember(routeKey) {
         mutableStateOf(false)
     }
-    LaunchedEffect(candidate, refreshing, routeKey, preserveReady) {
+    LaunchedEffect(candidate, refreshing, routeKey) {
         val refreshJustCompleted = previousRefreshing.value && !refreshing
         previousRefreshing.value = refreshing
         effective.value = reduceTimelineUiState(
             previous = effective.value,
             candidate = candidate,
             refreshJustCompleted = refreshJustCompleted,
-            preserveReady = preserveReady,
         )
     }
     return effective.value

@@ -522,12 +522,15 @@ fun TimelineScreen(
     }
     val boundaryCursors = boundaryCursorsState.value
 
-    // Threads-style grouping: when a post replies to another post that's ALSO present in the
-    // visible feed, the two are merged into a single LazyColumn slot (parent stacked above
-    // reply, joined by a connector line). Drives the main feed render; LaunchedEffects below
-    // that map "visible item indices" → posts use [FeedItem.posts] to flatten threaded slots
-    // back into individual TimelinePost entries.
-    val feedItems = remember(visiblePosts) { groupReplies(visiblePosts) }
+    // One TimelinePost → one [FeedItem] row. Single source of row identity through
+    // [FeedItem.key], stable across every ingest path (`loadChannelHistory`,
+    // `UpdateNewMessage`, `loadOlder`, album-coalesce). LazyColumn's keyed-scroll
+    // preservation carries the user's anchor through any reorder. The previous
+    // `groupReplies` reshape that promoted Single → Thread on the fly was deleted —
+    // see [FeedItem] for the full rationale.
+    val feedItems: List<FeedItem> = remember(visiblePosts) {
+        visiblePosts.map(::FeedItem)
+    }
     // Keep the forward-declared holder current so the home-tap LaunchedEffect
     // can read the latest list without capturing a stale reference. Wrapped
     // in [SideEffect] so the snapshot mutation happens after composition
@@ -540,11 +543,11 @@ fun TimelineScreen(
 
     // Row-space scroll target for user-initiated jumps (home tap, scope switch,
     // ↑ N / ↓ N pills). MUST be computed against [feedItems] — the LazyColumn
-    // renders FeedItem rows after [groupReplies] folds reply chains into single
-    // slots, so any post-space index would shift past every grouped reply ahead
-    // of the target. The latcher's own [Ready.initialIndex] is also row-space
-    // (see [buildTimelineUiState] using items.map { it.posts().first() }), so
-    // these stay in sync.
+    // renders FeedItem rows, and although the merged feed maps 1:1 to posts
+    // today, keeping the computation row-space makes the call sites resilient
+    // to future grouping (e.g. day-separators) and matches the latcher's own
+    // row-space [Ready.initialIndex] (see [buildTimelineUiState] using
+    // items.map { it.posts().first() }).
     // Per-key snapshot reads inside the derivedStateOf body: the closure
     // touches `cursorHolder[anchor.chatId]` for each [FeedItem] (this is
     // home-tap scroll target, computed against the whole feed — NOT just
@@ -616,7 +619,6 @@ fun TimelineScreen(
         candidate = candidateUiState,
         refreshing = refreshing,
         routeKey = routeKey,
-        preserveReady = coveredByOverlay,
     )
 
     // Cold-start positioning AND scroll preservation across tab swaps share
