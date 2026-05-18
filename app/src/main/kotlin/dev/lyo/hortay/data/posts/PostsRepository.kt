@@ -427,13 +427,29 @@ class PostsRepository(
         td.updates.filterIsInstance<TdApi.UpdateNewChat>()
             .onEach { update ->
                 chatCache[update.chat.id] = update.chat
-                // Seed the read cursor from server-side state — including the
-                // never-read sentinel `0`. The previous gate (`> 0L`) omitted
-                // those chats, leaving `cursors[chatId] == null`, which
-                // [isUnreadIn] treats as "read"; the symptom was a freshly-
-                // joined / never-opened channel whose posts silently lost the
-                // unread strip and never qualified as a boundary candidate.
+                // Seed the read cursor from server-side state, but ONLY when
+                // TDLib actually has a read-state signal for this chat —
+                // either `unreadCount > 0` (server knows there's incoming
+                // unread waiting) or `lastReadInboxMessageId > 0` (server
+                // has at least one acked inbox id). The `0 / 0` shape is
+                // ambiguous: it's either a never-read channel with no posts
+                // yet (lastMessage is then null too — harvest skips it
+                // anyway) OR an admin / outgoing-only channel where the user
+                // never acks their own broadcasts (TDLib invariant per
+                // tdlib/td#1419: outgoing posts don't bump
+                // `lastReadInboxMessageId`). Seeding cursor = 0 in the
+                // outgoing-only case would flip every own post to unread,
+                // and the recency-floor boundary picker would then land the
+                // user on a fresh self-authored post — the "lands on an
+                // old post" symptom reincarnated. Leaving the map slot
+                // empty makes [isUnreadIn] fall through to "read" for those
+                // posts, which matches the user's mental model ("I wrote
+                // it, of course I've seen it"). A real UpdateChatReadInbox
+                // arriving later still seeds normally via the listener
+                // below.
                 val cursor = update.chat.lastReadInboxMessageId
+                val hasReadState = cursor > 0L || update.chat.unreadCount > 0
+                if (!hasReadState) return@onEach
                 _chatReadCursors.update { current ->
                     val existing = current[update.chat.id]
                     // Monotonic clamp: a stale UpdateNewChat arriving after a

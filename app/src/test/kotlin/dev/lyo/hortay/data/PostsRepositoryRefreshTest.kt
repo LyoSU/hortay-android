@@ -135,13 +135,12 @@ class PostsRepositoryRefreshTest {
     }
 
     @Test
-    fun `UpdateNewChat seeds cursor even when lastReadInboxMessageId is zero`() = runTest {
-        // Never-read channels (lastReadInboxMessageId == 0) MUST land in the
-        // cursor map — otherwise [isUnreadIn] falls into the
-        // `cursors[chatId] == null → read` branch and every post of the
-        // channel silently loses the unread strip. Was visible as a freshly-
-        // joined / never-opened channel whose posts never qualified as
-        // unread even though no read ack ever crossed them.
+    fun `UpdateNewChat seeds cursor zero for a never-read channel with unread posts`() = runTest {
+        // Never-read channels that actually carry incoming unread
+        // (`unreadCount > 0`, `lastReadInboxMessageId == 0`) MUST land in
+        // the cursor map at the zero sentinel — otherwise [isUnreadIn]
+        // falls into the `cursors[chatId] == null → read` branch and
+        // every post silently loses the unread strip.
         val harness = PostsRepositoryTestHarness(this)
         val neverRead = harness.fakeChannel(
             id = -8000L,
@@ -154,8 +153,35 @@ class PostsRepositoryRefreshTest {
 
         val cursors = harness.repo.chatReadCursors.value
         assertTrue(-8000L in cursors,
-            "never-read channel must be present in the cursor map with the zero sentinel")
+            "never-read channel with unread MUST be in the cursor map")
         assertEquals(0L, cursors[-8000L])
+    }
+
+    @Test
+    fun `UpdateNewChat skips seeding for outgoing-only admin channels`() = runTest {
+        // Admin / outgoing-only channels report `unreadCount == 0` and
+        // `lastReadInboxMessageId == 0` — TDLib invariant: outgoing posts
+        // don't bump the inbox cursor (tdlib/td#1419). Seeding cursor=0
+        // would mark every own broadcast as unread, and the recency-floor
+        // boundary picker would then land the user on a fresh self-
+        // authored post. The right answer is to leave the slot empty so
+        // [isUnreadIn] falls through to "read" — matching the user's
+        // mental model ("I wrote that, of course I've seen it"). A real
+        // UpdateChatReadInbox arriving later (e.g. someone else's read
+        // ack on a discussion-mirror) still seeds normally via the
+        // dedicated listener.
+        val harness = PostsRepositoryTestHarness(this)
+        val adminOwn = harness.fakeChannel(
+            id = -8002L,
+            lastMessage = harness.fakeChannelMessage(-8002L, 820L),
+            unreadCount = 0,
+            lastReadInboxMessageId = 0L,
+        )
+        harness.td.emitUpdate(TdApi.UpdateNewChat(adminOwn))
+        harness.advanceUntilIdle()
+
+        assertTrue(-8002L !in harness.repo.chatReadCursors.value,
+            "outgoing-only admin channel must NOT seed a cursor (0/0 is ambiguous)")
     }
 
     @Test

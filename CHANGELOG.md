@@ -44,6 +44,7 @@
 - Cold-start feed now includes every subscribed channel's latest post, not only channels with an unread one — read context is back in Newest mode and `OldestUnreadFirst` no longer collapses to a tiny unread-only list.
 - `OldestUnreadFirst` no longer lands on a weeks-old dormant unread when fresh unread exists; the cold-start anchor picks within a 7-day recency window and falls through to the newest post when nothing recent is unread.
 - Never-opened / freshly-joined channels show the unread strip on their posts instead of silently appearing read until the user opens the chat.
+- Cold-start anchor no longer lands on a self-authored post in an admin / outgoing-only channel — the `0 / 0` cursor shape (TDLib invariant for channels with no incoming reads) is no longer interpreted as "everything unread".
 
 ## [0.5.0] — 2026-05-17
 
