@@ -47,6 +47,18 @@ import dev.lyo.hortay.data.TdMedia
  * ExoPlayer has decoded the first video frame. `Player.Listener.onRenderedFirstFrame`
  * is the precise boundary: a true frame is on-texture and any thumb hide afterwards
  * is safe.
+ *
+ * Looping: we deliberately do NOT use `Player.REPEAT_MODE_ONE`. The internal auto-loop
+ * path in media3 1.10 re-prepares the same MediaItem via its cached extractor state,
+ * and for short Telegram WebM stickers (~1-3 s, sparse keyframes, Cues element often
+ * absent) the re-prepare reuses the tail of the previous read instead of landing on
+ * position 0 cleanly. Observable symptom: first cycle plays in full, every subsequent
+ * cycle plays only the last fragment over and over. Manually driving the loop via
+ * `onPlaybackStateChanged(STATE_ENDED) → seekTo(0)` sidesteps the internal path
+ * entirely — a fresh seek-to-0 is always keyframe-aligned, costs one main-thread
+ * callback every ~2 s (negligible), and the same fix doesn't need to propagate to
+ * [TdVideoPlayer] / [dev.lyo.hortay.ui.timeline.VideoNoteBubble] because they play
+ * MP4/H.264 with proper indexes where the internal auto-loop is well-behaved.
  */
 @Composable
 fun WebmStickerPlayer(
@@ -77,7 +89,9 @@ fun WebmStickerPlayer(
     val exoPlayer = remember {
         pool.acquire(muted = true).apply {
             playWhenReady = true
-            repeatMode = Player.REPEAT_MODE_ONE
+            // Loop is driven manually below — see class KDoc for why REPEAT_MODE_ONE
+            // is unsafe for short Telegram WebM stickers in media3 1.10.
+            repeatMode = Player.REPEAT_MODE_OFF
             volume = 0f
         }
     }
@@ -117,6 +131,12 @@ fun WebmStickerPlayer(
         val playerListener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
                 firstFrameRendered = true
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) {
+                    exoPlayer.seekTo(0)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
