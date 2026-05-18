@@ -322,10 +322,6 @@ fun ChannelScreen(
     val candidateInitialIndex = (channelUiState as? ChannelUiState.Ready)?.initialIndex
     LaunchedEffect(chatId, candidateInitialIndex) {
         if (pinnedChannelSeed.intValue < 0 && candidateInitialIndex != null) {
-            android.util.Log.d(
-                "ChScroll",
-                "pin chat=$chatId candidate=$candidateInitialIndex (first Ready)",
-            )
             pinnedChannelSeed.intValue = candidateInitialIndex
         }
     }
@@ -338,41 +334,7 @@ fun ChannelScreen(
         chatId, initialIndexSeed,
         saver = androidx.compose.foundation.lazy.LazyListState.Saver,
     ) {
-        android.util.Log.w(
-            "ChScroll",
-            "LazyListState CREATED chat=$chatId seed=$initialIndexSeed " +
-                "pinned=${pinnedChannelSeed.intValue} cand=$candidateInitialIndex",
-        )
         androidx.compose.foundation.lazy.LazyListState(initialIndexSeed, 0)
-    }
-
-    // Diagnostic: watch firstVisibleItemIndex transitions. Log when the index
-    // jumps by more than 5 rows in one tick (smooth scrolls don't) or when the
-    // total items count changes — correlates user-perceived "thrown to the
-    // start" with concurrent ingest paths.
-    LaunchedEffect(listState, chatId, displayedItems) {
-        var prev = listState.firstVisibleItemIndex
-        var prevTotal = listState.layoutInfo.totalItemsCount
-        androidx.compose.runtime.snapshotFlow {
-            Triple(
-                listState.firstVisibleItemIndex,
-                listState.firstVisibleItemScrollOffset,
-                listState.layoutInfo.totalItemsCount,
-            )
-        }.collect { (idx, offset, total) ->
-            val jumped = kotlin.math.abs(idx - prev) > 5
-            val totalChanged = total != prevTotal
-            if (jumped || totalChanged) {
-                android.util.Log.d(
-                    "ChScroll",
-                    "tick chat=$chatId idx=$prev->$idx offset=$offset total=$prevTotal->$total " +
-                        "scrolling=${listState.isScrollInProgress} " +
-                        "items=${displayedItems.size}${if (jumped) " JUMP" else ""}",
-                )
-            }
-            prev = idx
-            prevTotal = total
-        }
     }
 
     // Resolve in-channel quote-tap scroll-to-message once the target row appears.
@@ -384,10 +346,6 @@ fun ChannelScreen(
         pendingTarget = pendingScrollToMessage,
         loadHistoryAround = { cid, mid -> repo.loadHistoryAround(cid, mid) },
         onLanded = { cid, mid, idx ->
-            android.util.Log.w(
-                "ChScroll",
-                "pendingScroll lands chat=$cid msg=$mid idx=$idx (programmatic scrollToItem)",
-            )
             highlightedPostKey = cid to mid
             listState.scrollToItem(idx)
             pendingScrollToMessage = null
@@ -398,24 +356,42 @@ fun ChannelScreen(
         },
     )
 
-    // Pagination: near-bottom snapshotFlow → VM.loadOlderIfPossible(). The VM
-    // guards against concurrent calls; the threshold (6 items from the end)
-    // matches PAGINATION_PREFETCH_THRESHOLD in TimelineScreen.
-    LaunchedEffect(listState, chatId) {
+    // Pagination: direction-aware near-edge snapshotFlow → VM.loadOlderIfPossible().
+    // Older history lives at opposite ends of the list depending on feedOrder, so the
+    // "near the older edge" condition flips with it:
+    //
+    //   - Newest (newest-first sort):        older = BOTTOM → trigger on
+    //     `lastVisibleIndex >= total - threshold`.
+    //   - OldestUnreadFirst (asc-by-date):   older = TOP → trigger on
+    //     `firstVisibleIndex <= threshold`.
+    //
+    // Using the Newest-mode trigger in OldestUnreadFirst was a load-bearing bug:
+    // [buildChannelUiState] lands the channel at `lastIndex` (newest, at the BOTTOM
+    // of the asc-sort) on cold entry, so `lastVisibleIndex == total - 1` immediately
+    // — the trigger fires before any user gesture. Each [loadOlder] inserts ~30 older
+    // posts at the TOP of the asc-sort; LazyColumn's keyed anchor preserves the
+    // user's row, so its index shifts deeper into the list, `lastVisibleIndex` stays
+    // ~= `total - 1`, and the trigger re-fires. Runaway pagination continued until
+    // TDLib exhausted its local history and `pageEnded` flipped — at which point
+    // further scroll-up never paginates because the chat is already marked
+    // "page-ended" — exactly the user-reported "ліміт скільки листаю вверх, далі
+    // запиняє прогружати" symptom.
+    LaunchedEffect(listState, chatId, feedOrder) {
         androidx.compose.runtime.snapshotFlow {
             val info = listState.layoutInfo
             val total = info.totalItemsCount
+            val firstVisible = info.visibleItemsInfo.firstOrNull()?.index ?: -1
             val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
-            total to lastVisible
+            Triple(total, firstVisible, lastVisible)
         }
             .distinctUntilChanged()
-            .collect { (total, last) ->
-                if (total == 0 || last < 0) return@collect
-                if (last >= total - CHANNEL_PAGINATION_THRESHOLD) {
-                    android.util.Log.d(
-                        "ChScroll",
-                        "loadOlder trigger chat=$chatId last=$last total=$total",
-                    )
+            .collect { (total, first, last) ->
+                if (total == 0 || first < 0 || last < 0) return@collect
+                val nearOlderEdge = when (feedOrder) {
+                    FeedOrder.Newest -> last >= total - CHANNEL_PAGINATION_THRESHOLD
+                    FeedOrder.OldestUnreadFirst -> first <= CHANNEL_PAGINATION_THRESHOLD
+                }
+                if (nearOlderEdge) {
                     vm.loadOlderIfPossible()
                 }
             }
