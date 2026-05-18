@@ -124,6 +124,21 @@ Each `❌` carries a **Revisit:** clause — the concrete condition that would j
 - ✅ Conventional commits, scope = package: `feat(timeline):`, `perf(media):`, `build(beta):`.
 - ✅ `@Immutable` / `@Stable` on every data class that reaches Compose.
 
+### Changelog
+
+CHANGELOG.md is release notes for a user, not a PR description. Rationale lives elsewhere (commit body, load-bearing KDoc, this file). Aggressive editing of entries is OK — write the entry as it should be read on release day, not as a stream of consciousness during the fix.
+
+- ❌ Multi-sentence paragraphs per bullet. One sentence, one change. Two sentences max only if the second is "no behaviour change" / "see CommitX for rationale".
+- ❌ File paths, line numbers, function names in bullets (`PostsRepository.refreshLocked`, `TdClient.kt:71-89`). Internal — belongs in commits / KDoc.
+- ❌ TDLib / Android issue links, "per Aliaksei Levin on tdlib/td#N" citations, RFC numbers. Internal.
+- ❌ "Two compounding root causes…", "the previous fix…", post-mortem narrative. Internal.
+- ❌ Reformulating from the developer's POV ("fixed bug in foo()"). Use the user's POV ("X works again" / "Y no longer Z").
+- ✅ Categories in Keep-a-Changelog order: **Added** → **Changed** → **Fixed** → **Performance** → **Architecture** → **Build**. Skip empty ones.
+- ✅ English; UI strings keep their original glyphs (`⭐`, `→`, `↓ N`, `@handle`).
+- ✅ New entries go under `## [Unreleased]`. On release: rename `[Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD` (em-dash, ISO date) and start a fresh `## [Unreleased]` block on top.
+- ✅ When a single fix sentence loses load-bearing context, point at the durable home (`CLAUDE.md → "Load-bearing"`, the file's KDoc, the commit) — never re-explain inline.
+- ✅ Before adding a bullet under `[Unreleased]`, check it isn't already there in a different phrasing. Merge variants of the same user-visible change.
+
 ## Commands
 
 ```bash
