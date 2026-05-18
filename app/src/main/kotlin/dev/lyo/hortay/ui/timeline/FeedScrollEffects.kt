@@ -150,7 +150,7 @@ fun rememberReadAckDwell(
     ackKey: Any?,
     markAsRead: (suspend (List<TimelinePost>) -> Unit)?,
     scope: CoroutineScope,
-    dwellMs: Long = 1000L,
+    dwellMs: Long = 500L,
 ): MutableSet<Pair<Long, Long>> {
     val ackedRead = remember(ackKey) { HashSet<Pair<Long, Long>>() }
     val itemsState = rememberUpdatedState(displayedItems)

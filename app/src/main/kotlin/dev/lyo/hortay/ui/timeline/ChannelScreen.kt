@@ -1102,7 +1102,7 @@ private fun SkeletonCard(barColor: Color) {
 private const val CHANNEL_PAGINATION_THRESHOLD = 6
 
 /** Viewport-stable dwell before marking posts as read. Matches TimelineScreen's READ_DWELL_MS. */
-private const val CHANNEL_READ_DWELL_MS = 1000L
+private const val CHANNEL_READ_DWELL_MS = 500L
 
 /** How long the surface-tint highlight lingers after scroll-to-message. Matches TimelineScreen. */
 private const val CHANNEL_HIGHLIGHT_DURATION_MS = 2200L

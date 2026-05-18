@@ -1842,12 +1842,13 @@ private const val MAX_PILL_BADGES = 3
 /**
  * Viewport-stable dwell required before a post counts as "read". Triggers
  * `viewMessages(forceRead=true)`, which advances `lastReadInboxMessageId` and clears
- * the unread badge in the official Telegram client. 1 s matches Telegram-Android's own
- * scroll-IDLE read threshold and the IAB-style "considered viewed" minimum used by
- * Twitter / Instagram. Lower would zero out badges on incidental flicker; higher
- * would feel laggy ("I read this 2 s ago, why is it still bold in my other client?").
+ * the unread badge in the official Telegram client. 500 ms starts AFTER scrolling stops
+ * (the `isScrollInProgress == false` gate already filters fling-throughs), so in practice
+ * this is "user settled on a post, held for half a second" — short enough to feel
+ * responsive, long enough to avoid acking a post the user merely paused on while reaching
+ * for back. Higher (≥1 s) reads as laggy: "I clearly read this, why is it still bold?".
  */
-private const val READ_DWELL_MS = 1000L
+private const val READ_DWELL_MS = 500L
 
 /**
  * Viewport-stable dwell before we promote the topmost post's chat to OpenChat in

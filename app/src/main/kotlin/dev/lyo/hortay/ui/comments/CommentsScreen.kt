@@ -826,11 +826,11 @@ private const val INDENT_DP = 12
 
 /**
  * Viewport-stable dwell before a visible comment is considered "read" and acked via
- * `viewMessages`. Same 1 s threshold as the feed's read-mark dwell — comments scroll
+ * `viewMessages`. Same 500 ms threshold as the feed's read-mark dwell — comments scroll
  * in the same UX shape, so any other value would make the two screens feel
  * inconsistent. With the discussion-thread chat already opened by
  * [CommentsRepository.threadFlow], the ack only needs `force_read=false`; TDLib
  * advances the thread's `lastReadInboxMessageId` automatically once the message is
  * "viewed in an opened chat" (see tdlib/td#46).
  */
-private const val COMMENT_READ_DWELL_MS = 1000L
+private const val COMMENT_READ_DWELL_MS = 500L
