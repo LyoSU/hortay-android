@@ -13,6 +13,7 @@
 - Posts now mark as read after 500 ms of viewport-stable dwell, down from 1 s.
 - Channel navigation waits up to 300 ms for content before pushing, so the destination mounts populated instead of flashing a skeleton.
 - Tapping the forwarded-from author on a forward chip drills into the source channel AT the original post, not just at its newest entry.
+- Auto-download settings (Wi-Fi / Cellular / Roaming) now sync across Telegram clients via your account.
 
 ### Fixed
 - Returning from a channel to the feed no longer jumps to a different post when an album-tailed channel hydrates in the background.
