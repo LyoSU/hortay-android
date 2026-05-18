@@ -230,10 +230,16 @@ class CommentsRepository(
         // the cold-path `GetMessageThreadHistory` pays full server round-trip latency,
         // which is the intermittent "1–3 sec Loading" the user sees.
         ChatPresence.withOpenChat(td, anchor.threadChatId) {
-            // Progressive emit: surface Ready as soon as the first batch lands so the user
-            // sees real comments while we keep filling up to `limit` in the background.
-            // Without this the screen sits on Loading until all 4× BATCH_SIZE round-trips
-            // complete — even when the first 50 already cover the visible viewport.
+            // Bootstrap is one shot: collect ALL pages first, emit Ready ONCE at the end.
+            // Per-batch progressive emit looked attractive ("surface fast"), but produced
+            // an inverted-feeling load order. TDLib paginates GetMessageThreadHistory
+            // id-desc (newest first), and `buildTree` sorts siblings by date asc, so each
+            // intermediate emit visually PREPENDED an older page above the previously-
+            // visible top — read as "newest comments load, then older ones squeeze in
+            // above", the opposite of a chronological reveal. The CommentsScreen's
+            // `rememberDeferredLoading` 600 ms grace already gates the spinner so
+            // prefetched / hot-LRU threads still feel instant; cold threads now show a
+            // single Ready transition instead of a cascade of upward shifts.
             //
             // Dedup: TDLib's GetMessageThreadHistory with offset=0 is INCLUSIVE on
             // from_message_id — the first message in page N+1 is the same as the last
@@ -283,13 +289,13 @@ class CommentsRepository(
                     if (seenIds.add(m.id)) { live += m; appended++ }
                 }
                 fromId = msgs.last().id
-                if (appended > 0) emit(buildReady(live, anchor))
                 // No new messages in this page (only the boundary repeat) → end of thread.
                 if (appended == 0) break
             }
-            // Empty-thread case: nothing was emitted in the loop. Surface a Ready so the
-            // overlay leaves Loading instead of hanging on it forever.
-            if (live.isEmpty()) emit(buildReady(live, anchor))
+            // Single Ready after the full bootstrap. Covers both the populated case and
+            // the empty-thread case (nothing was added), so the overlay leaves Loading
+            // exactly once with the full chronological set.
+            emit(buildReady(live, anchor))
 
             // Single-collector update fan-in. The previous implementation had four
             // launchIn'd collectors all racing on the shared `live` mutable list — a plain
