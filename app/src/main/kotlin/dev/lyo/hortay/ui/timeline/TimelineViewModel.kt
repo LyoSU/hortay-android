@@ -133,30 +133,40 @@ class TimelineViewModel(
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     /**
-     * Per-route cold-start scroll seed for [TimelineScreen]'s LazyColumn. Captured
-     * once per (routeKey) the first time the screen renders a [TimelineUiState.Ready]
-     * for it, then held constant across tab swaps so the LazyListState saver bundle
-     * key (`routeKey, readySeed`) stays stable and `firstVisibleItemIndex` restores
-     * cleanly when the user returns to the tab.
+     * Per-route cold-start scroll anchor for [TimelineScreen]'s LazyColumn.
+     * Captured the first time the screen renders a [TimelineUiState.Ready] for
+     * the route, then held constant so re-mounts (deep nav, where
+     * [dev.lyo.hortay.ui.main.NavOverlayRenderer]'s `takeLast(2)` window
+     * evicts the feed) land the user back where they came from.
      *
-     * Why a VM-resident map instead of `rememberSaveable`: the seed must survive tab
-     * swaps within a process (TimelineScreen disposes between Home and Saved) but
-     * MUST NOT survive process death — a stale cold-start index from the previous
-     * process is almost always wrong by the time refresh + cursor map land in the
-     * new process. ViewModel lifetime matches this requirement exactly: scoped to
-     * the Activity ViewModelStore (alive through configuration changes and tab
-     * swaps), discarded when the process ends.
+     * Stored as a [dev.lyo.hortay.ui.timeline.FeedItem] key, NOT a row index.
+     * Indices are positional and silently rot under any ingest: a channel
+     * drill calling [dev.lyo.hortay.data.posts.PostsRepository.loadChannelHistory]
+     * injects ~80 historical posts into `_posts` while the overlay is up; on
+     * pop they merge above the previous anchor in asc-by-date sort and
+     * "index N" now names a completely different row. Keys survive that —
+     * `FeedItem.key` is `(chatId, mediaAlbumId)` for albums and
+     * `(chatId, post.id)` for solos, both stable across the whole session.
+     *
+     * Why VM-resident, not `rememberSaveable`: the anchor must survive tab
+     * swaps within a process AND deep nav re-mounts (TimelineScreen disposes
+     * when the stack goes past 2) but MUST NOT survive process death — a
+     * stale cold-start anchor from the previous process is almost always
+     * wrong by the time refresh + cursor map land in the new one. ViewModel
+     * lifetime matches that exactly: scoped to the Activity ViewModelStore
+     * (alive through config changes, tab swaps, and overlay re-mounts),
+     * discarded when the process ends.
      *
      * `mutableStateMapOf` so Composable reads subscribe to per-key changes —
      * setting an entry triggers exactly the recomposition that wants it.
      */
-    private val pinnedScrollSeeds: SnapshotStateMap<Any, Int> = mutableStateMapOf()
+    private val pinnedScrollSeedKeys: SnapshotStateMap<Any, String> = mutableStateMapOf()
 
-    fun pinnedScrollSeed(routeKey: Any): Int? = pinnedScrollSeeds[routeKey]
+    fun pinnedScrollSeedKey(routeKey: Any): String? = pinnedScrollSeedKeys[routeKey]
 
-    /** One-shot capture — subsequent boundary movements never override the seed. */
-    fun capturePinnedScrollSeed(routeKey: Any, index: Int) {
-        if (routeKey !in pinnedScrollSeeds) pinnedScrollSeeds[routeKey] = index
+    /** One-shot capture — subsequent boundary movements never override the anchor. */
+    fun capturePinnedScrollSeedKey(routeKey: Any, key: String) {
+        if (routeKey !in pinnedScrollSeedKeys) pinnedScrollSeedKeys[routeKey] = key
     }
 
     init {

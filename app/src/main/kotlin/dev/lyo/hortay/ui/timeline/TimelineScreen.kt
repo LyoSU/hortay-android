@@ -413,6 +413,15 @@ fun TimelineScreen(
     // read this live holder — see [boundaryCursorsState] below for why.
     val cursorHolder = LocalReadCursors.current
 
+    // Recency floor for OldestUnreadFirst landing — see
+    // [BOUNDARY_RECENCY_WINDOW_MS]. Captured once per mount so the cutoff is
+    // stable across recompositions; on re-entry (tab swap / cold start) it
+    // re-samples, which is correct because the floor IS "recent relative to
+    // when the user opened the feed". One source of truth: every boundary
+    // pick — cold-start latcher, home-tap, scope switch, pill fallback — goes
+    // through the same value via [homeScrollIndex] / [buildTimelineUiState].
+    val recencyCutoffMs = remember { System.currentTimeMillis() - BOUNDARY_RECENCY_WINDOW_MS }
+
     val visiblePosts = remember(filteredPosts, feedOrder) {
         filteredPosts.orderedFor(feedOrder)
     }
@@ -540,7 +549,13 @@ fun TimelineScreen(
     // chat not in the feed is a free no-op; for an in-feed chat the
     // scan re-runs but most cursor advances don't move the integer
     // boundary, so the mirror does not re-emit.
-    val homeScrollIndex by remember(feedItems, feedOrder, cursorsHaveLanded) {
+    // Single source of truth for "where should I scroll now" boundary picks:
+    // cold-start latcher, NavBar home re-tap, scope/folder switch, and the
+    // UnreadCounterPill fallback all read this value. Goes through
+    // [continueReadingIndex] with the same [recencyCutoffMs] the latcher uses
+    // so a folder switch can't auto-scroll the user onto a weeks-old dormant
+    // unread that the cold-start picker would have rejected.
+    val homeScrollIndex by remember(feedItems, feedOrder, cursorsHaveLanded, recencyCutoffMs) {
         derivedStateOf {
             when (feedOrder) {
                 dev.lyo.hortay.data.FeedOrder.Newest -> 0
@@ -548,10 +563,13 @@ fun TimelineScreen(
                     if (feedItems.isEmpty()) 0
                     else if (!cursorsHaveLanded) 0
                     else {
-                        val boundary = feedItems.indexOfFirst { item ->
-                            val anchor = item.posts().first()
-                            anchor.isUnreadAt(cursorHolder[anchor.chatId])
-                        }
+                        val anchorPosts = feedItems.map { it.posts().first() }
+                        val boundary = dev.lyo.hortay.data.continueReadingIndex(
+                            order = dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst,
+                            posts = anchorPosts,
+                            cursors = cursorHolder.snapshot(),
+                            minUnreadDate = recencyCutoffMs,
+                        )
                         if (boundary >= 0) boundary else feedItems.lastIndex.coerceAtLeast(0)
                     }
                 }
@@ -588,12 +606,6 @@ fun TimelineScreen(
     // the latched value is what the latcher would have captured anyway;
     // for Newest mode the state stays at [EmptyReadCursors] which the
     // builder maps to initialIndex=0 (the correct Newest landing).
-    // Recency floor for the OldestUnreadFirst landing — see
-    // [BOUNDARY_RECENCY_WINDOW_MS]. Captured once per mount so the cutoff is
-    // stable across recompositions; on re-entry (tab swap / cold start) it
-    // re-samples, which is correct because the floor IS "recent relative to
-    // when the user opened the feed".
-    val recencyCutoffMs = remember { System.currentTimeMillis() - BOUNDARY_RECENCY_WINDOW_MS }
     val candidateUiState: TimelineUiState = buildTimelineUiState(
         items = persistentFeedItems,
         cursorsLanded = readCursorsLandedState.value,
@@ -613,33 +625,37 @@ fun TimelineScreen(
     // (`routeKey, readySeed`) STABLE per route within a process so a moved
     // boundary doesn't yank the bundle out from under the restoration path.
     //
-    // The naive `rememberSaveable(routeKey, liveBoundary, saver)` pattern keys
-    // on the LIVE boundary index. That gives the right cold-start landing
-    // (first Ready → key changes → fresh LazyListState seeded at boundary) at
-    // the cost of losing scroll on every tab swap where the boundary moved
-    // while the user was on another tab: the bundle was saved under
-    // `(route, oldBoundary)` but on re-entry the key is `(route, newBoundary)`,
-    // so Compose treats it as a fresh slot and re-seeds at index N instead of
-    // restoring `firstVisibleItemIndex`.
+    // The anchor lives in [TimelineViewModel.pinnedScrollSeedKeys] as a
+    // [FeedItem.key], NOT a row index. ViewModel lifetime spans tab swaps
+    // and overlay re-mounts (deep nav: `stack.takeLast(2)` in
+    // [dev.lyo.hortay.ui.main.NavOverlayRenderer] evicts the feed) but ends
+    // with process death — so cold launch always re-evaluates against the
+    // freshly-landed refresh + cursors. A key beats an index because any
+    // ingest between dispose and remount (channel drill calls
+    // [dev.lyo.hortay.data.posts.PostsRepository.loadChannelHistory] →
+    // ~80 historical posts merge into `_posts` while the overlay is up)
+    // shifts the positional index out from under us; the key resolves to
+    // the same post no matter how the surrounding feed grew.
     //
-    // The seed lives in [TimelineViewModel.pinnedScrollSeeds] — a per-route
-    // one-shot capture of the first boundary the screen ever saw. ViewModel
-    // lifetime is exactly right: stable across tab swaps within a process,
-    // discarded on process death (so cold launch re-evaluates the boundary
-    // against the freshly-landed refresh + cursors rather than restoring a
-    // stale index from the previous session's SavedState).
-    //
-    // The [LaunchedEffect] writes to the VM after composition, so the FIRST
-    // Ready-frame still gets the candidate value directly via the `?:`
-    // fallback — no one-frame paint at index 0 before the saver re-keys.
-    val pinnedSeed: Int? = vm.pinnedScrollSeed(routeKey)
+    // The [LaunchedEffect] captures after composition, so the FIRST Ready-
+    // frame still gets `candidateInitialIndex` directly via the `?:` chain
+    // — no one-frame paint at index 0 before the anchor is recorded.
     val candidateInitialIndex = (latchedUiState as? TimelineUiState.Ready)?.initialIndex
-    LaunchedEffect(routeKey, candidateInitialIndex) {
-        if (pinnedSeed == null && candidateInitialIndex != null) {
-            vm.capturePinnedScrollSeed(routeKey, candidateInitialIndex)
-        }
+    val pinnedKey: String? = vm.pinnedScrollSeedKey(routeKey)
+    LaunchedEffect(routeKey, candidateInitialIndex, feedItems) {
+        if (pinnedKey != null) return@LaunchedEffect
+        val anchorKey = candidateInitialIndex?.let { feedItems.getOrNull(it)?.key }
+            ?: return@LaunchedEffect
+        vm.capturePinnedScrollSeedKey(routeKey, anchorKey)
     }
-    val readySeed = pinnedSeed ?: candidateInitialIndex ?: 0
+    // Resolve the pinned key back to the current row index. If the post
+    // was deleted / filtered out between sessions of this composable, fall
+    // back to the freshest candidate.
+    val pinnedIndex: Int? = remember(pinnedKey, feedItems) {
+        if (pinnedKey == null) null
+        else feedItems.indexOfFirst { it.key == pinnedKey }.takeIf { it >= 0 }
+    }
+    val readySeed = pinnedIndex ?: candidateInitialIndex ?: 0
     val listState = rememberSaveable(
         routeKey, readySeed,
         saver = androidx.compose.foundation.lazy.LazyListState.Saver,
