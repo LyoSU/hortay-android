@@ -292,6 +292,10 @@ sqldelight {
 }
 
 androidComponents {
+    onVariants(selector().withName("benchmarkRelease")) { variant ->
+        variant.sources.manifests.addStaticManifestFile("src/benchmarkRelease/AndroidManifest.xml")
+    }
+
     onVariants { variant ->
         val isBeta = variant.buildType == "beta"
         val isRelease = variant.buildType == "release"

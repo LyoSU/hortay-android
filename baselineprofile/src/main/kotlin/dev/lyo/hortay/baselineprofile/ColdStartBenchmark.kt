@@ -108,27 +108,36 @@ class ColdStartBenchmark {
     }
 
     /**
-     * Deletes the DataStore-preferences file backing [TimelineSnapshotStore]
-     * for the target package.
+     * Clears the DataStore entry backing [TimelineSnapshotStore] inside the
+     * target process.
      *
      * The file name `timeline_snapshot` matches the `preferencesDataStore(name = ...)`
      * declaration in `data/TimelineSnapshotStore.kt`. DataStore writes it as
      * `<files>/datastore/<name>.preferences_pb`. Removing it forces the next
      * cold start to take the "no prior session" path.
      *
-     * We use `run-as` so this works on user-debug devices without needing
-     * `adb root`; the package is debuggable=false in the `benchmark` build
-     * type, but the macrobenchmark instrumentation runs with sufficient
-     * privilege via `am instrument` to delete files in the target's
-     * `/data/data/<pkg>/files/` tree on profileable builds.
+     * `run-as` cannot access the non-debuggable `benchmarkRelease` package on
+     * production devices, so the target APK exposes a benchmarkRelease-only
+     * receiver that calls the real production clear path and returns an ordered
+     * broadcast result. If that receiver is absent or fails, the benchmark fails
+     * instead of silently comparing two "with snapshot" runs.
      */
     private fun MacrobenchmarkScope.clearStartupSnapshot() {
-        val path = "/data/data/$PACKAGE/files/datastore/timeline_snapshot.preferences_pb"
-        device.executeShellCommand("run-as $PACKAGE rm -f $path")
+        val output = device.executeShellCommand(
+            "am broadcast --receiver-foreground " +
+                "-a $CLEAR_TIMELINE_SNAPSHOT_ACTION " +
+                "-n $CLEAR_TIMELINE_SNAPSHOT_COMPONENT"
+        )
+        check(output.contains("Broadcast completed: result=-1") && output.contains("data=\"cleared\"")) {
+            "Failed to clear timeline snapshot before benchmark iteration. Output: $output"
+        }
     }
 
     private companion object {
         const val PACKAGE = "dev.lyo.hortay"
+        const val CLEAR_TIMELINE_SNAPSHOT_ACTION = "dev.lyo.hortay.benchmark.CLEAR_TIMELINE_SNAPSHOT"
+        const val CLEAR_TIMELINE_SNAPSHOT_COMPONENT =
+            "$PACKAGE/dev.lyo.hortay.benchmark.ClearTimelineSnapshotReceiver"
 
         /**
          * Five iterations is the Macrobenchmark default for `StartupTimingMetric`.
