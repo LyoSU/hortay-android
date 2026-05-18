@@ -603,7 +603,7 @@ class PostsRepository(
             if (current.isNotEmpty()) current
             else {
                 added = mapped.size
-                PostFilterStrategy.apply(mapped).take(MAX_FEED_SIZE).toPersistentList()
+                PostFilterStrategy.apply(mapped).toPersistentList()
             }
         }
         return added
@@ -643,7 +643,7 @@ class PostsRepository(
         var upgraded = 0
         _posts.update { live ->
             val before = live.mapTo(HashSet()) { it.chatId to it.id }
-            val next = foldRawIntoCurrent(live, mapped, MAX_FEED_SIZE)
+            val next = foldRawIntoCurrent(live, mapped)
             upgraded = next.count { (it.chatId to it.id) !in before }
             next
         }
@@ -801,7 +801,7 @@ class PostsRepository(
         val mapped = raw.map { mapper.toChannelPost(it, chat) }
         if (mapped.isEmpty()) return false
 
-        _posts.update { current -> foldRawIntoCurrent(current, mapped, MAX_FEED_SIZE) }
+        _posts.update { current -> foldRawIntoCurrent(current, mapped) }
         return true
     }
 
@@ -855,7 +855,7 @@ class PostsRepository(
         val mapped = raw.map { mapper.toChannelPost(it, chat) }
         if (mapped.isEmpty()) return false
 
-        _posts.update { current -> foldRawIntoCurrent(current, mapped, MAX_FEED_SIZE) }
+        _posts.update { current -> foldRawIntoCurrent(current, mapped) }
         return true
     }
 
@@ -920,20 +920,7 @@ class PostsRepository(
         var nextChannelSize = 0
         _posts.update { current ->
             prevChannelSize = current.count { it.chatId == chatId }
-            // Relax the global cap to the post-merge size so the just-fetched older
-            // posts of [chatId] aren't trimmed by `take(MAX_FEED_SIZE)`. The default
-            // cap exists to bound the mixed-feed snapshot — but loadOlder is the user
-            // EXPLICITLY asking for older posts of one channel, which by definition
-            // sort to the back of the date-desc list and would otherwise be the first
-            // items evicted. Without this, pagination ran but every new page got
-            // immediately trimmed away, so the LazyColumn's totalItemsCount never
-            // changed, snapshotFlow.distinctUntilChanged didn't re-emit, and the user
-            // saw "pagination doesn't work" past the very first page. The cap relaxes
-            // for THIS update only — the next ingest of fresh top-of-feed posts falls
-            // back to MAX_FEED_SIZE and trims the deep history naturally as the
-            // session moves on.
-            val effectiveCap = maxOf(MAX_FEED_SIZE, current.size + mapped.size)
-            val result = foldRawIntoCurrent(current, mapped, effectiveCap)
+            val result = foldRawIntoCurrent(current, mapped)
             nextChannelSize = result.count { it.chatId == chatId }
             result
         }
@@ -1332,7 +1319,7 @@ class PostsRepository(
         var addedForEmit: List<TimelinePost> = emptyList()
         _posts.update { current ->
             val before = current.mapTo(HashSet()) { it.chatId to it.id }
-            val next = foldRawIntoCurrent(current, newPosts, MAX_FEED_SIZE)
+            val next = foldRawIntoCurrent(current, newPosts)
             addedForEmit = next.filter { (it.chatId to it.id) !in before }
             next
         }
@@ -1970,7 +1957,6 @@ class PostsRepository(
         const val TAG = "PostsRepository"
         const val CHAT_LIST_HINT = 200
         const val MAX_LOAD_CHATS_PAGES = 10
-        const val MAX_FEED_SIZE = 1_000
         const val REFRESH_DEFAULT_LIMIT = 30
         // Mirrors the FeedSource.refreshIfStale window: skip the round-trip
         // when last successful refresh was within the last minute. 60s tracks

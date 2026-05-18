@@ -38,7 +38,7 @@ class FoldRawIntoCurrentTest {
         // coalesceAlbumFragments' surround fetch came up short).
         val partialRaw = listOf(rawAlbumMember(chatId, albumId, id = 14L))
 
-        val result = foldRawIntoCurrent(persistentListOf(merged), partialRaw, maxFeedSize = 1000)
+        val result = foldRawIntoCurrent(persistentListOf(merged), partialRaw)
 
         assertEquals(1, result.size)
         val survivor = result.single()
@@ -60,7 +60,7 @@ class FoldRawIntoCurrentTest {
         // items) + 5 (raw, each PhotoAlbum-with-1-item) = 10 items.
         val raw = (10L..14L).map { rawAlbumMember(chatId, albumId, id = it) }
 
-        val result = foldRawIntoCurrent(persistentListOf(merged), raw, maxFeedSize = 1000)
+        val result = foldRawIntoCurrent(persistentListOf(merged), raw)
 
         assertEquals(1, result.size)
         val items = (result.single().content as PostContent.PhotoAlbum).items
@@ -79,7 +79,7 @@ class FoldRawIntoCurrentTest {
         val merged = mergedAlbum(chatId, albumId, ids = listOf(10L, 11L, 12L, 13L, 14L))
         val raw = (10L..14L).map { rawAlbumMember(chatId, albumId, id = it) }
 
-        val result = foldRawIntoCurrent(persistentListOf(merged), raw, maxFeedSize = 1000)
+        val result = foldRawIntoCurrent(persistentListOf(merged), raw)
 
         val items = (result.single().content as PostContent.PhotoAlbum).items
         assertEquals(5, items.size, "must not re-stack raw album members onto the merged anchor")
@@ -93,7 +93,7 @@ class FoldRawIntoCurrentTest {
         val stale = textPost(chatId, id = 99L, views = 10)
         val fresh = textPost(chatId, id = 99L, views = 999)
 
-        val result = foldRawIntoCurrent(persistentListOf(stale), listOf(fresh), maxFeedSize = 1000)
+        val result = foldRawIntoCurrent(persistentListOf(stale), listOf(fresh))
 
         assertEquals(1, result.size)
         assertEquals(999, result.single().views)
@@ -107,7 +107,7 @@ class FoldRawIntoCurrentTest {
         val albumId = 7L
         val raw = (1L..3L).map { rawAlbumMember(chatId, albumId, id = it) }
 
-        val result = foldRawIntoCurrent(persistentListOf(), raw, maxFeedSize = 1000)
+        val result = foldRawIntoCurrent(persistentListOf(), raw)
 
         assertEquals(1, result.size)
         val merged = result.single()
@@ -125,21 +125,13 @@ class FoldRawIntoCurrentTest {
         val current = persistentListOf(unrelated, merged)
         val partialRaw = listOf(rawAlbumMember(chatId, albumId, id = 12L))
 
-        val result = foldRawIntoCurrent(current, partialRaw, maxFeedSize = 1000)
+        val result = foldRawIntoCurrent(current, partialRaw)
 
         assertTrue(result.any { it.id == 50L }, "unrelated post must survive the fold")
         val mergedSurvivor = result.firstOrNull { it.id == merged.id }
         assertNotNull(mergedSurvivor)
         val items = (mergedSurvivor!!.content as PostContent.PhotoAlbum).items
         assertEquals(3, items.size)
-    }
-
-    @Test
-    fun `feed cap is honoured`() {
-        val chatId = -1001L
-        val raw = (1L..50L).map { textPost(chatId, id = it, views = 0) }
-        val result = foldRawIntoCurrent(persistentListOf(), raw, maxFeedSize = 10)
-        assertEquals(10, result.size)
     }
 
     private fun mergedAlbum(chatId: Long, albumId: Long, ids: List<Long>): TimelinePost {

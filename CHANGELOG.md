@@ -28,6 +28,7 @@
 - `OldestUnreadFirst` no longer lands on ancient or admin-owned posts on cold start.
 - Albums render correctly in comments: no phantom comments from album mirrors, and albums posted as comments group as one card.
 - "↓ N" unread pill no longer skips every second post; dwell-ack requires the row to be fully visible and the scroll idle.
+- Deep-link to an old post no longer surfaces "link not found" on a busy feed; the merged-feed size cap is removed so the just-fetched anchor isn't evicted before the resolver sees it.
 
 ## [0.5.0] — 2026-05-17
 

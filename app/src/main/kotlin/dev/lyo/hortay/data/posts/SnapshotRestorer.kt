@@ -64,7 +64,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal fun foldRawIntoCurrent(
     current: PersistentList<TimelinePost>,
     raw: List<TimelinePost>,
-    maxFeedSize: Int,
 ): PersistentList<TimelinePost> {
     val rawByAlbum = raw
         .filter { it.mediaAlbumId != 0L }
@@ -101,7 +100,7 @@ internal fun foldRawIntoCurrent(
         val keys = post.albumMessageIds.ifEmpty { listOf(post.id) }
         keys.any { id -> (post.chatId to id) in freshKeys }
     }
-    return PostFilterStrategy.apply(rawSafe + keptOld).take(maxFeedSize).toPersistentList()
+    return PostFilterStrategy.apply(rawSafe + keptOld).toPersistentList()
 }
 
 /**

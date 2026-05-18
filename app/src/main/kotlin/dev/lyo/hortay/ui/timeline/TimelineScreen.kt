@@ -1011,8 +1011,9 @@ fun TimelineScreen(
     //
     // ackedRead deduplicates so we don't re-issue viewMessages for the same posts on
     // every viewport mutation. TDLib filters re-acks server-side anyway (issue #136),
-    // but skipping the round-trip altogether is cheaper. Cap is implicit: feed size
-    // is bounded by MAX_FEED_SIZE (~1000), so the set stays small.
+    // but skipping the round-trip altogether is cheaper. Set size scales with what the
+    // user actually reads in one session — bounded by TDLib's own history retention,
+    // not by an in-process cap.
     // Read-ack dwell extracted to [rememberReadAckDwell] — shared with
     // [ChannelScreen]. Populates ackedRead BEFORE dispatching the suspending ack so
     // a mid-batch cancellation can't leave half the chats acked locally; the
