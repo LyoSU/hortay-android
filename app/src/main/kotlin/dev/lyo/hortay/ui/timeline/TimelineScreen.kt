@@ -1785,37 +1785,46 @@ fun TimelineScreen(
                     UnreadCounterPill(
                         count = unreadRemaining,
                         onClick = {
-                            // Jump to the NEWEST still-unread FeedItem per the live
+                            // Jump to the first STILL-unread FeedItem per the live
                             // cursor — row-space, because LazyColumn renders folded
-                            // reply chains as single rows. `indexOfLast` (not first)
-                            // matches the Telegram-chat ↓ FAB idiom this pill's
-                            // silhouette already borrows: the glyph promises a
-                            // downward jump, so the target must always sit at or
-                            // below current position. The previous `indexOfFirst`
-                            // (= "continue where you left off") meant tapping the
-                            // pill during an active reading session would either
-                            // do nothing (already at the boundary) or scroll
-                            // UPWARD (user had scrolled into the read history) —
-                            // both contradicting the ↓ glyph.
+                            // reply chains as single rows. This is the
+                            // "continue where you left off" semantic: the target is
+                            // the boundary between the read block and the unread
+                            // queue, NOT the newest unread at the bottom.
                             //
-                            // Falls back to `items.lastIndex` (= newest post in
-                            // feed, Telegram's caught-up landing) if every visible
-                            // post is live-read in the race between this click
-                            // and a refresh. The old fallback to
-                            // homeScrollIndexState (= snapshot cold-start
-                            // boundary, somewhere mid-feed) would have surfaced
-                            // an upward jump and re-introduced the very contract
-                            // mismatch this fix removes.
+                            // Conscious tradeoff against the literal ↓ glyph
+                            // direction. In OldestUnreadFirst the queue's
+                            // boundary IS the load-bearing UX anchor — it's "the
+                            // place I was reading" — so the pill's job is to
+                            // restore that position, not to dump the user at the
+                            // newest post. In the typical read-history-above
+                            // case `indexOfFirst` lands BELOW current and the
+                            // scroll is genuinely downward; in the active
+                            // reading case it's a noop (already at the
+                            // boundary), which is the correct visual cue that
+                            // there is nothing to jump to. `indexOfLast` was
+                            // tried in commit efce192 and reverted here: it
+                            // broke the "continue where you left off" anchor
+                            // without buying enough glyph-literal correctness
+                            // to be worth the loss.
+                            //
+                            // Falls back to the snapshot's cold-start boundary
+                            // (homeScrollIndex) if every visible post is
+                            // live-read in the race between this click and a
+                            // refresh — that index is the same "where you left
+                            // off" anchor frozen at the previous boundary
+                            // computation, so the fallback path stays
+                            // semantically consistent with the primary path.
                             //
                             // Read through [feedItemsState] (live) so a feed
                             // refresh / new-post arrival that lands between this
                             // composition and the click doesn't leave us indexing
                             // a stale captured list.
                             val items = feedItemsState.value
-                            val live = items.indexOfLast { item ->
+                            val live = items.indexOfFirst { item ->
                                 item.posts().any { it.isUnreadAt(cursorHolder[it.chatId]) }
                             }
-                            val target = if (live >= 0) live else items.lastIndex.coerceAtLeast(0)
+                            val target = if (live >= 0) live else homeScrollIndexState.intValue
                             scope.launch { listState.smartScrollTo(target) }
                         },
                     )
