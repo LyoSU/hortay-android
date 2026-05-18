@@ -239,9 +239,51 @@ class ChannelViewModel(
                 // cold-start harvest provides. `historyLoading` clears
                 // regardless of outcome — an inaccessible channel shows the
                 // empty hero, not a frozen skeleton.
+                //
+                // Ordering barrier: between `loadChannelHistory` returning
+                // and the `_historyLoading.value = false` write, we wait for
+                // [posts] (the per-channel filtered StateFlow) to reflect
+                // the just-loaded slice. Without this, Compose can observe
+                // a frame where `historyLoading=false` but [posts] is still
+                // on its stale pre-load value:
+                //
+                //   - `_posts.update` lands on the repo's Default-dispatcher
+                //     coroutine, notifying subscribers.
+                //   - [posts] is `repo.posts.map { filter }.stateIn(...)` —
+                //     its collector runs in viewModelScope (Main.immediate)
+                //     and updates the inner StateFlow asynchronously.
+                //   - The outer `loadChannelHistory.await()` continuation
+                //     ALSO resumes on viewModelScope's Main.immediate.
+                //   - Both are queued on Main but as separate continuations.
+                //     In practice the stateIn collector runs first (it was
+                //     scheduled when `_posts.update` notified subscribers,
+                //     before the deferred's `complete()` scheduled the
+                //     awaiter), but coroutine scheduling does not formally
+                //     guarantee that ordering.
+                //
+                // If `historyLoading=false` reaches Compose before [posts]
+                // does, `buildChannelUiState` returns Ready(items=staleSlice,
+                // initialIndex=lastIndex(staleSlice)=0 for the cold-harvest
+                // single post). `reduceChannelUiState` then LATCHES that
+                // initialIndex through subsequent Ready→Ready transitions
+                // (the deep-link / scroll-pin contract), so even after
+                // [posts] catches up to 80 items, the LazyColumn anchors at
+                // index 0 — and in OldestUnreadFirst (asc-by-date) that's
+                // the OLDEST post. From the user's POV: the new post they
+                // tapped sits at the bottom (key-anchored by LazyColumn's
+                // own machinery), and 78 older posts "appear above it" as
+                // soon as Compose paints the freshly-grown list.
+                //
+                // The fix is structural: `posts.first { it.size >= expected }`
+                // suspends this coroutine until the filtered slice reflects
+                // the just-loaded data. Only then do we flip
+                // `_historyLoading`, so Compose ALWAYS observes the (posts,
+                // historyLoading) pair as consistent.
                 launch {
                     try {
                         repo.loadChannelHistory(chatId)
+                        val expectedCount = repo.posts.value.count { it.chatId == chatId }
+                        posts.first { it.size >= expectedCount }
                     } finally {
                         _historyLoading.value = false
                     }
