@@ -642,8 +642,9 @@ fun ChannelScreen(
                 // Anti-flicker grace for the resolving-state skeleton. Most
                 // channel entries land Ready in 50-200 ms — local-cache
                 // history when the channel has surfaced in the merged feed,
-                // helped by [PostsRepository.primeChannelForOpen] which the
-                // push-site fires in parallel. Without a grace window
+                // helped by `pushChannel` which awaits
+                // [PostsRepository.loadChannelHistory] before pushing
+                // [NavEntry.Channel]. Without a grace window
                 // [SkeletonFeed] paints for one or two frames and unmounts
                 // — read as flicker. Gated on [SCREEN_MOUNT_GRACE_MS]
                 // (120 ms) so fast resolves paint zero skeleton; only

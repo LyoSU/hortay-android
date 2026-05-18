@@ -167,7 +167,8 @@ internal fun reduceChannelUiState(
  * then the latch caught up and the LazyColumn paints over it.
  *
  * Seeding from the first candidate makes Ready a frame-one state when the
- * upstream pipeline ([primeChannelForOpen] + the [ChannelViewModel.posts]
+ * upstream pipeline (the push-site `pushChannel` awaiting
+ * [PostsRepository.loadChannelHistory] + the [ChannelViewModel.posts]
  * StateFlow's synchronous initial value) already has a warm slice. The
  * [LaunchedEffect] keeps doing its job on subsequent emissions — passing
  * `reduceChannelUiState(previous, candidate)` preserves the latched
