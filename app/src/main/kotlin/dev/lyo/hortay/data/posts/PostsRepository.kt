@@ -800,18 +800,29 @@ class PostsRepository(
      * Fire-and-forget pre-warm of the per-channel slice ahead of a
      * navigation push. Returns immediately — does NOT block the caller.
      *
-     * Skips the launch when `_posts` already has a slice for [chatId] (the
-     * common case for any channel the user has seen in the feed since the
-     * session warmed). Otherwise kicks off [loadChannelHistory] in this
-     * repository's own scope so the request keeps running past whatever
-     * lifecycle event caused the push.
+     * Always kicks off [loadChannelHistory] in this repository's own
+     * scope so the request keeps running past whatever lifecycle event
+     * caused the push. Dedup is handled by [loadChannelHistory] itself:
+     *   - [deepLoadCooldownUntilMs] short-circuits the call if a load
+     *     completed within [DEEP_LOAD_COOLDOWN_MS] (warm re-entry).
+     *   - [deepLoadJobs] joins any in-flight load so a concurrent
+     *     [dev.lyo.hortay.ui.timeline.ChannelViewModel] init call awaits
+     *     the SAME Deferred — no duplicate `GetChatHistory` round-trip,
+     *     no extra FLOOD_WAIT.
      *
-     * The launched [loadChannelHistory] is single-flight via [deepLoadJobs],
-     * so when [ChannelViewModel] runs its own `loadChannelHistory(chatId)`
-     * call shortly after the screen mounts, it awaits the SAME Deferred.
-     * No duplicate `GetChatHistory` round-trip, no extra FLOOD_WAIT
-     * pressure. The head-start is the ~50-100 ms the channel takes to
-     * mount-and-construct-VM — small but free.
+     * The earlier "skip when slice has any posts for [chatId]" early-out
+     * was wrong: the cold-start harvest in [refreshLocked] populates
+     * exactly ONE post per channel (from `Chat.lastMessage`), so on the
+     * very first channel open the slice is ALWAYS "non-empty" — but only
+     * by virtue of that single harvest artifact. Skipping prefetch in
+     * that case left [dev.lyo.hortay.ui.timeline.ChannelScreen] mounting
+     * with one post; ~300-800 ms later the head-load posts merged in
+     * above (asc-by-date sort), and the LazyColumn's key-anchor preserved
+     * the visible row while a wall of older history popped in above it.
+     * Visible to the user as a sudden "jump" right after opening the
+     * channel. The fix is to let the prefetch run whenever the user
+     * navigates — the cooldown + single-flight handle dedup at no
+     * extra cost.
      *
      * Architectural contract: the push happens in parallel with this
      * prefetch, not after it. Whether a skeleton paints on the destination
@@ -820,8 +831,28 @@ class PostsRepository(
      * not by a flag set here.
      */
     fun primeChannelForOpen(chatId: Long) {
-        if (_posts.value.any { it.chatId == chatId }) return
         scope.launch { loadChannelHistory(chatId) }
+    }
+
+    /**
+     * True when [loadChannelHistory] for [chatId] completed successfully within
+     * the [DEEP_LOAD_COOLDOWN_MS] window — i.e. the in-memory `_posts` slice for
+     * this channel is "warm" (the full per-channel head has landed, not just
+     * the cold-start harvest artifact).
+     *
+     * Used by [dev.lyo.hortay.ui.timeline.ChannelViewModel] to seed
+     * `_historyLoading` synchronously on construction: warm re-entry means
+     * we already have the full head, so the channel screen lands Ready on
+     * frame one without gating through `Resolving`. Cold first entry returns
+     * false → the screen stays in `Resolving` until the deep load lands,
+     * avoiding the "one-post-then-the-rest-pop-in" jump documented on
+     * [primeChannelForOpen].
+     *
+     * Read-only against the cooldown map; no side effects.
+     */
+    fun hasWarmChannelHistory(chatId: Long): Boolean {
+        val until = deepLoadCooldownUntilMs[chatId] ?: return false
+        return System.currentTimeMillis() < until
     }
 
     suspend fun loadChannelHistory(chatId: Long, limit: Int = 80): Result<Unit> {

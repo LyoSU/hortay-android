@@ -38,8 +38,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  *     pill concept when the user is already inside the channel.
  *
  *   - [historyLoading] is true from VM init until the first [loadChannelHistory] round-
- *     trip completes (or fails). Drives the [ChannelPreviewSkeleton] in the UI — same
- *     idiom Telegram-Android uses on its public-channel preview screen.
+ *     trip completes (or fails). Drives the [ChannelUiState.Resolving] gate so the
+ *     LazyColumn only mounts once the deep slice has landed — avoids the
+ *     "one-post-then-the-rest-pop-in" jump that the cold-start harvest used to cause.
  *
  *   - [paginationLoading] coalesces rapid near-bottom scroll events so [loadOlder] is
  *     never called while a previous load for this channel is still in flight.
@@ -96,9 +97,22 @@ class ChannelViewModel(
         )
 
     // First-load guard: true from init until [loadChannelHistory] resolves — drives
-    // [ChannelPreviewSkeleton]. Reset to false regardless of success/failure so an
+    // [ChannelPreviewSkeleton] AND the [ChannelUiState.Resolving] gate in
+    // [buildChannelUiState]. Reset to false regardless of success/failure so an
     // inaccessible channel doesn't freeze the screen on the skeleton forever.
-    private val _historyLoading = MutableStateFlow(true)
+    //
+    // Seeded SYNCHRONOUSLY from [PostsRepository.hasWarmChannelHistory] so warm
+    // re-entries (deep history already landed this session, cooldown still
+    // active) land Ready on frame one — no Resolving flash, no blank skeleton
+    // grace window. Cold first entries start true and stay there until the
+    // deep load resolves, so the LazyColumn never paints with a sparse slice
+    // that's about to be back-filled by older posts above the visible row
+    // (the "stretching jump" symptom on first channel open from the feed:
+    // cold-start [PostsRepository.refreshLocked] populates exactly one post
+    // per channel from `Chat.lastMessage`, and without this gate the channel
+    // mounted with that one post, then 79 older posts merged in above it
+    // mid-scroll once [loadChannelHistory] returned).
+    private val _historyLoading = MutableStateFlow(!repo.hasWarmChannelHistory(chatId))
     val historyLoading: StateFlow<Boolean> = _historyLoading.asStateFlow()
 
     // Deep-link around-load attempt flag. Starts false; flipped to true by the init

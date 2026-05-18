@@ -3,17 +3,10 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -27,7 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
@@ -683,9 +675,12 @@ fun ChannelScreen(
                         Box(modifier = Modifier.fillMaxSize())
                     }
                     displayedList.isEmpty() && !refreshing -> {
+                        // [historyLoading] is exhausted by the Resolving gate above —
+                        // when this branch fires the channel has resolved Ready with
+                        // an empty slice (genuinely empty channel / search miss),
+                        // never a load-in-flight state.
                         when {
                             searchActive && searchQuery.isNotBlank() -> ChannelSearchEmpty()
-                            historyLoading -> ChannelPreviewSkeleton()
                             else -> ChannelEmptyState()
                         }
                     }
@@ -999,99 +994,6 @@ private fun ChannelEmptyState() {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-        )
-    }
-}
-
-/**
- * Loading skeleton for a freshly entered channel — three placeholder cards roughed to the
- * shape of a real [PostCard]. Matches [TimelineScreen]'s ChannelPreviewSkeleton exactly;
- * moved here since it is now only needed in the channel view, not the all-feed.
- *
- * Shimmer is a single infinite Animatable driving the surfaceContainerHighest /
- * surfaceContainerLow alpha sweep — cheap (no allocations per frame, one Animatable for
- * the whole skeleton). MotionScheme isn't used here because the animation is a deliberate
- * slow loop (1.2s linear), not a state-change spring.
- */
-@Composable
-private fun ChannelPreviewSkeleton() {
-    val infinite = rememberInfiniteTransition(label = "preview-skeleton")
-    val shimmer by infinite.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "preview-skeleton-alpha",
-    )
-    val shimmerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = shimmer)
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        repeat(3) { SkeletonCard(shimmerColor) }
-    }
-}
-
-@Composable
-private fun SkeletonCard(barColor: Color) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(barColor),
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(
-                    modifier = Modifier
-                        .height(12.dp)
-                        .width(140.dp)
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .background(barColor),
-                )
-                Box(
-                    modifier = Modifier
-                        .height(10.dp)
-                        .width(80.dp)
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .background(barColor),
-                )
-            }
-        }
-        Spacer(Modifier.height(2.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(12.dp)
-                .clip(MaterialTheme.shapes.extraSmall)
-                .background(barColor),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.85f)
-                .height(12.dp)
-                .clip(MaterialTheme.shapes.extraSmall)
-                .background(barColor),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.6f)
-                .height(12.dp)
-                .clip(MaterialTheme.shapes.extraSmall)
-                .background(barColor),
         )
     }
 }
