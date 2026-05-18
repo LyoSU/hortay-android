@@ -1166,19 +1166,18 @@ class PostsRepository(
      *     (`ChatTypeSupergroup` with `isChannel = true`). Caller switches the feed
      *     filter to [chatId].
      *
+     *   - [PublicHandleResult.User] — the handle resolves to a 1:1 user or bot
+     *     (`ChatTypePrivate`). Caller opens the in-app
+     *     [dev.lyo.hortay.ui.users.UserProfileSheet] so an `@username` mention lands
+     *     on the same surface as an in-text `TextEntityTypeMentionName` tap.
+     *
      *   - [PublicHandleResult.Unsupported] — the handle is a real Telegram entity but
-     *     not something Hortay can render today (1:1 user, bot, basic group,
-     *     supergroup that isn't a channel). Caller surfaces a user-facing message
-     *     ("profile / bot / group links open in Telegram") and offers to hand off via
-     *     the OS chooser.
+     *     not something Hortay can render today (basic group, supergroup that isn't
+     *     a channel). Caller surfaces a user-facing message and offers to hand off
+     *     via the OS chooser.
      *
      *   - [PublicHandleResult.NotFound] — TDLib couldn't resolve the handle at all
      *     (`SearchPublicChat` 4xx / network failure). Caller treats as silent miss.
-     *
-     * Hortay's UX scope is read-only channel-feed today; users, bots and groups need a
-     * full chat surface we don't have. Differentiating here lets the deep-link
-     * collector tell the user *why* a tap on `@durov` (a user) doesn't open the feed
-     * filter, instead of leaving them on a blank skeleton-then-empty screen.
      */
     suspend fun resolvePublicHandle(handle: String): PublicHandleResult {
         val cleaned = handle.removePrefix("@").trim()
@@ -1212,12 +1211,19 @@ class PostsRepository(
         return chat.toPublicHandleResult()
     }
 
-    private fun TdApi.Chat.toPublicHandleResult(): PublicHandleResult = when {
-        isChannel() -> PublicHandleResult.Channel(id)
-        type is TdApi.ChatTypePrivate -> PublicHandleResult.Unsupported(PublicHandleKind.User)
-        type is TdApi.ChatTypeBasicGroup -> PublicHandleResult.Unsupported(PublicHandleKind.Group)
-        type is TdApi.ChatTypeSupergroup -> PublicHandleResult.Unsupported(PublicHandleKind.Group)
-        else -> PublicHandleResult.Unsupported(PublicHandleKind.Unknown)
+    private fun TdApi.Chat.toPublicHandleResult(): PublicHandleResult {
+        val t = type
+        return when {
+            isChannel() -> PublicHandleResult.Channel(id)
+            // Private chat = 1:1 user / bot. Carry the userId through so the deep-link
+            // dispatcher can route the tap to UserProfileSheet instead of bouncing the
+            // user out to the official Telegram client. Reading from `ChatTypePrivate`
+            // keeps this correct even if TDLib ever decouples chat.id from user.id.
+            t is TdApi.ChatTypePrivate -> PublicHandleResult.User(t.userId)
+            t is TdApi.ChatTypeBasicGroup -> PublicHandleResult.Unsupported(PublicHandleKind.Group)
+            t is TdApi.ChatTypeSupergroup -> PublicHandleResult.Unsupported(PublicHandleKind.Group)
+            else -> PublicHandleResult.Unsupported(PublicHandleKind.Unknown)
+        }
     }
 
     /**
@@ -2116,9 +2122,14 @@ internal fun TdApi.Chat.isChannel(): Boolean {
 /** Result of [PostsRepository.resolvePublicHandle]. See its KDoc for semantics. */
 sealed interface PublicHandleResult {
     data class Channel(val chatId: Long) : PublicHandleResult
+    /** Handle resolves to a 1:1 user (or bot). Carries TDLib `userId` so callers can
+     *  open the in-app [dev.lyo.hortay.ui.users.UserProfileSheet] without re-resolving. */
+    data class User(val userId: Long) : PublicHandleResult
     data class Unsupported(val kind: PublicHandleKind) : PublicHandleResult
     data object NotFound : PublicHandleResult
 }
 
-/** Kind discriminator carried by [PublicHandleResult.Unsupported]. */
-enum class PublicHandleKind { User, Group, Unknown }
+/** Kind discriminator carried by [PublicHandleResult.Unsupported]. Users are routed via
+ *  [PublicHandleResult.User] directly, so this enum only covers things Hortay surfaces
+ *  to the OS / a snackbar (groups, supergroups, unrecognised entities). */
+enum class PublicHandleKind { Group, Unknown }

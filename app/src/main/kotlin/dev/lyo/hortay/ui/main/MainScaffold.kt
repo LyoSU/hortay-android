@@ -145,21 +145,35 @@ fun MainScaffold(graph: AppGraph) {
 
     val res = LocalContext.current.resources
 
+    // User-profile sheet pendant. Local state — unlike the report flow, no TDLib write
+    // is staged in here, so a rotation just re-fetches the profile (cheap, three cached
+    // local reads in the steady state). [UserProfileOpener] is a `fun interface` so
+    // re-providing the local on every recomposition still preserves equality identity
+    // for skippable propagation under the provider.
+    //
+    // Declared above the channel-open gates and the DeepLinkDispatcher so both can
+    // route `PublicHandleResult.User` straight to the in-app sheet — same surface as
+    // an in-text `TextEntityTypeMentionName` tap, no Telegram-client bounce.
+    var pendingUserId by remember { mutableStateOf<Long?>(null) }
+    val userProfileOpener = remember {
+        UserProfileOpener { userId -> pendingUserId = userId }
+    }
+
     /**
      * Gated channel-open for in-app gestures (forward-source chip, cross-channel
      * quote-tap, post-channel-name tap when it differs from the host). Mirrors the
      * type-gate the deep-link dispatcher runs against [dev.lyo.hortay.data.DeepLink].
-     * Non-channel targets (supergroup-chat, basic group, 1:1 user / bot) used to
-     * slip through these gestures, push a [NavEntry.Channel] onto the nav stack,
-     * and land the user on a ChannelScreen whose loadChannelHistory short-circuits
-     * on `!chat.isChannel()` → empty hero. Hortay's product scope is broadcast
-     * channels only, so the right answer for non-channel sources is a kind-keyed
-     * snackbar — same as the deep-link path.
+     * Non-channel targets (basic group, supergroup-chat) surface a kind-keyed
+     * snackbar; 1:1 user / bot targets open the in-app user-profile sheet, matching
+     * how `@username` mentions resolve. Hortay's product scope is broadcast channels
+     * only, so the right answer for groups is the snackbar — same as the deep-link
+     * path.
      */
     val safelyOpenChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
         scope.launch {
             when (val resolved = graph.postsRepository.resolveChatKind(chatId)) {
                 is PublicHandleResult.Channel -> pushChannel(resolved.chatId, scrollTo)
+                is PublicHandleResult.User -> userProfileOpener.open(resolved.userId)
                 is PublicHandleResult.Unsupported -> {
                     graph.userMessages.post(
                         res.getString(unsupportedHandleMessageId(resolved.kind)),
@@ -207,6 +221,14 @@ fun MainScaffold(graph: AppGraph) {
                         ),
                     )
                 }
+                is PublicHandleResult.User -> {
+                    // The "go to original" affordance landed on a 1:1 user / bot
+                    // (rare — a reply quote authored by a personal account). Pop
+                    // the originating overlay, then surface the in-app sheet so
+                    // the action still resolves to *something* the user can act on.
+                    graph.nav.pop()
+                    userProfileOpener.open(resolved.userId)
+                }
                 is PublicHandleResult.Unsupported -> {
                     graph.nav.pop()
                     graph.userMessages.post(
@@ -231,6 +253,7 @@ fun MainScaffold(graph: AppGraph) {
         resolveChatKind = graph.postsRepository::resolveChatKind,
         previewChatInvite = graph.channelActions::previewChatInvite,
         onPushChannel = pushChannel,
+        onOpenUser = { userId -> userProfileOpener.open(userId) },
     )
 
     // Pending report: (chatId, messageId, token). Hoisted off local state onto
@@ -240,16 +263,6 @@ fun MainScaffold(graph: AppGraph) {
     // erase the user's progress visibly.
     val openReport: (Long, Long?) -> Unit = { chatId, messageId ->
         graph.reportDialogs.open(ReportTarget(chatId, messageId, System.nanoTime()))
-    }
-
-    // User-profile sheet pendant. Local state — unlike the report flow, no TDLib write
-    // is staged in here, so a rotation just re-fetches the profile (cheap, three cached
-    // local reads in the steady state). [UserProfileOpener] is a `fun interface` so
-    // re-providing the local on every recomposition still preserves equality identity
-    // for skippable propagation under the provider.
-    var pendingUserId by remember { mutableStateOf<Long?>(null) }
-    val userProfileOpener = remember {
-        UserProfileOpener { userId -> pendingUserId = userId }
     }
 
     // Single predictive-back handler for the top nav-entry. Translates,

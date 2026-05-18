@@ -29,7 +29,6 @@ import dev.lyo.hortay.data.UserMessageBus
 private const val SERVER_TO_TD_SHIFT = 20
 
 internal fun unsupportedHandleMessageId(kind: PublicHandleKind): Int = when (kind) {
-    PublicHandleKind.User -> R.string.link_unsupported_user
     PublicHandleKind.Group -> R.string.link_unsupported_group
     PublicHandleKind.Unknown -> R.string.link_unsupported_other
 }
@@ -58,6 +57,10 @@ internal fun DeepLinkDispatcher(
     resolveChatKind: suspend (Long) -> PublicHandleResult,
     previewChatInvite: suspend (String) -> ChatInvitePreview?,
     onPushChannel: (chatId: Long, scrollTo: Long?) -> Unit,
+    /** Open the in-app user-profile sheet for an `@handle` that resolves to a 1:1
+     *  user / bot. Same surface as in-text `TextEntityTypeMentionName` taps — an
+     *  `@username` mention shouldn't bounce out to the official Telegram client. */
+    onOpenUser: (userId: Long) -> Unit,
 ) {
     val systemUriHandler: UriHandler = LocalUriHandler.current
     val res: Resources = LocalContext.current.resources
@@ -72,6 +75,14 @@ internal fun DeepLinkDispatcher(
                             is PublicHandleResult.Channel -> {
                                 targetChat = resolved.chatId
                                 tdMessageId = link.serverPostId?.let { it shl SERVER_TO_TD_SHIFT }
+                            }
+                            is PublicHandleResult.User -> {
+                                // `@handle` resolves to a 1:1 user / bot — open the
+                                // in-app profile sheet instead of punting to Telegram.
+                                // Matches the `TextEntityTypeMentionName` flow so both
+                                // mention shapes land on the same surface.
+                                onOpenUser(resolved.userId)
+                                return@collect
                             }
                             is PublicHandleResult.Unsupported -> {
                                 userMessages.post(
@@ -99,6 +110,13 @@ internal fun DeepLinkDispatcher(
                                 targetChat = resolved.chatId
                                 tdMessageId = link.serverPostId?.let { it shl SERVER_TO_TD_SHIFT }
                             }
+                            is PublicHandleResult.User -> {
+                                // `t.me/c/<userId>/...` never legitimately addresses a
+                                // 1:1 chat, but if TDLib reclassifies the cached chat
+                                // we still route to the user sheet rather than crash.
+                                onOpenUser(resolved.userId)
+                                return@collect
+                            }
                             is PublicHandleResult.Unsupported -> {
                                 userMessages.post(
                                     res.getString(unsupportedHandleMessageId(resolved.kind)),
@@ -123,6 +141,12 @@ internal fun DeepLinkDispatcher(
                             is PublicHandleResult.Channel -> {
                                 targetChat = resolved.chatId
                                 tdMessageId = link.messageId
+                            }
+                            is PublicHandleResult.User -> {
+                                // Per-message DM link — drop the message anchor and
+                                // open the user sheet; Hortay has no DM surface.
+                                onOpenUser(resolved.userId)
+                                return@collect
                             }
                             is PublicHandleResult.Unsupported -> {
                                 userMessages.post(
