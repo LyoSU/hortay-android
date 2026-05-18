@@ -1788,24 +1788,37 @@ fun TimelineScreen(
                     UnreadCounterPill(
                         count = unreadRemaining,
                         onClick = {
-                            // Jump to the first STILL-unread FeedItem per the live
+                            // Jump to the NEWEST still-unread FeedItem per the live
                             // cursor — row-space, because LazyColumn renders folded
-                            // reply chains as single rows. Skips past anything the
-                            // snapshot still has in the unread block but the user
-                            // has already dwelled-acked. Falls back to the snapshot's
-                            // boundary (homeScrollIndex) if everything visible
-                            // happens to be live-read in the race between this
-                            // click and a refresh.
+                            // reply chains as single rows. `indexOfLast` (not first)
+                            // matches the Telegram-chat ↓ FAB idiom this pill's
+                            // silhouette already borrows: the glyph promises a
+                            // downward jump, so the target must always sit at or
+                            // below current position. The previous `indexOfFirst`
+                            // (= "continue where you left off") meant tapping the
+                            // pill during an active reading session would either
+                            // do nothing (already at the boundary) or scroll
+                            // UPWARD (user had scrolled into the read history) —
+                            // both contradicting the ↓ glyph.
+                            //
+                            // Falls back to `items.lastIndex` (= newest post in
+                            // feed, Telegram's caught-up landing) if every visible
+                            // post is live-read in the race between this click
+                            // and a refresh. The old fallback to
+                            // homeScrollIndexState (= snapshot cold-start
+                            // boundary, somewhere mid-feed) would have surfaced
+                            // an upward jump and re-introduced the very contract
+                            // mismatch this fix removes.
                             //
                             // Read through [feedItemsState] (live) so a feed
                             // refresh / new-post arrival that lands between this
                             // composition and the click doesn't leave us indexing
                             // a stale captured list.
                             val items = feedItemsState.value
-                            val live = items.indexOfFirst { item ->
+                            val live = items.indexOfLast { item ->
                                 item.posts().any { it.isUnreadAt(cursorHolder[it.chatId]) }
                             }
-                            val target = if (live >= 0) live else homeScrollIndexState.intValue
+                            val target = if (live >= 0) live else items.lastIndex.coerceAtLeast(0)
                             scope.launch { listState.smartScrollTo(target) }
                         },
                     )

@@ -39,9 +39,12 @@ import dev.lyo.hortay.ui.theme.MorphShape
  *   - Count is the LIVE remaining-unread total in the visible feed
  *     (driven by [LocalReadCursors], not the frozen sort snapshot), so it
  *     ticks down as viewport-dwell acks land.
- *   - Tap → scroll the LazyColumn to the first still-unread post per the
- *     live cursor (skipping past posts the snapshot still has in the
- *     unread block but the live cursor has already acked).
+ *   - Tap → scroll the LazyColumn to the NEWEST still-unread post per the
+ *     live cursor — Telegram-chat ↓ FAB idiom. `indexOfLast` (not first) so
+ *     the jump always travels downward, matching the `arrow_downward`
+ *     glyph's promise in every reading state. Falls back to the feed's
+ *     newest entry on a click-vs-refresh race where every visible post is
+ *     already live-read.
  *
  * Silhouette-based hierarchy contrast with [NewPostsPill]:
  *   - [NewPostsPill] = ALERT — horizontal stadium with avatar stack +
