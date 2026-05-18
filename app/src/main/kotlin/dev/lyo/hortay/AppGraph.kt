@@ -151,13 +151,19 @@ class AppGraph(context: Context) {
 
     /**
      * User-configurable per-network auto-download policy (Wi-Fi / mobile / roaming),
-     * mirroring Telegram's "Data and Storage" → "Auto-Download Media" UX. Persisted
-     * as a single JSON blob in DataStore. Held by the graph because both the
-     * settings UI (read/write) and [autoDownloader] (read-only) need the same
-     * instance — splitting them would invalidate the shared cache and force the
-     * downloader to re-decode the JSON on every settings emit.
+     * mirroring Telegram's "Data and Storage" → "Auto-Download Media" UX. Writes
+     * route through TDLib's `SetAutoDownloadSettings` so the policy travels with
+     * the account; DataStore persists the same values locally as a cold-start
+     * cache for the window before [AuthStage.Ready] (TDLib has no per-network
+     * GET endpoint). Held by the graph because both the settings UI (read/write)
+     * and [autoDownloader] (read-only) need the same instance.
      */
-    val autoDownloadStore: AutoDownloadStore = AutoDownloadStore(context)
+    val autoDownloadStore: AutoDownloadStore = AutoDownloadStore(
+        context = context,
+        td = tdClient,
+        authStage = tdClient.authStage,
+        scope = appScope,
+    )
 
     /**
      * Background service that prefetches photos / videos / animations for posts that
