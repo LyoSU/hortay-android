@@ -111,11 +111,40 @@ internal fun PostContent.playbackFileIds(): List<Int> = buildList {
  * One slot in the rendered feed. A [Single] is the standard one-post-per-row case; a [Thread]
  * is a Threads-style stacked pair where a reply and the post it's replying to are merged
  * into a single LazyColumn slot. `key` powers LazyColumn's [items] keying — different
- * A threaded row keeps the reply post's key. That is load-bearing for scroll
- * stability: opening a channel can backfill the parent of an already-rendered
- * reply, turning `Single(reply)` into `Thread(parent, reply)` under the feed
- * overlay. LazyColumn must still recognize it as the same row, otherwise Back
- * from the channel loses the feed anchor and appears to jump to a random post.
+ * shapes share the same row identity whenever the underlying *message* is the same.
+ *
+ * Two scroll-stability invariants are encoded in [key]:
+ *
+ *  1. **Single → Thread reshape**: a threaded row keeps the reply post's id as its
+ *     key. Opening a channel can backfill the parent of an already-rendered reply,
+ *     turning `Single(reply)` into `Thread(parent, reply)` under the feed overlay.
+ *     LazyColumn must still recognize it as the same row, otherwise Back from the
+ *     channel loses the feed anchor and appears to jump to a random post.
+ *
+ *  2. **Album anchor flip**: album cards key on `(chatId, mediaAlbumId)`, NOT on
+ *     `post.id`. Reason: when the cold-start harvest ingests `Chat.lastMessage`
+ *     and the surround-fetch in `coalesceAlbumFragments` fails (FLOOD_WAIT,
+ *     transient network, message aged out of the local store), the feed renders
+ *     a 1-fragment card whose `post.id` is `chat.lastMessage.id` — typically
+ *     the *highest* album member id (TDLib stamps `lastMessage` as the most
+ *     recent message id, and album members are sent sequentially so the last
+ *     sibling has the highest id). When the user later opens that channel,
+ *     `loadChannelHistory` returns the full album and `foldRawIntoCurrent` /
+ *     `PostFilterStrategy.mergeAlbumMembers` rebuild the card with
+ *     `anchor.id` = the *lowest* member id (intentional; the lowest id is the
+ *     only carrier of `replyInfo` / `reactions` per tdlib/td#2312, and it's
+ *     stable across interaction-info updates). With a `post.id`-based key the
+ *     row's identity would flip on that rebuild — `LazyColumn` couldn't anchor
+ *     by the saved `firstVisibleItemKey`, fell back to the integer
+ *     `firstVisibleItemIndex`, and the user saw the feed "throw them onto" a
+ *     different post (one of the newly-folded older history rows that happened
+ *     to land at that index). Keying albums on the TDLib-assigned
+ *     `mediaAlbumId` makes both renderings of the same conceptual album share
+ *     a row identity, so the LazyColumn scroll-anchor survives the rebuild.
+ *     `mediaAlbumId` is per-session but `LazyListState.Saver` only persists
+ *     raw index + offset across process death, so we never need it to be
+ *     globally unique — only stable for the duration of one app process,
+ *     which it is.
  */
 @Immutable
 sealed interface FeedItem {
@@ -123,15 +152,23 @@ sealed interface FeedItem {
 
     @Immutable
     data class Single(val post: TimelinePost) : FeedItem {
-        override val key: String get() = "post_${post.chatId}_${post.id}"
+        override val key: String get() = feedItemKey(post)
     }
 
     @Immutable
     data class Thread(val parent: TimelinePost, val reply: TimelinePost) : FeedItem {
-        override val key: String
-            get() = "post_${reply.chatId}_${reply.id}"
+        override val key: String get() = feedItemKey(reply)
     }
 }
+
+/**
+ * Stable per-row key for a [TimelinePost]. Album posts key on `(chatId, mediaAlbumId)`
+ * so a 1-fragment → full-album rebuild (anchor.id flip) keeps the same row identity;
+ * standalones key on `post.id`. See [FeedItem] for the full rationale.
+ */
+private fun feedItemKey(post: TimelinePost): String =
+    if (post.mediaAlbumId != 0L) "album_${post.chatId}_${post.mediaAlbumId}"
+    else "post_${post.chatId}_${post.id}"
 
 /** Flatten a feed slot into its constituent posts (1 for Single, 2 for Thread). */
 internal fun FeedItem.posts(): List<TimelinePost> = when (this) {
