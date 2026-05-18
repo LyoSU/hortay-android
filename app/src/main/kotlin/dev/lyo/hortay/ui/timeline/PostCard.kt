@@ -56,8 +56,6 @@ import dev.lyo.hortay.ui.theme.MorphShape
 import dev.lyo.hortay.ui.theme.asComposeShape
 import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
 import kotlinx.coroutines.launch
-import java.text.DateFormat
-import java.util.Date
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -946,18 +944,6 @@ private fun SheetItem(
         )
         Spacer(Modifier.width(20.dp))
         Text(text = label, style = MaterialTheme.typography.bodyLarge)
-    }
-}
-
-@Composable
-private fun formatRelative(epochMs: Long): String {
-    val diffMin = (System.currentTimeMillis() - epochMs) / 60_000
-    return when {
-        diffMin < 1 -> stringResource(R.string.time_just_now)
-        diffMin < 60 -> stringResource(R.string.time_minutes_short, diffMin.toInt())
-        diffMin < 60 * 24 -> stringResource(R.string.time_hours_short, (diffMin / 60).toInt())
-        diffMin < 60 * 24 * 7 -> stringResource(R.string.time_days_short, (diffMin / (60 * 24)).toInt())
-        else -> DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(epochMs))
     }
 }
 

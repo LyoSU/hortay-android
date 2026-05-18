@@ -53,13 +53,12 @@ import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.rememberDeferredLoading
 import dev.lyo.hortay.ui.media.toAlbumItems
 import dev.lyo.hortay.ui.timeline.PostBody
+import dev.lyo.hortay.ui.timeline.formatRelative
 import dev.lyo.hortay.ui.timeline.PostCard
 import dev.lyo.hortay.ui.timeline.PostInteractions
 import dev.lyo.hortay.ui.timeline.ReactionChip
 import dev.lyo.hortay.ui.timeline.label
 import dev.lyo.hortay.ui.timeline.symbolName
-import java.text.DateFormat
-import java.util.Date
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -807,20 +806,8 @@ private fun ReplyBlock(reply: ReplyPreview) {
     }
 }
 
-// Label/symbol mapping is shared with the feed quote card via dev.lyo.hortay.ui.timeline
-// .label() / .symbolName() — see ReplyKindResources.kt.
-
-@Composable
-internal fun formatRelative(epochMs: Long): String {
-    val diffMin = (System.currentTimeMillis() - epochMs) / 60_000
-    return when {
-        diffMin < 1 -> stringResource(R.string.time_just_now)
-        diffMin < 60 -> stringResource(R.string.time_minutes_short, diffMin.toInt())
-        diffMin < 60 * 24 -> stringResource(R.string.time_hours_short, (diffMin / 60).toInt())
-        diffMin < 60 * 24 * 7 -> stringResource(R.string.time_days_short, (diffMin / (60 * 24)).toInt())
-        else -> DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(epochMs))
-    }
-}
+// Label/symbol mapping + relative timestamps are shared with the feed via
+// dev.lyo.hortay.ui.timeline — see ReplyKindResources.kt and TimeFormat.kt.
 
 private const val INDENT_DP = 12
 
