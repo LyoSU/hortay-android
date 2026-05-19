@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-19
+
 ### Added
 - Round video messages play inline with progress ring, time chip, tap-to-pause and independent mute toggle.
 - Hide channels from the home feed without unsubscribing (Channel info → "Hide from feed"; Settings → Hidden channels manages the list).
