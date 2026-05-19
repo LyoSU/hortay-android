@@ -685,18 +685,6 @@ fun TimelineScreen(
     // still Loading. The live candidate IS Ready in that same frame because
     // [buildTimelineUiState] runs in-line. Reading the live value here means
     // the re-keyed initializer always sees the boundary row.
-    //
-    // The init lambda captures [readySeed] DIRECTLY (no
-    // [rememberUpdatedState] hop). [rememberSaveable] invokes the init
-    // synchronously inside the same composition that recomputed
-    // [readySeed], so the closure sees the in-frame value.
-    // [rememberUpdatedState] would route the read through a [SideEffect]
-    // that runs AFTER composition — reading its `.value` from an init
-    // lambda invoked DURING composition gives the previous frame's value.
-    // On the cursors-landing frame that would re-key the saver with a
-    // still-stale seed (= 0) and the LazyColumn would mount at row 0 —
-    // i.e. the oldest post in OldestUnreadFirst's asc-by-date sort,
-    // which the user reported as "cold start lands on 2017 posts".
     val candidateInitialIndex = (latchedUiState as? TimelineUiState.Ready)?.initialIndex
     val pinnedKey: String? = vm.pinnedScrollSeedKey(routeKey)
     LaunchedEffect(routeKey, candidateInitialIndex, feedItems) {
@@ -714,11 +702,12 @@ fun TimelineScreen(
     }
     val liveInitialIndex = (candidateUiState as? TimelineUiState.Ready)?.initialIndex
     val readySeed = pinnedIndex ?: liveInitialIndex ?: 0
+    val readySeedSnapshot = rememberUpdatedState(readySeed)
     val listState = rememberSaveable(
         routeKey, cursorsHaveLanded,
         saver = androidx.compose.foundation.lazy.LazyListState.Saver,
     ) {
-        androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
+        androidx.compose.foundation.lazy.LazyListState(readySeedSnapshot.value, 0)
     }
     // Pinned color-only scroll behavior — height transitions are owned by
     // [topBarOffsetPx] below so we don't fight two systems for the same dp.
