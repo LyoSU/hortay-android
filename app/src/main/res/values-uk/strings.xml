@@ -155,7 +155,7 @@
     <string name="auth_err_init_failure">Не вдалося налаштувати клієнт Telegram. Перезапустіть застосунок</string>
 
     <!-- Duration humanisation -->
-    <string name="duration_seconds_short">%1$dс</string>
+    <string name="duration_seconds_short">%1$d с</string>
     <plurals name="duration_minutes">
         <item quantity="one">%d хвилину</item>
         <item quantity="few">%d хвилини</item>
@@ -207,9 +207,9 @@
 
     <!-- Time formatting -->
     <string name="time_just_now">щойно</string>
-    <string name="time_minutes_short">%1$dхв</string>
-    <string name="time_hours_short">%1$dгод</string>
-    <string name="time_days_short">%1$dд</string>
+    <string name="time_minutes_short">%1$d хв</string>
+    <string name="time_hours_short">%1$d год</string>
+    <string name="time_days_short">%1$d д</string>
 
     <!-- New posts pill -->
     <string name="new_posts_overflow">99+ нових постів</string>

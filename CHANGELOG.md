@@ -18,6 +18,7 @@
 - Auto-download settings (Wi-Fi / Cellular / Roaming) now sync across Telegram clients via your account.
 - Tapping an `@username` mention in a post opens the in-app user profile sheet instead of bouncing out to Telegram.
 - The "↓ N unread" affordance in `OldestUnreadFirst` mode is now a circular scroll-to-bottom FAB with a count badge that softly bursts on press; tap returns you to the boundary where you left off reading, and the pill stops looking like a twin of the "X new posts" alert when both surface at once.
+- Post timestamps and FLOOD_WAIT countdowns now space the number from its unit (`5 хв`, `45 с`) instead of gluing them together.
 
 ### Fixed
 - Opening a channel from a feed post no longer shows a single post that suddenly grows into the full history mid-scroll; the screen waits for the deeper load and mounts the list in one frame at the right anchor.

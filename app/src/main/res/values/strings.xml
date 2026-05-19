@@ -157,7 +157,7 @@
     <string name="auth_err_init_failure">Couldn\'t configure the Telegram client. Restart the app</string>
 
     <!-- Duration humanisation -->
-    <string name="duration_seconds_short">%1$ds</string>
+    <string name="duration_seconds_short">%1$d s</string>
     <plurals name="duration_minutes">
         <item quantity="one">%d minute</item>
         <item quantity="other">%d minutes</item>
@@ -203,9 +203,9 @@
 
     <!-- Time formatting -->
     <string name="time_just_now">just now</string>
-    <string name="time_minutes_short">%1$dm</string>
-    <string name="time_hours_short">%1$dh</string>
-    <string name="time_days_short">%1$dd</string>
+    <string name="time_minutes_short">%1$d m</string>
+    <string name="time_hours_short">%1$d h</string>
+    <string name="time_days_short">%1$d d</string>
 
     <!-- New posts pill -->
     <string name="new_posts_overflow">99+ new posts</string>
