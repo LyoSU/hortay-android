@@ -645,46 +645,25 @@ fun TimelineScreen(
     )
 
     // Cold-start positioning AND scroll preservation across tab swaps share
-    // the same saver bundle. The contract is asymmetric:
-    //   • Cold-start: the first composition that lands a real
-    //     [TimelineUiState.Ready] must initialise the listState at the
-    //     unread boundary in ONE frame (no "land at 0, then scroll"
-    //     flash).
-    //   • Every recomposition after that: the user's scroll is sovereign.
-    //     LazyColumn carries the visual anchor through any ingest via
-    //     keyed-scroll preservation on [FeedItem.key] — the previous
-    //     emission's `firstVisibleItemKey` resolves in the new emission
-    //     and the user stays put.
+    // the same saver bundle — the trick is to keep the `rememberSaveable` key
+    // (`routeKey, readySeed`) STABLE per route within a process so a moved
+    // boundary doesn't yank the bundle out from under the restoration path.
     //
-    // The earlier `(routeKey, readySeed)` keying broke contract #2. While
-    // the user was parked under a channel drill, [PostsRepository.loadChannelHistory]
-    // backfills ~80 older posts into `_posts` for the channel they opened
-    // (the channel IS in their subscribed feed, so [subscribedPosts] surfaces
-    // those rows). In [FeedOrder.OldestUnreadFirst]'s ascending-by-date sort
-    // those backfilled posts merge at the FRONT, shifting the pinned anchor's
-    // row index from ~5 to ~85. That changed [readySeed], invalidated the
-    // saver, and reinitialised the listState at the new anchor row — so on
-    // pop the user landed at the unread boundary instead of where they were
-    // reading. The CHANGELOG bullet that introduced [pinnedScrollSeedKey]
-    // ("anchor is now pinned to the post identity instead of its row index")
-    // had the right intent but the implementation still consumed the index
-    // as a `rememberSaveable` key.
+    // The anchor lives in [TimelineViewModel.pinnedScrollSeedKeys] as a
+    // [FeedItem.key], NOT a row index. ViewModel lifetime spans tab swaps
+    // and overlay re-mounts (deep nav: `stack.takeLast(2)` in
+    // [dev.lyo.hortay.ui.main.NavOverlayRenderer] evicts the feed) but ends
+    // with process death — so cold launch always re-evaluates against the
+    // freshly-landed refresh + cursors. A key beats an index because any
+    // ingest between dispose and remount (channel drill calls
+    // [dev.lyo.hortay.data.posts.PostsRepository.loadChannelHistory] →
+    // ~80 historical posts merge into `_posts` while the overlay is up)
+    // shifts the positional index out from under us; the key resolves to
+    // the same post no matter how the surrounding feed grew.
     //
-    // The fix is to key on `cursorsHaveLanded` (a one-shot false→true latch
-    // per `(feed, feedOrder)`) instead of `readySeed`. The key changes
-    // EXACTLY ONCE per route — on the cold-start cursor-landing frame, where
-    // we need the initializer to seed at the now-valid boundary. After that,
-    // ingest above the pinned anchor migrates [pinnedIndex] freely without
-    // touching the listState; the saver bundles the user's real scroll
-    // position, and LazyColumn handles the row-index shift via its
-    // keyed-scroll preservation.
-    //
-    // Why [liveInitialIndex] from [candidateUiState] (not [latchedUiState]):
-    // the latcher writes Ready via a [LaunchedEffect] AFTER composition, so
-    // on the very frame `cursorsHaveLanded` flips true the latched value is
-    // still Loading. The live candidate IS Ready in that same frame because
-    // [buildTimelineUiState] runs in-line. Reading the live value here means
-    // the re-keyed initializer always sees the boundary row.
+    // The [LaunchedEffect] captures after composition, so the FIRST Ready-
+    // frame still gets `candidateInitialIndex` directly via the `?:` chain
+    // — no one-frame paint at index 0 before the anchor is recorded.
     val candidateInitialIndex = (latchedUiState as? TimelineUiState.Ready)?.initialIndex
     val pinnedKey: String? = vm.pinnedScrollSeedKey(routeKey)
     LaunchedEffect(routeKey, candidateInitialIndex, feedItems) {
@@ -700,14 +679,12 @@ fun TimelineScreen(
         if (pinnedKey == null) null
         else feedItems.indexOfFirst { it.key == pinnedKey }.takeIf { it >= 0 }
     }
-    val liveInitialIndex = (candidateUiState as? TimelineUiState.Ready)?.initialIndex
-    val readySeed = pinnedIndex ?: liveInitialIndex ?: 0
-    val readySeedSnapshot = rememberUpdatedState(readySeed)
+    val readySeed = pinnedIndex ?: candidateInitialIndex ?: 0
     val listState = rememberSaveable(
-        routeKey, cursorsHaveLanded,
+        routeKey, readySeed,
         saver = androidx.compose.foundation.lazy.LazyListState.Saver,
     ) {
-        androidx.compose.foundation.lazy.LazyListState(readySeedSnapshot.value, 0)
+        androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
     }
     // Pinned color-only scroll behavior — height transitions are owned by
     // [topBarOffsetPx] below so we don't fight two systems for the same dp.
