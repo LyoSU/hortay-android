@@ -21,6 +21,7 @@
 - Post timestamps and FLOOD_WAIT countdowns now space the number from its unit (`5 хв`, `45 с`) instead of gluing them together.
 
 ### Fixed
+- Empty folders and folders without channel matches now auto-hide from the tab bar instead of staying visible until you tap them.
 - Opening a channel from a feed post no longer shows a single post that suddenly grows into the full history mid-scroll; the screen waits for the deeper load and mounts the list in one frame at the right anchor.
 - Returning from a channel to the feed no longer jumps to a different post when an album-tailed channel hydrates in the background.
 - Channel scroll-up no longer hits an invisible "loading limit"; pagination now triggers near the older edge instead of running away on cold entry in OldestUnreadFirst mode.

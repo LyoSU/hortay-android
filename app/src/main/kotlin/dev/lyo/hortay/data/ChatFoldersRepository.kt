@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -38,12 +39,22 @@ import java.util.concurrent.ConcurrentHashMap
  * ever adds a new exclude_* flag (it has shipped several in TDLib history) — by
  * round-tripping the resolved id list we always agree with the official client.
  *
- * The id-set cache is evicted on:
+ * The id-set cache is maintained by:
  *   • [TdApi.UpdateChatFolders] — folder structure or rule changed; every cached
  *     set is now potentially stale.
  *   • [TdApi.UpdateChatAddedToList] / [TdApi.UpdateChatRemovedFromList] targeting
- *     a [TdApi.ChatListFolder] — a single membership flipped; just evict that
- *     folder's set so the next read repopulates.
+ *     a [TdApi.ChatListFolder] — a single membership flipped; the chat id is
+ *     added to / removed from the cached set INCREMENTALLY via [MutableStateFlow.update].
+ *     Eviction here used to race with the eager warm-up: TDLib fires a burst of
+ *     `UpdateChatAddedToList` while `LoadChats(ChatListFolder)` drains, and an
+ *     eviction landing *after* the warm-up wrote `(id → set)` left the entry
+ *     `null`. The tab-visibility predicate in [TimelineScreen] treats `null` as
+ *     "not yet resolved → keep the chip", so empty / out-of-scope folders stayed
+ *     visible until the user tapped them — the tap path called [folderChatIds]
+ *     under the mutex and finally let the chip drop. Incremental updates kill
+ *     the race: the cache is monotonically maintained from the warm-up snapshot
+ *     onwards. Updates that arrive before the entry exists are ignored (warm-up
+ *     is the source of truth for initial population).
  */
 class ChatFoldersRepository(
     private val td: TdSender,
@@ -81,14 +92,24 @@ class ChatFoldersRepository(
             }
             .launchIn(scope)
 
-        // Live membership flips: when the user pins/excludes a chat in any client TDLib
-        // emits Update{Added,Removed}ToList for the affected ChatListFolder. Evict the
-        // cached id set so the next reader sees the new membership.
+        // Live membership flips: TDLib fires Update{Added,Removed}ToList both as part
+        // of the LoadChats drain that the warm-up triggers AND for runtime changes
+        // (user pins/excludes a chat in any client). Update incrementally rather than
+        // evicting the whole entry — an eviction landing after the warm-up wrote
+        // `(id → set)` would silently re-null the cache and keep an empty folder
+        // chip visible until the user tapped it. CAS via [MutableStateFlow.update]
+        // serialises concurrent writes from this collector and the warm-up. Updates
+        // for folders that haven't been warmed up yet are ignored — the warm-up's
+        // `GetChats` snapshot is the source of truth for initial population.
         td.updates
             .filterIsInstance<TdApi.UpdateChatAddedToList>()
             .onEach { update ->
                 val folderId = (update.chatList as? TdApi.ChatListFolder)?.chatFolderId ?: return@onEach
-                _folderChatIds.value = _folderChatIds.value - folderId
+                _folderChatIds.update { current ->
+                    val existing = current[folderId] ?: return@update current
+                    if (update.chatId in existing) current
+                    else current + (folderId to (existing + update.chatId))
+                }
             }
             .launchIn(scope)
 
@@ -96,7 +117,11 @@ class ChatFoldersRepository(
             .filterIsInstance<TdApi.UpdateChatRemovedFromList>()
             .onEach { update ->
                 val folderId = (update.chatList as? TdApi.ChatListFolder)?.chatFolderId ?: return@onEach
-                _folderChatIds.value = _folderChatIds.value - folderId
+                _folderChatIds.update { current ->
+                    val existing = current[folderId] ?: return@update current
+                    if (update.chatId !in existing) current
+                    else current + (folderId to (existing - update.chatId))
+                }
             }
             .launchIn(scope)
     }
@@ -137,7 +162,7 @@ class ChatFoldersRepository(
             .warnUnlessCancelled(TAG, "fullFolder($folderId)")
             .getOrNull() ?: return null
         fullFoldersCache[folderId] = full
-        _fullFolders.value = _fullFolders.value + (folderId to full)
+        _fullFolders.update { it + (folderId to full) }
         return full
     }
 
@@ -161,7 +186,7 @@ class ChatFoldersRepository(
                 ?.chatIds
                 ?.toHashSet()
                 ?: emptySet()
-            _folderChatIds.value = _folderChatIds.value + (folderId to ids)
+            _folderChatIds.update { it + (folderId to ids) }
             ids
         }
     }
