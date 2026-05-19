@@ -644,26 +644,58 @@ fun TimelineScreen(
         routeKey = routeKey,
     )
 
-    // Cold-start positioning AND scroll preservation across tab swaps share
-    // the same saver bundle — the trick is to keep the `rememberSaveable` key
-    // (`routeKey, readySeed`) STABLE per route within a process so a moved
-    // boundary doesn't yank the bundle out from under the restoration path.
+    // [rememberSaveable] key for the feed's [LazyListState] is keyed on the
+    // BOOLEAN "latched candidate has produced an initial index" — NOT on the
+    // index value itself.
     //
-    // The anchor lives in [TimelineViewModel.pinnedScrollSeedKeys] as a
-    // [FeedItem.key], NOT a row index. ViewModel lifetime spans tab swaps
-    // and overlay re-mounts (deep nav: `stack.takeLast(2)` in
-    // [dev.lyo.hortay.ui.main.NavOverlayRenderer] evicts the feed) but ends
-    // with process death — so cold launch always re-evaluates against the
-    // freshly-landed refresh + cursors. A key beats an index because any
-    // ingest between dispose and remount (channel drill calls
-    // [dev.lyo.hortay.data.posts.PostsRepository.loadChannelHistory] →
-    // ~80 historical posts merge into `_posts` while the overlay is up)
-    // shifts the positional index out from under us; the key resolves to
-    // the same post no matter how the surrounding feed grew.
+    // Why the boolean:
+    //   • Cold start: it flips `false→true` in lockstep with [latchedUiState]
+    //     reaching its first [TimelineUiState.Ready] (because
+    //     [candidateInitialIndex] is derived from latched in the same
+    //     composition). The init lambda runs synchronously on that re-key
+    //     and captures the current frame's [readySeed], so the LazyColumn
+    //     mounts at the unread boundary on the very same frame it first
+    //     becomes visible.
+    //   • Steady state, ingest, drill / drill-back, PTR, dwell-acks:
+    //     [reduceTimelineUiState] preserves `initialIndex` across every
+    //     Ready→Ready transition (one-shot latcher contract — see its
+    //     KDoc), so the boolean stays `true` and the key stays stable. The
+    //     saver bundle is owned by the user's scroll; LazyColumn carries
+    //     the visual anchor through any feedItems mutation via
+    //     keyed-scroll preservation on [FeedItem.key].
+    //   • Tab swap (TabContentSwitcher unmounts the inactive tab and the
+    //     parent SaveableStateProvider persists bundles per `tab.name`):
+    //     on remount the latcher cold-starts again (Loading → Ready), the
+    //     boolean transitions `false → true` once more, and on the `true`
+    //     frame the bundle saved before unmount is restored under the
+    //     same key — user's pre-unmount scroll position lands back where
+    //     it was.
     //
-    // The [LaunchedEffect] captures after composition, so the FIRST Ready-
-    // frame still gets `candidateInitialIndex` directly via the `?:` chain
-    // — no one-frame paint at index 0 before the anchor is recorded.
+    // Why NOT key on the index value (the original design): every time the
+    // resolved row of the pinned anchor drifts (e.g. while the user is
+    // parked under a channel drill, [PostsRepository.loadChannelHistory]
+    // backfills ~80 older posts of an open subscribed channel into `_posts`,
+    // shifting the anchor from row ~5 to ~85 in OldestUnreadFirst's
+    // asc-by-date sort), the key changes, the saver bundle is invalidated,
+    // and the listState reinitialises at the new anchor row. On overlay pop
+    // the user lands at the unread boundary instead of where they were
+    // reading.
+    //
+    // Why NOT key on `cursorsHaveLanded`: that flag flips `false→true` one
+    // composition BEFORE [latchedUiState] becomes Ready (the latcher
+    // updates `effective.value` through a [LaunchedEffect] that commits
+    // after composition). On the flip frame [candidateInitialIndex] is
+    // still null, so re-init would seed the listState at row 0 — the
+    // oldest post in OldestUnreadFirst's asc-by-date sort, which surfaces
+    // as "cold start lands on 2017 posts".
+    //
+    // The init lambda captures [readySeed] DIRECTLY (no
+    // [rememberUpdatedState] hop) because rememberSaveable invokes init
+    // synchronously inside the same composition that recomputed
+    // [readySeed]. rememberUpdatedState would defer the update to a
+    // SideEffect that runs AFTER composition — reading its `.value` from
+    // an init lambda invoked during composition returns the previous
+    // frame's value.
     val candidateInitialIndex = (latchedUiState as? TimelineUiState.Ready)?.initialIndex
     val pinnedKey: String? = vm.pinnedScrollSeedKey(routeKey)
     LaunchedEffect(routeKey, candidateInitialIndex, feedItems) {
@@ -681,7 +713,7 @@ fun TimelineScreen(
     }
     val readySeed = pinnedIndex ?: candidateInitialIndex ?: 0
     val listState = rememberSaveable(
-        routeKey, readySeed,
+        routeKey, candidateInitialIndex != null,
         saver = androidx.compose.foundation.lazy.LazyListState.Saver,
     ) {
         androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
