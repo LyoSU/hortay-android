@@ -16,7 +16,7 @@ import java.util.Locale
  * process — both its pre-T and post-T branches dispatch through the internal
  * `sActivityDelegates` set, which `AppCompatActivity` populates and `ComponentActivity`
  * does not. The symptom (reported by users): pick a language, dialog dismisses, nothing
- * else happens. CLAUDE.md pins MainActivity to ComponentActivity, so we roll our own
+ * else happens. ARCHITECTURE.md pins MainActivity to ComponentActivity, so we roll our own
  * thin bridge instead of dragging the AppCompat theme parent into the project.
  *
  * API 33+: the platform [LocaleManager] is the single source of truth — the system

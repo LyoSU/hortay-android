@@ -275,7 +275,7 @@ class TmePageParserTest {
 
     private companion object {
         // Captured 2026-05 — refresh by re-running the curl commands documented in
-        // CLAUDE.md "Setup-delta" once Phase 2 stabilizes.
+        // ARCHITECTURE.md "Setup-delta" once Phase 2 stabilizes.
         val FIXTURES = listOf(
             Fixture("durov", "durov-real.html"),
             Fixture("telegram", "telegram-real.html"),

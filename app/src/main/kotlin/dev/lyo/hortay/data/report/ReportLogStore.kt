@@ -37,7 +37,7 @@ data class ReportLogEntry(
  * most-recent 200 lines. All I/O on [Dispatchers.IO]; all mutations serialised
  * via [mutex] to avoid partial-line writes.
  *
- * Why JSONL instead of Room: project forbids Room (see CLAUDE.md). JSONL is
+ * Why JSONL instead of Room: project forbids Room (see ARCHITECTURE.md). JSONL is
  * the lightest format that is both append-only fast and human-readable for a
  * compliance audit, and 200 × ~200 B lines = ~40 KB max — trivially fits in a
  * single file read. Nothing here is queried or joined, only appended and

@@ -38,7 +38,7 @@ gradle.taskGraph.whenReady {
         throw GradleException(
             "Release/Beta packaging requires keystore.properties at the project root.\n" +
                 "Expected keys: storeFile, storePassword, keyAlias, keyPassword.\n" +
-                "See app/build.gradle.kts:17 and CLAUDE.md (Setup-delta) for details."
+                "See app/build.gradle.kts:17 and ARCHITECTURE.md (Setup-delta) for details."
         )
     }
     val packagingTask = allTasks.firstOrNull { task ->
@@ -214,7 +214,7 @@ android {
 // app/build/compose_compiler/ on every Kotlin compile that runs the Compose
 // plugin; skippability regressions surface as "unstable" verdicts in
 // <module>-classes.txt and as "restartable" without "skippable" in
-// <module>-composables.txt (see CLAUDE.md → Verifying rules). Stability config
+// <module>-composables.txt (see ARCHITECTURE.md → Verifying rules). Stability config
 // tells the compiler about external types whose JVM signature doesn't reveal
 // their de-facto immutability — see compose_stability.conf at the repo root.
 composeCompiler {
@@ -226,7 +226,7 @@ composeCompiler {
 }
 
 // Detekt — opt-in static analysis. Deliberately NOT wired into `check` /
-// `assemble` (heavy on dev hardware; per CLAUDE.md → Verifying rules the gate
+// `assemble` (heavy on dev hardware; per ARCHITECTURE.md → Verifying rules the gate
 // is `lintRelease` for translations + Compose Compiler reports for stability).
 // Invoke as `./gradlew :app:detekt`; CI adds it explicitly. The Compose ruleset
 // from nlopez/compose-rules is loaded via the `detektPlugins(...)` configuration

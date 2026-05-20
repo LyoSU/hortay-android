@@ -13,7 +13,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
  *   author row, forward-from-user chip, in-text user mention, channel context
  *   subtitle). Threading the callback through every composable param would be a
  *   constructor explosion of the same kind that drove the CompositionLocal-based
- *   media-cache / read-cursor injection in CLAUDE.md. Same mitigation applies.
+ *   media-cache / read-cursor injection in ARCHITECTURE.md. Same mitigation applies.
  *
  * Default is a no-op so screens rendered outside MainScaffold (auth, previews,
  * tests) don't crash on tap — the affordance just becomes inert.

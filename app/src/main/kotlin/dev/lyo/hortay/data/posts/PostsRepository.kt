@@ -147,7 +147,7 @@ class PostsRepository(
      *   1. **Cold-start harvest** ([refreshLocked]). The per-chat-id loop reads
      *      `chatCache[chatId].lastMessage` for ~200 chats. Replacing this with
      *      `td.send(GetChat)` reintroduces `GetChat × N` — the FLOOD_WAIT-class
-     *      regression CLAUDE.md's "Load-bearing" table explicitly forbids.
+     *      regression ARCHITECTURE.md's "Load-bearing" table explicitly forbids.
      *   2. **`UpdateChatLastMessage` gate** (see this file's
      *      `td.updates.filterIsInstance<UpdateChatLastMessage>()` listener).
      *      Containment check short-circuits before the chat is resolved; without

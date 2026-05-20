@@ -1239,7 +1239,7 @@ private fun HideOnlineStatusRow(
  *
  * Why not [androidx.appcompat.app.AppCompatDelegate.setApplicationLocales]: it dispatches
  * through an internal `sActivityDelegates` set populated only by `AppCompatActivity`, so
- * with a plain `ComponentActivity` (CLAUDE.md pins us here) the call is a no-op on every
+ * with a plain `ComponentActivity` (ARCHITECTURE.md pins us here) the call is a no-op on every
  * API level — symptom was "pick a language, dialog dismisses, nothing else happens".
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
