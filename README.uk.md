@@ -4,7 +4,9 @@ Twitter-подібна читалка Telegram-каналів. Підписки 
 
 Без Firebase, Crashlytics, аналітики, сторонніх push-сервісів. Дозвіл INTERNET використовується тільки для Telegram і — в гостьовому режимі — для анонімних `t.me/s/` прев'ю.
 
-![Стрічка](playstore/screens/photos/01-hero.jpg)
+<p align="center">
+  <img src="playstore/screens/photos/01-hero.jpg" alt="Стрічка Hortay" width="280">
+</p>
 
 ## Що всередині
 
