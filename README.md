@@ -7,6 +7,12 @@ A Twitter-style reader for Telegram channels. Read your subscribed channels as o
 No Firebase, no Crashlytics, no analytics, no third-party push. INTERNET permission is used only for Telegram itself and, in guest mode, anonymous `t.me/s/` previews.
 
 <p align="center">
+  <a href="https://play.google.com/store/apps/details?id=dev.lyo.hortay">
+    <img alt="Get it on Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="60">
+  </a>
+</p>
+
+<p align="center">
   <img src="playstore/screens/photos/01-hero.jpg" alt="Hortay feed" width="280">
 </p>
 

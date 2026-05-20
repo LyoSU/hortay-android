@@ -5,6 +5,12 @@ Twitter-подібна читалка Telegram-каналів. Підписки 
 Без Firebase, Crashlytics, аналітики, сторонніх push-сервісів. Дозвіл INTERNET використовується тільки для Telegram і — в гостьовому режимі — для анонімних `t.me/s/` прев'ю.
 
 <p align="center">
+  <a href="https://play.google.com/store/apps/details?id=dev.lyo.hortay">
+    <img alt="Завантажити в Google Play" src="https://play.google.com/intl/uk_ua/badges/static/images/badges/uk_badge_web_generic.png" height="60">
+  </a>
+</p>
+
+<p align="center">
   <img src="playstore/screens/photos/01-hero.jpg" alt="Стрічка Hortay" width="280">
 </p>
 
