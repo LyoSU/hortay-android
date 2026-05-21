@@ -1,7 +1,6 @@
 package dev.lyo.hortay.data
 
 import dev.lyo.hortay.testutil.PostsRepositoryTestHarness
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -56,7 +55,13 @@ class PostsRepositoryRefreshTest {
     }
 
     @Test
-    fun `refresh does not drain ChatListArchive`() = runTest {
+    fun `refresh drains both ChatListMain and ChatListArchive`() = runTest {
+        // Post-2026-05 update-pipeline rework: archived channels reach the
+        // Archive tab via the same UpdateChatAddedToList listener that feeds
+        // Main, but TDLib only emits those updates for lists it has been
+        // asked to LoadChats. So the cold-start drain MUST cover both
+        // lists — otherwise first-auth users with archived channels see an
+        // empty Archive tab until they manually re-trigger sync.
         val harness = PostsRepositoryTestHarness(this)
         val seenLists = mutableListOf<String>()
         harness.td.onAny("LoadChats") { fn ->
@@ -64,15 +69,14 @@ class PostsRepositoryRefreshTest {
             seenLists.add(req.chatList::class.simpleName ?: "?")
             TdApi.Error(404, "no more")
         }
-        harness.td.onAny("GetChats") { TdApi.Chats(0, longArrayOf()) }
 
         harness.repo.refresh()
         harness.advanceUntilIdle()
 
-        assertTrue(seenLists.none { it == "ChatListArchive" },
-            "cold-start refresh must skip the archive list entirely; seen=$seenLists")
         assertTrue(seenLists.any { it == "ChatListMain" },
-            "cold-start refresh must still drain ChatListMain")
+            "refresh must drain ChatListMain; seen=$seenLists")
+        assertTrue(seenLists.any { it == "ChatListArchive" },
+            "refresh must drain ChatListArchive; seen=$seenLists")
     }
 
     @Test
@@ -233,27 +237,81 @@ class PostsRepositoryRefreshTest {
     }
 
     @Test
-    fun `refresh tolerates UpdateNewChat arriving AFTER GetChats returns its id list`() = runTest {
+    fun `late UpdateNewChat after triggerInitialSync still ingests`() = runTest {
+        // Under the event-driven ingest design, refresh() is a fire-and-forget
+        // trigger that drives LoadChats — TDLib then emits UpdateNewChat /
+        // UpdateChatLastMessage at its own pace and our listeners catch them.
+        // A chat whose UpdateNewChat arrives AFTER refresh() returns (e.g. on
+        // slow first-auth networks) must still land in `_posts`; the
+        // downstream subscribedPosts filter handles membership.
         val harness = PostsRepositoryTestHarness(this)
-        // No UpdateNewChat emitted yet — chatCache is empty.
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
-        harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(-5000L)) }
-
-        // Schedule a late UpdateNewChat: arrives 100 ms into the suspend-until-or-timeout
-        // poll window. The 2 s timeout in refreshLocked must absorb this without dropping
-        // the chat.
-        val lateMsg = harness.fakeChannelMessage(-5000L, 500L)
-        launch {
-            kotlinx.coroutines.delay(100)
-            val chat = harness.fakeChannel(id = -5000L, lastMessage = lateMsg)
-            harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
-        }
 
         harness.repo.refresh()
         harness.advanceUntilIdle()
 
+        val lateMsg = harness.fakeChannelMessage(-5000L, 500L)
+        val chat = harness.fakeChannel(id = -5000L, lastMessage = lateMsg)
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+
         assertEquals(1, harness.repo.posts.value.size)
         assertEquals(500L, harness.repo.posts.value[0].id)
+    }
+
+    @Test
+    fun `UpdateChatLastMessage racing UpdateNewChat is buffered and flushed`() = runTest {
+        // Race window: UpdateChatLastMessage arrives BEFORE the matching
+        // UpdateNewChat seeded chatCache. The previous shape dropped the
+        // payload outright; the post-rework buffer captures it in
+        // [pendingLastMessages] and [handleNewChat] flushes the buffered
+        // message through ingest as soon as the chat lands.
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -9001L
+        val racingMsg = harness.fakeChannelMessage(chatId, 901L)
+
+        // Step A: UpdateChatLastMessage with NO prior UpdateNewChat —
+        // chatCache miss. The old design would have dropped this; the new
+        // one buffers it.
+        harness.td.emitUpdate(TdApi.UpdateChatLastMessage(chatId, racingMsg, emptyArray()))
+        harness.advanceUntilIdle()
+        assertEquals(0, harness.repo.posts.value.size,
+            "buffered payload must not surface until UpdateNewChat seeds chatCache")
+
+        // Step B: UpdateNewChat lands. handleNewChat must see the buffered
+        // payload via `pendingLastMessages.remove(chat.id)` and ingest it.
+        // chat.lastMessage = null here to prove the buffer wins.
+        val chat = harness.fakeChannel(id = chatId, lastMessage = null)
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+
+        assertEquals(1, harness.repo.posts.value.size,
+            "buffered UpdateChatLastMessage must flush on UpdateNewChat seed")
+        assertEquals(901L, harness.repo.posts.value[0].id)
+    }
+
+    @Test
+    fun `chat positions in UpdateNewChat hydrate _mainChatIds`() = runTest {
+        // hydrateChatListMembership reads `chat.positions` as a warm-cache
+        // shortcut so [ingest]'s subscription filter can activate sooner —
+        // without relying on the UpdateChatAddedToList listener for chats
+        // whose positions array is already filled in the cache read.
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -10_001L
+        val chat = harness.fakeChannel(
+            id = chatId,
+            lastMessage = harness.fakeChannelMessage(chatId, 1001L),
+        ).apply {
+            positions = arrayOf(TdApi.ChatPosition(TdApi.ChatListMain(), 100L, false, null))
+        }
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+
+        // archivedChatIds is exposed, _mainChatIds is private; subscribedPosts
+        // is the observable that combines both. After UpdateNewChat with a
+        // Main position, the post must be in subscribedPosts.
+        assertEquals(1, harness.repo.subscribedPosts.value.size,
+            "chat with ChatListMain in positions hydrates the main-list filter")
     }
 
     @Test
@@ -266,6 +324,21 @@ class PostsRepositoryRefreshTest {
         // `albumMessageIds.size = 3 > 1` and is skipped by the rescue
         // filter.
         val harness = PostsRepositoryTestHarness(this)
+        // Register responders FIRST: under the event-driven design,
+        // ingest fires at UpdateNewChat time, not at refresh time, so
+        // mock setup must precede the update emission.
+        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
+        harness.td.onAny("GetChatHistory") {
+            TdApi.Messages(
+                /*totalCount*/ 3,
+                arrayOf(
+                    harness.fakeChannelMessage(-6000L, 600L, mediaAlbumId = 999L),
+                    harness.fakeChannelMessage(-6000L, 601L, mediaAlbumId = 999L),
+                    harness.fakeChannelMessage(-6000L, 602L, mediaAlbumId = 999L),
+                ),
+            )
+        }
+
         val albumChat = harness.fakeChannel(
             id = -6000L,
             lastMessage = harness.fakeChannelMessage(-6000L, 600L, mediaAlbumId = 999L),
@@ -279,23 +352,6 @@ class PostsRepositoryRefreshTest {
             lastMessage = harness.fakeChannelMessage(-6002L, 602L, mediaAlbumId = 0L),
         )
         listOf(albumChat, soloA, soloB).forEach { harness.td.emitUpdate(TdApi.UpdateNewChat(it)) }
-        harness.advanceUntilIdle()
-
-        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
-        harness.td.onAny("GetChats") { TdApi.Chats(3, longArrayOf(-6000L, -6001L, -6002L)) }
-        // Warm-cache responder: surround fetch returns all three album
-        // members so the merged card lands complete on the first pass.
-        harness.td.onAny("GetChatHistory") {
-            TdApi.Messages(
-                /*totalCount*/ 3,
-                arrayOf(
-                    harness.fakeChannelMessage(-6000L, 600L, mediaAlbumId = 999L),
-                    harness.fakeChannelMessage(-6000L, 601L, mediaAlbumId = 999L),
-                    harness.fakeChannelMessage(-6000L, 602L, mediaAlbumId = 999L),
-                ),
-            )
-        }
-
         harness.repo.refresh()
         harness.advanceUntilIdle()
 

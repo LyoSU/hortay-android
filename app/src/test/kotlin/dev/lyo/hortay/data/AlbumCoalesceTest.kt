@@ -108,13 +108,11 @@ class AlbumCoalesceTest {
         val members = (1L..10L).map { id ->
             harness.fakeChannelMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
         }
-        val chat = harness.fakeChannel(id = chatId, lastMessage = members.last())
-        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
-        harness.advanceUntilIdle()
 
+        // Register mocks FIRST: under the event-driven ingest design,
+        // handleNewChat fires coalesceAlbumFragments at UpdateNewChat time,
+        // so GetChatHistory must already have a responder.
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
-        harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(chatId)) }
-
         var capturedOffset: Int? = null
         var capturedLimit: Int? = null
         harness.td.onAny("GetChatHistory") { req ->
@@ -126,6 +124,8 @@ class AlbumCoalesceTest {
             TdApi.Messages(members.size, members.toTypedArray())
         }
 
+        val chat = harness.fakeChannel(id = chatId, lastMessage = members.last())
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
         harness.repo.refresh()
         harness.advanceUntilIdle()
 
@@ -143,20 +143,17 @@ class AlbumCoalesceTest {
         val chatId = -7200L
         val albumId = 777L
 
-        // Seed the feed with a complete 5-member album via refresh — the
-        // canonical cold-start path. The first GetChatHistory responder
-        // returns all 5 members so the merged card lands whole.
+        // Seed the feed with a complete 5-member album via UpdateNewChat
+        // ingest. The GetChatHistory responder must be registered BEFORE
+        // emitting the update — under the event-driven design ingest fires
+        // at UpdateNewChat time, not at refresh time.
         val full = (1L..5L).map { id ->
             harness.fakeChannelMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
         }
+        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
+        harness.td.onAny("GetChatHistory") { TdApi.Messages(full.size, full.toTypedArray()) }
         val chat = harness.fakeChannel(id = chatId, lastMessage = full.last())
         harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
-        harness.advanceUntilIdle()
-
-        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
-        harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(chatId)) }
-        harness.td.onAny("GetChatHistory") { TdApi.Messages(full.size, full.toTypedArray()) }
-
         harness.repo.refresh()
         harness.advanceUntilIdle()
 
@@ -202,12 +199,9 @@ class AlbumCoalesceTest {
         val full = (1L..5L).map { id ->
             harness.fakePhotoAlbumMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
         }
-        val chat = harness.fakeChannel(id = chatId, lastMessage = full.last())
-        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
-        harness.advanceUntilIdle()
-
+        // Mocks registered BEFORE UpdateNewChat — handleNewChat ingest
+        // fires immediately and triggers coalesceAlbumFragments.
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
-        harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(chatId)) }
         harness.td.onAny("GetChatHistory") { TdApi.Messages(full.size, full.toTypedArray()) }
         // Anchor re-ingest path (the fix) performs a GetMessage(chatId, M1)
         // before handing the result back through handleNewMessage. Make the
@@ -224,7 +218,8 @@ class AlbumCoalesceTest {
                 caption = "edited caption",
             )
         }
-
+        val chat = harness.fakeChannel(id = chatId, lastMessage = full.last())
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
         harness.repo.refresh()
         harness.advanceUntilIdle()
 
@@ -287,18 +282,11 @@ class AlbumCoalesceTest {
         val full = (1L..5L).map { id ->
             harness.fakePhotoAlbumMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
         }
-        val chat = harness.fakeChannel(id = chatId, lastMessage = full.first())
-        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
-        harness.advanceUntilIdle()
-
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
-        harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(chatId)) }
-
         // GetChatHistory always returns empty here — simulates a TDLib cold
         // local cache that never warms within the refresh window. This is
         // the *worst* case the snapshot upgrade is designed to handle.
         harness.td.onAny("GetChatHistory") { TdApi.Messages(0, emptyArray()) }
-
         // Seed the snapshot with last session's full 5-member album ids and
         // wire GetMessage to return the real messages — that's what TDLib's
         // per-message local index provides on cold start (sidesteps the
@@ -308,7 +296,8 @@ class AlbumCoalesceTest {
             val q = req as TdApi.GetMessage
             full.firstOrNull { it.id == q.messageId } ?: TdApi.Error(404, "not found")
         }
-
+        val chat = harness.fakeChannel(id = chatId, lastMessage = full.first())
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
         harness.repo.refresh()
         harness.advanceUntilIdle()
 
@@ -364,12 +353,7 @@ class AlbumCoalesceTest {
         val full = (1L..5L).map { id ->
             harness.fakePhotoAlbumMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
         }
-        val chat = harness.fakeChannel(id = chatId, lastMessage = full.first())
-        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
-        harness.advanceUntilIdle()
-
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
-        harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(chatId)) }
         // Cold cache: surround fetch returns nothing → degraded card.
         harness.td.onAny("GetChatHistory") { TdApi.Messages(0, emptyArray()) }
         // Previous healthy session saved every member id.
@@ -380,7 +364,8 @@ class AlbumCoalesceTest {
             val q = req as TdApi.GetMessage
             full.firstOrNull { it.id == q.messageId } ?: TdApi.Error(404, "not found")
         }
-
+        val chat = harness.fakeChannel(id = chatId, lastMessage = full.first())
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
         harness.repo.refresh()
         harness.advanceUntilIdle()
 

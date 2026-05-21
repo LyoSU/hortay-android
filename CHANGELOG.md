@@ -17,6 +17,11 @@
 - Reactions, view counts and reply counts now refresh live on the post you're reading in the feed — previously the feed often opened a chat for a neighbouring partially-visible card and the post you were actually looking at stayed silent until you scrolled past it.
 - Reactions on an opened channel update in real time instead of staying stuck on the values they had when the screen first painted.
 - A reaction change that arrived in the same ~200 ms window as a view-count heartbeat is no longer swallowed by the heartbeat.
+- Channels with no posts in the last few seconds before sign-in no longer go missing from the feed until you pull-to-refresh — every subscribed channel's latest post lands on first sign-in regardless of cold-start update timing.
+- Archived channels show up in the "Архів" tab immediately after first sign-in instead of only after you toggle archive state in another client.
+
+### Performance
+- Cold-start feel: the daily storage sweep no longer runs alongside the chat-list load, so the first feed paint after launch lands sooner.
 
 ## [0.6.0] — 2026-05-19
 

@@ -1461,26 +1461,21 @@ class PostsRepository(
             ?.also { chatCache[it.id] = it }
             ?: return
         if (!chat.isChannel()) return
-        // Filter live arrivals to chats actually in the user's subscriptions
-        // (Main or Archive list). TDLib emits UpdateNewMessage for any chat
-        // it has resolved — deep-link previews, public-username lookups,
-        // linked discussion-group parents — so without this gate the feed
-        // leaked posts from channels the user never subscribed to.
+        // No subscription filter at ingest. `_posts` is the global post pool —
+        // every chat the daemon resolves (subscribed channels, deep-link
+        // previews, linked discussion-group parents) contributes through this
+        // single path. The merged feed surface ([subscribedPosts]) filters
+        // strictly against [_mainChatIds] / [_archivedChatIds] downstream, so
+        // a non-subscribed chat's lastMessage landing in `_posts` is invisible
+        // to TimelineScreen.
         //
-        // Gated on [_initialSyncDone] rather than on emptiness of
-        // [_mainChatIds]: during the cold-start LoadChats drain, the set
-        // is being filled incrementally by UpdateChatAddedToList. Filtering
-        // on a partially-populated set would drop legitimate subscribed-chat
-        // posts whose UpdateChatAddedToList hadn't landed yet. Once the
-        // drain returns 404 (TDLib's "no more chats to load" signal),
-        // [triggerInitialSync] flips the flag and we filter strictly.
-        // Pre-sync arrivals into [_posts] are filtered out of the merged
-        // feed by [subscribedPosts]' `combine` regardless, so the
-        // leniency here costs at most a few transient rows in `_posts`.
-        if (_initialSyncDone.value) {
-            val subscribed = chatId in _mainChatIds.value || chatId in _archivedChatIds.value
-            if (!subscribed) return
-        }
+        // The previous shape filtered at ingest time and ran into a race:
+        // `UpdateNewChat` typically arrives before `UpdateChatAddedToList`,
+        // so a chat whose membership hadn't yet been signaled was filtered
+        // out, then the membership-signal arrived too late to retroactively
+        // ingest. Trusting the downstream filter sidesteps the race entirely
+        // at a memory cost of a few transient rows (typically 0–3 per
+        // session for side-resolved chats).
 
         // If a real-time burst still left an album fragmented (e.g. members spread across
         // >600 ms by upstream), probe the chat for the missing siblings before mapping.
