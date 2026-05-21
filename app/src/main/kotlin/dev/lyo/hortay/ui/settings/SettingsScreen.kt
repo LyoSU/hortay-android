@@ -66,6 +66,7 @@ import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
+import dev.lyo.hortay.ui.theme.PremiumGold
 import org.drinkless.tdlib.TdApi
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.launch
@@ -670,8 +671,10 @@ private fun ProfileHero(me: TdApi.User) {
                 if (me.isPremium) {
                     Spacer(Modifier.width(6.dp))
                     Symbol(
-                        name = "auto_awesome",
-                        tint = MaterialTheme.colorScheme.primary,
+                        name = "star",
+                        filled = true,
+                        contentDescription = stringResource(R.string.cd_premium_badge),
+                        tint = PremiumGold,
                         size = 18.dp,
                     )
                 }

@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.ui.theme.HortayExpressive
+import dev.lyo.hortay.ui.theme.PremiumGold
 import dev.lyo.hortay.ui.theme.asComposeShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.clickable
@@ -682,6 +683,16 @@ private fun CommentBubble(
                             } else mod
                         },
                 )
+                if (message.isSenderPremium) {
+                    Spacer(Modifier.width(4.dp))
+                    Symbol(
+                        name = "star",
+                        filled = true,
+                        contentDescription = stringResource(R.string.cd_premium_badge),
+                        tint = PremiumGold,
+                        size = 13.dp,
+                    )
+                }
                 Spacer(Modifier.width(8.dp))
                 if (message.editDate > 0L) {
                     Symbol(

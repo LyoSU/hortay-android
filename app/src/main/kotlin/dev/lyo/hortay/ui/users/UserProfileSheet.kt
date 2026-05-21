@@ -55,6 +55,7 @@ import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.UserProfile
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
+import dev.lyo.hortay.ui.theme.PremiumGold
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -229,12 +230,10 @@ private fun ProfileHero(
             if (profile?.isPremium == true) {
                 Spacer(Modifier.width(6.dp))
                 Symbol(
-                    // `rocket_launch` stands in for Telegram Premium until a dedicated
-                    // star glyph is bundled — Premium itself is closer to "boost" than
-                    // a literal star in Telegram-Android marketing anyway.
-                    name = "rocket_launch",
+                    name = "star",
+                    filled = true,
                     contentDescription = stringResource(R.string.cd_premium_badge),
-                    tint = MaterialTheme.colorScheme.tertiary,
+                    tint = PremiumGold,
                     size = 16.dp,
                 )
             }

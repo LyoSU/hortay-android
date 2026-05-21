@@ -92,3 +92,11 @@ val DarkOutlineVariant = Color(0xFF47465A)
 val DarkInverseSurface = Color(0xFFE5E1F0)
 val DarkInverseOnSurface = Color(0xFF303038)
 val DarkInversePrimary = Color(0xFF5A5BA8)
+
+/**
+ * Telegram Premium gold. One shared swatch for both light and dark themes — Telegram
+ * itself doesn't recolour the premium star per theme; the gold reads as a brand mark,
+ * not as part of the M3 tonal scheme. Tuned to sit between Telegram-Android's
+ * `R.color.premium_gradient1/2` (#FBD55E → #E3A33F).
+ */
+val PremiumGold = Color(0xFFE9B33B)

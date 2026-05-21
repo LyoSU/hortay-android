@@ -63,6 +63,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
             "chat_bubble" -> return R.drawable.sym_chat_bubble_filled
             "push_pin" -> return R.drawable.sym_push_pin_filled
             "notifications_active" -> return R.drawable.sym_notifications_active_filled
+            "star" -> return R.drawable.sym_star_filled
             // No filled variant bundled — fall through to the outline below.
         }
     }

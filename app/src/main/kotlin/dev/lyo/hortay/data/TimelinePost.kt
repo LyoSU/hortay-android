@@ -103,6 +103,14 @@ data class TimelinePost(
      * (case 2 — covered by [senderUserId]), and null in web mode.
      */
     val senderChatId: Long? = null,
+    /**
+     * Whether the displayed sender is a Telegram Premium user. Surfaced as a
+     * small gold star next to the name in comment rows (same affordance as the
+     * user-profile sheet). Always false for chat-as-sender posts (channels
+     * carry no personal premium flag) and for web-mode rows (t.me/s/ exposes
+     * no premium status).
+     */
+    val isSenderPremium: Boolean = false,
 )
 
 /**

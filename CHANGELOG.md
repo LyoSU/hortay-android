@@ -6,8 +6,10 @@
 
 ### Added
 - Settings → Profile now opens with a Telegram-style header card: avatar, display name and @handle or phone number, with a premium star indicator if your account has it.
+- Comment authors who have Telegram Premium now show a small gold star next to their name, matching the indicator in user profiles.
 
 ### Changed
+- The Premium badge in your own and other users' profiles is now a gold filled star, matching Telegram's own indicator instead of the previous placeholder glyph.
 - Settings has a single "Sign out" action again — the duplicate "Continue without account" row is gone. Sign out lands you on the auth screen where "Read anonymously" is already one tap away.
 
 ### Fixed

@@ -174,6 +174,7 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
             // host/foreign discriminator here — every chat-sender id is "foreign" to
             // the human reader and worth a tap target. Null for human commenters.
             senderChatId = (message.senderId as? TdApi.MessageSenderChat)?.chatId,
+            isSenderPremium = sender.isPremium,
         )
     }
 
@@ -222,6 +223,7 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
             handle = username?.let { "@$it" },
             avatarThumb = u.profilePhoto?.minithumbnail?.data,
             avatarFileId = u.profilePhoto?.small?.id,
+            isPremium = u.isPremium,
         )
     }
 
@@ -392,6 +394,12 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
         val handle: String?,
         val avatarThumb: ByteArray?,
         val avatarFileId: Int?,
+        /**
+         * Mirrors `TdApi.User.isPremium`. False for chat-sender messages and for
+         * users we couldn't resolve (`GetUser` failed) — both are non-premium by
+         * construction.
+         */
+        val isPremium: Boolean = false,
     )
 }
 
