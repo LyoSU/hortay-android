@@ -362,6 +362,7 @@
     <string name="settings_section_author">Автор</string>
     <string name="settings_author_channel_title">Канал автора</string>
     <string name="settings_author_developer_title">Розробник</string>
+    <string name="settings_author_source_title">Вихідний код</string>
     <string name="settings_section_about">Про застосунок</string>
     <string name="settings_language">Мова</string>
     <string name="settings_language_summary_system">Системна</string>

@@ -347,6 +347,7 @@
     <string name="settings_section_author">Author</string>
     <string name="settings_author_channel_title">Author\'s channel</string>
     <string name="settings_author_developer_title">Developer</string>
+    <string name="settings_author_source_title">Source code</string>
     <string name="settings_section_about">About</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_summary_system">System default</string>

@@ -532,7 +532,7 @@ private fun SettingsMain(
                     subtitle = "@$AUTHOR_CHANNEL_HANDLE",
                     chevron = true,
                     index = 0,
-                    count = 2,
+                    count = 3,
                     onClick = { uriHandler.openUri("https://t.me/$AUTHOR_CHANNEL_HANDLE") },
                 )
                 SettingsRow(
@@ -541,8 +541,17 @@ private fun SettingsMain(
                     subtitle = "@$AUTHOR_DEVELOPER_HANDLE",
                     chevron = true,
                     index = 1,
-                    count = 2,
+                    count = 3,
                     onClick = { uriHandler.openUri("https://t.me/$AUTHOR_DEVELOPER_HANDLE") },
+                )
+                SettingsRow(
+                    symbol = "code",
+                    title = stringResource(R.string.settings_author_source_title),
+                    subtitle = AUTHOR_SOURCE_LABEL,
+                    chevron = true,
+                    index = 2,
+                    count = 3,
+                    onClick = { uriHandler.openUri(AUTHOR_SOURCE_URL) },
                 )
             }
 
@@ -693,3 +702,5 @@ private fun ProfileHero(me: TdApi.User) {
 
 private const val AUTHOR_CHANNEL_HANDLE = "lyblog"
 private const val AUTHOR_DEVELOPER_HANDLE = "lydev"
+private const val AUTHOR_SOURCE_URL = "https://github.com/LyoSU/hortay-android"
+private const val AUTHOR_SOURCE_LABEL = "github.com/LyoSU/hortay-android"
