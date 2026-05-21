@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FeedOrder
@@ -165,27 +167,19 @@ internal fun TabContentSwitcher(
                     snapScroll = snapScroll,
                     coveredByOverlay = coveredByOverlay,
                 )
-                NavTab.Profile -> SettingsScreen(
-                    settings = graph.settingsStore,
-                    stats = graph.statsRepository,
-                    contentPadding = padding,
-                    ignoredChannels = graph.ignoredChannels,
-                    channelActions = graph.channelActions,
-                    onLogout = { scope.launch { graph.tdClient.logOut() } },
-                    // Symmetric "auth → guest" path. Flip the guest flag FIRST so
-                    // the routing pass that follows the TDLib logout settles on
-                    // [WebModeScaffold] instead of looping through [AuthScreen]
-                    // for a beat. logOut() races on its own coroutine; if we
-                    // flipped after it we could observe AuthScreen between
-                    // the two ops.
-                    onEnterGuest = {
-                        scope.launch {
-                            graph.guestMode.setGuest(true)
-                            graph.tdClient.logOut()
-                        }
-                    },
-                    autoDownload = graph.autoDownloadStore,
-                )
+                NavTab.Profile -> {
+                    val me by graph.tdClient.me.collectAsStateWithLifecycle()
+                    SettingsScreen(
+                        settings = graph.settingsStore,
+                        stats = graph.statsRepository,
+                        contentPadding = padding,
+                        ignoredChannels = graph.ignoredChannels,
+                        channelActions = graph.channelActions,
+                        onLogout = { scope.launch { graph.tdClient.logOut() } },
+                        autoDownload = graph.autoDownloadStore,
+                        me = me,
+                    )
+                }
             }
         }
     }

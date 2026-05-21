@@ -63,11 +63,6 @@
     <string name="web_settings_clear_cache_cancel">Скасувати</string>
     <string name="web_comments_unavailable">Коментарі недоступні в гостьовому режимі. Увійдіть, щоб читати відповіді</string>
     <string name="web_comments_unavailable_title">Коментарі недоступні</string>
-    <string name="settings_enter_guest_title">Продовжити без акаунта</string>
-    <string name="settings_enter_guest_subtitle">Вийти і читати публічні канали анонімно через t.me</string>
-    <string name="settings_enter_guest_confirm_title">Перейти у гостьовий режим?</string>
-    <string name="settings_enter_guest_confirm_body">Ви вийдете з акаунта Telegram. Закладки й налаштування стрічки збережуться. Увійти знову можна будь-коли в налаштуваннях</string>
-    <string name="settings_enter_guest_confirm_action">Перейти</string>
     <string name="web_settings_privacy_title">Що бачить Telegram у цьому режимі</string>
     <string name="web_settings_privacy_body">Ваш IP і User-Agent настільного браузера. Без файлів cookie, акаунта чи персональних даних</string>
     <string name="web_add_body">@username, посилання t.me/username або текст із буфера обміну</string>

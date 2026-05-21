@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### Added
+- Settings → Profile now opens with a Telegram-style header card: avatar, display name and @handle or phone number, with a premium star indicator if your account has it.
+
+### Changed
+- Settings has a single "Sign out" action again — the duplicate "Continue without account" row is gone. Sign out lands you on the auth screen where "Read anonymously" is already one tap away.
+
 ## [0.6.0] — 2026-05-19
 
 ### Added

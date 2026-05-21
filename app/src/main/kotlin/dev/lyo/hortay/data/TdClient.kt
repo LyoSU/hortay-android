@@ -87,6 +87,20 @@ class TdClient private constructor(
      */
     val connection: StateFlow<ConnectionStatus> = _connection.asStateFlow()
 
+    private val _me = MutableStateFlow<TdApi.User?>(null)
+    /**
+     * Authenticated user, populated lazily on [TdApi.AuthorizationStateReady] via
+     * [TdApi.GetMe] and kept in sync afterwards through [TdApi.UpdateUser] events
+     * for the self user-id (so name / phone / username edits made in the official
+     * client surface here without a manual refresh). Cleared back to `null` on
+     * logout so a new account doesn't briefly inherit the previous one's hero.
+     *
+     * Profile UI ([SettingsScreen]) renders a TG-style header from this flow.
+     * Null is a render-nothing signal — pre-Ready cold starts and guest mode
+     * both see `null` and skip the hero block.
+     */
+    val me: StateFlow<TdApi.User?> = _me.asStateFlow()
+
     // Last phone number the user tried — kept so AuthorizationStateWaitCode can display
     // the right number even when we no longer optimistically pre-set WaitCode.
     @Volatile
@@ -201,6 +215,17 @@ class TdClient private constructor(
         when (update) {
             is TdApi.UpdateAuthorizationState -> scope.launch { onAuthState(update.authorizationState) }
             is TdApi.UpdateConnectionState -> _connection.value = update.state.toStatus()
+            is TdApi.UpdateUser -> {
+                // Keep [me] live when the official client edits the self user
+                // (display name, username, phone-number formatting, isPremium
+                // toggle from a fresh subscription, etc.). Cheap identity check
+                // first — UpdateUser fires for every contact / chat author so
+                // the hot path is "not me, skip".
+                val current = _me.value
+                if (current != null && update.user.id == current.id) {
+                    _me.value = update.user
+                }
+            }
             else -> Unit
         }
     }
@@ -281,9 +306,21 @@ class TdClient private constructor(
                 // back-to-back on cold start and racing-launched two parallel
                 // OptimizeStorage walks that TDLib then serialised — wasted
                 // 50-300 ms on every launch.
+
+                // Resolve the authenticated user for the Profile hero block.
+                // One-shot GetMe; the subsequent [TdApi.UpdateUser] events for
+                // the self user-id keep [_me] live without a re-fetch.
+                scope.launch {
+                    runCatching { send(TdApi.GetMe()) }
+                        .onSuccess { result -> if (result is TdApi.User) _me.value = result }
+                }
             }
             is TdApi.AuthorizationStateLoggingOut -> {
                 _authStage.value = AuthStage.Loading
+                // Drop the hero user before any UI recompose so a logout that
+                // races with a Settings recomposition can't briefly render the
+                // outgoing account's name / avatar on top of the loading state.
+                _me.value = null
                 // User-initiated logout: signal AppGraph to wipe per-account
                 // in-memory caches + the on-disk timeline snapshot BEFORE
                 // TDLib's eventual Closed → spawnClient races create a fresh
