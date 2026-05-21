@@ -172,11 +172,13 @@ class TimelineViewModel(
     init {
         // Bootstrap: first stable emission seeds [seenHighWater] for every chatId in
         // livePosts with that channel's max date, then flips [bootstrapped] true.
-        // Two arrival paths satisfy the gate:
-        //   1. Cold path: refreshing flips false → true → false; once back at false,
-        //      livePosts holds the streamed result.
-        //   2. Warm path: refreshIfStale skipped (data warm) — refreshing stays false,
-        //      livePosts populated from snapshot only.
+        // Gate is `livePosts.isNotEmpty() && !refreshing` — under the event-driven
+        // ingest design `refreshing` only flips during a user-initiated PTR (the
+        // session-start drain runs out of [AppGraph], not this ViewModel), so the
+        // common cold path is "livePosts streams in, `refreshing` stays false,
+        // bootstrap fires on the first non-empty emission". PTR keeps the
+        // `refreshing=true` guard so the bootstrap doesn't run on a transient
+        // mid-PTR snapshot.
         viewModelScope.launch {
             combine(livePosts, refreshing) { posts, isRefreshing ->
                 posts.takeIf { it.isNotEmpty() && !isRefreshing }
@@ -218,32 +220,20 @@ class TimelineViewModel(
                 }
             }
         }
-        // Cold-start path: kick the network refresh off, hold the snapshot as a
-        // pure fallback. Earlier this method raced the two — snapshot first paint
-        // landed top-of-feed from the previous session, then refresh chunks
-        // streamed in over the next 1-2s and `foldRawIntoCurrent`'s newest-first
-        // sort floated brand-new posts to index 0. The cold-start scroll-pin
-        // pinned `firstVisibleItemIndex = 0` through the entire window, so each
-        // chunk that introduced a fresher head item read as a visible content
-        // swap on the topmost card — "снапшот пост → інший пост, без скролу".
+        // Snapshot restore is fired immediately. The session-start
+        // [PostsRepository.triggerInitialSync] now runs out of [AppGraph]
+        // against `auth.Ready` — this ViewModel does NOT kick another
+        // refresh from `init`. The previous shape racing
+        // `refreshIfStale() + first { !it }; restore` layered redundant
+        // LoadChats on top of AppGraph's drain and put a `refreshing=true`
+        // gate around the first-paint window, delaying the snapshot
+        // fallback for offline / RPC-error cases.
         //
-        // The new contract: refresh always wins the first paint. Only if refresh
-        // completes without populating `_posts` (offline, RPC error, FLOOD_WAIT
-        // before any chat's lastMessage harvest landed) does the snapshot fill in
-        // as a last-known-good fallback. `restoreFromSnapshotInternal` already
-        // has the `current.isNotEmpty()` guard, so this just defers the call to
-        // after refresh settles instead of racing it.
-        //
-        // Trade-off accepted: on cold start the user sees an empty feed for the
-        // duration of the refresh RPC (typically ~1s on Wi-Fi/5G, ~2s on 4G)
-        // instead of the previous instant-then-swap. Offline path still serves
-        // the cached snapshot — refresh fails fast, fallback fires, content
-        // appears within ~100ms of the failure.
-        refreshIfStale()
-        viewModelScope.launch {
-            _refreshing.first { !it }
-            repo.restoreFromSnapshot()
-        }
+        // [restoreFromSnapshot] is idempotent against an ingest stream
+        // racing in (its `current.isNotEmpty()` early-return makes the live
+        // refresh result win the first paint). Offline path: snapshot
+        // replaces the empty feed within ~100 ms of construction.
+        viewModelScope.launch { repo.restoreFromSnapshot() }
     }
 
     /** Pull-to-refresh — always fires regardless of staleness. Reveals pending afterwards. */
@@ -312,24 +302,6 @@ class TimelineViewModel(
                 updated[chatId] = if (existing == null) date else maxOf(existing, date)
             }
             updated
-        }
-    }
-
-    /**
-     * Soft refresh used on VM construction; the repo skips if data is still warm.
-     *
-     * Flips [_refreshing] to `true` synchronously (before the coroutine launches)
-     * so the cold-start path can race-safely wait on the flip-up: the snapshot
-     * fallback launch below reads `_refreshing` immediately after this call
-     * returns and must observe `true`, otherwise its `first { !it }` would match
-     * the initial `false` and fire the fallback while refresh is still in flight.
-     */
-    private fun refreshIfStale() {
-        if (_refreshing.value) return
-        _refreshing.value = true
-        viewModelScope.launch {
-            repo.refreshIfStale()
-            _refreshing.value = false
         }
     }
 

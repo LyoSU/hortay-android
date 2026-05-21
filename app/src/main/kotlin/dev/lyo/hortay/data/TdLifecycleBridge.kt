@@ -147,45 +147,19 @@ class TdLifecycleBridge(
     }
 
     private suspend fun goOnline() {
+        // Per Levin in tdlib/td#3144: `online` is a per-user signal that drives
+        // `account.updateStatus`. Pushed on every foreground transition AFTER
+        // auth is Ready. Read-only client options (`disable_top_chats`,
+        // `notification_group_count_max`) are now set ONCE in
+        // TdClient.onAuthState(WaitTdlibParameters) — they stick across the
+        // session and don't need re-application here. `maybeOptimizeStorage`
+        // moved to [StorageOptimizer], which gates on
+        // [StartupCoordinator.Phase.Active] so the daily sweep can't race with
+        // cold-start LoadChats traffic.
         runCatching { td.send(TdApi.SetOption("online", TdApi.OptionValueBoolean(true))) }
             .warnUnlessCancelled(TAG, "online=true")
         runCatching { td.send(TdApi.SetNetworkType(currentNetworkType())) }
             .warnUnlessCancelled(TAG, "networkType")
-        applyReadOnlyClientOptions()
-        // Threshold-driven storage probe on every foreground transition. The probe is
-        // metadata-only (~10 ms); the actual sweep only runs if the cache is over the
-        // 80%-of-cap trigger or the 24h housekeeping timer is due. Catches gigabyte
-        // accumulation during a long single session that never cycled foreground.
-        td.maybeOptimizeStorage()
-    }
-
-    /**
-     * Read-only-client tuning. Applied on every goOnline because TDLib clears
-     * non-persistent options on a closed→reopened session and reissuing on
-     * re-auth keeps the daemon's state aligned without us having to track
-     * which options need re-application after AuthorizationStateClosed.
-     *
-     *   • `disable_top_chats=true` — Hortay never surfaces "frequently
-     *     contacted users" or top-chats UI. Telling TDLib stops it from
-     *     maintaining the local heuristic and saves a small amount of RAM
-     *     plus a bit of background server traffic. Per maintainer guidance
-     *     in tdlib/td#669: "If your application is read-only and doesn't
-     *     show top chats, set this to true."
-     *   • `notification_group_count_max=0` — TDLib otherwise reserves
-     *     buffer slots for grouped local notifications, which Hortay does
-     *     not produce (we don't run TDLib's notification subsystem at all).
-     *     Zero releases that buffer.
-     *
-     * Each option is sent best-effort: a failure here doesn't break the
-     * client, just leaves a default that costs marginal extra resources.
-     */
-    private suspend fun applyReadOnlyClientOptions() {
-        runCatching {
-            td.send(TdApi.SetOption("disable_top_chats", TdApi.OptionValueBoolean(true)))
-        }.warnUnlessCancelled(TAG, "disable_top_chats")
-        runCatching {
-            td.send(TdApi.SetOption("notification_group_count_max", TdApi.OptionValueInteger(0L)))
-        }.warnUnlessCancelled(TAG, "notification_group_count_max")
     }
 
     private suspend fun goOffline() {

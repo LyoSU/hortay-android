@@ -59,24 +59,30 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Twitter-style chronological feed merged from every channel chat the user follows.
  *
- * Pull model (cold-start):
- *   1. [TdApi.LoadChats] drains [TdApi.ChatListMain]; TDLib emits [TdApi.UpdateNewChat]
- *      per chat with `lastMessage` server-side populated.
- *   2. [TdApi.GetChats] returns the canonical chat-id list (local-only, fast).
- *   3. Harvest `chatCache[id].lastMessage` for each chat — no per-channel
- *      `GetChatHistory` fan-out on cold-start. Each harvested message is routed
- *      through [ingest] which already handles channel-filter, album coalesce
- *      (the only residual `GetChatHistory` calls, deferred for album-member
- *      last-messages only), and feed dedup.
- *   4. Raw messages → [MessageMapper] → [PostFilterStrategy] → [posts].
+ * Event-driven ingest (cold-start AND steady-state). [triggerInitialSync], called
+ * once per session from [dev.lyo.hortay.AppGraph] when `auth.Ready` first lands,
+ * drains [TdApi.LoadChats] for `ChatListMain` + `ChatListArchive`. That drain is a
+ * trigger, not a fetch — TDLib responds by emitting `UpdateNewChat`,
+ * `UpdateChatLastMessage`, `UpdateChatAddedToList` for every chat in the lists.
+ * Our listeners catch those, route messages through [ingest], and populate
+ * `_mainChatIds` / `_archivedChatIds` along the way. No `GetChats` round-trip,
+ * no per-channel `chat.lastMessage` harvest pass, no 2 s "wait for chatCache"
+ * timeout — Levin's canonical pattern (tdlib/td#3019: updates are the source of
+ * truth; LoadChats is what makes them flow).
  *
- * On-demand paths (NOT touched by refresh):
+ * On-demand paths (untouched by [triggerInitialSync]):
  *   • [loadChannelHistory] — when the user opens a single-channel filter.
  *   • [loadOlder] — when the user scrolls past the head of one channel.
  *   • [loadHistoryAround] — when a deep link lands on an older post.
  *
- * Concurrency: a single [Mutex] guards refreshes so that pull-to-refresh + incremental
- * updates from TDLib never interleave and produce phantom duplicates.
+ * Race-buffer: an `UpdateChatLastMessage` that arrives before its matching
+ * `UpdateNewChat` is stashed in [pendingLastMessages] and flushed in
+ * [handleNewChat]. The previous shape dropped these and relied on the harvest
+ * to recover; with the harvest gone, the buffer closes the window deterministically.
+ *
+ * Concurrency: [refreshMutex] serialises the batch refresh paths (initial sync,
+ * pull-to-refresh, snapshot restore) against [clear]. Live update ingest runs
+ * OUTSIDE this mutex via the CAS-loop semantics of [MutableStateFlow.update].
  *
  * Storage: the live feed is held in a [PersistentList]. The hot path
  * (UpdateMessageInteractionInfo) fires dozens of times per second on busy news days, and
@@ -84,17 +90,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  * structural sharing turns the per-event mutation into O(log N) — a few KB of allocation
  * instead of ~50KB.
  *
- * Cold-start rework rationale: see
- * `docs/superpowers/specs/2026-05-11-tdlib-cold-start-lastmessage-only-design.md`.
- *
  * File organisation. The class lives here; orthogonal helpers split out to keep this
  * file focused on the mutable-state surface:
  *   • [applyChatTitleToFeed] / [applyChatPhotoToFeed] in `ChannelMetadataSync.kt`
  *     own the per-row decision logic for `UpdateChatTitle` / `UpdateChatPhoto`
  *     (channel-as-sender vs personal-author split).
- *   • [foldRawIntoCurrent] and [suspendUntilOrTimeout] in `SnapshotRestorer.kt`
- *     hold the canonical raw → feed fold (partial-album guard) and the
- *     cold-start `UpdateNewChat` wait helper. Both unit-tested in isolation.
+ *   • [foldRawIntoCurrent] in `SnapshotRestorer.kt` holds the canonical raw →
+ *     feed fold (partial-album guard). Unit-tested in isolation.
  */
 class PostsRepository(
     private val td: TdSender,
@@ -138,34 +140,24 @@ class PostsRepository(
     private val refreshMutex = Mutex()
 
     /**
-     * Chat metadata mirror, fed by [TdApi.UpdateNewChat]. Three load-bearing
-     * reasons this cache is kept even after [MessageMapper] dropped its own
-     * `User`/`Chat`/`Supergroup` mirrors (Wave 1: mapper now reads through
-     * direct `td.send(GetUser/GetChat/GetSupergroup)`, which are offline calls
-     * per TDLib docs):
+     * Chat metadata mirror, fed by [TdApi.UpdateNewChat] and refreshed on
+     * [TdApi.UpdateChatTitle] / [TdApi.UpdateChatPhoto] eviction. Two
+     * load-bearing reasons it stays even after [MessageMapper] dropped its
+     * own `User`/`Chat`/`Supergroup` mirrors:
      *
-     *   1. **Cold-start harvest** ([refreshLocked]). The per-chat-id loop reads
-     *      `chatCache[chatId].lastMessage` for ~200 chats. Replacing this with
-     *      `td.send(GetChat)` reintroduces `GetChat × N` — the FLOOD_WAIT-class
-     *      regression ARCHITECTURE.md's "Load-bearing" table explicitly forbids.
-     *   2. **`UpdateChatLastMessage` gate** (see this file's
-     *      `td.updates.filterIsInstance<UpdateChatLastMessage>()` listener).
-     *      Containment check short-circuits before the chat is resolved; without
-     *      it, the per-update fallback to `GetChat` re-creates the same fanout
-     *      during cold-start update storms.
-     *   3. **Cold-start sync barrier** ([suspendUntilOrTimeout] over
-     *      `chatCache.containsKey(it)` in [refreshLocked]). The cache is the
-     *      observable for `UpdateNewChat` arrivals — there is no other signal
-     *      that `LoadChats` has drained for a given id. A `GetChat` lookup here
-     *      would always succeed (TDLib resolves it locally) and we'd never know
-     *      whether the chat-list page actually loaded.
-     *
-     * Steady-state reads ([chatTitle], [chatAvatar], [resolveChatKind],
-     * [loadChannelHistoryLocked], [searchInChannel], …) could in principle
-     * suspend on `GetChat` directly post-Wave-1, but they still benefit from
-     * the cache: skipping the JNI hop avoids contention with the same
-     * `td.send` queue that handles user-driven RPCs during scroll. Cost is
-     * trivial (one Chat POJO per subscribed channel, ~hundreds of bytes).
+     *   1. **`UpdateChatLastMessage` race gate** (see the listener below):
+     *      containment check short-circuits the per-update fallback that
+     *      would otherwise re-create a `GetChat` × N fanout during the
+     *      cold-start storm — the FLOOD_WAIT-class regression ARCHITECTURE.md's
+     *      "Load-bearing" table forbids. The race is buffered in
+     *      [pendingLastMessages] rather than dropped.
+     *   2. **Synchronous reads** for [channelSubscribersCached] (seeds
+     *      `ChannelHeaderBar` subtitle on the first frame) and the synchronous
+     *      branches of [chatTitle] / [chatAvatar] / [resolveChatKind] /
+     *      [loadChannelHistoryLocked] / [searchInChannel]. Skipping the JNI
+     *      hop avoids contention with the `td.send` queue that handles
+     *      user-driven RPCs during scroll. Cost is trivial (one Chat POJO
+     *      per subscribed channel, ~hundreds of bytes).
      *
      * Invariant maintenance: [handleChatTitle] / [handleChatPhoto] evict
      * (`remove`) on the corresponding update instead of in-place mutation —
@@ -213,10 +205,42 @@ class PostsRepository(
     internal fun supergroupCacheForTest(supergroupId: Long): TdApi.Supergroup? =
         supergroupCache[supergroupId]
 
-    // Stamped on successful refreshLocked completion. refreshIfStale uses it to skip
-    // re-opening the app from hammering 200+ TDLib calls when the feed is still warm.
+    // Stamped on successful triggerInitialSync completion. refreshIfStale uses it to
+    // skip re-running LoadChats when the previous drain is still warm. With the new
+    // event-driven shape, "refresh" is just LoadChats — TDLib emits the updates and
+    // our listeners stream them in.
     @Volatile
     private var lastRefreshAtMs: Long = 0L
+
+    /**
+     * Buffers an [TdApi.UpdateChatLastMessage] that arrived BEFORE the matching
+     * [TdApi.UpdateNewChat] seeded [chatCache]. The previous shape dropped these
+     * outright (to avoid a [TdApi.GetChat] × N fan-out storm on cold-start);
+     * with the harvest gone, a drop here is a permanent miss for that message.
+     *
+     * Buffer cost: at most ~hundreds of entries (one per subscribed chat) during
+     * the first cold-start tick; flushed and emptied as [TdApi.UpdateNewChat]
+     * arrivals seed [chatCache]. Bounded by the chat list size — no eviction
+     * needed.
+     */
+    private val pendingLastMessages = ConcurrentHashMap<Long, TdApi.Message>()
+
+    /**
+     * Flips to `true` when [triggerInitialSync]'s [TdApi.LoadChats] drain
+     * completes (TDLib emits 404 = "no more chats to load"). At that point
+     * [_mainChatIds] / [_archivedChatIds] are populated to "complete enough"
+     * — every subscribed chat for which `LoadChats(Main)` and
+     * `LoadChats(Archive)` resolved positions emitted an
+     * `UpdateChatAddedToList`, which our listener fed into the sets. From
+     * this edge on, [ingest] filters strictly; before it, we accept all to
+     * avoid dropping live arrivals whose `UpdateChatAddedToList` is still
+     * in flight.
+     *
+     * Reset to `false` on [clear] so a fresh login starts a fresh sync
+     * window.
+     */
+    private val _initialSyncDone = MutableStateFlow(false)
+    val initialSyncDone: StateFlow<Boolean> = _initialSyncDone.asStateFlow()
 
     // Album coalescing: TDLib emits one UpdateNewMessage per album member with no
     // "album complete" signal — confirmed upstream by tdlib/td#1482 (closed 2021
@@ -426,48 +450,25 @@ class PostsRepository(
             }
             .launchIn(scope)
 
-        // Brand-new chat appeared. We deliberately DO NOT issue GetChatHistory here:
-        //   - On startup TDLib re-emits the entire chat list as UpdateNewChat; auto-loading
-        //     each one 429-rate-limits the server.
-        //   - Many of those chats are private / archived / DM — every one is a guaranteed
-        //     [400] Can't access the chat warning.
-        // Posts from a freshly-joined channel reach us anyway via UpdateNewMessage; the user
-        // can pull-to-refresh for back-history. Just cache the metadata.
+        // Single entry-point for chat metadata. We deliberately DO NOT issue
+        // GetChatHistory here:
+        //   - On startup TDLib re-emits the entire chat list as UpdateNewChat; auto-
+        //     loading each one 429-rate-limits the server.
+        //   - Many of those chats are private / archived / DM — every one is a
+        //     guaranteed [400] Can't access the chat warning.
+        //
+        // Three things happen on every UpdateNewChat:
+        //   1. Cache the chat POJO and seed the read cursor (when TDLib has a signal).
+        //   2. Hydrate `_mainChatIds` / `_archivedChatIds` from `chat.positions`
+        //      (TDLib may emit positions as part of UpdateNewChat directly when the
+        //      chat is read from `useChatInfoDatabase`; for first-auth they fill in
+        //      later via UpdateChatAddedToList, which our listener also handles).
+        //   3. Ingest `chat.lastMessage` directly — no harvest, no 2 s wait. If a
+        //      racing UpdateChatLastMessage stashed its payload in
+        //      `pendingLastMessages` before chatCache was seeded, prefer it
+        //      (freshest known message wins).
         td.updates.filterIsInstance<TdApi.UpdateNewChat>()
-            .onEach { update ->
-                chatCache[update.chat.id] = update.chat
-                // Seed the read cursor from server-side state, but ONLY when
-                // TDLib actually has a read-state signal for this chat —
-                // either `unreadCount > 0` (server knows there's incoming
-                // unread waiting) or `lastReadInboxMessageId > 0` (server
-                // has at least one acked inbox id). The `0 / 0` shape is
-                // ambiguous: it's either a never-read channel with no posts
-                // yet (lastMessage is then null too — harvest skips it
-                // anyway) OR an admin / outgoing-only channel where the user
-                // never acks their own broadcasts (TDLib invariant per
-                // tdlib/td#1419: outgoing posts don't bump
-                // `lastReadInboxMessageId`). Seeding cursor = 0 in the
-                // outgoing-only case would flip every own post to unread,
-                // and the recency-floor boundary picker would then land the
-                // user on a fresh self-authored post — the "lands on an
-                // old post" symptom reincarnated. Leaving the map slot
-                // empty makes [isUnreadIn] fall through to "read" for those
-                // posts, which matches the user's mental model ("I wrote
-                // it, of course I've seen it"). A real UpdateChatReadInbox
-                // arriving later still seeds normally via the listener
-                // below.
-                val cursor = update.chat.lastReadInboxMessageId
-                val hasReadState = cursor > 0L || update.chat.unreadCount > 0
-                if (!hasReadState) return@onEach
-                _chatReadCursors.update { current ->
-                    val existing = current[update.chat.id]
-                    // Monotonic clamp: a stale UpdateNewChat arriving after a
-                    // fresh UpdateChatReadInbox must NOT roll the cursor
-                    // backwards, else already-read posts re-appear as unread.
-                    if (existing != null && cursor <= existing) current
-                    else current.put(update.chat.id, cursor)
-                }
-            }
+            .onEach { update -> handleNewChat(update.chat) }
             .launchIn(scope)
 
         // Canonical read-state stream from TDLib. Fires whenever the user reads in
@@ -488,26 +489,27 @@ class PostsRepository(
 
         // UpdateChatLastMessage fires when TDLib (a) discovers a fresh lastMessage for
         // a previously-known chat (edit, delete cascade, or a new post on a chat we
-        // haven't OpenChat'd) and (b) initial sync of late-arriving last-message data.
+        // haven't OpenChat'd) and (b) initial sync of late-arriving last-message data
+        // for a chat whose UpdateNewChat carried `lastMessage = null`.
         //
-        // Routes the message through ingest so the feed picks it up. ingest is
-        // idempotent on (chatId, messageId) — a duplicate arrival via UpdateNewMessage
-        // racing UpdateChatLastMessage cannot dupe a card.
+        // If the chat isn't cached yet, BUFFER the payload in [pendingLastMessages]
+        // rather than dropping it. The matching UpdateNewChat will arrive shortly
+        // and [handleNewChat] flushes the buffer through ingest. This closes the
+        // race that previously caused permanent misses on cold-start (the harvest
+        // is gone — there's no later catch-up sweep).
         //
-        // Early-return if the chat is not yet cached: UpdateChatLastMessage racing
-        // UpdateNewChat on a fresh-login storm would otherwise drive ingest into its
-        // `td.send(GetChat(id))` fallback for every chat, undoing the cold-start
-        // FLOOD_WAIT win. UpdateNewChat will arrive shortly with chat.lastMessage
-        // populated server-side; the next refreshLocked harvest picks it up. We do
-        // NOT mutate the cached Chat's lastMessage field — that would be a write-through
-        // race on a shared mutable object held by both this listener and the
-        // UpdateNewChat handler. A stale cache.lastMessage on the next refresh just
-        // re-routes a known message through ingest (no-op via the (chatId, messageId)
-        // dedup); feed correctness depends on ingest, not on the cache field.
+        // Why we DON'T fall back to `td.send(GetChat)` here: a cold-start storm
+        // can drive UpdateChatLastMessage × N before any UpdateNewChat lands. A
+        // per-update GetChat fan-out would re-introduce the FLOOD_WAIT-class
+        // regression the lastMessage-harvest rework was specifically built to
+        // avoid (ARCHITECTURE.md "Load-bearing" — "Cold-start contract").
         td.updates.filterIsInstance<TdApi.UpdateChatLastMessage>()
             .onEach { update ->
                 val msg = update.lastMessage ?: return@onEach
-                if (chatCache[update.chatId] == null) return@onEach
+                if (chatCache[update.chatId] == null) {
+                    pendingLastMessages[update.chatId] = msg
+                    return@onEach
+                }
                 ingest(update.chatId, listOf(msg))
             }
             .launchIn(scope)
@@ -637,10 +639,10 @@ class PostsRepository(
      * GetMessage on a known id is served from TDLib's local DB synchronously — for a
      * 50-post snapshot the whole pass is typically < 100ms.
      *
-     * Idempotent + safe to overlap with [refresh]: the same `_posts.update` merge
-     * policy in [refreshLocked] keeps refresh's authoritative result on top of any
-     * snapshot rows that landed first; concurrent ingest of brand-new posts also
-     * survives.
+     * Idempotent + safe to overlap with [triggerInitialSync]: the live ingest
+     * stream uses the same `_posts.update` merge policy, so a snapshot row
+     * landing first is preserved when a fresher TDLib update lands on top via
+     * [foldRawIntoCurrent]; concurrent ingest of brand-new posts also survives.
      *
      * Bails when `_posts` is already non-empty so a pull-to-refresh that beat us to
      * the punch wins — there's no point spending GetMessage round-trips to recreate
@@ -774,30 +776,75 @@ class PostsRepository(
         }
     }
 
-    // 30 (not 20) so an album sitting on the limit boundary doesn't get split: most
-    // albums are 2–6 members, so 30 is enough headroom for the latest few channel
-    // posts to arrive whole. GetChatHistory itself returns members one-per-message, so
-    // a 5-photo album consumes 5 of the 30 slots.
+    /**
+     * Pull-to-refresh entry point. With the event-driven shape, "refresh" is just
+     * re-running `LoadChats` so TDLib re-emits any stragglers it has held back.
+     * The feed itself is kept live by the update-stream listeners; there is no
+     * harvest to re-run. Idempotent: TDLib short-circuits a fully-drained list
+     * with 404 immediately (~ms), so calling this on a warm feed costs nothing.
+     */
     override suspend fun refresh() {
-        refreshMutex.withLock {
-            runCatching { refreshLocked() }
-                .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
-                .warnUnlessCancelled("refresh")
-                .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_refresh_feed, connection.value) }
-        }
+        runTriggerInitialSync("refresh", surfaceErrors = true)
     }
 
     /**
-     * Refresh only if the last successful refresh is older than [REFRESH_STALE_MS].
-     * Reuses the same mutex as [refresh] so a concurrent pull-to-refresh isn't stomped.
+     * Soft refresh: skip if the last successful drain is within [REFRESH_STALE_MS].
      */
     override suspend fun refreshIfStale() {
+        if (System.currentTimeMillis() - lastRefreshAtMs <= REFRESH_STALE_MS) return
+        runTriggerInitialSync("refreshIfStale", surfaceErrors = true)
+    }
+
+    /**
+     * One-shot session-start sync. Called once from [dev.lyo.hortay.AppGraph]
+     * when `auth.Ready` first lands, before any user-facing screen even has a
+     * chance to call `refresh*`. Idempotent against re-entry (serialised by
+     * [refreshMutex]).
+     *
+     * What it does:
+     *   1. Drains `LoadChats(ChatListMain)` until TDLib returns 404. This is
+     *      the trigger that makes TDLib emit `UpdateNewChat` /
+     *      `UpdateChatLastMessage` / `UpdateChatAddedToList` for every chat
+     *      in the main list. Our listeners ingest those into the feed.
+     *   2. Drains `LoadChats(ChatListArchive)` for the same reason — the
+     *      Archive tab needs its `_archivedChatIds` populated, and the only
+     *      way TDLib emits those updates is in response to LoadChats on the
+     *      archive list.
+     *   3. Flips [_initialSyncDone] so [ingest]'s subscription filter
+     *      activates and any subsequent `UpdateNewMessage` for a non-
+     *      subscribed chat is correctly dropped.
+     *
+     * What it deliberately doesn't do:
+     *   - No `GetChats` call. The set is built incrementally from the
+     *     listener stream, which is the canonical TDLib pattern (Levin in
+     *     tdlib/td#3019: updates are the source of truth).
+     *   - No 2 s wait for chatCache to fill. Updates either arrived
+     *     synchronously during the LoadChats drain (warm cache) or will
+     *     arrive on the wire (first-auth) — in both cases our listeners
+     *     handle them.
+     *   - No per-channel `chat.lastMessage` harvest pass. Each
+     *     UpdateNewChat ingests its `lastMessage` directly in
+     *     [handleNewChat]; the buffered-race case is covered by
+     *     [pendingLastMessages].
+     */
+    suspend fun triggerInitialSync() {
+        runTriggerInitialSync("triggerInitialSync", surfaceErrors = false)
+    }
+
+    private suspend fun runTriggerInitialSync(label: String, surfaceErrors: Boolean) {
         refreshMutex.withLock {
-            if (System.currentTimeMillis() - lastRefreshAtMs <= REFRESH_STALE_MS) return@withLock
-            runCatching { refreshLocked() }
+            runCatching {
+                drainChatList(TdApi.ChatListMain())
+                drainChatList(TdApi.ChatListArchive())
+                _initialSyncDone.value = true
+            }
                 .onSuccess { lastRefreshAtMs = System.currentTimeMillis() }
-                .warnUnlessCancelled("refreshIfStale")
-                .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_refresh_feed, connection.value) }
+                .warnUnlessCancelled(label)
+                .onFailure {
+                    if (surfaceErrors) {
+                        it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_refresh_feed, connection.value)
+                    }
+                }
         }
     }
 
@@ -1329,6 +1376,63 @@ class PostsRepository(
         )
     }
 
+    /**
+     * Canonical handler for [TdApi.UpdateNewChat]. Three responsibilities, in order:
+     *
+     *  1. **Cache + read cursor seed.** Mirror the chat POJO and (when TDLib has a
+     *     positive signal) seed [_chatReadCursors] from `lastReadInboxMessageId`.
+     *     The `0/0` shape is ambiguous and intentionally NOT seeded — see
+     *     tdlib/td#1419 for the outgoing-only-channel invariant.
+     *
+     *  2. **List-membership hydration.** Read [TdApi.Chat.positions] and add the
+     *     chat id to [_mainChatIds] / [_archivedChatIds] for each [TdApi.ChatList]
+     *     match. Positions may be empty on first-auth (filled in later via
+     *     UpdateChatPosition / UpdateChatAddedToList — handled by a separate
+     *     listener). When non-empty, this gives the ingest filter early data
+     *     so we can flip [_initialSyncDone] sooner.
+     *
+     *  3. **Lead-message ingest.** Prefer a payload buffered by
+     *     UpdateChatLastMessage that raced this update; fall back to
+     *     `chat.lastMessage`. When non-null and the chat is a channel, route
+     *     through [ingest] — no waiting, no harvest, no semaphore.
+     *
+     * Called from the [TdApi.UpdateNewChat] listener; suspending because [ingest]
+     * may suspend on its own GetChat fallback or on the [_posts] CAS loop.
+     */
+    private suspend fun handleNewChat(chat: TdApi.Chat) {
+        chatCache[chat.id] = chat
+        seedReadCursor(chat)
+        hydrateChatListMembership(chat)
+        val msg = pendingLastMessages.remove(chat.id) ?: chat.lastMessage
+        if (msg != null && chat.isChannel()) ingest(chat.id, listOf(msg))
+    }
+
+    private fun seedReadCursor(chat: TdApi.Chat) {
+        val cursor = chat.lastReadInboxMessageId
+        val hasReadState = cursor > 0L || chat.unreadCount > 0
+        if (!hasReadState) return
+        _chatReadCursors.update { current ->
+            val existing = current[chat.id]
+            // Monotonic clamp: a stale UpdateNewChat arriving after a fresh
+            // UpdateChatReadInbox must NOT roll the cursor backwards, else
+            // already-read posts re-appear as unread.
+            if (existing != null && cursor <= existing) current
+            else current.put(chat.id, cursor)
+        }
+    }
+
+    private fun hydrateChatListMembership(chat: TdApi.Chat) {
+        val positions = chat.positions ?: return
+        if (positions.isEmpty()) return
+        for (pos in positions) {
+            when (pos.list) {
+                is TdApi.ChatListMain -> _mainChatIds.update { it + chat.id }
+                is TdApi.ChatListArchive -> _archivedChatIds.update { it + chat.id }
+                else -> Unit
+            }
+        }
+    }
+
     private fun handleNewMessage(message: TdApi.Message) {
         if (message.mediaAlbumId == 0L) {
             scope.launch { ingest(message.chatId, listOf(message)) }
@@ -1361,22 +1465,20 @@ class PostsRepository(
         // (Main or Archive list). TDLib emits UpdateNewMessage for any chat
         // it has resolved — deep-link previews, public-username lookups,
         // linked discussion-group parents — so without this gate the feed
-        // leaked posts from channels the user never subscribed to. The
-        // `_mainChatIds` set is the authoritative ChatListMain membership
-        // populated by [refreshLocked] from `GetChats` (and kept live by
-        // the UpdateChatAddedToList / UpdateChatRemovedFromList listeners
-        // above), which sidesteps the `Chat.positions` cold-start race that
-        // an earlier attempt at this filter ran into.
+        // leaked posts from channels the user never subscribed to.
         //
-        // Empty `_mainChatIds` means we haven't completed cold-start
-        // refresh yet (or the user is signed out). Don't filter then —
-        // refreshLocked itself calls ingest for the harvest, and we don't
-        // want the cold-start ingest to be a no-op. Once refreshLocked's
-        // [_mainChatIds] population completes, subsequent live arrivals are
-        // gated normally.
-        val mainIds = _mainChatIds.value
-        if (mainIds.isNotEmpty()) {
-            val subscribed = chatId in mainIds || chatId in _archivedChatIds.value
+        // Gated on [_initialSyncDone] rather than on emptiness of
+        // [_mainChatIds]: during the cold-start LoadChats drain, the set
+        // is being filled incrementally by UpdateChatAddedToList. Filtering
+        // on a partially-populated set would drop legitimate subscribed-chat
+        // posts whose UpdateChatAddedToList hadn't landed yet. Once the
+        // drain returns 404 (TDLib's "no more chats to load" signal),
+        // [triggerInitialSync] flips the flag and we filter strictly.
+        // Pre-sync arrivals into [_posts] are filtered out of the merged
+        // feed by [subscribedPosts]' `combine` regardless, so the
+        // leniency here costs at most a few transient rows in `_posts`.
+        if (_initialSyncDone.value) {
+            val subscribed = chatId in _mainChatIds.value || chatId in _archivedChatIds.value
             if (!subscribed) return
         }
 
@@ -1442,9 +1544,10 @@ class PostsRepository(
      *    arrival can exceed the silence window, flushing 2..9 members while
      *    siblings are still in flight. Same failure mode as openclaw#1811 (their
      *    500 ms wasn't enough; their fix bumped to 1000–1500 ms — we use 1000).
-     *  - **Cold-start lastMessage harvest.** [refreshLocked] routes
-     *    `Chat.lastMessage` per channel through this method; if `lastMessage`
-     *    is an album member, the batch is trivially `size=1`.
+     *  - **UpdateNewChat lead-message ingest.** [handleNewChat] routes the
+     *    chat's `lastMessage` (or a buffered `UpdateChatLastMessage` payload)
+     *    through this method on every chat appearing in the session; if
+     *    `lastMessage` is an album member, the batch is trivially `size=1`.
      *
      * **Coalesce trigger.** Surround-fetch fires for any album group whose
      * member count is `<` [TELEGRAM_MAX_ALBUM_SIZE]. The previous `size == 1`
@@ -1865,7 +1968,7 @@ class PostsRepository(
 
     private fun handleChatTitle(update: TdApi.UpdateChatTitle) {
         // Drop the cached TdApi.Chat instead of mutating its `title` in place.
-        // Multiple workers read chatCache[chatId] concurrently (refreshLocked,
+        // Multiple workers read chatCache[chatId] concurrently (handleNewChat,
         // ingest, coalesceAlbum…) and TdApi.Chat is a plain Java POJO without
         // internal synchronisation — a mid-flight reader could otherwise see
         // torn fields (fresh title paired with stale photo). The next reader
@@ -1892,114 +1995,23 @@ class PostsRepository(
         MessageContentMapper.mapReactions(reactions)
 
     /**
-     * Set of chatIds the user has archived in Telegram. Populated alongside the main
-     * refresh so the feed UI can surface a dedicated "Архів" tab without a separate query.
-     * Stays a [StateFlow] so the tab can show / hide based on whether the user actually
-     * has anything archived.
+     * Set of chatIds the user has archived in Telegram. Populated by the same
+     * dual path as [_mainChatIds]: [handleNewChat] reads `chat.positions`
+     * for the warm cache, and UpdateChatAddedToList catches the late-fill
+     * first-auth case after [triggerInitialSync]'s `LoadChats(Archive)`
+     * drain. Stays a [StateFlow] so the "Архів" tab can show / hide based
+     * on whether the user actually has anything archived.
      */
     private val _archivedChatIds = MutableStateFlow<Set<Long>>(emptySet())
     val archivedChatIds: StateFlow<Set<Long>> = _archivedChatIds.asStateFlow()
 
-    // Set of chatIds in the user's main chat list. See [refreshLocked] for why
-    // we maintain this as an authoritative set (filled from GetChats response)
-    // rather than reading it off `Chat.positions` (which has a cold-start
+    // Set of chatIds in the user's main chat list. Populated incrementally by
+    // [handleNewChat] (reads `chat.positions` snapshot) and the
+    // UpdateChatAddedToList listener (catches the late-fill case where
+    // positions were empty at UpdateNewChat time — the classic cold-start
     // race). Filter source for [ingest] — live UpdateNewMessage from a chat
     // not in this set OR [archivedChatIds] is dropped.
     private val _mainChatIds = MutableStateFlow<Set<Long>>(emptySet())
-
-    private suspend fun refreshLocked() {
-        // Cold-start strategy (mirrors Telegram-Android): drive `LoadChats(ChatListMain)`
-        // so TDLib emits UpdateNewChat for every chat. Each chat carries `lastMessage`
-        // server-side, so the feed can be reconstructed from chatCache without a
-        // per-channel GetChatHistory fan-out. Previously this method issued
-        // GetChat × N (Sem=16) + GetChatHistory × N (Sem=4); on a 200-channel account
-        // that was ~400 RPCs on the critical path and the dominant trigger for the
-        // post-login FLOOD_WAIT class. See
-        // `docs/superpowers/specs/2026-05-11-tdlib-cold-start-lastmessage-only-design.md`.
-        //
-        // Archive is NOT drained here — archived chats are out of scope for v1 of this
-        // change. The existing UpdateChatAddedToList / UpdateChatRemovedFromList
-        // listeners still keep `_archivedChatIds` live so the UI scope predicate works.
-        drainChatList(TdApi.ChatListMain())
-
-        // GetChats returns chat ids already loaded into TDLib's local memory by the
-        // drainChatList pass above. Int.MAX_VALUE because the page count is the real
-        // ceiling on response size.
-        val chatIds = td.send(TdApi.GetChats(TdApi.ChatListMain(), Int.MAX_VALUE))
-            .chatIds.toList()
-
-        // Authoritative subscription set used by [ingest] to gate live
-        // [UpdateNewMessage] arrivals. TDLib pushes UpdateNewMessage for any
-        // chat it has ever resolved (deep-link previews, public-username
-        // lookups, linked discussion-group parents); without this gate those
-        // side-resolved channels' posts would land in the all-feed, which
-        // surfaced as "I see channels in the feed I'm not subscribed to" and
-        // as scroll-anchor creep when drilling into channels (their posts
-        // got slotted above the user's anchor). Maintained live by the
-        // UpdateChatAddedToList / UpdateChatRemovedFromList listeners above,
-        // so a freshly-joined channel becomes visible without app restart.
-        //
-        // Why this set + not `Chat.positions.any { ChatListMain && order != 0 }`:
-        // positions has a cold-start race where UpdateNewChat arrives before
-        // TDLib has filled in the positions array, and harvesting via the
-        // chat's `lastMessage` would then reject every chat — the resulting
-        // bug was an empty feed on restart with only post-warmup live
-        // arrivals visible. The GetChats response is, by contrast, the
-        // direct authoritative answer to "what's in ChatListMain right now",
-        // populated before harvest fires.
-        _mainChatIds.value = _mainChatIds.value + chatIds.toSet()
-
-        // LoadChats triggers UpdateNewChat per chat, but the emission may arrive on
-        // the td.updates flow AFTER GetChats has already returned the id list — TDLib's
-        // bridge does not guarantee that the update queue is fully drained before the
-        // response. Wait up to 2 s for chatCache to catch up; on timeout we proceed with
-        // whatever's cached (the UpdateChatLastMessage listener will catch the rest
-        // via live ingest as those updates arrive).
-        suspendUntilOrTimeout(WAIT_NEW_CHAT_TIMEOUT_MS, WAIT_NEW_CHAT_POLL_MS) {
-            chatIds.all { chatCache.containsKey(it) }
-        }
-
-        // Harvest lastMessage for each known chat and route through ingest. ingest()
-        // already:
-        //   - filters non-channel chats (basic groups / DM / supergroup-chats)
-        //   - runs coalesceAlbumFragments for album-member lastMessages
-        //   - applies PostFilterStrategy (service / expired media drops)
-        //   - emits on _newArrivals for the live-update consumers
-        //   - dedups against the existing feed
-        // Sem = REFRESH_CONCURRENCY (4) bounds the concurrent album-coalesce probes;
-        // for non-album chats ingest is pure in-memory and never blocks.
-        //
-        // Harvest is *complete*: every channel chat with a non-null lastMessage
-        // contributes a post, regardless of read state. The previous version
-        // skipped chats with `unreadCount == 0` to prevent ancient lastMessages
-        // from sitting at `items[0]` of the OldestUnreadFirst (asc-by-date) feed
-        // and being mistaken for "where the user left off", but the same filter
-        // emptied the Newest feed of every caught-up channel and made the
-        // OldestUnreadFirst landing land on the only-remaining unread post —
-        // which is often itself ancient if the surviving channels are dormant.
-        // The fix moved upstack: boundary picking now applies a recency floor
-        // to the unread set (see [continueReadingIndex]), so dormant unread
-        // can't strand the landing while read posts still anchor the feed.
-        val semaphore = Semaphore(REFRESH_CONCURRENCY)
-        coroutineScope {
-            chatIds.map { chatId ->
-                async {
-                    semaphore.withPermit {
-                        val chat = chatCache[chatId] ?: return@withPermit
-                        val msg = chat.lastMessage ?: return@withPermit
-                        ingest(chatId, listOf(msg))
-                    }
-                }
-            }.awaitAll()
-        }
-
-        // Partial-album rescue lives in [restoreFromSnapshotInternal] now —
-        // it does targeted GetMessage on the previous session's saved member
-        // ids and works deterministically against TDLib's per-message local
-        // index, sidestepping the chat-history hydration race that the old
-        // in-line delay-and-re-ingest pass tried (and sometimes failed) to
-        // wait out.
-    }
 
     /**
      * Wipe every piece of per-account in-memory state held by this repo.
@@ -2033,6 +2045,8 @@ class PostsRepository(
             lastRefreshAtMs = 0L
             _archivedChatIds.value = emptySet()
             _mainChatIds.value = emptySet()
+            pendingLastMessages.clear()
+            _initialSyncDone.value = false
         }
         runCatching { snapshotStore.clear() }
             .warnUnlessCancelled(TAG, "snapshotStore.clear")
@@ -2064,7 +2078,6 @@ class PostsRepository(
         const val TAG = "PostsRepository"
         const val CHAT_LIST_HINT = 200
         const val MAX_LOAD_CHATS_PAGES = 10
-        const val REFRESH_DEFAULT_LIMIT = 30
         // Mirrors the FeedSource.refreshIfStale window: skip the round-trip
         // when last successful refresh was within the last minute. 60s tracks
         // the WebFeedSource staleness gate so both modes feel equally responsive
@@ -2108,32 +2121,6 @@ class PostsRepository(
          * cheap first line; the next two layers are the safety net.
          */
         const val ALBUM_DEBOUNCE_MS = 1_000L
-        // Aligns with TDLib's default ~4 simultaneous downloads — same shape, same back-
-        // pressure profile.
-        const val REFRESH_CONCURRENCY = 4
-
-        /**
-         * How long [refreshLocked] waits for late-arriving `UpdateNewChat` emissions to
-         * fill [chatCache] after `GetChats` returns. Empirically TDLib's update queue
-         * drains within a few hundred ms on warm runs; on a true cold start it can take
-         * 1-2 s, which is the upper bound this constant captures.
-         *
-         * Known limitation. Past the timeout we proceed with whatever is cached. The
-         * [TdApi.UpdateChatLastMessage] listener catches chats that emit a fresh
-         * last-message after the window closes — but if a chat's last-message is
-         * UNCHANGED at the time its late [TdApi.UpdateNewChat] arrives (already-read
-         * channel, no new posts during the boot window), neither listener fires for
-         * it and the chat is absent from the feed until the next pull-to-refresh.
-         * Mitigation in practice: the next user-driven refresh runs `refreshLocked`
-         * again and the cache is warm by then, so the miss is recovered on the first
-         * scroll-down or PTR gesture. Permanent fix would require either a longer
-         * timeout (trades cold-start latency for completeness) or a second-pass
-         * GetChats after the burst settles. Deferred.
-         */
-        const val WAIT_NEW_CHAT_TIMEOUT_MS = 2_000L
-
-        /** Poll interval for [WAIT_NEW_CHAT_TIMEOUT_MS]. */
-        const val WAIT_NEW_CHAT_POLL_MS = 50L
         // 60s is long enough that quick back-and-forth between channels reuses the cached
         // history, short enough that a deliberate "refresh by re-entering" still works
         // within a normal browsing session.

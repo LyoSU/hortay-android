@@ -19,8 +19,10 @@ import kotlinx.coroutines.withTimeoutOrNull
  *    load / pagination / live ingest / snapshot upgrade. Same partial-album
  *    downgrade guard + album-id-aware dedup the long-form KDoc below
  *    describes.
- *  - [suspendUntilOrTimeout] — predicate poll with timeout; used by
- *    refresh to wait for TDLib's `UpdateNewChat` burst after `GetChats`.
+ *  - [suspendUntilOrTimeout] — predicate poll with timeout. Unused in
+ *    production after the event-driven ingest rework (the cold-start
+ *    `UpdateNewChat` wait it serviced is gone), kept as a small utility
+ *    helper because it's covered by [SuspendUntilOrTimeoutTest].
  */
 
 /**

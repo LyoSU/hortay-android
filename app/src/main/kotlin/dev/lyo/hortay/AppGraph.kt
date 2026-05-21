@@ -1,6 +1,7 @@
 package dev.lyo.hortay
 
 import android.content.Context
+import dev.lyo.hortay.data.AuthStage
 import dev.lyo.hortay.data.AutoDownloadStore
 import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.LinkDialogState
@@ -25,6 +26,7 @@ import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StartupCoordinator
 import dev.lyo.hortay.data.StatsRepository
+import dev.lyo.hortay.data.StorageOptimizer
 import dev.lyo.hortay.data.TelegramLinkResolver
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdLifecycleBridge
@@ -148,6 +150,35 @@ class AppGraph(context: Context) {
         posts = postsRepository.posts,
         scope = appScope,
     )
+
+    /**
+     * Storage-sweep observer. Runs [TdClient.maybeOptimizeStorage] only after
+     * [StartupCoordinator.Phase.Active] AND foreground — keeps the daily sweep
+     * off the cold-start critical path where it used to race [LoadChats]
+     * traffic.
+     */
+    @Suppress("unused")
+    private val storageOptimizer: StorageOptimizer = StorageOptimizer(
+        td = tdClient,
+        startupPhase = startupCoordinator.phase,
+        foreground = lifecycleBridge.foreground,
+        scope = appScope,
+    )
+
+    init {
+        // One-shot session-start sync. Fires the first time TDLib reaches
+        // `Ready` (cold start with existing creds OR fresh login completes),
+        // and once more on every re-Ready edge (re-login after logout). Per
+        // Levin (tdlib/td#3019): updates are the source of truth, LoadChats
+        // is the trigger. See [PostsRepository.triggerInitialSync] for what
+        // happens during the drain.
+        appScope.launch {
+            tdClient.authStage
+                .collect { stage ->
+                    if (stage is AuthStage.Ready) postsRepository.triggerInitialSync()
+                }
+        }
+    }
 
     /**
      * User-configurable per-network auto-download policy (Wi-Fi / mobile / roaming),

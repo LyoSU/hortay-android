@@ -266,7 +266,7 @@ class TdClient private constructor(
                 // ("Збій конфігурації…") instead of leaving the user on Loading forever,
                 // which is what the bare `send(params)` used to do (TdException would bubble
                 // into scope.launch's SupervisorJob and get silently swallowed).
-                runCatching { send(params) }
+                val ok = runCatching { send(params) }
                     .onFailure { err ->
                         if (err is CancellationException) throw err
                         Log.e(TAG, "SetTdlibParameters failed", err)
@@ -274,6 +274,8 @@ class TdClient private constructor(
                             strings.getString(R.string.auth_err_init_failure),
                         )
                     }
+                    .isSuccess
+                if (ok) applyReadOnlyClientOptions()
             }
             is TdApi.AuthorizationStateWaitPhoneNumber -> _authStage.value = AuthStage.WaitPhone
             is TdApi.AuthorizationStateWaitCode -> {
@@ -357,6 +359,34 @@ class TdClient private constructor(
                 AuthStage.Error(strings.getString(R.string.auth_err_premium_required))
             else -> Unit
         }
+    }
+
+    /**
+     * Read-only-client tuning. Sent ONCE in [AuthorizationStateWaitTdlibParameters]
+     * right after the parameters land — before any user-driven traffic (LoadChats,
+     * OpenChat, etc.). TDLib persists these in its option store, so we don't need
+     * to re-send on every foreground transition (the previous shape lived in
+     * [TdLifecycleBridge.goOnline] and ran on every cold-start storm window,
+     * racing the very RPCs they were meant to optimise).
+     *
+     *   • `disable_top_chats=true` — Hortay never surfaces "frequently
+     *     contacted users" or top-chats UI. Per maintainer guidance in
+     *     tdlib/td#669: *"If your application is read-only and doesn't show
+     *     top chats, set this to true."*
+     *   • `notification_group_count_max=0` — TDLib otherwise reserves buffer
+     *     slots for grouped local notifications, which Hortay does not
+     *     produce (we don't run TDLib's notification subsystem at all).
+     *
+     * Best-effort: a failure here doesn't break the client, just leaves a
+     * default that costs marginal extra resources.
+     */
+    private suspend fun applyReadOnlyClientOptions() {
+        runCatching {
+            send(TdApi.SetOption("disable_top_chats", TdApi.OptionValueBoolean(true)))
+        }.warnUnlessCancelled(TAG, "disable_top_chats")
+        runCatching {
+            send(TdApi.SetOption("notification_group_count_max", TdApi.OptionValueInteger(0L)))
+        }.warnUnlessCancelled(TAG, "notification_group_count_max")
     }
 
     fun clearAuthError() {
