@@ -30,10 +30,10 @@ import dev.lyo.hortay.ui.theme.PremiumGold
  * shared [dev.lyo.hortay.ui.media.CustomEmojiAnimator] so N instances on the
  * same screen (a thread full of premium commenters) share one Lottie session.
  *
- * NFT / upgraded-gift statuses (`EmojiStatusTypeUpgradedGift`) are NOT yet
- * supported — we'd need the gift-sticker renderer. Callers should resolve
- * `emojiStatusId` to null for that case so this badge silently falls back to
- * the gold star.
+ * Both regular emoji statuses and NFT/upgraded-gift statuses are supported —
+ * see [dev.lyo.hortay.data.resolveEmojiStatusId] for the decoding (gifts
+ * collapse to their `modelCustomEmojiId`; backdrop + symbol overlay is a
+ * future profile-header concern, not relevant at inline-badge size).
  */
 @Composable
 fun PremiumStatusBadge(
