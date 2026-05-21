@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-21
+
 ### Added
 - Settings → Profile now opens with a Telegram-style header card: avatar, display name and @handle or phone number, with a premium star indicator if your account has it.
 - Comment authors who have Telegram Premium now show a small gold star next to their name, matching the indicator in user profiles.
