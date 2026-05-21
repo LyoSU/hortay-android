@@ -1111,22 +1111,41 @@ fun TimelineScreen(
                         kotlinx.coroutines.delay(FOCUS_DWELL_MS)
                         // Latest displayed list — same staleness reason as the read-ack effect.
                         val items = feedItemsState.value
-                        val focusChat = items.getOrNull(focusIdx)?.posts()?.firstOrNull()?.chatId
+                        val focusedPost = items.getOrNull(focusIdx)?.posts()?.firstOrNull()
                             ?: return@collectLatest
+                        val focusChat = focusedPost.chatId
                         if (focusChat == opened) return@collectLatest
-                        // Atomic close+open via NonCancellable: ChatPresence decrements
-                        // the local refcount BEFORE issuing the network CloseChat, so a
-                        // mid-flight cancellation here would otherwise leak an opened
-                        // chat in TDLib (refcount 0 locally, but TDLib never received
-                        // CloseChat). Pinning the swap means a subsequent collectLatest
-                        // cancel waits for both calls to land before letting the next
-                        // emission start its own swap. NonCancellable doesn't block
-                        // forever — viewMessages and OpenChat/CloseChat are bounded
-                        // RPCs and ChatPresence wraps the send in runCatching anyway.
+                        // Atomic close+open+re-ack via NonCancellable. Three reasons it
+                        // has to be a single non-cancellable block:
+                        //
+                        // (1) ChatPresence decrements the local refcount BEFORE issuing
+                        //     the network CloseChat, so a mid-flight cancellation here
+                        //     would otherwise leak an opened chat in TDLib (refcount 0
+                        //     locally, but TDLib never received CloseChat). Pinning the
+                        //     swap means a subsequent collectLatest cancel waits for
+                        //     both calls to land before letting the next emission start
+                        //     its own swap.
+                        // (2) viewMessages MUST run AFTER openChat so
+                        //     [ChatPresence.isOpen] reports true and
+                        //     [PostsRepository.viewMessages] picks force_read=false
+                        //     (canonical "actively reading", which gates the
+                        //     interaction-info stream). Without this explicit re-ack
+                        //     the merged-feed focused post gets its only viewMessages
+                        //     from the read-ack dwell at READ_DWELL_MS (500 ms) —
+                        //     BEFORE this effect's FOCUS_DWELL_MS (600 ms) OpenChat —
+                        //     with force_read=true, which deprioritises the stream we
+                        //     want. ChannelScreen doesn't have this gap because OpenChat
+                        //     fires from ChannelViewModel.init before any viewMessages.
+                        // (3) NonCancellable doesn't block forever — viewMessages and
+                        //     OpenChat/CloseChat are bounded RPCs and ChatPresence
+                        //     wraps the send in runCatching anyway.
                         kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                             opened?.let { prev -> tdlibRepo.closeChat(prev) }
                             tdlibRepo.openChat(focusChat)
                             opened = focusChat
+                            val ids = focusedPost.albumMessageIds
+                                .ifEmpty { listOf(focusedPost.id) }
+                            tdlibRepo.viewMessages(focusChat, ids)
                         }
                     }
             } finally {
