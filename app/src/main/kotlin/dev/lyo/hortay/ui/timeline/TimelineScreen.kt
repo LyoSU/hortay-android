@@ -1063,18 +1063,28 @@ fun TimelineScreen(
         dwellMs = READ_DWELL_MS,
     )
 
-    // Focus-chat tracking: keep the chat of the topmost-visible post OpenChat'd while
-    // the user is dwelling on it, then transition cleanly to the next chat as they
-    // scroll. This is what makes reactions / views / comment-counts stream live for
-    // the post the user is actually looking at — per tdlib/td#2312, those updates
-    // arrive only for chats that are currently opened in TDLib. The maintainer's
-    // canonical pattern is "usually one chat opened" (tdlib/td#2695), so we honour
-    // that strictly: at most ONE merged-feed chat is open at any time, and it's the
-    // chat of whatever post sits at the top of the viewport.
+    // Focus-chat tracking: keep the chat of the post the user is actually LOOKING AT
+    // OpenChat'd, and transition cleanly to the next chat as they scroll. This is what
+    // makes reactions / views / comment-counts stream live for the post under their
+    // gaze — per tdlib/td#2312, those updates arrive only for chats currently opened
+    // in TDLib. The maintainer's canonical pattern is "usually one chat opened"
+    // (tdlib/td#2695), so we honour that strictly: at most ONE merged-feed chat is
+    // open at any time.
+    //
+    // Picking "the post under the gaze" — we use the item whose VISIBLE area in the
+    // viewport is greatest, not `firstVisibleItem`. In a feed of full-width tall cards
+    // the topmost item is usually partially scrolled out while the user reads the next
+    // card centred on screen; `firstVisibleItem` would OpenChat the wrong chat (one
+    // whose post is barely visible), leaving the actually-read chat closed and its
+    // interaction stream silent. Max-visible-area survives albums spanning more height
+    // than one card, near-equal splits at scroll boundaries (tie-break by index is
+    // stable, so we don't oscillate), and the cold-start "no items yet" state (null,
+    // skip). The previous KDoc claimed "topmost" was correct; observed in practice it
+    // wasn't.
     //
     // Hysteresis: FOCUS_DWELL_MS keeps us from rapidly cycling open/close on a quick
-    // scroll. collectLatest cancels the delay on every viewport top change — only a
-    // chat that wins the topmost slot AND holds it for FOCUS_DWELL_MS gets opened.
+    // scroll. collectLatest cancels the delay on every focus change — only a chat
+    // that holds the dominant-visible slot for FOCUS_DWELL_MS straight gets opened.
     //
     // Cleanup: try/finally with NonCancellable on the close so a fast screen exit
     // still flushes CloseChat.
@@ -1083,17 +1093,27 @@ fun TimelineScreen(
             var opened: Long? = null
             try {
                 androidx.compose.runtime.snapshotFlow {
-                    listState.layoutInfo.visibleItemsInfo.firstOrNull()?.index
+                    val layout = listState.layoutInfo
+                    val viewportStart = layout.viewportStartOffset
+                    val viewportEnd = layout.viewportEndOffset
+                    layout.visibleItemsInfo
+                        .maxByOrNull { item ->
+                            val itemEnd = item.offset + item.size
+                            val clippedStart = maxOf(item.offset, viewportStart)
+                            val clippedEnd = minOf(itemEnd, viewportEnd)
+                            (clippedEnd - clippedStart).coerceAtLeast(0)
+                        }
+                        ?.index
                 }
                     .distinctUntilChanged()
-                    .collectLatest { topIdx ->
-                        if (topIdx == null) return@collectLatest
+                    .collectLatest { focusIdx ->
+                        if (focusIdx == null) return@collectLatest
                         kotlinx.coroutines.delay(FOCUS_DWELL_MS)
-                        // Latest displayed list — same staleness reason as Effect 1.
+                        // Latest displayed list — same staleness reason as the read-ack effect.
                         val items = feedItemsState.value
-                        val topChat = items.getOrNull(topIdx)?.posts()?.firstOrNull()?.chatId
+                        val focusChat = items.getOrNull(focusIdx)?.posts()?.firstOrNull()?.chatId
                             ?: return@collectLatest
-                        if (topChat == opened) return@collectLatest
+                        if (focusChat == opened) return@collectLatest
                         // Atomic close+open via NonCancellable: ChatPresence decrements
                         // the local refcount BEFORE issuing the network CloseChat, so a
                         // mid-flight cancellation here would otherwise leak an opened
@@ -1105,8 +1125,8 @@ fun TimelineScreen(
                         // RPCs and ChatPresence wraps the send in runCatching anyway.
                         kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                             opened?.let { prev -> tdlibRepo.closeChat(prev) }
-                            tdlibRepo.openChat(topChat)
-                            opened = topChat
+                            tdlibRepo.openChat(focusChat)
+                            opened = focusChat
                         }
                     }
             } finally {
@@ -1944,14 +1964,19 @@ private const val MAX_PILL_BADGES = 3
 private const val READ_DWELL_MS = 500L
 
 /**
- * Viewport-stable dwell before we promote the topmost post's chat to OpenChat in
- * TDLib. Per tdlib/td#2312 only opened chats receive realtime reaction / view-counter
+ * Viewport-stable dwell before we promote the dominant-visible post's chat to OpenChat
+ * in TDLib. Per tdlib/td#2312 only opened chats receive realtime reaction / view-counter
  * / comment-count updates, so this is what makes interaction info come alive on the
- * post the user is actually looking at. Slightly longer than [READ_DWELL_MS] — this
- * one carries side effects (TDLib starts streaming updates and may fetch sponsored
- * messages), so we wait for the dwell to feel deliberate rather than incidental.
+ * post the user is actually looking at. Slightly above [READ_DWELL_MS] so the
+ * focus signal lags read-ack — a post that's still in transition past the centre when
+ * the user resumes scrolling never gets OpenChat'd, while a deliberate stop fires
+ * within human-perceptible latency. The pre-2026-05 value of 1500 ms was tuned for an
+ * `firstVisibleItem`-based tracker that opened the wrong chat anyway; with the
+ * max-visible-area picker the focus signal is accurate enough that we can shorten
+ * the dwell without thrashing OpenChat on flings (collectLatest cancels in-flight
+ * delays on every focus change, so a fling never accumulates open/close churn).
  */
-private const val FOCUS_DWELL_MS = 1500L
+private const val FOCUS_DWELL_MS = 600L
 
 /**
  * How long the surface-tint "you just landed here" highlight lingers on the post a

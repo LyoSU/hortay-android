@@ -270,6 +270,15 @@ class PostsRepository(
     // Non-nullable values: ConcurrentHashMap forbids null. TDLib does occasionally emit
     // UpdateMessageInteractionInfo with null `interactionInfo` (which the original
     // per-field-fallback handler treated as a no-op), so we drop those at the entry.
+    //
+    // Inserts go through `merge`, not `put`: TDLib often emits two updates back-to-back
+    // for the same message — first one carrying fresh views/replies with `reactions=null`
+    // ("no change to reactions, see your local copy"), then one with the new `reactions`.
+    // A naive `put` lets a later null-reactions heartbeat overwrite an earlier
+    // non-null-reactions update inside the same 200 ms coalesce window, silently dropping
+    // the reaction change. The merge keeps the latest non-null value per field — the same
+    // null-preserve rule [flushPendingInteractionInfo] applies field-by-field against
+    // [TimelinePost], lifted up so the buffer never loses information.
     private val pendingInteractionInfo =
         ConcurrentHashMap<Pair<Long, Long>, TdApi.MessageInteractionInfo>()
     private val interactionFlushScheduled = AtomicBoolean(false)
@@ -1271,19 +1280,29 @@ class PostsRepository(
      *
      * Maintainer-aligned design (TDLib's `Aliaksei Levin` aka levlam):
      *   - tdlib/td#2695: "Usually, users have at most one chat opened." → we DO NOT
-     *     hold OpenChat for every visible chat in the global feed; only the active
-     *     channel-filter screen opens its single chat (see [openChat]). Multi-open
-     *     is a fight against the API design and risks burst FLOOD_WAIT on a 200-channel
-     *     scroll.
+     *     hold OpenChat for every visible chat in the global feed; only the focused
+     *     chat in TimelineScreen and the active channel-filter screen open their
+     *     single chat (see [openChat]). Multi-open is a fight against the API design
+     *     and risks burst FLOOD_WAIT on a 200-channel scroll.
      *   - tdlib/td#46 + tdlib/td#219: when the chat isn't opened, the canonical way to
-     *     advance read state is `force_read=true` on `ViewMessages`. That's exactly the
-     *     case here — every channel except the filter target is closed.
+     *     advance read state is `force_read=true` on `ViewMessages`. That's the
+     *     non-focused case in the merged feed.
      *   - tdlib/td#136: `ViewMessages` is filtered server-side to messages TDLib
      *     considers "seen" (since 1.3.0), so calling it for a viewport-stable batch is
      *     safe even if the user only briefly glanced.
      *   - tdlib/td#2312: "Only a few messages can be viewed in a time." Caller must
      *     batch sensibly — TimelineScreen passes the visible viewport (3-7 posts), well
      *     within bounds. Do NOT bulk-ack the whole feed from this function.
+     *   - `force_read` flag is decided per-call from [ChatPresence.isOpen] rather than
+     *     hardcoded `true`: for an OPEN chat (focus-tracker or ChannelScreen target),
+     *     `force_read=true` is API misuse — the documented contract scopes the flag
+     *     to closed chats only, and observed TDLib behaviour (per the tdlib/td#2312
+     *     thread) is to deprioritise the interaction-info stream when the daemon
+     *     treats the call as a background batch-ack. With `force_read=false` on open
+     *     chats, reaction / view / reply updates flow live; with `force_read=true` on
+     *     closed chats, read state still advances even though we won't see live
+     *     reactions for those posts. The branching lives here because it's a TDLib
+     *     contract detail, not a UX policy.
      *
      * For album posts: [TimelinePost.id] is the oldest album member's id, which matches
      * tdlib/td#2312's note that "only the first message in an album can receive
@@ -1293,7 +1312,8 @@ class PostsRepository(
      * [TimelineScreen]: that's a UX policy, not a TDLib invariant, so it stays at the
      * call site.
      */
-    suspend fun viewMessages(chatId: Long, messageIds: List<Long>) =
+    suspend fun viewMessages(chatId: Long, messageIds: List<Long>) {
+        val open = ChatPresence.isOpen(chatId)
         ChatPresence.viewMessages(
             td = td,
             chatId = chatId,
@@ -1301,13 +1321,13 @@ class PostsRepository(
             // ChatHistory: the user is reading the channel feed (merged global view
             // or single-channel filter). Both look like history scrolling to TDLib.
             source = TdApi.MessageSourceChatHistory(),
-            // Closed chats in the global feed need force_read=true to advance read
-            // state — the maintainer-canonical alternative to OpenChat-per-channel.
-            // For the channel-filter case, the chat is already opened by the screen
-            // so force_read is a no-op; setting it true uniformly keeps the call
-            // site free of mode branching.
-            forceRead = true,
+            // See KDoc: closed → force_read=true (advances read state via the
+            // documented closed-chat path); open → force_read=false (canonical
+            // "user is actively reading", which is what gates the interaction-info
+            // stream we depend on for live reactions / views / replies).
+            forceRead = !open,
         )
+    }
 
     private fun handleNewMessage(message: TdApi.Message) {
         if (message.mediaAlbumId == 0L) {
@@ -1500,7 +1520,21 @@ class PostsRepository(
         // null interactionInfo: original handler resolved every field to its current value
         // (effectively no-op). Drop here so the buffer stays non-null for ConcurrentHashMap.
         val info = update.interactionInfo ?: return
-        pendingInteractionInfo[update.chatId to update.messageId] = info
+        pendingInteractionInfo.merge(update.chatId to update.messageId, info) { existing, incoming ->
+            TdApi.MessageInteractionInfo().apply {
+                // viewCount is monotonic per Telegram; take max so a slightly-stale heartbeat
+                // can't downgrade a fresher value already in the buffer.
+                viewCount = maxOf(existing.viewCount, incoming.viewCount)
+                // forwardCount: TDLib emits 0 to mean "not changed" in heartbeats too,
+                // so keep the prior non-zero value when the incoming says zero.
+                forwardCount = if (incoming.forwardCount != 0) incoming.forwardCount
+                else existing.forwardCount
+                // reactions / replyInfo: null in the incoming update means "see your local
+                // copy" — fall through to the existing buffered value, NOT overwrite it.
+                reactions = incoming.reactions ?: existing.reactions
+                replyInfo = incoming.replyInfo ?: existing.replyInfo
+            }
+        }
         if (interactionFlushScheduled.compareAndSet(false, true)) {
             scope.launch {
                 delay(INTERACTION_INFO_COALESCE_MS)

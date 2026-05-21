@@ -10,6 +10,11 @@
 ### Changed
 - Settings has a single "Sign out" action again — the duplicate "Continue without account" row is gone. Sign out lands you on the auth screen where "Read anonymously" is already one tap away.
 
+### Fixed
+- Reactions, view counts and reply counts now refresh live on the post you're reading in the feed — previously the feed often opened a chat for a neighbouring partially-visible card and the post you were actually looking at stayed silent until you scrolled past it.
+- Reactions on an opened channel update in real time instead of staying stuck on the values they had when the screen first painted.
+- A reaction change that arrived in the same ~200 ms window as a view-count heartbeat is no longer swallowed by the heartbeat.
+
 ## [0.6.0] — 2026-05-19
 
 ### Added

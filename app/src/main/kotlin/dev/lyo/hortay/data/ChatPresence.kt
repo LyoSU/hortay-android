@@ -81,6 +81,20 @@ internal object ChatPresence {
             .warnUnlessCancelled(TAG, "openChat($chatId)")
     }
 
+    /**
+     * Whether [chatId] currently has an outstanding `OpenChat` on its behalf.
+     * Reads the refcount under the same mutex that mutates it so the answer
+     * is consistent with the state the daemon sees. Callers use this to pick
+     * the right `force_read` on [viewMessages]: TDLib documents
+     * `force_read=true` as the closed-chat workaround for advancing
+     * `lastReadInboxMessageId`; passing it for an opened chat is API misuse
+     * and observed (tdlib/td#2312) to deprioritise the interaction-info
+     * stream the chat is otherwise entitled to.
+     */
+    suspend fun isOpen(chatId: Long): Boolean = refMutex.withLock {
+        (refCounts[chatId] ?: 0) > 0
+    }
+
     suspend fun closeChat(td: TdSender, chatId: Long) {
         val shouldSend = refMutex.withLock {
             val current = refCounts[chatId] ?: 0
