@@ -270,6 +270,7 @@ class ChannelActionsRepository(
             avatarFileId = user.profilePhoto?.small?.id,
             verification = user.verificationStatus?.toUserMark(),
             isPremium = user.isPremium,
+            emojiStatusId = resolveEmojiStatusId(user.emojiStatus),
             isBot = user.type is TdApi.UserTypeBot,
             isSupport = user.isSupport,
             isContact = user.isContact,
@@ -380,6 +381,13 @@ data class UserProfile(
     val avatarFileId: Int?,
     val verification: SenderVerification?,
     val isPremium: Boolean,
+    /**
+     * Pre-resolved custom-emoji id from [TdApi.User.emojiStatus] (see
+     * [resolveEmojiStatusId] for the expiration / variant rules). When non-null
+     * the user-profile sheet renders this animated emoji in place of the gold
+     * premium star.
+     */
+    val emojiStatusId: Long?,
     val isBot: Boolean,
     val isSupport: Boolean,
     val isContact: Boolean,

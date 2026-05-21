@@ -53,9 +53,9 @@ import dev.lyo.hortay.data.PersonalChannelLink
 import dev.lyo.hortay.data.PresenceStatus
 import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.UserProfile
+import dev.lyo.hortay.ui.components.PremiumStatusBadge
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
-import dev.lyo.hortay.ui.theme.PremiumGold
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -227,13 +227,11 @@ private fun ProfileHero(
                 Spacer(Modifier.width(6.dp))
                 VerificationGlyph(it)
             }
-            if (profile?.isPremium == true) {
+            if (profile?.isPremium == true || profile?.emojiStatusId != null) {
                 Spacer(Modifier.width(6.dp))
-                Symbol(
-                    name = "star",
-                    filled = true,
-                    contentDescription = stringResource(R.string.cd_premium_badge),
-                    tint = PremiumGold,
+                PremiumStatusBadge(
+                    isPremium = profile?.isPremium == true,
+                    emojiStatusId = profile?.emojiStatusId,
                     size = 16.dp,
                 )
             }

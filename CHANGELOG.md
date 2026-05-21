@@ -7,6 +7,7 @@
 ### Added
 - Settings → Profile now opens with a Telegram-style header card: avatar, display name and @handle or phone number, with a premium star indicator if your account has it.
 - Comment authors who have Telegram Premium now show a small gold star next to their name, matching the indicator in user profiles.
+- Custom emoji-status renders in place of the gold star wherever a user identity is shown — settings hero, user-profile sheet, and comments — and respects the status's expiration date.
 
 ### Changed
 - The Premium badge in your own and other users' profiles is now a gold filled star, matching Telegram's own indicator instead of the previous placeholder glyph.

@@ -111,6 +111,13 @@ data class TimelinePost(
      * no premium status).
      */
     val isSenderPremium: Boolean = false,
+    /**
+     * Custom-emoji id the sender chose as their Telegram emoji-status (renders
+     * via [dev.lyo.hortay.ui.components.PremiumStatusBadge] in place of the
+     * gold star). Pre-resolved through [resolveEmojiStatusId] so expired
+     * statuses and unsupported gift-type statuses arrive as null.
+     */
+    val senderEmojiStatusId: Long? = null,
 )
 
 /**

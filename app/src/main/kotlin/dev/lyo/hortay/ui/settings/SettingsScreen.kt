@@ -64,9 +64,9 @@ import dev.lyo.hortay.data.StatsRepository
 import dev.lyo.hortay.data.StorageUsage
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
-import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.data.resolveEmojiStatusId
+import dev.lyo.hortay.ui.components.PremiumStatusBadge
 import dev.lyo.hortay.ui.media.TdAvatar
-import dev.lyo.hortay.ui.theme.PremiumGold
 import org.drinkless.tdlib.TdApi
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.launch
@@ -668,13 +668,12 @@ private fun ProfileHero(me: TdApi.User) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (me.isPremium) {
+                val emojiStatusId = remember(me.emojiStatus) { resolveEmojiStatusId(me.emojiStatus) }
+                if (me.isPremium || emojiStatusId != null) {
                     Spacer(Modifier.width(6.dp))
-                    Symbol(
-                        name = "star",
-                        filled = true,
-                        contentDescription = stringResource(R.string.cd_premium_badge),
-                        tint = PremiumGold,
+                    PremiumStatusBadge(
+                        isPremium = me.isPremium,
+                        emojiStatusId = emojiStatusId,
                         size = 18.dp,
                     )
                 }

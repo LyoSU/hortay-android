@@ -175,6 +175,7 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
             // the human reader and worth a tap target. Null for human commenters.
             senderChatId = (message.senderId as? TdApi.MessageSenderChat)?.chatId,
             isSenderPremium = sender.isPremium,
+            senderEmojiStatusId = sender.emojiStatusId,
         )
     }
 
@@ -224,6 +225,7 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
             avatarThumb = u.profilePhoto?.minithumbnail?.data,
             avatarFileId = u.profilePhoto?.small?.id,
             isPremium = u.isPremium,
+            emojiStatusId = resolveEmojiStatusId(u.emojiStatus),
         )
     }
 
@@ -400,6 +402,13 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
          * construction.
          */
         val isPremium: Boolean = false,
+        /**
+         * Custom-emoji id when the user picked an emoji as their Telegram status
+         * (resolved via [dev.lyo.hortay.ui.components.resolveEmojiStatusId] so
+         * expired statuses and unsupported gift-type statuses arrive as null).
+         * Always null for chat senders — channels carry no per-user status.
+         */
+        val emojiStatusId: Long? = null,
     )
 }
 
