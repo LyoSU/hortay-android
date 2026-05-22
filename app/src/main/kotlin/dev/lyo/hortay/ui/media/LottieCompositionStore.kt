@@ -3,6 +3,7 @@ package dev.lyo.hortay.ui.media
 import android.util.Log
 import com.airbnb.lottie.LottieComposition
 import com.airbnb.lottie.LottieCompositionFactory
+import com.airbnb.lottie.LottieDrawable
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -127,10 +128,12 @@ internal object LottieCompositionStore {
                 // own global cache, which would otherwise hold strong refs in parallel
                 // to ours.
                 val result = LottieCompositionFactory.fromJsonStringSync(json, /* cacheKey */ null)
-                result.value ?: run {
+                val parsed = result.value ?: run {
                     Log.w(TAG, "lottie parse failed for $path: ${result.exception?.message}")
-                    null
+                    return@withContext null
                 }
+                if (!isCompositionRenderable(parsed, TAG, path)) return@withContext null
+                parsed
             }
         } catch (t: Throwable) {
             if (t is kotlin.coroutines.cancellation.CancellationException) {
@@ -193,3 +196,19 @@ internal object LottieCompositionStore {
     private const val MAX_FAILED = 128
     private const val MAX_DECOMPRESSED_BYTES = 5L * 1024L * 1024L
 }
+
+/**
+ * Smoke-build the Lottie layer tree on IO so we surface malformed shapes (e.g. a TGS
+ * `RectangleShape` missing `position`/`size`/`cornerRadius`) as a deterministic null
+ * here instead of crashing later on the main thread when Compose's first draw triggers
+ * `LottieDrawable.setComposition` (RectangleContent.<init> → NPE on
+ * `AnimatableFloatValue.createAnimation()`). `LottieDrawable.setComposition` is
+ * Looper-free — safe to invoke on a worker thread.
+ */
+internal fun isCompositionRenderable(
+    composition: LottieComposition,
+    tag: String,
+    label: String,
+): Boolean = runCatching { LottieDrawable().setComposition(composition) }
+    .onFailure { Log.w(tag, "lottie composition rejected (smoke build threw) for $label: ${it.message}") }
+    .isSuccess

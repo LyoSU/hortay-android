@@ -46,6 +46,7 @@ internal object LottieUrlStore {
                 Log.w(TAG, "lottie parse failed for $url: ${result.exception?.message}")
                 return@withContext null
             }
+            if (!isCompositionRenderable(composition, TAG, url)) return@withContext null
             synchronized(lru) { lru[url] = composition }
             composition
         }
