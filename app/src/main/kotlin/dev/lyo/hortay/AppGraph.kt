@@ -153,7 +153,7 @@ class AppGraph(context: Context) {
 
     val archiveSettingsStore: ArchiveSettingsStore = ArchiveSettingsStore(context)
 
-    private val archiveSettingsState: StateFlow<ArchiveSettings> =
+    internal val archiveSettingsState: StateFlow<ArchiveSettings> =
         archiveSettingsStore.flow.stateIn(
             scope = appScope,
             started = SharingStarted.Eagerly,
@@ -175,6 +175,7 @@ class AppGraph(context: Context) {
         ignoredChannels = ignoredChannels,
         coldStartBackfill = coldStartBackfillStore,
         archiveRepository = archiveRepository,
+        archiveSettings = archiveSettingsState,
     )
 
     val commentsRepository: CommentsRepository = CommentsRepository(

@@ -20,6 +20,7 @@ import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.archive.ArchiveRepository
+import dev.lyo.hortay.data.archive.ArchiveSettings
 import dev.lyo.hortay.data.archive.ChatRef
 import dev.lyo.hortay.data.archive.TdlibContentMetaExtractor
 import dev.lyo.hortay.data.surfaceTo
@@ -133,6 +134,13 @@ class PostsRepository(
      * capture calls are no-ops.
      */
     private val archiveRepository: ArchiveRepository? = null,
+    /**
+     * Live archive settings. When non-null and [ArchiveSettings.enabled] is true,
+     * [handleDeleted] marks posts as [TimelinePost.isDeleted] instead of removing
+     * them from the feed, preserving a tombstone visible to the user. When null
+     * (tests / historical call sites), the old remove-on-delete behavior is preserved.
+     */
+    private val archiveSettings: kotlinx.coroutines.flow.StateFlow<ArchiveSettings>? = null,
 ) : FeedSource {
 
     /**
@@ -1904,44 +1912,90 @@ class PostsRepository(
         }
 
         val ids = update.messageIds.toHashSet()
-        _posts.update { current ->
-            current.mutate { list ->
-                val toRemove = mutableListOf<Int>()
-                for (i in list.indices) {
-                    val post = list[i]
-                    if (post.chatId != update.chatId) continue
-                    val albumIds = post.albumMessageIds
-                    if (albumIds.isEmpty()) {
-                        if (post.id in ids) toRemove += i
-                        continue
+        val keepAsDeleted = archiveSettings?.value?.enabled == true
+        if (keepAsDeleted) {
+            // Archive mode: tombstone deleted posts with isDeleted=true so a
+            // DeletedBadge can surface in the feed instead of the post vanishing silently.
+            // Albums whose anchor is fully deleted also get tombstoned; partially-deleted
+            // albums are trimmed the same as non-archive mode (individual members have no
+            // separate card the user could read, so trimming is lossless from UX perspective).
+            _posts.update { current ->
+                current.mutate { list ->
+                    val toRemove = mutableListOf<Int>()
+                    for (i in list.indices) {
+                        val post = list[i]
+                        if (post.chatId != update.chatId) continue
+                        val albumIds = post.albumMessageIds
+                        if (albumIds.isEmpty()) {
+                            if (post.id in ids) list[i] = post.copy(isDeleted = true)
+                            continue
+                        }
+                        // Album: if every member was deleted, tombstone the anchor.
+                        val survivedIds = albumIds.filterNot { it in ids }
+                        if (survivedIds.size == albumIds.size) continue
+                        if (survivedIds.isEmpty()) {
+                            list[i] = post.copy(isDeleted = true)
+                            continue
+                        }
+                        // Partial album deletion: trim members that were removed.
+                        val keepIdx = albumIds.withIndex()
+                            .filter { (_, id) -> id !in ids }
+                            .map { (idx, _) -> idx }
+                            .toSet()
+                        val content = post.content
+                        if (content is PostContent.PhotoAlbum) {
+                            val newItems = content.items.filterIndexed { idx, _ -> idx in keepIdx }
+                            list[i] = post.copy(
+                                content = content.copy(items = newItems),
+                                albumMessageIds = survivedIds,
+                            )
+                        } else {
+                            toRemove += i
+                        }
                     }
-                    // Album: trim deleted members from items[] (mergeAlbumMembers builds
-                    // items in albumMessageIds order, so they correspond by index). Drop
-                    // the whole post if every member was deleted.
-                    val survivedIds = albumIds.filterNot { it in ids }
-                    if (survivedIds.size == albumIds.size) continue
-                    if (survivedIds.isEmpty()) {
-                        toRemove += i
-                        continue
-                    }
-                    val keepIdx = albumIds.withIndex()
-                        .filter { (_, id) -> id !in ids }
-                        .map { (idx, _) -> idx }
-                        .toSet()
-                    val content = post.content
-                    if (content is PostContent.PhotoAlbum) {
-                        val newItems = content.items.filterIndexed { idx, _ -> idx in keepIdx }
-                        list[i] = post.copy(
-                            content = content.copy(items = newItems),
-                            albumMessageIds = survivedIds,
-                        )
-                    } else {
-                        // Album with non-PhotoAlbum content (shouldn't happen given how
-                        // mergeAlbumMembers builds groups, but guard anyway). Drop it.
-                        toRemove += i
-                    }
+                    for (idx in toRemove.asReversed()) list.removeAt(idx)
                 }
-                for (idx in toRemove.asReversed()) list.removeAt(idx)
+            }
+        } else {
+            _posts.update { current ->
+                current.mutate { list ->
+                    val toRemove = mutableListOf<Int>()
+                    for (i in list.indices) {
+                        val post = list[i]
+                        if (post.chatId != update.chatId) continue
+                        val albumIds = post.albumMessageIds
+                        if (albumIds.isEmpty()) {
+                            if (post.id in ids) toRemove += i
+                            continue
+                        }
+                        // Album: trim deleted members from items[] (mergeAlbumMembers builds
+                        // items in albumMessageIds order, so they correspond by index). Drop
+                        // the whole post if every member was deleted.
+                        val survivedIds = albumIds.filterNot { it in ids }
+                        if (survivedIds.size == albumIds.size) continue
+                        if (survivedIds.isEmpty()) {
+                            toRemove += i
+                            continue
+                        }
+                        val keepIdx = albumIds.withIndex()
+                            .filter { (_, id) -> id !in ids }
+                            .map { (idx, _) -> idx }
+                            .toSet()
+                        val content = post.content
+                        if (content is PostContent.PhotoAlbum) {
+                            val newItems = content.items.filterIndexed { idx, _ -> idx in keepIdx }
+                            list[i] = post.copy(
+                                content = content.copy(items = newItems),
+                                albumMessageIds = survivedIds,
+                            )
+                        } else {
+                            // Album with non-PhotoAlbum content (shouldn't happen given how
+                            // mergeAlbumMembers builds groups, but guard anyway). Drop it.
+                            toRemove += i
+                        }
+                    }
+                    for (idx in toRemove.asReversed()) list.removeAt(idx)
+                }
             }
         }
     }
@@ -1999,7 +2053,10 @@ class PostsRepository(
         if (target.mediaAlbumId == 0L) {
             // Solo post — fast path, swap content in place.
             updateOnePost(update.chatId, update.messageId) {
-                it.copy(content = MessageContentMapper.map(update.newContent, res))
+                it.copy(
+                    content = MessageContentMapper.map(update.newContent, res),
+                    revisionCount = it.revisionCount + 1,
+                )
             }
             return
         }
@@ -2022,6 +2079,22 @@ class PostsRepository(
                 .warnUnlessCancelled(TAG, "getMessage(${update.chatId},${update.messageId})")
                 .getOrNull() ?: return@launch
             handleNewMessage(msg)
+            // Bump revisionCount on the freshly-merged album anchor. handleNewMessage →
+            // foldRawIntoCurrent replaces the existing anchor with a fresh mapper-built
+            // post (revisionCount = 0); increment it here after the merge so the EditedChip
+            // reflects the actual edit count. The second _posts.update is cheap — at most
+            // one list traversal — and fires outside the debounce window so no CAS storm.
+            _posts.update { current ->
+                current.mutate { list ->
+                    for (i in list.indices) {
+                        val p = list[i]
+                        if (p.chatId == update.chatId && update.messageId in p.albumMessageIds) {
+                            list[i] = p.copy(revisionCount = p.revisionCount + 1)
+                            break
+                        }
+                    }
+                }
+            }
         }
     }
 
