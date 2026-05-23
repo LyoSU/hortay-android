@@ -294,13 +294,16 @@ sqldelight {
         // Kept separate from web.db — unrelated data model, different lifecycle
         // (archive survives logout; web cache is cleared on demand).
         //
-        // srcDirs is pinned explicitly so SQLDelight 2.3's generator doesn't scan
-        // the entire sqldelight source root and pull in web.db's .sq files, which
-        // would produce duplicate Kotlin declarations in the same package.
         create("ArchiveDatabase") {
             packageName.set("dev.lyo.hortay.data.archive.db")
-            srcDirs.setFrom("src/main/sqldelight/dev/lyo/hortay/data/archive/db")
-            schemaOutputDirectory.set(file("src/main/sqldelight/dev/lyo/hortay/data/archive/db/schemas"))
+            // Dedicated source root keeps WebDatabase's generator from picking up
+            // archive .sq files (SQLDelight 2.3 generates ALL .sq files in srcDirs
+            // for every database that lists that root — there is no per-database
+            // package filter). Schema files live at:
+            //   src/main/sqldelight-archive/dev/lyo/hortay/data/archive/db/*.sq
+            // The package subdirectory path is required by the SQLDelight generator.
+            srcDirs.setFrom("src/main/sqldelight-archive")
+            schemaOutputDirectory.set(file("src/main/sqldelight-archive/dev/lyo/hortay/data/archive/db/schemas"))
         }
     }
 }

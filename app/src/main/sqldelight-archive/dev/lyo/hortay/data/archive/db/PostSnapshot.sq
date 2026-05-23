@@ -1,0 +1,81 @@
+CREATE TABLE PostSnapshot (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_kind     TEXT NOT NULL,
+    source_key      TEXT NOT NULL,
+    message_key     TEXT NOT NULL,
+    album_key       TEXT,
+    kind            TEXT NOT NULL,
+    seen_at_ms      INTEGER NOT NULL,
+    edited_at_ms    INTEGER,
+    content_kind    TEXT NOT NULL,
+    content_blob    BLOB NOT NULL,
+    content_hash    TEXT NOT NULL,
+    text_preview    TEXT NOT NULL DEFAULT '',
+    media_minithumb BLOB,
+    deleted_msg_keys TEXT,
+    is_comment      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_PostSnapshot_msg
+    ON PostSnapshot(source_kind, source_key, message_key, seen_at_ms DESC);
+
+CREATE INDEX idx_PostSnapshot_seen
+    ON PostSnapshot(seen_at_ms DESC);
+
+CREATE INDEX idx_PostSnapshot_id
+    ON PostSnapshot(id);
+
+insert:
+INSERT INTO PostSnapshot(source_kind, source_key, message_key, album_key, kind, seen_at_ms, edited_at_ms,
+                        content_kind, content_blob, content_hash, text_preview, media_minithumb,
+                        deleted_msg_keys, is_comment)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+latestForMessage:
+SELECT seen_at_ms, content_hash
+FROM PostSnapshot
+WHERE source_kind = ? AND source_key = ? AND message_key = ?
+ORDER BY seen_at_ms DESC
+LIMIT 1;
+
+selectRevisions:
+SELECT *
+FROM PostSnapshot
+WHERE source_kind = ? AND source_key = ? AND message_key = ?
+ORDER BY seen_at_ms ASC;
+
+countByMessage:
+SELECT COUNT(*) AS cnt
+FROM PostSnapshot
+WHERE source_kind = ? AND source_key = ? AND message_key = ? AND kind = 'VERSION';
+
+selectAllForFilter:
+SELECT *
+FROM PostSnapshot
+WHERE (:sourceKind IS NULL OR source_kind = :sourceKind)
+  AND (:kind IS NULL OR kind = :kind)
+  AND (:isComment IS NULL OR is_comment = :isComment)
+  AND (:query IS NULL OR text_preview LIKE :query)
+ORDER BY seen_at_ms DESC;
+
+deleteByIds:
+DELETE FROM PostSnapshot WHERE id IN ?;
+
+deleteOlderThan:
+DELETE FROM PostSnapshot WHERE seen_at_ms < ?;
+
+deleteByCap:
+DELETE FROM PostSnapshot
+WHERE id < (SELECT MAX(id) FROM PostSnapshot) - ?;
+
+clearAll:
+DELETE FROM PostSnapshot;
+
+storageBytes:
+SELECT COALESCE(SUM(LENGTH(content_blob) + LENGTH(COALESCE(media_minithumb, ''))), 0) AS bytes
+FROM PostSnapshot;
+
+selectAllForExport:
+SELECT *
+FROM PostSnapshot
+ORDER BY seen_at_ms ASC;
