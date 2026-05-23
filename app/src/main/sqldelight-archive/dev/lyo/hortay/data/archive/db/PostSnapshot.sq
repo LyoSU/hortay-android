@@ -35,14 +35,14 @@ latestForMessage:
 SELECT seen_at_ms, content_hash
 FROM PostSnapshot
 WHERE source_kind = ? AND source_key = ? AND message_key = ?
-ORDER BY seen_at_ms DESC
+ORDER BY seen_at_ms DESC, id DESC
 LIMIT 1;
 
 selectRevisions:
 SELECT *
 FROM PostSnapshot
 WHERE source_kind = ? AND source_key = ? AND message_key = ?
-ORDER BY seen_at_ms ASC;
+ORDER BY seen_at_ms ASC, id ASC;
 
 countByMessage:
 SELECT COUNT(*) AS cnt
