@@ -16,15 +16,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.data.FormattedText
+import dev.lyo.hortay.ui.icons.Symbol
 
 /**
  * Renderer for [FormattedText] that handles inline styles via AnnotatedString AND lifts
- * BlockQuote ranges into separate quoted rows with a Telegram-style 2dp left bar.
+ * BlockQuote ranges into separate quoted rows with a Telegram-style tinted block (see
+ * [QuoteRow]).
  *
  * Rationale for the split: BlockQuote is a *paragraph-level* affordance — a left bar plus
  * indentation. AnnotatedString can colour text but cannot draw a bar that wraps across
@@ -81,29 +85,67 @@ fun RichText(
     }
 }
 
+/**
+ * Telegram-style tinted blockquote, adapted to the M3 Expressive palette.
+ *
+ *   • Tint is `primary @ 10% alpha` over the parent surface — works above both
+ *     `surface` and `surfaceContainer` (PostCard / CommentBubble) and adapts to
+ *     dynamic-color / dark mode without hardcoded tokens. `primaryContainer`
+ *     would have fixed contrast and clash with the host card's own container tint.
+ *   • Asymmetric corners (4 dp leading, 12 dp trailing) let the 3 dp accent bar
+ *     stay a clean rectangle clipped by the container; with a fully-rounded
+ *     leading edge the bar would have to be rounded to match, doubling the
+ *     geometry coordination for no visual gain. `topStart` / `bottomStart` are
+ *     LayoutDirection-aware so RTL flips automatically.
+ *   • Body text uses `onSurface` (not `onSurfaceVariant`) — the tint already
+ *     conveys "this is a quote", so muting the body sacrifices readability for
+ *     redundant signal.
+ */
 @Composable
 private fun QuoteRow(
     text: AnnotatedString,
     inlineContent: Map<String, InlineTextContent>,
     style: TextStyle,
 ) {
-    Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .fillMaxHeight()
-                .background(
-                    color = MaterialTheme.colorScheme.primary,
-                    shape = RoundedCornerShape(1.dp),
+    val accent = MaterialTheme.colorScheme.primary
+    Box(
+        modifier = Modifier
+            .clip(
+                RoundedCornerShape(
+                    topStart = 4.dp,
+                    bottomStart = 4.dp,
+                    topEnd = 12.dp,
+                    bottomEnd = 12.dp,
                 ),
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = text,
-            inlineContent = inlineContent,
-            style = style,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(vertical = 2.dp),
+            )
+            .background(accent.copy(alpha = 0.10f)),
+    ) {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .background(accent),
+            )
+            Text(
+                text = text,
+                inlineContent = inlineContent,
+                style = style,
+                color = MaterialTheme.colorScheme.onSurface,
+                // Trailing padding reserves room for the corner glyph so a short
+                // single-line quote doesn't crash text into the icon.
+                modifier = Modifier.padding(start = 10.dp, end = 26.dp, top = 6.dp, bottom = 6.dp),
+            )
+        }
+        // Telegram-style quote glyph in the trailing corner. Decorative, so a
+        // low-alpha tint reads as a "watermark" rather than competing with text.
+        Symbol(
+            name = "format_quote",
+            tint = accent.copy(alpha = 0.45f),
+            size = 14.dp,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 4.dp, end = 6.dp),
         )
     }
 }

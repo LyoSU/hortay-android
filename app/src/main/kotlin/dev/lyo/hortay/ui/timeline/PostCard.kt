@@ -611,85 +611,124 @@ private fun forwardLabel(origin: ForwardOrigin): String = when (origin) {
  * TimelineScreen wires that to switch the channel filter when the parent is in the loaded feed,
  * or to a `tg://openmessage` deep link otherwise.
  */
+/**
+ * Telegram-style reply preview, adapted to M3 Expressive.
+ *
+ *   • Background is `primary @ 10% alpha` over the host card's `surfaceContainer` —
+ *     same idiom as the inline [QuoteRow] so quote-in-text and reply-to-post read
+ *     as one design family. The previous opaque `surfaceContainer` fill was
+ *     legible but visually inert; the tint pulls the chip into the primary-colour
+ *     family that already owns the accent bar and author name.
+ *   • Outer container is a [Box] so the trailing-corner reply glyph
+ *     ("↰" — `sym_reply`) can hover over the tinted bg at the top-right edge.
+ *     The glyph is suppressed when a thumbnail is present: the 44 dp media tile
+ *     already signals "this is a quoted media post", and an icon over the tile's
+ *     leading corner would crash visually.
+ *   • Shape stays at [MaterialTheme.shapes.medium] (18 dp via HortayShapes) so
+ *     the bumped Expressive corner scale ripples in via the token, no per-call
+ *     edits if the scale shifts again.
+ */
 @Composable
 private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
     val accent = MaterialTheme.colorScheme.primary
-    // Reply preview reads as Tier-C (dense reading inside the card) — uses
-    // the medium shape token so the bumped HortayShapes scale (18 dp) ripples
-    // through here without per-call-site edits.
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(role = Role.Button, onClick = onClick)
-            .height(IntrinsicSize.Min),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(accent.copy(alpha = 0.10f))
+            .clickable(role = Role.Button, onClick = onClick),
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .width(3.dp)
-                .fillMaxHeight()
-                .background(accent),
-        )
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = reply.authorName,
-                style = MaterialTheme.typography.labelMedium,
-                color = accent,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .background(accent),
             )
-            // Resolve a body line. Priority:
-            //   1. The actual excerpt (quote text, or first line of the parent's text).
-            //   2. A localized kind label ("Фото", "Голосове" …) when the parent is media-only.
-            //   3. Skip the second line entirely — should be rare (text post with no text).
-            val bodyText = reply.excerpt.ifBlank { reply.mediaKind.label() }
-            if (bodyText.isNotBlank()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (reply.excerpt.isBlank()) {
-                        // Show a tiny kind icon when the text is the kind label itself —
-                        // matches Telegram's "[icon] Photo / Video / Voice" layout.
-                        reply.mediaKind.symbolName()?.let { name ->
-                            Symbol(
-                                name = name,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                size = 14.dp,
-                            )
-                            Spacer(Modifier.width(6.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(
+                        start = 10.dp,
+                        // Reserve trailing room only when the reply glyph will sit there
+                        // (no thumbnail path). With a thumbnail the icon is suppressed,
+                        // so 8 dp is enough breathing room before the media tile.
+                        end = if (reply.mediaThumb == null) 28.dp else 8.dp,
+                        top = 8.dp,
+                        bottom = 8.dp,
+                    ),
+            ) {
+                Text(
+                    text = reply.authorName,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = accent,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // Resolve a body line. Priority:
+                //   1. The actual excerpt (quote text, or first line of the parent's text).
+                //   2. A localized kind label ("Фото", "Голосове" …) when the parent is media-only.
+                //   3. Skip the second line entirely — should be rare (text post with no text).
+                val bodyText = reply.excerpt.ifBlank { reply.mediaKind.label() }
+                if (bodyText.isNotBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (reply.excerpt.isBlank()) {
+                            // Show a tiny kind icon when the text is the kind label itself —
+                            // matches Telegram's "[icon] Photo / Video / Voice" layout.
+                            reply.mediaKind.symbolName()?.let { name ->
+                                Symbol(
+                                    name = name,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    size = 14.dp,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                            }
                         }
+                        Text(
+                            text = bodyText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
-                    Text(
-                        text = bodyText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                }
+            }
+            // Thumbnail (when available) — 44 dp square at the trailing edge.
+            reply.mediaThumb?.let { thumb ->
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .padding(end = 6.dp)
+                        .size(44.dp)
+                        .clip(MaterialTheme.shapes.small)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                ) {
+                    TdMediaImage(
+                        media = thumb,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
         }
-        // Thumbnail (when available) — 44 dp square at the trailing edge.
-        reply.mediaThumb?.let { thumb ->
-            Spacer(Modifier.width(8.dp))
-            Box(
+        // Telegram-style reply glyph in the trailing corner. Auto-mirrored drawable
+        // flips the arrow direction in RTL automatically (declared in sym_reply.xml).
+        if (reply.mediaThumb == null) {
+            Symbol(
+                name = "reply",
+                tint = accent.copy(alpha = 0.55f),
+                size = 14.dp,
                 modifier = Modifier
-                    .padding(end = 6.dp)
-                    .size(44.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-            ) {
-                TdMediaImage(
-                    media = thumb,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+                    .align(Alignment.TopEnd)
+                    .padding(top = 6.dp, end = 8.dp),
+            )
         }
     }
 }

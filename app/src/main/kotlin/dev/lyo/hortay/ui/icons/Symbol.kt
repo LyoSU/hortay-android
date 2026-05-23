@@ -101,6 +101,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "edit" -> R.drawable.sym_edit
         "error" -> R.drawable.sym_error
         "flag" -> R.drawable.sym_flag
+        "format_quote" -> R.drawable.sym_format_quote
         "forum" -> R.drawable.sym_forum
         "gif_box" -> R.drawable.sym_gif_box
         "hide_image" -> R.drawable.sym_hide_image
@@ -133,6 +134,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "redeem" -> R.drawable.sym_redeem
         "refresh" -> R.drawable.sym_refresh
         "repeat" -> R.drawable.sym_repeat
+        "reply" -> R.drawable.sym_reply
         "rocket_launch" -> R.drawable.sym_rocket_launch
         "rss_feed" -> R.drawable.sym_rss_feed
         "search" -> R.drawable.sym_search

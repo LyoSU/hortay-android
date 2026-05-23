@@ -762,74 +762,103 @@ private fun CommentBubble(
     }
 }
 
+/**
+ * Comments-side reply preview. Visually mirrors PostCard's ReplyBlock (tinted bg,
+ * accent bar, trailing reply glyph) so feed and thread surfaces read as one design
+ * family — see PostCard.ReplyBlock KDoc for the colour / shape rationale.
+ *
+ * Sized a touch tighter than the feed variant: `labelSmall` author, 36 dp thumb,
+ * 6 dp vertical padding. Comments are physically smaller cards than feed posts,
+ * so the reply chip scales with them.
+ */
 @Composable
 private fun ReplyBlock(reply: ReplyPreview) {
     val accent = MaterialTheme.colorScheme.primary
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .height(IntrinsicSize.Min),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(accent.copy(alpha = 0.10f)),
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .width(3.dp)
-                .fillMaxHeight()
-                .background(accent),
-        )
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = reply.authorName,
-                style = MaterialTheme.typography.labelSmall,
-                color = accent,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .background(accent),
             )
-            val bodyText = reply.excerpt.ifBlank { reply.mediaKind.label() }
-            if (bodyText.isNotBlank()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (reply.excerpt.isBlank()) {
-                        reply.mediaKind.symbolName()?.let { name ->
-                            Symbol(
-                                name = name,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                size = 12.dp,
-                            )
-                            Spacer(Modifier.width(4.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(
+                        start = 8.dp,
+                        end = if (reply.mediaThumb == null) 24.dp else 6.dp,
+                        top = 6.dp,
+                        bottom = 6.dp,
+                    ),
+            ) {
+                Text(
+                    text = reply.authorName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accent,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val bodyText = reply.excerpt.ifBlank { reply.mediaKind.label() }
+                if (bodyText.isNotBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (reply.excerpt.isBlank()) {
+                            reply.mediaKind.symbolName()?.let { name ->
+                                Symbol(
+                                    name = name,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    size = 12.dp,
+                                )
+                                Spacer(Modifier.width(4.dp))
+                            }
                         }
+                        Text(
+                            text = bodyText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
-                    Text(
-                        text = bodyText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                }
+            }
+            reply.mediaThumb?.let { thumb ->
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .padding(end = 4.dp)
+                        .size(36.dp)
+                        .clip(MaterialTheme.shapes.small)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                ) {
+                    TdMediaImage(
+                        media = thumb,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
         }
-        reply.mediaThumb?.let { thumb ->
-            Spacer(Modifier.width(6.dp))
-            Box(
+        if (reply.mediaThumb == null) {
+            Symbol(
+                name = "reply",
+                tint = accent.copy(alpha = 0.55f),
+                size = 12.dp,
                 modifier = Modifier
-                    .padding(end = 4.dp)
-                    .size(36.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-            ) {
-                TdMediaImage(
-                    media = thumb,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+                    .align(Alignment.TopEnd)
+                    .padding(top = 5.dp, end = 6.dp),
+            )
         }
     }
 }
