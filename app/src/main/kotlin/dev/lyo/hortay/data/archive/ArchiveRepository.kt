@@ -81,6 +81,7 @@ class ArchiveRepository(
         val hash = ContentBlobCodec.hash(blob)
         writeMutex.withLock {
             if (isDuplicate(chat, messageKey, hash)) return
+            if (isTextDuplicate(chat, messageKey, meta.text)) return
             insertSnapshot(
                 chat = chat, messageKey = messageKey, albumKey = albumKey,
                 kind = SnapshotKind.VERSION, editedAtMs = editedAtMs,
@@ -295,6 +296,29 @@ class ArchiveRepository(
             .asFlow().mapToList(Dispatchers.IO)
             .map { rows -> rows.mapNotNull(::buildTombstone).toPersistentList() }
 
+    /**
+     * Emits a `(chatId, messageId) → revisionCount` map. Used to seed
+     * [TimelinePost.revisionCount] on cold start so the EditedChip survives a
+     * relaunch — TDLib hands us posts with no archive metadata, and we'd
+     * otherwise have to wait for the next edit to repopulate the counter.
+     * `revisionCount = COUNT(VERSION) - 1` because the first capture is the
+     * pre-edit original (zero edits yet); we increment per actual edit.
+     */
+    fun observeTdlibRevisionCounts(): kotlinx.coroutines.flow.Flow<Map<Pair<Long, Long>, Int>> =
+        db.postSnapshotQueries.selectTdlibVersionCounts()
+            .asFlow().mapToList(Dispatchers.IO)
+            .map { rows ->
+                val out = HashMap<Pair<Long, Long>, Int>(rows.size)
+                rows.forEach { r ->
+                    val chatId = r.source_key.toLongOrNull()
+                    val msgId = r.message_key.toLongOrNull()
+                    if (chatId != null && msgId != null && r.cnt > 1L) {
+                        out[chatId to msgId] = (r.cnt - 1L).toInt()
+                    }
+                }
+                out
+            }
+
     private fun buildTombstone(deleted: dev.lyo.hortay.data.archive.db.PostSnapshot): TombstoneRecord? {
         val chatId = deleted.source_key.toLongOrNull() ?: return null
         val deletedKeys = deleted.deleted_msg_keys
@@ -335,10 +359,29 @@ class ArchiveRepository(
         ).executeAsOneOrNull() ?: return false
         // Same hash: always deduplicate (re-capture of unchanged content).
         if (last.content_hash == hash) return true
-        // Same hash within 500 ms: absorb rapid re-fire from upstream event fans.
-        // Different hash — always write; this path also covers DELETED rows following
-        // a VERSION row of the same message within the same millisecond (fixed-clock tests).
         return false
+    }
+
+    /**
+     * Compare a new candidate against the latest VERSION's logical content (text only,
+     * the user-visible bit) to absorb the lossy round-trip between the two extractor
+     * paths. [TdlibContentMetaExtractor.extract] pulls from a `TdApi.MessageContent` and
+     * preserves real entities; [TdlibContentMetaExtractor.extractFromPost] pulls from a
+     * [dev.lyo.hortay.data.TimelinePost] and discards entities (Hortay's PostContent has
+     * no round-trip to TdApi entities). Their `content_hash` values differ for the same
+     * logical post, which used to spam the archive with phantom "edits" on every
+     * UpdateMessageContent re-fire. Text-level dedup catches that case: a snapshot is
+     * truly redundant when both the text AND the latest archived text are identical.
+     * Distinct hashes with the same text → user didn't actually edit, just a re-fire.
+     */
+    private fun isTextDuplicate(chat: ChatRef, messageKey: String, newText: String): Boolean {
+        val latestVer = db.postSnapshotQueries.selectLatestVersionForMessage(
+            chat.kind.name, chat.key, messageKey,
+        ).executeAsOneOrNull() ?: return false
+        if (latestVer.content_kind != "tdlib") return false
+        val latestMeta = runCatching { ContentBlobCodec.decode(latestVer.content_blob) }.getOrNull()
+            ?: return false
+        return latestMeta.text == newText
     }
 
     private fun insertSnapshot(

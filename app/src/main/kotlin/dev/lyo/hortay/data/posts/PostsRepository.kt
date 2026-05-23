@@ -377,11 +377,32 @@ class PostsRepository(
         val tombstonesFlow: kotlinx.coroutines.flow.Flow<kotlinx.collections.immutable.ImmutableList<dev.lyo.hortay.data.archive.TombstoneRecord>> =
             archiveRepository?.observeTdlibTombstones()
                 ?: kotlinx.coroutines.flow.flowOf(kotlinx.collections.immutable.persistentListOf())
-        combine(_posts, _mainChatIds, _archivedChatIds, ignoredFlow, tombstonesFlow) { all, mainIds, archivedIds, ignored, tombstones ->
+        // Revision-count map from archive.db — seeds the EditedChip counter for posts
+        // that were edited in a previous session. Without this, the chip vanishes on
+        // every relaunch and only reappears after a fresh edit.
+        val revisionCountsFlow: kotlinx.coroutines.flow.Flow<Map<Pair<Long, Long>, Int>> =
+            archiveRepository?.observeTdlibRevisionCounts()
+                ?: kotlinx.coroutines.flow.flowOf(emptyMap())
+        // Pair tombstones + revCounts so the downstream `combine` stays within Kotlin's
+        // typed 5-arg overload (there is no typed 6-arg form — the vararg variant erases
+        // to Array<Any>, which we'd then have to cast at every read).
+        val archiveAuxFlow = combine(tombstonesFlow, revisionCountsFlow) { t, r -> t to r }
+        combine(_posts, _mainChatIds, _archivedChatIds, ignoredFlow, archiveAuxFlow) { all, mainIds, archivedIds, ignored, archiveAux ->
+            val (tombstones, revCounts) = archiveAux
             val subscribed = if (mainIds.isEmpty() && archivedIds.isEmpty()) all
             else all.filter { it.chatId in mainIds || it.chatId in archivedIds }
-            val filtered = if (ignored.isEmpty()) subscribed
+            val gated = if (ignored.isEmpty()) subscribed
             else subscribed.filter { it.chatId !in ignored }
+            // Seed revisionCount from archive — preserves the EditedChip counter across
+            // relaunches. Live-session bumps via handleContentChanged already work; this
+            // patches in the values for posts that were edited in earlier sessions and
+            // are now being rebuilt from TDLib (which carries no archive metadata).
+            // We use maxOf so a fresher in-memory count (e.g. an edit landed AFTER cold
+            // start but BEFORE the archive flow re-emits) doesn't get clobbered.
+            val filtered = if (revCounts.isEmpty()) gated else gated.map { p ->
+                val seeded = revCounts[p.chatId to p.id] ?: 0
+                if (seeded > p.revisionCount) p.copy(revisionCount = seeded) else p
+            }
             if (tombstones.isEmpty()) return@combine filtered.toPersistentList()
             // Merge ghosts: skip any tombstone whose primary message id is already
             // present (live post is the source of truth — TDLib hasn't yet propagated

@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,8 +59,12 @@ fun PostRevisionSheet(
 
     val isDeleted = revisions.any { it.kind == SnapshotKind.DELETED }
     var selectedIndex by remember { mutableStateOf(revisions.lastIndex) }
+    // skipPartiallyExpanded: open at full height so the action row at the bottom is
+    // visible without the user having to drag the sheet up. Half-expanded was hiding
+    // "Open in Telegram" below the visible viewport on tall revisions.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             Text(
                 stringResource(
