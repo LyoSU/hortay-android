@@ -1,6 +1,9 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
 /**
@@ -42,5 +45,27 @@ internal suspend fun LazyListState.smartScrollTo(
     when (scrollKindFor(current, target, threshold)) {
         ScrollKind.Instant -> scrollToItem(target)
         ScrollKind.Animated -> animateScrollToItem(target)
+    }
+}
+
+/**
+ * Suspend until LazyColumn's laid-out item count exceeds [previousTotal] (i.e.
+ * a freshly-staged ingest has committed all the way through the latched
+ * UiState → composition → measure pipeline), then return. Times out silently
+ * after [timeoutMs] so a refresh storm can't deadlock the caller.
+ *
+ * Necessary before `scrollToItem(N)` whenever the caller just mutated state
+ * that grows the row list: Compose dispatches the latched UiState through a
+ * `LaunchedEffect`, so [androidx.compose.foundation.lazy.LazyListLayoutInfo.totalItemsCount]
+ * lags the source-of-truth `items` list by a frame. `scrollToItem` CLAMPS to
+ * the current totalItemsCount — without this wait, target row N gets clamped
+ * down to OLD lastIndex and lands the user one row above the new arrivals.
+ */
+internal suspend fun LazyListState.awaitItemsCommitted(
+    previousTotal: Int,
+    timeoutMs: Long = 800L,
+) {
+    withTimeoutOrNull(timeoutMs) {
+        snapshotFlow { layoutInfo.totalItemsCount }.first { it > previousTotal }
     }
 }

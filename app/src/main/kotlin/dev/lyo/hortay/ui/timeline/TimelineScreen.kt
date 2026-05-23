@@ -929,31 +929,6 @@ fun TimelineScreen(
             .take(MAX_PILL_BADGES)
     }
 
-    // [NewPostsPill] is the single point of commit for arrivals — it stays
-    // visible whenever [scopedPendingNew] is non-empty, regardless of scroll
-    // position. The previous design tried to be clever: at the "freshness
-    // edge" (top of Newest, bottom of OldestUnreadFirst) it auto-accepted
-    // arrivals silently, on the theory that an actively-watching user
-    // shouldn't need to tap. Two problems killed it:
-    //   (a) LazyColumn's keyed-scroll preservation pins the user's anchor
-    //       item to its current y-coord, so silently-accepted posts render
-    //       OFF-screen (above the viewport in Newest, below it in
-    //       OldestUnreadFirst). Without a follow-up scroll the user sees no
-    //       visible change AND no pill — feels like the feed is broken.
-    //   (b) The follow-up `scrollToItem`-after-`acceptIds` path is racy:
-    //       the latcher in [rememberLatchedTimelineUiState] commits new
-    //       items via a `LaunchedEffect`, so `layoutInfo.totalItemsCount`
-    //       lags `feedItems` by a frame; even a `snapshotFlow.first`
-    //       guard couldn't always catch it before the user pulled the
-    //       LazyColumn's overscroll into the "I'm stuck at the wall"
-    //       state. Reports: "scroll to bottom, pill disappears, never
-    //       see the new posts even though I keep scrolling".
-    // Always-visible pill collapses both: the pill IS the affordance, its
-    // tap calls [vm.acceptIds] + waits for layout + `smartScrollTo` (the
-    // proven path), no edge detection, no auto-accept, no race. PTR still
-    // calls [vm.acceptPending] directly via [TimelineViewModel.refresh],
-    // covering the "user explicitly asked for everything" case.
-
     // Warm the discussion-thread cache for posts that linger in the viewport.
     // Extracted to [rememberCommentsPrefetch] — shared with [ChannelScreen]. Cold
     // GetMessageThread is ~1.5–2 s per channel; after a single fetch TDLib answers
@@ -1670,23 +1645,41 @@ fun TimelineScreen(
                 }
             }
 
-            // Floating "X нових постів" pill. Hidden in:
+            // Floating "X нових постів" pill — the single commit path for
+            // pendingNew arrivals (see ARCHITECTURE.md → Load-bearing).
+            //
+            // Visible whenever [scopedPendingNew] is non-empty, at EVERY
+            // scroll position. Hidden only in:
             //   - Saved tab (no concept of "new" in bookmarks)
-            //   - Refresh in flight (transient delta; PTR runs vm.acceptPending()
-            //     itself, the pill would race against it and double-commit).
-            // Visible at every scroll position when [scopedPendingNew] is
-            // non-empty — including at the freshness edge. See the comment
-            // block above the [scopedPendingNew] definition for why we don't
-            // try to hide the pill / auto-accept at the edge anymore.
+            //   - Refresh in flight (PTR runs vm.acceptPending() itself; the
+            //     pill would race against it and double-commit).
+            //
+            // Why no edge-based auto-hide / auto-accept (two iterations
+            // tried and reverted):
+            //   1. Bare `if (atTop || atBottom) acceptIds()` at the freshness
+            //      edge: LazyColumn's keyed-scroll preservation pins the
+            //      user's anchor item to its current y-coord, so the
+            //      silently-accepted posts render OFF-screen (above the
+            //      viewport in Newest, below it in OldestUnreadFirst). The
+            //      user sees no visible change AND no pill — feels broken.
+            //   2. Follow-up `scrollToItem`-after-`acceptIds`: the latcher
+            //      in [rememberLatchedTimelineUiState] commits new items
+            //      via a `LaunchedEffect`, so `layoutInfo.totalItemsCount`
+            //      lags `feedItems` by a frame. Even with [awaitItemsCommitted]
+            //      as the wait helper, the LazyColumn's own overscroll
+            //      could still latch the user into the "stuck at the wall"
+            //      state before the follow-up scroll resolved. User report:
+            //      "scroll to bottom in reverse mode, pill disappears,
+            //      never see the new posts even with the auto-scroll".
+            //
+            // Always-visible pill collapses both: the pill IS the affordance,
+            // [awaitItemsCommitted] (which the onClick uses) is the proven
+            // sequencer — no edge detection, no race.
             //
             // Mode-dependent placement / direction (single pill, two anchors):
-            //   - Newest: TopCenter, ↑ glyph — "fresh content lives above, tap
-            //     to scroll up".
-            //   - OldestUnreadFirst: BottomCenter, ↓ glyph — fresh content sits
-            //     at the END of the unread queue (asc by date). A top-anchored
-            //     pill would be misleading; bottom-anchored mirrors the natural
-            //     reading direction, the user opts in to see arrivals just as
-            //     they would in Newest.
+            //   - Newest: TopCenter, ↑ glyph — fresh content lives above.
+            //   - OldestUnreadFirst: BottomCenter, ↓ glyph — fresh content
+            //     sits at the END of the unread queue (asc by date).
             val pillVisible = !showOnlyBookmarked &&
                 !refreshing && scopedPendingChannels.isNotEmpty()
             val pillAtTop = feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst
@@ -1724,61 +1717,28 @@ fun TimelineScreen(
                     pendingCount = scopedPendingNew.size,
                     arrowGlyph = if (pillAtTop) "arrow_upward" else "arrow_downward",
                     onClick = {
-                        // Ack only scope-visible pending; archive / other-folder pending
-                        // stays unread for those tabs.
+                        // Ack only scope-visible pending; archive / other-folder
+                        // pending stays unread for those tabs. Scroll target lands
+                        // the user at the FIRST of the just-accepted posts in
+                        // row-space — canonical chat-app "New messages" jump
+                        // (oldest of the arrivals, read top → down). In Newest
+                        // the home target IS index 0 = newest, same idea.
                         val ackedKeys = scopedPendingNew.map { it.chatId to it.id }
                         val preTotal = listState.layoutInfo.totalItemsCount
                         vm.acceptIds(ackedKeys)
-                        // Scroll target mirrors the pill anchor — both in row-space
-                        // because LazyColumn renders FeedItem rows, not raw posts:
-                        //   - Newest pill (top): home target = index 0
-                        //     (freshest, top of feed).
-                        //   - OldestUnreadFirst pill (bottom): land at the FIRST
-                        //     of the just-accepted posts (smallest row index in
-                        //     the asc-by-date sort = oldest among the arrivals)
-                        //     so the user can read the new batch top → down,
-                        //     matching the canonical chat-app "New messages"
-                        //     jump (Telegram / Slack / Discord).
-                        //
-                        // Two staleness traps on this path, both load-bearing:
-                        //   1. `[feedItems]` captured by this lambda is the
-                        //      PRE-ack snapshot — read through [feedItemsState]
-                        //      (live) below.
-                        //   2. `feedItems` / `feedItemsState` update one
-                        //      Compose frame BEFORE the latched
-                        //      [TimelineUiState.Ready.items] that backs the
-                        //      LazyColumn (the latcher runs through a
-                        //      `LaunchedEffect`). [scrollToItem] CLAMPS to the
-                        //      column's current `totalItemsCount` — if we
-                        //      scroll while the latched render is still on the
-                        //      OLD list, target row N gets clamped down to
-                        //      OLD lastIndex (= the post immediately BEFORE
-                        //      the new arrivals — the "lands on the post
-                        //      above the new post" symptom).
-                        // Wait on [listState.layoutInfo.totalItemsCount]:
-                        // the LazyColumn's actually-laid-out count, downstream
-                        // of BOTH the feedItems recomposition AND the latched
-                        // UiState `LaunchedEffect`, and the same number
-                        // `scrollToItem` clamps against. Cap the wait so a
-                        // refresh storm can't deadlock the scroll.
                         scope.launch {
-                            withTimeoutOrNull(800L) {
-                                androidx.compose.runtime.snapshotFlow {
-                                    listState.layoutInfo.totalItemsCount
-                                }.first { it > preTotal }
-                            }
-                            val target = if (pillAtTop) {
-                                homeScrollIndexState.intValue
-                            } else {
-                                val ackedSet = ackedKeys.toHashSet()
-                                val items = feedItemsState.value
-                                val firstNew = items.indexOfFirst { fi ->
-                                    fi.posts().any { p ->
-                                        (p.chatId to p.id) in ackedSet
+                            listState.awaitItemsCommitted(preTotal)
+                            val target = when (feedOrder) {
+                                dev.lyo.hortay.data.FeedOrder.Newest -> homeScrollIndexState.intValue
+                                dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> {
+                                    val ackedSet = ackedKeys.toHashSet()
+                                    val items = feedItemsState.value
+                                    val firstNew = items.indexOfFirst { fi ->
+                                        fi.posts().any { (it.chatId to it.id) in ackedSet }
                                     }
+                                    if (firstNew >= 0) firstNew
+                                    else items.lastIndex.coerceAtLeast(0)
                                 }
-                                if (firstNew >= 0) firstNew
-                                else items.lastIndex.coerceAtLeast(0)
                             }
                             listState.smartScrollTo(target)
                         }
