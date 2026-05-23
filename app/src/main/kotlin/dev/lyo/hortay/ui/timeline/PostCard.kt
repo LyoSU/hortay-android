@@ -624,9 +624,10 @@ private fun forwardLabel(origin: ForwardOrigin): String = when (origin) {
  *     The glyph is suppressed when a thumbnail is present: the 44 dp media tile
  *     already signals "this is a quoted media post", and an icon over the tile's
  *     leading corner would crash visually.
- *   • Shape stays at [MaterialTheme.shapes.medium] (18 dp via HortayShapes) so
- *     the bumped Expressive corner scale ripples in via the token, no per-call
- *     edits if the scale shifts again.
+ *   • Shape is [MaterialTheme.shapes.extraSmall] (8 dp) — small enough that the
+ *     3 dp accent bar's corners read as designed-in softening rather than a
+ *     clipping artefact, and one tier tighter than the host PostCard's `medium`
+ *     so the chip nests cleanly inside it (M3E nested-radius rule).
  */
 @Composable
 private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
@@ -634,7 +635,7 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(accent.copy(alpha = 0.10f))
             .clickable(role = Role.Button, onClick = onClick),
     ) {

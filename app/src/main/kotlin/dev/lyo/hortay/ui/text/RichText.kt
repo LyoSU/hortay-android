@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -92,11 +91,11 @@ fun RichText(
  *     `surface` and `surfaceContainer` (PostCard / CommentBubble) and adapts to
  *     dynamic-color / dark mode without hardcoded tokens. `primaryContainer`
  *     would have fixed contrast and clash with the host card's own container tint.
- *   • Asymmetric corners (4 dp leading, 12 dp trailing) let the 3 dp accent bar
- *     stay a clean rectangle clipped by the container; with a fully-rounded
- *     leading edge the bar would have to be rounded to match, doubling the
- *     geometry coordination for no visual gain. `topStart` / `bottomStart` are
- *     LayoutDirection-aware so RTL flips automatically.
+ *   • Symmetric 8 dp corners (`shapes.extraSmall`) — small enough that the
+ *     3 dp accent bar's corners get only a hair of chamfer from the rounded
+ *     clip (reads as designed-in softening, not as a clipping artefact), and
+ *     consistent with the M3E nested-radius rule: outer PostCard is
+ *     `shapes.medium` (18 dp), nested reply / quote chips drop a tier.
  *   • Body text uses `onSurface` (not `onSurfaceVariant`) — the tint already
  *     conveys "this is a quote", so muting the body sacrifices readability for
  *     redundant signal.
@@ -110,14 +109,7 @@ private fun QuoteRow(
     val accent = MaterialTheme.colorScheme.primary
     Box(
         modifier = Modifier
-            .clip(
-                RoundedCornerShape(
-                    topStart = 4.dp,
-                    bottomStart = 4.dp,
-                    topEnd = 12.dp,
-                    bottomEnd = 12.dp,
-                ),
-            )
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(accent.copy(alpha = 0.10f)),
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {

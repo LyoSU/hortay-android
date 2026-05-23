@@ -777,7 +777,7 @@ private fun ReplyBlock(reply: ReplyPreview) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(accent.copy(alpha = 0.10f)),
     ) {
         Row(
