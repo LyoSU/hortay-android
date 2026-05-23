@@ -707,4 +707,12 @@
     <string name="revision_baseline_caveat">Перша версія, яку Hortay побачив — раніша історія не зафіксована.</string>
     <string name="revision_go_to_current">До поточної</string>
     <string name="revision_open_in_telegram">Відкрити в Telegram</string>
+
+    <!-- Archive: onboarding sheet -->
+    <string name="archive_onboarding_title">Зберігати редагування й видалення?</string>
+    <string name="archive_onboarding_what">Hortay зберігає текст та метадані медіа, коли канал редагує або видаляє пост. Самі фото й відео не завантажуються — лише маленькі мініатюри.</string>
+    <string name="archive_onboarding_where">Локально на цьому пристрої. Нікуди не надсилається.</string>
+    <string name="archive_onboarding_logout">Автоматично очищується при виході з акаунту.</string>
+    <string name="archive_onboarding_enable">Увімкнути</string>
+    <string name="archive_onboarding_cancel">Скасувати</string>
 </resources>

@@ -691,4 +691,12 @@
     <string name="revision_baseline_caveat">First version Hortay saw — earlier history not captured.</string>
     <string name="revision_go_to_current">Go to current</string>
     <string name="revision_open_in_telegram">Open in Telegram</string>
+
+    <!-- Archive: onboarding sheet -->
+    <string name="archive_onboarding_title">Save edits and deletions?</string>
+    <string name="archive_onboarding_what">Hortay saves text and media metadata when a channel edits or deletes a post. Photos and videos themselves are not downloaded — only small thumbnails.</string>
+    <string name="archive_onboarding_where">Stored locally on this device. Never uploaded.</string>
+    <string name="archive_onboarding_logout">Cleared automatically when you sign out.</string>
+    <string name="archive_onboarding_enable">Enable</string>
+    <string name="archive_onboarding_cancel">Cancel</string>
 </resources>
