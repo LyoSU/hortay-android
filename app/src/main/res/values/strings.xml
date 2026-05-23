@@ -668,6 +668,16 @@
         <item quantity="other">edited ×%d</item>
     </plurals>
 
+    <!-- Archive: list screen -->
+    <string name="archive_screen_title">Archive</string>
+    <string name="archive_filter_all">All</string>
+    <string name="archive_filter_edited">Edited</string>
+    <string name="archive_filter_deleted">Deleted</string>
+    <string name="archive_scope_all">All scopes</string>
+    <string name="archive_scope_posts">Posts</string>
+    <string name="archive_scope_comments">Comments</string>
+    <string name="archive_empty_enabled">Nothing yet. When a channel edits or deletes a post, it appears here.</string>
+
     <!-- Archive: row -->
     <string name="archive_row_kind_edited">Edited</string>
     <string name="archive_row_kind_deleted">Deleted</string>

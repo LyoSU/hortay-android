@@ -684,6 +684,16 @@
         <item quantity="other">ред. ×%d</item>
     </plurals>
 
+    <!-- Archive: list screen -->
+    <string name="archive_screen_title">Архів</string>
+    <string name="archive_filter_all">Усі</string>
+    <string name="archive_filter_edited">Редаговані</string>
+    <string name="archive_filter_deleted">Видалені</string>
+    <string name="archive_scope_all">Усе</string>
+    <string name="archive_scope_posts">Пости</string>
+    <string name="archive_scope_comments">Коментарі</string>
+    <string name="archive_empty_enabled">Поки нічого. Як тільки канал відредагує або видалить пост, він зʼявиться тут.</string>
+
     <!-- Archive: row -->
     <string name="archive_row_kind_edited">Редаговано</string>
     <string name="archive_row_kind_deleted">Видалено</string>
