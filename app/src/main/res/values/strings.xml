@@ -723,4 +723,16 @@
     <string name="archive_onboarding_logout">Cleared automatically when you sign out.</string>
     <string name="archive_onboarding_enable">Enable</string>
     <string name="archive_onboarding_cancel">Cancel</string>
+
+    <!-- Archive: settings sections -->
+    <string name="archive_section_capture">Capture</string>
+    <string name="archive_section_retention">Retention</string>
+    <string name="archive_section_events">Event types</string>
+    <string name="archive_section_archive">Archive</string>
+    <string name="archive_open_browser">Open archive</string>
+    <string name="archive_storage_label">Storage</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="one">%d snapshot</item>
+        <item quantity="other">%d snapshots</item>
+    </plurals>
 </resources>

@@ -323,7 +323,11 @@ private fun RenderNavEntry(
                     sweep = graph.archiveSweep,
                 )
             }
-            ArchiveSettingsScreen(viewModel = vm, onBack = onPopNav)
+            ArchiveSettingsScreen(
+                viewModel = vm,
+                onBack = onPopNav,
+                onOpenArchive = { graph.nav.push(dev.lyo.hortay.data.NavEntry.Archive()) },
+            )
         }
     }
 }

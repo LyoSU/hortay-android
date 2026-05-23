@@ -739,4 +739,18 @@
     <string name="archive_onboarding_logout">Автоматично очищується при виході з акаунту.</string>
     <string name="archive_onboarding_enable">Увімкнути</string>
     <string name="archive_onboarding_cancel">Скасувати</string>
+
+    <!-- Archive: settings sections -->
+    <string name="archive_section_capture">Запис</string>
+    <string name="archive_section_retention">Зберігання</string>
+    <string name="archive_section_events">Типи подій</string>
+    <string name="archive_section_archive">Архів</string>
+    <string name="archive_open_browser">Переглянути архів</string>
+    <string name="archive_storage_label">Обʼєм</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="one">%d запис</item>
+        <item quantity="few">%d записи</item>
+        <item quantity="many">%d записів</item>
+        <item quantity="other">%d запису</item>
+    </plurals>
 </resources>
