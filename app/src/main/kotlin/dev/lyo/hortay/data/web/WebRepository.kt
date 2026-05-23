@@ -195,6 +195,32 @@ class WebRepository(
     }
 
     /**
+     * Snapshot of all stored [WebPost]s for a single channel. Used exclusively
+     * by [WebFeedSource]'s diff-on-refresh archive path to obtain the previous
+     * content before [ingestPage] overwrites it. Returns a map keyed by post id
+     * (`"<username>/<seq>"`) for O(1) lookup against the freshly-parsed list.
+     *
+     * Only the fields that [WebPostDiff] inspects are reconstructed — views and
+     * reactions are intentionally omitted so the diff ignores live-state churn.
+     */
+    suspend fun readWebPostsForChannel(username: String): Map<String, WebPost> =
+        withContext(ioDispatcher) {
+            postQueries.selectRawByChannel(username).executeAsList().associate { row ->
+                row.id to WebPost(
+                    id = row.id,
+                    seq = row.seq,
+                    publishedAt = row.published_at_iso,
+                    textHtml = row.text_html,
+                    media = decodeMedia(row.media_json),
+                    webPreview = row.web_preview_json?.let { decodePreview(it) },
+                    forwardedFrom = row.forwarded_from_json?.let { decodeForward(it) },
+                    views = null,
+                    reactions = kotlinx.collections.immutable.persistentListOf(),
+                )
+            }
+        }
+
+    /**
      * Channels the user might want to follow next: usernames mentioned via
      * `@handle` inside post bodies, or appearing as the source of a forward,
      * across the most recent [limitPosts] posts of every subscribed channel.

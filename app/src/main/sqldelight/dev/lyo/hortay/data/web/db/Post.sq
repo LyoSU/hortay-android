@@ -251,3 +251,13 @@ JOIN channel ON channel.username = post.channel_username
 WHERE channel.is_subscribed = 1
 ORDER BY post.published_at_ms DESC, post.seq DESC
 LIMIT :limit;
+
+-- Raw content snapshot for the diff-on-refresh archive path. Returns just the
+-- fields [WebPostDiff] needs (id, seq, publishedAt, textHtml, media, preview,
+-- forward) keyed by the channel PK. Not used by the read-side feed pipeline —
+-- no JOIN on channel or TimelinePost mapping needed here.
+selectRawByChannel:
+SELECT id, seq, published_at_iso, text_html, media_json,
+       web_preview_json, forwarded_from_json
+FROM post
+WHERE channel_username = :channelUsername;

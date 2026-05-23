@@ -445,6 +445,7 @@ class AppGraph(context: Context) {
         subscriptions = webSubscriptions,
         scope = appScope,
         ignoredChannels = ignoredChannels,
+        archiveRepository = archiveRepository,
     )
 
     /**
