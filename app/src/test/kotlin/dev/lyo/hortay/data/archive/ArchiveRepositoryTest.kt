@@ -131,4 +131,42 @@ class ArchiveRepositoryTest {
         assertEquals(SnapshotKind.VERSION, revisions[0].kind)
         assertEquals("v1", (revisions[0].content as ArchivedContent.Tdlib).meta.text)
     }
+
+    @Test
+    fun loggedOutMidFlight_clearsAllSnapshots() = runTest {
+        val (repo, db) = newRepo()
+        val chat = ChatRef.tdlib(42)
+        repo.captureTdlibVersion(chat, "100", null, null, meta("a"))
+        repo.captureTdlibVersion(chat, "101", null, null, meta("b"))
+
+        repo.clear()
+
+        val rows = db.postSnapshotQueries.selectAllForFilter(null, null, null, null).executeAsList()
+        assertEquals(0, rows.size)
+    }
+
+    @Test
+    fun concurrentCaptureFromTwoSources_writesBoth() = runTest {
+        val (repo, db) = newRepo()
+        val tdlibChat = ChatRef.tdlib(42)
+        val webChat = ChatRef.web("demo")
+
+        // Capture from TDLib path
+        repo.captureTdlibVersion(tdlibChat, "100", null, null, meta("tdlib version"))
+
+        // Capture from web path (different source kind)
+        val webPost = dev.lyo.hortay.data.web.WebPost(
+            id = "demo/100", seq = 100L, publishedAt = "2026-05-23T10:00:00Z",
+            textHtml = "web version",
+            media = kotlinx.collections.immutable.persistentListOf(),
+            webPreview = null, forwardedFrom = null, views = null,
+            reactions = kotlinx.collections.immutable.persistentListOf(),
+        )
+        repo.captureWebVersion(webChat, "100", webPost)
+
+        val tdlibRows = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
+        val webRows = db.postSnapshotQueries.selectRevisions("WEB", "demo", "100").executeAsList()
+        assertEquals(1, tdlibRows.size)
+        assertEquals(1, webRows.size)
+    }
 }

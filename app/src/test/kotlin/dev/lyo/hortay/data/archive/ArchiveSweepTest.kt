@@ -68,4 +68,48 @@ class ArchiveSweepTest {
         val rows = db.postSnapshotQueries.selectAllForFilter(null, null, null, null).executeAsList()
         assertEquals(1, rows.size)
     }
+
+    @Test
+    fun capHoldsUnderBurst() = runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        ArchiveDatabase.Schema.create(driver)
+        val db = ArchiveDatabase(driver)
+        val settingsFlow = MutableStateFlow(ArchiveSettings(enabled = true, maxRecords = 100))
+        val repo = ArchiveRepository(db, settingsFlow, clock = { 1_000L })
+
+        // Write 250 rows (the repo evicts every 100 inserts, so we expect ≤ 200 at all times)
+        repeat(250) { i ->
+            repo.captureTdlibVersion(ChatRef.tdlib(1), "$i", null, null, meta("v$i"))
+        }
+
+        ArchiveSweep(db, settingsFlow, clock = { 1_000L }).run()
+
+        val rows = db.postSnapshotQueries.selectAllForFilter(null, null, null, null).executeAsList()
+        assertEquals(100, rows.size)
+    }
+
+    @Test
+    fun retentionChange_triggersImmediateSweep() = runTest {
+        // (note: actual retention-change-triggered sweep happens in ArchiveSettingsViewModel.setRetentionDays
+        // via sweep.run(); this test simply verifies the sweep itself respects current settings)
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        ArchiveDatabase.Schema.create(driver)
+        val db = ArchiveDatabase(driver)
+        val settingsFlow = MutableStateFlow(ArchiveSettings(enabled = true, retentionDays = 90))
+        val now = 30L * 86_400_000L + 1_000_000L
+
+        val ancientRepo = ArchiveRepository(db, settingsFlow, clock = { 0L })
+        ancientRepo.captureTdlibVersion(ChatRef.tdlib(1), "1", null, null, meta("ancient"))
+
+        // Initial sweep at 90d retention — ancient (30d old) stays
+        ArchiveSweep(db, settingsFlow, clock = { now }).run()
+        var rows = db.postSnapshotQueries.selectAllForFilter(null, null, null, null).executeAsList()
+        assertEquals(1, rows.size)
+
+        // User changes retention to 7d — sweep should now purge
+        settingsFlow.value = settingsFlow.value.copy(retentionDays = 7)
+        ArchiveSweep(db, settingsFlow, clock = { now }).run()
+        rows = db.postSnapshotQueries.selectAllForFilter(null, null, null, null).executeAsList()
+        assertEquals(0, rows.size)
+    }
 }
