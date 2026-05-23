@@ -20,6 +20,7 @@
 - First sign-in on a fresh install no longer leaves the feed with only one post per channel — the top channels you read most start populated with a few recent posts each, so the feed lands with real scroll headroom instead of two screens of single-post cards.
 - TDLib operation errors no longer surface the internal numeric code to users ("Couldn't refresh feed (400)" → "Couldn't refresh feed").
 - Hashtag tap no longer promises the feature in "the next update"; the snackbar now describes the actual limitation (search works inside a channel).
+- In "Newest at the bottom" feed order, fresh posts now slide into view when you're already parked at the tail — previously the "X new posts" pill hid as soon as you reached the bottom and the arrivals stayed off-screen until a manual refresh.
 
 ## [0.7.0] — 2026-05-21
 

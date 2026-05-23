@@ -1005,8 +1005,58 @@ fun TimelineScreen(
             dev.lyo.hortay.data.FeedOrder.Newest -> atTop
             dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> atBottom
         }
-        if (atFreshnessEdge) {
-            vm.acceptIds(autoAcceptable)
+        if (!atFreshnessEdge) return@LaunchedEffect
+        // Auto-accept at the freshness edge — and auto-scroll to reveal the
+        // arrivals, mirroring [NewPostsPill]'s onClick. Without the scroll,
+        // LazyColumn's keyed-scroll preservation pins the user's anchor item
+        // to its current y-coord, so the just-accepted posts render OUTSIDE
+        // the viewport (above it in Newest, below it in OldestUnreadFirst).
+        // The pill is hidden at the freshness edge in both modes — without
+        // the auto-scroll the user had no signal that anything arrived AND
+        // no visible content change. The bottom-edge case in OldestUnreadFirst
+        // was the loudest: user scrolls to the tail expecting fresh content,
+        // pill never appears (because they're at the edge), arrivals slot in
+        // off-screen, and scrolling further down feels unresponsive because
+        // there's nothing left to scroll INTO without the LazyColumn's anchor
+        // first being re-pinned. Chat-tail behaviour (Telegram, Slack, Discord
+        // at the bottom of a reverse feed) and the symmetric "Twitter pulls
+        // down to reveal new tweets" at the top of Newest both close it.
+        //
+        // Wait for the latched [TimelineUiState.Ready.items] to land before
+        // scrolling — same race the pill onClick guards against: feedItems
+        // updates one Compose frame BEFORE the LazyColumn's actual
+        // totalItemsCount, and [scrollToItem] clamps against the current
+        // totalItemsCount. Cap the wait so a refresh storm can't deadlock
+        // the auto-scroll path.
+        //
+        // The scroll itself is dispatched via [scope] (not the LaunchedEffect
+        // body) because the effect's keys include [scopedPendingNew], which
+        // empties as soon as [acceptIds] commits — the effect would re-key
+        // and cancel a mid-animation scroll. [scope] is tied to the
+        // composable's lifetime so the animation completes.
+        val preTotal = listState.layoutInfo.totalItemsCount
+        vm.acceptIds(autoAcceptable)
+        scope.launch {
+            withTimeoutOrNull(800L) {
+                androidx.compose.runtime.snapshotFlow {
+                    listState.layoutInfo.totalItemsCount
+                }.first { it > preTotal }
+            }
+            val target = when (feedOrder) {
+                dev.lyo.hortay.data.FeedOrder.Newest -> 0
+                dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> {
+                    val ackedSet = autoAcceptable.toHashSet()
+                    val items = feedItemsState.value
+                    val firstNew = items.indexOfFirst { fi ->
+                        fi.posts().any { p ->
+                            (p.chatId to p.id) in ackedSet
+                        }
+                    }
+                    if (firstNew >= 0) firstNew
+                    else items.lastIndex.coerceAtLeast(0)
+                }
+            }
+            listState.smartScrollTo(target)
         }
     }
 
