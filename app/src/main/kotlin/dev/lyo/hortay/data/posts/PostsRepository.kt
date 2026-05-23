@@ -1,6 +1,8 @@
 package dev.lyo.hortay.data.posts
 
+import android.util.Log
 import dev.lyo.hortay.data.ChatPresence
+import dev.lyo.hortay.data.ColdStartBackfillStore
 import dev.lyo.hortay.data.ConnectionStatus
 import dev.lyo.hortay.data.FeedSource
 import dev.lyo.hortay.data.IgnoredChannelsStore
@@ -25,6 +27,7 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.collections.immutable.mutate
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
@@ -115,6 +118,12 @@ class PostsRepository(
      * pre-feature implementation.
      */
     private val ignoredChannels: IgnoredChannelsStore? = null,
+    /**
+     * One-shot persisted flag for the first-sign-in history backfill (see
+     * [runFirstSignInBackfill]). Optional for the same test-constructor
+     * reason as [ignoredChannels]; when null, the backfill becomes a no-op.
+     */
+    private val coldStartBackfill: ColdStartBackfillStore? = null,
 ) : FeedSource {
 
     /**
@@ -846,6 +855,115 @@ class PostsRepository(
                     }
                 }
         }
+    }
+
+    /**
+     * First-sign-in history backfill. Cold-start contract emits exactly one post
+     * per channel (`chat.lastMessage` from `UpdateNewChat`) — perfect for
+     * Telegram's chat-list UX but visibly thin for a feed reader. This method
+     * fetches a few extra posts for the user's most-active channels so the feed
+     * lands "already full" on a fresh sign-in.
+     *
+     * **Budget, per Aliaksei Levin (tdlib/td#743): `GetChatHistory` is capped
+     * server-side at 30 requests / 30 seconds — sustained 1 RPC/sec.** Going
+     * above that earns FLOOD_WAIT (code 420/429) on the whole account for
+     * minutes-to-hours. We pick top-[BACKFILL_TOP_K] channels by
+     * `chat.positions[ChatListMain].order` desc (TDLib's own activity sort
+     * signal — same one Telegram uses to rank the chat list), throttle
+     * [BACKFILL_THROTTLE_MS] between calls (1 s + 100 ms margin so a
+     * concurrent user RPC doesn't push us over the bucket edge), and fetch
+     * [BACKFILL_POSTS_PER_CHAT] messages per channel. Total runtime
+     * ~[BACKFILL_TOP_K] × [BACKFILL_THROTTLE_MS] ≈ 22 s of background work.
+     *
+     * **Circuit-break on FLOOD_WAIT.** If a single call returns 420/429, stop
+     * the loop and DO NOT mark the flag done. Reason: the account-global
+     * `awaitFloodGate` will already pause every subsequent `td.send` for the
+     * server's retry-after window — including user-driven RPCs (open chat,
+     * load older). Continuing the backfill would extend the user-visible
+     * stall for no UX gain. Next sign-in (or next launch after this one, if
+     * we never marked done) retries.
+     *
+     * **One-shot per auth session.** Persisted via [coldStartBackfill]; reset
+     * on TDLib `loggedOut` via the standard cleanup fan-out in
+     * [dev.lyo.hortay.AppGraph]. Re-runs only on a fresh sign-in (different
+     * account, or same account after logout) — which is exactly the
+     * cold-start UX we're protecting; warm restarts already have TDLib's
+     * `useMessageDatabase` cache.
+     *
+     * Idempotent if the app is killed mid-loop: [ingest] dedupes messages by
+     * id, so on retry we may double-fetch a handful of GetChatHistory calls
+     * but the feed converges to the same state.
+     *
+     * **What this is NOT.** Not a substitute for `loadChannelHistory` (the
+     * single-channel deep load on drill). Not a periodic refresh. Not a
+     * cure-all for "feed looks empty" — dormant channels in the long tail
+     * still show one post each, and that's correct: backfilling 200 channels
+     * is exactly the FLOOD_WAIT regression
+     * [ARCHITECTURE.md → "PostsRepository cold-start contract"] forbids.
+     */
+    suspend fun runFirstSignInBackfill() {
+        val store = coldStartBackfill ?: return
+        if (store.isDone()) return
+
+        // Snapshot top-K under the live state. Not held under refreshMutex —
+        // the throttled fetch loop is too long (~22 s) to block pull-to-refresh
+        // or [clear] on. A stale snapshot is fine: chat positions can shift
+        // mid-backfill (a new UpdateNewMessage moves a channel up), but the
+        // version we captured at sync-completion is a reasonable approximation
+        // of "the user's top channels" and the live update stream picks up
+        // post-snapshot deltas anyway.
+        val topK = _mainChatIds.value.asSequence()
+            .mapNotNull { chatCache[it] }
+            .filter { it.isChannel() }
+            .sortedByDescending { chat ->
+                chat.positions?.firstOrNull { it.list is TdApi.ChatListMain }?.order ?: 0L
+            }
+            .take(BACKFILL_TOP_K)
+            .toList()
+        if (topK.isEmpty()) {
+            // No subscribed channels — nothing to backfill but also nothing to
+            // retry. Mark done so we don't re-walk the empty list on every
+            // foreground transition; logout/login will reset the flag.
+            store.markDone()
+            return
+        }
+
+        for (chat in topK) {
+            val res = runCatching {
+                td.send(
+                    TdApi.GetChatHistory(
+                        chat.id,
+                        /* fromMessageId = */ 0,
+                        /* offset = */ 0,
+                        /* limit = */ BACKFILL_POSTS_PER_CHAT,
+                        /* onlyLocal = */ false,
+                    )
+                )
+            }
+            val err = res.exceptionOrNull()
+            if (err is CancellationException) throw err
+            if (err is TdClient.TdException && TdClient.isFloodWaitCode(err.code)) {
+                // runCatching around Log.w to stay unit-testable — android.util.Log's
+                // static stubs throw "not mocked" on the JVM. Same pattern as
+                // [SnapshotRestorer.foldRawIntoCurrent].
+                runCatching {
+                    Log.w(
+                        TAG,
+                        "First-sign-in backfill hit FLOOD_WAIT (code=${err.code}) at chat=${chat.id}; " +
+                            "circuit-break, retry next session"
+                    )
+                }
+                return
+            }
+            // Other per-chat failures (chat became inaccessible, transient
+            // TDLib hiccup) are non-fatal — log and move on. The next channel
+            // in the top-K list is independent.
+            err?.let { runCatching { Log.w(TAG, "Backfill GetChatHistory failed for chat=${chat.id}: ${it.message}") } }
+            res.getOrNull()?.messages?.toList()?.takeIf { it.isNotEmpty() }
+                ?.let { messages -> ingest(chat.id, messages) }
+            delay(BACKFILL_THROTTLE_MS)
+        }
+        store.markDone()
     }
 
     /**
@@ -2139,6 +2257,32 @@ internal fun TdApi.Chat.isChannel(): Boolean {
     val type = this.type
     return type is TdApi.ChatTypeSupergroup && type.isChannel
 }
+
+/**
+ * First-sign-in backfill calibration. See [PostsRepository.runFirstSignInBackfill]
+ * for the full rationale; these are at top-level (not in the class's
+ * private companion) so unit tests in the same module can reference them
+ * without reflection.
+ *
+ *   - [BACKFILL_TOP_K] = 20. With [BACKFILL_THROTTLE_MS] = 1100 ms → ~22 s
+ *     background runtime. Short enough that the backfill is "mostly done"
+ *     before the user scrolls past the top of the feed; long enough to land
+ *     a few historical posts per "favourite" channel a typical user reads.
+ *   - [BACKFILL_POSTS_PER_CHAT] = 10. RPC cost is per-call, not per-message
+ *     (TDLib caps `GetChatHistory.limit` at 100 — anything ≤ that is free
+ *     vs N=1). At TOP_K × POSTS_PER_CHAT = 200 unique posts, the merged
+ *     feed has ~25-30 screens of scroll headroom before paginating. Higher N
+ *     risks pushing live arrivals out of the [PostsRepository] snapshot
+ *     top-N persistent window.
+ *   - [BACKFILL_THROTTLE_MS] = 1100. Aliaksei Levin (tdlib/td#743): server
+ *     limits `GetChatHistory` to 30 requests / 30 seconds = 1 RPC/sec
+ *     sustained. We add 100 ms so a concurrent user-driven `td.send`
+ *     (open chat, load older, etc.) sharing the same bucket doesn't push
+ *     our cadence past the edge.
+ */
+const val BACKFILL_TOP_K = 20
+const val BACKFILL_POSTS_PER_CHAT = 10
+const val BACKFILL_THROTTLE_MS = 1100L
 
 /** Result of [PostsRepository.resolvePublicHandle]. See its KDoc for semantics. */
 sealed interface PublicHandleResult {

@@ -6,6 +6,7 @@
 
 ### Fixed
 - A rare custom emoji-status with a malformed animation no longer crashes the app on draw — the affected emoji falls back to its static thumbnail instead.
+- First sign-in on a fresh install no longer leaves the feed with only one post per channel — the top channels you read most start populated with a few recent posts each, so the feed lands with real scroll headroom instead of two screens of single-post cards.
 
 ## [0.7.0] — 2026-05-21
 

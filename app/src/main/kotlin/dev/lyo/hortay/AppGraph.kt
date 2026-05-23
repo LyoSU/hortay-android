@@ -17,6 +17,8 @@ import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.CountryRepository
 import dev.lyo.hortay.data.CustomEmojiRepository
 import dev.lyo.hortay.data.DeepLinkRouter
+import dev.lyo.hortay.data.ColdStartBackfillStore
+import dev.lyo.hortay.data.ColdStartBackfillStoreImpl
 import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.MediaAutoDownloader
 import dev.lyo.hortay.data.MediaCache
@@ -123,6 +125,14 @@ class AppGraph(context: Context) {
      */
     val ignoredChannels: IgnoredChannelsStore = IgnoredChannelsStore(context)
 
+    /**
+     * One-shot persisted flag that gates [PostsRepository.runFirstSignInBackfill].
+     * Reset on TDLib `loggedOut` via [runLogoutCleanup] so a fresh sign-in
+     * re-runs the backfill — the cold-start UX it protects only ever bites
+     * when there is no cached history (different account, or first launch).
+     */
+    val coldStartBackfillStore: ColdStartBackfillStore = ColdStartBackfillStoreImpl(context)
+
     val postsRepository: PostsRepository = PostsRepository(
         td = tdClient,
         mapper = messageMapper,
@@ -133,6 +143,7 @@ class AppGraph(context: Context) {
         foreground = lifecycleBridge.foreground,
         res = res,
         ignoredChannels = ignoredChannels,
+        coldStartBackfill = coldStartBackfillStore,
     )
 
     val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope, res)
@@ -175,7 +186,18 @@ class AppGraph(context: Context) {
         appScope.launch {
             tdClient.authStage
                 .collect { stage ->
-                    if (stage is AuthStage.Ready) postsRepository.triggerInitialSync()
+                    if (stage !is AuthStage.Ready) return@collect
+                    postsRepository.triggerInitialSync()
+                    // Backfill runs AFTER the chat-list drain returns so
+                    // [PostsRepository._mainChatIds] / [chatCache] have a
+                    // reasonable snapshot to pick top-K from. Sequential in the
+                    // same coroutine — emitting a non-Ready stage while
+                    // backfill is mid-loop is fine: each TDLib call will start
+                    // erroring on a torn-down client and the loop bails out
+                    // through the FLOOD_WAIT/CancellationException branches.
+                    // The persisted flag stays unset on any failure path, so
+                    // the next Ready edge retries.
+                    postsRepository.runFirstSignInBackfill()
                 }
         }
     }
@@ -562,6 +584,12 @@ class AppGraph(context: Context) {
         runCatching { chatFoldersRepository.clear() }
         runCatching { translations.clear() }
         runCatching { migrationStore.reset() }
+        // Cold-start backfill flag is per-auth-session. Resetting on logout
+        // ensures the next sign-in (different Telegram account, or same
+        // account after explicit sign-out) re-runs the backfill — the
+        // cold-start UX it protects only ever bites without a warm TDLib
+        // message DB.
+        runCatching { coldStartBackfillStore.reset() }
         // Drop any in-flight report sheet — its target's chatId/messageId
         // belongs to account A's TDLib database and will be invalid the moment
         // the new client spawns.

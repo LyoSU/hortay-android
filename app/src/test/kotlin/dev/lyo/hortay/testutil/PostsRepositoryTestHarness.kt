@@ -1,5 +1,6 @@
 package dev.lyo.hortay.testutil
 
+import dev.lyo.hortay.data.ColdStartBackfillStore
 import dev.lyo.hortay.data.ConnectionStatus
 import dev.lyo.hortay.data.FakeStrings
 import dev.lyo.hortay.data.FakeTdSender
@@ -100,6 +101,13 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
      */
     val snapshotStore: InMemoryTimelineSnapshotStore = InMemoryTimelineSnapshotStore()
 
+    /**
+     * In-memory backfill flag for [PostsRepository.runFirstSignInBackfill].
+     * Exposed so tests can pre-seed `done = true` to verify the no-op path,
+     * or assert the flag's terminal state after a backfill run.
+     */
+    val coldStartBackfill: InMemoryColdStartBackfillStore = InMemoryColdStartBackfillStore()
+
     val repo: PostsRepository = PostsRepository(
         td = td,
         mapper = mapper,
@@ -109,6 +117,7 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
         snapshotStore = snapshotStore,
         foreground = foregroundState,
         res = FakeStrings,
+        coldStartBackfill = coldStartBackfill,
     )
 
     fun runCurrent() {
@@ -135,12 +144,24 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
         // tests (cursor seeding, etc.) so the parameter stays.
         unreadCount: Int = 1,
         lastReadInboxMessageId: Long = 0L,
+        // Order on ChatListMain. Non-null builds a `ChatPosition(ChatListMain,
+        // order, ...)` — used by runFirstSignInBackfill to pick top-K by
+        // activity. Null leaves positions empty (the default for tests that
+        // don't care about ordering).
+        mainListOrder: Long? = null,
     ): TdApi.Chat = TdApi.Chat().apply {
         this.id = id
         this.title = title
         this.type = TdApi.ChatTypeSupergroup(1L, true)
         this.lastMessage = lastMessage
-        this.positions = emptyArray()
+        this.positions = if (mainListOrder != null) {
+            arrayOf(TdApi.ChatPosition().apply {
+                this.list = TdApi.ChatListMain()
+                this.order = mainListOrder
+            })
+        } else {
+            emptyArray()
+        }
         this.permissions = TdApi.ChatPermissions()
         this.unreadCount = unreadCount
         this.lastReadInboxMessageId = lastReadInboxMessageId
@@ -168,6 +189,19 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
             null,
             null,
         )
+    }
+
+    /**
+     * Memory-only [ColdStartBackfillStore] for unit tests. No DataStore, no
+     * Android Context. The mutable `done` field is also test-visible so
+     * assertions can read the post-run state directly without going through
+     * the suspend accessor.
+     */
+    class InMemoryColdStartBackfillStore : ColdStartBackfillStore {
+        var done: Boolean = false
+        override suspend fun isDone(): Boolean = done
+        override suspend fun markDone() { done = true }
+        override suspend fun reset() { done = false }
     }
 
     class InMemoryTimelineSnapshotStore : TimelineSnapshotStore {

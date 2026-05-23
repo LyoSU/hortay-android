@@ -50,6 +50,16 @@ class FakeTdSender : TdSender {
         val responder = responders.pollFirst()
             ?: defaults[name]
             ?: error("Unexpected TdSender.send: $name — register a responder via onNext() or onAny()")
-        return responder(query) as T
+        val result = responder(query)
+        // Mirror real [TdClient.send] behaviour: a [TdApi.Error] response is
+        // surfaced as a [TdClient.TdException], not returned as a value.
+        // Without this, a responder that returns `TdApi.Error(420, ...)` would
+        // be silently miscast through generic erasure to T, and callers that
+        // use `runCatching { td.send(...) }` to detect rate-limit / 404 / etc.
+        // codes would never observe the error.
+        if (result is TdApi.Error) {
+            throw TdClient.TdException(result.code, result.message)
+        }
+        return result as T
     }
 }
