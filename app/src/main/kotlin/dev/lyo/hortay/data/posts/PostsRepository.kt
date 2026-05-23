@@ -325,6 +325,15 @@ class PostsRepository(
         ConcurrentHashMap<Pair<Long, Long>, TdApi.MessageInteractionInfo>()
     private val interactionFlushScheduled = AtomicBoolean(false)
 
+    /**
+     * Album members arrive as separate [TdApi.UpdateDeleteMessages] events. We coalesce
+     * by `(chatId, albumId)` over a 200 ms window to write one composite DELETED archive
+     * row instead of N. Matches the existing 200 ms coalesce window used by
+     * [pendingInteractionInfo] (see ARCHITECTURE.md).
+     */
+    private val pendingDeletionsByAlbum: ConcurrentHashMap<Pair<Long, Long>, MutableList<Long>> =
+        ConcurrentHashMap()
+
     private val _posts = MutableStateFlow<PersistentList<TimelinePost>>(persistentListOf())
     override val posts: StateFlow<PersistentList<TimelinePost>> = _posts.asStateFlow()
 
@@ -1845,6 +1854,55 @@ class PostsRepository(
 
     private fun handleDeleted(update: TdApi.UpdateDeleteMessages) {
         if (!update.isPermanent) return
+
+        // Archive: snapshot the deleted posts BEFORE removing from `_posts`. Group by
+        // album to write a single composite DELETED row. Standalone messages capture
+        // individually.
+        val deletedSnapshot = _posts.value
+        // Build a list of matched live posts for each deleted message id.
+        val matchedByMsgId = mutableListOf<TimelinePost>()
+        for (msgId in update.messageIds) {
+            val matched = deletedSnapshot.firstOrNull { p ->
+                p.chatId == update.chatId && p.id == msgId
+            }
+            if (matched != null) matchedByMsgId.add(matched)
+        }
+        // Group by album id (null = standalone).
+        val byAlbum = mutableMapOf<Long?, MutableList<Long>>()
+        for (p in matchedByMsgId) {
+            val albumBucket: Long? = if (p.mediaAlbumId != 0L) p.mediaAlbumId else null
+            byAlbum.getOrPut(albumBucket) { mutableListOf() }.add(p.id)
+        }
+        for (mapEntry in byAlbum.entries) {
+            val albumBucket: Long? = mapEntry.key
+            val msgIds: List<Long> = mapEntry.value
+            if (albumBucket != null) {
+                val cacheKey: Pair<Long, Long> = update.chatId to albumBucket
+                pendingDeletionsByAlbum.compute(cacheKey) { _, prev ->
+                    (prev ?: mutableListOf()).also { buf -> buf.addAll(msgIds) }
+                }
+                scope.launch {
+                    delay(200)
+                    val drained = pendingDeletionsByAlbum.remove(cacheKey) ?: return@launch
+                    archiveRepository?.captureTdlibDelete(
+                        chat = ChatRef.tdlib(update.chatId),
+                        messageKeys = drained.map { msgId -> msgId.toString() },
+                        albumKey = albumBucket.toString(),
+                        isComment = false,
+                    )
+                }
+            } else {
+                scope.launch {
+                    archiveRepository?.captureTdlibDelete(
+                        chat = ChatRef.tdlib(update.chatId),
+                        messageKeys = msgIds.map { msgId -> msgId.toString() },
+                        albumKey = null,
+                        isComment = false,
+                    )
+                }
+            }
+        }
+
         val ids = update.messageIds.toHashSet()
         _posts.update { current ->
             current.mutate { list ->
