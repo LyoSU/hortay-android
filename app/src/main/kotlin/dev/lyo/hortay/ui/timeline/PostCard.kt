@@ -418,13 +418,19 @@ private fun HeaderRow(
         }
     }
     Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .clickable(role = Role.Button, onClick = onChannelClick),
+        modifier = Modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Sender-name region — the ONLY clickable surface that drills into the channel.
+        // Previously the whole HeaderRow consumed taps; that swallowed taps on the edit
+        // chip and made it impossible to tell from the tap target which action would
+        // fire. Now: name+badge+chevron drills into channel; trailing region (pencil /
+        // chip / badge) keeps its own click semantics.
         Row(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(6.dp))
+                .clickable(role = Role.Button, onClick = onChannelClick),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -457,26 +463,43 @@ private fun HeaderRow(
             )
             Spacer(Modifier.width(4.dp))
         }
-        if (editDate > 0L) {
-            Symbol(
-                name = "edit",
-                contentDescription = stringResource(R.string.post_badge_edited),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 14.dp,
-            )
-            Spacer(Modifier.width(4.dp))
-        }
-        Text(
-            text = formatRelative(date),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // Pencil-icon-vs-chip resolution: when archive has captured revisions, the
+        // chip subsumes the pencil — tapping opens the revision sheet AND
+        // communicates "edited". When archive is off or this post was edited before
+        // the feature was enabled (editDate > 0 but no captured versions), we keep
+        // the original non-interactive pencil so the indicator never disappears for
+        // existing users.
         if (isDeleted) {
+            Text(
+                text = formatRelative(date),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(Modifier.width(4.dp))
             DeletedBadge()
         } else if (revisionCount > 0) {
-            Spacer(Modifier.width(4.dp))
             EditedChip(count = revisionCount, onClick = onTapRevisions)
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = formatRelative(date),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            if (editDate > 0L) {
+                Symbol(
+                    name = "edit",
+                    contentDescription = stringResource(R.string.post_badge_edited),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 14.dp,
+                )
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(
+                text = formatRelative(date),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
