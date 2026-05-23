@@ -288,6 +288,20 @@ sqldelight {
             // the migration pipeline is plumbed but never actually exercised.
             schemaOutputDirectory.set(file("src/main/sqldelight/databases"))
         }
+        // Post-archive database. Stores snapshots of edited and deleted channel
+        // posts so users can review changes. Schema files live under
+        // app/src/main/sqldelight/dev/lyo/hortay/data/archive/db/*.sq.
+        // Kept separate from web.db — unrelated data model, different lifecycle
+        // (archive survives logout; web cache is cleared on demand).
+        //
+        // srcDirs is pinned explicitly so SQLDelight 2.3's generator doesn't scan
+        // the entire sqldelight source root and pull in web.db's .sq files, which
+        // would produce duplicate Kotlin declarations in the same package.
+        create("ArchiveDatabase") {
+            packageName.set("dev.lyo.hortay.data.archive.db")
+            srcDirs.setFrom("src/main/sqldelight/dev/lyo/hortay/data/archive/db")
+            schemaOutputDirectory.set(file("src/main/sqldelight/dev/lyo/hortay/data/archive/db/schemas"))
+        }
     }
 }
 
@@ -377,6 +391,11 @@ dependencies {
     // visually without forking into a separate WebView activity.
     implementation("androidx.browser:browser:1.8.0")
 
+    // Post-archive feature: text-diff computation for edit-history snapshots, and
+    // protobuf serialisation for compact on-disk post snapshots.
+    implementation("io.github.java-diff-utils:java-diff-utils:4.12")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.7.3")
+
     // SQLDelight: typed DAO + Flow integration for the web.db database. Android
     // driver is the runtime; coroutines-extensions adds the asFlow() bridge so a
     // SELECT returns a Flow that re-emits whenever any of its source tables change
@@ -397,6 +416,8 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.kotlinx.coroutines.test)
+    // SQLite driver for JVM unit tests (archive DB schema + migration tests — Task 8).
+    testImplementation("app.cash.sqldelight:sqlite-driver:2.0.2")
 
     // Compose-specific detekt rules (nlopez/compose-rules). Loaded into detekt's
     // own classpath only — never reaches the APK.
