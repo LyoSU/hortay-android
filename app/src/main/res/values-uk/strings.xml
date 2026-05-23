@@ -675,6 +675,15 @@
     <string name="hidden_channels_id_placeholder">id %1$d</string>
     <string name="hidden_channels_unhide_for">Повернути %1$s у стрічку</string>
 
+    <!-- Archive: feed chips/badges -->
+    <string name="post_deleted_badge">видалено</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="one">ред.</item>
+        <item quantity="few">ред. ×%d</item>
+        <item quantity="many">ред. ×%d</item>
+        <item quantity="other">ред. ×%d</item>
+    </plurals>
+
     <!-- Archive: revision sheet -->
     <string name="revision_sheet_title">Історія редагувань</string>
     <string name="revision_sheet_title_deleted">Видалений пост</string>

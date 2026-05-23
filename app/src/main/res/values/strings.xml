@@ -661,6 +661,13 @@
     <string name="hidden_channels_id_placeholder">id %1$d</string>
     <string name="hidden_channels_unhide_for">Show %1$s in feed</string>
 
+    <!-- Archive: feed chips/badges -->
+    <string name="post_deleted_badge">deleted</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="one">edited</item>
+        <item quantity="other">edited ×%d</item>
+    </plurals>
+
     <!-- Archive: revision sheet -->
     <string name="revision_sheet_title">Edit history</string>
     <string name="revision_sheet_title_deleted">Deleted post</string>
