@@ -692,6 +692,25 @@
     <string name="revision_go_to_current">Go to current</string>
     <string name="revision_open_in_telegram">Open in Telegram</string>
 
+    <!-- Archive: settings screen -->
+    <string name="settings_archive_title">Post archive</string>
+    <string name="archive_master_toggle">Save snapshots</string>
+    <string name="archive_master_subtitle">Locally on this device. Cleared on sign-out.</string>
+    <string name="archive_capture_edits">Capture edits</string>
+    <string name="archive_capture_deletes">Capture deletions</string>
+    <string name="archive_retention_label">Retention</string>
+    <string name="archive_retention_days">%d days</string>
+    <string name="archive_retention_unlimited">No limit</string>
+    <string name="archive_max_records_label">Max records</string>
+    <string name="archive_records_unlimited">No limit</string>
+    <string name="archive_clear_all">Clear archive</string>
+    <string name="archive_clear_confirm">This permanently removes all snapshots. Channels won\'t notice.</string>
+    <string name="archive_clear_yes">Clear</string>
+    <string name="archive_disable_title">Disable archive</string>
+    <string name="archive_disable_body">Stop saving new snapshots. What about existing ones?</string>
+    <string name="archive_disable_keep">Keep, stop saving</string>
+    <string name="archive_disable_purge">Delete and disable</string>
+
     <!-- Archive: onboarding sheet -->
     <string name="archive_onboarding_title">Save edits and deletions?</string>
     <string name="archive_onboarding_what">Hortay saves text and media metadata when a channel edits or deletes a post. Photos and videos themselves are not downloaded — only small thumbnails.</string>

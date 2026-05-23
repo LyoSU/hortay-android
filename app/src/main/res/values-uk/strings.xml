@@ -708,6 +708,25 @@
     <string name="revision_go_to_current">До поточної</string>
     <string name="revision_open_in_telegram">Відкрити в Telegram</string>
 
+    <!-- Archive: settings screen -->
+    <string name="settings_archive_title">Архів постів</string>
+    <string name="archive_master_toggle">Зберігати знімки</string>
+    <string name="archive_master_subtitle">Локально на цьому пристрої. Очищується при виході.</string>
+    <string name="archive_capture_edits">Зберігати редагування</string>
+    <string name="archive_capture_deletes">Зберігати видалення</string>
+    <string name="archive_retention_label">Термін зберігання</string>
+    <string name="archive_retention_days">%d днів</string>
+    <string name="archive_retention_unlimited">Без обмежень</string>
+    <string name="archive_max_records_label">Максимум записів</string>
+    <string name="archive_records_unlimited">Без обмежень</string>
+    <string name="archive_clear_all">Очистити архів</string>
+    <string name="archive_clear_confirm">Назавжди видалити всі знімки. Канали цього не помітять.</string>
+    <string name="archive_clear_yes">Очистити</string>
+    <string name="archive_disable_title">Вимкнути архів</string>
+    <string name="archive_disable_body">Припинити зберігати нові знімки. Що зробити з наявними?</string>
+    <string name="archive_disable_keep">Залишити, не зберігати нові</string>
+    <string name="archive_disable_purge">Видалити й вимкнути</string>
+
     <!-- Archive: onboarding sheet -->
     <string name="archive_onboarding_title">Зберігати редагування й видалення?</string>
     <string name="archive_onboarding_what">Hortay зберігає текст та метадані медіа, коли канал редагує або видаляє пост. Самі фото й відео не завантажуються — лише маленькі мініатюри.</string>
