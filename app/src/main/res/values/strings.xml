@@ -209,13 +209,6 @@
         <item quantity="other">%d new posts</item>
     </plurals>
 
-    <!-- Unread counter pill (OldestUnreadFirst feed mode) -->
-    <string name="unread_remaining_overflow">99+ unread</string>
-    <plurals name="unread_remaining">
-        <item quantity="one">%d unread</item>
-        <item quantity="other">%d unread</item>
-    </plurals>
-
     <!-- Post card -->
     <string name="post_translated_chip">Translated · Show original</string>
     <string name="post_forwarded_from">Forwarded from %1$s</string>
@@ -341,7 +334,7 @@
     <string name="settings_section_privacy">Privacy</string>
     <string name="settings_hide_online_title">Hide online status</string>
     <string name="settings_hide_online_subtitle">Do not show your Telegram contacts that you are online while reading Hortay. The official Telegram app keeps its usual status behavior. This setting only affects Hortay sessions.</string>
-    <string name="timeline_unread_boundary">Unread</string>
+    <string name="timeline_unread_boundary">New posts</string>
     <string name="settings_section_traffic">Traffic</string>
     <string name="settings_section_storage">Storage</string>
     <string name="settings_section_account">Account</string>

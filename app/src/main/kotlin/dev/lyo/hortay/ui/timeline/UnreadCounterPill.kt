@@ -110,8 +110,8 @@ fun UnreadCounterPill(
     val label = unreadRemainingLabel(ctx.resources, count)
     BadgedBox(
         // mergeDescendants collapses the FAB + Symbol + Badge into a single
-        // accessibility node so TalkBack reads "12 непрочитаних лишилось" once
-        // instead of stuttering through the badge digits and the icon label.
+        // accessibility node so TalkBack reads "12 нових постів" once instead
+        // of stuttering through the badge digits and the icon label.
         modifier = modifier
             .scale(enterScale)
             .semantics(mergeDescendants = true) { contentDescription = label },
@@ -153,15 +153,21 @@ fun UnreadCounterPill(
 }
 
 /**
- * Plural-aware semantic label for screen readers / talkback ("12 непрочитаних
- * лишилось"). The visible badge only shows the bare number — short for
- * glanceability, matching Telegram's pattern — but the FAB's merged
- * `contentDescription` carries the full localised phrase so a11y users get
- * the same meaning.
+ * Plural-aware semantic label for screen readers / talkback ("12 нових постів").
+ * The visible badge only shows the bare number — short for glanceability,
+ * matching Telegram's pattern — but the FAB's merged `contentDescription`
+ * carries the full localised phrase so a11y users get the same meaning.
+ *
+ * Reuses [R.plurals.new_posts] / [R.string.new_posts_overflow] — same wording
+ * the [NewPostsPill] uses for arrivals. The two surfaces ARE distinct
+ * (arrivals outside the feed vs unread queue inside it) but the user-facing
+ * mental model is the same: "things I haven't read yet". Silhouette and
+ * anchor disambiguate visually (stadium + BottomCenter vs FAB + BottomEnd);
+ * the linguistic merge keeps the vocabulary friendly and small.
  */
 private fun unreadRemainingLabel(res: android.content.res.Resources, n: Int): String {
-    if (n > 99) return res.getString(R.string.unread_remaining_overflow)
-    return res.getQuantityString(R.plurals.unread_remaining, n, n)
+    if (n > 99) return res.getString(R.string.new_posts_overflow)
+    return res.getQuantityString(R.plurals.new_posts, n, n)
 }
 
 private fun countText(n: Int): String = if (n > 99) "99+" else n.toString()

@@ -13,7 +13,7 @@ import kotlinx.collections.immutable.persistentMapOf
  * ([PostsRepository.chatReadCursors], [WebFeedSource.chatReadCursors]) emit
  * a fresh PersistentMap on each cursor advance, and snapshot-style consumers
  * (TimelineUiState.frozenCursors, ChannelUiState boundary picker, the
- * cold-start "Непрочитане" rule) hold a frozen reference latched on discrete
+ * cold-start "Нові пости" boundary rule) hold a frozen reference latched on discrete
  * events. PersistentMap structural sharing keeps put cost at O(log N) — a
  * full O(N) copy would chew through cold-start when TDLib's first
  * UpdateChatReadInbox burst lands hundreds of entries.

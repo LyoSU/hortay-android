@@ -51,7 +51,7 @@ internal enum class EmptyKind { Default, Saved, CaughtUp }
  * confuse what's been seen with what hasn't.
  *
  * Style: ~28 dp tall, two `primary`-tinted divider lines flanking a
- * `labelSmall` "Непрочитане" pill in `primary` color. No background fill —
+ * `labelSmall` "Нові пости" pill in `primary` color. No background fill —
  * the rule reads as a typographic boundary inside the feed, not as a heavy
  * separator card. Restrained on purpose: this is peripheral orientation
  * ("you came in here"), not a CTA — Telegram-Android's same rule is

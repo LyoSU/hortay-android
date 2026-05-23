@@ -21,6 +21,7 @@
 - TDLib operation errors no longer surface the internal numeric code to users ("Couldn't refresh feed (400)" → "Couldn't refresh feed").
 - Hashtag tap no longer promises the feature in "the next update"; the snackbar now describes the actual limitation (search works inside a channel).
 - The "X new posts" pill now stays visible at every scroll position, including at the very top of "Newest on top" and the very bottom of "Newest at the bottom" — previously it auto-hid at the freshness edge and the arrivals could end up off-screen with no way to see them short of a pull-to-refresh.
+- The "Unread" divider in "Newest at the bottom" feed now reads "New posts" — same wording the floating arrival pill uses, since both surfaces mean "posts you haven't read yet" from the reader's point of view.
 
 ## [0.7.0] — 2026-05-21
 
