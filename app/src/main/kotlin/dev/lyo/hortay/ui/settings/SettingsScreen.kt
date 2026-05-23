@@ -381,7 +381,7 @@ private fun SettingsMain(
             // from WebModeScaffold's SettingsScreen call site.
             if (onNavigateToArchiveSettings != null) {
                 SettingsRow(
-                    symbol = "history",
+                    symbol = "delete_sweep",
                     title = stringResource(R.string.settings_archive_title),
                     subtitle = stringResource(R.string.archive_master_subtitle),
                     chevron = true,
