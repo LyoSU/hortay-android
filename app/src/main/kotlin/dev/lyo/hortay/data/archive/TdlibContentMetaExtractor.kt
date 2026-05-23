@@ -7,6 +7,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import org.drinkless.tdlib.TdApi
+import dev.lyo.hortay.data.PostContent
+import dev.lyo.hortay.data.TimelinePost
 
 /**
  * Builds [TdlibContentMeta] from a live [TdApi.MessageContent] at capture time.
@@ -93,6 +95,51 @@ object TdlibContentMetaExtractor {
         is TdApi.MessageVideoNote -> buildJsonObject {
             put("type", JsonPrimitive("videoNote"))
             put("durationMs", JsonPrimitive(c.videoNote.duration.toLong() * 1000))
+        }.toString()
+        else -> null
+    }
+
+    /**
+     * Snapshot a live in-memory post — used to capture the BEFORE state when an
+     * UpdateMessageContent arrives, so the archive contains the original version
+     * the user actually saw, not just the post-edit content. Lossy on rich
+     * formatting (Hortay's [PostContent] doesn't round-trip TDLib's
+     * `Array<TextEntity>` — the spans are kept as Hortay-native types). For diff
+     * purposes the text + media-summary fidelity is what matters.
+     */
+    fun extractFromPost(post: TimelinePost): TdlibContentMeta {
+        val content = post.content
+        return TdlibContentMeta(
+            text = content.captionPlain,
+            entitiesJson = "[]",
+            mediaSummaryJson = postContentMediaSummary(content),
+            pollJson = null,
+            forwardJson = null,
+            replyJson = null,
+        )
+    }
+
+    private fun postContentMediaSummary(c: PostContent): String? = when (c) {
+        is PostContent.Text -> null
+        is PostContent.PhotoAlbum -> buildJsonObject {
+            put("type", JsonPrimitive("photo"))
+            put("count", JsonPrimitive(c.items.size))
+        }.toString()
+        is PostContent.Video -> buildJsonObject {
+            put("type", JsonPrimitive("video"))
+            put("durationMs", JsonPrimitive(c.durationSec.toLong() * 1000))
+        }.toString()
+        is PostContent.Animation -> buildJsonObject {
+            put("type", JsonPrimitive("animation"))
+        }.toString()
+        is PostContent.Document -> buildJsonObject {
+            put("type", JsonPrimitive("document"))
+        }.toString()
+        is PostContent.Audio -> buildJsonObject {
+            put("type", JsonPrimitive("audio"))
+        }.toString()
+        is PostContent.VoiceNote -> buildJsonObject {
+            put("type", JsonPrimitive("voice"))
         }.toString()
         else -> null
     }

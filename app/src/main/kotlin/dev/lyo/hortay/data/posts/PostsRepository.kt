@@ -2111,12 +2111,18 @@ class PostsRepository(
         }
         if (livePost != null) {
             scope.launch {
+                // Capture the BEFORE state — the version the user actually saw — so
+                // the archive holds the original on the first edit, not the post-edit
+                // content. The post-edit content lives in `_posts` after the mutation
+                // below; the next edit will capture this version as its "before" and
+                // we accumulate a true revision chain. content_hash dedup absorbs
+                // re-fires of the same source state.
                 archiveRepository?.captureTdlibVersion(
                     chat = ChatRef.tdlib(update.chatId),
                     messageKey = update.messageId.toString(),
                     albumKey = livePost.mediaAlbumId.takeIf { it != 0L }?.toString(),
                     editedAtMs = null,
-                    meta = TdlibContentMetaExtractor.extract(update.newContent),
+                    meta = TdlibContentMetaExtractor.extractFromPost(livePost),
                     isComment = false,
                 )
                 // Denormalise channel metadata so tombstone reconstruction on cold start
