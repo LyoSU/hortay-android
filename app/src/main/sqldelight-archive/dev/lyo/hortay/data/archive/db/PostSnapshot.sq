@@ -66,7 +66,7 @@ DELETE FROM PostSnapshot WHERE seen_at_ms < ?;
 
 deleteByCap:
 DELETE FROM PostSnapshot
-WHERE id < (SELECT MAX(id) FROM PostSnapshot) - ?;
+WHERE id <= (SELECT MAX(id) FROM PostSnapshot) - ?;
 
 clearAll:
 DELETE FROM PostSnapshot;
