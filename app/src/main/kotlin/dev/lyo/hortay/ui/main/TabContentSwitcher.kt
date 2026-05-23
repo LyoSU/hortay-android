@@ -178,6 +178,7 @@ internal fun TabContentSwitcher(
                         onLogout = { scope.launch { graph.tdClient.logOut() } },
                         autoDownload = graph.autoDownloadStore,
                         me = me,
+                        userMessages = graph.userMessages,
                     )
                 }
             }

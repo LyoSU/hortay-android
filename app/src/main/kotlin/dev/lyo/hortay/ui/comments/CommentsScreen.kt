@@ -80,6 +80,9 @@ data class CommentsDisabledOverride(
     val symbol: String,
     val title: String,
     val body: String,
+    /** Optional CTA below the body — used by guest mode to surface "Sign in". */
+    val actionLabel: String? = null,
+    val onAction: (() -> Unit)? = null,
 )
 
 /**
@@ -480,6 +483,8 @@ fun CommentsScreen(
                         symbol = override.symbol,
                         title = override.title,
                         body = override.body,
+                        actionLabel = override.actionLabel,
+                        onAction = override.onAction,
                     )
                 }
                 return@LazyColumn
@@ -550,7 +555,13 @@ fun CommentsScreen(
  * area below the post without fighting it for attention.
  */
 @Composable
-private fun CommentsEmptyState(symbol: String, title: String, body: String) {
+private fun CommentsEmptyState(
+    symbol: String,
+    title: String,
+    body: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
     val composeShape = HortayExpressive.EmptyStateMask.asComposeShape()
     Column(
         modifier = Modifier
@@ -589,6 +600,12 @@ private fun CommentsEmptyState(symbol: String, title: String, body: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
+        if (actionLabel != null && onAction != null) {
+            Spacer(Modifier.height(20.dp))
+            androidx.compose.material3.Button(onClick = onAction) {
+                Text(actionLabel)
+            }
+        }
     }
 }
 

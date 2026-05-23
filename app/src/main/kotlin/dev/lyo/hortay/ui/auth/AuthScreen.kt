@@ -906,6 +906,21 @@ private fun RecoverableErrorBlock(message: String, onRetry: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(20.dp))
+        // AuthStage.Error always carries an "open Telegram, do X there, come back"
+        // recovery path (the subtitle on the hero block makes this explicit). Surface
+        // the open-Telegram action right next to retry so the user has a one-tap
+        // jump to the recovery surface — not just guidance copy.
+        val context = LocalContext.current
+        OutlinedButton(
+            onClick = { dev.lyo.hortay.ui.main.openTelegramApp(context) },
+            shapes = ButtonDefaults.shapes(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Symbol(name = "open_in_new", contentDescription = null, size = 18.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.action_open_telegram))
+        }
+        Spacer(Modifier.height(12.dp))
         PrimaryActionButton(
             text = stringResource(R.string.auth_retry),
             enabled = true,

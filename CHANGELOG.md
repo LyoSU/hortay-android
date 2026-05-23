@@ -4,9 +4,20 @@
 
 ## [Unreleased]
 
+### Changed
+- Feed-order toggle in Settings is now positional — "Newest on top" / "Newest at the bottom" with one-line subtitles — and switching it pops a confirmation explaining where new posts will appear.
+- The post's unread strip now collapses with a brief shrink-and-fade when dwell-ack marks the post read, instead of a passive opacity fade.
+- Empty Timeline and Channels tabs now offer an "Open Telegram to subscribe" button — channels you join there flow back into Hortay via the existing update stream, no manual refresh needed.
+- The "Action required" auth screen (banned number, premium required, email confirmation, etc.) now has a one-tap "Open Telegram" button next to Retry.
+- Guest mode now offers a tappable "Sign in" — inside the post-detail screen when comments are gated, and as the action on the "sign in to open private channels" snackbar.
+- Paid (⭐) reactions are visibly dimmed and tapping one offers to open *that specific post* in Telegram, not the Telegram root.
+- Channel-drill author chips show a subtle "›" chevron when the tap leaves the current screen, separating navigation from in-place actions.
+
 ### Fixed
 - A rare custom emoji-status with a malformed animation no longer crashes the app on draw — the affected emoji falls back to its static thumbnail instead.
 - First sign-in on a fresh install no longer leaves the feed with only one post per channel — the top channels you read most start populated with a few recent posts each, so the feed lands with real scroll headroom instead of two screens of single-post cards.
+- TDLib operation errors no longer surface the internal numeric code to users ("Couldn't refresh feed (400)" → "Couldn't refresh feed").
+- Hashtag tap no longer promises the feature in "the next update"; the snackbar now describes the actual limitation (search works inside a channel).
 
 ## [0.7.0] — 2026-05-21
 

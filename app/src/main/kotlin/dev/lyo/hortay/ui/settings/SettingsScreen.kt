@@ -62,6 +62,7 @@ import dev.lyo.hortay.data.NetworkUsage
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StatsRepository
 import dev.lyo.hortay.data.StorageUsage
+import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.data.resolveEmojiStatusId
@@ -122,6 +123,12 @@ fun SettingsScreen(
      * [dev.lyo.hortay.data.web.WebPostAdapter.stableChatId]. Null in TDLib mode.
      */
     webChannelByChatId: ((Long) -> WebChannelDescriptor?)? = null,
+    /**
+     * Process-wide bus used to surface a confirmation snackbar after the user
+     * flips the feed-order toggle. Optional so a test harness can omit it —
+     * the toggle still persists the preference, just without the toast.
+     */
+    userMessages: UserMessageBus? = null,
 ) {
     // Sub-screen nav lives inside Settings — the auto-download list and category
     // screens are conceptually "deeper" pages of the same tab. Using AnimatedContent
@@ -194,6 +201,7 @@ fun SettingsScreen(
                 ignoredChannels = ignoredChannels,
                 onOpenHiddenChannels = { showHiddenChannels = true },
                 me = me,
+                userMessages = userMessages,
             )
         }
     }
@@ -224,6 +232,7 @@ private fun SettingsMain(
     ignoredChannels: IgnoredChannelsStore?,
     onOpenHiddenChannels: () -> Unit,
     me: TdApi.User?,
+    userMessages: UserMessageBus?,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -292,11 +301,25 @@ private fun SettingsMain(
             val currentInlineAutoplay by settings.inlineVideoAutoplay.collectAsStateWithLifecycle(true)
             val currentHideOnline by settings.hideOnlineStatus.collectAsStateWithLifecycle(false)
             SectionLabel(stringResource(R.string.settings_section_feed))
+            val feedOrderToNewestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_newest)
+            val feedOrderToOldestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_oldest)
             FeedOrderRows(
                 current = currentFeedOrder,
                 onSelect = { order ->
                     if (order != currentFeedOrder) {
                         scope.launch { settings.setFeedOrder(order) }
+                        // One-line confirmation: the feed reorders in the background while
+                        // the user stays in Settings, so an explicit toast is the cheapest
+                        // way to make the side-effect visible. Mode-specific copy doubles as
+                        // a mental-model reminder ("newest at the bottom, like a chat") for
+                        // users who haven't internalised the OldestUnreadFirst layout yet.
+                        userMessages?.post(
+                            text = when (order) {
+                                FeedOrder.Newest -> feedOrderToNewestSnackbar
+                                FeedOrder.OldestUnreadFirst -> feedOrderToOldestSnackbar
+                            },
+                            severity = UserMessageBus.Severity.Info,
+                        )
                     }
                 },
             )

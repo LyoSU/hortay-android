@@ -20,6 +20,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -105,10 +106,20 @@ fun PostCard(
     // a different chat does not invalidate this card.
     val cursor = LocalReadCursors.current[post.chatId]
     val isUnread = !expanded && post.parentId == null && post.isUnreadAt(cursor)
+    // Twin animations on the strip transition: alpha fade (effects spec) for the
+    // colour disappearing, and a spatial-spring shrink that compresses the strip
+    // toward its vertical centre. Together they read as "the read marker just
+    // collapsed and vanished" instead of a passive fade-out — informative
+    // feedback for the dwell-ack the user might otherwise miss.
     val unreadAlpha by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (isUnread) 1f else 0f,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
-        label = "post-unread-strip",
+        label = "post-unread-strip-alpha",
+    )
+    val unreadShrink by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isUnread) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "post-unread-strip-shrink",
     )
     val unreadStripColor = MaterialTheme.colorScheme.primary
 
@@ -121,12 +132,14 @@ fun PostCard(
                 val stripWidth = 3.dp.toPx()
                 val verticalInset = 14.dp.toPx()
                 val cornerRadius = 2.dp.toPx()
-                val stripHeight = (size.height - verticalInset * 2f).coerceAtLeast(0f)
-                if (stripHeight <= 0f) return@drawBehind
+                val fullHeight = (size.height - verticalInset * 2f).coerceAtLeast(0f)
+                if (fullHeight <= 0f) return@drawBehind
+                val visibleHeight = fullHeight * unreadShrink
+                val verticalOffset = verticalInset + (fullHeight - visibleHeight) / 2f
                 drawRoundRect(
                     color = unreadStripColor,
-                    topLeft = Offset(0f, verticalInset),
-                    size = Size(stripWidth, stripHeight),
+                    topLeft = Offset(0f, verticalOffset),
+                    size = Size(stripWidth, visibleHeight),
                     cornerRadius = CornerRadius(cornerRadius, cornerRadius),
                     alpha = unreadAlpha,
                 )
@@ -195,6 +208,12 @@ fun PostCard(
                     date = post.date,
                     pinned = post.isPinned,
                     verification = post.verification,
+                    // Visual cue that this tap drills into another channel — only the
+                    // foreign-chat case (admin posting "as one of my other channels")
+                    // navigates to a separate destination. User-profile sheet and
+                    // host-channel filter stay on the same screen, so they get no
+                    // chevron — keeps the affordance honest.
+                    showDrillChevron = post.senderChatId != null,
                     onChannelClick = onSenderClick,
                 )
 
@@ -262,6 +281,13 @@ fun PostCard(
                         reactions = post.reactions,
                         onCommentsClick = { interactions.onPostClick(post) },
                         onReactionTap = { item -> interactions.onReactionToggle(post, item) },
+                        // Paid (⭐) reactions can't be cast from Hortay — the snackbar action
+                        // route opens THIS SPECIFIC post in Telegram (not the client root),
+                        // reusing [interactions.onOpenClick] which already minted the
+                        // canonical share URL via PostActions.openInTelegram. Going through
+                        // the snackbar (vs auto-opening on tap) gives the user a beat to
+                        // bail in case the tap was a misclick.
+                        onPaidReactionOpenPost = { interactions.onOpenClick(post) },
                     )
                 }
                 }
@@ -364,6 +390,7 @@ private fun HeaderRow(
     date: Long,
     pinned: Boolean,
     verification: SenderVerification?,
+    showDrillChevron: Boolean,
     onChannelClick: () -> Unit,
 ) {
     val titleColor = MaterialTheme.colorScheme.onSurface
@@ -400,6 +427,14 @@ private fun HeaderRow(
             verification?.let {
                 Spacer(Modifier.width(4.dp))
                 VerificationBadge(it)
+            }
+            if (showDrillChevron) {
+                Spacer(Modifier.width(2.dp))
+                Symbol(
+                    name = "chevron_right",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 14.dp,
+                )
             }
         }
         Spacer(Modifier.width(8.dp))
@@ -674,6 +709,13 @@ private fun ActionRow(
     reactions: dev.lyo.hortay.data.Reactions,
     onCommentsClick: () -> Unit,
     onReactionTap: (ReactionItem) -> Unit = {},
+    /**
+     * Invoked when the user taps the snackbar action button for a paid (⭐)
+     * reaction. The callsite already knows how to open *this specific* post in
+     * Telegram (via [PostInteractions.onOpenClick] → [PostActions.openInTelegram]),
+     * so ActionRow stays ignorant of post identity.
+     */
+    onPaidReactionOpenPost: () -> Unit = {},
 ) {
     Row(
         modifier = Modifier
@@ -705,15 +747,36 @@ private fun ActionRow(
                 VerticalSeparator()
                 Spacer(Modifier.width(14.dp))
             }
+            // Paid (⭐) reactions can't be cast from Hortay — sending one needs the
+            // star-amount confirmation flow we don't host. Tap surfaces a snackbar
+            // explaining the situation, with an action button that opens *this
+            // specific* post in Telegram (via the per-post callback, routed
+            // through [PostActions.openInTelegram]). The chip is rendered at 0.6
+            // alpha to read as informational rather than interactive (see
+            // [ReactionChip.disabled]); the snackbar gate keeps a misclick from
+            // bouncing the user out of Hortay before they can change their mind.
+            val res = androidx.compose.ui.platform.LocalContext.current.resources
+            val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
+            val openTelegramLabel = res.getString(R.string.action_open_telegram)
+            val paidExplainer = res.getString(R.string.reactions_paid_explainer)
             reactions.items.forEachIndexed { idx, item ->
                 if (idx > 0) Spacer(Modifier.width(6.dp))
-                // Paid (⭐) reactions are read-only in this client — sending one
-                // requires a star-amount confirmation flow we don't host. Render
-                // the count without a click handler so the chip stays informational.
-                val tapHandler: (() -> Unit)? =
-                    if (item.kind is ReactionKind.Paid) null
-                    else ({ onReactionTap(item) })
-                ReactionChip(item, onClick = tapHandler)
+                val isPaid = item.kind is ReactionKind.Paid
+                val tapHandler: () -> Unit = if (isPaid) {
+                    {
+                        bus?.post(
+                            text = paidExplainer,
+                            severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
+                            action = dev.lyo.hortay.data.UserMessageBus.Action.Run(
+                                label = openTelegramLabel,
+                                onClick = onPaidReactionOpenPost,
+                            ),
+                        )
+                    }
+                } else {
+                    { onReactionTap(item) }
+                }
+                ReactionChip(item, onClick = tapHandler, disabled = isPaid)
             }
         }
     }
@@ -751,7 +814,17 @@ private fun VerticalSeparator() {
  * aspect, including 3-digit counts.
  */
 @Composable
-internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
+internal fun ReactionChip(
+    item: ReactionItem,
+    onClick: (() -> Unit)? = null,
+    /**
+     * Render the chip as informational rather than active. Currently used for
+     * paid (⭐) reactions, which Hortay can't dispatch — the chip remains tappable
+     * (the tap raises an explainer snackbar with "Open Telegram") but the alpha
+     * + flat fill mark it as "secondary affordance" so users don't try to vote.
+     */
+    disabled: Boolean = false,
+) {
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val cornerRadius by rememberPressedSelectedCornerRadius(
         interactionSource = interactionSource,
@@ -791,6 +864,9 @@ internal fun ReactionChip(item: ReactionItem, onClick: (() -> Unit)? = null) {
                     onClick = onClick,
                 ) else it
             }
+            .then(
+                if (disabled) Modifier.alpha(0.6f) else Modifier,
+            )
             .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
