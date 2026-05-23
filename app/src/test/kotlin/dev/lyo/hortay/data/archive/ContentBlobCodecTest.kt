@@ -8,8 +8,10 @@ import org.junit.jupiter.api.assertThrows
 class ContentBlobCodecTest {
 
     private val sampleMeta = TdlibContentMeta(
-        textPreview = "hello world",
+        text = "hello world",
         entitiesJson = "[]",
+        mediaSummaryJson = null,
+        pollJson = null,
         forwardJson = null,
         replyJson = null,
     )
@@ -19,8 +21,10 @@ class ContentBlobCodecTest {
         val blob = ContentBlobCodec.encode(sampleMeta)
         val decoded = ContentBlobCodec.decode(blob)
 
-        assertEquals(sampleMeta.textPreview, decoded.textPreview)
+        assertEquals(sampleMeta.text, decoded.text)
         assertEquals(sampleMeta.entitiesJson, decoded.entitiesJson)
+        assertEquals(sampleMeta.mediaSummaryJson, decoded.mediaSummaryJson)
+        assertEquals(sampleMeta.pollJson, decoded.pollJson)
         assertEquals(sampleMeta.forwardJson, decoded.forwardJson)
         assertEquals(sampleMeta.replyJson, decoded.replyJson)
     }
@@ -37,7 +41,7 @@ class ContentBlobCodecTest {
     @Test
     fun `hash differs when content differs`() {
         val metaA = sampleMeta
-        val metaB = sampleMeta.copy(textPreview = "different text")
+        val metaB = sampleMeta.copy(text = "different text")
 
         val hashA = ContentBlobCodec.hash(ContentBlobCodec.encode(metaA))
         val hashB = ContentBlobCodec.hash(ContentBlobCodec.encode(metaB))
@@ -56,8 +60,10 @@ class ContentBlobCodecTest {
     @Test
     fun `roundtrip preserves optional fields when populated`() {
         val meta = TdlibContentMeta(
-            textPreview = "caption",
+            text = "caption",
             entitiesJson = """[{"offset":0,"length":7,"type":"bold"}]""",
+            mediaSummaryJson = """{"type":"photo","count":1,"w":1280,"h":720}""",
+            pollJson = null,
             forwardJson = """{"chatId":123,"messageId":456}""",
             replyJson = """{"messageId":789}""",
         )
