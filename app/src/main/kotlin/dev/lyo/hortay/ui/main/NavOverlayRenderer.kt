@@ -23,6 +23,10 @@ import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.NavEntry
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.UserMessageBus
+import dev.lyo.hortay.ui.archive.ArchiveScreen
+import dev.lyo.hortay.ui.archive.ArchiveSettingsScreen
+import dev.lyo.hortay.ui.archive.ArchiveSettingsViewModel
+import dev.lyo.hortay.ui.archive.ArchiveViewModel
 import dev.lyo.hortay.ui.comments.CommentsScreen
 import dev.lyo.hortay.ui.timeline.ChannelScreen
 import kotlinx.coroutines.CoroutineScope
@@ -305,5 +309,21 @@ private fun RenderNavEntry(
         // making the `when` exhaustive over the sealed hierarchy keeps
         // the compiler honest if the routing rule ever changes.
         is NavEntry.WebChannel -> Unit
+
+        is NavEntry.Archive -> {
+            val vm = remember { ArchiveViewModel(graph.archiveRepository) }
+            ArchiveScreen(viewModel = vm, onBack = onPopNav)
+        }
+
+        is NavEntry.ArchiveSettings -> {
+            val vm = remember {
+                ArchiveSettingsViewModel(
+                    store = graph.archiveSettingsStore,
+                    repo = graph.archiveRepository,
+                    sweep = graph.archiveSweep,
+                )
+            }
+            ArchiveSettingsScreen(viewModel = vm, onBack = onPopNav)
+        }
     }
 }

@@ -181,6 +181,9 @@ internal fun TabContentSwitcher(
                         autoDownload = graph.autoDownloadStore,
                         me = me,
                         userMessages = graph.userMessages,
+                        onNavigateToArchiveSettings = {
+                            graph.nav.push(dev.lyo.hortay.data.NavEntry.ArchiveSettings())
+                        },
                     )
                 }
             }
