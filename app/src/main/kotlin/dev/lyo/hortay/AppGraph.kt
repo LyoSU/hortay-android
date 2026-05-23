@@ -46,17 +46,26 @@ import dev.lyo.hortay.data.web.WebFeedScheduler
 import dev.lyo.hortay.data.web.WebFeedSource
 import dev.lyo.hortay.data.web.WebRepository
 import dev.lyo.hortay.data.web.WebTelegramClient
+import dev.lyo.hortay.data.archive.ArchiveRepository
+import dev.lyo.hortay.data.archive.ArchiveSettings
+import dev.lyo.hortay.data.archive.ArchiveSettingsStore
+import dev.lyo.hortay.data.archive.ArchiveSweep
+import dev.lyo.hortay.data.archive.db.ArchiveDatabase
 import dev.lyo.hortay.data.web.db.WebDatabase
 import dev.lyo.hortay.data.web.db.WebDatabaseProvider
 import java.io.File
 import androidx.lifecycle.ProcessLifecycleOwner
+import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import dev.lyo.hortay.ui.media.CustomEmojiAnimator
 import dev.lyo.hortay.ui.media.ExoPlayerPool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -350,6 +359,26 @@ class AppGraph(context: Context) {
      */
     val webDatabase: WebDatabase = WebDatabaseProvider.create(context)
 
+    // Archive database — separate from web.db (different retention semantics).
+    val archiveDriver: SqlDriver = AndroidSqliteDriver(
+        schema = ArchiveDatabase.Schema,
+        context = context,
+        name = "archive.db",
+    )
+    val archiveDb: ArchiveDatabase = ArchiveDatabase(archiveDriver)
+
+    val archiveSettingsStore: ArchiveSettingsStore = ArchiveSettingsStore(context)
+
+    private val archiveSettingsState: StateFlow<ArchiveSettings> =
+        archiveSettingsStore.flow.stateIn(
+            scope = appScope,
+            started = SharingStarted.Eagerly,
+            initialValue = ArchiveSettings.DEFAULT,
+        )
+
+    val archiveRepository: ArchiveRepository = ArchiveRepository(archiveDb, archiveSettingsState)
+    val archiveSweep: ArchiveSweep = ArchiveSweep(archiveDb, archiveSettingsState)
+
     val webRepository: WebRepository = WebRepository(webDatabase, res)
 
     /**
@@ -598,5 +627,9 @@ class AppGraph(context: Context) {
         // account A's TDLib database and will be invalid the moment the new
         // client spawns.
         runCatching { nav.clear() }
+        // Archive snapshots belong to the previous account's message ids and
+        // chat ids. Wipe on logout so account B doesn't see account A's history
+        // in the archive screen.
+        runCatching { archiveRepository.clear() }
     }
 }
