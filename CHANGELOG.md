@@ -13,7 +13,7 @@
 - Paid (⭐) reactions are visibly dimmed and tapping one offers to open *that specific post* in Telegram, not the Telegram root.
 - Channel-drill author chips show a subtle "›" chevron when the tap leaves the current screen, separating navigation from in-place actions.
 - Replies and inline quotes in posts and comments now sit inside a soft accent-tinted block with a small corner glyph, matching Telegram's modern reply and quote look.
-- Swipe-to-dismiss in the fullscreen photo viewer now fades the dim away with the gesture instead of sliding a translucent sheet behind the photo, so the feed underneath becomes visible as you pull the photo down.
+- Swipe-to-dismiss in the fullscreen photo viewer now fades the dim away with the gesture and no longer carries a light-grey sheet around the photo's letterboxed edges — the feed underneath becomes visible as you pull the photo down.
 
 ### Fixed
 - A rare custom emoji-status with a malformed animation no longer crashes the app on draw — the affected emoji falls back to its static thumbnail instead.

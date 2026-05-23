@@ -591,9 +591,15 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
             media = item.fullscreen,
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            // Transparent placeholder so the inline layer underneath bleeds
-            // through during the fullscreen variant's download window.
-            placeholderColor = if (sameTier) MaterialTheme.colorScheme.surfaceContainerHigh else null,
+            // No placeholder fill in the viewer. The default `surfaceContainerHigh`
+            // is a light grey that paints the entire `ContentScale.Fit` letterbox
+            // (and the Box itself, which sits inside the translating HorizontalPager).
+            // On swipe-to-dismiss that grey sheet rides along with the photo and reads
+            // as "a white background is glued to the photo". The minithumb under the
+            // Coil crossfade already covers the fullscreen-download window, and
+            // anything beyond its bounds shows the swipe-fading black scrim — exactly
+            // the Twitter / Instagram "fading away" feel.
+            placeholderColor = null,
             priority = DownloadPriority.Foreground,
             modifier = zoom,
         )
