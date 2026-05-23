@@ -51,38 +51,60 @@ app/src/main/sqldelight/dev/lyo/hortay/data/archive/db/
 
 A separate DB from `web.db`. Different retention semantics, different lifecycle. Reuses the same SQLDelight + portability rules (Android 8/9 SQLite < 3.24 → `INSERT OR IGNORE` + `UPDATE`, no `ON CONFLICT DO UPDATE`, no FTS5).
 
+**Key design decisions:**
+
+- **Unified `source_kind + source_key` instead of `Long chat_id`.** Guest mode keys are usernames (strings); TDLib keys are int64. Hashing usernames into a `Long` is a collision-prone crutch — separate columns keep both modes first-class.
+- **One `content_blob` instead of per-field JSON.** TDLib already serialises `MessageContent` to TLO; reusing that bytestring means no second serialiser, no parser drift across schema changes, and one rendering path for live posts and revisions. Guest mode stores its existing `WebPostContent` JSON in the same column with `content_kind='web'`.
+- **Two snapshot kinds only.** `VERSION` (a content snapshot at `seen_at_ms`) and `DELETED` (terminal marker). The "first version Hortay saw" is just `MIN(seen_at_ms)` per `(source_kind, source_key, message_key)` — not a distinct kind.
+
 ```sql
 CREATE TABLE PostSnapshot (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    chat_id       INTEGER NOT NULL,                -- TDLib chatId, or hash(username) for guest
-    message_id    INTEGER NOT NULL,                -- TDLib msgId, or t.me/s/ message no.
-    album_id      INTEGER,                         -- nullable
-    kind          TEXT NOT NULL,                   -- EDIT | DELETE | EDIT_BASELINE
-    seen_at_ms    INTEGER NOT NULL,
-    edited_at_ms  INTEGER,                         -- TDLib message.editDate, nullable
-    text          TEXT NOT NULL DEFAULT '',
-    entities_json TEXT,                            -- FormattedText entities serialised
-    media_summary_json TEXT,                       -- type, count, w, h, durationMs
-    media_minithumb BLOB,                          -- composite for albums: first member only
-    poll_json     TEXT,
-    forward_json  TEXT,
-    reply_json    TEXT,
-    is_comment    INTEGER NOT NULL DEFAULT 0,
-    text_hash     TEXT NOT NULL                    -- for dedup
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_kind     TEXT NOT NULL,                  -- 'tdlib' | 'web'
+    source_key      TEXT NOT NULL,                  -- chatId.toString() | username
+    message_key     TEXT NOT NULL,                  -- messageId.toString() | t.me/s/ no.
+    album_key       TEXT,                           -- nullable; groups album members
+    kind            TEXT NOT NULL,                  -- VERSION | DELETED
+    seen_at_ms      INTEGER NOT NULL,
+    edited_at_ms    INTEGER,                        -- TDLib message.editDate, nullable
+    content_kind    TEXT NOT NULL,                  -- 'tdlib' | 'web'
+    content_blob    BLOB NOT NULL,                  -- TLO (tdlib) or JSON (web)
+    content_hash    TEXT NOT NULL,                  -- SHA-256(content_blob) — dedup key
+    text_preview    TEXT NOT NULL DEFAULT '',       -- denormalised first 200 chars, for LIKE search
+    media_minithumb BLOB,                           -- album: composite of up to 3 first members
+    deleted_msg_keys TEXT,                          -- JSON array for composite album DELETE
+    is_comment      INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE INDEX idx_PostSnapshot_chat_msg ON PostSnapshot(chat_id, message_id, seen_at_ms DESC);
+CREATE INDEX idx_PostSnapshot_msg ON PostSnapshot(source_kind, source_key, message_key, seen_at_ms DESC);
 CREATE INDEX idx_PostSnapshot_seen ON PostSnapshot(seen_at_ms DESC);
+CREATE INDEX idx_PostSnapshot_id ON PostSnapshot(id);  -- for `id < MAX(id) - cap` cap eviction
 
 CREATE TABLE ArchivedChannel (
-    chat_id            INTEGER PRIMARY KEY,
-    title              TEXT NOT NULL,
-    handle             TEXT,
-    photo_minithumb    BLOB,
-    is_verified        INTEGER NOT NULL DEFAULT 0,
-    last_snapshot_at_ms INTEGER NOT NULL
+    source_kind         TEXT NOT NULL,
+    source_key          TEXT NOT NULL,
+    title               TEXT NOT NULL,
+    handle              TEXT,
+    photo_minithumb     BLOB,
+    is_verified         INTEGER NOT NULL DEFAULT 0,
+    last_snapshot_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (source_kind, source_key)
 );
 ```
+
+**`content_blob` format per `content_kind`:**
+
+- `tdlib`: `TdApi.MessageContent.toByteArray()` (TLO), plus a small wrapper carrying `formattedTextEntities` and `forwardInfo`/`replyInfo` summaries that don't live on `MessageContent` itself. Wrapper struct serialised with `kotlinx.serialization.protobuf` — one extra binary format, but it's already a transitive dep of TDLib JNI build.
+- `web`: existing `WebPostContent` (kotlinx.serialization JSON, byte-array form).
+
+**`content_hash` = SHA-256(content_blob).** Any formatting change → different bytes → different hash → captured. No false dedup.
+
+**`ChatRef`:**
+```kotlin
+@Immutable data class ChatRef(val kind: SourceKind, val key: String)
+enum class SourceKind { TDLIB, WEB }
+```
+Used everywhere `chat_id` would have been: `ArchiveSettings.excludedChats: PersistentSet<ChatRef>`, filter chips, `observeRevisions(ref, messageKey)`.
 
 ### Settings (`ArchiveSettingsStore` over DataStore)
 
@@ -125,7 +147,7 @@ Hook points (already isolated from UI per repository contract):
 
 ### Deduplication
 
-Before write: `SELECT seen_at_ms, text_hash FROM PostSnapshot WHERE chat_id=? AND message_id=? ORDER BY seen_at_ms DESC LIMIT 1`. If `now − last_seen < 500 ms` **and** `text_hash == new_hash` → skip. Closes the back-to-back-update window described in ARCHITECTURE.md for interaction info.
+Before write: `SELECT seen_at_ms, content_hash FROM PostSnapshot WHERE source_kind=? AND source_key=? AND message_key=? ORDER BY seen_at_ms DESC LIMIT 1`. If `content_hash == new_hash` → skip unconditionally (same content, no new revision). If hashes differ but `now − last_seen < 500 ms` → skip (back-to-back TDLib emit). Closes the same window ARCHITECTURE.md documents for `UpdateMessageInteractionInfo`.
 
 ### Cold-start race
 
@@ -178,34 +200,55 @@ Layout:
 
 **Diff implementation:**
 
-- Library: `io.github.java-diff-utils:java-diff-utils:4.12` (Apache 2.0, ~80 KB). Stable LCS; alternative would be a 100-line hand-rolled implementation — picking the library is the clean choice, not a crutch.
-- Granularity: **line-level**. Word-level breaks formatting (`entities`) and adds zero value on canonical Telegram edits (price change, typo, line append). Each revision keeps full `(text, entities)` so spans render correctly inside the diff highlight.
-- Entities preserved per revision side; diff styling applied as background + decoration on top.
+- Library: `io.github.java-diff-utils:java-diff-utils:4.12` (Apache 2.0, ~80 KB). Stable LCS; alternative would be a hand-rolled implementation — picking the library is the clean choice, not a crutch.
+- **Adaptive granularity** (real Telegram posts are often one paragraph — pure line-level would render as "everything deleted / everything inserted"):
+  1. If `text.split("\n").size >= 3` → **line-level** diff.
+  2. Else split on `[.!?…]\s+` regex. If `sentences.size >= 3` → **sentence-level** diff.
+  3. Else → **word-level** diff (split on `\s+`).
+- Entities preserved at the revision level (each version keeps its full `(text, entities)` blob). Diff styling is `background + lineThrough` on top of the regular Compose `AnnotatedString` render — the diff library operates on string slices, not on `entities`, so spans are never touched.
 
 **Media diff:** compare `mediaSummary` JSON. If type/count/dimensions differ → render `MediaRow(old) → MediaRow(new)` using `media_minithumb`.
 
 **Polls:** show both option lists side-by-side, mark renamed/added/removed.
 
-**Empty/missing baseline:** if first capture was an `EDIT_BASELINE` (post existed before feature enabled, this is the first version Hortay saw), the sheet shows that as the start of the timeline with a one-line caveat.
+**Empty/missing baseline:** if the earliest snapshot for a message was captured AT the moment of its first observed edit (post existed before the feature was enabled), the sheet labels the first revision as `"first version Hortay saw — earlier history not captured"`. This is just the row with `seen_at_ms = MIN(...)` for that message; no separate `kind` needed.
 
 ### 4. `ArchiveScreen` (push via `NavStack`)
 
 - `LazyColumn` with `stickyHeader` date groups (`Сьогодні`, `Вчора`, `dd MMM`).
-- Filter chips: channel (multi-select sheet with minithumb avatars), type (`Усі / Видалені / Редаговані`).
-- Local LIKE-based search, debounce 250 ms. No FTS.
+- Filter chips: **channel** (multi-select sheet with minithumb avatars), **type** (`Усі / Видалені / Редаговані`), **scope** (`Пости / Коментарі / Усі`). Without the scope filter, deleted comments would mix into the "all deleted" view alongside channel posts and create noise.
+- Local LIKE-based search over `text_preview`, debounce 250 ms. No FTS.
 - Swipe-to-purge with undo snackbar (4 s) via `UserMessageBus`.
-- Overflow `⋮`: export JSON (`Intent.ACTION_CREATE_DOCUMENT`), clear all (confirm dialog), info sheet.
+- Overflow `⋮`: export JSON (`Intent.ACTION_CREATE_DOCUMENT`) with **pre-export size warning** (raw size estimate including base64-encoded minithumbs — at 5000 records with thumbs this can reach ~25 MB), clear all (confirm dialog), info sheet.
 - Channel filter integrates with `ChannelInfoSheet` → row "Архів цього каналу".
+
+### 4a. `PostRevisionSheet` for deleted posts
+
+When opened from a `DELETED` snapshot, the sheet renders differently:
+
+- Header: `Post deleted at HH:mm` (errorContainer).
+- Body: the final captured `VERSION` rendered with `alpha=0.7` (acknowledges the post is gone).
+- If multiple `VERSION` rows exist, the timeline is still rendered so the user can step through edit history that preceded deletion.
+- Action row: `[ Поділитися знімком ]` + `[ Telegram ↗ ]` (with caveat snackbar "посилання, ймовірно, не працює — пост видалено").
+- No "Go to current" button — there is no current.
 
 ### 5. `ArchiveSettingsScreen`
 
 Sections: master toggle, retention (`7 / 30 / 90 / ∞` dropdown), max records (`1000 / 5000 / 10000 / ∞`), excluded channels list, event-type toggles (edits / deletes), storage usage label, "Clear archive" destructive row.
 
-**Master toggle off-flow:**
-`AlertDialog` with three options: keep archive but stop writing, delete archive and disable, cancel. Default = first option.
+**Master toggle ON flow (first time, gated):**
+1. User taps toggle (off → on).
+2. **Toggle does NOT flip yet.** Open `ModalBottomSheet` (`ArchiveOnboardingSheet`) describing:
+   - What is captured (text + entities + media metadata + small thumbnails — no photo/video files)
+   - Where it lives (locally on this device, never uploaded)
+   - When it clears (on sign-out, by TTL, by hand)
+3. Sheet has `[ Enable ]` (primary) + `[ Cancel ]`. Only `Enable` flips the toggle to ON.
+4. After first ON, subsequent toggles never re-show the sheet — they flip directly (with off-flow below).
 
-**First enable:**
-Onboarding sheet describes what is captured, where it lives, that it clears on logout.
+**Master toggle OFF flow:**
+`AlertDialog` with three options: keep archive but stop writing (default), delete archive and disable, cancel.
+
+**Onboarding gate state** is persisted in `ArchiveSettings.onboardingSeen: Boolean` — separate from `enabled`, because a user could enable, disable, and re-enable without needing the explainer again.
 
 ### 6. Settings → Privacy
 
@@ -221,23 +264,26 @@ Shortcut row "Архів постів" → same screen, for users searching from
 )
 
 @Immutable data class PostSnapshot(
-    val chatId: Long,
-    val messageId: Long,
-    val albumId: Long?,
-    val kind: SnapshotKind,
+    val id: Long,
+    val chat: ChatRef,
+    val messageKey: String,
+    val albumKey: String?,
+    val kind: SnapshotKind,                  // VERSION | DELETED
     val seenAtMs: Long,
     val editedAtMs: Long?,
-    val text: String,
-    val entities: ImmutableList<TextEntity>,
-    val mediaSummary: MediaSummary?,
+    val content: ArchivedContent,            // sealed: Tdlib(TdApi.MessageContent + wrapper) | Web(WebPostContent)
     val mediaMinithumb: ByteArray?,
-    val poll: PollSnapshot?,
-    val forward: ForwardSnapshot?,
-    val reply: ReplySnapshot?,
+    val deletedMessageKeys: ImmutableList<String>,  // album members for composite DELETED
     val isComment: Boolean,
 )
 
-enum class SnapshotKind { EDIT, DELETE, EDIT_BASELINE }
+enum class SnapshotKind { VERSION, DELETED }
+
+@Immutable sealed interface ArchivedContent {
+    val textPreview: String
+    data class Tdlib(val content: TdApi.MessageContent, val meta: TdlibContentMeta) : ArchivedContent
+    data class Web(val content: WebPostContent) : ArchivedContent
+}
 ```
 
 `ArchiveRepository` API (single writer, IO scope):
@@ -245,11 +291,21 @@ enum class SnapshotKind { EDIT, DELETE, EDIT_BASELINE }
 ```kotlin
 suspend fun captureEdit(old: TimelinePost, newContent: TdApi.MessageContent)
 suspend fun captureDelete(posts: List<TimelinePost>)
+suspend fun captureWebDiff(old: WebPost, new: WebPost?)   // null new = deleted
 fun observe(filter: ArchiveFilter): Flow<ImmutableList<PostSnapshot>>
-fun observeRevisions(chatId: Long, messageId: Long): Flow<ImmutableList<PostSnapshot>>
+fun observeRevisions(chat: ChatRef, messageKey: String): Flow<ImmutableList<PostSnapshot>>
+fun observeChannelIndex(): Flow<ImmutableList<ArchivedChannel>>
 suspend fun purge(snapshotIds: List<Long>)
 suspend fun clear()
-suspend fun export(): ByteArray
+suspend fun export(): ExportResult                          // includes size estimate
+```
+
+**`ArchivedChannel` UPSERT** on every snapshot write — channels rename, change handle, change photo. Pattern (SQLite < 3.24 portable):
+```sql
+INSERT OR IGNORE INTO ArchivedChannel(source_kind, source_key, title, handle, photo_minithumb, is_verified, last_snapshot_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+UPDATE ArchivedChannel SET title=?, handle=?, photo_minithumb=?, is_verified=?, last_snapshot_at_ms=?
+WHERE source_kind=? AND source_key=?;
 ```
 
 ## Lifecycle hooks
@@ -257,8 +313,8 @@ suspend fun export(): ByteArray
 - **`AppGraph`** constructs `ArchiveRepository` once, injects via constructor into `PostsRepository`, `CommentsRepository`, `WebFeedSource`. Not a CompositionLocal — repository-tier, follows existing DI pattern.
 - **`TdClient.loggedOut.collect { archiveRepository.clear() }`** — registered in `AppGraph.init`, same as other session-scoped clears.
 - **`AppGraph.runLogoutCleanup`** — explicit `archiveDb.clearAll()` for the synchronous path.
-- **Daily storage sweep** — adds `ArchiveSweep.run()` step (TTL + cap enforcement). On-write enforcement also runs each insert so cap is never exceeded by more than 1.
-- **`ArchiveSettings.retentionDays` change** — triggers immediate `ArchiveSweep.run()` so new limits apply without waiting for the daily window.
+- **Daily storage sweep** — adds `ArchiveSweep.run()` step (TTL + cap enforcement). Cap eviction uses **`DELETE FROM PostSnapshot WHERE id < (SELECT MAX(id) FROM PostSnapshot) - :cap`** — cheap (uses `idx_PostSnapshot_id`), no `COUNT()` scan. `ArchiveRepository` tracks a write counter and runs the eviction `DELETE` every 100 inserts so a burst can't sustain `> cap + 100`.
+- **`ArchiveSettings.retentionDays` / `maxRecords` change** — triggers immediate `ArchiveSweep.run()` so new limits apply without waiting for the daily window.
 
 ## i18n
 
@@ -276,39 +332,51 @@ All new strings in `values/strings.xml` (en) + `values-uk/strings.xml` (uk), sam
 | Hidden channel | Archived by default; user can exclude. `HiddenChannelsScreen` shows info link to this. |
 | Logout during pending capture | `archiveScope` cancelled, `clear()` issued. Inviolable. |
 | Channel banned / kicked, snapshots remain | `ArchivedChannel` denormalised (title, handle, minithumb stored). Read-only, drill disabled. |
-| First edit ever for a pre-feature post | `EDIT_BASELINE` snapshot, displayed with "original not captured" caveat. |
+| First edit ever for a pre-feature post | First `VERSION` snapshot captures the *current* (post-edit) state; UI labels the earliest revision per message with "first version Hortay saw — earlier history not captured". |
 | Reactions, views | Never trigger a snapshot. Shown as info in revision sheet, not as a revision. |
 | Poll edits | Captured (option text, correctness for quiz); user's vote is live state, not archived. |
 | Forwarded posts | `forward` field captured. Source delete is independent message; that channel's archive captures it separately if subscribed. |
 | Storage cap race | On every insert: `COUNT() > cap` → delete oldest. Daily sweep is belt-and-braces. |
 | Cold-start backfill | `captureEdit`/`captureDelete` skip when `existing == null` in `_posts`. |
-| TDLib `EDIT_BASELINE` for own message vs channel | Capture works the same; UI labels via standard `is_outgoing` check on `TimelinePost`. |
+| Own outgoing message in a channel where user is admin | Capture works the same; UI labels via standard `is_outgoing` check on `TimelinePost`. |
 
 ## Tests (JUnit 5)
 
 - `ArchiveRepositoryTest`
-  - `captureEdit_dedupesWithin500ms`
+  - `captureEdit_dedupesIdenticalContentHash`
+  - `captureEdit_dedupesWithin500msEvenIfDifferent`
   - `captureDelete_groupsAlbumMembers`
   - `captureSkippedWhenExistingNull` (cold-start)
-  - `respectsExcludedChats`
+  - `respectsExcludedChats` (covers both `TDLIB` and `WEB` `ChatRef`)
   - `respectsMasterToggle`
+  - `respectsCaptureEditsToggle` / `respectsCaptureDeletesToggle`
   - `loggedOut_clearsAllSnapshots`
+  - `loggedOutMidFlight_dropsPendingCapture`
+  - `concurrentCaptureFromTwoSources_writesBoth` (TDLib + Web on same `messageKey` in race)
+  - `archivedChannelUpsert_updatesTitleAndHandle`
 - `WebFeedDiffTest`
-  - `urlRotation_isNotTreatedAsEdit`
+  - `urlRotation_isNotTreatedAsEdit` (token query stripped, filename stable)
+  - `videoTokenedUrl_filenameStable_notTreatedAsEdit`
   - `ageOutOlderThan30min_doesNotMarkDeleted`
   - `textChange_isDetectedAsEdit`
+  - `entityChangeWithoutTextChange_isDetectedAsEdit`
 - `PostDiffTest`
-  - `lineLevelDiff_preservesEntities`
+  - `lineLevelDiff_picked_whenMultilinePost`
+  - `sentenceLevelDiff_picked_whenSingleParagraphMultiSentence`
+  - `wordLevelDiff_picked_whenShortSingleSentence`
+  - `entitiesPreserved_acrossAllGranularities`
   - `mediaSwap_detected`
   - `pollOptionsRenamed_detected`
 - `ArchiveSweepTest`
   - `sweep_purgesOlderThanRetention`
   - `sweep_keepsNewestUpToCap`
-  - `onWriteEnforcement_neverExceedsCap`
+  - `capHoldsUnderBurst` (100 inserts/sec → never exceeds `cap + 100`)
+  - `retentionChange_triggersImmediateSweep`
 
 ## Dependencies added
 
-- `io.github.java-diff-utils:java-diff-utils:4.12` (~80 KB, Apache 2.0).
+- `io.github.java-diff-utils:java-diff-utils:4.12` (~80 KB, Apache 2.0) — text diff.
+- `org.jetbrains.kotlinx:kotlinx-serialization-protobuf` (~70 KB) — wrapper struct for TDLib content metadata that doesn't fit in `TdApi.MessageContent` (formattedText entities, forward/reply summaries). Already used transitively by other Kotlinx serialization paths; declared explicitly here.
 
 No other new dependencies. SQLDelight, DataStore, kotlinx.collections.immutable, Coil — already in stack.
 
@@ -319,7 +387,7 @@ No other new dependencies. SQLDelight, DataStore, kotlinx.collections.immutable,
 - Cross-device archive sync (local only, by design).
 - FTS-backed search (Android 8/9 SQLite constraint; LIKE is adequate at 5000-record cap).
 - Per-channel exclude UI in `HiddenChannelsScreen` (separate concern; only an info link).
-- Capturing pre-feature post originals (impossible — `EDIT_BASELINE` is the honest answer).
+- Capturing pre-feature post originals (impossible — labelling the first observed revision is the honest answer).
 
 ## Rollout
 
