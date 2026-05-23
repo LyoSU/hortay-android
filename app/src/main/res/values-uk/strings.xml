@@ -95,7 +95,7 @@
     <string name="auth_subtitle_wait_code">Код надіслано. Перевірте: %1$s</string>
     <string name="auth_subtitle_password_no_hint">Акаунт захищено двофакторною автентифікацією</string>
     <string name="auth_subtitle_password_with_hint">Акаунт захищено двофакторною автентифікацією. Введіть пароль 2FA</string>
-    <string name="auth_subtitle_default">Стрічка Telegram-каналів як у Twitter</string>
+    <string name="auth_subtitle_default">Читай канали стрічкою — без чатів і пушок</string>
     <string name="auth_country_label">Країна</string>
     <string name="auth_country_loading">Завантажуємо…</string>
     <string name="auth_phone_placeholder">Номер телефону</string>
@@ -130,7 +130,7 @@
     <string name="auth_err_too_many_with_time">Забагато спроб. Зачекайте %1$s</string>
     <string name="auth_err_too_many_generic">Забагато спроб. Спробуйте пізніше</string>
     <string name="auth_err_phone_invalid">Перевірте код країни і цифри</string>
-    <string name="auth_err_phone_banned">Telegram заблокував цей номер. Зверніться до підтримки Telegram</string>
+    <string name="auth_err_phone_banned">Telegram заблокував цей номер. Спробуйте увійти через офіційний Telegram</string>
     <string name="auth_err_phone_flood">Telegram тимчасово обмежив вхід з цього номера. Спробуйте пізніше</string>
     <string name="auth_err_phone_occupied">На цьому номері вже є акаунт. Увійдіть у нього замість реєстрації</string>
     <string name="auth_err_code_invalid">Код не підходить. Перевірте і спробуйте ще раз</string>
@@ -139,7 +139,7 @@
     <string name="auth_err_password_too_fresh">Пароль щойно змінили. Telegram попросить трохи почекати</string>
     <string name="auth_err_password_recovery_na">Відновлення пароля тут недоступне. Скиньте 2FA в офіційному Telegram</string>
     <string name="auth_err_session_password_needed">Потрібен пароль 2FA</string>
-    <string name="auth_err_app_misconfigured">Помилка конфігурації застосунку. Напишіть розробнику</string>
+    <string name="auth_err_app_misconfigured">Помилка конфігурації. Перезапустіть Hortay або перевірте оновлення</string>
     <string name="auth_err_token_invalid">Дані не підходять. Почніть вхід заново</string>
     <string name="auth_err_generic">Щось пішло не так. Спробуйте ще раз</string>
     <string name="auth_err_step_failed">Не вдалося завершити крок (%1$s). Спробуйте ще раз</string>
@@ -171,10 +171,10 @@
     <string name="connection_connecting">Зʼєднуємося…</string>
     <string name="connection_updating">Оновлюємо…</string>
     <plurals name="connection_flood_wait">
-        <item quantity="one">Telegram просить почекати %d секунду</item>
-        <item quantity="few">Telegram просить почекати %d секунди</item>
-        <item quantity="many">Telegram просить почекати %d секунд</item>
-        <item quantity="other">Telegram просить почекати %d секунд</item>
+        <item quantity="one">Telegram обмежує запити (%d с)</item>
+        <item quantity="few">Telegram обмежує запити (%d с)</item>
+        <item quantity="many">Telegram обмежує запити (%d с)</item>
+        <item quantity="other">Telegram обмежує запити (%d с)</item>
     </plurals>
 
     <!-- Navigation -->
@@ -343,11 +343,12 @@
     <string name="timeline_subtitle_feed">%1$d каналів</string>
     <string name="timeline_subtitle_saved">Збережені пости</string>
     <string name="settings_section_feed">Стрічка</string>
-    <string name="settings_feed_order_newest_title">Найновіші зверху</string>
-    <string name="settings_feed_order_newest_subtitle">Свіжі пости — на самому верху</string>
-    <string name="settings_feed_order_oldest_title">Старі непрочитані спочатку</string>
-    <string name="settings_feed_order_oldest_subtitle">Спершу непрочитані за часом, потім уже переглянуті</string>
-    <string name="settings_feed_order_snackbar">Стрічку переупорядковано</string>
+    <string name="settings_feed_order_newest_title">Нові зверху</string>
+    <string name="settings_feed_order_newest_subtitle">Прокрутьте вниз, щоб бачити старі</string>
+    <string name="settings_feed_order_oldest_title">Нові внизу</string>
+    <string name="settings_feed_order_oldest_subtitle">Як у Telegram-чаті — нове прибуває знизу</string>
+    <string name="settings_feed_order_snackbar_to_newest">Стрічку переупорядковано — нові зверху</string>
+    <string name="settings_feed_order_snackbar_to_oldest">Стрічку переупорядковано — нові внизу, як у чаті</string>
     <string name="settings_snap_scroll_title">Привʼязка під час гортання</string>
     <string name="settings_snap_scroll_subtitle">Кожен пост зупиняється на місці після швидкого гортання</string>
     <string name="settings_inline_autoplay_title">Автозапуск відео у стрічці</string>
@@ -468,7 +469,7 @@
     <string name="err_not_found">Не знайдено: %1$s</string>
     <string name="err_server">Сервер Telegram тимчасово недоступний. Спробуйте за хвилину</string>
     <string name="err_no_connection">Немає мережі. Перевірте інтернет і спробуйте ще раз</string>
-    <string name="err_failed_op">Не вдалося %1$s (%2$d)</string>
+    <string name="err_failed_op">Не вдалося %1$s</string>
 
     <!-- Operation labels (verb in infinitive form, used inside error templates) -->
     <string name="op_refresh_feed">оновити стрічку</string>
@@ -521,6 +522,14 @@
     <string name="action_save_to_gallery">Зберегти в галерею</string>
     <string name="action_copy_image">Копіювати зображення</string>
     <string name="action_share_media">Поділитися</string>
+    <!-- Snackbar action labels surfaced by [UserMessageBus.Action]. Спільні для всіх
+         action-нерсних повідомлень, продюсери посилаються на ресурс-id без копіювання. -->
+    <string name="action_open_telegram">Відкрити Telegram</string>
+    <string name="action_sign_in">Увійти</string>
+    <!-- Основний CTA на empty-станах (TimelineEmptyHero default + порожня вкладка каналів). -->
+    <string name="empty_action_open_telegram">Відкрити Telegram, щоб підписатися</string>
+    <!-- Long-press snackbar для тапу на платну реакцію (її не можна поставити з Hortay). -->
+    <string name="reactions_paid_explainer">Платні реакції можна ставити лише в Telegram</string>
     <!-- Тост, що з\'являється після збереження / копіювання / поширення в повноекранному перегляді. -->
     <string name="media_saved_photo">Фото збережено в галерею</string>
     <string name="media_saved_video">Відео збережено в галерею</string>
@@ -545,8 +554,8 @@
     <string name="link_unsupported_group">Групи відкриваються в Telegram</string>
     <string name="link_unsupported_other">Це посилання відкриється в Telegram</string>
     <string name="link_not_found">Посилання не знайдено</string>
-    <string name="link_hashtag_search">Пошук %1$s буде у наступному оновленні</string>
-    <string name="link_hashtag_search_in_channel">Пошук %1$s у %2$s буде у наступному оновленні</string>
+    <string name="link_hashtag_search">Пошук за хештегом працює лише всередині каналу — відкрийте якийсь, щоб шукати %1$s</string>
+    <string name="link_hashtag_search_in_channel">Відкрийте %2$s, щоб шукати %1$s — глобального пошуку за хештегом поки немає</string>
     <!-- Підтвердження приєднання до каналу за запрошувальним посиланням. -->
     <string name="invite_dialog_title">Приєднатися до каналу</string>
     <string name="invite_dialog_unknown_chat">Канал Telegram</string>

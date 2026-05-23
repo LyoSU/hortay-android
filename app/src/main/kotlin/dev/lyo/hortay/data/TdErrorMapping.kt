@@ -74,7 +74,7 @@ fun Throwable.toUserFacing(
         // underlying cause is usually a network blip — call it that explicitly so the
         // message lines up with the connection banner's wording.
         code == 0 -> TdErrorKind.Network to res.getString(R.string.err_no_connection)
-        else -> TdErrorKind.Unknown to res.getString(R.string.err_failed_op, operation, code)
+        else -> TdErrorKind.Unknown to res.getString(R.string.err_failed_op, operation)
     }
 }
 

@@ -97,7 +97,7 @@
     <string name="auth_subtitle_wait_code">Code sent. Check: %1$s</string>
     <string name="auth_subtitle_password_no_hint">Account is protected with two-factor authentication</string>
     <string name="auth_subtitle_password_with_hint">Account is protected with two-factor authentication. Enter your 2FA password</string>
-    <string name="auth_subtitle_default">A Twitter-style feed of Telegram channels</string>
+    <string name="auth_subtitle_default">Read Telegram channels as a feed — without chats or pings</string>
     <string name="auth_country_label">Country</string>
     <string name="auth_country_loading">Loading…</string>
     <string name="auth_phone_placeholder">Phone number</string>
@@ -132,7 +132,7 @@
     <string name="auth_err_too_many_with_time">Too many attempts. Wait %1$s</string>
     <string name="auth_err_too_many_generic">Too many attempts. Try again later</string>
     <string name="auth_err_phone_invalid">Check the country code and digits</string>
-    <string name="auth_err_phone_banned">Telegram banned this number. Contact Telegram support</string>
+    <string name="auth_err_phone_banned">Telegram banned this number. Try signing in via the official Telegram</string>
     <string name="auth_err_phone_flood">Telegram temporarily limited sign-in from this number. Try later</string>
     <string name="auth_err_phone_occupied">This number already has an account. Sign in instead of registering</string>
     <string name="auth_err_code_invalid">Wrong code. Check and try again</string>
@@ -141,7 +141,7 @@
     <string name="auth_err_password_too_fresh">Password was just changed. Telegram will ask you to wait a bit</string>
     <string name="auth_err_password_recovery_na">Password recovery isn\'t available here. Reset 2FA in the official Telegram</string>
     <string name="auth_err_session_password_needed">2FA password required</string>
-    <string name="auth_err_app_misconfigured">App configuration error. Contact the developer</string>
+    <string name="auth_err_app_misconfigured">App configuration error. Try restarting Hortay or check for updates</string>
     <string name="auth_err_token_invalid">Credentials don\'t match. Restart sign-in</string>
     <string name="auth_err_generic">Something went wrong. Try again</string>
     <string name="auth_err_step_failed">Couldn\'t complete step (%1$s). Try again</string>
@@ -169,8 +169,8 @@
     <string name="connection_connecting">Connecting…</string>
     <string name="connection_updating">Updating…</string>
     <plurals name="connection_flood_wait">
-        <item quantity="one">Telegram asked to pause for %d second</item>
-        <item quantity="other">Telegram asked to pause for %d seconds</item>
+        <item quantity="one">Telegram is throttling requests (%d s)</item>
+        <item quantity="other">Telegram is throttling requests (%d s)</item>
     </plurals>
 
     <!-- Navigation -->
@@ -328,11 +328,12 @@
     <string name="timeline_subtitle_feed">%1$d channels</string>
     <string name="timeline_subtitle_saved">Bookmarked posts</string>
     <string name="settings_section_feed">Feed</string>
-    <string name="settings_feed_order_newest_title">Newest first</string>
-    <string name="settings_feed_order_newest_subtitle">Latest posts at the top</string>
-    <string name="settings_feed_order_oldest_title">Oldest unread first</string>
-    <string name="settings_feed_order_oldest_subtitle">Read forward in time, then catch up on what you\'ve seen</string>
-    <string name="settings_feed_order_snackbar">Feed reordered</string>
+    <string name="settings_feed_order_newest_title">Newest on top</string>
+    <string name="settings_feed_order_newest_subtitle">Scroll down for older posts</string>
+    <string name="settings_feed_order_oldest_title">Newest at the bottom</string>
+    <string name="settings_feed_order_oldest_subtitle">Like a Telegram chat — new arrives at the bottom</string>
+    <string name="settings_feed_order_snackbar_to_newest">Feed reordered — newest at the top</string>
+    <string name="settings_feed_order_snackbar_to_oldest">Feed reordered — newest at the bottom, like a chat</string>
     <string name="settings_snap_scroll_title">Snap scroll</string>
     <string name="settings_snap_scroll_subtitle">Each post clicks into place when you fling — TikTok/Reels feel</string>
     <string name="settings_inline_autoplay_title">Autoplay videos in feed</string>
@@ -453,7 +454,7 @@
     <string name="err_not_found">Not found: %1$s</string>
     <string name="err_server">Telegram server is temporarily unavailable. Try in a minute</string>
     <string name="err_no_connection">No connection. Check the internet and try again</string>
-    <string name="err_failed_op">Couldn\'t %1$s (%2$d)</string>
+    <string name="err_failed_op">Couldn\'t %1$s</string>
 
     <!-- Operation labels (verb in infinitive form, used inside error templates) -->
     <string name="op_refresh_feed">refresh the feed</string>
@@ -505,6 +506,20 @@
     <string name="action_save_to_gallery">Save to gallery</string>
     <string name="action_copy_image">Copy image</string>
     <string name="action_share_media">Share</string>
+    <!-- Snackbar action labels surfaced by [UserMessageBus.Action]. Shared across
+         all bus-driven actionable snackbars (auth dead-ends, guest-mode sign-in
+         nudges, etc.); resource ids are referenced from producers without local
+         duplication. -->
+    <string name="action_open_telegram">Open Telegram</string>
+    <string name="action_sign_in">Sign in</string>
+    <!-- Primary CTA used in empty states (TimelineEmptyHero default + channels empty).
+         Same intent the auth-mode dead-ends use: launch the official Telegram client
+         so the user can subscribe to channels there; Hortay picks them up via the
+         existing TDLib update stream. -->
+    <string name="empty_action_open_telegram">Open Telegram to subscribe</string>
+    <!-- Long-press snackbar surfaced when the user taps a paid-reaction chip (which
+         can\'t be voted from Hortay — paid reactions are a Telegram-client surface). -->
+    <string name="reactions_paid_explainer">Paid reactions can only be cast from Telegram</string>
     <!-- Toast banners shown by the fullscreen viewer after a Save / Copy / Share action. -->
     <string name="media_saved_photo">Photo saved to gallery</string>
     <string name="media_saved_video">Video saved to gallery</string>
@@ -532,11 +547,11 @@
     <!-- Surfaced when a `#tag` link/tap arrives without a channel scope —
          Comments-thread bodies, `tg://search?query=…` URLs, settings text. %1$s
          is the tag with its leading `#`. -->
-    <string name="link_hashtag_search">Search for %1$s is coming soon</string>
+    <string name="link_hashtag_search">Hashtag search works inside a channel for now — open one to search %1$s</string>
     <!-- Surfaced when a `#tag@channel` entity or a scoped PostBody tap resolves
          to a known channel. %1$s is the tag with `#`, %2$s is the channel
          handle with `@`. -->
-    <string name="link_hashtag_search_in_channel">Search for %1$s in %2$s is coming soon</string>
+    <string name="link_hashtag_search_in_channel">Open %2$s to search %1$s — global hashtag search isn\'t available yet</string>
     <!-- Confirmation dialog for an invite link (t.me/+abc...). -->
     <string name="invite_dialog_title">Join channel</string>
     <string name="invite_dialog_unknown_chat">Telegram channel</string>
