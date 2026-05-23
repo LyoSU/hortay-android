@@ -105,6 +105,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "forum" -> R.drawable.sym_forum
         "gif_box" -> R.drawable.sym_gif_box
         "hide_image" -> R.drawable.sym_hide_image
+        "history" -> R.drawable.sym_history
         "home" -> R.drawable.sym_home
         "hourglass_empty" -> R.drawable.sym_hourglass_empty
         "how_to_vote" -> R.drawable.sym_how_to_vote

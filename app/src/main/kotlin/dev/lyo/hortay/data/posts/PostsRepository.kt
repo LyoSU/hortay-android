@@ -9,6 +9,7 @@ import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.MessageContentMapper
 import dev.lyo.hortay.data.MessageMapper
 import dev.lyo.hortay.data.PostContent
+import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.PostFilterStrategy
 import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.ReactionTogglePolicy
@@ -369,14 +370,69 @@ class PostsRepository(
         // No store wired (legacy callers) → empty set, filter is a no-op.
         val ignoredFlow = ignoredChannels?.ignored
             ?: kotlinx.coroutines.flow.flowOf(kotlinx.collections.immutable.persistentSetOf())
-        combine(_posts, _mainChatIds, _archivedChatIds, ignoredFlow) { all, mainIds, archivedIds, ignored ->
+        // Tombstones flow — TDLib-only archived DELETED snapshots reconstructed as ghost
+        // posts. Merges into the live feed in the same combine so chat-list gates and
+        // ignored filtering apply uniformly. Empty when archive feature has no captures
+        // OR no repository is wired.
+        val tombstonesFlow: kotlinx.coroutines.flow.Flow<kotlinx.collections.immutable.ImmutableList<dev.lyo.hortay.data.archive.TombstoneRecord>> =
+            archiveRepository?.observeTdlibTombstones()
+                ?: kotlinx.coroutines.flow.flowOf(kotlinx.collections.immutable.persistentListOf())
+        combine(_posts, _mainChatIds, _archivedChatIds, ignoredFlow, tombstonesFlow) { all, mainIds, archivedIds, ignored, tombstones ->
             val subscribed = if (mainIds.isEmpty() && archivedIds.isEmpty()) all
             else all.filter { it.chatId in mainIds || it.chatId in archivedIds }
-            if (ignored.isEmpty()) subscribed.toPersistentList()
-            else subscribed.filter { it.chatId !in ignored }.toPersistentList()
+            val filtered = if (ignored.isEmpty()) subscribed
+            else subscribed.filter { it.chatId !in ignored }
+            if (tombstones.isEmpty()) return@combine filtered.toPersistentList()
+            // Merge ghosts: skip any tombstone whose primary message id is already
+            // present (live post is the source of truth — TDLib hasn't yet propagated
+            // the delete OR the chat lacks the message). Apply chat-list gating to
+            // ghosts too: archive may hold snapshots from a chat the user later
+            // unsubscribed from; we don't surface them.
+            val livePresence = HashSet<Long>(filtered.size).apply {
+                filtered.forEach { add(it.id) }
+            }
+            val ghosts = tombstones.asSequence()
+                .filter { t ->
+                    t.primaryMessageId !in livePresence &&
+                        (mainIds.isEmpty() && archivedIds.isEmpty() ||
+                            t.chatId in mainIds || t.chatId in archivedIds) &&
+                        t.chatId !in ignored
+                }
+                .map { buildTombstoneGhost(it) }
+                .toList()
+            if (ghosts.isEmpty()) filtered.toPersistentList()
+            else (filtered + ghosts).sortedByDescending { it.date }.toPersistentList()
         }
             .stateIn(scope, SharingStarted.Eagerly, persistentListOf())
     }
+
+    /**
+     * Build a minimal "ghost" [TimelinePost] from a [TombstoneRecord]. The feed shows it
+     * with [PostCard]'s deleted-mode treatment (alpha 0.55, hidden reactions, "deleted"
+     * badge). Tap routes through the existing onTapRevisions handler to open the
+     * revision sheet — that's where the rich history lives.
+     */
+    private fun buildTombstoneGhost(t: dev.lyo.hortay.data.archive.TombstoneRecord): TimelinePost = TimelinePost(
+        id = t.primaryMessageId,
+        chatId = t.chatId,
+        mediaAlbumId = 0L,
+        senderName = t.channelTitle,
+        senderHandle = t.channelHandle,
+        avatarThumb = t.channelPhotoMinithumb,
+        avatarFileId = null,
+        content = PostContent.Text(FormattedText(t.text, emptyList())),
+        views = 0,
+        date = t.originalSeenAtMs,
+        editDate = 0L,
+        forwardOrigin = null,
+        authorSignature = null,
+        reply = null,
+        reactions = Reactions(totalCount = 0, items = emptyList()),
+        commentCount = null,
+        albumMessageIds = emptyList(),
+        isDeleted = true,
+        revisionCount = 0,
+    )
 
     // Per-chat read cursors mirrored from TDLib's UpdateChatReadInbox stream and seeded
     // from UpdateNewChat. Single source of truth for "has the user read up to message X
@@ -1881,6 +1937,9 @@ class PostsRepository(
             val albumBucket: Long? = if (p.mediaAlbumId != 0L) p.mediaAlbumId else null
             byAlbum.getOrPut(albumBucket) { mutableListOf() }.add(p.id)
         }
+        // Channel metadata to denormalise alongside the DELETED snapshot — needed by
+        // tombstone reconstruction on cold start (no live TDLib lookup available then).
+        val channelSample = matchedByMsgId.firstOrNull()
         for (mapEntry in byAlbum.entries) {
             val albumBucket: Long? = mapEntry.key
             val msgIds: List<Long> = mapEntry.value
@@ -1898,6 +1957,15 @@ class PostsRepository(
                         albumKey = albumBucket.toString(),
                         isComment = false,
                     )
+                    channelSample?.let { sample ->
+                        archiveRepository?.upsertChannel(
+                            chat = ChatRef.tdlib(update.chatId),
+                            title = sample.senderName,
+                            handle = sample.senderHandle,
+                            photoMinithumb = sample.avatarThumb,
+                            isVerified = sample.verification != null,
+                        )
+                    }
                 }
             } else {
                 scope.launch {
@@ -1907,6 +1975,15 @@ class PostsRepository(
                         albumKey = null,
                         isComment = false,
                     )
+                    channelSample?.let { sample ->
+                        archiveRepository?.upsertChannel(
+                            chat = ChatRef.tdlib(update.chatId),
+                            title = sample.senderName,
+                            handle = sample.senderHandle,
+                            photoMinithumb = sample.avatarThumb,
+                            isVerified = sample.verification != null,
+                        )
+                    }
                 }
             }
         }
@@ -2041,6 +2118,15 @@ class PostsRepository(
                     editedAtMs = null,
                     meta = TdlibContentMetaExtractor.extract(update.newContent),
                     isComment = false,
+                )
+                // Denormalise channel metadata so tombstone reconstruction on cold start
+                // has a title / handle / avatar without a separate TDLib lookup.
+                archiveRepository?.upsertChannel(
+                    chat = ChatRef.tdlib(update.chatId),
+                    title = livePost.senderName,
+                    handle = livePost.senderHandle,
+                    photoMinithumb = livePost.avatarThumb,
+                    isVerified = livePost.verification != null,
                 )
             }
         }

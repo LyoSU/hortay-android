@@ -282,6 +282,51 @@ class ArchiveRepository(
         db.postSnapshotQueries.storageBytes().executeAsOne()
     }
 
+    /**
+     * Emits every TDLib-mode DELETED snapshot the archive has captured, joined with
+     * the most recent VERSION snapshot for the same message (the pre-delete content)
+     * and the denormalised channel metadata. Used by PostsRepository to reconstruct
+     * "ghost" tombstone posts in the feed on cold start — TDLib doesn't return
+     * deleted messages, so without these we'd silently lose every deleted post on
+     * relaunch even though the archive still holds the snapshot.
+     */
+    fun observeTdlibTombstones(): kotlinx.coroutines.flow.Flow<ImmutableList<TombstoneRecord>> =
+        db.postSnapshotQueries.selectAllDeleted()
+            .asFlow().mapToList(Dispatchers.IO)
+            .map { rows -> rows.mapNotNull(::buildTombstone).toPersistentList() }
+
+    private fun buildTombstone(deleted: dev.lyo.hortay.data.archive.db.PostSnapshot): TombstoneRecord? {
+        val chatId = deleted.source_key.toLongOrNull() ?: return null
+        val deletedKeys = deleted.deleted_msg_keys
+            ?.let { runCatching { Json.decodeFromString(ListSerializer(String.serializer()), it) }.getOrNull() }
+            ?: listOf(deleted.message_key)
+        val allMessageIds = deletedKeys.mapNotNull { it.toLongOrNull() }
+        val primaryId = allMessageIds.firstOrNull() ?: return null
+
+        val latestVersion = db.postSnapshotQueries.selectLatestVersionForMessage(
+            deleted.source_kind, deleted.source_key, deleted.message_key,
+        ).executeAsOneOrNull()
+        val meta = latestVersion?.let {
+            runCatching { ContentBlobCodec.decode(it.content_blob) }.getOrNull()
+        }
+        val channel = db.archivedChannelQueries.selectOne(
+            deleted.source_kind, deleted.source_key,
+        ).executeAsOneOrNull()
+
+        return TombstoneRecord(
+            chatId = chatId,
+            primaryMessageId = primaryId,
+            allMessageIds = allMessageIds,
+            deletedAtMs = deleted.seen_at_ms,
+            originalSeenAtMs = latestVersion?.seen_at_ms ?: deleted.seen_at_ms,
+            text = meta?.text.orEmpty(),
+            channelTitle = channel?.title.orEmpty(),
+            channelHandle = channel?.handle,
+            channelPhotoMinithumb = channel?.photo_minithumb,
+            isVerified = (channel?.is_verified ?: 0L) == 1L,
+        )
+    }
+
     // --- Private helpers ---
 
     private fun isDuplicate(chat: ChatRef, messageKey: String, hash: String): Boolean {
@@ -447,4 +492,27 @@ data class ArchivedChannelEntry(
     val photoMinithumb: ByteArray?,
     val snapshotCount: Int,
     val lastSnapshotAtMs: Long,
+)
+
+/**
+ * Denormalised record built from a DELETED [PostSnapshot] row + the most recent
+ * VERSION snapshot for the same message + the cached channel metadata. Enough to
+ * reconstruct a minimal "ghost" feed card after TDLib forgets the message.
+ */
+@Immutable
+data class TombstoneRecord(
+    val chatId: Long,
+    /** Anchor message id (first member of an album, or the standalone post id). */
+    val primaryMessageId: Long,
+    /** Full set of deleted ids (album members), or just `[primaryMessageId]` for solo. */
+    val allMessageIds: List<Long>,
+    val deletedAtMs: Long,
+    /** When Hortay first saw a VERSION of this message — used as the ghost's `date`. */
+    val originalSeenAtMs: Long,
+    /** Last captured text content (caption or message body). Empty when no VERSION was captured. */
+    val text: String,
+    val channelTitle: String,
+    val channelHandle: String?,
+    val channelPhotoMinithumb: ByteArray?,
+    val isVerified: Boolean,
 )
