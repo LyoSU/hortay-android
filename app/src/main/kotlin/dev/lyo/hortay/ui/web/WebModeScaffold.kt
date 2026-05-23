@@ -125,12 +125,15 @@ fun WebModeScaffold(graph: AppGraph) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val locale = remember { Locale.getDefault().language.lowercase() }
     val signInRequiredMsg = stringResource(R.string.web_deeplink_signin_required)
+    val signInActionLabel = stringResource(R.string.action_sign_in)
     // Snackbar host lifted into the scaffold so deep-link rejection messages
     // ("sign in to open private channels") land regardless of which tab the
-    // user is currently looking at. Same pattern as MainScaffold's userMessages
-    // bus — TDLib mode's UserMessageBus has no analogue in guest mode, so this
-    // is the lightest surface that satisfies the few cases we need.
+    // user is currently looking at. The bus-driven relay (shared with
+    // MainScaffold) collects [graph.userMessages] — repositories post once and
+    // the active scaffold renders it. Direct showSnackbar calls below (deep-link
+    // info pings) still work against the same host state.
     val snackbarHostState = remember { SnackbarHostState() }
+    dev.lyo.hortay.ui.main.UserMessageSnackbarRelay(graph = graph, hostState = snackbarHostState)
 
     // Deep-link dispatcher. Mirrors MainScaffold's collector but speaks the
     // guest-mode dialect: only [DeepLink.PublicChannel] is actionable here
@@ -155,8 +158,13 @@ fun WebModeScaffold(graph: AppGraph) {
                     is DeepLink.PrivateChannel,
                     is DeepLink.Message,
                     is DeepLink.ChatInvite -> {
-                        // Auth-only surfaces: nudge sign-in instead of silently dropping.
-                        snackbarHostState.showSnackbar(signInRequiredMsg)
+                        // Auth-only surfaces: nudge sign-in with a tappable action that
+                        // exits guest mode (MainActivity routes false → AuthScreen).
+                        graph.userMessages.post(
+                            text = signInRequiredMsg,
+                            severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
+                            action = dev.lyo.hortay.data.UserMessageBus.Action.SignIn(signInActionLabel),
+                        )
                     }
                     is DeepLink.External -> {
                         runCatching { systemUriHandler.openUri(link.originalUrl) }
@@ -267,11 +275,18 @@ fun WebModeScaffold(graph: AppGraph) {
     // post detail at all.
     val commentsDisabledTitle = stringResource(R.string.web_comments_unavailable_title)
     val commentsDisabledBody = stringResource(R.string.web_comments_unavailable)
-    val webCommentsOverride = remember(commentsDisabledTitle, commentsDisabledBody) {
+    val commentsDisabledAction = stringResource(R.string.action_sign_in)
+    val webCommentsOverride = remember(commentsDisabledTitle, commentsDisabledBody, commentsDisabledAction) {
         dev.lyo.hortay.ui.comments.CommentsDisabledOverride(
             symbol = "chat_bubble",
             title = commentsDisabledTitle,
             body = commentsDisabledBody,
+            actionLabel = commentsDisabledAction,
+            // Flipping guestMode → false triggers MainActivity to re-route to
+            // AuthScreen. Same path as the deep-link snackbar SignIn action,
+            // just surfaced inline in the comments-empty hero where the user
+            // actually hit the wall.
+            onAction = { scope.launch { graph.guestMode.setGuest(false) } },
         )
     }
     val onGuestPostClick: (TimelinePost) -> Unit = remember(graph) {
@@ -293,6 +308,7 @@ fun WebModeScaffold(graph: AppGraph) {
     CompositionLocalProvider(
         LocalReadCursors provides cursorHolder,
         dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,
+        dev.lyo.hortay.ui.main.LocalUserMessageBus provides graph.userMessages,
     ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -519,6 +535,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                     )
                                 }
                         },
+                        userMessages = graph.userMessages,
                     )
                 }
                 }

@@ -171,11 +171,7 @@ fun MainScaffold(graph: AppGraph) {
     // we resume; a flooded bus drops oldest (see [UserMessageBus]) so we never queue
     // a stale apology that no longer reflects the current state.
     val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(Unit) {
-        graph.userMessages.messages.collect { msg ->
-            snackbarHostState.showSnackbar(message = msg.text)
-        }
-    }
+    UserMessageSnackbarRelay(graph = graph, hostState = snackbarHostState)
 
     val res = LocalContext.current.resources
 
@@ -420,6 +416,7 @@ fun MainScaffold(graph: AppGraph) {
             LocalReadCursors provides cursorHolder,
             dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,
             LocalUserProfileOpener provides userProfileOpener,
+            LocalUserMessageBus provides graph.userMessages,
         ) {
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
