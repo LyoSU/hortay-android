@@ -118,6 +118,14 @@ data class TimelinePost(
      * statuses and unsupported gift-type statuses arrive as null.
      */
     val senderEmojiStatusId: Long? = null,
+    /** True when TDLib reported this message as permanently deleted and archive is enabled. */
+    val isDeleted: Boolean = false,
+    /**
+     * Number of content edits Hortay has captured for this post. Incremented on every
+     * [TdApi.UpdateMessageContent] that hits a live feed row; used by [EditedChip] to
+     * surface how many revisions exist.
+     */
+    val revisionCount: Int = 0,
 )
 
 /**
