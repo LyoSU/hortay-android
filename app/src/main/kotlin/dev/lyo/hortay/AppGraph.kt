@@ -212,6 +212,7 @@ class AppGraph(context: Context) {
         startupPhase = startupCoordinator.phase,
         foreground = lifecycleBridge.foreground,
         scope = appScope,
+        archiveSweep = archiveSweep,
     )
 
     init {

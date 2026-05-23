@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import dev.lyo.hortay.data.archive.ArchiveSweep
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -9,8 +10,9 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 
 /**
- * Runs [TdClient.maybeOptimizeStorage] only after the post-auth storm window
- * has settled (`StartupCoordinator.Phase.Active`) AND the user is foregrounded.
+ * Runs [TdClient.maybeOptimizeStorage] and [ArchiveSweep.run] only after the
+ * post-auth storm window has settled (`StartupCoordinator.Phase.Active`) AND
+ * the user is foregrounded.
  *
  * Why this is its own component, not a few lines in [TdLifecycleBridge]:
  *   - `maybeOptimizeStorage` is non-interactive housekeeping. Running it
@@ -25,12 +27,16 @@ import kotlinx.coroutines.flow.onEach
  * Trigger semantics: edge-triggered when (active && foreground) flips to true.
  * The optimiser itself is idempotent (skips when within the 24h timer AND
  * under the 80%-of-cap threshold), so re-firing on every transition is fine.
+ *
+ * [archiveSweep] is nullable so existing test constructors that omit it
+ * continue to compile without changes.
  */
 class StorageOptimizer(
     private val td: TdClient,
     startupPhase: StateFlow<StartupCoordinator.Phase>,
     foreground: StateFlow<Boolean>,
     scope: CoroutineScope,
+    private val archiveSweep: ArchiveSweep? = null,
 ) {
     init {
         combine(startupPhase, foreground) { phase, fg ->
@@ -38,7 +44,10 @@ class StorageOptimizer(
         }
             .distinctUntilChanged()
             .filter { it }
-            .onEach { td.maybeOptimizeStorage() }
+            .onEach {
+                td.maybeOptimizeStorage()
+                runCatching { archiveSweep?.run() }
+            }
             .launchIn(scope)
     }
 }
