@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- Post archive: edited and deleted channel posts are saved locally with a visual diff between versions — disabled by default, configurable in Settings → Post archive.
+
 ### Changed
 - Feed-order toggle in Settings is now positional — "Newest on top" / "Newest at the bottom" with one-line subtitles — and switching it pops a confirmation explaining where new posts will appear.
 - The post's unread strip now collapses with a brief shrink-and-fade when dwell-ack marks the post read, instead of a passive opacity fade.
