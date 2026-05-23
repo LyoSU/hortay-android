@@ -684,6 +684,10 @@
         <item quantity="other">ред. ×%d</item>
     </plurals>
 
+    <!-- Archive: row -->
+    <string name="archive_row_kind_edited">Редаговано</string>
+    <string name="archive_row_kind_deleted">Видалено</string>
+
     <!-- Archive: revision sheet -->
     <string name="revision_sheet_title">Історія редагувань</string>
     <string name="revision_sheet_title_deleted">Видалений пост</string>
