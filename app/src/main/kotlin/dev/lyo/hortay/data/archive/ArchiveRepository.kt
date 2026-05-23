@@ -245,6 +245,43 @@ class ArchiveRepository(
         db.postSnapshotQueries.deleteByIds(ids)
     }
 
+    /**
+     * Serialize the entire archive as a single JSON document. Includes minithumb
+     * BLOBs as base64. Expensive — at 5000 records with thumbs this can reach ~25 MB.
+     * Caller should warn the user before invocation.
+     */
+    suspend fun export(): ExportResult = writeMutex.withLock {
+        val rows = db.postSnapshotQueries.selectAllForExport().executeAsList()
+        val records = rows.map { r ->
+            buildJsonObject {
+                put("sourceKind", JsonPrimitive(r.source_kind))
+                put("sourceKey", JsonPrimitive(r.source_key))
+                put("messageKey", JsonPrimitive(r.message_key))
+                put("kind", JsonPrimitive(r.kind))
+                put("seenAtMs", JsonPrimitive(r.seen_at_ms))
+                put("textPreview", JsonPrimitive(r.text_preview))
+                put("contentKind", JsonPrimitive(r.content_kind))
+                put("contentBlobBase64", JsonPrimitive(
+                    android.util.Base64.encodeToString(r.content_blob, android.util.Base64.NO_WRAP)))
+                r.media_minithumb?.let {
+                    put("minithumbBase64", JsonPrimitive(
+                        android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP)))
+                }
+            }
+        }
+        val payload = JsonObject(mapOf(
+            "version" to JsonPrimitive(1),
+            "exportedAtMs" to JsonPrimitive(clock()),
+            "records" to kotlinx.serialization.json.JsonArray(records),
+        ))
+        val bytes = Json.encodeToString(JsonObject.serializer(), payload).toByteArray()
+        ExportResult(bytes, recordCount = records.size)
+    }
+
+    suspend fun storageBytes(): Long = writeMutex.withLock {
+        db.postSnapshotQueries.storageBytes().executeAsOne()
+    }
+
     // --- Private helpers ---
 
     private fun isDuplicate(chat: ChatRef, messageKey: String, hash: String): Boolean {
@@ -375,6 +412,11 @@ class ArchiveRepository(
             reactions = reactionList.toPersistentList(),
         )
     }
+}
+
+@Immutable
+data class ExportResult(val bytes: ByteArray, val recordCount: Int) {
+    val approxBytes: Long get() = bytes.size.toLong()
 }
 
 sealed interface ArchiveEvent {

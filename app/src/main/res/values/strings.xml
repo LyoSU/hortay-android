@@ -711,6 +711,11 @@
     <string name="archive_disable_keep">Keep, stop saving</string>
     <string name="archive_disable_purge">Delete and disable</string>
 
+    <!-- Archive: export -->
+    <string name="archive_export_json">Export to JSON</string>
+    <string name="archive_export_size_warning">Approximate size: %d MB. Continue?</string>
+    <string name="archive_export_continue">Export</string>
+
     <!-- Archive: onboarding sheet -->
     <string name="archive_onboarding_title">Save edits and deletions?</string>
     <string name="archive_onboarding_what">Hortay saves text and media metadata when a channel edits or deletes a post. Photos and videos themselves are not downloaded — only small thumbnails.</string>

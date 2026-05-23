@@ -1,5 +1,7 @@
 package dev.lyo.hortay.ui.archive
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,25 +22,49 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.archive.ArchiveSettings
 import dev.lyo.hortay.ui.icons.Symbol
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArchiveSettingsScreen(viewModel: ArchiveSettingsViewModel, onBack: () -> Unit) {
     val s by viewModel.settings.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showOnboarding by remember { mutableStateOf(false) }
     var showDisableDialog by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
+    var showExportConfirm by remember { mutableStateOf(false) }
+    var approxBytes by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(s.enabled) {
+        if (s.enabled) approxBytes = viewModel.peekStorageBytes()
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val bytes = viewModel.export()
+                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+            }
+        }
+    }
 
     Scaffold(topBar = {
         TopAppBar(
@@ -96,6 +122,10 @@ fun ArchiveSettingsScreen(viewModel: ArchiveSettingsViewModel, onBack: () -> Uni
                     },
                 )
                 ListItem(
+                    headlineContent = { Text(stringResource(R.string.archive_export_json)) },
+                    modifier = Modifier.clickable { showExportConfirm = true },
+                )
+                ListItem(
                     headlineContent = {
                         Text(
                             stringResource(R.string.archive_clear_all),
@@ -136,6 +166,31 @@ fun ArchiveSettingsScreen(viewModel: ArchiveSettingsViewModel, onBack: () -> Uni
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirm = false }) {
+                    Text(stringResource(R.string.archive_onboarding_cancel))
+                }
+            },
+        )
+    }
+    if (showExportConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExportConfirm = false },
+            title = { Text(stringResource(R.string.archive_export_json)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.archive_export_size_warning,
+                        (approxBytes / 1024 / 1024).coerceAtLeast(1),
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExportConfirm = false
+                    exportLauncher.launch("hortay-archive-${System.currentTimeMillis()}.json")
+                }) { Text(stringResource(R.string.archive_export_continue)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportConfirm = false }) {
                     Text(stringResource(R.string.archive_onboarding_cancel))
                 }
             },

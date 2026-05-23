@@ -727,6 +727,11 @@
     <string name="archive_disable_keep">Залишити, не зберігати нові</string>
     <string name="archive_disable_purge">Видалити й вимкнути</string>
 
+    <!-- Archive: export -->
+    <string name="archive_export_json">Експортувати в JSON</string>
+    <string name="archive_export_size_warning">Приблизний розмір: %d МБ. Продовжити?</string>
+    <string name="archive_export_continue">Експортувати</string>
+
     <!-- Archive: onboarding sheet -->
     <string name="archive_onboarding_title">Зберігати редагування й видалення?</string>
     <string name="archive_onboarding_what">Hortay зберігає текст та метадані медіа, коли канал редагує або видаляє пост. Самі фото й відео не завантажуються — лише маленькі мініатюри.</string>

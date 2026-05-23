@@ -64,4 +64,8 @@ class ArchiveSettingsViewModel(
     fun clearAll() {
         viewModelScope.launch { repo.clear() }
     }
+
+    suspend fun export(): ByteArray = repo.export().bytes
+
+    suspend fun peekStorageBytes(): Long = repo.storageBytes()
 }
