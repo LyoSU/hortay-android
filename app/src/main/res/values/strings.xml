@@ -678,6 +678,7 @@
     <string name="archive_scope_comments">Comments</string>
     <string name="archive_empty_enabled">Nothing yet. When a channel edits or deletes a post, it appears here.</string>
     <string name="archive_search_placeholder">Search archive</string>
+    <string name="archive_purged">Snapshot removed.</string>
 
     <!-- Archive: row -->
     <string name="archive_row_kind_edited">Edited</string>

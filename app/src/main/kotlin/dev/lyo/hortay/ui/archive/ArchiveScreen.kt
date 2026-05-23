@@ -16,19 +16,24 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import dev.lyo.hortay.ui.icons.Symbol
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
@@ -36,7 +41,10 @@ import dev.lyo.hortay.data.archive.ArchiveScope
 import dev.lyo.hortay.data.archive.PostSnapshot
 import dev.lyo.hortay.data.archive.SnapshotKind
 import dev.lyo.hortay.ui.archive.components.ArchiveRow
+import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -49,6 +57,9 @@ fun ArchiveScreen(
     val filter by viewModel.filter.collectAsState()
     var openSnapshot by remember { mutableStateOf<PostSnapshot?>(null) }
     var queryText by remember { mutableStateOf("") }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     LaunchedEffect(queryText) {
         delay(250)
@@ -70,6 +81,7 @@ fun ArchiveScreen(
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(Modifier.padding(padding)) {
             OutlinedTextField(
@@ -131,7 +143,26 @@ fun ArchiveScreen(
             } else {
                 LazyColumn {
                     items(snapshots, key = { it.id }) { snap ->
-                        ArchiveRow(snap, onClick = { openSnapshot = snap })
+                        val purgedMessage = stringResource(R.string.archive_purged)
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            confirmValueChange = { value ->
+                                if (value == SwipeToDismissBoxValue.StartToEnd ||
+                                    value == SwipeToDismissBoxValue.EndToStart
+                                ) {
+                                    viewModel.purge(listOf(snap.id))
+                                    scope.launch { snackbarHostState.showSnackbar(purgedMessage) }
+                                    true
+                                } else {
+                                    false
+                                }
+                            },
+                        )
+                        SwipeToDismissBox(
+                            state = dismissState,
+                            backgroundContent = {},
+                        ) {
+                            ArchiveRow(snap, onClick = { openSnapshot = snap })
+                        }
                     }
                 }
             }

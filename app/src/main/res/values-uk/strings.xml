@@ -694,6 +694,7 @@
     <string name="archive_scope_comments">Коментарі</string>
     <string name="archive_empty_enabled">Поки нічого. Як тільки канал відредагує або видалить пост, він зʼявиться тут.</string>
     <string name="archive_search_placeholder">Пошук в архіві</string>
+    <string name="archive_purged">Запис видалено.</string>
 
     <!-- Archive: row -->
     <string name="archive_row_kind_edited">Редаговано</string>
