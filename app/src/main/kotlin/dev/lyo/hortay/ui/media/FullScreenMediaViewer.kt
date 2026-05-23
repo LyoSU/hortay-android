@@ -29,11 +29,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import android.graphics.drawable.ColorDrawable
+import android.view.WindowManager
 import android.widget.Toast
 import dev.lyo.hortay.R
 import androidx.compose.runtime.State
@@ -69,6 +73,16 @@ fun FullScreenMediaViewer(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
+        // Strip the Dialog's default opaque windowBackground + system FLAG_DIM_BEHIND so
+        // the only thing painting between the photo and the activity underneath is the
+        // Box scrim below. Without this the light-theme white windowBackground bleeds
+        // through whenever the scrim fades, and the swipe-to-dismiss reads as
+        // "a white sheet slides in behind the photo" instead of "the viewer fades out".
+        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect {
+            dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+            dialogWindow?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        }
         val pagerState = rememberPagerState(initialPage = initialIndex.coerceIn(0, items.lastIndex)) { items.size }
 
         val density = LocalDensity.current
@@ -80,8 +94,12 @@ fun FullScreenMediaViewer(
             scope.launch { offsetY.snapTo(offsetY.value + delta) }
         }
 
-        // Background dims as the user drags away — gives a sense of "you're pulling the sheet off".
-        val backgroundAlpha = (1f - (abs(offsetY.value) / maxFadePx)).coerceIn(0.4f, 1f)
+        // Black scrim alpha tracks |offsetY| linearly to 0 — at full drag the viewer
+        // is transparent and the feed underneath is visible, matching the Telegram /
+        // Instagram "pulling the photo away from the page" idiom. No alpha floor:
+        // any non-zero floor would leave a translucent dark sheet glued over the
+        // photo while it translates, breaking the "fading away" reading of the gesture.
+        val backgroundAlpha = (1f - (abs(offsetY.value) / maxFadePx)).coerceIn(0f, 1f)
 
         Box(
             modifier = Modifier
