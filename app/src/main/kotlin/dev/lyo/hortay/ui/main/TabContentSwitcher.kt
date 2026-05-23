@@ -126,6 +126,7 @@ internal fun TabContentSwitcher(
                             feedOrder = feedOrder,
                             snapScroll = snapScroll,
                             coveredByOverlay = coveredByOverlay,
+                            archiveRepository = graph.archiveRepository,
                         )
                     }
                 }
@@ -166,6 +167,7 @@ internal fun TabContentSwitcher(
                     feedOrder = feedOrder,
                     snapScroll = snapScroll,
                     coveredByOverlay = coveredByOverlay,
+                    archiveRepository = graph.archiveRepository,
                 )
                 NavTab.Profile -> {
                     val me by graph.tdClient.me.collectAsStateWithLifecycle()

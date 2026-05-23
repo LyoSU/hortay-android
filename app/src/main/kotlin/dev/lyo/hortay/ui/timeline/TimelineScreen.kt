@@ -41,6 +41,10 @@ import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.bookmarkKey
+import dev.lyo.hortay.data.archive.ArchiveRepository
+import dev.lyo.hortay.data.archive.ChatRef
+import dev.lyo.hortay.ui.archive.PostRevisionSheet
+import kotlinx.collections.immutable.persistentListOf
 import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
 import androidx.compose.ui.draw.clipToBounds
@@ -218,6 +222,13 @@ fun TimelineScreen(
      * the FAB height + a 16.dp gap.
      */
     unreadPillExtraBottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    /**
+     * Optional archive repository for showing [PostRevisionSheet] when the user
+     * taps [dev.lyo.hortay.ui.archive.components.EditedChip] on an edited post.
+     * Null in guest mode and any surface that doesn't wire archive support — the
+     * chip is still rendered, but tapping it is a no-op.
+     */
+    archiveRepository: ArchiveRepository? = null,
 ) {
     // Holders read by long-lived LaunchedEffects (home-tap, scope-switch) so
     // their captures stay live across recomposition without restarting the
@@ -294,6 +305,8 @@ fun TimelineScreen(
     // Without this guard the pill flashes a misleading huge count for ~1 frame.
 
     val scope = rememberCoroutineScope()
+    // Revision sheet: set to the post whose EditedChip was tapped; null when closed.
+    var revisionsForPost by remember { mutableStateOf<TimelinePost?>(null) }
     // Single scroll-position holder. Scroll state preservation is now parent-owned:
     // MainScaffold wraps each TimelineScreen mount in a
     //   SaveableStateProvider(key = "feed-channel:<chatId>")   for per-channel views
@@ -1768,6 +1781,9 @@ fun TimelineScreen(
                                 centeredItemKeyState = centeredItemKeyState,
                                 highlightedPostKey = highlightedPostKey,
                                 interactions = interactions,
+                                onTapRevisions = { post ->
+                                    if (archiveRepository != null) revisionsForPost = post
+                                },
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
@@ -1976,6 +1992,26 @@ fun TimelineScreen(
             }
 
         }
+    }
+
+    // Revision sheet: shown when the user taps EditedChip on a post.
+    val currentRevisionPost = revisionsForPost
+    if (currentRevisionPost != null && archiveRepository != null) {
+        val revisions by archiveRepository
+            .observeRevisions(
+                ChatRef.tdlib(currentRevisionPost.chatId),
+                currentRevisionPost.id.toString(),
+            )
+            .collectAsState(initial = persistentListOf())
+        PostRevisionSheet(
+            revisions = revisions,
+            onDismiss = { revisionsForPost = null },
+            onOpenInTelegram = {
+                scope.launch {
+                    PostActions.openInTelegram(context, tdlibRepo, currentRevisionPost)
+                }
+            },
+        )
     }
 
 }

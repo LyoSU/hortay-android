@@ -51,6 +51,7 @@ internal fun TimelineFeedColumn(
     centeredItemKeyState: State<Any?>,
     highlightedPostKey: Pair<Long, Long>?,
     interactions: PostInteractions,
+    onTapRevisions: (dev.lyo.hortay.data.TimelinePost) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -97,7 +98,7 @@ internal fun TimelineFeedColumn(
                 LocalIsCenteredItem provides isCenteredState,
                 LocalIsHighlightedItem provides highlighted,
             ) {
-                PostCard(post = post, interactions = interactions)
+                PostCard(post = post, interactions = interactions, onTapRevisions = onTapRevisions)
             }
         }
     }

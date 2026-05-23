@@ -52,6 +52,8 @@ import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.text.LocalHashtagTap
 import dev.lyo.hortay.ui.text.parseHashtagWithScope
 import androidx.compose.runtime.CompositionLocalProvider
+import dev.lyo.hortay.ui.archive.components.DeletedBadge
+import dev.lyo.hortay.ui.archive.components.EditedChip
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.MorphShape
 import dev.lyo.hortay.ui.theme.asComposeShape
@@ -65,6 +67,7 @@ fun PostCard(
     interactions: PostInteractions = PostInteractions.Noop,
     clickable: Boolean = true,
     expanded: Boolean = false,
+    onTapRevisions: (TimelinePost) -> Unit = {},
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
 
@@ -126,6 +129,7 @@ fun PostCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .alpha(if (post.isDeleted) 0.55f else 1f)
             .background(highlightColor)
             .drawBehind {
                 if (unreadAlpha <= 0f) return@drawBehind
@@ -215,6 +219,9 @@ fun PostCard(
                     // chevron — keeps the affordance honest.
                     showDrillChevron = post.senderChatId != null,
                     onChannelClick = onSenderClick,
+                    isDeleted = post.isDeleted,
+                    revisionCount = post.revisionCount,
+                    onTapRevisions = { onTapRevisions(post) },
                 )
 
                 // "у Channel" subtitle for personal-author posts (TDLib's new channel mode
@@ -273,7 +280,7 @@ fun PostCard(
                     pollVoting = pollVoting,
                 )
 
-                if (post.views > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty()) {
+                if (!post.isDeleted && (post.views > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty())) {
                     Spacer(Modifier.height(10.dp))
                     ActionRow(
                         views = post.views,
@@ -392,6 +399,9 @@ private fun HeaderRow(
     verification: SenderVerification?,
     showDrillChevron: Boolean,
     onChannelClick: () -> Unit,
+    isDeleted: Boolean = false,
+    revisionCount: Int = 0,
+    onTapRevisions: () -> Unit = {},
 ) {
     val titleColor = MaterialTheme.colorScheme.onSurface
     val subColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -461,6 +471,13 @@ private fun HeaderRow(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (isDeleted) {
+            Spacer(Modifier.width(4.dp))
+            DeletedBadge()
+        } else if (revisionCount > 0) {
+            Spacer(Modifier.width(4.dp))
+            EditedChip(count = revisionCount, onClick = onTapRevisions)
+        }
     }
 }
 
