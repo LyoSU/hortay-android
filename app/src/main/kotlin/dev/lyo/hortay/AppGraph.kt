@@ -177,7 +177,13 @@ class AppGraph(context: Context) {
         archiveRepository = archiveRepository,
     )
 
-    val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope, res)
+    val commentsRepository: CommentsRepository = CommentsRepository(
+        td = tdClient,
+        mapper = messageMapper,
+        scope = appScope,
+        res = res,
+        archiveRepository = archiveRepository,
+    )
 
     /**
      * Process-wide cold-start gate. Holds the [StartupCoordinator.Phase.Booting] flag

@@ -52,6 +52,7 @@ class CommentsRepository(
     private val mapper: MessageMapper,
     private val scope: CoroutineScope,
     private val res: StringResolver,
+    private val archiveRepository: dev.lyo.hortay.data.archive.ArchiveRepository? = null,
 ) {
 
     private val unavailableMsg: String get() = res.getString(dev.lyo.hortay.R.string.comments_unavailable)
@@ -566,12 +567,43 @@ class CommentsRepository(
             else {
                 val idx = live.indexOfFirst { it.id == upd.messageId }
                 if (idx == -1) false
-                else { live[idx].content = upd.newContent; true }
+                else {
+                    // Archive: capture comment edit. Mirror of PostsRepository handling
+                    // but with isComment = true so the snapshot is filtered out of the
+                    // feed's deleted-post view (still surfaces in the archive screen).
+                    if (archiveRepository != null) {
+                        scope.launch {
+                            archiveRepository.captureTdlibVersion(
+                                chat = dev.lyo.hortay.data.archive.ChatRef.tdlib(upd.chatId),
+                                messageKey = upd.messageId.toString(),
+                                albumKey = null, // comments rarely have albums
+                                editedAtMs = null,
+                                meta = dev.lyo.hortay.data.archive.TdlibContentMetaExtractor.extract(upd.newContent),
+                                isComment = true,
+                            )
+                        }
+                    }
+                    live[idx].content = upd.newContent; true
+                }
             }
         }
         is TdApi.UpdateDeleteMessages -> {
             if (upd.chatId != anchor.threadChatId || !upd.isPermanent) false
             else {
+                // Archive: capture comment deletions before mutating live list.
+                if (archiveRepository != null) {
+                    val keys = upd.messageIds.map { it.toString() }
+                    if (keys.isNotEmpty()) {
+                        scope.launch {
+                            archiveRepository.captureTdlibDelete(
+                                chat = dev.lyo.hortay.data.archive.ChatRef.tdlib(upd.chatId),
+                                messageKeys = keys,
+                                albumKey = null, // comments don't use album debounce
+                                isComment = true,
+                            )
+                        }
+                    }
+                }
                 // Delete fan-in is naturally thread-safe: the only mutation is
                 // `live.removeAll { it.id in ids }`, so messages from foreign
                 // threads (different `messageThreadId`, same discussion chat)
