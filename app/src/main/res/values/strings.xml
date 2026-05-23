@@ -660,4 +660,12 @@
     <string name="hidden_channels_unknown">Hidden channel</string>
     <string name="hidden_channels_id_placeholder">id %1$d</string>
     <string name="hidden_channels_unhide_for">Show %1$s in feed</string>
+
+    <!-- Archive: revision sheet -->
+    <string name="revision_sheet_title">Edit history</string>
+    <string name="revision_sheet_title_deleted">Deleted post</string>
+    <string name="revision_empty">No revisions stored.</string>
+    <string name="revision_baseline_caveat">First version Hortay saw — earlier history not captured.</string>
+    <string name="revision_go_to_current">Go to current</string>
+    <string name="revision_open_in_telegram">Open in Telegram</string>
 </resources>

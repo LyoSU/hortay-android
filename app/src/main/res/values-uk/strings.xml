@@ -674,4 +674,12 @@
     <string name="hidden_channels_unknown">Прихований канал</string>
     <string name="hidden_channels_id_placeholder">id %1$d</string>
     <string name="hidden_channels_unhide_for">Повернути %1$s у стрічку</string>
+
+    <!-- Archive: revision sheet -->
+    <string name="revision_sheet_title">Історія редагувань</string>
+    <string name="revision_sheet_title_deleted">Видалений пост</string>
+    <string name="revision_empty">Версій ще немає.</string>
+    <string name="revision_baseline_caveat">Перша версія, яку Hortay побачив — раніша історія не зафіксована.</string>
+    <string name="revision_go_to_current">До поточної</string>
+    <string name="revision_open_in_telegram">Відкрити в Telegram</string>
 </resources>
