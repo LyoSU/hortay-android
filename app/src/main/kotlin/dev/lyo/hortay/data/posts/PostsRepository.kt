@@ -19,6 +19,9 @@ import dev.lyo.hortay.data.TdSender
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.UserMessageBus
+import dev.lyo.hortay.data.archive.ArchiveRepository
+import dev.lyo.hortay.data.archive.ChatRef
+import dev.lyo.hortay.data.archive.TdlibContentMetaExtractor
 import dev.lyo.hortay.data.surfaceTo
 import dev.lyo.hortay.data.warnUnlessCancelled
 import kotlinx.collections.immutable.PersistentList
@@ -124,6 +127,12 @@ class PostsRepository(
      * reason as [ignoredChannels]; when null, the backfill becomes a no-op.
      */
     private val coldStartBackfill: ColdStartBackfillStore? = null,
+    /**
+     * Archive capture sink. Optional so tests + historical call sites that don't wire
+     * the archive feature keep constructing a repository without it. When null, all
+     * capture calls are no-ops.
+     */
+    private val archiveRepository: ArchiveRepository? = null,
 ) : FeedSource {
 
     /**
@@ -1903,6 +1912,27 @@ class PostsRepository(
         // The right gate is [TimelinePost.mediaAlbumId]: anything with a
         // non-zero album id must re-ingest the whole group, regardless of
         // which member id the update names.
+        // Archive: snapshot the new content before the feed mutation. We check for a live
+        // post first — cold-start replays of UpdateMessageContent arrive before the feed
+        // is populated and would be archived as "edits" of posts the user never saw. Skip
+        // silently; the live subscription will capture subsequent edits normally.
+        val livePost = _posts.value.firstOrNull {
+            it.chatId == update.chatId &&
+                (it.id == update.messageId || update.messageId in it.albumMessageIds)
+        }
+        if (livePost != null) {
+            scope.launch {
+                archiveRepository?.captureTdlibVersion(
+                    chat = ChatRef.tdlib(update.chatId),
+                    messageKey = update.messageId.toString(),
+                    albumKey = livePost.mediaAlbumId.takeIf { it != 0L }?.toString(),
+                    editedAtMs = null,
+                    meta = TdlibContentMetaExtractor.extract(update.newContent),
+                    isComment = false,
+                )
+            }
+        }
+
         val target = _posts.value.firstOrNull { post ->
             post.chatId == update.chatId &&
                 (post.id == update.messageId || update.messageId in post.albumMessageIds)

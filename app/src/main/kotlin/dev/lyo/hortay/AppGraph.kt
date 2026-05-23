@@ -142,6 +142,27 @@ class AppGraph(context: Context) {
      */
     val coldStartBackfillStore: ColdStartBackfillStore = ColdStartBackfillStoreImpl(context)
 
+    // Archive database and repository — declared before postsRepository so the capture
+    // sink is available when PostsRepository is wired.
+    val archiveDriver: SqlDriver = AndroidSqliteDriver(
+        schema = ArchiveDatabase.Schema,
+        context = context,
+        name = "archive.db",
+    )
+    val archiveDb: ArchiveDatabase = ArchiveDatabase(archiveDriver)
+
+    val archiveSettingsStore: ArchiveSettingsStore = ArchiveSettingsStore(context)
+
+    private val archiveSettingsState: StateFlow<ArchiveSettings> =
+        archiveSettingsStore.flow.stateIn(
+            scope = appScope,
+            started = SharingStarted.Eagerly,
+            initialValue = ArchiveSettings.DEFAULT,
+        )
+
+    val archiveRepository: ArchiveRepository = ArchiveRepository(archiveDb, archiveSettingsState)
+    val archiveSweep: ArchiveSweep = ArchiveSweep(archiveDb, archiveSettingsState)
+
     val postsRepository: PostsRepository = PostsRepository(
         td = tdClient,
         mapper = messageMapper,
@@ -153,6 +174,7 @@ class AppGraph(context: Context) {
         res = res,
         ignoredChannels = ignoredChannels,
         coldStartBackfill = coldStartBackfillStore,
+        archiveRepository = archiveRepository,
     )
 
     val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope, res)
@@ -358,26 +380,6 @@ class AppGraph(context: Context) {
      * 50-100 ms of WAL-mode setup on every read.
      */
     val webDatabase: WebDatabase = WebDatabaseProvider.create(context)
-
-    // Archive database — separate from web.db (different retention semantics).
-    val archiveDriver: SqlDriver = AndroidSqliteDriver(
-        schema = ArchiveDatabase.Schema,
-        context = context,
-        name = "archive.db",
-    )
-    val archiveDb: ArchiveDatabase = ArchiveDatabase(archiveDriver)
-
-    val archiveSettingsStore: ArchiveSettingsStore = ArchiveSettingsStore(context)
-
-    private val archiveSettingsState: StateFlow<ArchiveSettings> =
-        archiveSettingsStore.flow.stateIn(
-            scope = appScope,
-            started = SharingStarted.Eagerly,
-            initialValue = ArchiveSettings.DEFAULT,
-        )
-
-    val archiveRepository: ArchiveRepository = ArchiveRepository(archiveDb, archiveSettingsState)
-    val archiveSweep: ArchiveSweep = ArchiveSweep(archiveDb, archiveSettingsState)
 
     val webRepository: WebRepository = WebRepository(webDatabase, res)
 
