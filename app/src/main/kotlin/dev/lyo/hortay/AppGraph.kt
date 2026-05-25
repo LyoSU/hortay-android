@@ -46,17 +46,26 @@ import dev.lyo.hortay.data.web.WebFeedScheduler
 import dev.lyo.hortay.data.web.WebFeedSource
 import dev.lyo.hortay.data.web.WebRepository
 import dev.lyo.hortay.data.web.WebTelegramClient
+import dev.lyo.hortay.data.archive.ArchiveRepository
+import dev.lyo.hortay.data.archive.ArchiveSettings
+import dev.lyo.hortay.data.archive.ArchiveSettingsStore
+import dev.lyo.hortay.data.archive.ArchiveSweep
+import dev.lyo.hortay.data.archive.db.ArchiveDatabase
 import dev.lyo.hortay.data.web.db.WebDatabase
 import dev.lyo.hortay.data.web.db.WebDatabaseProvider
 import java.io.File
 import androidx.lifecycle.ProcessLifecycleOwner
+import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import dev.lyo.hortay.ui.media.CustomEmojiAnimator
 import dev.lyo.hortay.ui.media.ExoPlayerPool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -133,6 +142,30 @@ class AppGraph(context: Context) {
      */
     val coldStartBackfillStore: ColdStartBackfillStore = ColdStartBackfillStoreImpl(context)
 
+    // Archive database and repository — declared before postsRepository so the capture
+    // sink is available when PostsRepository is wired.
+    val archiveDriver: SqlDriver = AndroidSqliteDriver(
+        schema = ArchiveDatabase.Schema,
+        context = context,
+        name = "archive.db",
+    )
+    val archiveDb: ArchiveDatabase = ArchiveDatabase(archiveDriver)
+
+    val archiveSettingsStore: ArchiveSettingsStore = ArchiveSettingsStore(context)
+
+    internal val archiveSettingsState: StateFlow<ArchiveSettings> =
+        archiveSettingsStore.flow.stateIn(
+            scope = appScope,
+            started = SharingStarted.Eagerly,
+            initialValue = ArchiveSettings.DEFAULT,
+        )
+
+    val archivedMediaStore: dev.lyo.hortay.data.archive.ArchivedMediaStore =
+        dev.lyo.hortay.data.archive.ArchivedMediaStore(context, archiveDb)
+    val archiveRepository: ArchiveRepository =
+        ArchiveRepository(archiveDb, archiveSettingsState, archivedMediaStore, appScope)
+    val archiveSweep: ArchiveSweep = ArchiveSweep(archiveDb, archiveSettingsState, archivedMediaStore)
+
     val postsRepository: PostsRepository = PostsRepository(
         td = tdClient,
         mapper = messageMapper,
@@ -144,9 +177,18 @@ class AppGraph(context: Context) {
         res = res,
         ignoredChannels = ignoredChannels,
         coldStartBackfill = coldStartBackfillStore,
+        archiveRepository = archiveRepository,
+        archiveMediaStore = archivedMediaStore,
     )
 
-    val commentsRepository: CommentsRepository = CommentsRepository(tdClient, messageMapper, appScope, res)
+    val commentsRepository: CommentsRepository = CommentsRepository(
+        td = tdClient,
+        mapper = messageMapper,
+        scope = appScope,
+        res = res,
+        archiveRepository = archiveRepository,
+        archiveMediaStore = archivedMediaStore,
+    )
 
     /**
      * Process-wide cold-start gate. Holds the [StartupCoordinator.Phase.Booting] flag
@@ -174,6 +216,7 @@ class AppGraph(context: Context) {
         startupPhase = startupCoordinator.phase,
         foreground = lifecycleBridge.foreground,
         scope = appScope,
+        archiveSweep = archiveSweep,
     )
 
     init {
@@ -408,6 +451,7 @@ class AppGraph(context: Context) {
         subscriptions = webSubscriptions,
         scope = appScope,
         ignoredChannels = ignoredChannels,
+        archiveRepository = archiveRepository,
     )
 
     /**
@@ -598,5 +642,13 @@ class AppGraph(context: Context) {
         // account A's TDLib database and will be invalid the moment the new
         // client spawns.
         runCatching { nav.clear() }
+        // Archive snapshots belong to the previous account's message ids and
+        // chat ids. Wipe on logout so account B doesn't see account A's history
+        // in the archive screen.
+        runCatching { archiveRepository.clear() }
+        // Per-account preferences in ArchiveSettingsStore (currently: the
+        // excluded-chat set, which is keyed on TDLib chatIds). The master
+        // `enabled` toggle is a global user preference and survives logout.
+        runCatching { archiveSettingsStore.resetForLogout() }
     }
 }

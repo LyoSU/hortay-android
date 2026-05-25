@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+- Post archive: edited and deleted channel posts are saved locally with a visual diff between versions — disabled by default, configurable in Settings → Post archive.
+- Archive now snapshots photo, video, animation, document, audio, voice and round-video media at capture time, so the revision sheet shows the deleted post's media instead of just its text. When the full file isn't in Telegram's cache the inline preview is shown blurred with an honest "preview only" label.
+
 ### Changed
 - Feed-order toggle in Settings is now positional — "Newest on top" / "Newest at the bottom" with one-line subtitles — and switching it pops a confirmation explaining where new posts will appear.
 - The post's unread strip now collapses with a brief shrink-and-fade when dwell-ack marks the post read, instead of a passive opacity fade.
@@ -22,6 +26,10 @@
 - Hashtag tap no longer promises the feature in "the next update"; the snackbar now describes the actual limitation (search works inside a channel).
 - The "X new posts" pill now stays visible at every scroll position, including at the very top of "Newest on top" and the very bottom of "Newest at the bottom" — previously it auto-hid at the freshness edge and the arrivals could end up off-screen with no way to see them short of a pull-to-refresh.
 - The "Unread" divider in "Newest at the bottom" feed now reads "New posts" — same wording the floating arrival pill uses, since both surfaces mean "posts you haven't read yet" from the reader's point of view.
+- Voting in a poll no longer creates a fake "edit" entry in the archive — only real admin edits are recorded.
+- Live-location ticks, paid-media reveals, self-destruct timer expiries and other internal TDLib content updates no longer fill the archive with false revisions.
+- The post-archive revision timeline now anchors the first dot at the post's publication time, so a freshly-edited post reads as "published → edited" rather than the first dot misleadingly carrying the edit timestamp.
+- Archive purge and retention sweep no longer leak media files on disk — clearing snapshots also reclaims their image and video bytes.
 
 ## [0.7.0] — 2026-05-21
 

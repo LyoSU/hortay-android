@@ -665,4 +665,88 @@
     <string name="hidden_channels_unknown">Прихований канал</string>
     <string name="hidden_channels_id_placeholder">id %1$d</string>
     <string name="hidden_channels_unhide_for">Повернути %1$s у стрічку</string>
+
+    <!-- Archive: feed chips/badges -->
+    <string name="post_deleted_badge">видалено</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="one">ред.</item>
+        <item quantity="few">ред. ×%d</item>
+        <item quantity="many">ред. ×%d</item>
+        <item quantity="other">ред. ×%d</item>
+    </plurals>
+
+    <!-- Archive: list screen -->
+    <string name="archive_screen_title">Архів</string>
+    <string name="archive_filter_all">Усі</string>
+    <string name="archive_filter_edited">Редаговані</string>
+    <string name="archive_filter_deleted">Видалені</string>
+    <string name="archive_scope_all">Усе</string>
+    <string name="archive_scope_posts">Пости</string>
+    <string name="archive_scope_comments">Коментарі</string>
+    <string name="archive_empty_enabled">Поки нічого. Як тільки канал відредагує або видалить пост, він зʼявиться тут.</string>
+    <string name="archive_search_placeholder">Пошук в архіві</string>
+    <string name="archive_purged">Запис видалено.</string>
+
+    <!-- Archive: row -->
+    <string name="archive_row_kind_edited">Редаговано</string>
+    <string name="archive_row_kind_deleted">Видалено</string>
+
+    <!-- Archive: revision sheet -->
+    <string name="revision_sheet_title">Історія редагувань</string>
+    <string name="revision_sheet_title_deleted">Видалений пост</string>
+    <string name="revision_empty">Версій ще немає.</string>
+    <string name="revision_baseline_caveat">Оригінал не зафіксовано — показано вміст після найранішого редагування, яке побачив Hortay.</string>
+    <string name="revision_go_to_current">До поточної</string>
+    <string name="revision_open_in_telegram">Відкрити в Telegram</string>
+    <string name="revision_media_video_caption">Відео · %1$dс</string>
+    <string name="revision_media_audio_caption">Аудіо · %1$dс</string>
+    <string name="revision_media_document">Документ</string>
+    <string name="revision_media_unavailable">Медіа не вдалося зберегти</string>
+    <string name="revision_media_low_res_overlay">Лише прев\'ю — повне медіа не було в кеші</string>
+
+    <!-- Archive: settings screen -->
+    <string name="settings_archive_title">Архів постів</string>
+    <string name="archive_master_toggle">Зберігати знімки</string>
+    <string name="archive_master_subtitle">Локально на цьому пристрої. Очищується при виході.</string>
+    <string name="archive_capture_edits">Зберігати редагування</string>
+    <string name="archive_capture_deletes">Зберігати видалення</string>
+    <string name="archive_retention_label">Термін зберігання</string>
+    <string name="archive_retention_days">%d днів</string>
+    <string name="archive_retention_unlimited">Без обмежень</string>
+    <string name="archive_max_records_label">Максимум записів</string>
+    <string name="archive_records_unlimited">Без обмежень</string>
+    <string name="archive_clear_all">Очистити архів</string>
+    <string name="archive_clear_confirm">Назавжди видалити всі знімки. Канали цього не помітять.</string>
+    <string name="archive_clear_yes">Очистити</string>
+    <string name="archive_disable_title">Вимкнути архів</string>
+    <string name="archive_disable_body">Припинити зберігати нові знімки. Що зробити з наявними?</string>
+    <string name="archive_disable_keep">Залишити, не зберігати нові</string>
+    <string name="archive_disable_purge">Видалити й вимкнути</string>
+
+    <!-- Archive: export -->
+    <string name="archive_export_json">Експортувати в JSON</string>
+    <string name="archive_export_size_warning">Приблизний розмір: %d МБ. Продовжити?</string>
+    <string name="archive_export_continue">Експортувати</string>
+
+    <!-- Archive: onboarding sheet -->
+    <string name="archive_onboarding_title">Зберігати редагування й видалення?</string>
+    <string name="archive_onboarding_what">Hortay зберігає текст та метадані медіа, коли канал редагує або видаляє пост. Самі фото й відео не завантажуються — лише маленькі мініатюри.</string>
+    <string name="archive_onboarding_where">Локально на цьому пристрої. Нікуди не надсилається.</string>
+    <string name="archive_onboarding_logout">Автоматично очищується при виході з акаунту.</string>
+    <string name="archive_onboarding_enable">Увімкнути</string>
+    <string name="archive_onboarding_cancel">Скасувати</string>
+
+    <!-- Archive: settings sections -->
+    <string name="archive_section_capture">Запис</string>
+    <string name="archive_section_retention">Зберігання</string>
+    <string name="archive_section_events">Типи подій</string>
+    <string name="archive_section_archive">Архів</string>
+    <string name="archive_open_browser">Переглянути архів</string>
+    <string name="archive_storage_label">Обʼєм</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="one">%d запис</item>
+        <item quantity="few">%d записи</item>
+        <item quantity="many">%d записів</item>
+        <item quantity="other">%d запису</item>
+    </plurals>
 </resources>

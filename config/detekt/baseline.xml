@@ -1,5 +1,171 @@
 <?xml version="1.0" ?>
 <SmellBaseline>
-  <ManuallySuppressedIssues/>
-  <CurrentIssues/>
+  <ManuallySuppressedIssues></ManuallySuppressedIssues>
+  <CurrentIssues>
+    <ID>ComposableNaming:FeedScrollEffects.kt$rememberCommentsPrefetch</ID>
+    <ID>ComposableNaming:FeedScrollEffects.kt$rememberPendingScrollToMessage</ID>
+    <ID>ComposableParamOrder:ConnectionBanner.kt$ConnectionBanner</ID>
+    <ID>ComposableParamOrder:OtpInput.kt$OtpInput</ID>
+    <ID>ComposableParamOrder:SkeletonFeed.kt$SkeletonFeed</ID>
+    <ID>ComposableParamOrder:TimelineFeedColumn.kt$TimelineFeedColumn</ID>
+    <ID>ComposableParamOrder:UserProfileSheet.kt$UserProfileSheet</ID>
+    <ID>CompositionLocalAllowlist:LocalCenteredItem.kt$LocalIsCenteredItem</ID>
+    <ID>CompositionLocalAllowlist:LocalCenteredItem.kt$LocalIsHighlightedItem</ID>
+    <ID>CompositionLocalAllowlist:LocalCustomEmojiAnimator.kt$LocalCustomEmojiAnimator</ID>
+    <ID>CompositionLocalAllowlist:LocalHashtagTap.kt$LocalHashtagTap</ID>
+    <ID>CompositionLocalAllowlist:LocalInlineVideoAutoplay.kt$LocalInlineVideoAutoplay</ID>
+    <ID>CompositionLocalAllowlist:LocalLinkConfirm.kt$LocalLinkConfirm</ID>
+    <ID>CompositionLocalAllowlist:LocalStickerOutline.kt$LocalStickerOutline</ID>
+    <ID>CompositionLocalAllowlist:LocalWebHttpClient.kt$LocalWebHttpClient</ID>
+    <ID>CompositionLocalAllowlist:MediaViewerHost.kt$LocalMediaViewer</ID>
+    <ID>CompositionLocalAllowlist:UserMessageActionDispatcher.kt$LocalUserMessageBus</ID>
+    <ID>ContentSlotReused:PostCard.kt$content</ID>
+    <ID>ContentSlotReused:RichText.kt$renderer</ID>
+    <ID>DestructuringDeclarationWithTooManyEntries:ConnectionBanner.kt$val (symbol, label, container, content) = if (showFlood) { Quad( "pause", pluralStringResource( R.plurals.connection_flood_wait, floodSecondsRemaining.toInt(), floodSecondsRemaining.toInt(), ), MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer, ) } else when (status) { ConnectionStatus.WaitingForNetwork -&gt; Quad( "wifi_off", stringResource(R.string.connection_waiting), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer, ) ConnectionStatus.Connecting -&gt; Quad( "cloud_off", stringResource(R.string.connection_connecting), MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, ) ConnectionStatus.Updating -&gt; Quad( "sync", stringResource(R.string.connection_updating), MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, ) ConnectionStatus.Ready -&gt; return@AnimatedVisibility }</ID>
+    <ID>ExplicitItLambdaParameter:ChannelsScreen.kt${ _, it -&gt; it.chatId }</ID>
+    <ID>ExplicitItLambdaParameter:WebChannelsScreen.kt${ _, it -&gt; it.info.username }</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_fetched_at_ms: Long</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_id: String</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_is_bookmarked: Boolean</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_is_read: Boolean</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_last_etag: String?</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_last_modified: String?</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_older_cursor: String?</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_published_at_ms: Long</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_text_plain: String</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$avatar_url: String?</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$channel_avatar: String?</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$channel_title: String</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$channel_username: String</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$fetch_error: String?</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$fetch_retry_after_ms: Long?</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$fetch_status: String</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$forwarded_from_json: String?</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$is_subscribed: Boolean</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$is_verified: Boolean</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$last_fetched_at_ms: Long?</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$media_json: String</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$published_at_iso: String</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$reactions_json: String</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$text_html: String</ID>
+    <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$web_preview_json: String?</ID>
+    <ID>InstanceOfCheckForException:DeepLinkDispatcher.kt$t is kotlin.coroutines.cancellation.CancellationException</ID>
+    <ID>InstanceOfCheckForException:LottieCompositionStore.kt$LottieCompositionStore$t is kotlin.coroutines.cancellation.CancellationException</ID>
+    <ID>InstanceOfCheckForException:LottieUrlStore.kt$LottieUrlStore$t is kotlin.coroutines.cancellation.CancellationException</ID>
+    <ID>InstanceOfCheckForException:MediaCache.kt$MediaCache$t is kotlinx.coroutines.CancellationException</ID>
+    <ID>InstanceOfCheckForException:StickerOutlineStore.kt$StickerOutlineStore$t is kotlin.coroutines.cancellation.CancellationException</ID>
+    <ID>InstanceOfCheckForException:WebFeedSource.kt$WebFeedSource$t is kotlinx.coroutines.CancellationException</ID>
+    <ID>InstanceOfCheckForException:WebModeScaffold.kt$t is kotlin.coroutines.cancellation.CancellationException</ID>
+    <ID>LambdaParameterEventTrailing:SpoilerOverlay.kt$onReveal</ID>
+    <ID>LambdaParameterEventTrailing:WebChannelsScreen.kt$onAddChannel</ID>
+    <ID>LambdaParameterInRestartableEffect:ChannelScreen.kt$onScrollHandled</ID>
+    <ID>LambdaParameterInRestartableEffect:ChannelScreen.kt$onScrollMissed</ID>
+    <ID>LambdaParameterInRestartableEffect:DeepLinkDispatcher.kt$onOpenUser</ID>
+    <ID>LambdaParameterInRestartableEffect:DeepLinkDispatcher.kt$onPushChannel</ID>
+    <ID>LambdaParameterInRestartableEffect:DeepLinkDispatcher.kt$previewChatInvite</ID>
+    <ID>LambdaParameterInRestartableEffect:DeepLinkDispatcher.kt$resolveChatKind</ID>
+    <ID>LambdaParameterInRestartableEffect:DeepLinkDispatcher.kt$resolvePublicHandle</ID>
+    <ID>LambdaParameterInRestartableEffect:FeedScrollEffects.kt$loadHistoryAround</ID>
+    <ID>LambdaParameterInRestartableEffect:FeedScrollEffects.kt$markAsRead</ID>
+    <ID>LambdaParameterInRestartableEffect:FeedScrollEffects.kt$onLanded</ID>
+    <ID>LambdaParameterInRestartableEffect:FeedScrollEffects.kt$onMissed</ID>
+    <ID>LambdaParameterInRestartableEffect:FeedScrollEffects.kt$prefetchThread</ID>
+    <ID>LambdaParameterInRestartableEffect:FullScreenMediaViewer.kt$onQualityPick</ID>
+    <ID>LambdaParameterInRestartableEffect:HiddenChannelsScreen.kt$webChannelByChatId</ID>
+    <ID>LambdaParameterInRestartableEffect:SpoilerOverlay.kt$onReveal</ID>
+    <ID>LambdaParameterInRestartableEffect:TimelineScreen.kt$onScrollHandled</ID>
+    <ID>LargeClass:PostsRepository.kt$PostsRepository : FeedSource</ID>
+    <ID>LoopWithTooManyJumpStatements:CommentsRepository.kt$CommentsRepository$while</ID>
+    <ID>LoopWithTooManyJumpStatements:CustomEmojiRepository.kt$CustomEmojiRepository$for</ID>
+    <ID>LoopWithTooManyJumpStatements:FullScreenMediaViewer.kt$do</ID>
+    <ID>LoopWithTooManyJumpStatements:LinkAwareText.kt$for</ID>
+    <ID>LoopWithTooManyJumpStatements:LinkLongPress.kt$while</ID>
+    <ID>LoopWithTooManyJumpStatements:MediaCache.kt$MediaCache$for</ID>
+    <ID>LoopWithTooManyJumpStatements:MediaCache.kt$MediaCache$while</ID>
+    <ID>LoopWithTooManyJumpStatements:PostsRepository.kt$PostsRepository$for</ID>
+    <ID>LoopWithTooManyJumpStatements:WebFeedSource.kt$WebFeedSource$for</ID>
+    <ID>MatchingDeclarationName:ChannelHeaderBar.kt$ChannelHeaderAvatar</ID>
+    <ID>MatchingDeclarationName:CommentsScreen.kt$CommentsDisabledOverride</ID>
+    <ID>MatchingDeclarationName:FloatingTopBar.kt$FloatingTopBarBehavior</ID>
+    <ID>MatchingDeclarationName:HortayTopBar.kt$HortayTopBarSize</ID>
+    <ID>MatchingDeclarationName:PollBlock.kt$PollVoting</ID>
+    <ID>MatchingDeclarationName:SmartScroll.kt$ScrollKind</ID>
+    <ID>MatchingDeclarationName:SpoilerOverlay.kt$SpoilerKind</ID>
+    <ID>MatchingDeclarationName:TdErrorMapping.kt$TdErrorKind</ID>
+    <ID>MatchingDeclarationName:TimelineEmptyHero.kt$EmptyKind</ID>
+    <ID>MayBeConst:WebCustomEmojiResolver.kt$WebCustomEmojiResolver.Companion$private val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) " + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"</ID>
+    <ID>ModifierMissing:ArchiveScreen.kt$ArchiveScreen</ID>
+    <ID>ModifierMissing:ArchiveSettingsScreen.kt$ArchiveSettingsScreen</ID>
+    <ID>ModifierMissing:AuthScreen.kt$AuthScreen</ID>
+    <ID>ModifierMissing:AutoDownloadScreen.kt$AutoDownloadHost</ID>
+    <ID>ModifierMissing:ChannelScreen.kt$ChannelScreen</ID>
+    <ID>ModifierMissing:ChannelsScreen.kt$ChannelsScreen</ID>
+    <ID>ModifierMissing:CommentsScreen.kt$CommentsScreen</ID>
+    <ID>ModifierMissing:FoldersBar.kt$FoldersBar</ID>
+    <ID>ModifierMissing:HiddenChannelsScreen.kt$HiddenChannelsScreen</ID>
+    <ID>ModifierMissing:MainScaffold.kt$MainScaffold</ID>
+    <ID>ModifierMissing:PostCard.kt$PostCard</ID>
+    <ID>ModifierMissing:RichText.kt$RichText</ID>
+    <ID>ModifierMissing:TimelineScreen.kt$TimelineScreen</ID>
+    <ID>ModifierMissing:WebChannelScreen.kt$WebChannelScreen</ID>
+    <ID>ModifierMissing:WebChannelsScreen.kt$WebChannelsScreen</ID>
+    <ID>ModifierMissing:WebModeScaffold.kt$WebModeScaffold</ID>
+    <ID>ModifierMissing:WebSearchScreen.kt$WebSearchScreen</ID>
+    <ID>MultipleEmitters:InlineCustomEmojiRenderer.kt$InlineCustomEmojiRenderer</ID>
+    <ID>MultipleEmitters:PostBody.kt$MediaCaption</ID>
+    <ID>MultipleEmitters:ReportFlowSheet.kt$OptionSelectionContent</ID>
+    <ID>MultipleEmitters:ReportFlowSheet.kt$TextRequiredContent</ID>
+    <ID>MutableStateAutoboxing:TdVideoPlayer.kt$mutableStateOf(initialAspect)</ID>
+    <ID>MutableStateAutoboxing:WebModeScaffold.kt$mutableStateOf(0L)</ID>
+    <ID>ParameterNaming:ChannelScreen.kt$onScrollHandled</ID>
+    <ID>ParameterNaming:ChannelScreen.kt$onScrollMissed</ID>
+    <ID>ParameterNaming:FeedScrollEffects.kt$onLanded</ID>
+    <ID>ParameterNaming:FeedScrollEffects.kt$onMissed</ID>
+    <ID>ParameterNaming:FoldersBar.kt$onSelected</ID>
+    <ID>ParameterNaming:NavOverlayRenderer.kt$onLinkNotFound</ID>
+    <ID>ParameterNaming:TimelineScreen.kt$onScrollHandled</ID>
+    <ID>ParameterNaming:TimelineScreen.kt$onScrollMissed</ID>
+    <ID>ParameterNaming:VideoPlayerControls.kt$onSliderChangeFinished</ID>
+    <ID>RethrowCaughtException:TdErrorMapping.kt$throw e</ID>
+    <ID>TooGenericExceptionCaught:CommentsRepository.kt$CommentsRepository$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:CustomEmojiAnimator.kt$CustomEmojiAnimator$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:DeepLinkDispatcher.kt$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:LottieCompositionStore.kt$LottieCompositionStore$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:LottieUrlStore.kt$LottieUrlStore$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:MediaCache.kt$MediaCache$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:MediaShareActions.kt$MediaShareActions$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:MigrationCoordinator.kt$MigrationCoordinator$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:StickerOutlineStore.kt$StickerOutlineStore$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:WebFeedScheduler.kt$WebFeedScheduler$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:WebFeedSource.kt$WebFeedSource$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:WebModeScaffold.kt$t: Throwable</ID>
+    <ID>UnstableCollections:CountryPickerSheet.kt$List&lt;Country&gt;</ID>
+    <ID>UnstableCollections:FeedScrollEffects.kt$List&lt;FeedItem&gt;</ID>
+    <ID>UnstableCollections:FoldersBar.kt$List&lt;FolderTab&gt;</ID>
+    <ID>UnstableCollections:FullScreenMediaViewer.kt$List&lt;AlbumItem&gt;</ID>
+    <ID>UnstableCollections:LinkLongPress.kt$List&lt;LinkRange&gt;</ID>
+    <ID>UnstableCollections:MigrationProposalSheet.kt$List&lt;String&gt;</ID>
+    <ID>UnstableCollections:NavOverlayRenderer.kt$List&lt;NavEntry&gt;</ID>
+    <ID>UnstableCollections:NewPostsPill.kt$List&lt;ChannelBadge&gt;</ID>
+    <ID>UnstableCollections:PostMediaBlocks.kt$List&lt;AlbumItem&gt;</ID>
+    <ID>UnstableCollections:ReportFlowSheet.kt$List&lt;org.drinkless.tdlib.TdApi.ReportOption&gt;</ID>
+    <ID>UnstableCollections:RichText.kt$Map&lt;String, InlineTextContent&gt;</ID>
+    <ID>UnstableCollections:TimelineFeedColumn.kt$List&lt;FeedItem&gt;</ID>
+    <ID>UnusedParameter:NavOverlayRenderer.kt$onPushChannel: (chatId: Long, scrollTo: Long?) -&gt; Unit</ID>
+    <ID>UnusedParameter:WebRepository.kt$WebRepository$_fetched_at_ms: Long</ID>
+    <ID>UnusedParameter:WebRepository.kt$WebRepository$_id: String</ID>
+    <ID>UnusedParameter:WebRepository.kt$WebRepository$_is_bookmarked: Boolean</ID>
+    <ID>UnusedParameter:WebRepository.kt$WebRepository$_is_read: Boolean</ID>
+    <ID>UnusedParameter:WebRepository.kt$WebRepository$_last_etag: String?</ID>
+    <ID>UnusedParameter:WebRepository.kt$WebRepository$_last_modified: String?</ID>
+    <ID>UnusedParameter:WebRepository.kt$WebRepository$_older_cursor: String?</ID>
+    <ID>UnusedParameter:WebRepository.kt$WebRepository$_published_at_ms: Long</ID>
+    <ID>UnusedParameter:WebRepository.kt$WebRepository$_text_plain: String</ID>
+    <ID>UnusedPrivateProperty:ArchiveScreen.kt$val context = LocalContext.current</ID>
+    <ID>UnusedPrivateProperty:MediaProgressIndicator.kt$private const val INDETERMINATE_SWEEP_DEGREES = 90f</ID>
+    <ID>UnusedPrivateProperty:TimelineScreen.kt$/** How long after the last keystroke we issue the search round-trip. */ private const val SEARCH_DEBOUNCE_MS = 300L</ID>
+    <ID>UnusedPrivateProperty:TimelineScreen.kt$val postsState = rememberUpdatedState(posts)</ID>
+    <ID>UnusedPrivateProperty:WebRepository.kt$WebRepository$private val suggestionQueries get() = db.channelSuggestionQueries</ID>
+    <ID>VariableNaming:TimelineScreen.kt$val scope_filter: FilterScope = remember(selectedFolderId, archiveSelected, foldersList) { when { archiveSelected -&gt; FilterScope.Archive selectedFolderId != null -&gt; { val match = foldersList.firstOrNull { it.id == selectedFolderId } if (match == null) FilterScope.All else FilterScope.Folder(match.id, match.name?.text?.text.orEmpty()) } else -&gt; FilterScope.All } }</ID>
+  </CurrentIssues>
 </SmellBaseline>

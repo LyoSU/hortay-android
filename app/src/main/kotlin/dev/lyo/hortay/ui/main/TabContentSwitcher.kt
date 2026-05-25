@@ -126,6 +126,8 @@ internal fun TabContentSwitcher(
                             feedOrder = feedOrder,
                             snapScroll = snapScroll,
                             coveredByOverlay = coveredByOverlay,
+                            archiveRepository = graph.archiveRepository,
+                            archiveMediaStore = graph.archivedMediaStore,
                         )
                     }
                 }
@@ -166,6 +168,8 @@ internal fun TabContentSwitcher(
                     feedOrder = feedOrder,
                     snapScroll = snapScroll,
                     coveredByOverlay = coveredByOverlay,
+                    archiveRepository = graph.archiveRepository,
+                    archiveMediaStore = graph.archivedMediaStore,
                 )
                 NavTab.Profile -> {
                     val me by graph.tdClient.me.collectAsStateWithLifecycle()
@@ -179,6 +183,9 @@ internal fun TabContentSwitcher(
                         autoDownload = graph.autoDownloadStore,
                         me = me,
                         userMessages = graph.userMessages,
+                        onNavigateToArchiveSettings = {
+                            graph.nav.push(dev.lyo.hortay.data.NavEntry.ArchiveSettings())
+                        },
                     )
                 }
             }

@@ -129,6 +129,11 @@ fun SettingsScreen(
      * the toggle still persists the preference, just without the toast.
      */
     userMessages: UserMessageBus? = null,
+    /**
+     * Opens the post-archive settings screen. Wired in TDLib mode via NavEntry.ArchiveSettings;
+     * null in guest mode (archive requires an authenticated session).
+     */
+    onNavigateToArchiveSettings: (() -> Unit)? = null,
 ) {
     // Sub-screen nav lives inside Settings — the auto-download list and category
     // screens are conceptually "deeper" pages of the same tab. Using AnimatedContent
@@ -202,6 +207,7 @@ fun SettingsScreen(
                 onOpenHiddenChannels = { showHiddenChannels = true },
                 me = me,
                 userMessages = userMessages,
+                onNavigateToArchiveSettings = onNavigateToArchiveSettings,
             )
         }
     }
@@ -233,6 +239,7 @@ private fun SettingsMain(
     onOpenHiddenChannels: () -> Unit,
     me: TdApi.User?,
     userMessages: UserMessageBus?,
+    onNavigateToArchiveSettings: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -364,6 +371,21 @@ private fun SettingsMain(
                     },
                     chevron = true,
                     onClick = onOpenHiddenChannels,
+                )
+            }
+
+            // ---- Archive settings: TDLib-mode-only entry point ----------------------
+            // Post archive requires an authenticated session (capture hooks live in
+            // PostsRepository and CommentsRepository; the DB is wiped on logout). The
+            // row is hidden in guest mode by passing onNavigateToArchiveSettings = null
+            // from WebModeScaffold's SettingsScreen call site.
+            if (onNavigateToArchiveSettings != null) {
+                SettingsRow(
+                    symbol = "delete_sweep",
+                    title = stringResource(R.string.settings_archive_title),
+                    subtitle = stringResource(R.string.archive_master_subtitle),
+                    chevron = true,
+                    onClick = onNavigateToArchiveSettings,
                 )
             }
 

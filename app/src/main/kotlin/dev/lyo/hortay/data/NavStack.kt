@@ -85,6 +85,18 @@ sealed interface NavEntry {
         val username: String,
         override val entryId: String = UUID.randomUUID().toString(),
     ) : NavEntry
+
+    /** Archive browser screen. */
+    @Immutable
+    data class Archive(
+        override val entryId: String = UUID.randomUUID().toString(),
+    ) : NavEntry
+
+    /** Archive settings screen — reached from Settings or via an action on [Archive]. */
+    @Immutable
+    data class ArchiveSettings(
+        override val entryId: String = UUID.randomUUID().toString(),
+    ) : NavEntry
 }
 
 class NavStack {

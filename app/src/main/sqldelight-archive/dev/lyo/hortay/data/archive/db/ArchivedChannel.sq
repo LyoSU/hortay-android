@@ -1,0 +1,36 @@
+CREATE TABLE ArchivedChannel (
+    source_kind         TEXT NOT NULL,
+    source_key          TEXT NOT NULL,
+    title               TEXT NOT NULL,
+    handle              TEXT,
+    photo_minithumb     BLOB,
+    is_verified         INTEGER NOT NULL DEFAULT 0,
+    last_snapshot_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (source_kind, source_key)
+);
+
+upsertInsert:
+INSERT OR IGNORE INTO ArchivedChannel(source_kind, source_key, title, handle, photo_minithumb,
+                                      is_verified, last_snapshot_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+upsertUpdate:
+UPDATE ArchivedChannel
+SET title = ?, handle = ?, photo_minithumb = ?, is_verified = ?, last_snapshot_at_ms = ?
+WHERE source_kind = ? AND source_key = ?;
+
+selectAll:
+SELECT * FROM ArchivedChannel ORDER BY last_snapshot_at_ms DESC;
+
+selectOne:
+SELECT * FROM ArchivedChannel WHERE source_kind = ? AND source_key = ?;
+
+countByChannel:
+SELECT ac.source_kind, ac.source_key, ac.title, ac.handle, ac.photo_minithumb, ac.is_verified, ac.last_snapshot_at_ms,
+       (SELECT COUNT(*) FROM PostSnapshot ps
+        WHERE ps.source_kind = ac.source_kind AND ps.source_key = ac.source_key) AS snapshot_count
+FROM ArchivedChannel ac
+ORDER BY ac.last_snapshot_at_ms DESC;
+
+clearAll:
+DELETE FROM ArchivedChannel;

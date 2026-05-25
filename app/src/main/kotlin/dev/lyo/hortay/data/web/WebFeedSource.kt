@@ -73,7 +73,17 @@ class WebFeedSource(
     private val maxConcurrentFetches: Int = DEFAULT_CONCURRENCY,
     private val stalenessWindowMs: Long = DEFAULT_STALENESS_WINDOW_MS,
     private val mediaTtlMs: Long = DEFAULT_MEDIA_TTL_MS,
+    /**
+     * Archive capture hook. Optional (default null) so existing tests and guest-
+     * mode without archive enabled don't require the dependency. When present,
+     * [fetchOne] captures edits (changed text or media filenames) and deletions
+     * (posts that vanished within the 30-minute CDN age-out window) into the
+     * archive DB before [WebRepository.ingestPage] overwrites them.
+     */
+    private val archiveRepository: dev.lyo.hortay.data.archive.ArchiveRepository? = null,
 ) : FeedSource {
+
+    private val webPostDiff = WebPostDiff()
 
     private val refreshMutex = Mutex()
     private val fetchSemaphore = Semaphore(maxConcurrentFetches)
@@ -340,6 +350,7 @@ class WebFeedSource(
             }
             when (result) {
                 is FetchResult.Page -> {
+                    captureArchiveDiff(username, result.page.posts, fetchedAtMs)
                     repository.ingestPage(
                         page = result.page,
                         etag = result.etag,
@@ -399,6 +410,50 @@ class WebFeedSource(
                 error = t.message,
             )
             return FetchOutcome.Transient
+        }
+    }
+
+    /**
+     * Diff the freshly-fetched [freshPosts] list against the previously-stored
+     * snapshot for [username] and fire archive captures for any edits before
+     * the ingest overwrites them.
+     *
+     * Edit detection: a post whose content changed (text, media filenames, web
+     * preview, or forwarded-from) triggers [captureWebVersion] with the OLD
+     * snapshot. [WebPostDiff] intentionally ignores CDN URL token rotation
+     * (same filename, different query-string) and view/reaction churn.
+     *
+     * Web-mode deletion capture is intentionally not surfaced yet: ghost-feed
+     * reconstruction is wired only for the TDLib path (see
+     * [ArchiveRepository.observeTdlibTombstones]); writing WEB-source DELETED
+     * rows that never reach the user would just waste storage.
+     *
+     * All captures are fire-and-forget via [scope].launch — they must NOT block
+     * the ingest path. A capture failure only means the archive misses one event;
+     * the feed itself is unaffected.
+     */
+    private suspend fun captureArchiveDiff(
+        username: String,
+        freshPosts: List<WebPost>,
+        fetchedAtMs: Long,
+    ) {
+        val archive = archiveRepository ?: return
+        val previousById = repository.readWebPostsForChannel(username)
+        if (previousById.isEmpty()) return
+
+        val chat = dev.lyo.hortay.data.archive.ChatRef.web(username)
+        for (fresh in freshPosts) {
+            val previous = previousById[fresh.id] ?: continue
+            if (webPostDiff.detectChange(previous, fresh) != null) {
+                scope.launch {
+                    archive.captureWebVersion(
+                        chat = chat,
+                        messageKey = previous.seq.toString(),
+                        previous = previous,
+                        seenAtOverrideMs = fetchedAtMs,
+                    )
+                }
+            }
         }
     }
 
@@ -531,5 +586,6 @@ class WebFeedSource(
          * inside the OkHttp Cache validity window.
          */
         const val DEFAULT_MEDIA_TTL_MS = 4 * 60 * 60 * 1000L // 4 hours
+
     }
 }

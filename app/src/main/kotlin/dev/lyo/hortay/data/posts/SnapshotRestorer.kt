@@ -102,7 +102,26 @@ internal fun foldRawIntoCurrent(
         val keys = post.albumMessageIds.ifEmpty { listOf(post.id) }
         keys.any { id -> (post.chatId to id) in freshKeys }
     }
-    return PostFilterStrategy.apply(rawSafe + keptOld).toPersistentList()
+    // Carry archive-derived state (revisionCount, isDeleted) forward when a raw
+    // batch replaces a post we already had in memory. MessageMapper rebuilds posts
+    // from TdApi.Message with revisionCount = 0 — without this merge, every PTR /
+    // scroll-up / cold-start-backfill resets the EditedChip counter to zero even
+    // though [handleContentChanged] correctly bumped it on the original update.
+    val carryByKey = HashMap<Pair<Long, Long>, TimelinePost>(current.size)
+    current.forEach { post ->
+        val keys = post.albumMessageIds.ifEmpty { listOf(post.id) }
+        keys.forEach { id -> carryByKey[post.chatId to id] = post }
+    }
+    val rawMerged = rawSafe.map { fresh ->
+        val carry = carryByKey[fresh.chatId to fresh.id]
+            ?: fresh.albumMessageIds.firstNotNullOfOrNull { id -> carryByKey[fresh.chatId to id] }
+        if (carry == null) fresh
+        else fresh.copy(
+            revisionCount = maxOf(fresh.revisionCount, carry.revisionCount),
+            isDeleted = carry.isDeleted || fresh.isDeleted,
+        )
+    }
+    return PostFilterStrategy.apply(rawMerged + keptOld).toPersistentList()
 }
 
 /**
