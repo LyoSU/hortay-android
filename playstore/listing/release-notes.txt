@@ -1,8 +1,7 @@
 ==============================================================================
 RELEASE NAME  (internal, max 50 chars — users do not see this)
 ==============================================================================
-0.2.0 (174) — initial public release
-
+0.8.0 (586) — post archive, +11 languages
 
 ==============================================================================
 WHAT'S NEW  (release notes — Play Console multi-language format)
@@ -16,17 +15,21 @@ Each language max 500 chars. Plain text only — no HTML / Markdown.
 ------------------------------------------------------------------------------
 
 <en-US>
-First public release of Hortay — an independent reader for Telegram channels.
+Post archive: see when channel posts are edited or deleted, with photos and video saved at capture time. Off by default — enable in Settings → Post archive.
 
-A social-feed view: no chat clutter, no ads, no analytics. Reactions, comment threads, rich formatting, animated emojis.
+11 new languages: Russian, Spanish, German, French, Italian, Portuguese (BR), Polish, Turkish, Indonesian, Persian and Arabic.
 
-Sign in with Telegram, or read public channels in guest mode without an account. Cross-channel local search, cache controls, Material 3 design.
+First sign-in no longer leaves the feed with one post per channel — top channels open pre-filled with real scroll headroom.
+
+Plus dozens of fixes to feed order, reactions, replies, quotes and the photo viewer.
 </en-US>
 
 <uk-UA>
-Перший публічний реліз Hortay — незалежна читалка Telegram-каналів.
+Архів постів: бачте, коли пости в каналах редагують або видаляють, зі знімками фото й відео. Вимкнено за замовчуванням — у Налаштуваннях → Архів постів.
 
-Стрічка як соцмережа: без чатового шуму, реклами й аналітики. Реакції, гілки коментарів, форматований текст, анімовані емодзі.
+11 нових мов: російська, іспанська, німецька, французька, італійська, португальська (BR), польська, турецька, індонезійська, перська й арабська.
 
-Увійдіть через Telegram або читайте публічні канали в гостьовому режимі без акаунта. Локальний пошук у підписках, керування кешем, дизайн Material 3.
+Перший вхід більше не лишає по одному посту на канал — топові канали одразу мають реальний скрол.
+
+Плюс десятки виправлень стрічки, реакцій, відповідей, цитат і перегляду фото.
 </uk-UA>

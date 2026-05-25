@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-25
+
 ### Added
 - Post archive: edited and deleted channel posts are saved locally with a visual diff between versions — disabled by default, configurable in Settings → Post archive.
 - Archive now snapshots photo, video, animation, document, audio, voice and round-video media at capture time, so the revision sheet shows the deleted post's media instead of just its text. When the full file isn't in Telegram's cache the inline preview is shown blurred with an honest "preview only" label.
