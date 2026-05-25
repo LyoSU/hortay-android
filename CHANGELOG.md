@@ -6,6 +6,7 @@
 
 ### Added
 - Post archive: edited and deleted channel posts are saved locally with a visual diff between versions — disabled by default, configurable in Settings → Post archive.
+- Archive now snapshots photo, video, animation, document, audio, voice and round-video media at capture time, so the revision sheet shows the deleted post's media instead of just its text. When the full file isn't in Telegram's cache the inline preview is shown blurred with an honest "preview only" label.
 
 ### Changed
 - Feed-order toggle in Settings is now positional — "Newest on top" / "Newest at the bottom" with one-line subtitles — and switching it pops a confirmation explaining where new posts will appear.
@@ -24,6 +25,10 @@
 - TDLib operation errors no longer surface the internal numeric code to users ("Couldn't refresh feed (400)" → "Couldn't refresh feed").
 - Hashtag tap no longer promises the feature in "the next update"; the snackbar now describes the actual limitation (search works inside a channel).
 - In "Newest at the bottom" feed order, fresh posts now slide into view when you're already parked at the tail — previously the "X new posts" pill hid as soon as you reached the bottom and the arrivals stayed off-screen until a manual refresh.
+- Voting in a poll no longer creates a fake "edit" entry in the archive — only real admin edits are recorded.
+- Live-location ticks, paid-media reveals, self-destruct timer expiries and other internal TDLib content updates no longer fill the archive with false revisions.
+- The post-archive revision timeline now anchors the first dot at the post's publication time, so a freshly-edited post reads as "published → edited" rather than the first dot misleadingly carrying the edit timestamp.
+- Archive purge and retention sweep no longer leak media files on disk — clearing snapshots also reclaims their image and video bytes.
 
 ## [0.7.0] — 2026-05-21
 

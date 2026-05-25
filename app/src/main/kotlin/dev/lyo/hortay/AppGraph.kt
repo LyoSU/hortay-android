@@ -160,8 +160,11 @@ class AppGraph(context: Context) {
             initialValue = ArchiveSettings.DEFAULT,
         )
 
-    val archiveRepository: ArchiveRepository = ArchiveRepository(archiveDb, archiveSettingsState)
-    val archiveSweep: ArchiveSweep = ArchiveSweep(archiveDb, archiveSettingsState)
+    val archivedMediaStore: dev.lyo.hortay.data.archive.ArchivedMediaStore =
+        dev.lyo.hortay.data.archive.ArchivedMediaStore(context, archiveDb)
+    val archiveRepository: ArchiveRepository =
+        ArchiveRepository(archiveDb, archiveSettingsState, archivedMediaStore, appScope)
+    val archiveSweep: ArchiveSweep = ArchiveSweep(archiveDb, archiveSettingsState, archivedMediaStore)
 
     val postsRepository: PostsRepository = PostsRepository(
         td = tdClient,
@@ -175,7 +178,7 @@ class AppGraph(context: Context) {
         ignoredChannels = ignoredChannels,
         coldStartBackfill = coldStartBackfillStore,
         archiveRepository = archiveRepository,
-        archiveSettings = archiveSettingsState,
+        archiveMediaStore = archivedMediaStore,
     )
 
     val commentsRepository: CommentsRepository = CommentsRepository(
@@ -184,6 +187,7 @@ class AppGraph(context: Context) {
         scope = appScope,
         res = res,
         archiveRepository = archiveRepository,
+        archiveMediaStore = archivedMediaStore,
     )
 
     /**
@@ -642,5 +646,9 @@ class AppGraph(context: Context) {
         // chat ids. Wipe on logout so account B doesn't see account A's history
         // in the archive screen.
         runCatching { archiveRepository.clear() }
+        // Per-account preferences in ArchiveSettingsStore (currently: the
+        // excluded-chat set, which is keyed on TDLib chatIds). The master
+        // `enabled` toggle is a global user preference and survives logout.
+        runCatching { archiveSettingsStore.resetForLogout() }
     }
 }

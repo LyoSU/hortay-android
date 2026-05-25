@@ -61,11 +61,31 @@ ORDER BY seen_at_ms DESC;
 deleteByIds:
 DELETE FROM PostSnapshot WHERE id IN ?;
 
+-- Same blob-collection pattern as selectBlobsOlderThan / selectBlobsByCap —
+-- needed so user-initiated purges (swipe-to-dismiss in ArchiveScreen) also
+-- release their media refcount instead of orphaning files.
+selectBlobsByIds:
+SELECT content_blob FROM PostSnapshot WHERE id IN ?;
+
 deleteOlderThan:
 DELETE FROM PostSnapshot WHERE seen_at_ms < ?;
 
 deleteByCap:
 DELETE FROM PostSnapshot
+WHERE id <= (SELECT MAX(id) FROM PostSnapshot) - ?;
+
+-- Returns content_blob bytes for every row that would be deleted by
+-- deleteOlderThan. The sweep decodes each blob to recover the media SHA,
+-- releases the refcount in ArchivedMediaFile, then runs deleteOlderThan
+-- itself. Two-step is needed because deleteOlderThan doesn't have a
+-- RETURNING clause portable across the older SQLite versions on min-SDK
+-- 26 devices (see Web-mode SQL portability note in ARCHITECTURE.md).
+selectBlobsOlderThan:
+SELECT content_blob FROM PostSnapshot WHERE seen_at_ms < ?;
+
+-- Same idea for the cap-based eviction.
+selectBlobsByCap:
+SELECT content_blob FROM PostSnapshot
 WHERE id <= (SELECT MAX(id) FROM PostSnapshot) - ?;
 
 clearAll:
@@ -80,12 +100,6 @@ SELECT *
 FROM PostSnapshot
 ORDER BY seen_at_ms ASC;
 
-selectAllDeleted:
-SELECT *
-FROM PostSnapshot
-WHERE kind = 'DELETED' AND source_kind = 'TDLIB'
-ORDER BY seen_at_ms DESC;
-
 selectLatestVersionForMessage:
 SELECT *
 FROM PostSnapshot
@@ -97,5 +111,37 @@ selectTdlibVersionCounts:
 SELECT source_key, message_key, COUNT(*) AS cnt
 FROM PostSnapshot
 WHERE source_kind = 'TDLIB' AND kind = 'VERSION'
-GROUP BY source_key, message_key
-HAVING COUNT(*) > 1;
+GROUP BY source_key, message_key;
+
+-- Joined tombstone read: one row per DELETED snapshot, with latest VERSION
+-- content_blob and ArchivedChannel metadata. Replaces the previous N+M
+-- per-row lookup loop in ArchiveRepository.buildTombstone — that path used to
+-- issue O(deletedRows × 2) extra SELECTs on every flow re-emit, which
+-- becomes painful as the archive grows past a few hundred rows.
+selectTombstonesJoined:
+SELECT d.source_kind        AS d_source_kind,
+       d.source_key         AS d_source_key,
+       d.message_key        AS d_message_key,
+       d.seen_at_ms         AS d_seen_at_ms,
+       d.deleted_msg_keys   AS d_deleted_msg_keys,
+       v.content_blob       AS v_content_blob,
+       v.seen_at_ms         AS v_seen_at_ms,
+       c.title              AS c_title,
+       c.handle             AS c_handle,
+       c.photo_minithumb    AS c_photo_minithumb,
+       c.is_verified        AS c_is_verified
+FROM PostSnapshot d
+LEFT JOIN PostSnapshot v
+    ON v.source_kind = d.source_kind
+    AND v.source_key = d.source_key
+    AND v.message_key = d.message_key
+    AND v.kind = 'VERSION'
+    AND v.id = (SELECT MAX(id) FROM PostSnapshot
+                WHERE source_kind = d.source_kind
+                  AND source_key = d.source_key
+                  AND message_key = d.message_key
+                  AND kind = 'VERSION')
+LEFT JOIN ArchivedChannel c
+    ON c.source_kind = d.source_kind AND c.source_key = d.source_key
+WHERE d.kind = 'DELETED' AND d.source_kind = 'TDLIB'
+ORDER BY d.seen_at_ms DESC;

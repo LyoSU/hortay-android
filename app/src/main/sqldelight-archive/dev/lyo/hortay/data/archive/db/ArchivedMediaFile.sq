@@ -1,0 +1,52 @@
+-- Reference-counted permanent storage for media files copied out of TDLib's
+-- cache on capture. SHA-256 of file contents is the primary key — two snapshots
+-- that share identical bytes share one row (and one underlying file).
+--
+-- Lifecycle:
+--   * On capture: ArchivedMediaStore.copyIfAvailable either inserts a new row
+--     (ref_count = 1) or increments ref_count on an existing match.
+--   * On snapshot eviction (deleteByCap / deleteOlderThan / explicit purge):
+--     ArchivedMediaStore.releaseRef decrements; row + file are deleted when
+--     ref_count drops to 0.
+--
+-- Why not use TDLib's local.path directly? Because TDLib's file cache is LRU
+-- (message_unload_delay default 60s) and may evict the file at any moment
+-- after capture. A snapshot that pointed at the TDLib path would lose its
+-- media silently. Copying into our own filesDir guarantees survival.
+
+CREATE TABLE ArchivedMediaFile (
+    sha             TEXT PRIMARY KEY,
+    path            TEXT NOT NULL,
+    size_bytes      INTEGER NOT NULL,
+    mime_type       TEXT,
+    created_at_ms   INTEGER NOT NULL,
+    ref_count       INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_ArchivedMediaFile_refCount
+    ON ArchivedMediaFile(ref_count);
+
+selectBySha:
+SELECT * FROM ArchivedMediaFile WHERE sha = ?;
+
+insert:
+INSERT OR IGNORE INTO ArchivedMediaFile(sha, path, size_bytes, mime_type, created_at_ms, ref_count)
+VALUES (?, ?, ?, ?, ?, ?);
+
+incrementRefCount:
+UPDATE ArchivedMediaFile SET ref_count = ref_count + 1 WHERE sha = ?;
+
+decrementRefCount:
+UPDATE ArchivedMediaFile SET ref_count = MAX(0, ref_count - 1) WHERE sha = ?;
+
+deleteBySha:
+DELETE FROM ArchivedMediaFile WHERE sha = ?;
+
+selectOrphans:
+SELECT sha, path FROM ArchivedMediaFile WHERE ref_count <= 0;
+
+storageBytes:
+SELECT COALESCE(SUM(size_bytes), 0) AS bytes FROM ArchivedMediaFile;
+
+clearAll:
+DELETE FROM ArchivedMediaFile;

@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.ListSerializer
@@ -46,6 +47,21 @@ import java.util.concurrent.atomic.AtomicInteger
 class ArchiveRepository(
     private val db: ArchiveDatabase,
     private val settings: StateFlow<ArchiveSettings>,
+    /**
+     * Optional companion for storing media file bytes. Tests + legacy call sites
+     * can pass null — capture still records a [TdlibContentMeta] with the
+     * structured [ArchivedMediaRef] (remoteId, uniqueId, minithumb), but
+     * `localArchiveSha` stays null so the revision sheet falls back to the
+     * minithumb / Telegram-side re-download path.
+     */
+    private val mediaStore: ArchivedMediaStore? = null,
+    /**
+     * Background scope for fire-and-forget media-refcount releases triggered
+     * by hot-path cap eviction. When null, hot-path orphans accumulate and
+     * are reclaimed by the nightly [ArchiveSweep] instead — fine for tests
+     * and call sites that prefer synchronous semantics.
+     */
+    private val releaseScope: kotlinx.coroutines.CoroutineScope? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
 
@@ -56,13 +72,23 @@ class ArchiveRepository(
     private val _events = MutableSharedFlow<ArchiveEvent>(extraBufferCapacity = 64)
     val events: Flow<ArchiveEvent> = _events
 
+    /** Synchronous accessor for the `enabled` toggle. Equivalent to
+     *  `settings.value.enabled` but lets call sites read the current state without
+     *  taking a dependency on the [StateFlow] type. */
+    fun isEnabled(): Boolean = settings.value.enabled
+
     /**
      * Capture a TDLib content snapshot (a VERSION row).
      *
      * @param meta extracted by the caller from `TdApi.MessageContent`. Repository is
      *   intentionally TDLib-free for testability.
-     * @param minithumb optional. Pass the raw `Minithumbnail.data` for singles or use
-     *   [MinithumbCompositor.composite] for albums.
+     * @param minithumb optional. Pass the raw `Minithumbnail.data` for singles —
+     *   composite tiling for albums is a future extension and not currently wired.
+     * @param originalDateMs the post's publication time. When this is the FIRST
+     *   snapshot for [messageKey], it's used as the row's `seen_at_ms` so the
+     *   revision timeline anchors on "when the post was published" rather than
+     *   "when Hortay first saw the edit". Subsequent edit snapshots always use
+     *   the current clock.
      */
     suspend fun captureTdlibVersion(
         chat: ChatRef,
@@ -72,22 +98,42 @@ class ArchiveRepository(
         meta: TdlibContentMeta,
         minithumb: ByteArray? = null,
         isComment: Boolean = false,
+        originalDateMs: Long? = null,
     ) {
         val s = settings.first()
         if (!s.enabled || !s.captureEdits) return
         if (chat in s.excludedChats) return
 
+        // [meta] already carries any pre-computed [ArchivedMediaRef.localArchiveSha]
+        // (the caller invoked [ArchivedMediaStore.copyIfAvailable] before invoking
+        // capture). Repository stays TDLib-free.
         val blob = ContentBlobCodec.encode(meta)
-        val hash = ContentBlobCodec.hash(blob)
+        // Hash a *normalized* projection so unstable counters (poll voterCount,
+        // isChosen, etc.) cannot poison dedup. See [ContentNormalizer] KDoc.
+        val hash = ContentBlobCodec.hash(ContentNormalizer.canonicalBytes(meta))
         writeMutex.withLock {
-            if (isDuplicate(chat, messageKey, hash)) return
-            if (isTextDuplicate(chat, messageKey, meta.text)) return
+            val existing = db.postSnapshotQueries.latestForMessage(
+                chat.kind.name, chat.key, messageKey,
+            ).executeAsOneOrNull()
+            if (existing?.content_hash == hash) {
+                // Dedupped — release the refcount bump that copyIfAvailable just
+                // applied so we don't leak. The file row stays alive if other
+                // snapshots reference it.
+                meta.mediaRef?.localArchiveSha?.let { sha ->
+                    runCatching { mediaStore?.releaseRef(sha) }
+                }
+                return
+            }
+            val seenAtMs = if (existing == null && originalDateMs != null) originalDateMs
+                           else clock()
             insertSnapshot(
                 chat = chat, messageKey = messageKey, albumKey = albumKey,
                 kind = SnapshotKind.VERSION, editedAtMs = editedAtMs,
                 contentKind = "tdlib", blob = blob, hash = hash,
                 textPreview = meta.textPreview,
-                minithumb = minithumb, deletedKeys = null, isComment = isComment,
+                minithumb = minithumb ?: meta.mediaRef?.minithumbBytes,
+                deletedKeys = null, isComment = isComment,
+                seenAtMs = seenAtMs,
             )
             maybeEvictByCap()
         }
@@ -172,11 +218,6 @@ class ArchiveRepository(
         _events.tryEmit(ArchiveEvent.Captured(chat, messageKey))
     }
 
-    /** Capture a guest-mode delete. */
-    suspend fun captureWebDelete(chat: ChatRef, messageKey: String) {
-        captureTdlibDelete(chat, listOf(messageKey), albumKey = null, isComment = false)
-    }
-
     /** UPSERT the denormalised channel-index row. Call on every capture. */
     suspend fun upsertChannel(
         chat: ChatRef, title: String, handle: String?,
@@ -202,11 +243,16 @@ class ArchiveRepository(
         }
     }
 
-    suspend fun clear() = writeMutex.withLock {
-        db.transaction {
-            db.postSnapshotQueries.clearAll()
-            db.archivedChannelQueries.clearAll()
+    suspend fun clear() {
+        writeMutex.withLock {
+            db.transaction {
+                db.postSnapshotQueries.clearAll()
+                db.archivedChannelQueries.clearAll()
+            }
         }
+        // Outside writeMutex — mediaStore takes its own mutex; calling under
+        // ours would invert lock order with copyIfAvailable's release path.
+        runCatching { mediaStore?.clearAll() }
     }
 
     // --- Read API ---
@@ -242,41 +288,69 @@ class ArchiveRepository(
                 }.toPersistentList()
             }
 
-    suspend fun purge(ids: List<Long>) = writeMutex.withLock {
-        db.postSnapshotQueries.deleteByIds(ids)
+    suspend fun purge(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        val shasToRelease: List<String> = writeMutex.withLock {
+            val blobs = db.postSnapshotQueries.selectBlobsByIds(ids).executeAsList()
+            db.postSnapshotQueries.deleteByIds(ids)
+            blobs.mapNotNull { blob ->
+                runCatching { ContentBlobCodec.decode(blob).mediaRef?.localArchiveSha }
+                    .getOrNull()?.takeIf { it.isNotEmpty() }
+            }
+        }
+        // Release outside the writeMutex: mediaStore takes its own mutex, and
+        // nesting could deadlock with copyIfAvailable's release path.
+        for (sha in shasToRelease) {
+            runCatching { mediaStore?.releaseRef(sha) }
+        }
     }
 
     /**
-     * Serialize the entire archive as a single JSON document. Includes minithumb
-     * BLOBs as base64. Expensive — at 5000 records with thumbs this can reach ~25 MB.
-     * Caller should warn the user before invocation.
+     * Stream the entire archive as JSON into [out].
+     *
+     * Uses [android.util.JsonWriter] so the in-memory cost stays bounded by
+     * the largest single row (its base64-encoded blob), not by the total
+     * archive size — a 5000-row archive with minithumbs can be ~25 MB which
+     * previously sat in RAM as a single ByteArray for the duration of the
+     * export.
+     *
+     * @return the number of records written.
      */
-    suspend fun export(): ExportResult = writeMutex.withLock {
+    suspend fun exportTo(out: java.io.OutputStream): Int = writeMutex.withLock {
+        val writer = android.util.JsonWriter(out.writer(Charsets.UTF_8).buffered())
+        var count = 0
+        writer.beginObject()
+        writer.name("version").value(1L)
+        writer.name("exportedAtMs").value(clock())
+        writer.name("records").beginArray()
+        // executeAsList still materialises the row metadata, but the heavy
+        // payload (blobs) is base64-encoded once per row and written straight
+        // through — no second copy.
         val rows = db.postSnapshotQueries.selectAllForExport().executeAsList()
-        val records = rows.map { r ->
-            buildJsonObject {
-                put("sourceKind", JsonPrimitive(r.source_kind))
-                put("sourceKey", JsonPrimitive(r.source_key))
-                put("messageKey", JsonPrimitive(r.message_key))
-                put("kind", JsonPrimitive(r.kind))
-                put("seenAtMs", JsonPrimitive(r.seen_at_ms))
-                put("textPreview", JsonPrimitive(r.text_preview))
-                put("contentKind", JsonPrimitive(r.content_kind))
-                put("contentBlobBase64", JsonPrimitive(
-                    android.util.Base64.encodeToString(r.content_blob, android.util.Base64.NO_WRAP)))
-                r.media_minithumb?.let {
-                    put("minithumbBase64", JsonPrimitive(
-                        android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP)))
-                }
+        for (r in rows) {
+            writer.beginObject()
+            writer.name("sourceKind").value(r.source_kind)
+            writer.name("sourceKey").value(r.source_key)
+            writer.name("messageKey").value(r.message_key)
+            writer.name("kind").value(r.kind)
+            writer.name("seenAtMs").value(r.seen_at_ms)
+            writer.name("textPreview").value(r.text_preview)
+            writer.name("contentKind").value(r.content_kind)
+            writer.name("contentBlobBase64").value(
+                android.util.Base64.encodeToString(r.content_blob, android.util.Base64.NO_WRAP),
+            )
+            r.media_minithumb?.let {
+                writer.name("minithumbBase64").value(
+                    android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP),
+                )
             }
+            writer.endObject()
+            count++
         }
-        val payload = JsonObject(mapOf(
-            "version" to JsonPrimitive(1),
-            "exportedAtMs" to JsonPrimitive(clock()),
-            "records" to kotlinx.serialization.json.JsonArray(records),
-        ))
-        val bytes = Json.encodeToString(JsonObject.serializer(), payload).toByteArray()
-        ExportResult(bytes, recordCount = records.size)
+        writer.endArray()
+        writer.endObject()
+        writer.flush()
+        count
     }
 
     suspend fun storageBytes(): Long = writeMutex.withLock {
@@ -290,19 +364,26 @@ class ArchiveRepository(
      * "ghost" tombstone posts in the feed on cold start — TDLib doesn't return
      * deleted messages, so without these we'd silently lose every deleted post on
      * relaunch even though the archive still holds the snapshot.
+     *
+     * Implementation: single `LEFT JOIN` SQL query ([selectTombstonesJoined]) so
+     * each flow emission is O(deletedRows) over one cursor instead of the previous
+     * N+M synchronous SELECTs per row (1000+ extra queries on a busy archive).
      */
     fun observeTdlibTombstones(): kotlinx.coroutines.flow.Flow<ImmutableList<TombstoneRecord>> =
-        db.postSnapshotQueries.selectAllDeleted()
+        db.postSnapshotQueries.selectTombstonesJoined()
             .asFlow().mapToList(Dispatchers.IO)
-            .map { rows -> rows.mapNotNull(::buildTombstone).toPersistentList() }
+            .map { rows -> rows.mapNotNull(::buildTombstoneFromJoinedRow).toPersistentList() }
 
     /**
      * Emits a `(chatId, messageId) → revisionCount` map. Used to seed
      * [TimelinePost.revisionCount] on cold start so the EditedChip survives a
      * relaunch — TDLib hands us posts with no archive metadata, and we'd
      * otherwise have to wait for the next edit to repopulate the counter.
-     * `revisionCount = COUNT(VERSION) - 1` because the first capture is the
-     * pre-edit original (zero edits yet); we increment per actual edit.
+     *
+     * `revisionCount == COUNT(VERSION)` because every captured VERSION corresponds
+     * to a real edit (single capture path — see [TdlibContentMetaExtractor]).
+     * Entries with cnt == 0 are excluded by the SQL `GROUP BY` itself, and Kotlin
+     * filters cnt < 1 defensively.
      */
     fun observeTdlibRevisionCounts(): kotlinx.coroutines.flow.Flow<Map<Pair<Long, Long>, Int>> =
         db.postSnapshotQueries.selectTdlibVersionCounts()
@@ -312,42 +393,37 @@ class ArchiveRepository(
                 rows.forEach { r ->
                     val chatId = r.source_key.toLongOrNull()
                     val msgId = r.message_key.toLongOrNull()
-                    if (chatId != null && msgId != null && r.cnt > 1L) {
-                        out[chatId to msgId] = (r.cnt - 1L).toInt()
+                    if (chatId != null && msgId != null && r.cnt >= 1L) {
+                        out[chatId to msgId] = r.cnt.toInt()
                     }
                 }
                 out
             }
 
-    private fun buildTombstone(deleted: dev.lyo.hortay.data.archive.db.PostSnapshot): TombstoneRecord? {
-        val chatId = deleted.source_key.toLongOrNull() ?: return null
-        val deletedKeys = deleted.deleted_msg_keys
+    private fun buildTombstoneFromJoinedRow(
+        row: dev.lyo.hortay.data.archive.db.SelectTombstonesJoined,
+    ): TombstoneRecord? {
+        val chatId = row.d_source_key.toLongOrNull() ?: return null
+        val deletedKeys = row.d_deleted_msg_keys
             ?.let { runCatching { Json.decodeFromString(ListSerializer(String.serializer()), it) }.getOrNull() }
-            ?: listOf(deleted.message_key)
+            ?: listOf(row.d_message_key)
         val allMessageIds = deletedKeys.mapNotNull { it.toLongOrNull() }
         val primaryId = allMessageIds.firstOrNull() ?: return null
 
-        val latestVersion = db.postSnapshotQueries.selectLatestVersionForMessage(
-            deleted.source_kind, deleted.source_key, deleted.message_key,
-        ).executeAsOneOrNull()
-        val meta = latestVersion?.let {
-            runCatching { ContentBlobCodec.decode(it.content_blob) }.getOrNull()
-        }
-        val channel = db.archivedChannelQueries.selectOne(
-            deleted.source_kind, deleted.source_key,
-        ).executeAsOneOrNull()
+        val meta = row.v_content_blob
+            ?.let { runCatching { ContentBlobCodec.decode(it) }.getOrNull() }
 
         return TombstoneRecord(
             chatId = chatId,
             primaryMessageId = primaryId,
             allMessageIds = allMessageIds,
-            deletedAtMs = deleted.seen_at_ms,
-            originalSeenAtMs = latestVersion?.seen_at_ms ?: deleted.seen_at_ms,
+            deletedAtMs = row.d_seen_at_ms,
+            originalSeenAtMs = row.v_seen_at_ms ?: row.d_seen_at_ms,
             text = meta?.text.orEmpty(),
-            channelTitle = channel?.title.orEmpty(),
-            channelHandle = channel?.handle,
-            channelPhotoMinithumb = channel?.photo_minithumb,
-            isVerified = (channel?.is_verified ?: 0L) == 1L,
+            channelTitle = row.c_title.orEmpty(),
+            channelHandle = row.c_handle,
+            channelPhotoMinithumb = row.c_photo_minithumb,
+            isVerified = (row.c_is_verified ?: 0L) == 1L,
         )
     }
 
@@ -357,31 +433,7 @@ class ArchiveRepository(
         val last = db.postSnapshotQueries.latestForMessage(
             chat.kind.name, chat.key, messageKey,
         ).executeAsOneOrNull() ?: return false
-        // Same hash: always deduplicate (re-capture of unchanged content).
-        if (last.content_hash == hash) return true
-        return false
-    }
-
-    /**
-     * Compare a new candidate against the latest VERSION's logical content (text only,
-     * the user-visible bit) to absorb the lossy round-trip between the two extractor
-     * paths. [TdlibContentMetaExtractor.extract] pulls from a `TdApi.MessageContent` and
-     * preserves real entities; [TdlibContentMetaExtractor.extractFromPost] pulls from a
-     * [dev.lyo.hortay.data.TimelinePost] and discards entities (Hortay's PostContent has
-     * no round-trip to TdApi entities). Their `content_hash` values differ for the same
-     * logical post, which used to spam the archive with phantom "edits" on every
-     * UpdateMessageContent re-fire. Text-level dedup catches that case: a snapshot is
-     * truly redundant when both the text AND the latest archived text are identical.
-     * Distinct hashes with the same text → user didn't actually edit, just a re-fire.
-     */
-    private fun isTextDuplicate(chat: ChatRef, messageKey: String, newText: String): Boolean {
-        val latestVer = db.postSnapshotQueries.selectLatestVersionForMessage(
-            chat.kind.name, chat.key, messageKey,
-        ).executeAsOneOrNull() ?: return false
-        if (latestVer.content_kind != "tdlib") return false
-        val latestMeta = runCatching { ContentBlobCodec.decode(latestVer.content_blob) }.getOrNull()
-            ?: return false
-        return latestMeta.text == newText
+        return last.content_hash == hash
     }
 
     private fun insertSnapshot(
@@ -389,6 +441,7 @@ class ArchiveRepository(
         kind: SnapshotKind, editedAtMs: Long?, contentKind: String,
         blob: ByteArray, hash: String, textPreview: String,
         minithumb: ByteArray?, deletedKeys: String?, isComment: Boolean,
+        seenAtMs: Long = clock(),
     ) {
         db.postSnapshotQueries.insert(
             source_kind = chat.kind.name,
@@ -396,7 +449,7 @@ class ArchiveRepository(
             message_key = messageKey,
             album_key = albumKey,
             kind = kind.name,
-            seen_at_ms = clock(),
+            seen_at_ms = seenAtMs,
             edited_at_ms = editedAtMs,
             content_kind = contentKind,
             content_blob = blob,
@@ -410,10 +463,30 @@ class ArchiveRepository(
 
     private fun maybeEvictByCap() {
         val count = writeCounter.incrementAndGet()
-        if (count % capEvictionEvery == 0) {
-            val cap = settings.value.maxRecords
-            if (cap != Int.MAX_VALUE) {
-                db.postSnapshotQueries.deleteByCap(cap.toLong())
+        if (count % capEvictionEvery != 0) return
+        val cap = settings.value.maxRecords
+        if (cap == Int.MAX_VALUE) return
+        // Snapshot soon-evicted blobs, DELETE inside the mutex (we're already
+        // holding writeMutex via the calling capture*), then release refs in
+        // a fire-and-forget coroutine outside our lock to avoid inverting
+        // mediaStore's own mutex order.
+        val store = mediaStore
+        val rs = releaseScope
+        if (store == null || rs == null) {
+            db.postSnapshotQueries.deleteByCap(cap.toLong())
+            return
+        }
+        val blobs = db.postSnapshotQueries.selectBlobsByCap(cap.toLong()).executeAsList()
+        db.postSnapshotQueries.deleteByCap(cap.toLong())
+        if (blobs.isEmpty()) return
+        rs.launch {
+            for (blob in blobs) {
+                val sha = runCatching {
+                    ContentBlobCodec.decode(blob).mediaRef?.localArchiveSha
+                }.getOrNull()
+                if (!sha.isNullOrEmpty()) {
+                    runCatching { store.releaseRef(sha) }
+                }
             }
         }
     }
@@ -500,11 +573,6 @@ class ArchiveRepository(
             reactions = reactionList.toPersistentList(),
         )
     }
-}
-
-@Immutable
-data class ExportResult(val bytes: ByteArray, val recordCount: Int) {
-    val approxBytes: Long get() = bytes.size.toLong()
 }
 
 sealed interface ArchiveEvent {

@@ -37,6 +37,14 @@ class ArchiveSettingsStore(private val context: Context) {
         it[K_EXCLUDED] = refs.map(::encode).toSet()
     }
 
+    /**
+     * Drop per-account state on logout. The master `enabled` toggle is a user
+     * preference and survives — but the excluded-chat set is keyed on the
+     * previous account's TDLib chatIds, which become meaningless (and outright
+     * misleading) once a different account signs in.
+     */
+    suspend fun resetForLogout() = update { it.remove(K_EXCLUDED) }
+
     private suspend fun update(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         dataStore.edit(block)
     }

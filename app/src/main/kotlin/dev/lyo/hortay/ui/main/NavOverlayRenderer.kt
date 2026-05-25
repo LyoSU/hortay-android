@@ -312,7 +312,11 @@ private fun RenderNavEntry(
 
         is NavEntry.Archive -> {
             val vm = remember { ArchiveViewModel(graph.archiveRepository) }
-            ArchiveScreen(viewModel = vm, onBack = onPopNav)
+            ArchiveScreen(
+                viewModel = vm,
+                onBack = onPopNav,
+                mediaStore = graph.archivedMediaStore,
+            )
         }
 
         is NavEntry.ArchiveSettings -> {

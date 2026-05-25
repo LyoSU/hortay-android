@@ -23,10 +23,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.archive.ArchivedContent
+import dev.lyo.hortay.data.archive.ArchivedMediaStore
 import dev.lyo.hortay.data.archive.PostSnapshot
 import dev.lyo.hortay.data.archive.SnapshotKind
 import dev.lyo.hortay.data.archive.diff.PostDiff
 import dev.lyo.hortay.ui.archive.components.DiffText
+import dev.lyo.hortay.ui.archive.components.RevisionMediaPreview
 import dev.lyo.hortay.ui.archive.components.RevisionTimeline
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toPersistentList
@@ -46,6 +48,7 @@ fun PostRevisionSheet(
     onDismiss: () -> Unit,
     onGoToCurrent: (() -> Unit)? = null,
     onOpenInTelegram: () -> Unit,
+    mediaStore: ArchivedMediaStore? = null,
 ) {
     if (revisions.isEmpty()) {
         ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -78,6 +81,13 @@ fun PostRevisionSheet(
                 selectedIndex = selectedIndex,
                 onSelect = { selectedIndex = it },
             )
+            // Media preview for the currently selected revision. Renders archived
+            // bytes when available, falls back to the inline minithumb, finally
+            // a "not captured" placeholder. Text-only posts skip this block
+            // (mediaRef == null).
+            mediaRefOf(revisions[selectedIndex])?.let { media ->
+                RevisionMediaPreview(media = media, mediaStore = mediaStore)
+            }
             if (selectedIndex > 0) {
                 val older = revisions[selectedIndex - 1]
                 val newer = revisions[selectedIndex]
@@ -88,11 +98,18 @@ fun PostRevisionSheet(
             } else {
                 val current = revisions[selectedIndex]
                 Text(textOf(current), modifier = Modifier.padding(8.dp))
-                Text(
-                    stringResource(R.string.revision_baseline_caveat),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
-                )
+                // Show the "wasn't captured" caveat ONLY for legacy snapshots where
+                // the first row was actually an edit (editedAtMs != null). When the
+                // first row is a true baseline capture (Phase 4 — editedAtMs == null
+                // and seenAtMs == publication time), the user is looking at the
+                // genuine as-published content, no caveat needed.
+                if (current.editedAtMs != null) {
+                    Text(
+                        stringResource(R.string.revision_baseline_caveat),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                }
             }
             Spacer(Modifier.height(12.dp))
             Row(
@@ -119,3 +136,9 @@ private fun textOf(snapshot: PostSnapshot): String = when (val c = snapshot.cont
     is ArchivedContent.Tdlib -> c.meta.text
     is ArchivedContent.Web -> c.textPreview
 }
+
+private fun mediaRefOf(snapshot: PostSnapshot): dev.lyo.hortay.data.archive.ArchivedMediaRef? =
+    when (val c = snapshot.content) {
+        is ArchivedContent.Tdlib -> c.meta.mediaRef
+        is ArchivedContent.Web -> null
+    }

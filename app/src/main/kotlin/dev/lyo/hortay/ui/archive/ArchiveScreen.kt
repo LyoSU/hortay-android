@@ -52,6 +52,7 @@ fun ArchiveScreen(
     viewModel: ArchiveViewModel,
     onBack: () -> Unit,
     onOpenInTelegram: (PostSnapshot) -> Unit = {},
+    mediaStore: dev.lyo.hortay.data.archive.ArchivedMediaStore? = null,
 ) {
     val snapshots by viewModel.snapshots.collectAsState()
     val filter by viewModel.filter.collectAsState()
@@ -177,6 +178,7 @@ fun ArchiveScreen(
             revisions = revisions,
             onDismiss = { openSnapshot = null },
             onOpenInTelegram = { onOpenInTelegram(current) },
+            mediaStore = mediaStore,
         )
     }
 }

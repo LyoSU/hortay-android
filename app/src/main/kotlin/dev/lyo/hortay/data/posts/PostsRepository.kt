@@ -21,9 +21,12 @@ import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.archive.ArchiveRepository
-import dev.lyo.hortay.data.archive.ArchiveSettings
+import dev.lyo.hortay.data.archive.ArchivedMediaStore
 import dev.lyo.hortay.data.archive.ChatRef
+import dev.lyo.hortay.data.archive.MediaFileFromContent
+import dev.lyo.hortay.data.archive.PendingEditBuffer
 import dev.lyo.hortay.data.archive.TdlibContentMetaExtractor
+import dev.lyo.hortay.data.archive.TombstoneRecord
 import dev.lyo.hortay.data.surfaceTo
 import dev.lyo.hortay.data.warnUnlessCancelled
 import kotlinx.collections.immutable.PersistentList
@@ -40,8 +43,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
@@ -130,18 +136,22 @@ class PostsRepository(
      */
     private val coldStartBackfill: ColdStartBackfillStore? = null,
     /**
-     * Archive capture sink. Optional so tests + historical call sites that don't wire
-     * the archive feature keep constructing a repository without it. When null, all
-     * capture calls are no-ops.
+     * Archive capture sink AND the live archive-enabled gate. Optional so tests +
+     * historical call sites that don't wire the archive feature keep constructing a
+     * repository without it. When null, capture calls are no-ops and [handleDeleted]
+     * falls back to the pre-feature remove-on-delete behaviour; when present and
+     * [ArchiveRepository.isEnabled] is true, [handleDeleted] marks posts as
+     * [TimelinePost.isDeleted] instead so a tombstone surfaces in the feed.
      */
     private val archiveRepository: ArchiveRepository? = null,
     /**
-     * Live archive settings. When non-null and [ArchiveSettings.enabled] is true,
-     * [handleDeleted] marks posts as [TimelinePost.isDeleted] instead of removing
-     * them from the feed, preserving a tombstone visible to the user. When null
-     * (tests / historical call sites), the old remove-on-delete behavior is preserved.
+     * Optional companion to [archiveRepository] for storing media file bytes
+     * locally. When non-null, captured snapshots get a Tier 2 file copy under
+     * `filesDir/archive_media/` keyed by SHA-256 — survives TDLib LRU eviction
+     * and post deletion. When null, only structured media references + inline
+     * minithumb are persisted.
      */
-    private val archiveSettings: kotlinx.coroutines.flow.StateFlow<ArchiveSettings>? = null,
+    private val archiveMediaStore: ArchivedMediaStore? = null,
 ) : FeedSource {
 
     /**
@@ -342,6 +352,25 @@ class PostsRepository(
      */
     private val pendingDeletionsByAlbum: ConcurrentHashMap<Pair<Long, Long>, MutableList<Long>> =
         ConcurrentHashMap()
+    /**
+     * Sliding-window debounce timers paired with [pendingDeletionsByAlbum]. Each
+     * fresh batch for the same `(chatId, albumId)` cancels the previous timer and
+     * rearms a new one — so a 200 ms quiet period from the LAST arrival, not 200 ms
+     * from the first, fires the consolidated capture. This closes the regression
+     * where slow networks could split an album's `UpdateDeleteMessages` into two
+     * pulses > 200 ms apart, writing two DELETED rows for one logical event.
+     */
+    private val albumDeletionTimers: ConcurrentHashMap<Pair<Long, Long>, Job> =
+        ConcurrentHashMap()
+
+    /**
+     * Pairs `UpdateMessageContent` (UMC) with `UpdateMessageEdited` (UME) so the
+     * archive captures a VERSION only for real admin edits. Bare UMC events
+     * (poll voter ticks, live-location coords, paid-media reveals) get stashed
+     * here and dropped on TTL when no paired UME arrives — see
+     * [PendingEditBuffer] for the full rationale (and tdlib TL schema:9844).
+     */
+    private val pendingArchiveEdits = PendingEditBuffer()
 
     private val _posts = MutableStateFlow<PersistentList<TimelinePost>>(persistentListOf())
     override val posts: StateFlow<PersistentList<TimelinePost>> = _posts.asStateFlow()
@@ -374,15 +403,15 @@ class PostsRepository(
         // posts. Merges into the live feed in the same combine so chat-list gates and
         // ignored filtering apply uniformly. Empty when archive feature has no captures
         // OR no repository is wired.
-        val tombstonesFlow: kotlinx.coroutines.flow.Flow<kotlinx.collections.immutable.ImmutableList<dev.lyo.hortay.data.archive.TombstoneRecord>> =
+        val tombstonesFlow: Flow<ImmutableList<TombstoneRecord>> =
             archiveRepository?.observeTdlibTombstones()
-                ?: kotlinx.coroutines.flow.flowOf(kotlinx.collections.immutable.persistentListOf())
+                ?: flowOf(persistentListOf())
         // Revision-count map from archive.db — seeds the EditedChip counter for posts
         // that were edited in a previous session. Without this, the chip vanishes on
         // every relaunch and only reappears after a fresh edit.
-        val revisionCountsFlow: kotlinx.coroutines.flow.Flow<Map<Pair<Long, Long>, Int>> =
+        val revisionCountsFlow: Flow<Map<Pair<Long, Long>, Int>> =
             archiveRepository?.observeTdlibRevisionCounts()
-                ?: kotlinx.coroutines.flow.flowOf(emptyMap())
+                ?: flowOf(emptyMap())
         // Pair tombstones + revCounts so the downstream `combine` stays within Kotlin's
         // typed 5-arg overload (there is no typed 6-arg form — the vararg variant erases
         // to Array<Any>, which we'd then have to cast at every read).
@@ -433,7 +462,7 @@ class PostsRepository(
      * badge). Tap routes through the existing onTapRevisions handler to open the
      * revision sheet — that's where the rich history lives.
      */
-    private fun buildTombstoneGhost(t: dev.lyo.hortay.data.archive.TombstoneRecord): TimelinePost = TimelinePost(
+    private fun buildTombstoneGhost(t: TombstoneRecord): TimelinePost = TimelinePost(
         id = t.primaryMessageId,
         chatId = t.chatId,
         mediaAlbumId = 0L,
@@ -1743,6 +1772,74 @@ class PostsRepository(
         // tryEmit can never block under DROP_OLDEST, so we don't risk back-pressuring
         // the ingest path on a slow downstream collector.
         for (post in addedForEmit) _newArrivals.tryEmit(post)
+
+        // Archive baseline capture (Phase 4): write a VERSION row for the post's
+        // ORIGINAL content (editDate == 0 — message has not been edited yet) so
+        // the revision sheet has a true "as-published" anchor instead of falling
+        // back to the first-edit caveat. Only fires for posts the user actually
+        // sees added to the feed AND only when archive is enabled. captureTdlibVersion
+        // is idempotent via the latestForMessage hash check, so a repeat call on
+        // re-ingest is a cheap no-op.
+        //
+        // `editDate != 0` messages are deliberately skipped: the edit-aware capture
+        // path (handleEdited) is the only writer for those. Capturing here would
+        // produce a "baseline" row whose content is actually post-edit — misleading
+        // for the revision sheet's caveat string.
+        if (archiveRepository?.isEnabled() == true && addedForEmit.isNotEmpty()) {
+            val addedIds = addedForEmit.mapTo(HashSet()) { it.chatId to it.id }
+            for (raw in full) {
+                if (raw.editDate != 0) continue
+                if ((raw.chatId to raw.id) !in addedIds) continue
+                scope.launch { captureBaselineSnapshot(raw, chat) }
+            }
+        }
+    }
+
+    /**
+     * Captures the as-published VERSION row for a freshly-ingested message.
+     *
+     * Mirrors the structure of `handleEdited`'s archive path but with
+     * `editedAtMs = null` and `originalDateMs = message.date * 1000` — the
+     * repository uses originalDateMs as the row's `seen_at_ms` ONLY when no
+     * prior row exists for this message, so a baseline+edit pair produces
+     * the right two timeline anchors.
+     *
+     * Errors are swallowed (caller has no recovery): archive misses on a
+     * single post are recoverable on the next user-visible edit.
+     */
+    private suspend fun captureBaselineSnapshot(
+        message: TdApi.Message,
+        chat: TdApi.Chat,
+    ) {
+        val repo = archiveRepository ?: return
+        val mediaSha = archiveMediaStore?.let { store ->
+            MediaFileFromContent.extract(message.content)?.let { store.copyIfAvailable(it) }
+        }
+        val baseMeta = TdlibContentMetaExtractor.extract(message.content)
+        val meta = if (mediaSha != null && baseMeta.mediaRef != null) {
+            baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
+        } else baseMeta
+        runCatching {
+            repo.captureTdlibVersion(
+                chat = ChatRef.tdlib(chat.id),
+                messageKey = message.id.toString(),
+                albumKey = message.mediaAlbumId.takeIf { it != 0L }?.toString(),
+                editedAtMs = null,
+                meta = meta,
+                isComment = false,
+                originalDateMs = message.date.toLong() * 1000L,
+            )
+            val livePost = _posts.value.firstOrNull { it.chatId == chat.id && it.id == message.id }
+            if (livePost != null) {
+                repo.upsertChannel(
+                    chat = ChatRef.tdlib(chat.id),
+                    title = livePost.senderName,
+                    handle = livePost.senderHandle,
+                    photoMinithumb = livePost.avatarThumb,
+                    isVerified = livePost.verification != null,
+                )
+            }
+        }.warnUnlessCancelled(TAG, "captureBaselineSnapshot(${chat.id},${message.id})")
     }
 
     /**
@@ -1932,13 +2029,73 @@ class PostsRepository(
         // sub-message id, but our merged anchor's id may be a different sibling. Stamp
         // editDate on the anchor whose albumMessageIds contains the touched id so the
         // "edited" badge refreshes regardless of which member the edit landed on.
+        //
+        // editDate semantics (tdlib/td#2294): UME with editDate == 0 fires for
+        // non-edit changes (reactions appearing in big supergroups, fact-check
+        // additions, etc.) — it's an internal "something changed" signal, not a
+        // human/bot edit. Only editDate > 0 should stamp the badge AND trigger
+        // archive capture.
+        if (update.editDate <= 0) return
+
         updateOnePostByAnyMemberId(update.chatId, update.messageId) {
             it.copy(editDate = update.editDate.toLong() * 1000L)
+        }
+
+        // Archive: capture VERSION row. Pulls the fresh content from
+        // [pendingArchiveEdits] (UMC arrived first, common path) or falls back to
+        // GetMessage when UME beat UMC. The mapped TimelinePost in _posts is the
+        // wrong source — it strips entities and would produce a different hash
+        // than the canonical TdApi.MessageContent path (see TdlibContentMetaExtractor
+        // KDoc on the phantom-edit regression).
+        if (archiveRepository == null) return
+        val livePost = _posts.value.firstOrNull { p ->
+            p.chatId == update.chatId &&
+                (p.id == update.messageId || update.messageId in p.albumMessageIds)
+        } ?: return
+        val buffered = pendingArchiveEdits.commitOnEdited(update.chatId, update.messageId)
+        scope.launch {
+            val content: TdApi.MessageContent = buffered
+                ?: runCatching { td.send(TdApi.GetMessage(update.chatId, update.messageId)) }
+                    .warnUnlessCancelled(TAG, "getMessage(archive,${update.chatId},${update.messageId})")
+                    .getOrNull()?.content
+                ?: return@launch
+            // Tier 2 media copy: while TDLib still has the file locally, snapshot
+            // the bytes into archive storage. The resulting SHA is folded into
+            // mediaRef so the revision sheet can render the media even after the
+            // original message is deleted or TDLib evicts the file from cache.
+            val mediaSha = archiveMediaStore?.let { store ->
+                MediaFileFromContent.extract(content)?.let { store.copyIfAvailable(it) }
+            }
+            val baseMeta = TdlibContentMetaExtractor.extract(content)
+            val meta = if (mediaSha != null && baseMeta.mediaRef != null) {
+                baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
+            } else baseMeta
+            archiveRepository.captureTdlibVersion(
+                chat = ChatRef.tdlib(update.chatId),
+                messageKey = update.messageId.toString(),
+                albumKey = livePost.mediaAlbumId.takeIf { it != 0L }?.toString(),
+                editedAtMs = update.editDate.toLong() * 1000L,
+                meta = meta,
+                isComment = false,
+                originalDateMs = livePost.date,
+            )
+            archiveRepository.upsertChannel(
+                chat = ChatRef.tdlib(update.chatId),
+                title = livePost.senderName,
+                handle = livePost.senderHandle,
+                photoMinithumb = livePost.avatarThumb,
+                isVerified = livePost.verification != null,
+            )
         }
     }
 
     private fun handleDeleted(update: TdApi.UpdateDeleteMessages) {
         if (!update.isPermanent) return
+
+        // Single read of the archive-enabled gate up front. Capture and feed-side
+        // branches use the SAME observation, so a Settings flip between them can't
+        // strand a ghost in the feed without a backing snapshot, or vice versa.
+        val archiveEnabled = archiveRepository?.isEnabled() == true
 
         // Archive: snapshot the deleted posts BEFORE removing from `_posts`. Group by
         // album to write a single composite DELETED row. Standalone messages capture
@@ -1969,8 +2126,14 @@ class PostsRepository(
                 pendingDeletionsByAlbum.compute(cacheKey) { _, prev ->
                     (prev ?: mutableListOf()).also { buf -> buf.addAll(msgIds) }
                 }
-                scope.launch {
-                    delay(200)
+                // Sliding-window: cancel any pending capture for the same album
+                // and re-arm with a fresh 200 ms delay. Drain happens when the
+                // chunk pause exceeds 200 ms — works for slow networks where TDLib
+                // streams album members in two or more pulses.
+                albumDeletionTimers[cacheKey]?.cancel()
+                albumDeletionTimers[cacheKey] = scope.launch {
+                    delay(ALBUM_DELETE_DEBOUNCE_MS)
+                    albumDeletionTimers.remove(cacheKey)
                     val drained = pendingDeletionsByAlbum.remove(cacheKey) ?: return@launch
                     archiveRepository?.captureTdlibDelete(
                         chat = ChatRef.tdlib(update.chatId),
@@ -2010,8 +2173,7 @@ class PostsRepository(
         }
 
         val ids = update.messageIds.toHashSet()
-        val keepAsDeleted = archiveSettings?.value?.enabled == true
-        if (keepAsDeleted) {
+        if (archiveEnabled) {
             // Archive mode: tombstone deleted posts with isDeleted=true so a
             // DeletedBadge can surface in the feed instead of the post vanishing silently.
             // Albums whose anchor is fully deleted also get tombstoned; partially-deleted
@@ -2122,50 +2284,12 @@ class PostsRepository(
         // The right gate is [TimelinePost.mediaAlbumId]: anything with a
         // non-zero album id must re-ingest the whole group, regardless of
         // which member id the update names.
-        // Archive: snapshot the new content before the feed mutation. We check for a live
-        // post first — cold-start replays of UpdateMessageContent arrive before the feed
-        // is populated and would be archived as "edits" of posts the user never saw. Skip
-        // silently; the live subscription will capture subsequent edits normally.
-        val livePost = _posts.value.firstOrNull {
-            it.chatId == update.chatId &&
-                (it.id == update.messageId || update.messageId in it.albumMessageIds)
-        }
-        if (livePost != null) {
-            scope.launch {
-                // Capture BOTH ends of the transition. The BEFORE state (from live
-                // _posts) is the original the user actually saw — without this, the
-                // first edit would only have the post-edit content in the archive and
-                // the diff view has nothing to compare against. The AFTER state
-                // ensures the latest version is always in the archive so the sheet's
-                // diff renders meaningfully on every edit, not one edit behind.
-                // content_hash dedup absorbs identical re-emits (the next edit's
-                // "before" matches this edit's "after").
-                archiveRepository?.captureTdlibVersion(
-                    chat = ChatRef.tdlib(update.chatId),
-                    messageKey = update.messageId.toString(),
-                    albumKey = livePost.mediaAlbumId.takeIf { it != 0L }?.toString(),
-                    editedAtMs = null,
-                    meta = TdlibContentMetaExtractor.extractFromPost(livePost),
-                    isComment = false,
-                )
-                archiveRepository?.captureTdlibVersion(
-                    chat = ChatRef.tdlib(update.chatId),
-                    messageKey = update.messageId.toString(),
-                    albumKey = livePost.mediaAlbumId.takeIf { it != 0L }?.toString(),
-                    editedAtMs = null,
-                    meta = TdlibContentMetaExtractor.extract(update.newContent),
-                    isComment = false,
-                )
-                // Denormalise channel metadata so tombstone reconstruction on cold start
-                // has a title / handle / avatar without a separate TDLib lookup.
-                archiveRepository?.upsertChannel(
-                    chat = ChatRef.tdlib(update.chatId),
-                    title = livePost.senderName,
-                    handle = livePost.senderHandle,
-                    photoMinithumb = livePost.avatarThumb,
-                    isVerified = livePost.verification != null,
-                )
-            }
+        // Archive: stash the new content into the pairing buffer. Capture itself
+        // happens in handleEdited when a paired UpdateMessageEdited(editDate > 0)
+        // confirms this is a real admin edit (not a poll vote / live loc / etc.).
+        // See PendingEditBuffer KDoc for the schema-based rationale.
+        if (archiveRepository != null) {
+            pendingArchiveEdits.stash(update.chatId, update.messageId, update.newContent)
         }
 
         val target = _posts.value.firstOrNull { post ->
@@ -2518,6 +2642,15 @@ class PostsRepository(
          * cheap first line; the next two layers are the safety net.
          */
         const val ALBUM_DEBOUNCE_MS = 1_000L
+        /**
+         * Quiet-window length after which an album's accumulated DELETED ids are
+         * flushed as a single archive row. Sliding-window — every new arrival for
+         * the same album resets the timer. 200 ms matches the existing
+         * `pendingInteractionInfo` coalesce window and is large enough to absorb
+         * a typical slow-network album delete fan-out (~tens of ms between
+         * siblings), small enough not to delay the user-visible tombstone.
+         */
+        const val ALBUM_DELETE_DEBOUNCE_MS = 200L
         // 60s is long enough that quick back-and-forth between channels reuses the cached
         // history, short enough that a deliberate "refresh by re-entering" still works
         // within a normal browsing session.

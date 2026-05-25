@@ -704,9 +704,14 @@
     <string name="revision_sheet_title">Історія редагувань</string>
     <string name="revision_sheet_title_deleted">Видалений пост</string>
     <string name="revision_empty">Версій ще немає.</string>
-    <string name="revision_baseline_caveat">Перша версія, яку Hortay побачив — раніша історія не зафіксована.</string>
+    <string name="revision_baseline_caveat">Оригінал не зафіксовано — показано вміст після найранішого редагування, яке побачив Hortay.</string>
     <string name="revision_go_to_current">До поточної</string>
     <string name="revision_open_in_telegram">Відкрити в Telegram</string>
+    <string name="revision_media_video_caption">Відео · %1$dс</string>
+    <string name="revision_media_audio_caption">Аудіо · %1$dс</string>
+    <string name="revision_media_document">Документ</string>
+    <string name="revision_media_unavailable">Медіа не вдалося зберегти</string>
+    <string name="revision_media_low_res_overlay">Лише прев\'ю — повне медіа не було в кеші</string>
 
     <!-- Archive: settings screen -->
     <string name="settings_archive_title">Архів постів</string>

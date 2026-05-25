@@ -415,18 +415,18 @@ class WebFeedSource(
 
     /**
      * Diff the freshly-fetched [freshPosts] list against the previously-stored
-     * snapshot for [username] and fire archive captures for any edits or
-     * deletions before the ingest overwrites them.
+     * snapshot for [username] and fire archive captures for any edits before
+     * the ingest overwrites them.
      *
      * Edit detection: a post whose content changed (text, media filenames, web
      * preview, or forwarded-from) triggers [captureWebVersion] with the OLD
      * snapshot. [WebPostDiff] intentionally ignores CDN URL token rotation
      * (same filename, different query-string) and view/reaction churn.
      *
-     * Deletion detection: a post present in the DB but absent from the fresh
-     * page AND published within the last 30 minutes is treated as a real
-     * deletion — older disappearances are CDN age-out or the page's history
-     * window shrinking, not user-visible deletions.
+     * Web-mode deletion capture is intentionally not surfaced yet: ghost-feed
+     * reconstruction is wired only for the TDLib path (see
+     * [ArchiveRepository.observeTdlibTombstones]); writing WEB-source DELETED
+     * rows that never reach the user would just waste storage.
      *
      * All captures are fire-and-forget via [scope].launch — they must NOT block
      * the ingest path. A capture failure only means the archive misses one event;
@@ -442,9 +442,6 @@ class WebFeedSource(
         if (previousById.isEmpty()) return
 
         val chat = dev.lyo.hortay.data.archive.ChatRef.web(username)
-        val freshIds = freshPosts.associateBy { it.id }
-        val ageOutThresholdMs = fetchedAtMs - DELETION_AGE_OUT_WINDOW_MS
-
         for (fresh in freshPosts) {
             val previous = previousById[fresh.id] ?: continue
             if (webPostDiff.detectChange(previous, fresh) != null) {
@@ -456,18 +453,6 @@ class WebFeedSource(
                         seenAtOverrideMs = fetchedAtMs,
                     )
                 }
-            }
-        }
-
-        for (gone in previousById.values) {
-            if (gone.id in freshIds) continue
-            val publishedMs = parseIsoToMillis(gone.publishedAt) ?: continue
-            if (publishedMs < ageOutThresholdMs) continue // older than window — CDN age-out
-            scope.launch {
-                archive.captureWebDelete(
-                    chat = chat,
-                    messageKey = gone.seq.toString(),
-                )
             }
         }
     }
@@ -602,20 +587,5 @@ class WebFeedSource(
          */
         const val DEFAULT_MEDIA_TTL_MS = 4 * 60 * 60 * 1000L // 4 hours
 
-        /**
-         * Posts older than 30 minutes that disappear from the t.me/s/ page are
-         * treated as CDN age-out (Telegram rolls older posts off the preview page
-         * and retires signed CDN URLs) rather than user-visible deletions. Posts
-         * newer than this window that vanish are captured as [captureWebDelete].
-         */
-        internal const val DELETION_AGE_OUT_WINDOW_MS = 30L * 60L * 1000L // 30 min
-
-        /**
-         * ISO-8601 timestamp parser. Same implementation as [WebRepository.parseIsoToMillis]
-         * — kept private there; duplicated here rather than coupling the two classes.
-         */
-        internal fun parseIsoToMillis(iso: String): Long? = runCatching {
-            java.time.OffsetDateTime.parse(iso).toInstant().toEpochMilli()
-        }.getOrNull()
     }
 }

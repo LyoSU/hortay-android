@@ -15,18 +15,26 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import kotlinx.collections.immutable.ImmutableList
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 /**
- * Horizontal row of dots, one per revision, with HH:mm labels.
+ * Horizontal row of dots, one per revision, with timestamp labels.
  * Filled dot = selected revision; outlined = others. Tap selects.
+ *
+ * Label format adapts to the timestamps: when all revisions land on the same
+ * calendar day the label is `HH:mm` (compact, fits long timelines); when at
+ * least one revision crosses into a different day the label includes
+ * `dd MMM` so the user can tell "edit on Mon 10:30" apart from
+ * "another edit on Wed 10:35".
  */
 @Composable
 fun RevisionTimeline(
@@ -35,6 +43,7 @@ fun RevisionTimeline(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val formatter = remember(timestamps) { pickFormatter(timestamps) }
     Row(
         modifier = modifier.fillMaxWidth().padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -53,14 +62,20 @@ fun RevisionTimeline(
                         .clickable { onSelect(i) }
                 )
                 Spacer(Modifier.height(4.dp))
-                Text(formatHm(ts), style = MaterialTheme.typography.labelSmall)
+                Text(formatter.format(Date(ts)), style = MaterialTheme.typography.labelSmall)
             }
         }
     }
 }
 
-private val timeFormatter by lazy {
-    SimpleDateFormat("HH:mm", Locale.getDefault())
+private fun pickFormatter(timestamps: List<Long>): SimpleDateFormat {
+    if (timestamps.size <= 1) return SimpleDateFormat("HH:mm", Locale.getDefault())
+    val cal = Calendar.getInstance()
+    val days = HashSet<Long>(timestamps.size)
+    for (ts in timestamps) {
+        cal.timeInMillis = ts
+        days += cal.get(Calendar.YEAR) * 400L + cal.get(Calendar.DAY_OF_YEAR)
+        if (days.size > 1) return SimpleDateFormat("dd MMM HH:mm", Locale.getDefault())
+    }
+    return SimpleDateFormat("HH:mm", Locale.getDefault())
 }
-
-private fun formatHm(ms: Long): String = timeFormatter.format(Date(ms))

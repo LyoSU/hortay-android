@@ -83,8 +83,9 @@ fun ArchiveSettingsScreen(
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                val data = viewModel.export()
-                context.contentResolver.openOutputStream(uri)?.use { it.write(data) }
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    viewModel.exportTo(out)
+                }
             }
         }
     }
@@ -410,7 +411,7 @@ private fun retentionLabel(days: Int): String =
 @Composable
 private fun recordsLabel(n: Int): String =
     if (n == Int.MAX_VALUE) stringResource(R.string.archive_records_unlimited)
-    else n.toString()
+    else java.text.NumberFormat.getIntegerInstance().format(n)
 
 private fun formatBytes(bytes: Long): String {
     val kb = bytes / 1024.0

@@ -229,6 +229,12 @@ fun TimelineScreen(
      * chip is still rendered, but tapping it is a no-op.
      */
     archiveRepository: ArchiveRepository? = null,
+    /**
+     * Companion to [archiveRepository] for rendering archived media in the
+     * revision sheet. When null, the sheet falls back to the minithumb-only
+     * path; archived bytes are unreachable.
+     */
+    archiveMediaStore: dev.lyo.hortay.data.archive.ArchivedMediaStore? = null,
 ) {
     // Holders read by long-lived LaunchedEffects (home-tap, scope-switch) so
     // their captures stay live across recomposition without restarting the
@@ -2011,6 +2017,7 @@ fun TimelineScreen(
                     PostActions.openInTelegram(context, tdlibRepo, currentRevisionPost)
                 }
             },
+            mediaStore = archiveMediaStore,
         )
     }
 

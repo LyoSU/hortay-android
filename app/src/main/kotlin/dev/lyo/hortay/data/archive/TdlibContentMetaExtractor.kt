@@ -1,21 +1,21 @@
 package dev.lyo.hortay.data.archive
 
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import org.drinkless.tdlib.TdApi
-import dev.lyo.hortay.data.PostContent
-import dev.lyo.hortay.data.TimelinePost
 
 /**
  * Builds [TdlibContentMeta] from a live [TdApi.MessageContent] at capture time.
  *
- * `entitiesJson` / `mediaSummaryJson` / `pollJson` use plain Kotlinx JSON so the
- * schema can evolve without rewriting the ProtoBuf wrapper. forward/reply summaries
- * are NOT in MessageContent — caller supplies them if available.
+ * Single extraction path: every snapshot in the archive comes from a real
+ * [TdApi.MessageContent] (UpdateMessageContent's `newContent`, or the initial
+ * mapping in handleNewMessage). A previous variant that derived meta from a
+ * mapped [dev.lyo.hortay.data.TimelinePost] was removed — it stripped entities
+ * and produced a different `content_hash` for the same logical post, which
+ * spammed the archive with "phantom" edits visible only as duplicated rows.
  */
 object TdlibContentMetaExtractor {
 
@@ -32,8 +32,94 @@ object TdlibContentMetaExtractor {
             pollJson = pollSnapshot(content),
             forwardJson = forwardJson,
             replyJson = replyJson,
+            mediaRef = extractMediaRef(content),
         )
     }
+
+    /**
+     * Extracts an [ArchivedMediaRef] from a media-bearing [TdApi.MessageContent].
+     * Returns null for text-only / poll-without-banner / call / venue / contact /
+     * location / sticker content — all carry no downloadable media file.
+     *
+     * Stickers are intentionally excluded: their lifecycle is tied to the
+     * StickerSet, not the message; storing per-snapshot copies would balloon the
+     * archive on busy reaction streams.
+     *
+     * The largest [TdApi.PhotoSize] is selected for photos because that's the one
+     * Telegram serves on viewer open — capturing a thumb would be useless for the
+     * "what did the deleted post look like" UX.
+     */
+    private fun extractMediaRef(c: TdApi.MessageContent): ArchivedMediaRef? = when (c) {
+        is TdApi.MessagePhoto -> {
+            val largest = c.photo.sizes.maxByOrNull { it.width.toLong() * it.height } ?: return null
+            buildMediaRef(
+                type = "photo", file = largest.photo,
+                width = largest.width, height = largest.height,
+                durationMs = 0L, mimeType = "image/jpeg", fileName = null,
+                minithumb = c.photo.minithumbnail?.data,
+            )
+        }
+        is TdApi.MessageVideo -> buildMediaRef(
+            type = "video", file = c.video.video,
+            width = c.video.width, height = c.video.height,
+            durationMs = c.video.duration.toLong() * 1000,
+            mimeType = c.video.mimeType, fileName = c.video.fileName.ifEmpty { null },
+            minithumb = c.video.minithumbnail?.data,
+        )
+        is TdApi.MessageAnimation -> buildMediaRef(
+            type = "animation", file = c.animation.animation,
+            width = c.animation.width, height = c.animation.height,
+            durationMs = c.animation.duration.toLong() * 1000,
+            mimeType = c.animation.mimeType, fileName = c.animation.fileName.ifEmpty { null },
+            minithumb = c.animation.minithumbnail?.data,
+        )
+        is TdApi.MessageDocument -> buildMediaRef(
+            type = "document", file = c.document.document,
+            width = 0, height = 0, durationMs = 0L,
+            mimeType = c.document.mimeType, fileName = c.document.fileName.ifEmpty { null },
+            minithumb = c.document.minithumbnail?.data,
+        )
+        is TdApi.MessageAudio -> buildMediaRef(
+            type = "audio", file = c.audio.audio,
+            width = 0, height = 0,
+            durationMs = c.audio.duration.toLong() * 1000,
+            mimeType = c.audio.mimeType, fileName = c.audio.fileName.ifEmpty { null },
+            minithumb = null,
+        )
+        is TdApi.MessageVoiceNote -> buildMediaRef(
+            type = "voice", file = c.voiceNote.voice,
+            width = 0, height = 0,
+            durationMs = c.voiceNote.duration.toLong() * 1000,
+            mimeType = c.voiceNote.mimeType, fileName = null,
+            minithumb = null,
+        )
+        is TdApi.MessageVideoNote -> buildMediaRef(
+            type = "videoNote", file = c.videoNote.video,
+            width = c.videoNote.length, height = c.videoNote.length,
+            durationMs = c.videoNote.duration.toLong() * 1000,
+            mimeType = null, fileName = null,
+            minithumb = c.videoNote.minithumbnail?.data,
+        )
+        else -> null
+    }
+
+    private fun buildMediaRef(
+        type: String,
+        file: TdApi.File,
+        width: Int, height: Int,
+        durationMs: Long, mimeType: String?, fileName: String?,
+        minithumb: ByteArray?,
+    ): ArchivedMediaRef = ArchivedMediaRef(
+        type = type,
+        width = width, height = height,
+        durationMs = durationMs,
+        sizeBytes = if (file.size > 0) file.size else file.expectedSize,
+        mimeType = mimeType, fileName = fileName,
+        remoteId = file.remote?.id.orEmpty(),
+        uniqueId = file.remote?.uniqueId.orEmpty(),
+        minithumbBytes = minithumb,
+        localArchiveSha = null, // populated by ArchivedMediaStore.copyIfAvailable
+    )
 
     private fun textWithEntities(c: TdApi.MessageContent): Pair<String, Array<TdApi.TextEntity>> = when (c) {
         is TdApi.MessageText -> c.text.text to c.text.entities
@@ -95,51 +181,6 @@ object TdlibContentMetaExtractor {
         is TdApi.MessageVideoNote -> buildJsonObject {
             put("type", JsonPrimitive("videoNote"))
             put("durationMs", JsonPrimitive(c.videoNote.duration.toLong() * 1000))
-        }.toString()
-        else -> null
-    }
-
-    /**
-     * Snapshot a live in-memory post — used to capture the BEFORE state when an
-     * UpdateMessageContent arrives, so the archive contains the original version
-     * the user actually saw, not just the post-edit content. Lossy on rich
-     * formatting (Hortay's [PostContent] doesn't round-trip TDLib's
-     * `Array<TextEntity>` — the spans are kept as Hortay-native types). For diff
-     * purposes the text + media-summary fidelity is what matters.
-     */
-    fun extractFromPost(post: TimelinePost): TdlibContentMeta {
-        val content = post.content
-        return TdlibContentMeta(
-            text = content.captionPlain,
-            entitiesJson = "[]",
-            mediaSummaryJson = postContentMediaSummary(content),
-            pollJson = null,
-            forwardJson = null,
-            replyJson = null,
-        )
-    }
-
-    private fun postContentMediaSummary(c: PostContent): String? = when (c) {
-        is PostContent.Text -> null
-        is PostContent.PhotoAlbum -> buildJsonObject {
-            put("type", JsonPrimitive("photo"))
-            put("count", JsonPrimitive(c.items.size))
-        }.toString()
-        is PostContent.Video -> buildJsonObject {
-            put("type", JsonPrimitive("video"))
-            put("durationMs", JsonPrimitive(c.durationSec.toLong() * 1000))
-        }.toString()
-        is PostContent.Animation -> buildJsonObject {
-            put("type", JsonPrimitive("animation"))
-        }.toString()
-        is PostContent.Document -> buildJsonObject {
-            put("type", JsonPrimitive("document"))
-        }.toString()
-        is PostContent.Audio -> buildJsonObject {
-            put("type", JsonPrimitive("audio"))
-        }.toString()
-        is PostContent.VoiceNote -> buildJsonObject {
-            put("type", JsonPrimitive("voice"))
         }.toString()
         else -> null
     }

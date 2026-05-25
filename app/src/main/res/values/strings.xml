@@ -688,9 +688,14 @@
     <string name="revision_sheet_title">Edit history</string>
     <string name="revision_sheet_title_deleted">Deleted post</string>
     <string name="revision_empty">No revisions stored.</string>
-    <string name="revision_baseline_caveat">First version Hortay saw — earlier history not captured.</string>
+    <string name="revision_baseline_caveat">Original wasn\'t captured — this shows the content after the earliest edit Hortay observed.</string>
     <string name="revision_go_to_current">Go to current</string>
     <string name="revision_open_in_telegram">Open in Telegram</string>
+    <string name="revision_media_video_caption">Video · %1$ds</string>
+    <string name="revision_media_audio_caption">Audio · %1$ds</string>
+    <string name="revision_media_document">Document</string>
+    <string name="revision_media_unavailable">Media wasn\'t captured</string>
+    <string name="revision_media_low_res_overlay">Preview only — full media wasn\'t cached</string>
 
     <!-- Archive: settings screen -->
     <string name="settings_archive_title">Post archive</string>
