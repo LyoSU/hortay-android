@@ -12,7 +12,7 @@ Modules, load-bearing decisions, hard rules, and conventions. Pair with [README.
 ## Language policy
 
 - **Code, comments, identifiers, commit messages — English only.**
-- **User-facing strings — never hardcoded.** `strings.xml` (default English) + `values-uk/strings.xml` mirror, in the same commit. Use `<plurals>` (UK: one/few/many/other; EN: one/other).
+- **User-facing strings — never hardcoded.** New strings go into `values/strings.xml` (default English) AND every `values-<lang>/strings.xml` mirror, in the same commit. Currently shipping: en (default), uk, ru, es, de, fr, it, pt-rBR, pl, tr, in (Indonesian — Android legacy code), fa, ar. `lintRelease`'s `MissingTranslation` error gate enforces this. Use `<plurals>` with the CLDR forms each locale requires (en: one/other; uk/ru/pl: one/few/many/other; es/it/de/tr/fa: one/other; fr/pt-rBR: one/many/other; ar: zero/one/two/few/many/other; in: other only).
 - **Talk to the user in their language** (UA/PL/EN/…). Code stays English.
 
 ## Two modes
@@ -112,7 +112,7 @@ Each `❌` carries a **Revisit:** clause — the concrete condition that would j
 
 ### i18n & a11y
 
-- ❌ Hardcoded user-facing strings. Always `values/strings.xml` + `values-uk/strings.xml` in the same commit.
+- ❌ Hardcoded user-facing strings. Always `values/strings.xml` + every `values-<lang>/strings.xml` mirror in the same commit (see language policy at the top of this file for the full list and CLDR plural forms).
 - ❌ Replying to the user in English when they write in another language.
 - ✅ `<plurals>` for counts. `contentDescription` via `stringResource(...)`.
 - ✅ Every clickable Row/Box that isn't `IconButton`/`Button` gets `Modifier.clickable(role = Role.Button)` + meaningful `contentDescription`.

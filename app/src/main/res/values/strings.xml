@@ -345,8 +345,20 @@
     <string name="settings_section_about">About</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_summary_system">System default</string>
-    <string name="settings_language_summary_uk">Українська</string>
-    <string name="settings_language_summary_en">English</string>
+    <!-- Native names shown as-is in every UI locale (Telegram convention). -->
+    <string name="settings_language_summary_ar" translatable="false">العربية</string>
+    <string name="settings_language_summary_de" translatable="false">Deutsch</string>
+    <string name="settings_language_summary_en" translatable="false">English</string>
+    <string name="settings_language_summary_es" translatable="false">Español</string>
+    <string name="settings_language_summary_fa" translatable="false">فارسی</string>
+    <string name="settings_language_summary_fr" translatable="false">Français</string>
+    <string name="settings_language_summary_id" translatable="false">Bahasa Indonesia</string>
+    <string name="settings_language_summary_it" translatable="false">Italiano</string>
+    <string name="settings_language_summary_pl" translatable="false">Polski</string>
+    <string name="settings_language_summary_pt_br" translatable="false">Português (Brasil)</string>
+    <string name="settings_language_summary_ru" translatable="false">Русский</string>
+    <string name="settings_language_summary_tr" translatable="false">Türkçe</string>
+    <string name="settings_language_summary_uk" translatable="false">Українська</string>
     <string name="settings_language_dialog_title">App language</string>
     <string name="settings_logout_title">Sign out</string>
     <string name="settings_logout_subtitle">Telegram session resets, cache stays</string>

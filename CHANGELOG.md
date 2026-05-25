@@ -7,6 +7,7 @@
 ### Added
 - Post archive: edited and deleted channel posts are saved locally with a visual diff between versions — disabled by default, configurable in Settings → Post archive.
 - Archive now snapshots photo, video, animation, document, audio, voice and round-video media at capture time, so the revision sheet shows the deleted post's media instead of just its text. When the full file isn't in Telegram's cache the inline preview is shown blurred with an honest "preview only" label.
+- App now reads in 11 more languages — Russian, Spanish, German, French, Italian, Portuguese (Brazil), Polish, Turkish, Indonesian, Persian and Arabic — pick yours in Settings → Language or via the system per-app picker.
 
 ### Changed
 - Feed-order toggle in Settings is now positional — "Newest on top" / "Newest at the bottom" with one-line subtitles — and switching it pops a confirmation explaining where new posts will appear.
