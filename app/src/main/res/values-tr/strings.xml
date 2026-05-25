@@ -210,11 +210,6 @@
     </plurals>
 
     <!-- Okunmamış sayacı hapsi (OldestUnreadFirst akış modu) -->
-    <string name="unread_remaining_overflow">99+ okunmamış</string>
-    <plurals name="unread_remaining">
-        <item quantity="one">%d okunmamış</item>
-        <item quantity="other">%d okunmamış</item>
-    </plurals>
 
     <!-- Gönderi kartı -->
     <string name="post_translated_chip">Çevrildi · Orijinali göster</string>
@@ -649,4 +644,70 @@
     <string name="hidden_channels_unknown">Gizli kanal</string>
     <string name="hidden_channels_id_placeholder">id %1$d</string>
     <string name="hidden_channels_unhide_for">%1$s kanalını akışta göster</string>
+
+    <!-- Post archive -->
+    <string name="archive_capture_deletes">Silmeleri kaydet</string>
+    <string name="archive_capture_edits">Düzenlemeleri kaydet</string>
+    <string name="archive_clear_all">Arşivi temizle</string>
+    <string name="archive_clear_confirm">Bu işlem tüm anlık görüntüleri kalıcı olarak siler. Kanallar bunu görmez.</string>
+    <string name="archive_clear_yes">Temizle</string>
+    <string name="archive_disable_body">Yeni anlık görüntü kaydedilmesin. Mevcut olanlar ne olsun?</string>
+    <string name="archive_disable_keep">Koru, kaydetmeyi durdur</string>
+    <string name="archive_disable_purge">Sil ve devre dışı bırak</string>
+    <string name="archive_disable_title">Arşivi devre dışı bırak</string>
+    <string name="archive_empty_enabled">Henüz bir şey yok. Bir kanal gönderi düzenlediğinde veya sildiğinde burada görünür.</string>
+    <string name="archive_export_continue">Dışa aktar</string>
+    <string name="archive_export_json">JSON olarak dışa aktar</string>
+    <string name="archive_export_size_warning">Yaklaşık boyut: %d MB. Devam edilsin mi?</string>
+    <string name="archive_filter_all">Tümü</string>
+    <string name="archive_filter_deleted">Silinmiş</string>
+    <string name="archive_filter_edited">Düzenlenmiş</string>
+    <string name="archive_master_subtitle">Bu cihazda yerel olarak. Çıkış yapınca temizlenir.</string>
+    <string name="archive_master_toggle">Anlık görüntüleri kaydet</string>
+    <string name="archive_max_records_label">Maksimum kayıt sayısı</string>
+    <string name="archive_onboarding_cancel">İptal</string>
+    <string name="archive_onboarding_enable">Etkinleştir</string>
+    <string name="archive_onboarding_logout">Çıkış yapınca otomatik olarak temizlenir.</string>
+    <string name="archive_onboarding_title">Düzenlemeler ve silmeler kaydedilsin mi?</string>
+    <string name="archive_onboarding_what">Hortay, bir kanal gönderi düzenlediğinde veya sildiğinde metni ve medya meta verilerini kaydeder. Fotoğraf ve videolar indirilmez — yalnızca küçük önizlemeler saklanır.</string>
+    <string name="archive_onboarding_where">Bu cihazda yerel olarak saklanır. Hiçbir yere yüklenmez.</string>
+    <string name="archive_open_browser">Arşivi aç</string>
+    <string name="archive_purged">Anlık görüntü silindi.</string>
+    <string name="archive_records_unlimited">Sınırsız</string>
+    <string name="archive_retention_days">%d gün</string>
+    <string name="archive_retention_label">Saklama süresi</string>
+    <string name="archive_retention_unlimited">Sınırsız</string>
+    <string name="archive_row_kind_deleted">Silindi</string>
+    <string name="archive_row_kind_edited">Düzenlendi</string>
+    <string name="archive_scope_all">Tüm kapsamlar</string>
+    <string name="archive_scope_comments">Yorumlar</string>
+    <string name="archive_scope_posts">Gönderiler</string>
+    <string name="archive_screen_title">Arşiv</string>
+    <string name="archive_search_placeholder">Arşivde ara</string>
+    <string name="archive_section_archive">Arşiv</string>
+    <string name="archive_section_capture">Yakalama</string>
+    <string name="archive_section_events">Olay türleri</string>
+    <string name="archive_section_retention">Saklama</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="one">%d anlık görüntü</item>
+        <item quantity="other">%d anlık görüntü</item>
+    </plurals>
+    <string name="archive_storage_label">Depolama</string>
+    <string name="post_deleted_badge">silindi</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="one">düzenlendi</item>
+        <item quantity="other">%d kez düzenlendi</item>
+    </plurals>
+    <string name="revision_baseline_caveat">Orijinal kaydedilmedi — bu, Hortay\'ın gözlemlediği en erken düzenlemeden sonraki içeriği gösteriyor.</string>
+    <string name="revision_empty">Kaydedilmiş revizyon yok.</string>
+    <string name="revision_go_to_current">Güncel sürüme git</string>
+    <string name="revision_media_audio_caption">Ses · %1$d sn</string>
+    <string name="revision_media_document">Belge</string>
+    <string name="revision_media_low_res_overlay">Yalnızca önizleme — tam medya önbelleğe alınmadı</string>
+    <string name="revision_media_unavailable">Medya kaydedilmedi</string>
+    <string name="revision_media_video_caption">Video · %1$d sn</string>
+    <string name="revision_open_in_telegram">Telegram\'da aç</string>
+    <string name="revision_sheet_title">Düzenleme geçmişi</string>
+    <string name="revision_sheet_title_deleted">Silinen gönderi</string>
+    <string name="settings_archive_title">Gönderi arşivi</string>
 </resources>

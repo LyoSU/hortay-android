@@ -667,7 +667,7 @@
     <!-- Archive: feed chips/badges -->
     <string name="post_deleted_badge">видалено</string>
     <plurals name="post_edited_chip_count">
-        <item quantity="one">ред.</item>
+        <item quantity="one">ред. ×%d</item>
         <item quantity="few">ред. ×%d</item>
         <item quantity="many">ред. ×%d</item>
         <item quantity="other">ред. ×%d</item>

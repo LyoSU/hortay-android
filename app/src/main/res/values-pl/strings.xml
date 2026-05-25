@@ -216,13 +216,6 @@
     </plurals>
 
     <!-- Licznik nieprzeczytanych (tryb OldestUnreadFirst) -->
-    <string name="unread_remaining_overflow">99+ nieprzeczytanych</string>
-    <plurals name="unread_remaining">
-        <item quantity="one">%d nieprzeczytany</item>
-        <item quantity="few">%d nieprzeczytane</item>
-        <item quantity="many">%d nieprzeczytanych</item>
-        <item quantity="other">%d nieprzeczytanego</item>
-    </plurals>
 
     <!-- Karta wpisu -->
     <string name="post_translated_chip">Przetłumaczono · Pokaż oryginał</string>
@@ -677,4 +670,74 @@
     <string name="hidden_channels_unknown">Ukryty kanał</string>
     <string name="hidden_channels_id_placeholder">id %1$d</string>
     <string name="hidden_channels_unhide_for">Pokaż %1$s w feedzie</string>
+
+    <!-- Post archive -->
+    <string name="archive_capture_deletes">Rejestruj usunięcia</string>
+    <string name="archive_capture_edits">Rejestruj edycje</string>
+    <string name="archive_clear_all">Wyczyść archiwum</string>
+    <string name="archive_clear_confirm">To trwale usuwa wszystkie zapisy. Kanały nie zostaną powiadomione.</string>
+    <string name="archive_clear_yes">Wyczyść</string>
+    <string name="archive_disable_body">Nowe zapisy nie będą już dodawane. Co zrobić z istniejącymi?</string>
+    <string name="archive_disable_keep">Zachowaj, zatrzymaj zapisywanie</string>
+    <string name="archive_disable_purge">Usuń i wyłącz</string>
+    <string name="archive_disable_title">Wyłączyć archiwum</string>
+    <string name="archive_empty_enabled">Nic tu jeszcze nie ma. Gdy kanał edytuje lub usuwa wpis, pojawi się tutaj.</string>
+    <string name="archive_export_continue">Eksportuj</string>
+    <string name="archive_export_json">Eksportuj do JSON</string>
+    <string name="archive_export_size_warning">Przybliżony rozmiar: %d MB. Kontynuować?</string>
+    <string name="archive_filter_all">Wszystkie</string>
+    <string name="archive_filter_deleted">Usunięte</string>
+    <string name="archive_filter_edited">Edytowane</string>
+    <string name="archive_master_subtitle">Lokalnie na tym urządzeniu. Czyszczone przy wylogowaniu.</string>
+    <string name="archive_master_toggle">Zapisuj migawki</string>
+    <string name="archive_max_records_label">Maks. liczba zapisów</string>
+    <string name="archive_onboarding_cancel">Anuluj</string>
+    <string name="archive_onboarding_enable">Włącz</string>
+    <string name="archive_onboarding_logout">Czyszczone automatycznie przy wylogowaniu.</string>
+    <string name="archive_onboarding_title">Zapisywać edycje i usunięcia?</string>
+    <string name="archive_onboarding_what">Hortay zapisuje tekst i metadane mediów, gdy kanał edytuje lub usuwa wpis. Zdjęcia i filmy nie są pobierane — tylko małe miniatury.</string>
+    <string name="archive_onboarding_where">Przechowywane lokalnie na tym urządzeniu. Nigdy nie są wysyłane.</string>
+    <string name="archive_open_browser">Otwórz archiwum</string>
+    <string name="archive_purged">Migawka usunięta.</string>
+    <string name="archive_records_unlimited">Bez limitu</string>
+    <string name="archive_retention_days">%d dni</string>
+    <string name="archive_retention_label">Czas przechowywania</string>
+    <string name="archive_retention_unlimited">Bez limitu</string>
+    <string name="archive_row_kind_deleted">Usunięto</string>
+    <string name="archive_row_kind_edited">Edytowano</string>
+    <string name="archive_scope_all">Wszystkie zakresy</string>
+    <string name="archive_scope_comments">Komentarze</string>
+    <string name="archive_scope_posts">Wpisy</string>
+    <string name="archive_screen_title">Archiwum</string>
+    <string name="archive_search_placeholder">Szukaj w archiwum</string>
+    <string name="archive_section_archive">Archiwum</string>
+    <string name="archive_section_capture">Rejestrowanie</string>
+    <string name="archive_section_events">Typy zdarzeń</string>
+    <string name="archive_section_retention">Czas przechowywania</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="one">%d migawka</item>
+        <item quantity="few">%d migawki</item>
+        <item quantity="many">%d migawek</item>
+        <item quantity="other">%d migawki</item>
+    </plurals>
+    <string name="archive_storage_label">Pamięć</string>
+    <string name="post_deleted_badge">usunięto</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="one">edytowano</item>
+        <item quantity="few">edytowano ×%d</item>
+        <item quantity="many">edytowano ×%d</item>
+        <item quantity="other">edytowano ×%d</item>
+    </plurals>
+    <string name="revision_baseline_caveat">Oryginał nie został zapisany — widoczna jest treść po najwcześniejszej edycji zauważonej przez Hortay.</string>
+    <string name="revision_empty">Brak zapisanych wersji.</string>
+    <string name="revision_go_to_current">Przejdź do aktualnej</string>
+    <string name="revision_media_audio_caption">Audio · %1$d s</string>
+    <string name="revision_media_document">Dokument</string>
+    <string name="revision_media_low_res_overlay">Tylko podgląd — pełne media nie były w cache</string>
+    <string name="revision_media_unavailable">Media nie zostały zapisane</string>
+    <string name="revision_media_video_caption">Wideo · %1$d s</string>
+    <string name="revision_open_in_telegram">Otwórz w Telegramie</string>
+    <string name="revision_sheet_title">Historia edycji</string>
+    <string name="revision_sheet_title_deleted">Usunięty wpis</string>
+    <string name="settings_archive_title">Archiwum wpisów</string>
 </resources>

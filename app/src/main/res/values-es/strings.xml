@@ -214,12 +214,6 @@
     </plurals>
 
     <!-- Unread counter pill (OldestUnreadFirst feed mode) -->
-    <string name="unread_remaining_overflow">99+ sin leer</string>
-    <plurals name="unread_remaining">
-        <item quantity="one">%d sin leer</item>
-        <item quantity="other">%d sin leer</item>
-        <item quantity="many">%d sin leer</item>
-    </plurals>
 
     <!-- Post card -->
     <string name="post_translated_chip">Traducido · Ver original</string>
@@ -673,4 +667,72 @@
     <string name="hidden_channels_unknown">Canal oculto</string>
     <string name="hidden_channels_id_placeholder">id %1$d</string>
     <string name="hidden_channels_unhide_for">Mostrar %1$s en el inicio</string>
+
+    <!-- Post archive -->
+    <string name="archive_capture_deletes">Capturar eliminaciones</string>
+    <string name="archive_capture_edits">Capturar ediciones</string>
+    <string name="archive_clear_all">Borrar archivo</string>
+    <string name="archive_clear_confirm">Esto elimina permanentemente todas las instantáneas. Los canales no se enterarán.</string>
+    <string name="archive_clear_yes">Borrar</string>
+    <string name="archive_disable_body">Deja de guardar nuevas instantáneas. ¿Qué hacer con las existentes?</string>
+    <string name="archive_disable_keep">Conservar y dejar de guardar</string>
+    <string name="archive_disable_purge">Eliminar y desactivar</string>
+    <string name="archive_disable_title">Desactivar archivo</string>
+    <string name="archive_empty_enabled">Nada aún. Cuando un canal edite o elimine una publicación, aparecerá aquí.</string>
+    <string name="archive_export_continue">Exportar</string>
+    <string name="archive_export_json">Exportar a JSON</string>
+    <string name="archive_export_size_warning">Tamaño aproximado: %d MB. ¿Continuar?</string>
+    <string name="archive_filter_all">Todo</string>
+    <string name="archive_filter_deleted">Eliminadas</string>
+    <string name="archive_filter_edited">Editadas</string>
+    <string name="archive_master_subtitle">Solo en este dispositivo. Se borra al cerrar sesión.</string>
+    <string name="archive_master_toggle">Guardar instantáneas</string>
+    <string name="archive_max_records_label">Máximo de registros</string>
+    <string name="archive_onboarding_cancel">Cancelar</string>
+    <string name="archive_onboarding_enable">Activar</string>
+    <string name="archive_onboarding_logout">Se borra automáticamente al cerrar sesión.</string>
+    <string name="archive_onboarding_title">¿Guardar ediciones y eliminaciones?</string>
+    <string name="archive_onboarding_what">Hortay guarda el texto y los metadatos de medios cuando un canal edita o elimina una publicación. Las fotos y videos no se descargan — solo miniaturas pequeñas.</string>
+    <string name="archive_onboarding_where">Almacenado solo en este dispositivo. Nunca se sube a ningún servidor.</string>
+    <string name="archive_open_browser">Abrir archivo</string>
+    <string name="archive_purged">Instantánea eliminada.</string>
+    <string name="archive_records_unlimited">Sin límite</string>
+    <string name="archive_retention_days">%d días</string>
+    <string name="archive_retention_label">Retención</string>
+    <string name="archive_retention_unlimited">Sin límite</string>
+    <string name="archive_row_kind_deleted">Eliminada</string>
+    <string name="archive_row_kind_edited">Editada</string>
+    <string name="archive_scope_all">Todos los ámbitos</string>
+    <string name="archive_scope_comments">Comentarios</string>
+    <string name="archive_scope_posts">Publicaciones</string>
+    <string name="archive_screen_title">Archivo</string>
+    <string name="archive_search_placeholder">Buscar en el archivo</string>
+    <string name="archive_section_archive">Archivo</string>
+    <string name="archive_section_capture">Captura</string>
+    <string name="archive_section_events">Tipos de eventos</string>
+    <string name="archive_section_retention">Retención</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="one">%d instantánea</item>
+        <item quantity="other">%d instantáneas</item>
+        <item quantity="many">%d instantáneas</item>
+    </plurals>
+    <string name="archive_storage_label">Almacenamiento</string>
+    <string name="post_deleted_badge">eliminada</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="one">editada</item>
+        <item quantity="other">editada ×%d</item>
+        <item quantity="many">editada ×%d</item>
+    </plurals>
+    <string name="revision_baseline_caveat">El original no fue capturado — se muestra el contenido tras la primera edición que Hortay observó.</string>
+    <string name="revision_empty">No hay revisiones guardadas.</string>
+    <string name="revision_go_to_current">Ir a la versión actual</string>
+    <string name="revision_media_audio_caption">Audio · %1$ds</string>
+    <string name="revision_media_document">Documento</string>
+    <string name="revision_media_low_res_overlay">Solo vista previa — el contenido completo no fue guardado en caché</string>
+    <string name="revision_media_unavailable">El contenido multimedia no fue capturado</string>
+    <string name="revision_media_video_caption">Video · %1$ds</string>
+    <string name="revision_open_in_telegram">Abrir en Telegram</string>
+    <string name="revision_sheet_title">Historial de ediciones</string>
+    <string name="revision_sheet_title_deleted">Publicación eliminada</string>
+    <string name="settings_archive_title">Archivo de publicaciones</string>
 </resources>

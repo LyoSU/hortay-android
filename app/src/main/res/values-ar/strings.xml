@@ -224,15 +224,6 @@
     </plurals>
 
     <!-- عداد المنشورات غير المقروءة (وضع الأقدم-أولاً) -->
-    <string name="unread_remaining_overflow">99+ غير مقروء</string>
-    <plurals name="unread_remaining">
-        <item quantity="zero">لا توجد منشورات غير مقروءة</item>
-        <item quantity="one">منشور غير مقروء</item>
-        <item quantity="two">منشوران غير مقروءَين</item>
-        <item quantity="few">%d منشورات غير مقروءة</item>
-        <item quantity="many">%d منشوراً غير مقروء</item>
-        <item quantity="other">%d غير مقروء</item>
-    </plurals>
 
     <!-- بطاقة المنشور -->
     <string name="post_translated_chip">مترجَم · عرض الأصل</string>
@@ -706,4 +697,78 @@
     <string name="hidden_channels_unknown">قناة مخفية</string>
     <string name="hidden_channels_id_placeholder">المعرّف %1$d</string>
     <string name="hidden_channels_unhide_for">إظهار %1$s في الخلاصة</string>
+
+    <!-- Post archive -->
+    <string name="archive_capture_deletes">تسجيل الحذف</string>
+    <string name="archive_capture_edits">تسجيل التعديلات</string>
+    <string name="archive_clear_all">مسح الأرشيف</string>
+    <string name="archive_clear_confirm">سيُحذف كل اللقطات نهائياً. القنوات لن تلاحظ ذلك.</string>
+    <string name="archive_clear_yes">مسح</string>
+    <string name="archive_disable_body">أوقف حفظ اللقطات الجديدة. ماذا تريد أن تفعل بالموجودة؟</string>
+    <string name="archive_disable_keep">احتفظ بها وأوقف الحفظ</string>
+    <string name="archive_disable_purge">احذف وعطّل</string>
+    <string name="archive_disable_title">تعطيل الأرشيف</string>
+    <string name="archive_empty_enabled">لا شيء بعد. حين تُعدّل قناة منشوراً أو تحذفه سيظهر هنا.</string>
+    <string name="archive_export_continue">تصدير</string>
+    <string name="archive_export_json">تصدير إلى JSON</string>
+    <string name="archive_export_size_warning">الحجم التقريبي: %d ميغابايت. هل تريد المتابعة؟</string>
+    <string name="archive_filter_all">الكل</string>
+    <string name="archive_filter_deleted">المحذوفة</string>
+    <string name="archive_filter_edited">المعدَّلة</string>
+    <string name="archive_master_subtitle">محلياً على هذا الجهاز. يُمسح عند تسجيل الخروج.</string>
+    <string name="archive_master_toggle">حفظ اللقطات</string>
+    <string name="archive_max_records_label">الحد الأقصى للسجلات</string>
+    <string name="archive_onboarding_cancel">إلغاء</string>
+    <string name="archive_onboarding_enable">تفعيل</string>
+    <string name="archive_onboarding_logout">يُمسح تلقائياً عند تسجيل الخروج.</string>
+    <string name="archive_onboarding_title">حفظ التعديلات والمحذوفات؟</string>
+    <string name="archive_onboarding_what">يحفظ Hortay النص وبيانات الوسائط حين تُعدّل قناة منشوراً أو تحذفه. الصور والفيديوهات نفسها لا تُنزَّل — فقط مصغّرات صغيرة.</string>
+    <string name="archive_onboarding_where">مخزَّن محلياً على هذا الجهاز. لا يُرفع أبداً.</string>
+    <string name="archive_open_browser">فتح الأرشيف</string>
+    <string name="archive_purged">تم حذف اللقطة.</string>
+    <string name="archive_records_unlimited">بلا حدود</string>
+    <string name="archive_retention_days">%d أيام</string>
+    <string name="archive_retention_label">مدة الاحتفاظ</string>
+    <string name="archive_retention_unlimited">بلا حدود</string>
+    <string name="archive_row_kind_deleted">محذوف</string>
+    <string name="archive_row_kind_edited">معدَّل</string>
+    <string name="archive_scope_all">كل النطاقات</string>
+    <string name="archive_scope_comments">التعليقات</string>
+    <string name="archive_scope_posts">المنشورات</string>
+    <string name="archive_screen_title">الأرشيف</string>
+    <string name="archive_search_placeholder">البحث في الأرشيف</string>
+    <string name="archive_section_archive">الأرشيف</string>
+    <string name="archive_section_capture">التسجيل</string>
+    <string name="archive_section_events">أنواع الأحداث</string>
+    <string name="archive_section_retention">الاحتفاظ</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="zero">لا توجد لقطات</item>
+        <item quantity="one">لقطة واحدة</item>
+        <item quantity="two">%d لقطتان</item>
+        <item quantity="few">%d لقطات</item>
+        <item quantity="many">%d لقطة</item>
+        <item quantity="other">%d لقطة</item>
+    </plurals>
+    <string name="archive_storage_label">التخزين</string>
+    <string name="post_deleted_badge">محذوف</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="zero">معدَّل</item>
+        <item quantity="one">معدَّل</item>
+        <item quantity="two">معدَّل ×%d</item>
+        <item quantity="few">معدَّل ×%d</item>
+        <item quantity="many">معدَّل ×%d</item>
+        <item quantity="other">معدَّل ×%d</item>
+    </plurals>
+    <string name="revision_baseline_caveat">لم تُلتقط النسخة الأصلية — يعرض هذا المحتوى بعد أقدم تعديل رصده Hortay.</string>
+    <string name="revision_empty">لا توجد مراجعات مخزَّنة.</string>
+    <string name="revision_go_to_current">الانتقال إلى الحالية</string>
+    <string name="revision_media_audio_caption">صوت · %1$d ث</string>
+    <string name="revision_media_document">مستند</string>
+    <string name="revision_media_low_res_overlay">معاينة فقط — لم يُخزَّن الوسائط الكاملة</string>
+    <string name="revision_media_unavailable">لم تُلتقط الوسائط</string>
+    <string name="revision_media_video_caption">فيديو · %1$d ث</string>
+    <string name="revision_open_in_telegram">فتح في Telegram</string>
+    <string name="revision_sheet_title">سجل التعديلات</string>
+    <string name="revision_sheet_title_deleted">منشور محذوف</string>
+    <string name="settings_archive_title">أرشيف المنشورات</string>
 </resources>

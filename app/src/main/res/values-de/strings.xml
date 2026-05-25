@@ -210,11 +210,6 @@
     </plurals>
 
     <!-- Ungelesen-Pill (OldestUnreadFirst-Feed-Modus) -->
-    <string name="unread_remaining_overflow">99+ ungelesen</string>
-    <plurals name="unread_remaining">
-        <item quantity="one">%d ungelesen</item>
-        <item quantity="other">%d ungelesen</item>
-    </plurals>
 
     <!-- Beitragskarte -->
     <string name="post_translated_chip">Übersetzt · Original anzeigen</string>
@@ -654,4 +649,70 @@
     <string name="hidden_channels_unknown">Ausgeblendeter Kanal</string>
     <string name="hidden_channels_id_placeholder">ID %1$d</string>
     <string name="hidden_channels_unhide_for">%1$s im Feed anzeigen</string>
+
+    <!-- Post archive -->
+    <string name="archive_capture_deletes">Löschungen erfassen</string>
+    <string name="archive_capture_edits">Bearbeitungen erfassen</string>
+    <string name="archive_clear_all">Archiv leeren</string>
+    <string name="archive_clear_confirm">Alle Schnappschüsse werden dauerhaft gelöscht. Kanäle bemerken das nicht.</string>
+    <string name="archive_clear_yes">Leeren</string>
+    <string name="archive_disable_body">Keine neuen Schnappschüsse mehr speichern. Was soll mit den vorhandenen passieren?</string>
+    <string name="archive_disable_keep">Behalten, nicht mehr speichern</string>
+    <string name="archive_disable_purge">Löschen und deaktivieren</string>
+    <string name="archive_disable_title">Archiv deaktivieren</string>
+    <string name="archive_empty_enabled">Noch nichts. Sobald ein Kanal einen Beitrag bearbeitet oder löscht, erscheint er hier.</string>
+    <string name="archive_export_continue">Exportieren</string>
+    <string name="archive_export_json">Als JSON exportieren</string>
+    <string name="archive_export_size_warning">Ungefähre Größe: %d MB. Weiter?</string>
+    <string name="archive_filter_all">Alle</string>
+    <string name="archive_filter_deleted">Gelöscht</string>
+    <string name="archive_filter_edited">Bearbeitet</string>
+    <string name="archive_master_subtitle">Lokal auf diesem Gerät. Wird beim Abmelden geleert.</string>
+    <string name="archive_master_toggle">Schnappschüsse speichern</string>
+    <string name="archive_max_records_label">Max. Einträge</string>
+    <string name="archive_onboarding_cancel">Abbrechen</string>
+    <string name="archive_onboarding_enable">Aktivieren</string>
+    <string name="archive_onboarding_logout">Wird automatisch geleert, wenn du dich abmeldest.</string>
+    <string name="archive_onboarding_title">Bearbeitungen und Löschungen speichern?</string>
+    <string name="archive_onboarding_what">Hortay speichert Text und Medien-Metadaten, wenn ein Kanal einen Beitrag bearbeitet oder löscht. Fotos und Videos selbst werden nicht heruntergeladen — nur kleine Miniaturansichten.</string>
+    <string name="archive_onboarding_where">Lokal auf diesem Gerät gespeichert. Wird nie hochgeladen.</string>
+    <string name="archive_open_browser">Archiv öffnen</string>
+    <string name="archive_purged">Schnappschuss entfernt.</string>
+    <string name="archive_records_unlimited">Kein Limit</string>
+    <string name="archive_retention_days">%d Tage</string>
+    <string name="archive_retention_label">Aufbewahrung</string>
+    <string name="archive_retention_unlimited">Kein Limit</string>
+    <string name="archive_row_kind_deleted">Gelöscht</string>
+    <string name="archive_row_kind_edited">Bearbeitet</string>
+    <string name="archive_scope_all">Alle Bereiche</string>
+    <string name="archive_scope_comments">Kommentare</string>
+    <string name="archive_scope_posts">Beiträge</string>
+    <string name="archive_screen_title">Archiv</string>
+    <string name="archive_search_placeholder">Archiv durchsuchen</string>
+    <string name="archive_section_archive">Archiv</string>
+    <string name="archive_section_capture">Erfassung</string>
+    <string name="archive_section_events">Ereignistypen</string>
+    <string name="archive_section_retention">Aufbewahrung</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="one">%d Schnappschuss</item>
+        <item quantity="other">%d Schnappschüsse</item>
+    </plurals>
+    <string name="archive_storage_label">Speicher</string>
+    <string name="post_deleted_badge">gelöscht</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="one">bearbeitet</item>
+        <item quantity="other">bearbeitet ×%d</item>
+    </plurals>
+    <string name="revision_baseline_caveat">Original nicht erfasst — gezeigt wird der Inhalt nach der frühesten Bearbeitung, die Hortay beobachtet hat.</string>
+    <string name="revision_empty">Keine Versionen gespeichert.</string>
+    <string name="revision_go_to_current">Zur aktuellen Version</string>
+    <string name="revision_media_audio_caption">Audio · %1$ds</string>
+    <string name="revision_media_document">Dokument</string>
+    <string name="revision_media_low_res_overlay">Nur Vorschau — vollständige Medien wurden nicht gecacht</string>
+    <string name="revision_media_unavailable">Medien wurden nicht erfasst</string>
+    <string name="revision_media_video_caption">Video · %1$ds</string>
+    <string name="revision_open_in_telegram">In Telegram öffnen</string>
+    <string name="revision_sheet_title">Bearbeitungsverlauf</string>
+    <string name="revision_sheet_title_deleted">Gelöschter Beitrag</string>
+    <string name="settings_archive_title">Beitragsarchiv</string>
 </resources>

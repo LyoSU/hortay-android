@@ -208,11 +208,6 @@
     </plurals>
 
     <!-- قرص شمارش خوانده‌نشده‌ها (حالت OldestUnreadFirst) -->
-    <string name="unread_remaining_overflow">+99 خوانده‌نشده</string>
-    <plurals name="unread_remaining">
-        <item quantity="one">%d خوانده‌نشده</item>
-        <item quantity="other">%d خوانده‌نشده</item>
-    </plurals>
 
     <!-- کارت پست -->
     <string name="post_translated_chip">ترجمه‌شده · نمایش اصل</string>
@@ -648,4 +643,70 @@
     <string name="hidden_channels_unknown">کانال پنهان</string>
     <string name="hidden_channels_id_placeholder">شناسه %1$d</string>
     <string name="hidden_channels_unhide_for">نمایش %1$s در فید</string>
+
+    <!-- Post archive -->
+    <string name="archive_capture_deletes">ثبت حذف‌ها</string>
+    <string name="archive_capture_edits">ثبت ویرایش‌ها</string>
+    <string name="archive_clear_all">پاک کردن آرشیو</string>
+    <string name="archive_clear_confirm">این کار همه نسخه‌ها را برای همیشه حذف می‌کند. کانال‌ها متوجه نمی‌شوند.</string>
+    <string name="archive_clear_yes">پاک کن</string>
+    <string name="archive_disable_body">دیگر نسخه‌ی جدیدی ذخیره نمی‌شود. نسخه‌های موجود چطور؟</string>
+    <string name="archive_disable_keep">نگه دار، فقط متوقف کن</string>
+    <string name="archive_disable_purge">حذف کن و غیرفعال</string>
+    <string name="archive_disable_title">غیرفعال کردن آرشیو</string>
+    <string name="archive_empty_enabled">هنوز چیزی نیست. وقتی کانالی پستی را ویرایش یا حذف کند، اینجا ظاهر می‌شود.</string>
+    <string name="archive_export_continue">خروجی بگیر</string>
+    <string name="archive_export_json">خروجی به JSON</string>
+    <string name="archive_export_size_warning">حجم تقریبی: %d MB. ادامه می‌دهی؟</string>
+    <string name="archive_filter_all">همه</string>
+    <string name="archive_filter_deleted">حذف‌شده</string>
+    <string name="archive_filter_edited">ویرایش‌شده</string>
+    <string name="archive_master_subtitle">فقط روی این دستگاه. با خروج از حساب پاک می‌شود.</string>
+    <string name="archive_master_toggle">ذخیره‌ی نسخه‌ها</string>
+    <string name="archive_max_records_label">حداکثر رکورد</string>
+    <string name="archive_onboarding_cancel">انصراف</string>
+    <string name="archive_onboarding_enable">فعال</string>
+    <string name="archive_onboarding_logout">با خروج از حساب به‌طور خودکار پاک می‌شود.</string>
+    <string name="archive_onboarding_title">ویرایش‌ها و حذف‌ها ذخیره شوند؟</string>
+    <string name="archive_onboarding_what">Hortay متن و متادیتای رسانه را هنگام ویرایش یا حذف پست توسط کانال ذخیره می‌کند. عکس‌ها و ویدیوها دانلود نمی‌شوند — فقط تصاویر کوچک.</string>
+    <string name="archive_onboarding_where">فقط روی این دستگاه ذخیره می‌شود. هرگز آپلود نمی‌شود.</string>
+    <string name="archive_open_browser">باز کردن آرشیو</string>
+    <string name="archive_purged">نسخه حذف شد.</string>
+    <string name="archive_records_unlimited">بدون محدودیت</string>
+    <string name="archive_retention_days">%d روز</string>
+    <string name="archive_retention_label">نگهداری</string>
+    <string name="archive_retention_unlimited">بدون محدودیت</string>
+    <string name="archive_row_kind_deleted">حذف‌شده</string>
+    <string name="archive_row_kind_edited">ویرایش‌شده</string>
+    <string name="archive_scope_all">همه دامنه‌ها</string>
+    <string name="archive_scope_comments">نظرات</string>
+    <string name="archive_scope_posts">پست‌ها</string>
+    <string name="archive_screen_title">آرشیو</string>
+    <string name="archive_search_placeholder">جستجو در آرشیو</string>
+    <string name="archive_section_archive">آرشیو</string>
+    <string name="archive_section_capture">ثبت</string>
+    <string name="archive_section_events">نوع رویداد</string>
+    <string name="archive_section_retention">نگهداری</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="one">%d نسخه</item>
+        <item quantity="other">%d نسخه</item>
+    </plurals>
+    <string name="archive_storage_label">فضای ذخیره‌سازی</string>
+    <string name="post_deleted_badge">حذف‌شده</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="one">ویرایش‌شده ×%d</item>
+        <item quantity="other">ویرایش‌شده ×%d</item>
+    </plurals>
+    <string name="revision_baseline_caveat">نسخه‌ی اصلی ثبت نشده — این محتوا پس از اولین ویرایشی است که Hortay دیده.</string>
+    <string name="revision_empty">هیچ ویرایشی ذخیره نشده.</string>
+    <string name="revision_go_to_current">رفتن به نسخه‌ی فعلی</string>
+    <string name="revision_media_audio_caption">صدا · %1$d ث</string>
+    <string name="revision_media_document">سند</string>
+    <string name="revision_media_low_res_overlay">فقط پیش‌نمایش — رسانه‌ی اصلی کش نشده</string>
+    <string name="revision_media_unavailable">رسانه ثبت نشده</string>
+    <string name="revision_media_video_caption">ویدیو · %1$d ث</string>
+    <string name="revision_open_in_telegram">باز کردن در Telegram</string>
+    <string name="revision_sheet_title">تاریخچه‌ی ویرایش</string>
+    <string name="revision_sheet_title_deleted">پست حذف‌شده</string>
+    <string name="settings_archive_title">آرشیو پست</string>
 </resources>

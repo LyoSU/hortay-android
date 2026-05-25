@@ -214,12 +214,6 @@
     </plurals>
 
     <!-- Pastille non lus (mode fil OldestUnreadFirst) -->
-    <string name="unread_remaining_overflow">99+ non lus</string>
-    <plurals name="unread_remaining">
-        <item quantity="one">%d non lu</item>
-        <item quantity="many">%d non lus</item>
-        <item quantity="other">%d non lus</item>
-    </plurals>
 
     <!-- Carte de publication -->
     <string name="post_translated_chip">Traduit · Voir l\'original</string>
@@ -667,4 +661,72 @@
     <string name="hidden_channels_unknown">Chaîne masquée</string>
     <string name="hidden_channels_id_placeholder">id %1$d</string>
     <string name="hidden_channels_unhide_for">Afficher %1$s dans le fil</string>
+
+    <!-- Post archive -->
+    <string name="archive_capture_deletes">Capturer les suppressions</string>
+    <string name="archive_capture_edits">Capturer les modifications</string>
+    <string name="archive_clear_all">Vider l\'archive</string>
+    <string name="archive_clear_confirm">Supprime définitivement toutes les captures. Les chaînes n\'y verront que du feu.</string>
+    <string name="archive_clear_yes">Vider</string>
+    <string name="archive_disable_body">Arrêter d\'enregistrer de nouvelles captures. Que faire des captures existantes ?</string>
+    <string name="archive_disable_keep">Conserver, ne plus enregistrer</string>
+    <string name="archive_disable_purge">Supprimer et désactiver</string>
+    <string name="archive_disable_title">Désactiver l\'archive</string>
+    <string name="archive_empty_enabled">Rien encore. Quand une chaîne modifie ou supprime une publication, elle apparaît ici.</string>
+    <string name="archive_export_continue">Exporter</string>
+    <string name="archive_export_json">Exporter en JSON</string>
+    <string name="archive_export_size_warning">Taille approximative : %d Mo. Continuer ?</string>
+    <string name="archive_filter_all">Tout</string>
+    <string name="archive_filter_deleted">Supprimées</string>
+    <string name="archive_filter_edited">Modifiées</string>
+    <string name="archive_master_subtitle">Localement sur cet appareil. Effacé à la déconnexion.</string>
+    <string name="archive_master_toggle">Enregistrer des captures</string>
+    <string name="archive_max_records_label">Nombre max d\'entrées</string>
+    <string name="archive_onboarding_cancel">Annuler</string>
+    <string name="archive_onboarding_enable">Activer</string>
+    <string name="archive_onboarding_logout">Effacé automatiquement à la déconnexion.</string>
+    <string name="archive_onboarding_title">Enregistrer les modifications et suppressions ?</string>
+    <string name="archive_onboarding_what">Hortay enregistre le texte et les métadonnées des médias quand une chaîne modifie ou supprime une publication. Les photos et vidéos elles-mêmes ne sont pas téléchargées — seulement de petites miniatures.</string>
+    <string name="archive_onboarding_where">Stocké localement sur cet appareil. Jamais envoyé nulle part.</string>
+    <string name="archive_open_browser">Ouvrir l\'archive</string>
+    <string name="archive_purged">Capture supprimée.</string>
+    <string name="archive_records_unlimited">Sans limite</string>
+    <string name="archive_retention_days">%d jours</string>
+    <string name="archive_retention_label">Durée de conservation</string>
+    <string name="archive_retention_unlimited">Sans limite</string>
+    <string name="archive_row_kind_deleted">Supprimée</string>
+    <string name="archive_row_kind_edited">Modifiée</string>
+    <string name="archive_scope_all">Tout</string>
+    <string name="archive_scope_comments">Commentaires</string>
+    <string name="archive_scope_posts">Publications</string>
+    <string name="archive_screen_title">Archive</string>
+    <string name="archive_search_placeholder">Rechercher dans l\'archive</string>
+    <string name="archive_section_archive">Archive</string>
+    <string name="archive_section_capture">Capture</string>
+    <string name="archive_section_events">Types d\'événements</string>
+    <string name="archive_section_retention">Conservation</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="one">%d capture</item>
+        <item quantity="many">%d captures</item>
+        <item quantity="other">%d captures</item>
+    </plurals>
+    <string name="archive_storage_label">Stockage</string>
+    <string name="post_deleted_badge">supprimée</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="one">modifiée ×%d</item>
+        <item quantity="many">modifiée ×%d</item>
+        <item quantity="other">modifiée ×%d</item>
+    </plurals>
+    <string name="revision_baseline_caveat">L\'original n\'a pas été capturé — ceci affiche le contenu après la première modification qu\'Hortay a observée.</string>
+    <string name="revision_empty">Aucune version enregistrée.</string>
+    <string name="revision_go_to_current">Aller à la version actuelle</string>
+    <string name="revision_media_audio_caption">Audio · %1$ds</string>
+    <string name="revision_media_document">Document</string>
+    <string name="revision_media_low_res_overlay">Aperçu uniquement — le média complet n\'a pas été mis en cache</string>
+    <string name="revision_media_unavailable">Le média n\'a pas été capturé</string>
+    <string name="revision_media_video_caption">Vidéo · %1$ds</string>
+    <string name="revision_open_in_telegram">Ouvrir dans Telegram</string>
+    <string name="revision_sheet_title">Historique des modifications</string>
+    <string name="revision_sheet_title_deleted">Publication supprimée</string>
+    <string name="settings_archive_title">Archive des publications</string>
 </resources>

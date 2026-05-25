@@ -218,13 +218,6 @@
     </plurals>
 
     <!-- Unread counter pill (OldestUnreadFirst feed mode) -->
-    <string name="unread_remaining_overflow">99+ непрочитанных</string>
-    <plurals name="unread_remaining">
-        <item quantity="one">%d непрочитанный</item>
-        <item quantity="few">%d непрочитанных</item>
-        <item quantity="many">%d непрочитанных</item>
-        <item quantity="other">%d непрочитанных</item>
-    </plurals>
 
     <!-- Post card -->
     <string name="post_translated_chip">Переведено · Показать оригинал</string>
@@ -680,4 +673,74 @@
     <string name="hidden_channels_unknown">Скрытый канал</string>
     <string name="hidden_channels_id_placeholder">id %1$d</string>
     <string name="hidden_channels_unhide_for">Вернуть %1$s в ленту</string>
+
+    <!-- Post archive -->
+    <string name="archive_capture_deletes">Сохранять удаления</string>
+    <string name="archive_capture_edits">Сохранять редактирования</string>
+    <string name="archive_clear_all">Очистить архив</string>
+    <string name="archive_clear_confirm">Это навсегда удалит все снимки. Каналы этого не заметят.</string>
+    <string name="archive_clear_yes">Очистить</string>
+    <string name="archive_disable_body">Прекратить сохранять новые снимки. Что сделать с имеющимися?</string>
+    <string name="archive_disable_keep">Оставить, не сохранять новые</string>
+    <string name="archive_disable_purge">Удалить и отключить</string>
+    <string name="archive_disable_title">Отключить архив</string>
+    <string name="archive_empty_enabled">Пока ничего. Когда канал отредактирует или удалит пост, он появится здесь.</string>
+    <string name="archive_export_continue">Экспортировать</string>
+    <string name="archive_export_json">Экспортировать в JSON</string>
+    <string name="archive_export_size_warning">Примерный размер: %d МБ. Продолжить?</string>
+    <string name="archive_filter_all">Все</string>
+    <string name="archive_filter_deleted">Удалённые</string>
+    <string name="archive_filter_edited">Изменённые</string>
+    <string name="archive_master_subtitle">Локально на этом устройстве. Очищается при выходе.</string>
+    <string name="archive_master_toggle">Сохранять снимки</string>
+    <string name="archive_max_records_label">Максимум записей</string>
+    <string name="archive_onboarding_cancel">Отмена</string>
+    <string name="archive_onboarding_enable">Включить</string>
+    <string name="archive_onboarding_logout">Автоматически очищается при выходе из аккаунта.</string>
+    <string name="archive_onboarding_title">Сохранять редактирования и удаления?</string>
+    <string name="archive_onboarding_what">Hortay сохраняет текст и метаданные медиа, когда канал редактирует или удаляет пост. Сами фото и видео не скачиваются — только небольшие миниатюры.</string>
+    <string name="archive_onboarding_where">Хранится локально на этом устройстве. Никуда не отправляется.</string>
+    <string name="archive_open_browser">Открыть архив</string>
+    <string name="archive_purged">Запись удалена.</string>
+    <string name="archive_records_unlimited">Без ограничений</string>
+    <string name="archive_retention_days">%d дней</string>
+    <string name="archive_retention_label">Срок хранения</string>
+    <string name="archive_retention_unlimited">Без ограничений</string>
+    <string name="archive_row_kind_deleted">Удалено</string>
+    <string name="archive_row_kind_edited">Изменено</string>
+    <string name="archive_scope_all">Всё</string>
+    <string name="archive_scope_comments">Комментарии</string>
+    <string name="archive_scope_posts">Посты</string>
+    <string name="archive_screen_title">Архив</string>
+    <string name="archive_search_placeholder">Поиск в архиве</string>
+    <string name="archive_section_archive">Архив</string>
+    <string name="archive_section_capture">Запись</string>
+    <string name="archive_section_events">Типы событий</string>
+    <string name="archive_section_retention">Хранение</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="one">%d снимок</item>
+        <item quantity="few">%d снимка</item>
+        <item quantity="many">%d снимков</item>
+        <item quantity="other">%d снимка</item>
+    </plurals>
+    <string name="archive_storage_label">Объём</string>
+    <string name="post_deleted_badge">удалено</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="one">ред. ×%d</item>
+        <item quantity="few">ред. ×%d</item>
+        <item quantity="many">ред. ×%d</item>
+        <item quantity="other">ред. ×%d</item>
+    </plurals>
+    <string name="revision_baseline_caveat">Оригинал не зафиксирован — показано содержимое после самого раннего редактирования, которое увидел Hortay.</string>
+    <string name="revision_empty">Версий ещё нет.</string>
+    <string name="revision_go_to_current">К текущей</string>
+    <string name="revision_media_audio_caption">Аудио · %1$d с</string>
+    <string name="revision_media_document">Документ</string>
+    <string name="revision_media_low_res_overlay">Только превью — полный файл не был в кеше</string>
+    <string name="revision_media_unavailable">Медиа не сохранено</string>
+    <string name="revision_media_video_caption">Видео · %1$d с</string>
+    <string name="revision_open_in_telegram">Открыть в Telegram</string>
+    <string name="revision_sheet_title">История изменений</string>
+    <string name="revision_sheet_title_deleted">Удалённый пост</string>
+    <string name="settings_archive_title">Архив постов</string>
 </resources>

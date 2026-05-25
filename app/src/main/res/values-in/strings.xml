@@ -204,10 +204,6 @@
     </plurals>
 
     <!-- Pil penghitung belum dibaca (mode feed OldestUnreadFirst) -->
-    <string name="unread_remaining_overflow">99+ belum dibaca</string>
-    <plurals name="unread_remaining">
-        <item quantity="other">%d belum dibaca</item>
-    </plurals>
 
     <!-- Kartu kiriman -->
     <string name="post_translated_chip">Diterjemahkan · Tampilkan asli</string>
@@ -637,4 +633,68 @@
     <string name="hidden_channels_unknown">Kanal tersembunyi</string>
     <string name="hidden_channels_id_placeholder">id %1$d</string>
     <string name="hidden_channels_unhide_for">Tampilkan %1$s di feed</string>
+
+    <!-- Post archive -->
+    <string name="archive_capture_deletes">Rekam penghapusan</string>
+    <string name="archive_capture_edits">Rekam pengeditan</string>
+    <string name="archive_clear_all">Bersihkan arsip</string>
+    <string name="archive_clear_confirm">Semua salinan akan dihapus permanen. Kanal tidak akan tahu.</string>
+    <string name="archive_clear_yes">Bersihkan</string>
+    <string name="archive_disable_body">Berhenti menyimpan salinan baru. Apa yang dilakukan dengan yang sudah ada?</string>
+    <string name="archive_disable_keep">Simpan, jangan rekam lagi</string>
+    <string name="archive_disable_purge">Hapus dan nonaktifkan</string>
+    <string name="archive_disable_title">Nonaktifkan arsip</string>
+    <string name="archive_empty_enabled">Belum ada apa-apa. Kalau ada kanal yang mengedit atau menghapus kiriman, akan muncul di sini.</string>
+    <string name="archive_export_continue">Ekspor</string>
+    <string name="archive_export_json">Ekspor ke JSON</string>
+    <string name="archive_export_size_warning">Perkiraan ukuran: %d MB. Lanjutkan?</string>
+    <string name="archive_filter_all">Semua</string>
+    <string name="archive_filter_deleted">Dihapus</string>
+    <string name="archive_filter_edited">Diedit</string>
+    <string name="archive_master_subtitle">Tersimpan lokal di perangkat ini. Dihapus saat keluar.</string>
+    <string name="archive_master_toggle">Simpan salinan</string>
+    <string name="archive_max_records_label">Maks. rekaman</string>
+    <string name="archive_onboarding_cancel">Batal</string>
+    <string name="archive_onboarding_enable">Aktifkan</string>
+    <string name="archive_onboarding_logout">Dihapus otomatis saat kamu keluar.</string>
+    <string name="archive_onboarding_title">Simpan pengeditan dan penghapusan?</string>
+    <string name="archive_onboarding_what">Hortay menyimpan teks dan metadata media saat kanal mengedit atau menghapus kiriman. Foto dan video tidak diunduh — hanya thumbnail kecil.</string>
+    <string name="archive_onboarding_where">Tersimpan lokal di perangkat ini. Tidak pernah diunggah.</string>
+    <string name="archive_open_browser">Buka arsip</string>
+    <string name="archive_purged">Salinan dihapus.</string>
+    <string name="archive_records_unlimited">Tanpa batas</string>
+    <string name="archive_retention_days">%d hari</string>
+    <string name="archive_retention_label">Retensi</string>
+    <string name="archive_retention_unlimited">Tanpa batas</string>
+    <string name="archive_row_kind_deleted">Dihapus</string>
+    <string name="archive_row_kind_edited">Diedit</string>
+    <string name="archive_scope_all">Semua cakupan</string>
+    <string name="archive_scope_comments">Komentar</string>
+    <string name="archive_scope_posts">Kiriman</string>
+    <string name="archive_screen_title">Arsip</string>
+    <string name="archive_search_placeholder">Cari di arsip</string>
+    <string name="archive_section_archive">Arsip</string>
+    <string name="archive_section_capture">Perekaman</string>
+    <string name="archive_section_events">Jenis kejadian</string>
+    <string name="archive_section_retention">Retensi</string>
+    <plurals name="archive_snapshot_count">
+        <item quantity="other">%d salinan</item>
+    </plurals>
+    <string name="archive_storage_label">Penyimpanan</string>
+    <string name="post_deleted_badge">dihapus</string>
+    <plurals name="post_edited_chip_count">
+        <item quantity="other">diedit ×%d</item>
+    </plurals>
+    <string name="revision_baseline_caveat">Asli tidak direkam — ini menampilkan konten setelah pengeditan paling awal yang Hortay lihat.</string>
+    <string name="revision_empty">Belum ada revisi tersimpan.</string>
+    <string name="revision_go_to_current">Ke versi saat ini</string>
+    <string name="revision_media_audio_caption">Audio · %1$d dtk</string>
+    <string name="revision_media_document">Dokumen</string>
+    <string name="revision_media_low_res_overlay">Hanya pratinjau — media penuh tidak di-cache</string>
+    <string name="revision_media_unavailable">Media tidak direkam</string>
+    <string name="revision_media_video_caption">Video · %1$d dtk</string>
+    <string name="revision_open_in_telegram">Buka di Telegram</string>
+    <string name="revision_sheet_title">Riwayat pengeditan</string>
+    <string name="revision_sheet_title_deleted">Kiriman yang dihapus</string>
+    <string name="settings_archive_title">Arsip kiriman</string>
 </resources>
