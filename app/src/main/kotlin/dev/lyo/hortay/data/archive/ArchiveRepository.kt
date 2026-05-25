@@ -201,6 +201,51 @@ class ArchiveRepository(
     }
 
     /**
+     * Smart-grouped delete capture: ungrouped delete events come in as a flat
+     * list of `messageKeys`, this method looks each one up against the latest
+     * VERSION row to recover its `album_key`, then writes one composite
+     * [captureTdlibDelete] per album bucket (members without a known album
+     * are written as standalone rows, one per key).
+     *
+     * Why it exists. The PostsRepository feed-side debounce coalesces
+     * `UpdateDeleteMessages` pulses by album using the live `_posts`
+     * snapshot's `mediaAlbumId`. Cold-start catch-up — when TDLib emits a
+     * pile of `UpdateDeleteMessages` from `getChannelDifference` for posts
+     * the user never scrolled to — has no live `_posts` entries to read
+     * `mediaAlbumId` from. Routing through this method lets the archive
+     * recover album grouping from its own VERSION history instead, so a
+     * deleted 5-photo album doesn't fan out to five DELETED rows in the
+     * revision sheet.
+     */
+    suspend fun captureTdlibDeleteSmart(
+        chat: ChatRef,
+        messageKeys: List<String>,
+        isComment: Boolean,
+    ) {
+        if (messageKeys.isEmpty()) return
+        // Lookup album_key per message under writeMutex so a concurrent VERSION
+        // ingest can't move the key under us mid-grouping. SELECT only; no
+        // writes inside this loop, the writes happen in captureTdlibDelete.
+        val byAlbum: Map<String?, List<String>> = writeMutex.withLock {
+            messageKeys.groupBy { key ->
+                db.postSnapshotQueries.selectAlbumKeyForMessage(
+                    chat.kind.name, chat.key, key,
+                ).executeAsOneOrNull()?.album_key
+            }
+        }
+        for ((albumKey, keys) in byAlbum) {
+            if (albumKey == null) {
+                // No known album — each key is a standalone DELETED.
+                for (k in keys) {
+                    captureTdlibDelete(chat, listOf(k), albumKey = null, isComment = isComment)
+                }
+            } else {
+                captureTdlibDelete(chat, keys, albumKey = albumKey, isComment = isComment)
+            }
+        }
+    }
+
+    /**
      * Capture a TDLib delete event (a DELETED marker row).
      *
      * Albums: pass all `messageKeys` together. The repository writes a single composite
