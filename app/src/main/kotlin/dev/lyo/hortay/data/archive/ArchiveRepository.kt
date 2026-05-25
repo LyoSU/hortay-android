@@ -108,6 +108,19 @@ class ArchiveRepository(
         originalDateMs: Long,
         minithumb: ByteArray? = null,
         isComment: Boolean = false,
+        /**
+         * When the post had already been edited before we observed it
+         * (`Message.editDate > 0` on first ingest), this carries that prior
+         * edit timestamp so the row records "first observed in edited state"
+         * truthfully — `edited_at_ms` is then non-null. Null when the ingest
+         * snapshot is genuinely as-published.
+         *
+         * Either way the row is the message's earliest seen state; without
+         * it, posts that were edited before ingest never got an archive row,
+         * which left their later deletion as an "orphan" DELETED entry
+         * (no VERSION to JOIN against, no tombstone card to render).
+         */
+        priorEditedAtMs: Long? = null,
     ) {
         val s = settings.first()
         if (!s.enabled || !s.captureEdits) return
@@ -121,12 +134,15 @@ class ArchiveRepository(
         // isChosen, etc.) cannot poison dedup. See [ContentNormalizer] KDoc.
         val hash = ContentBlobCodec.hash(ContentNormalizer.canonicalBytes(meta))
         writeMutex.withLock {
-            val existing = db.postSnapshotQueries.selectBaselineForMessage(
+            // Idempotency rule: skip if the archive already holds a VERSION
+            // row at-or-before `originalDateMs`. Covers normal re-ingest
+            // (equality), preserves the race fix (an edit lands first with
+            // `seen_at = clock() > originalDateMs` — baseline still inserts
+            // ahead of it), and prevents duplicate pre-edited baselines.
+            val first = db.postSnapshotQueries.selectFirstSeenForMessage(
                 chat.kind.name, chat.key, messageKey,
             ).executeAsOneOrNull()
-            if (existing != null) {
-                // Baseline already captured — release the refcount bump from
-                // copyIfAvailable so the media file row isn't leaked.
+            if (first != null && first.seen_at_ms <= originalDateMs) {
                 meta.mediaRef?.localArchiveSha?.let { sha ->
                     runCatching { mediaStore?.releaseRef(sha) }
                 }
@@ -134,7 +150,7 @@ class ArchiveRepository(
             }
             insertSnapshot(
                 chat = chat, messageKey = messageKey, albumKey = albumKey,
-                kind = SnapshotKind.VERSION, editedAtMs = null,
+                kind = SnapshotKind.VERSION, editedAtMs = priorEditedAtMs,
                 contentKind = "tdlib", blob = blob, hash = hash,
                 textPreview = meta.textPreview,
                 minithumb = minithumb ?: meta.mediaRef?.minithumbBytes,
@@ -515,20 +531,23 @@ class ArchiveRepository(
         val allMessageIds = deletedKeys.mapNotNull { it.toLongOrNull() }
         val primaryId = allMessageIds.firstOrNull() ?: return null
 
-        val meta = row.v_content_blob
-            ?.let { runCatching { ContentBlobCodec.decode(it) }.getOrNull() }
+        // INNER JOIN guarantees v_content_blob + c_title are non-null. A decode
+        // failure (corrupt blob, schema drift) still drops the row to mapNotNull
+        // upstream.
+        val meta = runCatching { ContentBlobCodec.decode(row.v_content_blob) }.getOrNull()
+            ?: return null
 
         return TombstoneRecord(
             chatId = chatId,
             primaryMessageId = primaryId,
             allMessageIds = allMessageIds,
             deletedAtMs = row.d_seen_at_ms,
-            originalSeenAtMs = row.v_seen_at_ms ?: row.d_seen_at_ms,
-            text = meta?.text.orEmpty(),
-            channelTitle = row.c_title.orEmpty(),
+            originalSeenAtMs = row.v_seen_at_ms,
+            text = meta.text,
+            channelTitle = row.c_title,
             channelHandle = row.c_handle,
             channelPhotoMinithumb = row.c_photo_minithumb,
-            isVerified = (row.c_is_verified ?: 0L) == 1L,
+            isVerified = row.c_is_verified == 1L,
         )
     }
 

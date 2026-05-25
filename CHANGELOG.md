@@ -34,6 +34,7 @@
 - Deleted comments no longer appear as ghost cards in the channel feed — the tombstone reconstruction now scopes itself to channel posts and leaves comment deletions inside their discussion thread.
 - The post-archive revision timeline keeps the publication-time anchor even on the rare cold-start race where an admin's edit reaches the app before the as-published snapshot — earlier the two dots could read out of order.
 - Edits and deletions made while the app was closed are now archived on the next launch — previously only posts visible in the feed at the moment of the change were recorded, so a delete arriving via Telegram's catch-up stream for an older post slipped past the archive.
+- Empty tombstone cards no longer appear at the bottom of the feed — deleted posts whose content was never captured (typically posts that were already edited the first time the app saw them) are now either archived on ingest with their first-observed state, or hidden from the feed if their content is genuinely unrecoverable.
 
 ## [0.7.0] — 2026-05-21
 

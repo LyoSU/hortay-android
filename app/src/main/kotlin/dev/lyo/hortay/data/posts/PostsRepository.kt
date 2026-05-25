@@ -1773,23 +1773,25 @@ class PostsRepository(
         // the ingest path on a slow downstream collector.
         for (post in addedForEmit) _newArrivals.tryEmit(post)
 
-        // Archive baseline capture: write a VERSION row for the post's
-        // ORIGINAL content (editDate == 0 — message has not been edited yet) so
-        // the revision sheet has a true "as-published" anchor instead of falling
-        // back to the first-edit caveat. Only fires for posts the user actually
-        // sees added to the feed AND only when archive is enabled.
-        // captureTdlibBaseline is idempotent via the selectBaselineForMessage
-        // existence check (NOT content hash — see its KDoc for the race that
-        // motivated that), so a repeat call on re-ingest is a cheap no-op.
+        // Archive baseline capture: write a "first-observed" VERSION row so
+        // every post that reaches the feed has at least one snapshot in the
+        // archive. Two shapes:
+        //   * `editDate == 0` — genuine as-published anchor (priorEditedAtMs = null).
+        //   * `editDate != 0` — post was already edited before we saw it; we
+        //     record THIS state with `priorEditedAtMs = msg.editDate` so the
+        //     row is truthfully tagged as "first observed in edited state".
         //
-        // `editDate != 0` messages are deliberately skipped: the edit-aware capture
-        // path (handleEdited) is the only writer for those. Capturing here would
-        // produce a "baseline" row whose content is actually post-edit — misleading
-        // for the revision sheet's caveat string.
+        // Pre-fix, the `editDate != 0` branch was skipped entirely. That left
+        // any later `UpdateDeleteMessages` for those posts producing an
+        // **orphan DELETED row** — no VERSION to JOIN against, so the
+        // tombstone-feed rendered an empty card (no title, no text, no
+        // media). The reader saw mysterious blank rows at the bottom of the
+        // feed. selectTombstonesJoined is now INNER JOIN so any remaining
+        // orphans are hidden, and this branch prevents new orphans by
+        // capturing the pre-edited state instead of dropping it.
         if (archiveRepository?.isEnabled() == true && addedForEmit.isNotEmpty()) {
             val addedIds = addedForEmit.mapTo(HashSet()) { it.chatId to it.id }
             for (raw in full) {
-                if (raw.editDate != 0) continue
                 if ((raw.chatId to raw.id) !in addedIds) continue
                 scope.launch { captureBaselineSnapshot(raw, chat) }
             }
@@ -1828,6 +1830,10 @@ class PostsRepository(
                 meta = meta,
                 originalDateMs = message.date.toLong() * 1000L,
                 isComment = false,
+                priorEditedAtMs = message.editDate
+                    .takeIf { it > 0 }
+                    ?.toLong()
+                    ?.times(1000L),
             )
             val livePost = _posts.value.firstOrNull { it.chatId == chat.id && it.id == message.id }
             if (livePost != null) {

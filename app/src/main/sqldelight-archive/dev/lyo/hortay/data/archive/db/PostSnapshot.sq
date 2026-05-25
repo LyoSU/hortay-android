@@ -107,17 +107,22 @@ WHERE source_kind = ? AND source_key = ? AND message_key = ? AND kind = 'VERSION
 ORDER BY id DESC
 LIMIT 1;
 
--- "Baseline" = the as-published VERSION row, stamped with edited_at_ms IS NULL
--- so it remains identifiable across edits. At most one per message. Used by
--- captureTdlibBaseline as the existence check so a race between cold-start
--- ingest and an early UpdateMessageEdited can't either skip the baseline
--- OR write it with the edit-row's clock() timestamp — see
--- ArchiveRepository.captureTdlibBaseline KDoc.
-selectBaselineForMessage:
-SELECT id
+-- Earliest VERSION row for a message — used by captureTdlibBaseline as the
+-- idempotency check. The baseline "wants" to claim the smallest seen_at_ms
+-- (publication time); the right question is therefore "is there already a
+-- VERSION row at-or-before this timestamp?" rather than "is there any
+-- baseline-shaped row?". This handles three cases in one rule:
+--   * Re-ingest of the same post: existing.seen_at == proposed → skip.
+--   * Race where an edit landed first (existing.seen_at = clock, > proposed):
+--     not skipped → baseline inserts AHEAD of the edit on the ASC timeline.
+--   * Pre-edited first-observed baseline (edited_at_ms set, seen_at = msg.date):
+--     existing.seen_at == proposed on re-ingest → skip, no duplicates.
+selectFirstSeenForMessage:
+SELECT id, seen_at_ms
 FROM PostSnapshot
 WHERE source_kind = ? AND source_key = ? AND message_key = ?
-  AND kind = 'VERSION' AND edited_at_ms IS NULL
+  AND kind = 'VERSION'
+ORDER BY seen_at_ms ASC, id ASC
 LIMIT 1;
 
 -- Latest known album_key for a message — used by captureTdlibDeleteSmart to
@@ -166,7 +171,15 @@ SELECT d.source_kind        AS d_source_kind,
        c.photo_minithumb    AS c_photo_minithumb,
        c.is_verified        AS c_is_verified
 FROM PostSnapshot d
-LEFT JOIN PostSnapshot v
+-- INNER join on VERSION: the tombstone card needs body text + media to render
+-- as a recognisable ghost. Without an accompanying VERSION row the card
+-- would show as a blank line with no channel, no text, no media — those
+-- "empty posts" are useless to the reader. Pre-baselined posts (an admin
+-- delete that arrived before our baseline catch could run, or a post that
+-- was deleted between cap-eviction of its VERSION and now) get silently
+-- skipped — the DELETED row stays in the archive so a future schema /
+-- UX iteration can still surface them, but the feed doesn't expose orphans.
+INNER JOIN PostSnapshot v
     ON v.source_kind = d.source_kind
     AND v.source_key = d.source_key
     AND v.message_key = d.message_key
@@ -176,7 +189,11 @@ LEFT JOIN PostSnapshot v
                   AND source_key = d.source_key
                   AND message_key = d.message_key
                   AND kind = 'VERSION')
-LEFT JOIN ArchivedChannel c
+-- INNER join on channel: same logic — without channel metadata the card
+-- can't render a sender row. Channels seen at least once in the session
+-- (any baseline or edit capture) have an ArchivedChannel row, so the
+-- inner join only filters the orphan case described above.
+INNER JOIN ArchivedChannel c
     ON c.source_kind = d.source_kind AND c.source_key = d.source_key
 -- is_comment = 0 keeps deleted *comments* out of the channel feed: a deleted
 -- comment lives only inside its discussion thread, so reconstructing it as a

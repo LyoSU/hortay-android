@@ -141,6 +141,31 @@ class ArchiveRepositoryTest {
     }
 
     /**
+     * Pre-edited posts (those seen for the first time with `Message.editDate > 0`)
+     * record their first-observed state via `priorEditedAtMs`, so a later
+     * deletion has a VERSION row to JOIN against in the tombstone-feed query
+     * (no orphan DELETED rows). Re-ingest of the same post is still idempotent.
+     */
+    @Test
+    fun baseline_acceptsPriorEditedAt_andIsIdempotentOnReingest() = runTest {
+        val (repo, db) = newRepo()
+        val chat = ChatRef.tdlib(42)
+        repo.captureTdlibBaseline(
+            chat, "100", null, meta("v1-edited"),
+            originalDateMs = 500L, priorEditedAtMs = 700L,
+        )
+        repo.captureTdlibBaseline(
+            chat, "100", null, meta("v1-edited"),
+            originalDateMs = 500L, priorEditedAtMs = 700L,
+        )
+
+        val rows = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
+        assertEquals(1, rows.size)
+        assertEquals(500L, rows[0].seen_at_ms)
+        assertEquals(700L, rows[0].edited_at_ms)
+    }
+
+    /**
      * Race fix: edit row lands FIRST (cold-start UME beats the launched baseline
      * coroutine), then baseline arrives. Old unified captureTdlibVersion would
      * have stamped the baseline with clock() instead of originalDateMs and the
