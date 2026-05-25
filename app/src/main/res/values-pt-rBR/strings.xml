@@ -1,0 +1,674 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hortay</string>
+
+    <!-- Tela de autenticação -->
+    <string name="auth_phone_label">Número de telefone</string>
+    <string name="auth_phone_helper">Número com código do país. O Telegram enviará um código de confirmação</string>
+    <string name="auth_password_label">Senha 2FA</string>
+    <string name="auth_password_hint">Dica: %1$s</string>
+    <string name="auth_password_helper">A mesma senha que você definiu no Telegram oficial em Verificação em duas etapas</string>
+    <string name="auth_password_forgot">Esqueci a senha</string>
+    <string name="auth_password_recovery_sent">Código de redefinição enviado para %1$s. Digite-o para entrar sem sua senha</string>
+    <string name="auth_password_recovery_code_label">Código do e-mail</string>
+    <string name="auth_password_recovery_back">Inserir senha</string>
+    <string name="auth_password_recovery_unavailable">Nenhum e-mail de recuperação cadastrado. O 2FA só pode ser redefinido pelo Telegram oficial em outro dispositivo</string>
+    <string name="auth_send_code">Enviar código</string>
+    <string name="auth_continue">Continuar</string>
+    <string name="auth_continue_without_login">Sem entrar: ler canais públicos</string>
+
+    <!-- Modo web (anônimo / visitante) -->
+    <string name="web_feed_title">Feed</string>
+    <string name="web_channels_title">Canais</string>
+    <string name="web_saved_title">Salvos</string>
+    <string name="web_settings_title">Configurações</string>
+    <string name="web_add_channel">Adicionar canal</string>
+    <string name="web_loading">Carregando…</string>
+    <string name="web_empty_posts">Nada aqui ainda. Verifique suas inscrições</string>
+    <string name="web_empty_channels">Nenhuma inscrição ainda.\nAdicione canais pela aba Feed</string>
+    <string name="web_empty_channels_title">Nenhum canal ainda</string>
+    <string name="web_empty_channels_body">Adicione um canal público e as publicações começarão a aparecer no seu feed</string>
+    <string name="web_add_mentioned_title">Mencionado nos seus canais</string>
+    <string name="web_add_mentioned_count">Mencionado %1$d vezes nas suas inscrições</string>
+    <string name="web_empty_saved">Nada salvo ainda</string>
+    <string name="web_welcome_title">Sem entrar</string>
+    <string name="web_welcome_body">Adicione alguns canais públicos e leia-os sem entrar no Telegram</string>
+    <string name="web_refresh_error">Falha na atualização: %1$s</string>
+    <string name="web_unsubscribe_title">Cancelar inscrição?</string>
+    <string name="web_unsubscribe_body">O canal @%1$s será removido do seu feed. Publicações salvas ficam em Salvos</string>
+    <string name="web_unsubscribe_confirm">Cancelar inscrição</string>
+    <string name="web_cancel">Cancelar</string>
+    <string name="web_search_action">Pesquisar publicações</string>
+    <string name="web_search_hint">Pesquisar nos seus canais</string>
+    <string name="web_search_clear">Limpar</string>
+    <string name="web_search_prompt">Digite para pesquisar publicações nos canais que você segue</string>
+    <string name="web_search_no_results">Nenhum resultado para "%1$s"</string>
+    <string name="media_open_in_telegram">Abrir no Telegram</string>
+    <string name="web_status_not_found">canal não encontrado</string>
+    <string name="web_status_private">canal privado</string>
+    <string name="web_status_rate_limited">Telegram pediu para aguardar</string>
+    <string name="web_status_error">não foi possível atualizar</string>
+    <string name="web_status_parse_failure">formato da página mudou</string>
+    <string name="web_status_loading">atualizando…</string>
+    <string name="web_retry_for">Tentar novamente para %1$s</string>
+    <string name="web_settings_subtitle">Sem entrar no Telegram</string>
+    <string name="web_settings_signin">Entrar no Telegram</string>
+    <string name="web_settings_signin_helper">Libera comentários, reações e canais privados. Inscrições são mantidas</string>
+    <string name="web_settings_clear_cache">Limpar cache</string>
+    <string name="web_settings_clearing">Limpando…</string>
+    <string name="web_settings_clear_cache_helper">Remove publicações e arquivos em cache. Inscrições e publicações salvas são mantidas</string>
+    <string name="web_settings_clear_cache_confirm_title">Limpar publicações em cache?</string>
+    <string name="web_settings_clear_cache_confirm_body">Remove publicações e imagens armazenadas localmente. Inscrições e publicações salvas são mantidas. O conteúdo visível será recarregado do t.me</string>
+    <string name="web_settings_clear_cache_confirm_action">Limpar</string>
+    <string name="web_settings_clear_cache_cancel">Cancelar</string>
+    <string name="web_comments_unavailable">Comentários indisponíveis no modo visitante. Entre para ler as respostas</string>
+    <string name="web_comments_unavailable_title">Comentários indisponíveis</string>
+    <string name="web_settings_privacy_title">O que o Telegram vê neste modo</string>
+    <string name="web_settings_privacy_body">Seu IP e um User-Agent de navegador de desktop. Sem cookies, sem conta, sem dados pessoais</string>
+    <string name="web_add_body">@username, link t.me/username, ou cole da área de transferência</string>
+    <string name="web_add_input_label">Canal</string>
+    <string name="web_add_paste_clipboard">Colar da área de transferência: %1$s</string>
+    <string name="web_add_validating">Validando…</string>
+    <string name="web_add_lookup">Buscar</string>
+    <string name="web_add_confirm">Adicionar</string>
+    <string name="web_add_curated_title">Canais populares</string>
+    <string name="web_add_check">Verificar</string>
+    <string name="web_add_invalid">Digite @username ou um link t.me/…</string>
+    <string name="web_add_not_found">Canal @%1$s não encontrado</string>
+    <string name="web_add_private">Canal privado. Publicações públicas indisponíveis</string>
+    <string name="web_add_parse_failure">Não foi possível processar a resposta do Telegram</string>
+    <string name="web_add_rate_limited">Limite atingido. Tente novamente em %1$d s</string>
+    <string name="web_add_network_error">Erro de rede: %1$s</string>
+    <!-- %1$s é uma string pré-formatada do t.me (ex.: "1.5K", "262K", "12 345"),
+         não um Int. O número não é analisado, então isso não pode usar <plurals>
+         por quantidade. Se um futuro ponto de chamada passar um Int, troque
+         *aquele ponto* para um novo recurso com plural — não migre este. -->
+    <string name="web_subscribers">Inscritos: %1$s</string>
+    <string name="web_deeplink_signin_required">Entre para abrir canais privados</string>
+    <string name="auth_change_number">Mudar número</string>
+    <string name="auth_back">Voltar</string>
+    <string name="auth_password_show">Mostrar senha</string>
+    <string name="auth_password_hide">Ocultar senha</string>
+    <string name="auth_retry">Começar novamente</string>
+    <string name="auth_open_telegram_hint">Abra o Telegram oficial, faça o necessário e volte aqui</string>
+    <string name="auth_title_wait_code">Digite o código</string>
+    <string name="auth_title_wait_password">Senha 2FA</string>
+    <string name="auth_title_error">Ação necessária</string>
+    <string name="auth_subtitle_wait_code">Código enviado. Verifique: %1$s</string>
+    <string name="auth_subtitle_password_no_hint">A conta está protegida com verificação em duas etapas</string>
+    <string name="auth_subtitle_password_with_hint">A conta está protegida com verificação em duas etapas. Digite sua senha 2FA</string>
+    <string name="auth_subtitle_default">Leia canais do Telegram como um feed — sem chats ou notificações</string>
+    <string name="auth_country_label">País</string>
+    <string name="auth_country_loading">Carregando…</string>
+    <string name="auth_phone_placeholder">Número de telefone</string>
+    <string name="auth_code_placeholder">Palavra ou frase do SMS</string>
+    <string name="auth_resend_sending">Enviando…</string>
+    <string name="auth_resend_countdown">Tentar novamente em %1$d:%2$02d</string>
+    <string name="auth_resend_via">Reenviar código (%1$s)</string>
+    <string name="auth_resend_again">Reenviar</string>
+
+    <!-- Seletor de país -->
+    <string name="country_picker_title">Escolha o país</string>
+    <string name="country_picker_search">Pesquisar</string>
+    <string name="country_picker_empty">Nada encontrado</string>
+    <string name="country_anonymous_numbers">Números anônimos</string>
+    <string name="country_other">Outro país</string>
+
+    <!-- Canais de código de autenticação -->
+    <string name="auth_channel_telegram_message">Telegram em outro dispositivo</string>
+    <string name="auth_channel_sms_with_phone">SMS para %1$s</string>
+    <string name="auth_channel_sms">SMS</string>
+    <string name="auth_channel_sms_word">SMS com uma palavra</string>
+    <string name="auth_channel_sms_phrase">SMS com uma frase</string>
+    <string name="auth_channel_call_with_phone">ligação para %1$s</string>
+    <string name="auth_channel_call">ligação telefônica</string>
+    <string name="auth_channel_missed_call">chamada perdida (digite os últimos dígitos do número)</string>
+    <string name="auth_channel_flash_call">chamada perdida</string>
+    <string name="auth_channel_fragment">via Fragment</string>
+    <string name="auth_channel_firebase">via verificação do dispositivo</string>
+    <string name="auth_channel_other">outro método</string>
+
+    <!-- Erros de autenticação -->
+    <string name="auth_err_too_many_with_time">Muitas tentativas. Aguarde %1$s</string>
+    <string name="auth_err_too_many_generic">Muitas tentativas. Tente novamente mais tarde</string>
+    <string name="auth_err_phone_invalid">Verifique o código do país e os dígitos</string>
+    <string name="auth_err_phone_banned">O Telegram bloqueou este número. Tente entrar pelo Telegram oficial</string>
+    <string name="auth_err_phone_flood">O Telegram limitou temporariamente o acesso deste número. Tente mais tarde</string>
+    <string name="auth_err_phone_occupied">Este número já tem uma conta. Entre nela em vez de se registrar</string>
+    <string name="auth_err_code_invalid">Código incorreto. Verifique e tente novamente</string>
+    <string name="auth_err_code_expired">Código expirado. Solicite um novo</string>
+    <string name="auth_err_password_invalid">Senha incorreta. Tente novamente</string>
+    <string name="auth_err_password_too_fresh">A senha foi alterada recentemente. O Telegram pedirá que você aguarde um pouco</string>
+    <string name="auth_err_password_recovery_na">A recuperação de senha não está disponível aqui. Redefina o 2FA no Telegram oficial</string>
+    <string name="auth_err_session_password_needed">Senha 2FA necessária</string>
+    <string name="auth_err_app_misconfigured">Erro de configuração do app. Reinicie o Hortay ou verifique atualizações</string>
+    <string name="auth_err_token_invalid">Credenciais não correspondem. Reinicie o login</string>
+    <string name="auth_err_generic">Algo deu errado. Tente novamente</string>
+    <string name="auth_err_step_failed">Não foi possível concluir a etapa (%1$s). Tente novamente</string>
+    <string name="auth_err_email_required">Confirme o e-mail no Telegram oficial e volte aqui</string>
+    <string name="auth_err_phone_unregistered">Nenhuma conta do Telegram neste número ainda. Crie uma no app oficial</string>
+    <string name="auth_err_other_device">Confirme o login pelo Telegram em outro dispositivo</string>
+    <string name="auth_err_premium_required">Telegram Premium necessário. Assine no Telegram oficial e volte aqui</string>
+    <string name="auth_err_init_failure">Não foi possível configurar o cliente do Telegram. Reinicie o app</string>
+
+    <!-- Formatação de duração -->
+    <string name="duration_seconds_short">%1$d s</string>
+    <plurals name="duration_minutes">
+        <item quantity="one">%d minuto</item>
+        <item quantity="many">%d minutos</item>
+        <item quantity="other">%d minutos</item>
+    </plurals>
+    <plurals name="duration_hours">
+        <item quantity="one">%d hora</item>
+        <item quantity="many">%d horas</item>
+        <item quantity="other">%d horas</item>
+    </plurals>
+    <string name="duration_minutes_short">%1$d min</string>
+    <string name="duration_hours_short">%1$d h</string>
+
+    <!-- Banner de conexão -->
+    <string name="connection_waiting">Aguardando rede</string>
+    <string name="connection_connecting">Conectando…</string>
+    <string name="connection_updating">Atualizando…</string>
+    <plurals name="connection_flood_wait">
+        <item quantity="one">O Telegram está limitando as requisições (%d s)</item>
+        <item quantity="many">O Telegram está limitando as requisições (%d s)</item>
+        <item quantity="other">O Telegram está limitando as requisições (%d s)</item>
+    </plurals>
+
+    <!-- Navegação -->
+    <string name="nav_feed">Feed</string>
+    <string name="nav_channels">Canais</string>
+    <string name="nav_saved">Salvos</string>
+    <string name="nav_profile">Perfil</string>
+
+    <!-- Timeline -->
+    <string name="timeline_title">Feed</string>
+    <string name="timeline_empty">Tudo quieto aqui. Inscreva-se em canais no Telegram e eles aparecerão no feed</string>
+    <string name="timeline_empty_default_helper">Inscreva-se em canais no Telegram e eles aparecerão no feed</string>
+    <string name="timeline_empty_saved_title">Nada salvo ainda</string>
+    <string name="timeline_empty_saved_helper">Toque no marcador ao lado de uma publicação para salvá-la para depois</string>
+    <string name="timeline_empty_default_title">Tudo quieto aqui</string>
+    <string name="timeline_empty_caught_up_title">Tudo em dia</string>
+    <string name="timeline_empty_caught_up_helper">Você leu todas as publicações do feed. Puxe para atualizar e ver as novidades.</string>
+    <string name="timeline_search_in_channel">Pesquisar no canal</string>
+    <string name="timeline_search_empty">Nada encontrado</string>
+    <string name="timeline_subscribers">Inscritos: %1$s</string>
+    <string name="timeline_saved_tab">Salvos</string>
+    <string name="channel_empty_title">Nenhuma publicação ainda</string>
+    <string name="channel_empty_body">Este canal não tem publicações</string>
+    <string name="channel_info_action">Informações do canal</string>
+
+    <!-- Formatação de hora -->
+    <string name="time_just_now">agora mesmo</string>
+    <string name="time_minutes_short">%1$d min</string>
+    <string name="time_hours_short">%1$d h</string>
+    <string name="time_days_short">%1$d d</string>
+
+    <!-- Pílula de novas publicações -->
+    <string name="new_posts_overflow">99+ novas publicações</string>
+    <plurals name="new_posts">
+        <item quantity="one">%d nova publicação</item>
+        <item quantity="many">%d novas publicações</item>
+        <item quantity="other">%d novas publicações</item>
+    </plurals>
+
+    <!-- Pílula de contador não lido (modo OldestUnreadFirst) -->
+    <string name="unread_remaining_overflow">99+ não lidas</string>
+    <plurals name="unread_remaining">
+        <item quantity="one">%d não lida</item>
+        <item quantity="many">%d não lidas</item>
+        <item quantity="other">%d não lidas</item>
+    </plurals>
+
+    <!-- Card de publicação -->
+    <string name="post_translated_chip">Traduzido · Ver original</string>
+    <string name="post_forwarded_from">Encaminhado de %1$s</string>
+    <string name="post_show_original">Ver original</string>
+    <string name="post_translate">Traduzir</string>
+    <string name="post_save">Salvar publicação</string>
+    <string name="post_unsave">Remover dos salvos</string>
+    <string name="post_copy_text">Copiar texto</string>
+    <string name="post_share">Compartilhar</string>
+    <string name="post_open_telegram">Abrir no Telegram</string>
+    <string name="post_copied_toast">Copiado</string>
+    <string name="post_show_more">Ver mais</string>
+
+    <!-- Serviço / mídia expirada -->
+    <string name="expired_photo">Foto autodestrutiva expirou</string>
+    <string name="expired_video">Vídeo autodestrutivo expirou</string>
+    <string name="expired_video_note">Mensagem de vídeo expirou</string>
+    <string name="expired_voice">Mensagem de voz expirou</string>
+    <string name="service_pinned_message">Mensagem fixada</string>
+    <plurals name="service_boost">
+        <item quantity="one">Canal recebeu %d impulso</item>
+        <item quantity="many">Canal recebeu %d impulsos</item>
+        <item quantity="other">Canal recebeu %d impulsos</item>
+    </plurals>
+    <plurals name="invite_dialog_subscribers">
+        <item quantity="one">%d inscrito</item>
+        <item quantity="many">%d inscritos</item>
+        <item quantity="other">%d inscritos</item>
+    </plurals>
+    <string name="service_giveaway_started">Sorteio iniciado</string>
+    <string name="service_screenshot">Captura de tela</string>
+    <string name="service_video_chat_started">Chamada em grupo iniciada</string>
+    <string name="service_video_chat_ended">Chamada em grupo encerrada</string>
+    <string name="service_video_call">Videochamada</string>
+    <string name="service_voice_call">Chamada de voz</string>
+    <string name="service_other">Mensagem do sistema</string>
+
+    <!-- Conteúdo do corpo da publicação -->
+    <string name="document_unnamed">Documento</string>
+    <string name="voice_message">Mensagem de voz</string>
+    <string name="content_audio_fallback">Faixa de áudio</string>
+    <string name="content_invoice">Fatura</string>
+    <string name="content_giveaway">Sorteio</string>
+    <string name="content_game">Jogo</string>
+    <string name="content_story">Story</string>
+    <string name="content_premium_gift">Presente Telegram Premium</string>
+    <string name="content_gift">Presente</string>
+    <string name="content_paid_locked">Mídia paga bloqueada</string>
+    <string name="content_paid_stars">%1$d estrelas</string>
+    <string name="content_open_in_telegram">Abrir no Telegram</string>
+    <string name="poll_anonymous">Enquete anônima</string>
+    <string name="poll_title">Enquete</string>
+    <string name="poll_total_votes">%1$d votos</string>
+    <!-- Chips / ações do card de enquete MD3E -->
+    <string name="poll_type_regular">Enquete</string>
+    <string name="poll_type_quiz">Quiz</string>
+    <string name="poll_state_closed">Resultado final</string>
+    <string name="poll_anonymous_short">Anônima</string>
+    <string name="poll_countdown_finished">Encerrando…</string>
+    <string name="poll_total_votes_empty">Nenhum voto ainda</string>
+    <plurals name="poll_total_votes_plural">
+        <item quantity="one">%1$d voto</item>
+        <item quantity="many">%1$d votos</item>
+        <item quantity="other">%1$d votos</item>
+    </plurals>
+    <string name="poll_action_vote">Votar</string>
+    <string name="poll_action_retract">Retirar voto</string>
+    <string name="poll_action_view_explanation">Por quê?</string>
+    <string name="poll_action_add_option">Propor uma opção</string>
+    <string name="content_giveaway_completed">🎁 Sorteio encerrado</string>
+    <string name="content_giveaway_winners">🎁 Sorteio · vencedores</string>
+    <string name="content_paid">⭐ Conteúdo pago</string>
+
+    <!-- Comentários -->
+    <string name="comments_title">Publicação</string>
+    <string name="comments_loading">Carregando…</string>
+    <plurals name="comments_count">
+        <item quantity="one">%d comentário</item>
+        <item quantity="many">%d comentários</item>
+        <item quantity="other">%d comentários</item>
+    </plurals>
+    <string name="comments_empty_title">Nenhum comentário ainda</string>
+    <string name="comments_empty_body">Novas respostas aparecerão aqui assim que chegarem</string>
+    <string name="comments_disabled_title">Comentários desativados</string>
+    <string name="comments_disabled_body">Este canal não tem um grupo de discussão vinculado</string>
+    <string name="comments_unavailable">Discussão indisponível</string>
+
+    <!-- Canais -->
+    <string name="channels_title">Canais</string>
+    <string name="channels_loading">Carregando…</string>
+    <string name="channels_subscribers">Inscritos: %1$s</string>
+    <string name="channels_unmute">Ativar notificações</string>
+    <string name="channels_mute">Silenciar notificações</string>
+    <string name="channels_leave">Sair do canal</string>
+    <string name="channels_join">Inscrever-se</string>
+    <string name="channels_hide_from_feed">Ocultar do feed</string>
+    <string name="channels_unhide_from_feed">Mostrar no feed</string>
+    <string name="channels_hide_from_feed_for">Ocultar %1$s do feed</string>
+    <string name="channels_unhide_from_feed_for">Mostrar %1$s no feed</string>
+    <string name="channels_empty_title">Nenhum canal ainda</string>
+    <string name="channels_empty_helper">Inscreva-se em canais no Telegram e eles aparecerão aqui</string>
+
+    <!-- Pastas -->
+    <string name="folder_all">Todos</string>
+    <string name="folder_archive">Arquivo</string>
+
+    <!-- Configurações -->
+    <string name="settings_profile_title">Perfil</string>
+    <string name="settings_subtitle_profile">Conta, tráfego, downloads</string>
+    <string name="settings_subtitle_auto_download">Fotos, vídeos, GIFs</string>
+    <string name="settings_subtitle_auto_download_category_wifi">Via Wi-Fi</string>
+    <string name="settings_subtitle_auto_download_category_mobile">Via dados móveis</string>
+    <string name="settings_subtitle_auto_download_category_roaming">No roaming</string>
+    <string name="timeline_subtitle_feed">%1$d canais</string>
+    <string name="timeline_subtitle_saved">Publicações salvas</string>
+    <string name="settings_section_feed">Feed</string>
+    <string name="settings_feed_order_newest_title">Mais recentes no topo</string>
+    <string name="settings_feed_order_newest_subtitle">Role para baixo para ver publicações mais antigas</string>
+    <string name="settings_feed_order_oldest_title">Mais recentes no rodapé</string>
+    <string name="settings_feed_order_oldest_subtitle">Como um chat do Telegram — o novo chega embaixo</string>
+    <string name="settings_feed_order_snackbar_to_newest">Feed reordenado — mais recentes no topo</string>
+    <string name="settings_feed_order_snackbar_to_oldest">Feed reordenado — mais recentes no rodapé, como um chat</string>
+    <string name="settings_snap_scroll_title">Rolagem por encaixe</string>
+    <string name="settings_snap_scroll_subtitle">Cada publicação encaixa no lugar ao dar um gesto rápido — estilo TikTok/Reels</string>
+    <string name="settings_inline_autoplay_title">Reprodução automática de vídeos no feed</string>
+    <string name="settings_inline_autoplay_subtitle">Vídeos curtos já em cache são reproduzidos sem som ao rolar. Toque para abrir em tela cheia com som.</string>
+    <string name="settings_section_privacy">Privacidade</string>
+    <string name="settings_hide_online_title">Ocultar status online</string>
+    <string name="settings_hide_online_subtitle">Não mostra para seus contatos do Telegram que você está online enquanto usa o Hortay. O app oficial do Telegram mantém seu comportamento de status normal. Esta configuração afeta apenas as sessões do Hortay.</string>
+    <string name="timeline_unread_boundary">Não lidas</string>
+    <string name="settings_section_traffic">Tráfego</string>
+    <string name="settings_section_storage">Armazenamento</string>
+    <string name="settings_section_account">Conta</string>
+    <string name="settings_section_author">Autor</string>
+    <string name="settings_author_channel_title">Canal do autor</string>
+    <string name="settings_author_developer_title">Desenvolvedor</string>
+    <string name="settings_author_source_title">Código-fonte</string>
+    <string name="settings_section_about">Sobre</string>
+    <string name="settings_language">Idioma</string>
+    <string name="settings_language_summary_system">Padrão do sistema</string>
+    <string name="settings_language_dialog_title">Idioma do app</string>
+    <string name="settings_logout_title">Sair</string>
+    <string name="settings_logout_subtitle">A sessão do Telegram é encerrada, o cache é mantido</string>
+    <string name="settings_version">Versão</string>
+    <string name="settings_logout_dialog_title">Sair do Telegram?</string>
+    <string name="settings_logout_dialog_text">Você precisará digitar seu número e o código de confirmação novamente</string>
+    <string name="settings_logout_confirm">Sair</string>
+    <string name="settings_logout_cancel">Cancelar</string>
+    <string name="settings_traffic_downloaded">Baixado</string>
+    <string name="settings_traffic_uploaded">Enviado</string>
+    <string name="settings_traffic_helper">Total desde o primeiro uso. Limpar o cache não redefine este contador, ele é separado</string>
+    <string name="settings_traffic_reset">Zerar contador</string>
+    <string name="settings_storage_used_by">usado pelo Hortay neste dispositivo</string>
+    <string name="settings_storage_clearing">Limpando…</string>
+    <string name="settings_storage_clear">Limpar cache de mídia</string>
+    <string name="settings_storage_clear_helper">Remove fotos, vídeos e arquivos em cache. O banco de mensagens e a sessão são mantidos — só sair da conta limpa esses dados</string>
+    <string name="settings_storage_media">Mídia</string>
+    <string name="settings_storage_db">Banco de dados</string>
+
+    <!-- Download automático de mídia -->
+    <string name="autodownload_section">Download automático de mídia</string>
+    <string name="autodownload_entry_title">Download automático de mídia</string>
+    <string name="autodownload_entry_subtitle">Fotos, vídeos e GIFs via Wi-Fi, dados móveis ou roaming</string>
+    <string name="autodownload_screen_title">Download automático</string>
+    <string name="autodownload_header_helper">Novas publicações são baixadas em segundo plano para você não ver carregamento. Escolha o que carregar e o tamanho máximo</string>
+    <string name="autodownload_category_wifi">Via Wi-Fi</string>
+    <string name="autodownload_category_mobile">Via dados móveis</string>
+    <string name="autodownload_category_roaming">No roaming</string>
+    <string name="autodownload_summary_off">Desativado</string>
+    <string name="autodownload_summary_photos">Fotos</string>
+    <string name="autodownload_summary_videos_unbounded">Vídeos</string>
+    <string name="autodownload_summary_videos_capped">Vídeos até %1$s</string>
+    <string name="autodownload_summary_animations">GIFs</string>
+    <string name="autodownload_toggle_photos">Fotos</string>
+    <string name="autodownload_toggle_photos_helper">Sempre pequenas. Carregam rapidamente mesmo em redes lentas</string>
+    <string name="autodownload_toggle_videos">Vídeos</string>
+    <string name="autodownload_toggle_videos_helper">Apenas vídeos até o tamanho definido abaixo</string>
+    <string name="autodownload_toggle_animations">GIFs</string>
+    <string name="autodownload_toggle_animations_helper">Clipes em loop e animações</string>
+    <string name="autodownload_video_max_label">Tamanho máximo de vídeo</string>
+    <string name="autodownload_video_max_value">Até %1$s</string>
+    <string name="autodownload_data_saver_note">O Economia de Dados do sistema está ativo. Vídeos e GIFs ficam pausados no celular até você desativá-lo nas configurações do Android</string>
+    <string name="autodownload_reset">Restaurar padrões</string>
+    <string name="autodownload_reset_done">Padrões restaurados</string>
+    <string name="autodownload_back">Voltar</string>
+    <string name="size_mb_int">%1$d MB</string>
+
+    <!-- Tamanhos -->
+    <string name="size_bytes">%1$d B</string>
+    <string name="size_kb">%1$.1f KB</string>
+    <string name="size_mb">%1$.1f MB</string>
+    <string name="size_gb">%1$.2f GB</string>
+    <string-array name="size_units">
+        <item>B</item>
+        <item>KB</item>
+        <item>MB</item>
+        <item>GB</item>
+    </string-array>
+
+    <!-- Mídia -->
+    <string name="media_video_quality">Qualidade do vídeo</string>
+    <string name="media_retry">tentar novamente</string>
+    <string name="media_load_stalled">download pausado</string>
+    <string name="spoiler_sensitive_tap">Conteúdo sensível. Toque para ver</string>
+    <string name="web_media_placeholder_photo">[imagem]</string>
+    <string name="web_media_placeholder_video">[vídeo]</string>
+    <string name="web_media_placeholder_round_video">[mensagem de vídeo]</string>
+    <string name="web_media_placeholder_voice">[mensagem de voz]</string>
+    <string name="web_media_placeholder_document">[documento]</string>
+    <string name="web_media_placeholder_sticker">[figurinha]</string>
+    <string name="web_media_placeholder_gif">[GIF]</string>
+
+    <!-- Modo de canal com autor pessoal: subtítulo "em <Canal>" abaixo do nome do admin -->
+    <string name="post_in_channel">em %1$s</string>
+
+    <!-- Rótulos de tipo de resposta/citação (exibidos quando o pai não tem legenda) -->
+    <string name="reply_kind_photo">Foto</string>
+    <string name="reply_kind_video">Vídeo</string>
+    <string name="reply_kind_animation">GIF</string>
+    <string name="reply_kind_document">Arquivo</string>
+    <string name="reply_kind_audio">Áudio</string>
+    <string name="reply_kind_voice">Mensagem de voz</string>
+    <string name="reply_kind_video_note">Mensagem de vídeo</string>
+    <string name="content_description_video_note">Mensagem de vídeo redonda. Toque para ativar/desativar o som.</string>
+    <string name="reply_kind_sticker">Figurinha</string>
+    <string name="reply_kind_poll">Enquete</string>
+
+    <!-- Padrões de usuário -->
+    <string name="user_default_name">Usuário</string>
+    <string name="channel_default_name">Canal</string>
+
+    <!-- Erros genéricos / TDLib -->
+    <string name="error_generic">Algo deu errado</string>
+    <string name="err_flood_with_time">O Telegram está limitando as requisições. Tente novamente em %1$s</string>
+    <string name="err_flood_generic">O Telegram está limitando as requisições. Tente novamente mais tarde</string>
+    <string name="err_unauthorized">Sessão encerrada. Entre novamente</string>
+    <string name="err_forbidden">Não é possível %1$s: ação não permitida</string>
+    <string name="err_not_found">Não encontrado: %1$s</string>
+    <string name="err_server">O servidor do Telegram está temporariamente indisponível. Tente em um minuto</string>
+    <string name="err_no_connection">Sem conexão. Verifique a internet e tente novamente</string>
+    <string name="err_failed_op">Não foi possível %1$s</string>
+
+    <!-- Rótulos de operação (verbo no infinitivo, usados nos modelos de erro) -->
+    <string name="op_refresh_feed">atualizar o feed</string>
+    <string name="op_load_channel">carregar o canal</string>
+    <string name="op_load_older">carregar publicações mais antigas</string>
+    <string name="op_change_reaction">alterar reação</string>
+    <string name="op_vote_in_poll">votar na enquete</string>
+    <string name="op_close_poll">encerrar a enquete</string>
+    <string name="op_mute">silenciar notificações</string>
+    <string name="op_unmute">ativar notificações</string>
+    <string name="op_join_channel">entrar no canal</string>
+    <string name="op_leave_channel">sair do canal</string>
+    <string name="op_translate">traduzir a mensagem</string>
+    <string name="op_search">pesquisar no canal</string>
+
+    <!-- Painel de proposta de migração anônimo → autenticado -->
+    <string name="migration_title">Migrar inscrições anônimas?</string>
+    <plurals name="migration_subtitle">
+        <item quantity="one">Você seguiu %1$d canal sem entrar. Inscrever-se com sua conta?</item>
+        <item quantity="many">Você seguiu %1$d canais sem entrar. Escolha os que deseja inscrever com sua conta</item>
+        <item quantity="other">Você seguiu %1$d canais sem entrar. Escolha os que deseja inscrever com sua conta</item>
+    </plurals>
+    <string name="migration_subtitle_disclaimer">Entrar adiciona o canal ao seu Telegram. O admin verá você como novo membro</string>
+    <string name="migration_select_all">Selecionar todos</string>
+    <string name="migration_deselect_all">Desmarcar todos</string>
+    <!-- Texto honesto: tocar aqui dispensa permanentemente o painel (proposalShown=true em
+         MigrationCoordinator). Não é "mais tarde" — o painel não reaparece. -->
+    <string name="migration_skip">Não mostrar novamente</string>
+    <string name="migration_confirm">Inscrever-se (%1$d)</string>
+    <string name="migration_progress_label">%1$d de %2$d</string>
+
+    <!-- Descrições de acessibilidade de avatar / imagem para o TalkBack. -->
+    <string name="avatar_for_channel">Avatar de %1$s</string>
+
+    <!-- Selo persistente do modo visitante na barra superior. -->
+    <string name="guest_mode_badge">Modo visitante</string>
+
+    <!-- CTA de login quando o canal pesquisado é privado. -->
+    <string name="web_add_signin_for_private">Entre para acessar canais privados</string>
+
+    <!-- Rótulo TalkBack para o ícone de cancelar inscrição com nome do canal. -->
+    <string name="web_unsubscribe_from">Cancelar inscrição em %1$s</string>
+
+    <!-- Rótulos genéricos de ação como contentDescription do TalkBack em
+         botões somente com ícone nas barras superiores e barras de ferramentas. -->
+    <string name="action_back">Voltar</string>
+    <string name="action_close">Fechar</string>
+    <string name="action_clear">Limpar</string>
+    <string name="action_search">Pesquisar</string>
+    <string name="action_save_to_gallery">Salvar na galeria</string>
+    <string name="action_copy_image">Copiar imagem</string>
+    <string name="action_share_media">Compartilhar</string>
+    <!-- Rótulos de ação de snackbar expostos por [UserMessageBus.Action]. Compartilhados entre
+         todos os snackbars acionáveis (bloqueios de auth, avisos de login em modo visitante,
+         etc.); IDs de recursos são referenciados pelos produtores sem duplicação local. -->
+    <string name="action_open_telegram">Abrir Telegram</string>
+    <string name="action_sign_in">Entrar</string>
+    <!-- CTA principal usado em estados vazios (TimelineEmptyHero padrão + canais vazios).
+         Mesma intenção dos bloqueios de modo auth: abrir o cliente oficial do Telegram
+         para o usuário se inscrever em canais lá; o Hortay os recebe pelo stream de
+         atualizações TDLib existente. -->
+    <string name="empty_action_open_telegram">Abrir Telegram para se inscrever</string>
+    <!-- Snackbar de pressão longa ao tocar em um chip de reação paga (que
+         não pode ser votada no Hortay — reações pagas são uma superfície do cliente Telegram). -->
+    <string name="reactions_paid_explainer">Reações pagas só podem ser enviadas pelo Telegram</string>
+    <!-- Banners de toast exibidos pelo visualizador em tela cheia após Salvar / Copiar / Compartilhar. -->
+    <string name="media_saved_photo">Foto salva na galeria</string>
+    <string name="media_saved_video">Vídeo salvo na galeria</string>
+    <string name="media_save_failed">Não foi possível salvar: %1$s</string>
+    <string name="media_copied">Imagem copiada</string>
+    <string name="media_copy_failed">Não foi possível copiar: %1$s</string>
+    <string name="media_share_failed">Não foi possível compartilhar: %1$s</string>
+    <!-- Selos de status inline ao lado de uma publicação. -->
+    <string name="post_badge_edited">Editado</string>
+    <string name="post_badge_pinned">Fixado</string>
+    <!-- Menu de pressão longa em um link inline no corpo da publicação. -->
+    <string name="link_action_open">Abrir</string>
+    <string name="link_action_copy">Copiar link</string>
+    <string name="link_action_share">Compartilhar</string>
+    <string name="link_copied_toast">Link copiado</string>
+    <!-- Diálogo anti-phishing quando um span TextUrl mascarado aponta para fora do Telegram. -->
+    <string name="link_confirm_title">Abrir link</string>
+    <string name="link_confirm_body">Você está prestes a abrir:</string>
+    <string name="action_cancel">Cancelar</string>
+    <!-- Mensagens de snackbar quando um handle t.me é resolvido para algo que o Hortay não exibe. -->
+    <string name="link_unsupported_user">Links de perfil abrem no Telegram</string>
+    <string name="link_unsupported_group">Grupos abrem no Telegram</string>
+    <string name="link_unsupported_other">Este link abre no Telegram</string>
+    <string name="link_not_found">Link não encontrado</string>
+    <!-- Exibido quando um link/toque de `#tag` chega sem escopo de canal —
+         corpos de comentários, URLs `tg://search?query=…`, textos de configurações. %1$s
+         é a tag com o `#` inicial. -->
+    <string name="link_hashtag_search">A busca por hashtag funciona dentro de um canal por enquanto — abra um para pesquisar %1$s</string>
+    <!-- Exibido quando uma entidade `#tag@canal` ou toque de PostBody com escopo é resolvido
+         para um canal conhecido. %1$s é a tag com `#`, %2$s é o handle do canal com `@`. -->
+    <string name="link_hashtag_search_in_channel">Abra %2$s para pesquisar %1$s — a busca global por hashtag ainda não está disponível</string>
+    <!-- Diálogo de confirmação para link de convite (t.me/+abc...). -->
+    <string name="invite_dialog_title">Entrar no canal</string>
+    <string name="invite_dialog_unknown_chat">Canal do Telegram</string>
+    <string name="invite_dialog_join">Entrar</string>
+
+    <!-- Settings → Seção Segurança (conformidade CSAE) -->
+    <string name="settings_section_safety">Segurança</string>
+    <string name="settings_safety_report_title">Denunciar conteúdo</string>
+    <string name="settings_safety_report_subtitle">Denunciar um canal ou publicação aos moderadores do Telegram</string>
+    <string name="settings_safety_child_policy_title">Padrões de segurança infantil</string>
+    <string name="settings_safety_child_policy_subtitle">Hortay publicou padrões de segurança para crianças</string>
+    <string name="settings_safety_privacy_title">Política de privacidade</string>
+    <string name="settings_safety_privacy_subtitle">Como o Hortay trata seus dados</string>
+
+    <!-- Tela Denunciar conteúdo (Settings → Segurança → Denunciar conteúdo) -->
+    <string name="report_content_title">Denunciar conteúdo</string>
+    <string name="report_handle_label">Handle do canal</string>
+    <string name="report_invalid_handle">Digite um @handle válido (2–32 caracteres)</string>
+    <string name="report_post_id_label">ID da publicação (opcional)</string>
+    <string name="report_post_id_placeholder">ex.: 12345</string>
+    <string name="report_continue">Continuar</string>
+
+    <!-- Painel inferior do fluxo de denúncia (denúncia no app via TDLib) -->
+    <string name="report_loading">Conectando ao Telegram…</string>
+    <string name="report_text_hint">Adicionar detalhes</string>
+    <string name="report_text_placeholder">Descreva o problema (opcional)</string>
+    <string name="report_skip">Pular</string>
+    <string name="report_submit">Enviar denúncia</string>
+    <string name="report_success">Denúncia enviada. Obrigado</string>
+    <string name="report_retry">Tentar novamente</string>
+    <!-- %1$d é a contagem regressiva em segundos. -->
+    <plurals name="report_flood_wait_plural">
+        <item quantity="one">Muitas denúncias. Aguarde %1$d segundo</item>
+        <item quantity="many">Muitas denúncias. Aguarde %1$d segundos</item>
+        <item quantity="other">Muitas denúncias. Aguarde %1$d segundos</item>
+    </plurals>
+    <string name="report_flood_wait_generic">Muitas denúncias. Tente novamente mais tarde</string>
+
+    <!-- Explicação exibida antes da primeira denúncia (ambos os modos). -->
+    <string name="report_about_dialog_title">Como funciona a denúncia</string>
+    <string name="report_about_dialog_body">Sua denúncia vai diretamente para os moderadores do Telegram. O Hortay não revisa conteúdo — delegamos toda a moderação ao Telegram.</string>
+    <string name="report_about_dialog_ok">Entendi</string>
+
+    <!-- Diálogo de instrução exibido após a delegação no modo visitante abrir o Telegram ou a web. -->
+    <string name="report_guest_instruction_title">Conclua sua denúncia</string>
+    <string name="report_guest_instruction_body">O Telegram foi aberto. Encontre o canal ou a publicação e use a opção Denunciar no menu (⋯ ou pressione e segure).</string>
+
+    <!-- Item "Denunciar" no menu de ações da publicação -->
+    <string name="report_action">Denunciar</string>
+
+    <!-- Motivos de falha do MediaShareActions (exibidos via Toast no visualizador em tela cheia). -->
+    <string name="media_share_error_source_missing">Fonte indisponível</string>
+    <string name="media_share_error_only_photos">Somente fotos podem ser copiadas</string>
+    <string name="media_share_error_clipboard_unavailable">Área de transferência indisponível</string>
+    <string name="media_share_error_insert_failed">Não foi possível salvar na galeria</string>
+    <string name="media_share_error_mkdir">Não foi possível criar a pasta %1$s</string>
+    <string name="media_share_error_intent_failed">Nenhum app disponível para receber o compartilhamento</string>
+
+    <!-- WebTelegramClient.lookupChannel expirou (sem gate de limite de taxa). -->
+    <string name="web_lookup_timed_out">Tempo de busca esgotado</string>
+
+    <!-- Rótulo de acessibilidade para o selo de canal verificado no PostCard. -->
+    <string name="cd_verified_badge">Verificado</string>
+    <string name="cd_premium_badge">Telegram Premium</string>
+
+    <!-- Painel de perfil do usuário (UserProfileSheet) -->
+    <string name="user_profile_loading_name">Carregando…</string>
+    <string name="user_profile_bio">Sobre</string>
+    <string name="user_profile_bot_about">Sobre este bot</string>
+    <string name="user_profile_about">Detalhes</string>
+    <string name="user_profile_personal_channel">Canal pessoal</string>
+    <string name="user_profile_birthday">Aniversário</string>
+    <string name="user_profile_groups_in_common">Grupos em comum</string>
+    <string name="user_profile_action_message">Mensagem</string>
+    <string name="user_profile_handle_copied">Handle copiado</string>
+    <string name="user_profile_chip_bot">bot</string>
+    <string name="user_profile_chip_support">suporte</string>
+    <string name="user_profile_status_online">online</string>
+    <string name="user_profile_status_recently">visto recentemente</string>
+    <string name="user_profile_status_last_week">visto na última semana</string>
+    <string name="user_profile_status_last_month">visto no último mês</string>
+    <string name="user_profile_status_just_now">visto agora mesmo</string>
+    <plurals name="user_profile_status_was_minutes_ago">
+        <item quantity="one">visto há %d minuto</item>
+        <item quantity="many">visto há %d minutos</item>
+        <item quantity="other">visto há %d minutos</item>
+    </plurals>
+    <plurals name="user_profile_status_was_hours_ago">
+        <item quantity="one">visto há %d hora</item>
+        <item quantity="many">visto há %d horas</item>
+        <item quantity="other">visto há %d horas</item>
+    </plurals>
+    <plurals name="user_profile_status_was_days_ago">
+        <item quantity="one">visto há %d dia</item>
+        <item quantity="many">visto há %d dias</item>
+        <item quantity="other">visto há %d dias</item>
+    </plurals>
+    <string name="user_profile_status_was_long_ago">visto há muito tempo</string>
+
+    <!-- Canais ocultos (lista de exclusão do feed) -->
+    <string name="settings_hidden_channels_title">Canais ocultos</string>
+    <string name="settings_hidden_channels_subtitle_empty">Ocultar canais específicos do feed principal</string>
+    <plurals name="settings_hidden_channels_count">
+        <item quantity="one">%d canal oculto do feed</item>
+        <item quantity="many">%d canais ocultos do feed</item>
+        <item quantity="other">%d canais ocultos do feed</item>
+    </plurals>
+    <string name="hidden_channels_title">Canais ocultos</string>
+    <string name="hidden_channels_empty_title">Nada oculto</string>
+    <string name="hidden_channels_empty_body">Publicações dos canais que você ocultar aqui não aparecerão no feed principal. Você ainda os verá ao abrir o canal diretamente.</string>
+    <string name="hidden_channels_unknown">Canal oculto</string>
+    <string name="hidden_channels_id_placeholder">id %1$d</string>
+    <string name="hidden_channels_unhide_for">Mostrar %1$s no feed</string>
+</resources>

@@ -59,7 +59,14 @@ import kotlinx.collections.immutable.persistentListOf
 private data class LanguageEntry(val tag: String, @StringRes val labelRes: Int)
 
 private val LANGUAGES: ImmutableList<LanguageEntry> = persistentListOf(
+    LanguageEntry("de", R.string.settings_language_summary_de),
     LanguageEntry("en", R.string.settings_language_summary_en),
+    LanguageEntry("es", R.string.settings_language_summary_es),
+    LanguageEntry("fr", R.string.settings_language_summary_fr),
+    LanguageEntry("it", R.string.settings_language_summary_it),
+    LanguageEntry("pl", R.string.settings_language_summary_pl),
+    LanguageEntry("pt-BR", R.string.settings_language_summary_pt_br),
+    LanguageEntry("ru", R.string.settings_language_summary_ru),
     LanguageEntry("uk", R.string.settings_language_summary_uk),
 )
 
