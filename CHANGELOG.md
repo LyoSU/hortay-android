@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Switching to Channels or Settings and back to the feed no longer flashes a skeleton — the feed paints in place at the same scroll position instead of replaying a loading state.
+
 ## [0.8.0] — 2026-05-25
 
 ### Added

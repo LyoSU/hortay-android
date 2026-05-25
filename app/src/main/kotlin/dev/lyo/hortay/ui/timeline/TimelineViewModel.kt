@@ -133,6 +133,37 @@ class TimelineViewModel(
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     /**
+     * Latched cold-start cursors-settled flag. Flips `false → true` exactly once
+     * per ViewModel lifetime, when [TimelineScreen]'s grace timer fires for the
+     * first time (TDLib's `UpdateChatReadInbox` burst has landed and the
+     * boundary picker can run against a stable map). Stays true for the rest of
+     * the session — including across [dev.lyo.hortay.ui.main.TabContentSwitcher]
+     * AnimatedContent unmount / remount.
+     *
+     * Why VM-resident, not screen-local `remember`: the previous
+     * `remember(feed, feedOrder) { mutableStateOf(false) }` reset on every
+     * Feed-tab remount, so a Feed → Channels → Feed swap re-armed the
+     * `COLD_START_CURSOR_GRACE_MS` grace and the candidate [TimelineUiState]
+     * fell back to [TimelineUiState.Loading] for the duration — a visible
+     * `SkeletonFeed` flash on every tab return. The flag is actually a
+     * **session-scoped** property of "has TDLib delivered the cursor map
+     * yet" — once observed true, it can never legitimately go back to false
+     * within a session.
+     *
+     * ViewModel lifetime is the correct scope: Activity-scoped (survives tab
+     * swaps, config changes, overlay re-mounts) and discarded on process
+     * death (correct — a stale flag from the previous process is meaningless
+     * before refresh + cursor map land in the new one). Same rationale as
+     * [pinnedScrollSeedKeys] below.
+     */
+    private val _coldStartCursorsSettled = MutableStateFlow(false)
+    val coldStartCursorsSettled: StateFlow<Boolean> = _coldStartCursorsSettled.asStateFlow()
+
+    fun markColdStartCursorsSettled() {
+        if (!_coldStartCursorsSettled.value) _coldStartCursorsSettled.value = true
+    }
+
+    /**
      * Per-route cold-start scroll anchor for [TimelineScreen]'s LazyColumn.
      * Captured the first time the screen renders a [TimelineUiState.Ready] for
      * the route, then held constant so re-mounts (deep nav, where

@@ -241,13 +241,10 @@ fun TimelineScreen(
     // effect bodies. `.intValue = …` / `.value = …` assignments happen inside
     // a single [LaunchedEffect] below the [latchedUiState] / [feedItems]
     // computation, NOT during composition — keeps the writes outside the
-    // composition critical path. Default `0` / `false` / empty are the right
+    // composition critical path. Default `0` / empty are the right
     // pre-landing fallbacks.
     val homeScrollIndexState = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableIntStateOf(0)
-    }
-    val readCursorsLandedState = androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(false)
     }
     val feedItemsForEffectsState = androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<List<FeedItem>>(emptyList())
@@ -460,13 +457,20 @@ fun TimelineScreen(
         filteredPosts.orderedFor(feedOrder)
     }
 
-    // Cold-start "cursors usable for the boundary picker" signal.
+    // Cold-start "cursors usable for the boundary picker" signal. Source of
+    // truth is [TimelineViewModel.coldStartCursorsSettled] — an Activity-scoped
+    // latched flag that flips `false → true` exactly once per session and stays
+    // true across [dev.lyo.hortay.ui.main.TabContentSwitcher] AnimatedContent
+    // unmount / remount. Holding the flag in the VM avoids the previous
+    // screen-local `remember(feed, feedOrder) { mutableStateOf(false) }` that
+    // reset on every Feed-tab remount and re-armed the grace timer, painting a
+    // `SkeletonFeed` for ~800 ms on every Feed → Channels → Feed swap.
     //
     // Gated on `refresh idle + COLD_START_CURSOR_GRACE_MS` only — NOT on
-    // "first cursor put landed", which was a race: `cursorsHaveLanded` would
-    // flip true the moment ANY chat's `UpdateChatReadInbox` arrived, but the
-    // boundary picker then ran against a partially-seeded cursor map. Chats
-    // whose `UpdateNewChat` hadn't been processed yet had `cursor == null` and
+    // "first cursor put landed", which was a race: the flag would flip true
+    // the moment ANY chat's `UpdateChatReadInbox` arrived, but the boundary
+    // picker then ran against a partially-seeded cursor map. Chats whose
+    // `UpdateNewChat` hadn't been processed yet had `cursor == null` and
     // looked "read" per [isUnreadIn] — so an early-flipping cursor could pin
     // the LazyColumn at the wrong [items] row, and the latcher would freeze
     // that wrong landing for the rest of the session.
@@ -480,19 +484,17 @@ fun TimelineScreen(
     // `UpdateChatReadInbox` deltas the daemon sends just after `LoadChats`
     // resolves. Refs: tdlib/td#1369 (state via updates, not getChats
     // response), #1034 (`unreadCount` ↔ `lastReadInboxMessageId` invariant).
-    val cursorsHaveLandedState = remember(feed, feedOrder) {
-        androidx.compose.runtime.mutableStateOf(false)
-    }
-    LaunchedEffect(feed, feedOrder) {
+    val cursorsHaveLanded by vm.coldStartCursorsSettled.collectAsStateWithLifecycle()
+    LaunchedEffect(feed, feedOrder, cursorsHaveLanded) {
+        if (cursorsHaveLanded) return@LaunchedEffect
         if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
-            cursorsHaveLandedState.value = true
+            vm.markColdStartCursorsSettled()
             return@LaunchedEffect
         }
         androidx.compose.runtime.snapshotFlow { refreshing }.first { !it }
         kotlinx.coroutines.delay(COLD_START_CURSOR_GRACE_MS)
-        cursorsHaveLandedState.value = true
+        vm.markColdStartCursorsSettled()
     }
-    val cursorsHaveLanded = cursorsHaveLandedState.value
 
     // Frozen cursor snapshot for the [UnreadBoundaryRow] divider. Latches on
     // discrete boundary events — never on the per-card dwell-acks that flow
@@ -523,8 +525,15 @@ fun TimelineScreen(
     // "how many left?") with three different cadences. That separation is
     // load-bearing — collapsing them costs either clarity (drop the
     // divider) or stability (let it migrate).
+    // Seeded with the live snapshot when cursors are already settled (= the
+    // VM-resident cold-start flag is true), so a tab-swap remount lands the
+    // divider in the right place on the first frame instead of flashing the
+    // empty-cursor fallback until the [LaunchedEffect] below catches up.
     val boundaryCursorsState = remember(feed, feedOrder) {
-        androidx.compose.runtime.mutableStateOf(dev.lyo.hortay.data.EmptyReadCursors)
+        androidx.compose.runtime.mutableStateOf(
+            if (cursorsHaveLanded) cursorHolder.snapshot()
+            else dev.lyo.hortay.data.EmptyReadCursors,
+        )
     }
     LaunchedEffect(feed, feedOrder, cursorsHaveLanded, refreshing) {
         if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) return@LaunchedEffect
@@ -610,12 +619,11 @@ fun TimelineScreen(
             }
         }
     }
-    // Mirror into the forward-declared holders so the cold-start pin /
+    // Mirror into the forward-declared holder so the cold-start pin /
     // home-tap / scope-switch effects further up the composable see the
-    // current target. Single-effect write keeps the read consistent.
-    LaunchedEffect(homeScrollIndex, cursorsHaveLanded) {
+    // current target without recomposing on every cursor advance.
+    LaunchedEffect(homeScrollIndex) {
         homeScrollIndexState.intValue = homeScrollIndex
-        readCursorsLandedState.value = cursorsHaveLanded
     }
 
     // Single source of truth for what TimelineScreen renders — derived from the
@@ -651,7 +659,7 @@ fun TimelineScreen(
     // builder maps to initialIndex=0 (the correct Newest landing).
     val candidateUiState: TimelineUiState = buildTimelineUiState(
         items = persistentFeedItems,
-        cursorsLanded = readCursorsLandedState.value,
+        cursorsLanded = cursorsHaveLanded,
         frozenCursors = boundaryCursors,
         feedOrder = feedOrder,
         refreshing = refreshing,
