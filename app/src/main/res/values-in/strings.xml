@@ -1,0 +1,640 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hortay</string>
+
+    <!-- Layar autentikasi -->
+    <string name="auth_phone_label">Nomor telepon</string>
+    <string name="auth_phone_helper">Nomor beserta kode negara. Telegram akan mengirim kode konfirmasi</string>
+    <string name="auth_password_label">Kata sandi 2FA</string>
+    <string name="auth_password_hint">Petunjuk: %1$s</string>
+    <string name="auth_password_helper">Kata sandi yang kamu buat di Telegram resmi untuk Autentikasi Dua Faktor</string>
+    <string name="auth_password_forgot">Lupa kata sandi</string>
+    <string name="auth_password_recovery_sent">Kode reset dikirim ke %1$s. Masukkan untuk masuk tanpa kata sandi</string>
+    <string name="auth_password_recovery_code_label">Kode email</string>
+    <string name="auth_password_recovery_back">Masukkan kata sandi</string>
+    <string name="auth_password_recovery_unavailable">Tidak ada email pemulihan yang terdaftar. 2FA hanya bisa direset dari Telegram resmi di perangkat lain</string>
+    <string name="auth_send_code">Kirim kode</string>
+    <string name="auth_continue">Lanjutkan</string>
+    <string name="auth_continue_without_login">Tanpa masuk: baca kanal publik</string>
+
+    <!-- Mode web (anonim / tamu) -->
+    <string name="web_feed_title">Feed</string>
+    <string name="web_channels_title">Kanal</string>
+    <string name="web_saved_title">Tersimpan</string>
+    <string name="web_settings_title">Pengaturan</string>
+    <string name="web_add_channel">Tambah kanal</string>
+    <string name="web_loading">Memuat…</string>
+    <string name="web_empty_posts">Belum ada apa-apa. Periksa langgananmu</string>
+    <string name="web_empty_channels">Belum ada langganan.\nTambah kanal dari tab Feed</string>
+    <string name="web_empty_channels_title">Belum ada kanal</string>
+    <string name="web_empty_channels_body">Tambah kanal publik dan kiriman-kirimanya akan muncul di feed-mu</string>
+    <string name="web_add_mentioned_title">Disebut di kanal-kanalmu</string>
+    <string name="web_add_mentioned_count">Disebut %1$d kali di langgananmu</string>
+    <string name="web_empty_saved">Belum ada yang tersimpan</string>
+    <string name="web_welcome_title">Tanpa masuk</string>
+    <string name="web_welcome_body">Tambah beberapa kanal publik dan baca tanpa masuk ke Telegram</string>
+    <string name="web_refresh_error">Gagal memperbarui: %1$s</string>
+    <string name="web_unsubscribe_title">Berhenti berlangganan?</string>
+    <string name="web_unsubscribe_body">Kanal @%1$s akan hilang dari feed-mu. Kiriman yang disimpan tetap ada di Tersimpan</string>
+    <string name="web_unsubscribe_confirm">Berhenti berlangganan</string>
+    <string name="web_cancel">Batal</string>
+    <string name="web_search_action">Cari kiriman</string>
+    <string name="web_search_hint">Cari di kanal-kanalmu</string>
+    <string name="web_search_clear">Hapus</string>
+    <string name="web_search_prompt">Ketik untuk mencari kiriman di kanal yang kamu ikuti</string>
+    <string name="web_search_no_results">Tidak ada hasil untuk "%1$s"</string>
+    <string name="media_open_in_telegram">Buka di Telegram</string>
+    <string name="web_status_not_found">kanal tidak ditemukan</string>
+    <string name="web_status_private">kanal privat</string>
+    <string name="web_status_rate_limited">Telegram meminta menunggu</string>
+    <string name="web_status_error">gagal memperbarui</string>
+    <string name="web_status_parse_failure">format halaman berubah</string>
+    <string name="web_status_loading">memperbarui…</string>
+    <string name="web_retry_for">Coba lagi untuk %1$s</string>
+    <string name="web_settings_subtitle">Tanpa masuk Telegram</string>
+    <string name="web_settings_signin">Masuk ke Telegram</string>
+    <string name="web_settings_signin_helper">Membuka komentar, reaksi, dan kanal privat. Langganan tetap tersimpan</string>
+    <string name="web_settings_clear_cache">Hapus cache</string>
+    <string name="web_settings_clearing">Menghapus…</string>
+    <string name="web_settings_clear_cache_helper">Menghapus kiriman dan aset yang di-cache. Langganan dan kiriman tersimpan tetap ada</string>
+    <string name="web_settings_clear_cache_confirm_title">Hapus kiriman yang di-cache?</string>
+    <string name="web_settings_clear_cache_confirm_body">Menghapus kiriman kanal dan gambar yang di-cache secara lokal. Langganan dan kiriman tersimpan tetap ada. Konten akan dimuat ulang dari t.me</string>
+    <string name="web_settings_clear_cache_confirm_action">Hapus</string>
+    <string name="web_settings_clear_cache_cancel">Batal</string>
+    <string name="web_comments_unavailable">Komentar tidak tersedia di mode tamu. Masuk untuk membaca balasan</string>
+    <string name="web_comments_unavailable_title">Komentar tidak tersedia</string>
+    <string name="web_settings_privacy_title">Apa yang dilihat Telegram di mode ini</string>
+    <string name="web_settings_privacy_body">IP dan User-Agent browser desktop. Tanpa cookie, tanpa akun, tanpa data pribadimu</string>
+    <string name="web_add_body">@username, tautan t.me/username, atau tempel dari clipboard</string>
+    <string name="web_add_input_label">Kanal</string>
+    <string name="web_add_paste_clipboard">Tempel dari clipboard: %1$s</string>
+    <string name="web_add_validating">Memvalidasi…</string>
+    <string name="web_add_lookup">Cari</string>
+    <string name="web_add_confirm">Tambah</string>
+    <string name="web_add_curated_title">Kanal populer</string>
+    <string name="web_add_check">Periksa</string>
+    <string name="web_add_invalid">Masukkan @username atau tautan t.me/…</string>
+    <string name="web_add_not_found">Kanal @%1$s tidak ditemukan</string>
+    <string name="web_add_private">Kanal privat. Kiriman publik tidak tersedia</string>
+    <string name="web_add_parse_failure">Gagal mengurai respons Telegram</string>
+    <string name="web_add_rate_limited">Batas permintaan tercapai. Coba lagi dalam %1$d dtk</string>
+    <string name="web_add_network_error">Kesalahan jaringan: %1$s</string>
+    <!-- %1$s adalah string yang sudah diformat dari t.me (mis. "1.5K", "262K", "12 345"),
+         bukan Int. Kita tidak mem-parse jumlahnya, jadi <plurals> tidak bisa dipakai di sini. -->
+    <string name="web_subscribers">Pelanggan: %1$s</string>
+    <string name="web_deeplink_signin_required">Masuk untuk membuka kanal privat</string>
+    <string name="auth_change_number">Ganti nomor</string>
+    <string name="auth_back">Kembali</string>
+    <string name="auth_password_show">Tampilkan kata sandi</string>
+    <string name="auth_password_hide">Sembunyikan kata sandi</string>
+    <string name="auth_retry">Mulai ulang</string>
+    <string name="auth_open_telegram_hint">Buka Telegram resmi, lakukan yang diperlukan, lalu kembali</string>
+    <string name="auth_title_wait_code">Masukkan kode</string>
+    <string name="auth_title_wait_password">Kata sandi 2FA</string>
+    <string name="auth_title_error">Tindakan diperlukan</string>
+    <string name="auth_subtitle_wait_code">Kode terkirim. Periksa: %1$s</string>
+    <string name="auth_subtitle_password_no_hint">Akun dilindungi dengan autentikasi dua faktor</string>
+    <string name="auth_subtitle_password_with_hint">Akun dilindungi dengan autentikasi dua faktor. Masukkan kata sandi 2FA-mu</string>
+    <string name="auth_subtitle_default">Baca kanal Telegram sebagai feed — tanpa obrolan atau notifikasi</string>
+    <string name="auth_country_label">Negara</string>
+    <string name="auth_country_loading">Memuat…</string>
+    <string name="auth_phone_placeholder">Nomor telepon</string>
+    <string name="auth_code_placeholder">Kata atau frasa dari SMS</string>
+    <string name="auth_resend_sending">Mengirim…</string>
+    <string name="auth_resend_countdown">Coba lagi dalam %1$d:%2$02d</string>
+    <string name="auth_resend_via">Kirim ulang kode (%1$s)</string>
+    <string name="auth_resend_again">Kirim ulang</string>
+
+    <!-- Pemilih negara -->
+    <string name="country_picker_title">Pilih negara</string>
+    <string name="country_picker_search">Cari</string>
+    <string name="country_picker_empty">Tidak ditemukan</string>
+    <string name="country_anonymous_numbers">Nomor anonim</string>
+    <string name="country_other">Negara lain</string>
+
+    <!-- Saluran kode autentikasi -->
+    <string name="auth_channel_telegram_message">Telegram di perangkat lain</string>
+    <string name="auth_channel_sms_with_phone">SMS ke %1$s</string>
+    <string name="auth_channel_sms">SMS</string>
+    <string name="auth_channel_sms_word">SMS dengan kata</string>
+    <string name="auth_channel_sms_phrase">SMS dengan frasa</string>
+    <string name="auth_channel_call_with_phone">panggilan telepon ke %1$s</string>
+    <string name="auth_channel_call">panggilan telepon</string>
+    <string name="auth_channel_missed_call">panggilan tak terjawab (masukkan digit terakhir nomornya)</string>
+    <string name="auth_channel_flash_call">panggilan tak terjawab</string>
+    <string name="auth_channel_fragment">via Fragment</string>
+    <string name="auth_channel_firebase">via verifikasi perangkat</string>
+    <string name="auth_channel_other">metode lain</string>
+
+    <!-- Kesalahan autentikasi -->
+    <string name="auth_err_too_many_with_time">Terlalu banyak percobaan. Tunggu %1$s</string>
+    <string name="auth_err_too_many_generic">Terlalu banyak percobaan. Coba lagi nanti</string>
+    <string name="auth_err_phone_invalid">Periksa kode negara dan digit nomornya</string>
+    <string name="auth_err_phone_banned">Telegram memblokir nomor ini. Coba masuk lewat Telegram resmi</string>
+    <string name="auth_err_phone_flood">Telegram membatasi sementara masuk dari nomor ini. Coba lagi nanti</string>
+    <string name="auth_err_phone_occupied">Nomor ini sudah memiliki akun. Masuk alih-alih mendaftar</string>
+    <string name="auth_err_code_invalid">Kode salah. Periksa dan coba lagi</string>
+    <string name="auth_err_code_expired">Kode kadaluarsa. Minta kode baru</string>
+    <string name="auth_err_password_invalid">Kata sandi salah. Coba lagi</string>
+    <string name="auth_err_password_too_fresh">Kata sandi baru saja diganti. Telegram akan meminta kamu menunggu sebentar</string>
+    <string name="auth_err_password_recovery_na">Pemulihan kata sandi tidak tersedia di sini. Reset 2FA di Telegram resmi</string>
+    <string name="auth_err_session_password_needed">Kata sandi 2FA diperlukan</string>
+    <string name="auth_err_app_misconfigured">Kesalahan konfigurasi aplikasi. Coba restart Hortay atau periksa pembaruan</string>
+    <string name="auth_err_token_invalid">Kredensial tidak cocok. Mulai ulang proses masuk</string>
+    <string name="auth_err_generic">Terjadi kesalahan. Coba lagi</string>
+    <string name="auth_err_step_failed">Langkah gagal diselesaikan (%1$s). Coba lagi</string>
+    <string name="auth_err_email_required">Konfirmasi email di Telegram resmi, lalu kembali</string>
+    <string name="auth_err_phone_unregistered">Nomor ini belum memiliki akun Telegram. Buat akun di aplikasi resmi</string>
+    <string name="auth_err_other_device">Konfirmasi masuk via Telegram di perangkat lain</string>
+    <string name="auth_err_premium_required">Telegram Premium diperlukan. Berlangganan di Telegram resmi, lalu kembali</string>
+    <string name="auth_err_init_failure">Gagal mengonfigurasi klien Telegram. Restart aplikasi</string>
+
+    <!-- Format durasi -->
+    <string name="duration_seconds_short">%1$d dtk</string>
+    <plurals name="duration_minutes">
+        <item quantity="other">%d menit</item>
+    </plurals>
+    <plurals name="duration_hours">
+        <item quantity="other">%d jam</item>
+    </plurals>
+    <string name="duration_minutes_short">%1$d mnt</string>
+    <string name="duration_hours_short">%1$d j</string>
+
+    <!-- Banner koneksi -->
+    <string name="connection_waiting">Menunggu jaringan</string>
+    <string name="connection_connecting">Menghubungkan…</string>
+    <string name="connection_updating">Memperbarui…</string>
+    <plurals name="connection_flood_wait">
+        <item quantity="other">Telegram membatasi permintaan (%d dtk)</item>
+    </plurals>
+
+    <!-- Navigasi -->
+    <string name="nav_feed">Feed</string>
+    <string name="nav_channels">Kanal</string>
+    <string name="nav_saved">Tersimpan</string>
+    <string name="nav_profile">Profil</string>
+
+    <!-- Timeline -->
+    <string name="timeline_title">Feed</string>
+    <string name="timeline_empty">Sepi di sini. Ikuti kanal di Telegram dan mereka akan muncul di feed</string>
+    <string name="timeline_empty_default_helper">Ikuti kanal di Telegram dan mereka akan muncul di feed</string>
+    <string name="timeline_empty_saved_title">Belum ada yang tersimpan</string>
+    <string name="timeline_empty_saved_helper">Ketuk ikon bookmark di samping kiriman untuk menyimpannya</string>
+    <string name="timeline_empty_default_title">Sepi di sini</string>
+    <string name="timeline_empty_caught_up_title">Semua sudah dibaca</string>
+    <string name="timeline_empty_caught_up_helper">Kamu sudah membaca semua kiriman di feed-mu. Tarik untuk memuat yang baru.</string>
+    <string name="timeline_search_in_channel">Cari di kanal</string>
+    <string name="timeline_search_empty">Tidak ditemukan</string>
+    <string name="timeline_subscribers">Pelanggan: %1$s</string>
+    <string name="timeline_saved_tab">Tersimpan</string>
+    <string name="channel_empty_title">Belum ada kiriman</string>
+    <string name="channel_empty_body">Belum ada kiriman di kanal ini</string>
+    <string name="channel_info_action">Info kanal</string>
+
+    <!-- Format waktu -->
+    <string name="time_just_now">baru saja</string>
+    <string name="time_minutes_short">%1$d mnt</string>
+    <string name="time_hours_short">%1$d j</string>
+    <string name="time_days_short">%1$d h</string>
+
+    <!-- Pil kiriman baru -->
+    <string name="new_posts_overflow">99+ kiriman baru</string>
+    <plurals name="new_posts">
+        <item quantity="other">%d kiriman baru</item>
+    </plurals>
+
+    <!-- Pil penghitung belum dibaca (mode feed OldestUnreadFirst) -->
+    <string name="unread_remaining_overflow">99+ belum dibaca</string>
+    <plurals name="unread_remaining">
+        <item quantity="other">%d belum dibaca</item>
+    </plurals>
+
+    <!-- Kartu kiriman -->
+    <string name="post_translated_chip">Diterjemahkan · Tampilkan asli</string>
+    <string name="post_forwarded_from">Diteruskan dari %1$s</string>
+    <string name="post_show_original">Tampilkan asli</string>
+    <string name="post_translate">Terjemahkan</string>
+    <string name="post_save">Simpan kiriman</string>
+    <string name="post_unsave">Hapus dari tersimpan</string>
+    <string name="post_copy_text">Salin teks</string>
+    <string name="post_share">Bagikan</string>
+    <string name="post_open_telegram">Buka di Telegram</string>
+    <string name="post_copied_toast">Disalin</string>
+    <string name="post_show_more">Tampilkan lebih banyak</string>
+
+    <!-- Pesan layanan / media kadaluarsa -->
+    <string name="expired_photo">Foto merusak diri sudah kedaluwarsa</string>
+    <string name="expired_video">Video merusak diri sudah kedaluwarsa</string>
+    <string name="expired_video_note">Pesan video sudah kedaluwarsa</string>
+    <string name="expired_voice">Pesan suara sudah kedaluwarsa</string>
+    <string name="service_pinned_message">Pesan disematkan</string>
+    <plurals name="service_boost">
+        <item quantity="other">Kanal menerima %d boost</item>
+    </plurals>
+    <plurals name="invite_dialog_subscribers">
+        <item quantity="other">%d pelanggan</item>
+    </plurals>
+    <string name="service_giveaway_started">Giveaway dimulai</string>
+    <string name="service_screenshot">Screenshot</string>
+    <string name="service_video_chat_started">Panggilan grup dimulai</string>
+    <string name="service_video_chat_ended">Panggilan grup berakhir</string>
+    <string name="service_video_call">Panggilan video</string>
+    <string name="service_voice_call">Panggilan suara</string>
+    <string name="service_other">Pesan sistem</string>
+
+    <!-- Konten isi kiriman -->
+    <string name="document_unnamed">Dokumen</string>
+    <string name="voice_message">Pesan suara</string>
+    <string name="content_audio_fallback">Trek audio</string>
+    <string name="content_invoice">Invoice</string>
+    <string name="content_giveaway">Giveaway</string>
+    <string name="content_game">Game</string>
+    <string name="content_story">Story</string>
+    <string name="content_premium_gift">Hadiah Telegram Premium</string>
+    <string name="content_gift">Hadiah</string>
+    <string name="content_paid_locked">Media berbayar terkunci</string>
+    <string name="content_paid_stars">%1$d bintang</string>
+    <string name="content_open_in_telegram">Buka di Telegram</string>
+    <string name="poll_anonymous">Jajak pendapat anonim</string>
+    <string name="poll_title">Jajak pendapat</string>
+    <string name="poll_total_votes">%1$d suara</string>
+    <!-- Chip / aksi kartu jajak pendapat MD3E baru -->
+    <string name="poll_type_regular">Jajak pendapat</string>
+    <string name="poll_type_quiz">Kuis</string>
+    <string name="poll_state_closed">Hasil akhir</string>
+    <string name="poll_anonymous_short">Anonim</string>
+    <string name="poll_countdown_finished">Menutup…</string>
+    <string name="poll_total_votes_empty">Belum ada suara</string>
+    <plurals name="poll_total_votes_plural">
+        <item quantity="other">%1$d suara</item>
+    </plurals>
+    <string name="poll_action_vote">Vote</string>
+    <string name="poll_action_retract">Tarik suara</string>
+    <string name="poll_action_view_explanation">Kenapa?</string>
+    <string name="poll_action_add_option">Usulkan opsi</string>
+    <string name="content_giveaway_completed">🎁 Giveaway selesai</string>
+    <string name="content_giveaway_winners">🎁 Giveaway · pemenang</string>
+    <string name="content_paid">⭐ Konten berbayar</string>
+
+    <!-- Komentar -->
+    <string name="comments_title">Kiriman</string>
+    <string name="comments_loading">Memuat…</string>
+    <plurals name="comments_count">
+        <item quantity="other">%d komentar</item>
+    </plurals>
+    <string name="comments_empty_title">Belum ada komentar</string>
+    <string name="comments_empty_body">Balasan baru akan muncul di sini saat tiba</string>
+    <string name="comments_disabled_title">Komentar dinonaktifkan</string>
+    <string name="comments_disabled_body">Kanal ini tidak memiliki grup diskusi yang terhubung</string>
+    <string name="comments_unavailable">Diskusi tidak tersedia</string>
+
+    <!-- Kanal -->
+    <string name="channels_title">Kanal</string>
+    <string name="channels_loading">Memuat…</string>
+    <string name="channels_subscribers">Pelanggan: %1$s</string>
+    <string name="channels_unmute">Aktifkan notifikasi</string>
+    <string name="channels_mute">Bisukan notifikasi</string>
+    <string name="channels_leave">Keluar dari kanal</string>
+    <string name="channels_join">Ikuti</string>
+    <string name="channels_hide_from_feed">Sembunyikan dari feed</string>
+    <string name="channels_unhide_from_feed">Tampilkan di feed</string>
+    <string name="channels_hide_from_feed_for">Sembunyikan %1$s dari feed</string>
+    <string name="channels_unhide_from_feed_for">Tampilkan %1$s di feed</string>
+    <string name="channels_empty_title">Belum ada kanal</string>
+    <string name="channels_empty_helper">Ikuti kanal di Telegram dan mereka akan muncul di sini</string>
+
+    <!-- Folder -->
+    <string name="folder_all">Semua</string>
+    <string name="folder_archive">Arsip</string>
+
+    <!-- Pengaturan -->
+    <string name="settings_profile_title">Profil</string>
+    <string name="settings_subtitle_profile">Akun, data, unduhan</string>
+    <string name="settings_subtitle_auto_download">Foto, video, GIF</string>
+    <string name="settings_subtitle_auto_download_category_wifi">Lewat Wi-Fi</string>
+    <string name="settings_subtitle_auto_download_category_mobile">Lewat data seluler</string>
+    <string name="settings_subtitle_auto_download_category_roaming">Saat roaming</string>
+    <string name="timeline_subtitle_feed">%1$d kanal</string>
+    <string name="timeline_subtitle_saved">Kiriman yang disimpan</string>
+    <string name="settings_section_feed">Feed</string>
+    <string name="settings_feed_order_newest_title">Terbaru di atas</string>
+    <string name="settings_feed_order_newest_subtitle">Gulir ke bawah untuk kiriman lama</string>
+    <string name="settings_feed_order_oldest_title">Terbaru di bawah</string>
+    <string name="settings_feed_order_oldest_subtitle">Seperti obrolan Telegram — kiriman baru muncul di bawah</string>
+    <string name="settings_feed_order_snackbar_to_newest">Feed diurutkan ulang — terbaru di atas</string>
+    <string name="settings_feed_order_snackbar_to_oldest">Feed diurutkan ulang — terbaru di bawah, seperti obrolan</string>
+    <string name="settings_snap_scroll_title">Snap scroll</string>
+    <string name="settings_snap_scroll_subtitle">Setiap kiriman terkunci saat kamu flinging — nuansa TikTok/Reels</string>
+    <string name="settings_inline_autoplay_title">Putar otomatis video di feed</string>
+    <string name="settings_inline_autoplay_subtitle">Video pendek yang sudah di cache diputar tanpa suara saat digulir. Ketuk untuk membuka layar penuh dengan suara.</string>
+    <string name="settings_section_privacy">Privasi</string>
+    <string name="settings_hide_online_title">Sembunyikan status online</string>
+    <string name="settings_hide_online_subtitle">Tidak menampilkan kepada kontak Telegram bahwa kamu sedang online saat membaca Hortay. Aplikasi Telegram resmi tetap menampilkan status seperti biasa. Pengaturan ini hanya berlaku untuk sesi Hortay.</string>
+    <string name="timeline_unread_boundary">Belum dibaca</string>
+    <string name="settings_section_traffic">Data</string>
+    <string name="settings_section_storage">Penyimpanan</string>
+    <string name="settings_section_account">Akun</string>
+    <string name="settings_section_author">Pembuat</string>
+    <string name="settings_author_channel_title">Kanal pembuat</string>
+    <string name="settings_author_developer_title">Pengembang</string>
+    <string name="settings_author_source_title">Kode sumber</string>
+    <string name="settings_section_about">Tentang</string>
+    <string name="settings_language">Bahasa</string>
+    <string name="settings_language_summary_system">Default sistem</string>
+    <string name="settings_language_dialog_title">Bahasa aplikasi</string>
+    <string name="settings_logout_title">Keluar</string>
+    <string name="settings_logout_subtitle">Sesi Telegram direset, cache tetap ada</string>
+    <string name="settings_version">Versi</string>
+    <string name="settings_logout_dialog_title">Keluar dari Telegram?</string>
+    <string name="settings_logout_dialog_text">Kamu perlu memasukkan nomor dan kode konfirmasi lagi</string>
+    <string name="settings_logout_confirm">Keluar</string>
+    <string name="settings_logout_cancel">Batal</string>
+    <string name="settings_traffic_downloaded">Diunduh</string>
+    <string name="settings_traffic_uploaded">Diunggah</string>
+    <string name="settings_traffic_helper">Total sejak pertama kali diluncurkan. Menghapus cache tidak mereset ini, itu penghitung terpisah</string>
+    <string name="settings_traffic_reset">Reset penghitung</string>
+    <string name="settings_storage_used_by">digunakan Hortay di perangkat ini</string>
+    <string name="settings_storage_clearing">Menghapus…</string>
+    <string name="settings_storage_clear">Hapus cache media</string>
+    <string name="settings_storage_clear_helper">Menghapus foto, video, dan file yang di-cache. Database pesan dan sesi tetap ada, hanya dihapus saat keluar</string>
+    <string name="settings_storage_media">Media</string>
+    <string name="settings_storage_db">Database</string>
+
+    <!-- Unduhan otomatis media -->
+    <string name="autodownload_section">Unduhan otomatis media</string>
+    <string name="autodownload_entry_title">Unduhan otomatis media</string>
+    <string name="autodownload_entry_subtitle">Foto, video, dan GIF lewat Wi-Fi, data seluler, atau roaming</string>
+    <string name="autodownload_screen_title">Unduhan otomatis</string>
+    <string name="autodownload_header_helper">Kiriman baru diunduh di latar belakang agar kamu tidak melihat loading. Pilih apa yang dimuat dan seberapa besar</string>
+    <string name="autodownload_category_wifi">Lewat Wi-Fi</string>
+    <string name="autodownload_category_mobile">Lewat data seluler</string>
+    <string name="autodownload_category_roaming">Saat roaming</string>
+    <string name="autodownload_summary_off">Mati</string>
+    <string name="autodownload_summary_photos">Foto</string>
+    <string name="autodownload_summary_videos_unbounded">Video</string>
+    <string name="autodownload_summary_videos_capped">Video hingga %1$s</string>
+    <string name="autodownload_summary_animations">GIF</string>
+    <string name="autodownload_toggle_photos">Foto</string>
+    <string name="autodownload_toggle_photos_helper">Selalu kecil. Dimuat cepat meski di jaringan lambat</string>
+    <string name="autodownload_toggle_videos">Video</string>
+    <string name="autodownload_toggle_videos_helper">Hanya video hingga ukuran yang dipilih di bawah</string>
+    <string name="autodownload_toggle_animations">GIF</string>
+    <string name="autodownload_toggle_animations_helper">Klip berulang dan animasi</string>
+    <string name="autodownload_video_max_label">Ukuran video maksimum</string>
+    <string name="autodownload_video_max_value">Hingga %1$s</string>
+    <string name="autodownload_data_saver_note">Penghemat Data sistem aktif. Video dan GIF dijeda di data seluler sampai kamu mematikannya di pengaturan Android</string>
+    <string name="autodownload_reset">Reset ke default</string>
+    <string name="autodownload_reset_done">Default dipulihkan</string>
+    <string name="autodownload_back">Kembali</string>
+    <string name="size_mb_int">%1$d MB</string>
+
+    <!-- Ukuran -->
+    <string name="size_bytes">%1$d B</string>
+    <string name="size_kb">%1$.1f KB</string>
+    <string name="size_mb">%1$.1f MB</string>
+    <string name="size_gb">%1$.2f GB</string>
+    <string-array name="size_units">
+        <item>B</item>
+        <item>KB</item>
+        <item>MB</item>
+        <item>GB</item>
+    </string-array>
+
+    <!-- Media -->
+    <string name="media_video_quality">Kualitas video</string>
+    <string name="media_retry">coba lagi</string>
+    <string name="media_load_stalled">unduhan terhenti</string>
+    <string name="spoiler_sensitive_tap">Sensitif. Ketuk untuk melihat</string>
+    <string name="web_media_placeholder_photo">[gambar]</string>
+    <string name="web_media_placeholder_video">[video]</string>
+    <string name="web_media_placeholder_round_video">[pesan video]</string>
+    <string name="web_media_placeholder_voice">[pesan suara]</string>
+    <string name="web_media_placeholder_document">[dokumen]</string>
+    <string name="web_media_placeholder_sticker">[stiker]</string>
+    <string name="web_media_placeholder_gif">[GIF]</string>
+
+    <!-- Mode kanal personal-author: subjudul "di <Kanal>" di bawah nama admin -->
+    <string name="post_in_channel">di %1$s</string>
+
+    <!-- Label jenis balasan / kartu kutipan (ditampilkan saat induk tidak punya teks) -->
+    <string name="reply_kind_photo">Foto</string>
+    <string name="reply_kind_video">Video</string>
+    <string name="reply_kind_animation">GIF</string>
+    <string name="reply_kind_document">File</string>
+    <string name="reply_kind_audio">Audio</string>
+    <string name="reply_kind_voice">Pesan suara</string>
+    <string name="reply_kind_video_note">Pesan video</string>
+    <string name="content_description_video_note">Pesan video bulat. Ketuk untuk mengaktifkan/menonaktifkan suara.</string>
+    <string name="reply_kind_sticker">Stiker</string>
+    <string name="reply_kind_poll">Jajak pendapat</string>
+
+    <!-- Default pengguna -->
+    <string name="user_default_name">Pengguna</string>
+    <string name="channel_default_name">Kanal</string>
+
+    <!-- Kesalahan generik / TD -->
+    <string name="error_generic">Terjadi kesalahan</string>
+    <string name="err_flood_with_time">Telegram membatasi permintaan. Coba lagi dalam %1$s</string>
+    <string name="err_flood_generic">Telegram membatasi permintaan. Coba lagi nanti</string>
+    <string name="err_unauthorized">Sesi direset. Masuk kembali</string>
+    <string name="err_forbidden">Tidak bisa %1$s: tindakan dilarang</string>
+    <string name="err_not_found">Tidak ditemukan: %1$s</string>
+    <string name="err_server">Server Telegram sementara tidak tersedia. Coba lagi dalam semenit</string>
+    <string name="err_no_connection">Tidak ada koneksi. Periksa internet dan coba lagi</string>
+    <string name="err_failed_op">Gagal %1$s</string>
+
+    <!-- Label operasi (bentuk infinitif, digunakan dalam template error) -->
+    <string name="op_refresh_feed">memperbarui feed</string>
+    <string name="op_load_channel">memuat kanal</string>
+    <string name="op_load_older">memuat kiriman lama</string>
+    <string name="op_change_reaction">mengubah reaksi</string>
+    <string name="op_vote_in_poll">memilih di jajak pendapat</string>
+    <string name="op_close_poll">menutup jajak pendapat</string>
+    <string name="op_mute">membisukan notifikasi</string>
+    <string name="op_unmute">mengaktifkan notifikasi</string>
+    <string name="op_join_channel">bergabung ke kanal</string>
+    <string name="op_leave_channel">keluar dari kanal</string>
+    <string name="op_translate">menerjemahkan pesan</string>
+    <string name="op_search">mencari di kanal</string>
+
+    <!-- Lembar proposal migrasi anonim → terautentikasi -->
+    <string name="migration_title">Migrasikan langganan anonim?</string>
+    <plurals name="migration_subtitle">
+        <item quantity="other">Kamu mengikuti %1$d kanal tanpa masuk. Pilih yang ingin kamu ikuti dengan akunmu</item>
+    </plurals>
+    <string name="migration_subtitle_disclaimer">Bergabung menambahkan kanal ke Telegram-mu. Admin akan melihatmu sebagai anggota baru</string>
+    <string name="migration_select_all">Pilih semua</string>
+    <string name="migration_deselect_all">Batal semua</string>
+    <!-- Teks jujur: mengetuk ini akan menutup lembar secara permanen (proposalShown=true di
+         MigrationCoordinator). Ini bukan "nanti" — lembar tidak akan muncul lagi. -->
+    <string name="migration_skip">Jangan tampilkan lagi</string>
+    <string name="migration_confirm">Ikuti (%1$d)</string>
+    <string name="migration_progress_label">%1$d dari %2$d</string>
+
+    <!-- Deskripsi konten avatar / gambar untuk Talkback. -->
+    <string name="avatar_for_channel">Avatar untuk %1$s</string>
+
+    <!-- Lencana mode tamu permanen di bilah atas. -->
+    <string name="guest_mode_badge">Mode tamu</string>
+
+    <!-- CTA masuk saat kanal yang ditemukan bersifat privat. -->
+    <string name="web_add_signin_for_private">Masuk untuk mengakses kanal privat</string>
+
+    <!-- Label Talkback untuk ikon berhenti berlangganan dengan nama kanal. -->
+    <string name="web_unsubscribe_from">Berhenti berlangganan dari %1$s</string>
+
+    <!-- Label aksi generik sebagai contentDescription TalkBack pada tombol ikon
+         di bilah atas dan toolbar. -->
+    <string name="action_back">Kembali</string>
+    <string name="action_close">Tutup</string>
+    <string name="action_clear">Hapus</string>
+    <string name="action_search">Cari</string>
+    <string name="action_save_to_gallery">Simpan ke galeri</string>
+    <string name="action_copy_image">Salin gambar</string>
+    <string name="action_share_media">Bagikan</string>
+    <!-- Label aksi snackbar dari [UserMessageBus.Action]. Dipakai bersama di semua
+         snackbar berbasis bus; id resource direferensi dari produsen tanpa duplikasi. -->
+    <string name="action_open_telegram">Buka Telegram</string>
+    <string name="action_sign_in">Masuk</string>
+    <!-- CTA utama di layar kosong (TimelineEmptyHero default + kanal kosong).
+         Tujuan: membuka Telegram resmi agar pengguna bisa berlangganan kanal;
+         Hortay akan menerimanya via stream pembaruan TDLib yang ada. -->
+    <string name="empty_action_open_telegram">Buka Telegram untuk berlangganan</string>
+    <!-- Snackbar long-press saat pengguna mengetuk chip reaksi berbayar
+         (tidak bisa dipilih dari Hortay — reaksi berbayar khusus di Telegram). -->
+    <string name="reactions_paid_explainer">Reaksi berbayar hanya bisa dikirim dari Telegram</string>
+    <!-- Toast setelah aksi Simpan / Salin / Bagikan di penampil layar penuh. -->
+    <string name="media_saved_photo">Foto disimpan ke galeri</string>
+    <string name="media_saved_video">Video disimpan ke galeri</string>
+    <string name="media_save_failed">Gagal menyimpan: %1$s</string>
+    <string name="media_copied">Gambar disalin</string>
+    <string name="media_copy_failed">Gagal menyalin: %1$s</string>
+    <string name="media_share_failed">Gagal membagikan: %1$s</string>
+    <!-- Label status inline di samping kiriman. -->
+    <string name="post_badge_edited">Diedit</string>
+    <string name="post_badge_pinned">Disematkan</string>
+    <!-- Menu long-press pada tautan inline di isi kiriman. -->
+    <string name="link_action_open">Buka</string>
+    <string name="link_action_copy">Salin tautan</string>
+    <string name="link_action_share">Bagikan</string>
+    <string name="link_copied_toast">Tautan disalin</string>
+    <!-- Dialog anti-phishing saat TextUrl tersembunyi mengarah ke luar Telegram. -->
+    <string name="link_confirm_title">Buka tautan</string>
+    <string name="link_confirm_body">Kamu akan membuka:</string>
+    <string name="action_cancel">Batal</string>
+    <!-- Pesan snackbar saat tautan t.me tidak mengarah ke kanal. -->
+    <string name="link_unsupported_user">Tautan profil dibuka di Telegram</string>
+    <string name="link_unsupported_group">Obrolan grup dibuka di Telegram</string>
+    <string name="link_unsupported_other">Tautan ini dibuka di Telegram</string>
+    <string name="link_not_found">Tautan tidak ditemukan</string>
+    <!-- Ditampilkan saat tautan/ketukan #tag tiba tanpa cakupan kanal. %1$s
+         adalah tag dengan awalan #. -->
+    <string name="link_hashtag_search">Pencarian hashtag berfungsi di dalam kanal — buka salah satu untuk mencari %1$s</string>
+    <!-- Ditampilkan saat entitas #tag@channel atau ketukan PostBody yang memiliki cakupan
+         mengarah ke kanal yang diketahui. %1$s adalah tag dengan #, %2$s adalah
+         handle kanal dengan @. -->
+    <string name="link_hashtag_search_in_channel">Buka %2$s untuk mencari %1$s — pencarian hashtag global belum tersedia</string>
+    <!-- Dialog konfirmasi untuk tautan undangan (t.me/+abc...). -->
+    <string name="invite_dialog_title">Bergabung ke kanal</string>
+    <string name="invite_dialog_unknown_chat">Kanal Telegram</string>
+    <string name="invite_dialog_join">Gabung</string>
+
+    <!-- Pengaturan → bagian Keamanan (kepatuhan CSAE) -->
+    <string name="settings_section_safety">Keamanan</string>
+    <string name="settings_safety_report_title">Laporkan konten</string>
+    <string name="settings_safety_report_subtitle">Laporkan kanal atau kiriman ke moderator Telegram</string>
+    <string name="settings_safety_child_policy_title">Standar keamanan anak</string>
+    <string name="settings_safety_child_policy_subtitle">Hortay mempublikasikan standar keamanan anak</string>
+    <string name="settings_safety_privacy_title">Kebijakan privasi</string>
+    <string name="settings_safety_privacy_subtitle">Bagaimana Hortay menangani datamu</string>
+
+    <!-- Layar Laporkan konten (Pengaturan → Keamanan → Laporkan konten) -->
+    <string name="report_content_title">Laporkan konten</string>
+    <string name="report_handle_label">Handle kanal</string>
+    <string name="report_invalid_handle">Masukkan @handle yang valid (2–32 karakter)</string>
+    <string name="report_post_id_label">ID kiriman (opsional)</string>
+    <string name="report_post_id_placeholder">mis. 12345</string>
+    <string name="report_continue">Lanjutkan</string>
+
+    <!-- Lembar bawah alur laporan (pelaporan mode auth via TDLib) -->
+    <string name="report_loading">Menghubungkan ke Telegram…</string>
+    <string name="report_text_hint">Tambahkan detail</string>
+    <string name="report_text_placeholder">Jelaskan masalahnya (opsional)</string>
+    <string name="report_skip">Lewati</string>
+    <string name="report_submit">Kirim laporan</string>
+    <string name="report_success">Laporan terkirim. Terima kasih</string>
+    <string name="report_retry">Coba lagi</string>
+    <!-- %1$d adalah hitungan mundur retry-after dalam detik. -->
+    <plurals name="report_flood_wait_plural">
+        <item quantity="other">Terlalu banyak laporan. Tunggu %1$d detik</item>
+    </plurals>
+    <string name="report_flood_wait_generic">Terlalu banyak laporan. Coba lagi nanti</string>
+
+    <!-- Penjelasan sekali tampil sebelum laporan pertama (kedua mode). -->
+    <string name="report_about_dialog_title">Cara kerja pelaporan</string>
+    <string name="report_about_dialog_body">Laporanmu langsung dikirim ke moderator Telegram. Hortay tidak meninjau konten — semua moderasi diserahkan ke Telegram.</string>
+    <string name="report_about_dialog_ok">Mengerti</string>
+
+    <!-- Dialog instruksi setelah delegasi mode tamu membuka Telegram atau web. -->
+    <string name="report_guest_instruction_title">Selesaikan laporanmu</string>
+    <string name="report_guest_instruction_body">Telegram sudah terbuka. Temukan kanal atau kiriman dan gunakan opsi Laporkan dari menu (⋯ atau tekan lama).</string>
+
+    <!-- Item "Laporkan" di lembar aksi kiriman -->
+    <string name="report_action">Laporkan</string>
+
+    <!-- Alasan kegagalan MediaShareActions (ditampilkan via Toast di penampil layar penuh). -->
+    <string name="media_share_error_source_missing">Sumber tidak tersedia</string>
+    <string name="media_share_error_only_photos">Hanya foto yang bisa disalin</string>
+    <string name="media_share_error_clipboard_unavailable">Clipboard tidak tersedia</string>
+    <string name="media_share_error_insert_failed">Gagal menyimpan ke galeri</string>
+    <string name="media_share_error_mkdir">Gagal membuat folder %1$s</string>
+    <string name="media_share_error_intent_failed">Tidak ada aplikasi untuk menerima berbagi</string>
+
+    <!-- WebTelegramClient.lookupChannel timed out (tanpa gerbang rate-limit). -->
+    <string name="web_lookup_timed_out">Pencarian habis waktu</string>
+
+    <!-- Label aksesibilitas untuk lencana kanal terverifikasi di PostCard. -->
+    <string name="cd_verified_badge">Terverifikasi</string>
+    <string name="cd_premium_badge">Telegram Premium</string>
+
+    <!-- Lembar profil pengguna (UserProfileSheet) -->
+    <string name="user_profile_loading_name">Memuat…</string>
+    <string name="user_profile_bio">Tentang</string>
+    <string name="user_profile_bot_about">Tentang bot ini</string>
+    <string name="user_profile_about">Detail</string>
+    <string name="user_profile_personal_channel">Kanal pribadi</string>
+    <string name="user_profile_birthday">Ulang tahun</string>
+    <string name="user_profile_groups_in_common">Grup bersama</string>
+    <string name="user_profile_action_message">Pesan</string>
+    <string name="user_profile_handle_copied">Handle disalin</string>
+    <string name="user_profile_chip_bot">bot</string>
+    <string name="user_profile_chip_support">dukungan</string>
+    <string name="user_profile_status_online">online</string>
+    <string name="user_profile_status_recently">terakhir aktif baru-baru ini</string>
+    <string name="user_profile_status_last_week">terakhir aktif dalam seminggu</string>
+    <string name="user_profile_status_last_month">terakhir aktif dalam sebulan</string>
+    <string name="user_profile_status_just_now">terakhir aktif baru saja</string>
+    <plurals name="user_profile_status_was_minutes_ago">
+        <item quantity="other">terakhir aktif %d menit lalu</item>
+    </plurals>
+    <plurals name="user_profile_status_was_hours_ago">
+        <item quantity="other">terakhir aktif %d jam lalu</item>
+    </plurals>
+    <plurals name="user_profile_status_was_days_ago">
+        <item quantity="other">terakhir aktif %d hari lalu</item>
+    </plurals>
+    <string name="user_profile_status_was_long_ago">terakhir aktif lama sekali</string>
+
+    <!-- Kanal tersembunyi (daftar pengecualian dari feed) -->
+    <string name="settings_hidden_channels_title">Kanal tersembunyi</string>
+    <string name="settings_hidden_channels_subtitle_empty">Sembunyikan kanal tertentu dari feed utama</string>
+    <plurals name="settings_hidden_channels_count">
+        <item quantity="other">%d kanal disembunyikan dari feed</item>
+    </plurals>
+    <string name="hidden_channels_title">Kanal tersembunyi</string>
+    <string name="hidden_channels_empty_title">Tidak ada yang disembunyikan</string>
+    <string name="hidden_channels_empty_body">Kiriman dari kanal yang kamu sembunyikan tidak akan muncul di feed utama. Kamu tetap bisa melihatnya saat membuka kanal secara langsung.</string>
+    <string name="hidden_channels_unknown">Kanal tersembunyi</string>
+    <string name="hidden_channels_id_placeholder">id %1$d</string>
+    <string name="hidden_channels_unhide_for">Tampilkan %1$s di feed</string>
+</resources>

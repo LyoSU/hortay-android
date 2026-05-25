@@ -1,0 +1,652 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hortay</string>
+
+    <!-- Kimlik doğrulama ekranı -->
+    <string name="auth_phone_label">Telefon numarası</string>
+    <string name="auth_phone_helper">Ülke koduyla birlikte numara gir. Telegram bir doğrulama kodu gönderecek</string>
+    <string name="auth_password_label">2FA şifresi</string>
+    <string name="auth_password_hint">İpucu: %1$s</string>
+    <string name="auth_password_helper">Resmi Telegram uygulamasında İki Adımlı Doğrulama için ayarladığın şifre</string>
+    <string name="auth_password_forgot">Şifremi unuttum</string>
+    <string name="auth_password_recovery_sent">Sıfırlama kodu %1$s adresine gönderildi. Şifresiz giriş için kodu gir</string>
+    <string name="auth_password_recovery_code_label">E-posta kodu</string>
+    <string name="auth_password_recovery_back">Şifre gir</string>
+    <string name="auth_password_recovery_unavailable">Kurtarma e-postası eklenmemiş. 2FA yalnızca başka bir cihazda resmi Telegram üzerinden sıfırlanabilir</string>
+    <string name="auth_send_code">Kod gönder</string>
+    <string name="auth_continue">Devam et</string>
+    <string name="auth_continue_without_login">Giriş yapmadan: herkese açık kanalları oku</string>
+
+    <!-- Web (anonim / misafir) modu -->
+    <string name="web_feed_title">Akış</string>
+    <string name="web_channels_title">Kanallar</string>
+    <string name="web_saved_title">Kaydedilenler</string>
+    <string name="web_settings_title">Ayarlar</string>
+    <string name="web_add_channel">Kanal ekle</string>
+    <string name="web_loading">Yükleniyor…</string>
+    <string name="web_empty_posts">Henüz bir şey yok. Aboneliklerini kontrol et</string>
+    <string name="web_empty_channels">Henüz abonelik yok.\nAkış sekmesinden kanal ekle</string>
+    <string name="web_empty_channels_title">Henüz kanal yok</string>
+    <string name="web_empty_channels_body">Herkese açık bir kanal ekle; gönderileri akışında görünmeye başlasın</string>
+    <string name="web_add_mentioned_title">Kanallarında bahsedilen</string>
+    <string name="web_add_mentioned_count">Aboneliklerinde %1$d kez geçiyor</string>
+    <string name="web_empty_saved">Henüz kaydedilen yok</string>
+    <string name="web_welcome_title">Giriş yapmadan</string>
+    <string name="web_welcome_body">Birkaç herkese açık kanal ekle ve Telegram\'a giriş yapmadan oku</string>
+    <string name="web_refresh_error">Güncelleme başarısız: %1$s</string>
+    <string name="web_unsubscribe_title">Aboneliği iptal et?</string>
+    <string name="web_unsubscribe_body">@%1$s kanalı akışından çıkacak. Yer imlerine eklenen gönderiler Kaydedilenlerde kalır</string>
+    <string name="web_unsubscribe_confirm">Aboneliği iptal et</string>
+    <string name="web_cancel">İptal</string>
+    <string name="web_search_action">Gönderi ara</string>
+    <string name="web_search_hint">Kanallarında ara</string>
+    <string name="web_search_clear">Temizle</string>
+    <string name="web_search_prompt">Abone olduğun kanallardaki gönderilerde aramak için yaz</string>
+    <string name="web_search_no_results">"%1$s" için sonuç bulunamadı</string>
+    <string name="media_open_in_telegram">Telegram\'da aç</string>
+    <string name="web_status_not_found">kanal bulunamadı</string>
+    <string name="web_status_private">özel kanal</string>
+    <string name="web_status_rate_limited">Telegram beklenmesini istedi</string>
+    <string name="web_status_error">güncellenemedi</string>
+    <string name="web_status_parse_failure">sayfa biçimi değişti</string>
+    <string name="web_status_loading">güncelleniyor…</string>
+    <string name="web_retry_for">%1$s için yeniden dene</string>
+    <string name="web_settings_subtitle">Telegram girişi yok</string>
+    <string name="web_settings_signin">Telegram\'a giriş yap</string>
+    <string name="web_settings_signin_helper">Yorumlar, tepkiler ve özel kanallara erişim açılır. Abonelikler korunur</string>
+    <string name="web_settings_clear_cache">Önbelleği temizle</string>
+    <string name="web_settings_clearing">Temizleniyor…</string>
+    <string name="web_settings_clear_cache_helper">Önbelleğe alınan gönderileri ve içerikleri siler. Abonelikler ve kaydedilen gönderiler korunur</string>
+    <string name="web_settings_clear_cache_confirm_title">Önbelleğe alınan gönderiler silinsin mi?</string>
+    <string name="web_settings_clear_cache_confirm_body">Yerel olarak önbelleğe alınan kanal gönderileri ve görseller silinir. Abonelikler ve kaydedilen gönderiler korunur. Görünen içerik t.me\'den yeniden yüklenir</string>
+    <string name="web_settings_clear_cache_confirm_action">Temizle</string>
+    <string name="web_settings_clear_cache_cancel">İptal</string>
+    <string name="web_comments_unavailable">Yorumlar misafir modunda kullanılamaz. Yanıtları okumak için giriş yap</string>
+    <string name="web_comments_unavailable_title">Yorumlar kullanılamıyor</string>
+    <string name="web_settings_privacy_title">Bu modda Telegram ne görüyor</string>
+    <string name="web_settings_privacy_body">IP adresin ve masaüstü tarayıcı User-Agent\'ı. Çerez, hesap veya kişisel bilgi yok</string>
+    <string name="web_add_body">@kullanıcıadı, t.me/kullanıcıadı bağlantısı veya panodan yapıştır</string>
+    <string name="web_add_input_label">Kanal</string>
+    <string name="web_add_paste_clipboard">Panodan yapıştır: %1$s</string>
+    <string name="web_add_validating">Doğrulanıyor…</string>
+    <string name="web_add_lookup">Bul</string>
+    <string name="web_add_confirm">Ekle</string>
+    <string name="web_add_curated_title">Popüler kanallar</string>
+    <string name="web_add_check">Kontrol et</string>
+    <string name="web_add_invalid">@kullanıcıadı veya t.me/… bağlantısı gir</string>
+    <string name="web_add_not_found">@%1$s kanalı bulunamadı</string>
+    <string name="web_add_private">Kanal özel. Herkese açık gönderiler kullanılamıyor</string>
+    <string name="web_add_parse_failure">Telegram\'ın yanıtı işlenemedi</string>
+    <string name="web_add_rate_limited">İstek sınırı aşıldı. %1$d saniye sonra tekrar dene</string>
+    <string name="web_add_network_error">Ağ hatası: %1$s</string>
+    <!-- %1$s is a pre-formatted string from t.me (e.g. "1.5K", "262K", "12 345"),
+         not an Int. We don't parse the count, so this can't use <plurals> keyed
+         by quantity. If a future call site ever passes an Int, switch *that
+         site* to a new plural-keyed resource — don't migrate this one. -->
+    <string name="web_subscribers">Abone: %1$s</string>
+    <string name="web_deeplink_signin_required">Özel kanalları açmak için giriş yap</string>
+    <string name="auth_change_number">Numarayı değiştir</string>
+    <string name="auth_back">Geri</string>
+    <string name="auth_password_show">Şifreyi göster</string>
+    <string name="auth_password_hide">Şifreyi gizle</string>
+    <string name="auth_retry">Baştan başla</string>
+    <string name="auth_open_telegram_hint">Resmi Telegram\'ı aç, gerekeni yap ve geri dön</string>
+    <string name="auth_title_wait_code">Kodu gir</string>
+    <string name="auth_title_wait_password">2FA şifresi</string>
+    <string name="auth_title_error">İşlem gerekiyor</string>
+    <string name="auth_subtitle_wait_code">Kod gönderildi. Kontrol et: %1$s</string>
+    <string name="auth_subtitle_password_no_hint">Hesap iki adımlı doğrulamayla korunuyor</string>
+    <string name="auth_subtitle_password_with_hint">Hesap iki adımlı doğrulamayla korunuyor. 2FA şifreni gir</string>
+    <string name="auth_subtitle_default">Telegram kanallarını akış olarak oku — sohbet ve bildirim olmadan</string>
+    <string name="auth_country_label">Ülke</string>
+    <string name="auth_country_loading">Yükleniyor…</string>
+    <string name="auth_phone_placeholder">Telefon numarası</string>
+    <string name="auth_code_placeholder">SMS\'teki kelime veya ifade</string>
+    <string name="auth_resend_sending">Gönderiliyor…</string>
+    <string name="auth_resend_countdown">%1$d:%2$02d sonra tekrar dene</string>
+    <string name="auth_resend_via">Kodu tekrar gönder (%1$s)</string>
+    <string name="auth_resend_again">Yeniden gönder</string>
+
+    <!-- Ülke seçici -->
+    <string name="country_picker_title">Ülke seç</string>
+    <string name="country_picker_search">Ara</string>
+    <string name="country_picker_empty">Sonuç bulunamadı</string>
+    <string name="country_anonymous_numbers">Anonim numaralar</string>
+    <string name="country_other">Diğer ülke</string>
+
+    <!-- Doğrulama kodu kanalları -->
+    <string name="auth_channel_telegram_message">Başka cihazdaki Telegram</string>
+    <string name="auth_channel_sms_with_phone">%1$s numarasına SMS</string>
+    <string name="auth_channel_sms">SMS</string>
+    <string name="auth_channel_sms_word">Kelimeli SMS</string>
+    <string name="auth_channel_sms_phrase">İfadeli SMS</string>
+    <string name="auth_channel_call_with_phone">%1$s numarasına sesli arama</string>
+    <string name="auth_channel_call">sesli arama</string>
+    <string name="auth_channel_missed_call">cevapsız arama (numaranın son rakamlarını gir)</string>
+    <string name="auth_channel_flash_call">cevapsız arama</string>
+    <string name="auth_channel_fragment">Fragment aracılığıyla</string>
+    <string name="auth_channel_firebase">cihaz doğrulamasıyla</string>
+    <string name="auth_channel_other">başka bir yöntem</string>
+
+    <!-- Kimlik doğrulama hataları -->
+    <string name="auth_err_too_many_with_time">Çok fazla deneme. %1$s bekle</string>
+    <string name="auth_err_too_many_generic">Çok fazla deneme. Daha sonra tekrar dene</string>
+    <string name="auth_err_phone_invalid">Ülke kodunu ve rakamları kontrol et</string>
+    <string name="auth_err_phone_banned">Telegram bu numarayı engelledi. Resmi Telegram üzerinden giriş yapmayı dene</string>
+    <string name="auth_err_phone_flood">Telegram bu numaradan girişi geçici olarak sınırladı. Daha sonra dene</string>
+    <string name="auth_err_phone_occupied">Bu numara zaten bir hesaba kayıtlı. Kayıt yerine giriş yap</string>
+    <string name="auth_err_code_invalid">Yanlış kod. Kontrol edip tekrar dene</string>
+    <string name="auth_err_code_expired">Kodun süresi doldu. Yeni bir tane iste</string>
+    <string name="auth_err_password_invalid">Yanlış şifre. Tekrar dene</string>
+    <string name="auth_err_password_too_fresh">Şifre az önce değiştirildi. Telegram biraz beklenmesini isteyecek</string>
+    <string name="auth_err_password_recovery_na">Şifre kurtarma burada kullanılamıyor. 2FA\'yı resmi Telegram\'dan sıfırla</string>
+    <string name="auth_err_session_password_needed">2FA şifresi gerekiyor</string>
+    <string name="auth_err_app_misconfigured">Uygulama yapılandırma hatası. Hortay\'ı yeniden başlat veya güncellemeleri kontrol et</string>
+    <string name="auth_err_token_invalid">Kimlik bilgileri eşleşmiyor. Girişi yeniden başlat</string>
+    <string name="auth_err_generic">Bir şeyler ters gitti. Tekrar dene</string>
+    <string name="auth_err_step_failed">Adım tamamlanamadı (%1$s). Tekrar dene</string>
+    <string name="auth_err_email_required">Resmi Telegram\'da e-postayı onayla, sonra geri dön</string>
+    <string name="auth_err_phone_unregistered">Bu numaraya bağlı Telegram hesabı yok. Resmi uygulamada bir tane oluştur</string>
+    <string name="auth_err_other_device">Başka bir cihazdaki Telegram üzerinden girişi onayla</string>
+    <string name="auth_err_premium_required">Telegram Premium gerekiyor. Resmi Telegram\'a abone ol, sonra geri dön</string>
+    <string name="auth_err_init_failure">Telegram istemcisi yapılandırılamadı. Uygulamayı yeniden başlat</string>
+
+    <!-- Süre biçimlendirme -->
+    <string name="duration_seconds_short">%1$d sn</string>
+    <plurals name="duration_minutes">
+        <item quantity="one">%d dakika</item>
+        <item quantity="other">%d dakika</item>
+    </plurals>
+    <plurals name="duration_hours">
+        <item quantity="one">%d saat</item>
+        <item quantity="other">%d saat</item>
+    </plurals>
+    <string name="duration_minutes_short">%1$d dk</string>
+    <string name="duration_hours_short">%1$d sa</string>
+
+    <!-- Bağlantı başlığı -->
+    <string name="connection_waiting">Ağ bekleniyor</string>
+    <string name="connection_connecting">Bağlanıyor…</string>
+    <string name="connection_updating">Güncelleniyor…</string>
+    <plurals name="connection_flood_wait">
+        <item quantity="one">Telegram istekleri kısıtlıyor (%d sn)</item>
+        <item quantity="other">Telegram istekleri kısıtlıyor (%d sn)</item>
+    </plurals>
+
+    <!-- Gezinme -->
+    <string name="nav_feed">Akış</string>
+    <string name="nav_channels">Kanallar</string>
+    <string name="nav_saved">Kaydedilenler</string>
+    <string name="nav_profile">Profil</string>
+
+    <!-- Zaman tüneli -->
+    <string name="timeline_title">Akış</string>
+    <string name="timeline_empty">Burada henüz bir şey yok. Telegram\'da kanallara abone ol; akışında görünmeye başlasınlar</string>
+    <string name="timeline_empty_default_helper">Telegram\'da kanallara abone ol; akışında görünmeye başlasınlar</string>
+    <string name="timeline_empty_saved_title">Henüz kaydedilen yok</string>
+    <string name="timeline_empty_saved_helper">Sonra okumak için bir gönderiyi kaydetmek üzere yer imini tıkla</string>
+    <string name="timeline_empty_default_title">Burada henüz bir şey yok</string>
+    <string name="timeline_empty_caught_up_title">Her şeyi okudun</string>
+    <string name="timeline_empty_caught_up_helper">Akışındaki tüm gönderileri okudun. Yeni gelenler için aşağı çek.</string>
+    <string name="timeline_search_in_channel">Kanalda ara</string>
+    <string name="timeline_search_empty">Sonuç bulunamadı</string>
+    <string name="timeline_subscribers">Abone: %1$s</string>
+    <string name="timeline_saved_tab">Kaydedilenler</string>
+    <string name="channel_empty_title">Henüz gönderi yok</string>
+    <string name="channel_empty_body">Bu kanalda hiç gönderi yok</string>
+    <string name="channel_info_action">Kanal bilgisi</string>
+
+    <!-- Zaman biçimlendirme -->
+    <string name="time_just_now">şimdi</string>
+    <string name="time_minutes_short">%1$d dk</string>
+    <string name="time_hours_short">%1$d sa</string>
+    <string name="time_days_short">%1$d g</string>
+
+    <!-- Yeni gönderiler hapsi -->
+    <string name="new_posts_overflow">99+ yeni gönderi</string>
+    <plurals name="new_posts">
+        <item quantity="one">%d yeni gönderi</item>
+        <item quantity="other">%d yeni gönderi</item>
+    </plurals>
+
+    <!-- Okunmamış sayacı hapsi (OldestUnreadFirst akış modu) -->
+    <string name="unread_remaining_overflow">99+ okunmamış</string>
+    <plurals name="unread_remaining">
+        <item quantity="one">%d okunmamış</item>
+        <item quantity="other">%d okunmamış</item>
+    </plurals>
+
+    <!-- Gönderi kartı -->
+    <string name="post_translated_chip">Çevrildi · Orijinali göster</string>
+    <string name="post_forwarded_from">%1$s\'dan iletildi</string>
+    <string name="post_show_original">Orijinali göster</string>
+    <string name="post_translate">Çevir</string>
+    <string name="post_save">Gönderiyi kaydet</string>
+    <string name="post_unsave">Kaydedilenlerden kaldır</string>
+    <string name="post_copy_text">Metni kopyala</string>
+    <string name="post_share">Paylaş</string>
+    <string name="post_open_telegram">Telegram\'da aç</string>
+    <string name="post_copied_toast">Kopyalandı</string>
+    <string name="post_show_more">Daha fazla göster</string>
+
+    <!-- Sistem / süresi dolmuş medya -->
+    <string name="expired_photo">Kendiliğinden silinen fotoğraf silindi</string>
+    <string name="expired_video">Kendiliğinden silinen video silindi</string>
+    <string name="expired_video_note">Video mesajı silindi</string>
+    <string name="expired_voice">Sesli mesaj silindi</string>
+    <string name="service_pinned_message">Bir mesaj sabitlendi</string>
+    <plurals name="service_boost">
+        <item quantity="one">Kanal %d güçlendirme aldı</item>
+        <item quantity="other">Kanal %d güçlendirme aldı</item>
+    </plurals>
+    <plurals name="invite_dialog_subscribers">
+        <item quantity="one">%d abone</item>
+        <item quantity="other">%d abone</item>
+    </plurals>
+    <string name="service_giveaway_started">Çekiliş başladı</string>
+    <string name="service_screenshot">Ekran görüntüsü</string>
+    <string name="service_video_chat_started">Grup araması başladı</string>
+    <string name="service_video_chat_ended">Grup araması bitti</string>
+    <string name="service_video_call">Görüntülü arama</string>
+    <string name="service_voice_call">Sesli arama</string>
+    <string name="service_other">Sistem mesajı</string>
+
+    <!-- Gönderi gövdesi içeriği -->
+    <string name="document_unnamed">Belge</string>
+    <string name="voice_message">Sesli mesaj</string>
+    <string name="content_audio_fallback">Ses parçası</string>
+    <string name="content_invoice">Fatura</string>
+    <string name="content_giveaway">Çekiliş</string>
+    <string name="content_game">Oyun</string>
+    <string name="content_story">Hikaye</string>
+    <string name="content_premium_gift">Telegram Premium hediyesi</string>
+    <string name="content_gift">Hediye</string>
+    <string name="content_paid_locked">Kilitli ücretli içerik</string>
+    <string name="content_paid_stars">%1$d yıldız</string>
+    <string name="content_open_in_telegram">Telegram\'da aç</string>
+    <string name="poll_anonymous">Anonim anket</string>
+    <string name="poll_title">Anket</string>
+    <string name="poll_total_votes">%1$d oy</string>
+    <!-- Yeni MD3E anket kartı çipleri / eylemleri -->
+    <string name="poll_type_regular">Anket</string>
+    <string name="poll_type_quiz">Test</string>
+    <string name="poll_state_closed">Kesin sonuçlar</string>
+    <string name="poll_anonymous_short">Anonim</string>
+    <string name="poll_countdown_finished">Kapatılıyor…</string>
+    <string name="poll_total_votes_empty">Henüz oy yok</string>
+    <plurals name="poll_total_votes_plural">
+        <item quantity="one">%1$d oy</item>
+        <item quantity="other">%1$d oy</item>
+    </plurals>
+    <string name="poll_action_vote">Oy ver</string>
+    <string name="poll_action_retract">Oyu geri al</string>
+    <string name="poll_action_view_explanation">Neden?</string>
+    <string name="poll_action_add_option">Seçenek öner</string>
+    <string name="content_giveaway_completed">🎁 Çekiliş tamamlandı</string>
+    <string name="content_giveaway_winners">🎁 Çekiliş · kazananlar</string>
+    <string name="content_paid">⭐ Ücretli içerik</string>
+
+    <!-- Yorumlar -->
+    <string name="comments_title">Gönderi</string>
+    <string name="comments_loading">Yükleniyor…</string>
+    <plurals name="comments_count">
+        <item quantity="one">%d yorum</item>
+        <item quantity="other">%d yorum</item>
+    </plurals>
+    <string name="comments_empty_title">Henüz yorum yok</string>
+    <string name="comments_empty_body">Yeni yanıtlar geldikçe burada görünecek</string>
+    <string name="comments_disabled_title">Yorumlar kapalı</string>
+    <string name="comments_disabled_body">Bu kanalın bağlı bir tartışma grubu yok</string>
+    <string name="comments_unavailable">Tartışma kullanılamıyor</string>
+
+    <!-- Kanallar -->
+    <string name="channels_title">Kanallar</string>
+    <string name="channels_loading">Yükleniyor…</string>
+    <string name="channels_subscribers">Abone: %1$s</string>
+    <string name="channels_unmute">Bildirimleri aç</string>
+    <string name="channels_mute">Bildirimleri kapat</string>
+    <string name="channels_leave">Kanaldan ayrıl</string>
+    <string name="channels_join">Abone ol</string>
+    <string name="channels_hide_from_feed">Akıştan gizle</string>
+    <string name="channels_unhide_from_feed">Akışta göster</string>
+    <string name="channels_hide_from_feed_for">%1$s kanalını akıştan gizle</string>
+    <string name="channels_unhide_from_feed_for">%1$s kanalını akışta göster</string>
+    <string name="channels_empty_title">Henüz kanal yok</string>
+    <string name="channels_empty_helper">Telegram\'da kanallara abone ol; burada görünmeye başlasınlar</string>
+
+    <!-- Klasörler -->
+    <string name="folder_all">Tümü</string>
+    <string name="folder_archive">Arşiv</string>
+
+    <!-- Ayarlar -->
+    <string name="settings_profile_title">Profil</string>
+    <string name="settings_subtitle_profile">Hesap, trafik, indirmeler</string>
+    <string name="settings_subtitle_auto_download">Fotoğraflar, videolar, GIF\'ler</string>
+    <string name="settings_subtitle_auto_download_category_wifi">Wi-Fi üzerinden</string>
+    <string name="settings_subtitle_auto_download_category_mobile">Mobil veriyle</string>
+    <string name="settings_subtitle_auto_download_category_roaming">Dolaşımda</string>
+    <string name="timeline_subtitle_feed">%1$d kanal</string>
+    <string name="timeline_subtitle_saved">Yer imlerine alınan gönderiler</string>
+    <string name="settings_section_feed">Akış</string>
+    <string name="settings_feed_order_newest_title">En yeni üstte</string>
+    <string name="settings_feed_order_newest_subtitle">Eski gönderiler için aşağı kaydır</string>
+    <string name="settings_feed_order_oldest_title">En yeni altta</string>
+    <string name="settings_feed_order_oldest_subtitle">Telegram sohbeti gibi — yeni gönderiler altta görünür</string>
+    <string name="settings_feed_order_snackbar_to_newest">Akış yeniden sıralandı — en yeni üstte</string>
+    <string name="settings_feed_order_snackbar_to_oldest">Akış yeniden sıralandı — sohbet gibi, en yeni altta</string>
+    <string name="settings_snap_scroll_title">Tutturmalı kaydırma</string>
+    <string name="settings_snap_scroll_subtitle">Hızlı kaydırdığında her gönderi yerine kilitlenir — TikTok/Reels hissi</string>
+    <string name="settings_inline_autoplay_title">Akışta videoları otomatik oynat</string>
+    <string name="settings_inline_autoplay_subtitle">Önbellekte bulunan kısa videolar kaydırırken sessiz oynar. Sesle tam ekranda açmak için tıkla.</string>
+    <string name="settings_section_privacy">Gizlilik</string>
+    <string name="settings_hide_online_title">Çevrimiçi durumunu gizle</string>
+    <string name="settings_hide_online_subtitle">Hortay\'ı okurken Telegram kişilerine çevrimiçi göründüğünü gizler. Resmi Telegram uygulaması normal durum davranışını korur. Bu ayar yalnızca Hortay oturumlarını etkiler.</string>
+    <string name="timeline_unread_boundary">Okunmamış</string>
+    <string name="settings_section_traffic">Trafik</string>
+    <string name="settings_section_storage">Depolama</string>
+    <string name="settings_section_account">Hesap</string>
+    <string name="settings_section_author">Geliştirici</string>
+    <string name="settings_author_channel_title">Geliştiricinin kanalı</string>
+    <string name="settings_author_developer_title">Geliştirici</string>
+    <string name="settings_author_source_title">Kaynak kodu</string>
+    <string name="settings_section_about">Hakkında</string>
+    <string name="settings_language">Dil</string>
+    <string name="settings_language_summary_system">Sistem varsayılanı</string>
+    <string name="settings_language_dialog_title">Uygulama dili</string>
+    <string name="settings_logout_title">Çıkış yap</string>
+    <string name="settings_logout_subtitle">Telegram oturumu sıfırlanır, önbellek korunur</string>
+    <string name="settings_version">Sürüm</string>
+    <string name="settings_logout_dialog_title">Telegram\'dan çıkış yapılsın mı?</string>
+    <string name="settings_logout_dialog_text">Numaran ve doğrulama kodunu yeniden girmek gerekecek</string>
+    <string name="settings_logout_confirm">Çıkış yap</string>
+    <string name="settings_logout_cancel">İptal</string>
+    <string name="settings_traffic_downloaded">İndirildi</string>
+    <string name="settings_traffic_uploaded">Yüklendi</string>
+    <string name="settings_traffic_helper">İlk başlatmadan bu yana toplam. Önbellek temizleme bu sayacı sıfırlamaz, ayrı bir sayaçtır</string>
+    <string name="settings_traffic_reset">Sayacı sıfırla</string>
+    <string name="settings_storage_used_by">bu cihazda Hortay tarafından kullanılıyor</string>
+    <string name="settings_storage_clearing">Temizleniyor…</string>
+    <string name="settings_storage_clear">Medya önbelleğini temizle</string>
+    <string name="settings_storage_clear_helper">Önbelleğe alınan fotoğraf, video ve dosyaları siler. Mesaj veritabanı ve oturum korunur; bunları yalnızca çıkış yapmak siler</string>
+    <string name="settings_storage_media">Medya</string>
+    <string name="settings_storage_db">Veritabanı</string>
+
+    <!-- Medyayı otomatik indir -->
+    <string name="autodownload_section">Medyayı otomatik indir</string>
+    <string name="autodownload_entry_title">Medyayı otomatik indir</string>
+    <string name="autodownload_entry_subtitle">Wi-Fi, mobil veri veya dolaşımda fotoğraf, video ve GIF\'ler</string>
+    <string name="autodownload_screen_title">Otomatik indirme</string>
+    <string name="autodownload_header_helper">Kaydırırken beklememen için yeni gönderiler arka planda indirilir. Ne yükleneceğini ve boyut sınırını seç</string>
+    <string name="autodownload_category_wifi">Wi-Fi üzerinden</string>
+    <string name="autodownload_category_mobile">Mobil veri üzerinden</string>
+    <string name="autodownload_category_roaming">Dolaşımda</string>
+    <string name="autodownload_summary_off">Kapalı</string>
+    <string name="autodownload_summary_photos">Fotoğraflar</string>
+    <string name="autodownload_summary_videos_unbounded">Videolar</string>
+    <string name="autodownload_summary_videos_capped">%1$s\'a kadar video</string>
+    <string name="autodownload_summary_animations">GIF\'ler</string>
+    <string name="autodownload_toggle_photos">Fotoğraflar</string>
+    <string name="autodownload_toggle_photos_helper">Her zaman küçük boyutlu. Yavaş ağlarda bile anında yüklenir</string>
+    <string name="autodownload_toggle_videos">Videolar</string>
+    <string name="autodownload_toggle_videos_helper">Yalnızca aşağıdaki boyut sınırına kadar olan videolar</string>
+    <string name="autodownload_toggle_animations">GIF\'ler</string>
+    <string name="autodownload_toggle_animations_helper">Döngülü klipler ve animasyonlar</string>
+    <string name="autodownload_video_max_label">Maksimum video boyutu</string>
+    <string name="autodownload_video_max_value">%1$s\'a kadar</string>
+    <string name="autodownload_data_saver_note">Sistem Veri Tasarrufu açık. Android ayarlarında kapatana kadar mobil veride video ve GIF\'ler duraklatıldı</string>
+    <string name="autodownload_reset">Varsayılanlara sıfırla</string>
+    <string name="autodownload_reset_done">Varsayılanlar geri yüklendi</string>
+    <string name="autodownload_back">Geri</string>
+    <string name="size_mb_int">%1$d MB</string>
+
+    <!-- Boyutlar -->
+    <string name="size_bytes">%1$d B</string>
+    <string name="size_kb">%1$.1f KB</string>
+    <string name="size_mb">%1$.1f MB</string>
+    <string name="size_gb">%1$.2f GB</string>
+    <string-array name="size_units">
+        <item>B</item>
+        <item>KB</item>
+        <item>MB</item>
+        <item>GB</item>
+    </string-array>
+
+    <!-- Medya -->
+    <string name="media_video_quality">Video kalitesi</string>
+    <string name="media_retry">yeniden dene</string>
+    <string name="media_load_stalled">indirme takıldı</string>
+    <string name="spoiler_sensitive_tap">Hassas içerik. Görmek için tıkla</string>
+    <string name="web_media_placeholder_photo">[görsel]</string>
+    <string name="web_media_placeholder_video">[video]</string>
+    <string name="web_media_placeholder_round_video">[video mesaj]</string>
+    <string name="web_media_placeholder_voice">[sesli mesaj]</string>
+    <string name="web_media_placeholder_document">[belge]</string>
+    <string name="web_media_placeholder_sticker">[çıkartma]</string>
+    <string name="web_media_placeholder_gif">[GIF]</string>
+
+    <!-- Kişisel yazar kanal modu: yöneticinin adının altında "kanal adında" alt başlığı -->
+    <string name="post_in_channel">%1$s kanalında</string>
+
+    <!-- Yanıt / alıntı kartı tür etiketleri (üst öğenin başlığı yokken gösterilir) -->
+    <string name="reply_kind_photo">Fotoğraf</string>
+    <string name="reply_kind_video">Video</string>
+    <string name="reply_kind_animation">GIF</string>
+    <string name="reply_kind_document">Dosya</string>
+    <string name="reply_kind_audio">Ses</string>
+    <string name="reply_kind_voice">Sesli mesaj</string>
+    <string name="reply_kind_video_note">Video mesaj</string>
+    <string name="content_description_video_note">Yuvarlak video mesaj. Sesi açıp kapatmak için tıkla.</string>
+    <string name="reply_kind_sticker">Çıkartma</string>
+    <string name="reply_kind_poll">Anket</string>
+
+    <!-- Kullanıcı varsayılanları -->
+    <string name="user_default_name">Kullanıcı</string>
+    <string name="channel_default_name">Kanal</string>
+
+    <!-- Genel / TD hataları -->
+    <string name="error_generic">Bir şeyler ters gitti</string>
+    <string name="err_flood_with_time">Telegram istekleri kısıtlıyor. %1$s içinde tekrar dene</string>
+    <string name="err_flood_generic">Telegram istekleri kısıtlıyor. Daha sonra tekrar dene</string>
+    <string name="err_unauthorized">Oturum sıfırlandı. Yeniden giriş yap</string>
+    <string name="err_forbidden">%1$s yapılamıyor: eylem yasak</string>
+    <string name="err_not_found">Bulunamadı: %1$s</string>
+    <string name="err_server">Telegram sunucusu geçici olarak kullanılamıyor. Bir dakika sonra tekrar dene</string>
+    <string name="err_no_connection">Bağlantı yok. İnterneti kontrol edip tekrar dene</string>
+    <string name="err_failed_op">%1$s yapılamadı</string>
+
+    <!-- İşlem etiketleri (hata şablonlarında kullanılan mastar fiil biçimi) -->
+    <string name="op_refresh_feed">akışı yenile</string>
+    <string name="op_load_channel">kanalı yükle</string>
+    <string name="op_load_older">eski gönderileri yükle</string>
+    <string name="op_change_reaction">tepkiyi değiştir</string>
+    <string name="op_vote_in_poll">ankette oy ver</string>
+    <string name="op_close_poll">anketi kapat</string>
+    <string name="op_mute">bildirimleri kapat</string>
+    <string name="op_unmute">bildirimleri aç</string>
+    <string name="op_join_channel">kanala abone ol</string>
+    <string name="op_leave_channel">kanaldan ayrıl</string>
+    <string name="op_translate">mesajı çevir</string>
+    <string name="op_search">kanalda ara</string>
+
+    <!-- Anonim → kimlik doğrulamalı geçiş öneri sayfası -->
+    <string name="migration_title">Anonim abonelikler taşınsın mı?</string>
+    <plurals name="migration_subtitle">
+        <item quantity="one">Giriş yapmadan %1$d kanali takip ettin. Hesabınla abone olmak ister misin?</item>
+        <item quantity="other">Giriş yapmadan %1$d kanalı takip ettin. Hesabınla abone olmak istediklerini seç</item>
+    </plurals>
+    <string name="migration_subtitle_disclaimer">Katılmak kanalı Telegram\'ına ekler. Yönetici seni yeni üye olarak görecek</string>
+    <string name="migration_select_all">Tümünü seç</string>
+    <string name="migration_deselect_all">Tümünü kaldır</string>
+    <!-- Dürüst metin: buna dokunmak öneriyi kalıcı olarak kapatır (proposalShown=true,
+         MigrationCoordinator). "Sonraya" ertelemez — öneri bir daha görünmez. -->
+    <string name="migration_skip">Bir daha gösterme</string>
+    <string name="migration_confirm">Abone ol (%1$d)</string>
+    <string name="migration_progress_label">%2$d içinde %1$d</string>
+
+    <!-- Talkback için avatar / görsel içerik açıklamaları. -->
+    <string name="avatar_for_channel">%1$s için avatar</string>
+
+    <!-- Üst çubukta kalıcı misafir modu rozeti. -->
+    <string name="guest_mode_badge">Misafir modu</string>
+
+    <!-- Aranan kanal özel olduğunda gösterilen giriş CTA\'sı. -->
+    <string name="web_add_signin_for_private">Özel kanallara erişmek için giriş yap</string>
+
+    <!-- Abonelik iptal simgesi için kanal adıyla Talkback etiketi. -->
+    <string name="web_unsubscribe_from">%1$s aboneliğini iptal et</string>
+
+    <!-- Üst çubuklardaki yalnızca simge düğmeleri için genel TalkBack contentDescription etiketleri. -->
+    <string name="action_back">Geri</string>
+    <string name="action_close">Kapat</string>
+    <string name="action_clear">Temizle</string>
+    <string name="action_search">Ara</string>
+    <string name="action_save_to_gallery">Galeriye kaydet</string>
+    <string name="action_copy_image">Görseli kopyala</string>
+    <string name="action_share_media">Paylaş</string>
+    <!-- [UserMessageBus.Action] tarafından görüntülenen snackbar eylem etiketleri. Tüm
+         eylem tabanlı snackbar\'larda ortak; kaynak kimliği üreticilerden referans alınır. -->
+    <string name="action_open_telegram">Telegram\'ı aç</string>
+    <string name="action_sign_in">Giriş yap</string>
+    <!-- Boş durumlarda kullanılan birincil CTA (TimelineEmptyHero varsayılanı + kanal boş sekmesi). -->
+    <string name="empty_action_open_telegram">Abone olmak için Telegram\'ı aç</string>
+    <!-- Ücretli tepki çipine tıklandığında gösterilen uzun basma snackbar\'ı. -->
+    <string name="reactions_paid_explainer">Ücretli tepkiler yalnızca Telegram\'dan verilebilir</string>
+    <!-- Tam ekran görüntüleyicide Kaydet / Kopyala / Paylaş eyleminden sonra gösterilen tost. -->
+    <string name="media_saved_photo">Fotoğraf galeriye kaydedildi</string>
+    <string name="media_saved_video">Video galeriye kaydedildi</string>
+    <string name="media_save_failed">Kaydedilemedi: %1$s</string>
+    <string name="media_copied">Görsel kopyalandı</string>
+    <string name="media_copy_failed">Kopyalanamadı: %1$s</string>
+    <string name="media_share_failed">Paylaşılamadı: %1$s</string>
+    <!-- Gönderi yanındaki satır içi durum rozetleri. -->
+    <string name="post_badge_edited">Düzenlendi</string>
+    <string name="post_badge_pinned">Sabitlendi</string>
+    <!-- Gönderi gövdesindeki satır içi bağlantıya uzun basma menüsü. -->
+    <string name="link_action_open">Aç</string>
+    <string name="link_action_copy">Bağlantıyı kopyala</string>
+    <string name="link_action_share">Paylaş</string>
+    <string name="link_copied_toast">Bağlantı kopyalandı</string>
+    <!-- Telegram dışına işaret eden gizlenmiş TextUrl span\'ında kimlik avı koruması iletişim kutusu. -->
+    <string name="link_confirm_title">Bağlantıyı aç</string>
+    <string name="link_confirm_body">Şu bağlantıyı açmak üzeresin:</string>
+    <string name="action_cancel">İptal</string>
+    <!-- t.me/<kullanıcıadı> kanala değil başka bir şeye yönlendiğinde snackbar mesajları. -->
+    <string name="link_unsupported_user">Profil bağlantıları Telegram\'da açılır</string>
+    <string name="link_unsupported_group">Grup sohbetleri Telegram\'da açılır</string>
+    <string name="link_unsupported_other">Bu bağlantı Telegram\'da açılır</string>
+    <string name="link_not_found">Bağlantı bulunamadı</string>
+    <!-- Kanal kapsamı olmaksızın bir #etiket bağlantısı / tıklaması geldiğinde gösterilir.
+         %1$s önünde # ile etikettir. -->
+    <string name="link_hashtag_search">Etiket araması şimdilik yalnızca kanal içinde çalışıyor — %1$s için aramak üzere bir kanal aç</string>
+    <!-- Bilinen bir kanala çözümlenen #etiket@kanal varlığı veya kapsamlı PostBody tıklamasında gösterilir.
+         %1$s # ile etiket, %2$s @ ile kanal kullanıcıadıdır. -->
+    <string name="link_hashtag_search_in_channel">%1$s aramak için %2$s\'ı aç — global etiket araması henüz mevcut değil</string>
+    <!-- Davet bağlantısı (t.me/+abc...) için onay iletişim kutusu. -->
+    <string name="invite_dialog_title">Kanala katıl</string>
+    <string name="invite_dialog_unknown_chat">Telegram kanalı</string>
+    <string name="invite_dialog_join">Katıl</string>
+
+    <!-- Ayarlar → Güvenlik bölümü (CSAE uyumluluğu) -->
+    <string name="settings_section_safety">Güvenlik</string>
+    <string name="settings_safety_report_title">İçerik bildir</string>
+    <string name="settings_safety_report_subtitle">Telegram moderatörlerine kanal veya gönderi bildir</string>
+    <string name="settings_safety_child_policy_title">Çocuk güvenliği standartları</string>
+    <string name="settings_safety_child_policy_subtitle">Hortay\'ın çocuk güvenliği standartları yayımlandı</string>
+    <string name="settings_safety_privacy_title">Gizlilik politikası</string>
+    <string name="settings_safety_privacy_subtitle">Hortay verilerini nasıl işliyor</string>
+
+    <!-- İçerik bildir ekranı (Ayarlar → Güvenlik → İçerik bildir) -->
+    <string name="report_content_title">İçerik bildir</string>
+    <string name="report_handle_label">Kanal kullanıcı adı</string>
+    <string name="report_invalid_handle">Geçerli bir @kullanıcıadı gir (2–32 karakter)</string>
+    <string name="report_post_id_label">Gönderi kimliği (isteğe bağlı)</string>
+    <string name="report_post_id_placeholder">örn. 12345</string>
+    <string name="report_continue">Devam et</string>
+
+    <!-- Bildir akışı alt sayfası (TDLib üzerinden uygulama içi kimlik doğrulamalı bildirme) -->
+    <string name="report_loading">Telegram\'a bağlanıyor…</string>
+    <string name="report_text_hint">Ayrıntı ekle</string>
+    <string name="report_text_placeholder">Sorunu açıkla (isteğe bağlı)</string>
+    <string name="report_skip">Atla</string>
+    <string name="report_submit">Bildiri gönder</string>
+    <string name="report_success">Bildiri gönderildi. Teşekkürler</string>
+    <string name="report_retry">Tekrar dene</string>
+    <!-- %1$d saniye cinsinden geri sayım. -->
+    <plurals name="report_flood_wait_plural">
+        <item quantity="one">Çok fazla bildiri. Lütfen %1$d saniye bekle</item>
+        <item quantity="other">Çok fazla bildiri. Lütfen %1$d saniye bekle</item>
+    </plurals>
+    <string name="report_flood_wait_generic">Çok fazla bildiri. Lütfen daha sonra tekrar dene</string>
+
+    <!-- İlk bildirimden önce bir kez gösterilen açıklama (her iki modda da). -->
+    <string name="report_about_dialog_title">Bildirme nasıl çalışır</string>
+    <string name="report_about_dialog_body">Bildirin doğrudan Telegram moderatörlerine iletilir. Hortay içerik incelemez — tüm moderasyonu Telegram üstlenir.</string>
+    <string name="report_about_dialog_ok">Anladım</string>
+
+    <!-- Misafir modu delegasyonu Telegram\'ı veya web\'i açtıktan sonra gösterilen talimat iletişim kutusu. -->
+    <string name="report_guest_instruction_title">Bildirimi tamamla</string>
+    <string name="report_guest_instruction_body">Telegram açıldı. Kanal veya gönderiyi bul ve menüden Bildir seçeneğini kullan (⋯ veya uzun bas).</string>
+
+    <!-- Gönderi eylem sayfası "Bildir" öğesi -->
+    <string name="report_action">Bildir</string>
+
+    <!-- MediaShareActions hata nedenleri (tam ekran görüntüleyicide Toast olarak gösterilir). -->
+    <string name="media_share_error_source_missing">Kaynak mevcut değil</string>
+    <string name="media_share_error_only_photos">Yalnızca fotoğraflar kopyalanabilir</string>
+    <string name="media_share_error_clipboard_unavailable">Pano kullanılamıyor</string>
+    <string name="media_share_error_insert_failed">Galeriye kaydedilemedi</string>
+    <string name="media_share_error_mkdir">%1$s klasörü oluşturulamadı</string>
+    <string name="media_share_error_intent_failed">Paylaşım için uygulama bulunamadı</string>
+
+    <!-- WebTelegramClient.lookupChannel zaman aşımına uğradı (hız sınırı yok). -->
+    <string name="web_lookup_timed_out">Arama zaman aşımına uğradı</string>
+
+    <!-- PostCard'daki doğrulanmış kanal rozeti için erişilebilirlik etiketi. -->
+    <string name="cd_verified_badge">Doğrulandı</string>
+    <string name="cd_premium_badge">Telegram Premium</string>
+
+    <!-- Kullanıcı profili sayfası (UserProfileSheet) -->
+    <string name="user_profile_loading_name">Yükleniyor…</string>
+    <string name="user_profile_bio">Hakkında</string>
+    <string name="user_profile_bot_about">Bu bot hakkında</string>
+    <string name="user_profile_about">Ayrıntılar</string>
+    <string name="user_profile_personal_channel">Kişisel kanal</string>
+    <string name="user_profile_birthday">Doğum günü</string>
+    <string name="user_profile_groups_in_common">Ortak gruplar</string>
+    <string name="user_profile_action_message">Mesaj gönder</string>
+    <string name="user_profile_handle_copied">Kullanıcı adı kopyalandı</string>
+    <string name="user_profile_chip_bot">bot</string>
+    <string name="user_profile_chip_support">destek</string>
+    <string name="user_profile_status_online">çevrimiçi</string>
+    <string name="user_profile_status_recently">son görülme yakın zamanda</string>
+    <string name="user_profile_status_last_week">son görülme bu hafta içinde</string>
+    <string name="user_profile_status_last_month">son görülme bu ay içinde</string>
+    <string name="user_profile_status_just_now">son görülme az önce</string>
+    <plurals name="user_profile_status_was_minutes_ago">
+        <item quantity="one">%d dakika önce görüldü</item>
+        <item quantity="other">%d dakika önce görüldü</item>
+    </plurals>
+    <plurals name="user_profile_status_was_hours_ago">
+        <item quantity="one">%d saat önce görüldü</item>
+        <item quantity="other">%d saat önce görüldü</item>
+    </plurals>
+    <plurals name="user_profile_status_was_days_ago">
+        <item quantity="one">%d gün önce görüldü</item>
+        <item quantity="other">%d gün önce görüldü</item>
+    </plurals>
+    <string name="user_profile_status_was_long_ago">uzun süredir görülmedi</string>
+
+    <!-- Gizli kanallar (akış dışlama listesi) -->
+    <string name="settings_hidden_channels_title">Gizli kanallar</string>
+    <string name="settings_hidden_channels_subtitle_empty">Belirli kanalları ana akıştan gizle</string>
+    <plurals name="settings_hidden_channels_count">
+        <item quantity="one">%d kanal akıştan gizlendi</item>
+        <item quantity="other">%d kanal akıştan gizlendi</item>
+    </plurals>
+    <string name="hidden_channels_title">Gizli kanallar</string>
+    <string name="hidden_channels_empty_title">Gizlenen yok</string>
+    <string name="hidden_channels_empty_body">Buradan gizlediğin kanalların gönderileri ana akışta görünmez. Kanalı doğrudan açtığında yine de görürsün.</string>
+    <string name="hidden_channels_unknown">Gizli kanal</string>
+    <string name="hidden_channels_id_placeholder">id %1$d</string>
+    <string name="hidden_channels_unhide_for">%1$s kanalını akışta göster</string>
+</resources>

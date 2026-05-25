@@ -23,7 +23,7 @@ No Firebase, no Crashlytics, no analytics, no third-party push. INTERNET permiss
 - **Full post features** — polls (vote, quiz reveal, multi-answer), reactions, custom emoji, animated stickers (TGS/WebM/WEBP), albums, inline videos, round video messages
 - **Comments overlay** with predictive back, reply chains, and a user-profile sheet
 - **Material 3 Expressive** — dynamic color, motion scheme, reduced-motion aware
-- **English and Ukrainian** with full plurals
+- **13 languages** — English, Ukrainian, Russian, Spanish, German, French, Italian, Portuguese (Brazil), Polish, Turkish, Indonesian, Persian, Arabic — with proper CLDR plural forms throughout
 
 ## Building
 

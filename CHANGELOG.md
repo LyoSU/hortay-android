@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- App now reads in 11 more languages — Russian, Spanish, German, French, Italian, Portuguese (Brazil), Polish, Turkish, Indonesian, Persian and Arabic — pick yours in Settings → Language or via the system per-app picker.
+
 ### Changed
 - Feed-order toggle in Settings is now positional — "Newest on top" / "Newest at the bottom" with one-line subtitles — and switching it pops a confirmation explaining where new posts will appear.
 - The post's unread strip now collapses with a brief shrink-and-fade when dwell-ack marks the post read, instead of a passive opacity fade.
