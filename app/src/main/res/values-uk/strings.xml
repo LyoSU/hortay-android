@@ -367,8 +367,6 @@
     <string name="settings_section_about">Про застосунок</string>
     <string name="settings_language">Мова</string>
     <string name="settings_language_summary_system">Системна</string>
-    <string name="settings_language_summary_uk">Українська</string>
-    <string name="settings_language_summary_en">English</string>
     <string name="settings_language_dialog_title">Мова застосунку</string>
     <string name="settings_logout_title">Вийти з акаунта</string>
     <string name="settings_logout_subtitle">Вихід скине сесію Telegram, кеш збережеться</string>

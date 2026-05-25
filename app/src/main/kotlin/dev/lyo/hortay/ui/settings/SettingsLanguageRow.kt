@@ -29,8 +29,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.annotation.StringRes
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.LocaleStore
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 
 /**
  * Per-app language row. Reads / writes through [LocaleStore], which bridges Hortay's
@@ -44,13 +47,22 @@ import dev.lyo.hortay.data.LocaleStore
  * is recreated explicitly so [dev.lyo.hortay.MainActivity.attachBaseContext] can wrap
  * the base context with the new [java.util.Locale] before resources resolve.
  *
- * The locales offered must stay aligned with `res/xml/locales_config.xml` (`en`, `uk`).
+ * The locales offered must stay aligned with `res/xml/locales_config.xml`. Append a new
+ * [LanguageEntry] to [LANGUAGES] only after the matching `values-XX/strings.xml` exists,
+ * otherwise the picker shows a language that resolves back to the default at runtime.
  *
  * Why not [androidx.appcompat.app.AppCompatDelegate.setApplicationLocales]: it dispatches
  * through an internal `sActivityDelegates` set populated only by `AppCompatActivity`, so
  * with a plain `ComponentActivity` (ARCHITECTURE.md pins us here) the call is a no-op on every
  * API level — symptom was "pick a language, dialog dismisses, nothing else happens".
  */
+private data class LanguageEntry(val tag: String, @StringRes val labelRes: Int)
+
+private val LANGUAGES: ImmutableList<LanguageEntry> = persistentListOf(
+    LanguageEntry("en", R.string.settings_language_summary_en),
+    LanguageEntry("uk", R.string.settings_language_summary_uk),
+)
+
 @Composable
 internal fun LanguageRow(index: Int, count: Int) {
     val context = LocalContext.current
@@ -58,10 +70,11 @@ internal fun LanguageRow(index: Int, count: Int) {
     // Re-read on every dialog open so the row reflects an out-of-band change (e.g. the
     // user flipped the language via the system per-app picker on API 33+ and came back).
     val activeTag = remember(showDialog) { LocaleStore.read(context) }
-    val summary = when (activeTag) {
-        "uk" -> stringResource(R.string.settings_language_summary_uk)
-        "en" -> stringResource(R.string.settings_language_summary_en)
-        else -> stringResource(R.string.settings_language_summary_system)
+    val matchedRes = LANGUAGES.firstOrNull { it.tag == activeTag }?.labelRes
+    val summary = if (matchedRes != null) {
+        stringResource(matchedRes)
+    } else {
+        stringResource(R.string.settings_language_summary_system)
     }
     SettingsRow(
         symbol = "translate",
@@ -113,16 +126,13 @@ private fun LanguageDialog(
                     selected = activeTag == null,
                     onClick = { onSelect(null) },
                 )
-                LanguageOption(
-                    label = stringResource(R.string.settings_language_summary_uk),
-                    selected = activeTag == "uk",
-                    onClick = { onSelect("uk") },
-                )
-                LanguageOption(
-                    label = stringResource(R.string.settings_language_summary_en),
-                    selected = activeTag == "en",
-                    onClick = { onSelect("en") },
-                )
+                LANGUAGES.forEach { entry ->
+                    LanguageOption(
+                        label = stringResource(entry.labelRes),
+                        selected = activeTag == entry.tag,
+                        onClick = { onSelect(entry.tag) },
+                    )
+                }
             }
         },
     )
