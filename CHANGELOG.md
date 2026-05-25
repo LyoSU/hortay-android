@@ -6,6 +6,7 @@
 
 ### Fixed
 - Switching to Channels or Settings and back to the feed no longer flashes a skeleton — the feed paints in place at the same scroll position instead of replaying a loading state.
+- Channel avatar on a deleted-post tombstone no longer flickers between the initial letter and the photo when other channels in the archive update.
 
 ## [0.8.0] — 2026-05-25
 
