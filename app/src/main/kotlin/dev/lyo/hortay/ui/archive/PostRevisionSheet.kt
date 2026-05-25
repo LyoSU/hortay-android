@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -68,7 +70,15 @@ fun PostRevisionSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(Modifier.padding(horizontal = 16.dp)) {
+        // verticalScroll(): without it long revisions (image + multi-paragraph
+        // diff + caveat) ran off the bottom of the sheet with no way to reach
+        // the action row. ModalBottomSheet doesn't scroll its content for us —
+        // it just constrains the height to the sheet's expanded slot.
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
             Text(
                 stringResource(
                     if (isDeleted) R.string.revision_sheet_title_deleted
