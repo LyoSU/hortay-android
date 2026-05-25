@@ -2037,8 +2037,16 @@ class PostsRepository(
         // archive capture.
         if (update.editDate <= 0) return
 
+        // editDate stamp + revisionCount bump together — UME(editDate > 0) is the
+        // single canonical signal for "this post was edited", so the EditedChip's
+        // count comes from the same path as the badge itself. Counting per
+        // UpdateMessageContent instead would inflate on poll votes / live-loc /
+        // paid-media reveals (any non-edit UMC).
         updateOnePostByAnyMemberId(update.chatId, update.messageId) {
-            it.copy(editDate = update.editDate.toLong() * 1000L)
+            it.copy(
+                editDate = update.editDate.toLong() * 1000L,
+                revisionCount = it.revisionCount + 1,
+            )
         }
 
         // Archive: capture VERSION row. Pulls the fresh content from
@@ -2298,12 +2306,12 @@ class PostsRepository(
         } ?: return
 
         if (target.mediaAlbumId == 0L) {
-            // Solo post — fast path, swap content in place.
+            // Solo post — fast path, swap content in place. revisionCount is
+            // NOT bumped here: UMC fires for any content mutation (poll votes,
+            // live-location ticks, paid-media reveals); the chip's counter is
+            // bumped from handleEdited(editDate > 0) only.
             updateOnePost(update.chatId, update.messageId) {
-                it.copy(
-                    content = MessageContentMapper.map(update.newContent, res),
-                    revisionCount = it.revisionCount + 1,
-                )
+                it.copy(content = MessageContentMapper.map(update.newContent, res))
             }
             return
         }
@@ -2326,22 +2334,10 @@ class PostsRepository(
                 .warnUnlessCancelled(TAG, "getMessage(${update.chatId},${update.messageId})")
                 .getOrNull() ?: return@launch
             handleNewMessage(msg)
-            // Bump revisionCount on the freshly-merged album anchor. handleNewMessage →
-            // foldRawIntoCurrent replaces the existing anchor with a fresh mapper-built
-            // post (revisionCount = 0); increment it here after the merge so the EditedChip
-            // reflects the actual edit count. The second _posts.update is cheap — at most
-            // one list traversal — and fires outside the debounce window so no CAS storm.
-            _posts.update { current ->
-                current.mutate { list ->
-                    for (i in list.indices) {
-                        val p = list[i]
-                        if (p.chatId == update.chatId && update.messageId in p.albumMessageIds) {
-                            list[i] = p.copy(revisionCount = p.revisionCount + 1)
-                            break
-                        }
-                    }
-                }
-            }
+            // revisionCount intentionally not bumped here. The paired
+            // UpdateMessageEdited(editDate > 0) is the canonical edit signal —
+            // handleEdited bumps the count once per real admin edit. Bumping in
+            // both places (UMC + UME) double-counted album edits.
         }
     }
 

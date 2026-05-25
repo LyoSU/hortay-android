@@ -380,10 +380,10 @@ class ArchiveRepository(
      * relaunch — TDLib hands us posts with no archive metadata, and we'd
      * otherwise have to wait for the next edit to repopulate the counter.
      *
-     * `revisionCount == COUNT(VERSION)` because every captured VERSION corresponds
-     * to a real edit (single capture path — see [TdlibContentMetaExtractor]).
-     * Entries with cnt == 0 are excluded by the SQL `GROUP BY` itself, and Kotlin
-     * filters cnt < 1 defensively.
+     * `revisionCount == COUNT(VERSION) - 1`: every archived message starts
+     * with a baseline VERSION (Phase 4 — captureBaselineSnapshot on first
+     * ingest), so the edit count is total rows minus that baseline. SQL
+     * already filters cnt > 0 via HAVING; Kotlin filters cnt >= 1 defensively.
      */
     fun observeTdlibRevisionCounts(): kotlinx.coroutines.flow.Flow<Map<Pair<Long, Long>, Int>> =
         db.postSnapshotQueries.selectTdlibVersionCounts()

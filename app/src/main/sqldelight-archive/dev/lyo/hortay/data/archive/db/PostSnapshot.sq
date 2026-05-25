@@ -107,11 +107,21 @@ WHERE source_kind = ? AND source_key = ? AND message_key = ? AND kind = 'VERSION
 ORDER BY id DESC
 LIMIT 1;
 
+-- Counts admin edits per message. Baseline VERSIONs (captured on first ingest)
+-- always pair with at least one row, so the natural edit-count formula is
+-- `total VERSIONs - 1` (the -1 swallows the baseline). HAVING > 1 then hides
+-- never-edited posts whose only row is the baseline itself — without this
+-- guard every archived post would surface an EditedChip.
+--
+-- The `-1` form is intentionally robust to legacy data: pre-Phase-4 captures
+-- wrote VERSIONs with `edited_at_ms IS NULL` for real edits too, so a column
+-- filter would have lost the count for them. Subtraction works uniformly.
 selectTdlibVersionCounts:
-SELECT source_key, message_key, COUNT(*) AS cnt
+SELECT source_key, message_key, COUNT(*) - 1 AS cnt
 FROM PostSnapshot
 WHERE source_kind = 'TDLIB' AND kind = 'VERSION'
-GROUP BY source_key, message_key;
+GROUP BY source_key, message_key
+HAVING cnt > 0;
 
 -- Joined tombstone read: one row per DELETED snapshot, with latest VERSION
 -- content_blob and ArchivedChannel metadata. Replaces the previous N+M
