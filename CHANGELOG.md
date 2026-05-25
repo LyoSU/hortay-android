@@ -31,6 +31,8 @@
 - Live-location ticks, paid-media reveals, self-destruct timer expiries and other internal TDLib content updates no longer fill the archive with false revisions.
 - The post-archive revision timeline now anchors the first dot at the post's publication time, so a freshly-edited post reads as "published → edited" rather than the first dot misleadingly carrying the edit timestamp.
 - Archive purge and retention sweep no longer leak media files on disk — clearing snapshots also reclaims their image and video bytes.
+- Deleted comments no longer appear as ghost cards in the channel feed — the tombstone reconstruction now scopes itself to channel posts and leaves comment deletions inside their discussion thread.
+- The post-archive revision timeline keeps the publication-time anchor even on the rare cold-start race where an admin's edit reaches the app before the as-published snapshot — earlier the two dots could read out of order.
 
 ## [0.7.0] — 2026-05-21
 

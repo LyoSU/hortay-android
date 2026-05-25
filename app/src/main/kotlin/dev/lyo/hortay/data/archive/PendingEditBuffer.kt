@@ -41,15 +41,23 @@ class PendingEditBuffer(private val nowMs: () -> Long = System::currentTimeMilli
     private data class Entry(val content: TdApi.MessageContent, val expiresAtMs: Long)
 
     private val pending = ConcurrentHashMap<Pair<Long, Long>, Entry>()
+    private val stashCount = java.util.concurrent.atomic.AtomicInteger(0)
 
     /**
      * Stash an incoming [TdApi.UpdateMessageContent]. If a paired
      * [TdApi.UpdateMessageEdited] arrives within [TTL_MS], [commitOnEdited]
      * returns this content. Otherwise the entry expires silently on next
      * call to [pruneExpired] / [commitOnEdited].
+     *
+     * Opportunistic prune: every [STASH_PRUNE_EVERY] stash() folds in a
+     * [pruneExpired] sweep so the map can't grow unboundedly on channels
+     * that emit many non-paired UMC events (poll-vote / live-location
+     * streams the user idles on). Amortised O(1) per stash and no separate
+     * timer coroutine to coordinate with test schedulers.
      */
     fun stash(chatId: Long, messageId: Long, content: TdApi.MessageContent) {
         pending[chatId to messageId] = Entry(content, nowMs() + TTL_MS)
+        if (stashCount.incrementAndGet() % STASH_PRUNE_EVERY == 0) pruneExpired()
     }
 
     /**
@@ -90,5 +98,13 @@ class PendingEditBuffer(private val nowMs: () -> Long = System::currentTimeMilli
          * the UMC is almost certainly a non-edit mutation that won't pair.
          */
         const val TTL_MS: Long = 1500L
+
+        /**
+         * Stash-counter modulus that triggers an opportunistic [pruneExpired].
+         * 32 keeps amortised cost negligible — one map iteration per dozens of
+         * stash calls — while bounding the worst case at `STASH_PRUNE_EVERY`
+         * entries above the true active set between sweeps.
+         */
+        const val STASH_PRUNE_EVERY = 32
     }
 }

@@ -24,10 +24,10 @@ class ArchiveSweepTest {
         val settingsFlow = MutableStateFlow(ArchiveSettings(enabled = true, retentionDays = 30))
 
         val ancientRepo = ArchiveRepository(db, settingsFlow, clock = { 0L })
-        ancientRepo.captureTdlibVersion(ChatRef.tdlib(1), "1", null, null, meta("ancient"))
+        ancientRepo.captureTdlibBaseline(ChatRef.tdlib(1), "1", null, meta("ancient"), originalDateMs = 0L)
 
         val freshRepo = ArchiveRepository(db, settingsFlow, clock = { now })
-        freshRepo.captureTdlibVersion(ChatRef.tdlib(1), "2", null, null, meta("fresh"))
+        freshRepo.captureTdlibBaseline(ChatRef.tdlib(1), "2", null, meta("fresh"), originalDateMs = now)
 
         ArchiveSweep(db, settingsFlow, clock = { now }).run()
 
@@ -45,7 +45,7 @@ class ArchiveSweepTest {
         val repo = ArchiveRepository(db, settingsFlow, clock = { 1_000L })
 
         repeat(5) { i ->
-            repo.captureTdlibVersion(ChatRef.tdlib(1), "$i", null, null, meta("v$i"))
+            repo.captureTdlibBaseline(ChatRef.tdlib(1), "$i", null, meta("v$i"), originalDateMs = 1_000L)
         }
         ArchiveSweep(db, settingsFlow, clock = { 1_000L }).run()
 
@@ -61,7 +61,7 @@ class ArchiveSweepTest {
         val settingsFlow = MutableStateFlow(ArchiveSettings(
             enabled = true, retentionDays = Int.MAX_VALUE, maxRecords = Int.MAX_VALUE))
         val ancientRepo = ArchiveRepository(db, settingsFlow, clock = { 0L })
-        ancientRepo.captureTdlibVersion(ChatRef.tdlib(1), "1", null, null, meta("ancient"))
+        ancientRepo.captureTdlibBaseline(ChatRef.tdlib(1), "1", null, meta("ancient"), originalDateMs = 0L)
 
         ArchiveSweep(db, settingsFlow, clock = { Long.MAX_VALUE / 2 }).run()
 
@@ -79,7 +79,7 @@ class ArchiveSweepTest {
 
         // Write 250 rows (the repo evicts every 100 inserts, so we expect ≤ 200 at all times)
         repeat(250) { i ->
-            repo.captureTdlibVersion(ChatRef.tdlib(1), "$i", null, null, meta("v$i"))
+            repo.captureTdlibBaseline(ChatRef.tdlib(1), "$i", null, meta("v$i"), originalDateMs = 1_000L)
         }
 
         ArchiveSweep(db, settingsFlow, clock = { 1_000L }).run()
@@ -99,7 +99,7 @@ class ArchiveSweepTest {
         val now = 30L * 86_400_000L + 1_000_000L
 
         val ancientRepo = ArchiveRepository(db, settingsFlow, clock = { 0L })
-        ancientRepo.captureTdlibVersion(ChatRef.tdlib(1), "1", null, null, meta("ancient"))
+        ancientRepo.captureTdlibBaseline(ChatRef.tdlib(1), "1", null, meta("ancient"), originalDateMs = 0L)
 
         // Initial sweep at 90d retention — ancient (30d old) stays
         ArchiveSweep(db, settingsFlow, clock = { now }).run()

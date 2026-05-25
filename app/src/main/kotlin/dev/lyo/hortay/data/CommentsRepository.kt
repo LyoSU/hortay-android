@@ -603,7 +603,6 @@ class CommentsRepository(
                         val archive = archiveRepository
                         if (archive != null) {
                             val buffered = pendingCommentEdits.commitOnEdited(upd.chatId, upd.messageId)
-                            val postedAtMs = live[idx].date.toLong() * 1000L
                             scope.launch {
                                 val content: TdApi.MessageContent = buffered
                                     ?: runCatching {
@@ -617,14 +616,13 @@ class CommentsRepository(
                                 val meta = if (mediaSha != null && baseMeta.mediaRef != null) {
                                     baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
                                 } else baseMeta
-                                archive.captureTdlibVersion(
+                                archive.captureTdlibEdit(
                                     chat = dev.lyo.hortay.data.archive.ChatRef.tdlib(upd.chatId),
                                     messageKey = upd.messageId.toString(),
                                     albumKey = null,
                                     editedAtMs = upd.editDate.toLong() * 1000L,
                                     meta = meta,
                                     isComment = true,
-                                    originalDateMs = postedAtMs,
                                 )
                                 // upsertChannel intentionally skipped here — discussion-group
                                 // metadata is the channel anchor's, not the comment author's;
@@ -849,6 +847,7 @@ class CommentsRepository(
     fun clear() {
         resolvedAnchors.clear()
         optimisticOverrides.clear()
+        pendingCommentEdits.clear()
         synchronized(streams) { streams.clear() }
     }
 

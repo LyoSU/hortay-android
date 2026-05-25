@@ -107,6 +107,19 @@ WHERE source_kind = ? AND source_key = ? AND message_key = ? AND kind = 'VERSION
 ORDER BY id DESC
 LIMIT 1;
 
+-- "Baseline" = the as-published VERSION row, stamped with edited_at_ms IS NULL
+-- so it remains identifiable across edits. At most one per message. Used by
+-- captureTdlibBaseline as the existence check so a race between cold-start
+-- ingest and an early UpdateMessageEdited can't either skip the baseline
+-- OR write it with the edit-row's clock() timestamp — see
+-- ArchiveRepository.captureTdlibBaseline KDoc.
+selectBaselineForMessage:
+SELECT id
+FROM PostSnapshot
+WHERE source_kind = ? AND source_key = ? AND message_key = ?
+  AND kind = 'VERSION' AND edited_at_ms IS NULL
+LIMIT 1;
+
 -- Counts admin edits per message. Baseline VERSIONs (captured on first ingest)
 -- always pair with at least one row, so the natural edit-count formula is
 -- `total VERSIONs - 1` (the -1 swallows the baseline). HAVING > 1 then hides
@@ -153,5 +166,11 @@ LEFT JOIN PostSnapshot v
                   AND kind = 'VERSION')
 LEFT JOIN ArchivedChannel c
     ON c.source_kind = d.source_kind AND c.source_key = d.source_key
-WHERE d.kind = 'DELETED' AND d.source_kind = 'TDLIB'
+-- is_comment = 0 keeps deleted *comments* out of the channel feed: a deleted
+-- comment lives only inside its discussion thread, so reconstructing it as a
+-- ghost card in the channel timeline would surface a tombstone where the
+-- original post never existed for the reader. Comment tombstones still live
+-- in the archive (selectAllForFilter with scope = COMMENTS reaches them); the
+-- filter is purely scoped to the feed-reconstruction read path.
+WHERE d.kind = 'DELETED' AND d.source_kind = 'TDLIB' AND d.is_comment = 0
 ORDER BY d.seen_at_ms DESC;

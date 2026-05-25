@@ -78,27 +78,36 @@ class ArchiveRepository(
     fun isEnabled(): Boolean = settings.value.enabled
 
     /**
-     * Capture a TDLib content snapshot (a VERSION row).
+     * Capture the as-published baseline VERSION row — `seen_at_ms = originalDateMs`,
+     * `edited_at_ms = null` — so the revision timeline anchors on "when the post
+     * was published" rather than "when Hortay first observed it".
      *
-     * @param meta extracted by the caller from `TdApi.MessageContent`. Repository is
-     *   intentionally TDLib-free for testability.
-     * @param minithumb optional. Pass the raw `Minithumbnail.data` for singles —
-     *   composite tiling for albums is a future extension and not currently wired.
-     * @param originalDateMs the post's publication time. When this is the FIRST
-     *   snapshot for [messageKey], it's used as the row's `seen_at_ms` so the
-     *   revision timeline anchors on "when the post was published" rather than
-     *   "when Hortay first saw the edit". Subsequent edit snapshots always use
-     *   the current clock.
+     * Idempotency: skips when a baseline row already exists for [messageKey]
+     * regardless of content hash. There is exactly one publication event per
+     * message; the baseline is a fixed left anchor on the revision timeline.
+     *
+     * **A content-hash check would be wrong here.** Cold-start ingest fires
+     * the baseline call via `scope.launch` after merging the post into `_posts`;
+     * an `UpdateMessageEdited(editDate > 0)` can land for the same message
+     * before the launched coroutine acquires `writeMutex`. The legacy unified
+     * capture path then saw the edit row as "latest" and either dropped the
+     * baseline as a dup (when content matched) or wrote it with `clock()` as
+     * `seen_at_ms` (when it didn't) — both broke the timeline ordering. The
+     * `selectBaselineForMessage` existence check is invariant under that race.
+     *
+     * @param meta extracted from `TdApi.MessageContent`. Repository stays TDLib-free.
+     * @param originalDateMs the post's publication time in ms. Required —
+     *   without it there is no "baseline" semantic, the caller should use
+     *   [captureTdlibEdit] instead.
      */
-    suspend fun captureTdlibVersion(
+    suspend fun captureTdlibBaseline(
         chat: ChatRef,
         messageKey: String,
         albumKey: String?,
-        editedAtMs: Long?,
         meta: TdlibContentMeta,
+        originalDateMs: Long,
         minithumb: ByteArray? = null,
         isComment: Boolean = false,
-        originalDateMs: Long? = null,
     ) {
         val s = settings.first()
         if (!s.enabled || !s.captureEdits) return
@@ -112,20 +121,71 @@ class ArchiveRepository(
         // isChosen, etc.) cannot poison dedup. See [ContentNormalizer] KDoc.
         val hash = ContentBlobCodec.hash(ContentNormalizer.canonicalBytes(meta))
         writeMutex.withLock {
-            val existing = db.postSnapshotQueries.latestForMessage(
+            val existing = db.postSnapshotQueries.selectBaselineForMessage(
                 chat.kind.name, chat.key, messageKey,
             ).executeAsOneOrNull()
-            if (existing?.content_hash == hash) {
-                // Dedupped — release the refcount bump that copyIfAvailable just
-                // applied so we don't leak. The file row stays alive if other
-                // snapshots reference it.
+            if (existing != null) {
+                // Baseline already captured — release the refcount bump from
+                // copyIfAvailable so the media file row isn't leaked.
                 meta.mediaRef?.localArchiveSha?.let { sha ->
                     runCatching { mediaStore?.releaseRef(sha) }
                 }
                 return
             }
-            val seenAtMs = if (existing == null && originalDateMs != null) originalDateMs
-                           else clock()
+            insertSnapshot(
+                chat = chat, messageKey = messageKey, albumKey = albumKey,
+                kind = SnapshotKind.VERSION, editedAtMs = null,
+                contentKind = "tdlib", blob = blob, hash = hash,
+                textPreview = meta.textPreview,
+                minithumb = minithumb ?: meta.mediaRef?.minithumbBytes,
+                deletedKeys = null, isComment = isComment,
+                seenAtMs = originalDateMs,
+            )
+            maybeEvictByCap()
+        }
+        _events.tryEmit(ArchiveEvent.Captured(chat, messageKey))
+    }
+
+    /**
+     * Capture an admin-edit VERSION row — `seen_at_ms = clock()`,
+     * `edited_at_ms = editedAtMs`. One call per paired
+     * `UpdateMessageContent` + `UpdateMessageEdited(editDate > 0)` event.
+     *
+     * Idempotency: skips when the latest row for this message already carries
+     * the same content_hash (TDLib re-emitting the same pair on cold-start
+     * catch-up / reconnect).
+     *
+     * `seen_at_ms` is **always** `clock()`. Even when the call happens to be
+     * the first row for this message (no baseline ever captured, e.g. the
+     * comment archive that intentionally skips baseline), the edit must keep
+     * its clock-time stamp — otherwise a later baseline call would land at
+     * publication time and the edit would precede it on the ASC timeline.
+     */
+    suspend fun captureTdlibEdit(
+        chat: ChatRef,
+        messageKey: String,
+        albumKey: String?,
+        editedAtMs: Long,
+        meta: TdlibContentMeta,
+        minithumb: ByteArray? = null,
+        isComment: Boolean = false,
+    ) {
+        val s = settings.first()
+        if (!s.enabled || !s.captureEdits) return
+        if (chat in s.excludedChats) return
+
+        val blob = ContentBlobCodec.encode(meta)
+        val hash = ContentBlobCodec.hash(ContentNormalizer.canonicalBytes(meta))
+        writeMutex.withLock {
+            val existing = db.postSnapshotQueries.latestForMessage(
+                chat.kind.name, chat.key, messageKey,
+            ).executeAsOneOrNull()
+            if (existing?.content_hash == hash) {
+                meta.mediaRef?.localArchiveSha?.let { sha ->
+                    runCatching { mediaStore?.releaseRef(sha) }
+                }
+                return
+            }
             insertSnapshot(
                 chat = chat, messageKey = messageKey, albumKey = albumKey,
                 kind = SnapshotKind.VERSION, editedAtMs = editedAtMs,
@@ -133,7 +193,7 @@ class ArchiveRepository(
                 textPreview = meta.textPreview,
                 minithumb = minithumb ?: meta.mediaRef?.minithumbBytes,
                 deletedKeys = null, isComment = isComment,
-                seenAtMs = seenAtMs,
+                seenAtMs = clock(),
             )
             maybeEvictByCap()
         }

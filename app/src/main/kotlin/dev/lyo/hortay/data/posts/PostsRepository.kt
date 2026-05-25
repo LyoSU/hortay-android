@@ -1773,13 +1773,14 @@ class PostsRepository(
         // the ingest path on a slow downstream collector.
         for (post in addedForEmit) _newArrivals.tryEmit(post)
 
-        // Archive baseline capture (Phase 4): write a VERSION row for the post's
+        // Archive baseline capture: write a VERSION row for the post's
         // ORIGINAL content (editDate == 0 — message has not been edited yet) so
         // the revision sheet has a true "as-published" anchor instead of falling
         // back to the first-edit caveat. Only fires for posts the user actually
-        // sees added to the feed AND only when archive is enabled. captureTdlibVersion
-        // is idempotent via the latestForMessage hash check, so a repeat call on
-        // re-ingest is a cheap no-op.
+        // sees added to the feed AND only when archive is enabled.
+        // captureTdlibBaseline is idempotent via the selectBaselineForMessage
+        // existence check (NOT content hash — see its KDoc for the race that
+        // motivated that), so a repeat call on re-ingest is a cheap no-op.
         //
         // `editDate != 0` messages are deliberately skipped: the edit-aware capture
         // path (handleEdited) is the only writer for those. Capturing here would
@@ -1796,13 +1797,13 @@ class PostsRepository(
     }
 
     /**
-     * Captures the as-published VERSION row for a freshly-ingested message.
-     *
-     * Mirrors the structure of `handleEdited`'s archive path but with
-     * `editedAtMs = null` and `originalDateMs = message.date * 1000` — the
-     * repository uses originalDateMs as the row's `seen_at_ms` ONLY when no
-     * prior row exists for this message, so a baseline+edit pair produces
-     * the right two timeline anchors.
+     * Captures the as-published baseline VERSION row for a freshly-ingested
+     * message. The archive repository pins `seen_at_ms = originalDateMs` and
+     * uses `selectBaselineForMessage` existence — not content hash — as its
+     * idempotency check, so this call is race-safe against an
+     * `UpdateMessageEdited` that lands for the same message before the
+     * baseline coroutine wins `writeMutex` (see
+     * [ArchiveRepository.captureTdlibBaseline] KDoc).
      *
      * Errors are swallowed (caller has no recovery): archive misses on a
      * single post are recoverable on the next user-visible edit.
@@ -1820,14 +1821,13 @@ class PostsRepository(
             baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
         } else baseMeta
         runCatching {
-            repo.captureTdlibVersion(
+            repo.captureTdlibBaseline(
                 chat = ChatRef.tdlib(chat.id),
                 messageKey = message.id.toString(),
                 albumKey = message.mediaAlbumId.takeIf { it != 0L }?.toString(),
-                editedAtMs = null,
                 meta = meta,
-                isComment = false,
                 originalDateMs = message.date.toLong() * 1000L,
+                isComment = false,
             )
             val livePost = _posts.value.firstOrNull { it.chatId == chat.id && it.id == message.id }
             if (livePost != null) {
@@ -2078,14 +2078,13 @@ class PostsRepository(
             val meta = if (mediaSha != null && baseMeta.mediaRef != null) {
                 baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
             } else baseMeta
-            archiveRepository.captureTdlibVersion(
+            archiveRepository.captureTdlibEdit(
                 chat = ChatRef.tdlib(update.chatId),
                 messageKey = update.messageId.toString(),
                 albumKey = livePost.mediaAlbumId.takeIf { it != 0L }?.toString(),
                 editedAtMs = update.editDate.toLong() * 1000L,
                 meta = meta,
                 isComment = false,
-                originalDateMs = livePost.date,
             )
             archiveRepository.upsertChannel(
                 chat = ChatRef.tdlib(update.chatId),
@@ -2563,6 +2562,10 @@ class PostsRepository(
             _archivedChatIds.value = emptySet()
             _mainChatIds.value = emptySet()
             pendingLastMessages.clear()
+            pendingArchiveEdits.clear()
+            pendingDeletionsByAlbum.clear()
+            albumDeletionTimers.values.forEach { it.cancel() }
+            albumDeletionTimers.clear()
             _initialSyncDone.value = false
         }
         runCatching { snapshotStore.clear() }
