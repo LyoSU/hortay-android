@@ -22,11 +22,12 @@ import java.util.ArrayDeque
  * **Two sub-pools**: muted vs. audio-capable. A muted instance is built with
  * [VideoOnlyRenderersFactory] which skips the audio renderer entirely — that drops
  * the `AudioMix` partial wakelock that AudioTrack would otherwise hold for the
- * lifetime of every player, even at volume=0. The vast majority of our usage is
- * muted (timeline autoplay, WebM stickers, custom emoji); only the fullscreen
- * video viewer needs audio. Pool reuse only happens between callers of the same
- * mute regime — handing an audio-capable instance to a sticker would re-arm
- * AudioMix even though we don't need it.
+ * lifetime of every player, even at volume=0. Muted callers: timeline autoplay,
+ * round-video notes, and guest-mode (URL) WebM stickers. TDLib-mode WebM stickers
+ * and custom emoji moved to the ffmpeg alpha path ([WebmAlphaImage]) and no longer
+ * consume ExoPlayer instances. Only the fullscreen video viewer needs audio.
+ * Pool reuse only happens between callers of the same mute regime — handing an
+ * audio-capable instance to a sticker would re-arm AudioMix even though we don't need it.
  *
  * Threading: ExoPlayer must be touched from the application looper (main thread).
  * All compose call sites already are, so no extra locking is needed beyond the

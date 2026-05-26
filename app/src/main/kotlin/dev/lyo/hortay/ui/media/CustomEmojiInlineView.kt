@@ -1,21 +1,26 @@
 package dev.lyo.hortay.ui.media
 
+import android.animation.ValueAnimator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.data.CustomEmojiSticker
 import dev.lyo.hortay.data.DownloadPriority
@@ -29,12 +34,16 @@ import dev.lyo.hortay.data.StickerFormat
  *     post text.
  *   • Inside reaction chips when the bucket is a custom-emoji reaction.
  *
- * Battery-conscious by default: at the small sizes where this view is used (≤ 28dp),
- * driving a 30 fps WebM decoder per emoji is wasteful. So we render the static
- * [CustomEmojiSticker.thumb] for WebM and static-WEBP custom emojis, and only run a
- * full Lottie animation for TGS (Lottie is GPU-cheap even at thumbnail size). Pass
- * `animateAlways = true` in the rare cases where animated playback is wanted (e.g. a
- * focused selection state).
+ * Both animated formats play inline at thumbnail size, each over a shared decode +
+ * shared clock so N copies of an emoji cost N cheap draws off one source, not N
+ * players: TGS via [InlineCustomEmojiRenderer] (one [com.airbnb.lottie.LottieDrawable]
+ * per id in [CustomEmojiAnimator]); WebM via [WebmAlphaImage] (one ffmpeg VP9+alpha
+ * decode per id in [dev.lyo.hortay.data.media.WebmFrameCache], one
+ * [WebmAnimationClock] tick). WebM used to be pinned to its static thumb because the
+ * only animator then available was a per-instance ExoPlayer — prohibitive at inline
+ * size; the shared frame cache removed that cost, so WebM now animates inline like
+ * TGS. Static WEBP stays static (no animation to run). Reduced motion (system animator
+ * scale 0) collapses both animated paths to their first frame / static thumb.
  *
  * `tintFromText`: if the sticker is monochrome (`needsRepainting`), it's tinted with
  * [tintColor] so the glyph reads on top of any surface — same way the official Telegram
@@ -46,7 +55,6 @@ fun CustomEmojiInlineView(
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
     tintColor: Color? = null,
-    animateAlways: Boolean = false,
     priority: DownloadPriority = DownloadPriority.Avatar,
     /**
      * Optional pre-resolved sticker. When supplied (typical FormattedTextRenderer
@@ -86,33 +94,24 @@ fun CustomEmojiInlineView(
     //   • Tgs: the static thumb if TDLib gave us one (LottieStickerView underlays
     //     it while .tgs streams), else the .tgs media itself.
     //   • Webp: the WEBP image at media.fileId.
-    //   • Webm: the static thumb at inline size; if animateAlways is on (focused
-    //     picker context) and there's no thumb, fall back to the .webm media
-    //     so the placeholder waits on the actual playback file rather than
-    //     hiding before WebmStickerPlayer has a frame to draw.
+    //   • Webm: the static thumb if TDLib gave us one (WebmAlphaImage underlays it
+    //     while the .webm decodes), else the .webm media itself so the placeholder
+    //     waits on the actual playback file rather than hiding before there's a
+    //     frame to draw. Same shape as Tgs now that WebM animates inline too.
     // Web mode passes null fileIds and uses the remoteUrl chain instead — there
     // we trust Coil / LottieUrlStore for their own loading visuals and let the
     // metadata-resolution placeholder be the only one we paint.
-    // First fileId that actually has to be ready before SOMETHING paints in the
-    // sticker box.
     val firstVisibleFileId: Int? = sticker?.let {
         when (it.format) {
             StickerFormat.Tgs -> it.thumb?.fileId ?: it.media.fileId
             StickerFormat.Webp -> it.media.fileId
-            StickerFormat.Webm -> {
-                val canAnimate = animateAlways && it.media.fileId != null
-                if (canAnimate) it.thumb?.fileId ?: it.media.fileId
-                else it.thumb?.fileId
-            }
+            StickerFormat.Webm -> it.thumb?.fileId ?: it.media.fileId
         }
     }
     val binding = rememberMediaBinding(fileId = firstVisibleFileId, priority = priority)
 
     val contentReady = when {
         sticker == null -> false
-        sticker.format == StickerFormat.Webm &&
-            sticker.thumb == null &&
-            !(animateAlways && sticker.media.fileId != null) -> false
         firstVisibleFileId == null -> true
         else -> binding.isReady
     }
@@ -175,64 +174,68 @@ fun CustomEmojiInlineView(
                 )
             }
             StickerFormat.Webm -> {
-                // WebM custom emojis ALWAYS render as the static WEBP thumb at
-                // inline size. Tested approaches and why each was rejected:
+                // WebM custom emoji animate INLINE via [WebmAlphaImage], mirroring how
+                // the Tgs branch animates inline via [InlineCustomEmojiRenderer]. Both
+                // share ONE decode + ONE clock across every instance of the same id
+                // (TGS: CustomEmojiAnimator; WebM: WebmFrameCache + WebmAnimationClock),
+                // so N copies of an emoji in a post cost N cheap draws off one source —
+                // not N players. That shared-cost pipeline is what removed the original
+                // reason WebM was pinned to a static thumb: the old path span up one
+                // per-instance ExoPlayer per emoji, which was prohibitive at inline size.
                 //
-                //   1. Animate via raw `WebmStickerPlayer` — t.me/i/emoji serves
-                //      WebMs as pre-rendered `yuv420p` (no alpha channel) baked
-                //      against `srgb(0,0,0)`. The original sticker carries alpha
-                //      as a sidecar VP9 stream via Matroska BlockAdditional which
-                //      standard Android `MediaCodec` ignores, so the post card
-                //      gets a solid black square wherever the sticker was supposed
-                //      to be transparent.
+                // Gate matches Tgs: animate whenever there's a TDLib fileId to decode.
+                // Guest mode (URL-only, fileId == null) keeps the static thumb because
+                // [WebmAlphaImage] needs a local file path.
+                // Per-instance/off-screen pausing is handled by the shared clock, which
+                // only advances while the app produces frames — same as the TGS animator.
                 //
-                //   2. Animate + apply a luma-key fragment shader to recover
-                //      transparency (`alpha = max(r, g, b)`). Mathematically
-                //      equivalent to Telegram Web's `mix-blend-mode: lighten`.
-                //      Works visually for stickers made of bright colours but
-                //      collapses for any sticker with intentionally dark/black
-                //      glyph regions (a black pupil, a navy outline) — those
-                //      pixels read as "background" to the shader and disappear
-                //      with the actual background.
-                //
-                //   3. Add `media3-decoder-vp9` to decode the alpha sidecar via
-                //      libvpx. Correct visual but ~10 MB of native libs across
-                //      arm64 + x86_64 just to animate inline emojis at 24 dp.
-                //      Disproportionate cost vs. the WEBP thumb that already
-                //      gives the right glyph with proper alpha.
-                //
-                // The thumb is a single Coil-cached lookup so it appears
-                // instantly — no animation, but no artifacts and no delay
-                // either. Same visual contract as TDLib mode.
-                //
-                // `animateAlways = true` keeps the TDLib-mode escape hatch for a
-                // focused picker UI where the file genuinely carries alpha (HW
-                // VP9-alpha or a libvpx ext build). Guest mode never opts into
-                // it because the URL-only sticker has no alpha to recover.
-                val canAnimateTdlib = animateAlways && sticker.media.fileId != null
-                if (canAnimateTdlib) {
-                    WebmStickerPlayer(
-                        fileId = sticker.media.fileId,
-                        thumb = sticker.thumb,
-                        contentDescription = contentDescription,
-                        modifier = Modifier.fillMaxSize(),
-                        priority = priority,
-                    )
-                } else if (sticker.thumb != null) {
-                    TdMediaImage(
-                        media = sticker.thumb,
-                        contentDescription = contentDescription,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit,
-                        placeholderColor = null,
-                        showProgress = false,
-                        priority = priority,
-                    )
+                // reducedMotion: off-switch mirroring effectiveSkeletonGrace's test —
+                // animator scale at 0 means the user disabled animations; we then draw
+                // frame 0 instead of running the clock.
+                val canAnimate = sticker.media.fileId != null
+                val reducedMotion = ValueAnimator.getDurationScale() == 0f
+
+                // Separate binding for the .webm playback file: the `firstVisibleFileId`
+                // binding above targets the thumb (placeholder gating); we need the webm
+                // readyPath independently so the thumb shows while the larger playback
+                // file downloads in parallel.
+                val webmBinding = if (canAnimate) {
+                    rememberMediaBinding(fileId = sticker.media.fileId, priority = priority)
+                } else null
+
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val density = LocalDensity.current
+                    val sizePx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
+                    var firstFrameRendered by remember(sticker.customEmojiId) { mutableStateOf(false) }
+
+                    // Static thumb underlay — shown until the first decoded WebM frame
+                    // lands (or permanently when not animating).
+                    if (sticker.thumb != null && (!canAnimate || !firstFrameRendered)) {
+                        TdMediaImage(
+                            media = sticker.thumb,
+                            contentDescription = contentDescription,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit,
+                            placeholderColor = null,
+                            showProgress = false,
+                            priority = priority,
+                        )
+                    }
+                    // Animated overlay — mounted whenever there's a decodable fileId.
+                    if (canAnimate) {
+                        WebmAlphaImage(
+                            key = "emoji_${sticker.customEmojiId}",
+                            path = webmBinding?.readyPath,
+                            sizePx = sizePx,
+                            modifier = Modifier.fillMaxSize(),
+                            animate = !reducedMotion,
+                            onFirstFrame = { firstFrameRendered = true },
+                        )
+                    }
                 }
-                // Else: no thumb AND no animation path → there is literally
-                // nothing to draw for this sticker. The needsPlaceholder
-                // overlay below keeps the loading disc visible so the box
-                // doesn't render as transparent dead space.
+                // Else: no thumb AND no fileId → nothing to draw. The needsPlaceholder
+                // overlay below keeps the loading disc visible so the box doesn't render
+                // as transparent dead space.
             }
         }
 

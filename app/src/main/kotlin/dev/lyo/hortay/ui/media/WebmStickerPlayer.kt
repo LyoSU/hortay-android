@@ -2,6 +2,7 @@ package dev.lyo.hortay.ui.media
 
 import android.view.TextureView
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -12,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -22,43 +24,27 @@ import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.TdMedia
 
 /**
- * Plays a Telegram WebM (VP9) sticker. Looped, muted, no controls — the typical "video
- * sticker" UX. Built on a per-instance [ExoPlayer] because video decoders are scarce
- * (most devices ship 2-4 VP9 decoders) and ExoPlayer manages decoder pooling internally.
+ * Plays a Telegram WebM (VP9+alpha) sticker. Looped, muted, no controls — the typical
+ * "video sticker" UX.
  *
- * Renders into a [TextureView] (NOT `PlayerView`/SurfaceView). Telegram's WebM stickers
- * carry a real alpha channel — transparent backgrounds — and SurfaceView is a hardware
- * overlay that renders in its own window layer behind the app. Transparent regions of
- * the video, on a SurfaceView, "punch through" the app window and reveal whatever the
- * OS shows underneath, which on a dark theme reads as a black square. TextureView
- * renders into the app's normal GL-backed canvas, so alpha composites correctly with
- * the surrounding content. `isOpaque = false` is the bit that flips that behaviour on;
- * leaving it at the TextureView default (true) would still paint a solid background
- * because of the same performance optimisation that makes TextureView opaque by default.
+ * **TDLib mode** (local file): rendered via [WebmAlphaImage] — ffmpeg software decode
+ * with a true VP9+alpha sidecar via Matroska BlockAdditional. Frames land as
+ * [androidx.compose.ui.graphics.ImageBitmap] drawn on a Compose [Canvas] with native
+ * srcOver compositing, so transparent sticker regions blend correctly with any surface.
  *
- * Lifecycle: paused on ON_PAUSE, resumed on ON_RESUME, fully released on dispose. The
- * lazy-list dispose is what stops the decoder when the sticker scrolls off-screen —
- * Compose tears the composable down and the [DisposableEffect] frees the ExoPlayer.
+ * **Guest mode** (URL): ExoPlayer + [TextureView] path retained unchanged. [WebmAlphaImage]
+ * requires a local file path and cannot decode a URL; guest-mode alpha rendering is an
+ * explicit follow-up.
  *
- * The static thumbnail underlays the player until the FIRST FRAME has actually been
- * rendered to the texture. Gating on `mediaState is Ready` (the older condition) is
- * insufficient because (a) guest mode streams directly from a URL with no MediaCache
- * state at all, and (b) even in TDLib mode `Ready` fires when bytes land, well before
- * ExoPlayer has decoded the first video frame. `Player.Listener.onRenderedFirstFrame`
- * is the precise boundary: a true frame is on-texture and any thumb hide afterwards
- * is safe.
+ * The static thumbnail underlays the renderer until the first frame arrives.
+ * [onFirstFrame] (from [WebmAlphaImage]) / `Player.Listener.onRenderedFirstFrame` (guest)
+ * is the precise boundary: a real frame is on-canvas and any thumb hide afterwards is safe.
  *
- * Looping: we deliberately do NOT use `Player.REPEAT_MODE_ONE`. The internal auto-loop
- * path in media3 1.10 re-prepares the same MediaItem via its cached extractor state,
- * and for short Telegram WebM stickers (~1-3 s, sparse keyframes, Cues element often
- * absent) the re-prepare reuses the tail of the previous read instead of landing on
- * position 0 cleanly. Observable symptom: first cycle plays in full, every subsequent
- * cycle plays only the last fragment over and over. Manually driving the loop via
- * `onPlaybackStateChanged(STATE_ENDED) → seekTo(0)` sidesteps the internal path
- * entirely — a fresh seek-to-0 is always keyframe-aligned, costs one main-thread
- * callback every ~2 s (negligible), and the same fix doesn't need to propagate to
- * [TdVideoPlayer] / [dev.lyo.hortay.ui.timeline.VideoNoteBubble] because they play
- * MP4/H.264 with proper indexes where the internal auto-loop is well-behaved.
+ * Guest-mode looping: ExoPlayer `REPEAT_MODE_ONE` is unsafe for short Telegram WebM
+ * stickers in media3 1.10 — re-prepare reuses the tail of the previous read and the
+ * second+ cycles replay only the last fragment. Manually seeking to 0 on STATE_ENDED
+ * sidesteps the internal path (same fix as before; the TDLib path no longer has this
+ * problem because [WebmAlphaImage] loops by frame-index arithmetic on the decoded array).
  */
 @Composable
 fun WebmStickerPlayer(
@@ -76,16 +62,71 @@ fun WebmStickerPlayer(
      */
     remoteUrl: String? = null,
 ) {
-    val pool = LocalExoPlayerPool.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val isRemote = fileId == null && remoteUrl != null
 
     // Centralised observe / ensure / cancelDeferred — see [rememberMediaBinding].
     val binding = rememberMediaBinding(fileId = fileId, priority = priority, isRemote = isRemote)
 
-    // Acquire from the shared pool. WebM stickers are inherently silent, so we
-    // request the muted variant — no audio renderer is built, AudioTrack is never
-    // allocated, and the AudioMix system wakelock is never taken.
+    if (isRemote) {
+        // ── Guest mode: ExoPlayer + TextureView ──────────────────────────────
+        // WebmAlphaImage requires a local file path; URL-only WebM alpha is a follow-up.
+        // The full ExoPlayer path is preserved verbatim here.
+        GuestModeWebmPlayer(
+            remoteUrl = remoteUrl,
+            thumb = thumb,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            priority = priority,
+        )
+    } else {
+        // ── TDLib mode: WebmAlphaImage (ffmpeg VP9+alpha software decode) ────
+        // sizePx: the sticker box is always constrained to STICKER_MAX_SIDE on its
+        // longer axis (see stickerBoxModifier). We read the actual laid-out size from
+        // BoxWithConstraints so the cache key reflects the real pixel budget and
+        // non-square stickers (shorter side < maxSide) don't over-allocate.
+        BoxWithConstraints(modifier = modifier) {
+            val density = LocalDensity.current
+            val sizePx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
+            var firstFrameRendered by remember(fileId) { mutableStateOf(false) }
+
+            // Thumb stays under the canvas until WebmAlphaImage reports onFirstFrame.
+            if (thumb != null && !firstFrameRendered) {
+                TdMediaImage(
+                    media = thumb,
+                    contentDescription = contentDescription,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                    placeholderColor = null,
+                    showProgress = false,
+                    priority = priority,
+                )
+            }
+            WebmAlphaImage(
+                key = fileId.toString(),
+                path = binding.readyPath,
+                sizePx = sizePx,
+                modifier = Modifier.fillMaxSize(),
+                animate = true,
+                onFirstFrame = { firstFrameRendered = true },
+            )
+        }
+    }
+}
+
+/** ExoPlayer + TextureView renderer for guest-mode (URL) WebM stickers. Kept separate so
+ *  [WebmStickerPlayer] can use [BoxWithConstraints] for the TDLib branch without sharing
+ *  composition scope with all the ExoPlayer [DisposableEffect] / [LaunchedEffect] machinery. */
+@Composable
+private fun GuestModeWebmPlayer(
+    remoteUrl: String?,
+    thumb: TdMedia?,
+    contentDescription: String?,
+    modifier: Modifier,
+    priority: DownloadPriority,
+) {
+    val pool = LocalExoPlayerPool.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     val exoPlayer = remember {
         pool.acquire(muted = true).apply {
             playWhenReady = true
@@ -96,30 +137,13 @@ fun WebmStickerPlayer(
         }
     }
 
-    // Key on the Ready path only so Downloading-burst progress updates don't churn
-    // ExoPlayer's setMediaItem/prepare cycle. fileId / remoteUrl are captured so
-    // swapping to a different sticker instance triggers a fresh prepare even if
-    // the new file's path coincidentally matches the previous one.
-    val readyPath = binding.readyPath
-    LaunchedEffect(readyPath, fileId, remoteUrl, isRemote) {
-        val uri: String = when {
-            // K2 smart-casts remoteUrl to String via the isRemote val above
-            // (`fileId == null && remoteUrl != null`).
-            isRemote -> remoteUrl
-            else -> {
-                val path = readyPath ?: return@LaunchedEffect
-                "file://$path"
-            }
-        }
-        exoPlayer.setMediaItem(MediaItem.fromUri(uri))
+    LaunchedEffect(remoteUrl) {
+        val url = remoteUrl ?: return@LaunchedEffect
+        exoPlayer.setMediaItem(MediaItem.fromUri(url))
         exoPlayer.prepare()
     }
 
-    // Track when ExoPlayer has put the first decoded frame onto the TextureView.
-    // Kept on a per-(fileId, remoteUrl) key so swapping to a different sticker
-    // instance correctly resets the gate: the new texture is empty until its
-    // own first frame lands.
-    var firstFrameRendered by remember(fileId, remoteUrl) { mutableStateOf(false) }
+    var firstFrameRendered by remember(remoteUrl) { mutableStateOf(false) }
     DisposableEffect(exoPlayer) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -149,9 +173,7 @@ fun WebmStickerPlayer(
     }
 
     Box(modifier = modifier) {
-        // Thumb stays under the texture until ExoPlayer has put a real frame on
-        // it. Hiding earlier (e.g. on `Ready` bytes-on-disk) leaves a window
-        // where the TextureView is transparent and exposes the surface behind.
+        // Thumb stays under the texture until ExoPlayer has put a real frame on it.
         if (thumb != null && !firstFrameRendered) {
             TdMediaImage(
                 media = thumb,
