@@ -90,6 +90,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "child_care" -> R.drawable.sym_child_care
         "close" -> R.drawable.sym_close
         "cloud_off" -> R.drawable.sym_cloud_off
+        "code" -> R.drawable.sym_code
         "content_copy" -> R.drawable.sym_content_copy
         "data_saver_on" -> R.drawable.sym_data_saver_on
         "delete" -> R.drawable.sym_delete
@@ -139,6 +140,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "rss_feed" -> R.drawable.sym_rss_feed
         "search" -> R.drawable.sym_search
         "search_off" -> R.drawable.sym_search_off
+        "share" -> R.drawable.sym_share
         "shield" -> R.drawable.sym_shield
         "signal_cellular_alt" -> R.drawable.sym_signal_cellular_alt
         "smart_display" -> R.drawable.sym_smart_display
