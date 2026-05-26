@@ -1,6 +1,5 @@
 package dev.lyo.hortay.ui.media
 
-import android.animation.ValueAnimator
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,11 +61,12 @@ internal fun placeholderLingerVisible(
 /**
  * Animated reveal fraction: 1f when [revealed], 0f otherwise, eased via the M3 effects
  * spec. Snaps instantly when the system animator-duration-scale is 0 ("Remove animations"),
- * matching [dev.lyo.hortay.data.effectiveSkeletonGrace] elsewhere in the app.
+ * via the shared [dev.lyo.hortay.data.animatorDurationScale] accessor (same source as
+ * [dev.lyo.hortay.data.effectiveSkeletonGrace] elsewhere in the app).
  */
 @Composable
 fun rememberRevealAlpha(revealed: Boolean): Float {
-    val reducedMotion = remember { ValueAnimator.getDurationScale() == 0f }
+    val reducedMotion = remember { dev.lyo.hortay.data.animatorDurationScale() == 0f }
     val target = if (revealed) 1f else 0f
     val animated by animateFloatAsState(
         targetValue = target,
@@ -112,9 +112,9 @@ fun rememberPlaceholderLinger(
 fun MediaReveal(
     revealed: Boolean,
     key: Any?,
+    placeholder: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     lingerMs: Long = MEDIA_REVEAL_LINGER_MS,
-    placeholder: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
     val alpha = rememberRevealAlpha(revealed)

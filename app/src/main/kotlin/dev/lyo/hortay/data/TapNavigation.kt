@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data
 
 import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 
 /**
  * Anti-flicker grace for tap-driven destination skeletons.
@@ -54,6 +55,19 @@ const val SCREEN_MOUNT_GRACE_MS: Long = 120L
  * to `kotlinx.coroutines.delay` without an extra check.
  */
 fun effectiveSkeletonGrace(baseMs: Long): Long {
-    val scale = ValueAnimator.getDurationScale().toDouble()
+    val scale = animatorDurationScale().toDouble()
     return (baseMs * scale).toLong().coerceAtLeast(0L)
 }
+
+/**
+ * The user's system-wide animation-speed multiplier (Settings → Developer options, and the
+ * accessibility "Remove animations" toggle, which sets it to `0f`). The single accessor for
+ * it across the app — both [effectiveSkeletonGrace] and the media-reveal fade read it here.
+ *
+ * [ValueAnimator.getDurationScale] has existed as a hidden framework method since API 11 and
+ * only became public API in 33, so lint flags it as `NewApi` at our `minSdk 26`. The call
+ * resolves at runtime on every supported API (the method is physically present on-device), so
+ * the suppression is safe — kept in one place with this rationale rather than scattered.
+ */
+@SuppressLint("NewApi")
+internal fun animatorDurationScale(): Float = ValueAnimator.getDurationScale()
