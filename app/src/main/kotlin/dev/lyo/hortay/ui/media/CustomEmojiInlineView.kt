@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.data.CustomEmojiSticker
@@ -116,7 +117,6 @@ fun CustomEmojiInlineView(
         firstVisibleFileId == null -> true
         else -> binding.isReady
     }
-    val needsPlaceholder = !contentReady
 
     Box(modifier = modifier) {
         if (sticker == null) {
@@ -243,8 +243,16 @@ fun CustomEmojiInlineView(
         // justify dropping the underlay variant. The composables underneath stay
         // mounted so they keep driving their MediaCache / LottieUrlStore loads.
         // sticker is guaranteed non-null here — the null branch returned above.
-        if (needsPlaceholder) {
-            PlaceholderDisc()
+        //
+        // Fade the disc OUT (1 - alpha) as content becomes ready instead of unmounting it
+        // instantly; the linger gate keeps it composed through the fade. Under reduced
+        // motion the alpha snaps, collapsing back to the old instant disappear.
+        val discAlpha = rememberRevealAlpha(revealed = contentReady)
+        val keepDisc = rememberPlaceholderLinger(contentReady, key = firstVisibleFileId)
+        if (keepDisc) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - discAlpha }) {
+                PlaceholderDisc()
+            }
         }
     }
 }

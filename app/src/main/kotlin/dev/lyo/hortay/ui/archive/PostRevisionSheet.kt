@@ -48,8 +48,8 @@ import kotlinx.collections.immutable.toPersistentList
 fun PostRevisionSheet(
     revisions: ImmutableList<PostSnapshot>,
     onDismiss: () -> Unit,
-    onGoToCurrent: (() -> Unit)? = null,
     onOpenInTelegram: () -> Unit,
+    onGoToCurrent: (() -> Unit)? = null,
     mediaStore: ArchivedMediaStore? = null,
 ) {
     if (revisions.isEmpty()) {

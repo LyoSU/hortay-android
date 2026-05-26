@@ -13,6 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,9 +28,11 @@ import kotlinx.coroutines.withContext
  *
  * **Decode pipeline**: a process-wide [MinithumbCache] holds previously-decoded Bitmaps keyed
  * by ByteArray content (not identity — see cache KDoc). Cache hits render synchronously (zero
- * main-thread work). Cache misses decode on [Dispatchers.Default] — the parent's letter
- * fallback (e.g. `TdAvatar`) shows through during the ~1 ms decode, so the user never sees a
- * blank square. The previous implementation decoded synchronously on the main thread, costing
+ * main-thread work) and paint at full alpha immediately — no fade, since the thumb was already
+ * decoded. Cache misses decode on [Dispatchers.Default] — the parent's letter fallback (e.g.
+ * `TdAvatar`) shows through during the ~1 ms decode, and the decoded bitmap then fades in via
+ * [rememberRevealAlpha] so the avatar doesn't hard-pop from the letter to the photo on every
+ * post header. The previous implementation decoded synchronously on the main thread, costing
  * ~10-20 ms per visible frame during fast scroll across a feed of cards (every avatar = one
  * decode).
  *
@@ -43,7 +46,8 @@ fun MinithumbImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
 ) {
-    var bitmap by remember(bytes) { mutableStateOf(MinithumbCache.peek(bytes)) }
+    val cached = remember(bytes) { MinithumbCache.peek(bytes) }
+    var bitmap by remember(bytes) { mutableStateOf(cached) }
     LaunchedEffect(bytes) {
         if (bitmap != null) return@LaunchedEffect
         bitmap = withContext(Dispatchers.Default) { MinithumbCache.getOrDecode(bytes) }
@@ -51,11 +55,15 @@ fun MinithumbImage(
     val bmp = bitmap ?: return
     // Cache the wrapper so we don't allocate a new ImageBitmap on every recomposition.
     val image = remember(bmp) { bmp.asImageBitmap() }
+    // Cache hit ⇒ paint at full alpha (already decoded, was effectively already on screen).
+    // Cache miss ⇒ the bitmap arrives ~1 frame later off Dispatchers.Default; fade it in so
+    // the avatar doesn't pop from the letter fallback to the photo.
+    val alpha = if (cached == null) rememberRevealAlpha(revealed = true) else 1f
     Image(
         bitmap = image,
         contentDescription = contentDescription,
         contentScale = contentScale,
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().graphicsLayer { this.alpha = alpha },
     )
 }
 

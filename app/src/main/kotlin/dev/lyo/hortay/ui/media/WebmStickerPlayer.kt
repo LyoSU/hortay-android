@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -45,8 +46,9 @@ import dev.lyo.hortay.data.TdMedia
  * insufficient because (a) guest mode streams directly from a URL with no MediaCache
  * state at all, and (b) even in TDLib mode `Ready` fires when bytes land, well before
  * ExoPlayer has decoded the first video frame. `Player.Listener.onRenderedFirstFrame`
- * is the precise boundary: a true frame is on-texture and any thumb hide afterwards
- * is safe.
+ * is the precise boundary: a true frame is on-texture and the thumb crossfading out
+ * afterwards is safe (it fades rather than hard-cuts, so the swap to the live frame
+ * doesn't pop).
  *
  * Looping: we deliberately do NOT use `Player.REPEAT_MODE_ONE`. The internal auto-loop
  * path in media3 1.10 re-prepares the same MediaItem via its cached extractor state,
@@ -149,14 +151,19 @@ fun WebmStickerPlayer(
     }
 
     Box(modifier = modifier) {
-        // Thumb stays under the texture until ExoPlayer has put a real frame on
-        // it. Hiding earlier (e.g. on `Ready` bytes-on-disk) leaves a window
-        // where the TextureView is transparent and exposes the surface behind.
-        if (thumb != null && !firstFrameRendered) {
+        // Thumb stays under the texture and fades OUT once ExoPlayer has put a real
+        // frame on it. Hiding earlier (e.g. on `Ready` bytes-on-disk) leaves a window
+        // where the TextureView is transparent and exposes the surface behind; holding
+        // it at full alpha under the running animation would double the silhouette in
+        // transparent regions of a moving frame. So we crossfade (1 - alpha) rather than
+        // hard-cut. The linger gate keeps it composed through the fade, then drops it.
+        val crossAlpha = rememberRevealAlpha(firstFrameRendered)
+        val keepThumb = rememberPlaceholderLinger(firstFrameRendered, key = fileId ?: remoteUrl)
+        if (thumb != null && keepThumb) {
             TdMediaImage(
                 media = thumb,
                 contentDescription = contentDescription,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - crossAlpha },
                 contentScale = ContentScale.Fit,
                 placeholderColor = null,
                 showProgress = false,

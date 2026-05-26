@@ -51,8 +51,9 @@ import java.io.File
 fun RevisionMediaPreview(
     media: ArchivedMediaRef,
     mediaStore: ArchivedMediaStore?,
+    modifier: Modifier = Modifier,
 ) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    Column(modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         when (media.type) {
             "photo", "video", "animation", "videoNote" -> {
                 ImageOrThumb(media = media, mediaStore = mediaStore)

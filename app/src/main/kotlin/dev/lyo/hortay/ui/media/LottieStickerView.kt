@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.Lifecycle
@@ -33,7 +34,8 @@ import dev.lyo.hortay.data.TdMedia
  * Plays a Telegram TGS (gzipped Lottie) sticker. Pipeline:
  *
  *   1. Ask [MediaCache] to download the .tgs file at the given priority.
- *   2. Underlay the [thumb] (TDLib-served WEBP/PNG) — instant preview while bytes land.
+ *   2. Underlay the [thumb] (TDLib-served WEBP/PNG) — instant preview while bytes land;
+ *      it crossfades OUT as the animation's first frame fades in (see the reveal block below).
  *   3. Once the file is `Ready`, decompress + parse via [LottieCompositionStore].
  *   4. Hand the composition to Compose's [LottieAnimation] — GPU-accelerated, cheap.
  *
@@ -118,15 +120,21 @@ fun LottieStickerView(
         )
     }
 
+    // Transparent crossfade: the static thumb fades OUT (1 - alpha) as the animation fades
+    // in (alpha). We must NOT hold the thumb at full alpha under the running animation —
+    // transparent areas of a moving frame would reveal the static thumb behind them and read
+    // as a doubled silhouette. The linger gate keeps the thumb composed just long enough to
+    // finish its fade-out, then drops it (releasing its own MediaCache load). Under reduced
+    // motion the alpha snaps, collapsing this back to the old instant hide.
+    val revealed = composition != null
+    val crossAlpha = rememberRevealAlpha(revealed)
+    val keepThumb = rememberPlaceholderLinger(revealed, key = fileId ?: remoteUrl)
     Box(modifier = modifier) {
-        // Underlay the static thumbnail until the composition is ready. We hide it once
-        // Lottie has frames so transparent areas of the sticker don't reveal the static
-        // thumb behind them (which would look like a doubled silhouette).
-        if (thumb != null && composition == null) {
+        if (thumb != null && keepThumb) {
             TdMediaImage(
                 media = thumb,
                 contentDescription = contentDescription,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - crossAlpha },
                 contentScale = ContentScale.Fit,
                 placeholderColor = null,
                 showProgress = false,
@@ -137,7 +145,7 @@ fun LottieStickerView(
             LottieAnimation(
                 composition = comp,
                 progress = { progress },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = crossAlpha },
                 dynamicProperties = dynamicProperties,
             )
         }
