@@ -23,4 +23,5 @@ dependencyResolutionManagement {
 rootProject.name = "Hortay"
 include(":app")
 include(":libtdlib")
+include(":libwebm")
 include(":baselineprofile")

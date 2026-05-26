@@ -409,6 +409,7 @@ dependencies {
     implementation(libs.sqldelight.coroutines.extensions)
 
     implementation(project(":libtdlib"))
+    implementation(project(":libwebm"))
 
     // Runtime installer for the AOT baseline profile bundled by AGP's
     // baselineProfile {} block above. Without it, the profile sits in the APK but
