@@ -18,8 +18,10 @@
     <ID>CompositionLocalAllowlist:LocalLinkConfirm.kt$LocalLinkConfirm</ID>
     <ID>CompositionLocalAllowlist:LocalStickerOutline.kt$LocalStickerOutline</ID>
     <ID>CompositionLocalAllowlist:LocalWebHttpClient.kt$LocalWebHttpClient</ID>
+    <ID>CompositionLocalAllowlist:LocalWebmFrameCache.kt$LocalWebmFrameCache</ID>
     <ID>CompositionLocalAllowlist:MediaViewerHost.kt$LocalMediaViewer</ID>
     <ID>CompositionLocalAllowlist:UserMessageActionDispatcher.kt$LocalUserMessageBus</ID>
+    <ID>CompositionLocalAllowlist:WebmAnimationClock.kt$LocalWebmClock</ID>
     <ID>ContentSlotReused:PostCard.kt$content</ID>
     <ID>ContentSlotReused:RichText.kt$renderer</ID>
     <ID>DestructuringDeclarationWithTooManyEntries:ConnectionBanner.kt$val (symbol, label, container, content) = if (showFlood) { Quad( "pause", pluralStringResource( R.plurals.connection_flood_wait, floodSecondsRemaining.toInt(), floodSecondsRemaining.toInt(), ), MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer, ) } else when (status) { ConnectionStatus.WaitingForNetwork -&gt; Quad( "wifi_off", stringResource(R.string.connection_waiting), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer, ) ConnectionStatus.Connecting -&gt; Quad( "cloud_off", stringResource(R.string.connection_connecting), MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, ) ConnectionStatus.Updating -&gt; Quad( "sync", stringResource(R.string.connection_updating), MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, ) ConnectionStatus.Ready -&gt; return@AnimatedVisibility }</ID>

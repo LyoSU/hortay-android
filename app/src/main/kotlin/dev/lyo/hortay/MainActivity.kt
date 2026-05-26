@@ -9,7 +9,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -23,7 +25,10 @@ import dev.lyo.hortay.ui.media.LocalExoPlayerPool
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalStickerOutline
 import dev.lyo.hortay.ui.media.LocalWebHttpClient
+import dev.lyo.hortay.ui.media.LocalWebmClock
+import dev.lyo.hortay.ui.media.LocalWebmFrameCache
 import dev.lyo.hortay.ui.media.MediaViewerHost
+import dev.lyo.hortay.ui.media.WebmAnimationClock
 import dev.lyo.hortay.ui.theme.HortayTheme
 import dev.lyo.hortay.ui.web.MigrationProposalSheet
 import dev.lyo.hortay.ui.web.WebModeScaffold
@@ -59,6 +64,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             HortayTheme {
+                val webmClock = remember { WebmAnimationClock() }
                 CompositionLocalProvider(
                     LocalMediaCache provides graph.mediaCache,
                     LocalCustomEmoji provides graph.customEmoji,
@@ -66,7 +72,10 @@ class MainActivity : ComponentActivity() {
                     LocalStickerOutline provides graph.stickerOutline,
                     LocalExoPlayerPool provides graph.exoPlayerPool,
                     LocalWebHttpClient provides graph.webHttpClient,
+                    LocalWebmFrameCache provides graph.webmFrameCache,
+                    LocalWebmClock provides webmClock,
                 ) {
+                    LaunchedEffect(webmClock) { webmClock.run() }
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val auth by graph.tdClient.authStage.collectAsStateWithLifecycle()
                         val isGuest by graph.guestMode.isGuest.collectAsStateWithLifecycle(

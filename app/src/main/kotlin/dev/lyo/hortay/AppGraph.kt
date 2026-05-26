@@ -331,6 +331,12 @@ class AppGraph(context: Context) {
     // scroll past video cards essentially free at the player layer.
     val exoPlayerPool: ExoPlayerPool = ExoPlayerPool(context)
 
+    // Decoded-frame LRU cache for VP9+alpha WebM animations (stickers, custom emoji).
+    // Shares appScope so decode coroutines are cancelled with the process; maxBytes
+    // default (24 MB) covers ~100 small sticker frames without measurable heap pressure.
+    val webmFrameCache: dev.lyo.hortay.data.media.WebmFrameCache =
+        dev.lyo.hortay.data.media.WebmFrameCache(appScope)
+
     /**
      * Process-wide delivery channel for resolved Telegram deep links. The parser
      * ([linkResolver]) submits typed events here; `MainScaffold` / `WebModeScaffold`
