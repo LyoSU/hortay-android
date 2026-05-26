@@ -43,11 +43,12 @@ import dev.lyo.hortay.ui.icons.Symbol
  *  * [SpoilerKind.Sensitive] — dot cloud PLUS a centred icon-and-label pill, so the
  *    user knows *why* the cover is there and that tapping is a deliberate consent step.
  *
- * Reveal is a Thanos-style dispersion: tap starts a 750ms `Animatable` that pushes a
- * `dispersionProgress` 0 → 1 into the shimmer drawer (particles scatter outward with
- * seeded direction + delay, fading and shrinking); when the animation completes the
- * overlay calls [onReveal] and the parent flips its `revealed` state, removing both
- * the overlay and the underlying blur in one frame.
+ * Reveal is a Thanos-style dispersion: tap starts an `Animatable` that pushes a
+ * `dispersionProgress` 0 → 1 into the shimmer drawer (the dot field disintegrates in a
+ * left→right sweep, each particle drifting a fixed distance on an upward wind arc while
+ * the whole cloud fades and shrinks); when the animation completes the overlay calls
+ * [onReveal] and the parent flips its `revealed` state, removing both the overlay and the
+ * underlying blur in one frame.
  */
 enum class SpoilerKind { Spoiler, Sensitive }
 
@@ -62,6 +63,7 @@ fun SpoilerOverlay(
     onReveal: () -> Unit,
 ) {
     val drift by rememberSpoilerDrift()
+    val field = remember { SpoilerField() }
     val dispersion = remember { Animatable(0f) }
     var dismissing by remember { mutableStateOf(false) }
     val dispersionProgress = dispersion.value
@@ -69,9 +71,9 @@ fun SpoilerOverlay(
     LaunchedEffect(dismissing) {
         if (dismissing) {
             // easeInQuad — slow start, fast finish. Matches Telegram-Android's spoiler
-            // ripple (Easings.easeInQuad in SpoilerEffect.java). The dot cloud lingers
-            // visibly for the first ~250ms so the user *sees* the dispersion start,
-            // then accelerates outward in the second half — the "lift off" feel.
+            // ripple (Easings.easeInQuad in SpoilerEffect.java). It drives the wave front:
+            // the left edge starts crumbling gently, then the sweep rips across the field
+            // faster through the back half — the "lift off" feel.
             dispersion.animateTo(
                 targetValue = 1f,
                 animationSpec = tween(
@@ -106,6 +108,7 @@ fun SpoilerOverlay(
         )
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawSpoilerShimmer(
+                field = field,
                 seed = seed,
                 drift = drift,
                 color = Color.White,

@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.media
 
+import android.graphics.Paint
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -8,11 +9,10 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PointMode
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -23,25 +23,33 @@ import kotlin.random.Random
  * cloud of small white particles that gently drift and twinkle — this helper reproduces
  * that look in a single Canvas pass per spoiler region.
  *
- * Optimisation notes:
- *  * Points are drawn in 3 size buckets (S/M/L) via [DrawScope.drawPoints] with
- *    [StrokeCap.Round] — six batched draw calls per spoiler (3 sizes × 2 twinkle phases)
- *    instead of one `drawCircle` per particle. At the typical ~60-particle density this
- *    cuts display-list ops by ~10× versus the original per-circle loop.
- *  * Twinkle is implemented by stamping each size bucket twice with two complementary
- *    alphas derived from a single shared `sin(drift)` — no per-point trig.
- *  * Vertical drift uses one shared offset for all points, but it travels exactly one
- *    `wrap` per cycle. That makes the Restart-mode loop seamless: at drift = 1 each
- *    particle's wrapped y equals its y at drift = 0, so the 1-frame snap-back is a
- *    no-op instead of a global stutter.
- *  * The phase ([rememberSpoilerDrift]) is hoisted to a single `InfiniteTransition`
- *    shared by every spoiler on screen, so 20 visible cards = 1 animation timer, not 20.
- *  * Thanos-style reveal: when the parent passes a non-zero [dispersionProgress] the
- *    same six batched draw calls scatter each particle along a seeded radial vector
- *    with a seeded delay (waves, not a uniform pop), and fade alpha + shrink radius.
+ * Resource model — the cloud animates at display refresh while visible, so per-frame cost
+ * is the whole budget. [SpoilerField] is the optimisation:
+ *  * **Zero per-frame allocation.** The static per-particle data (base position, scatter
+ *    angle, speed, size/brightness bucket) is deterministic from `seed` — it never changes
+ *    between frames. [SpoilerField.ensure] builds it once into primitive arrays and only
+ *    rebuilds when seed/size/density change; each frame writes live coordinates into
+ *    pre-sized reusable [FloatArray] buffers. No `Offset` boxing, no `ArrayList`, no
+ *    re-seeded `Random` per frame.
+ *  * **Six batched draws.** Points are stamped in 3 size buckets × 2 twinkle phases via
+ *    `Canvas.drawPoints(FloatArray)` through one reused [Paint] (`StrokeCap.Round` turns a
+ *    zero-length stroke into a round dot) — six native draw calls per spoiler instead of
+ *    one `drawCircle` per particle.
+ *  * Vertical drift uses one shared offset that travels exactly one `wrap` per cycle, so
+ *    the Restart-mode loop is seamless (at drift = 1 each wrapped y equals its drift = 0
+ *    value, making the snap-back a no-op).
+ *  * The phase ([rememberSpoilerDrift]) is hoisted to a single `InfiniteTransition` shared
+ *    by every spoiler on screen, so 20 visible cards = 1 animation timer.
+ *  * Thanos-style reveal: when the parent passes a non-zero `dispersionProgress` the same
+ *    six draws disintegrate the field. Mirrors TG-Android's `thanos_vertex.glsl`: a
+ *    left→right *sweep* (each particle starts dissolving only once the wave front reaches
+ *    its column — not a uniform random-delay pop), a *fixed-pixel* travel per particle so
+ *    big photos crumble evenly instead of exploding from the centre, per-particle speed
+ *    jitter, and an accelerating upward wind drift (t²) so dots keep moving through the
+ *    whole fade instead of easing to a dead stop.
  *
- * Density target: ~1 dot per 600 px² with floor/ceiling so tiny inline-text runs and
- * huge album photos both look balanced.
+ * Density target: ~1 dot per 220 px² (media) with floor/ceiling so tiny inline-text runs
+ * and huge album photos both look balanced; text passes a denser value.
  */
 
 /** Phase in [0, 1) shared by every spoiler on the current composition. */
@@ -59,7 +67,157 @@ fun rememberSpoilerDrift(): State<Float> {
     )
 }
 
+/**
+ * Per-spoiler particle cache. `remember { SpoilerField() }` one instance per spoiler region
+ * and feed it to [drawSpoilerShimmer] every frame. Holds the deterministic static layout
+ * plus reusable coordinate buffers and a single [Paint], so steady-state drawing allocates
+ * nothing. Not thread-safe — only ever touched on the draw thread of its owning Canvas.
+ */
+class SpoilerField {
+    private var seed = Int.MIN_VALUE
+    private var w = -1f
+    private var h = -1f
+    private var density = -1f
+    private var n = 0
+
+    // Static, rebuilt only by [ensure]: base x (sway added per frame), base y in [0,1),
+    // scatter angle, speed jitter, and the combined size×brightness bucket (0..5).
+    private var baseX = FloatArray(0)
+    private var baseYFraction = FloatArray(0)
+    private var angle = FloatArray(0)
+    private var speed = FloatArray(0)
+    private var bucketOf = IntArray(0)
+
+    // Reusable per-bucket coordinate buffers ([x0,y0,x1,y1,…]) sized to each bucket's exact
+    // population, plus a per-frame write cursor. Six buckets = 3 sizes × 2 twinkle phases.
+    private val coords = Array(BUCKETS) { FloatArray(0) }
+    private val cursor = IntArray(BUCKETS)
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+
+    fun ensure(seed: Int, w: Float, h: Float, density: Float) {
+        if (seed == this.seed && w == this.w && h == this.h && density == this.density) return
+        this.seed = seed; this.w = w; this.h = h; this.density = density
+
+        n = (w * h / density).toInt().coerceIn(MIN_DOTS, MAX_DOTS)
+        if (baseX.size < n) {
+            baseX = FloatArray(n); baseYFraction = FloatArray(n)
+            angle = FloatArray(n); speed = FloatArray(n); bucketOf = IntArray(n)
+        }
+
+        val rng = Random(seed)
+        val perBucket = IntArray(BUCKETS)
+        for (i in 0 until n) {
+            baseX[i] = rng.nextFloat() * w
+            baseYFraction[i] = rng.nextFloat()
+            angle[i] = rng.nextFloat() * TWO_PI
+            speed[i] = DISPERSE_SPEED_MIN + rng.nextFloat() * DISPERSE_SPEED_SPAN
+            val sizeBucket = rng.nextInt(8).let { if (it < 5) 0 else if (it < 7) 1 else 2 }
+            val bucket = sizeBucket * 2 + if (rng.nextBoolean()) 1 else 0
+            bucketOf[i] = bucket
+            perBucket[bucket]++
+        }
+        for (b in 0 until BUCKETS) {
+            val need = perBucket[b] * 2
+            if (coords[b].size != need) coords[b] = FloatArray(need)
+        }
+    }
+
+    fun draw(scope: DrawScope, drift: Float, color: Color, dispersionProgress: Float) {
+        if (n == 0 || dispersionProgress >= 1f) return
+
+        val wrap = h + VERTICAL_DRIFT_PX
+        val driftYPx = drift * wrap
+        val swayXPx = sin(drift * TWO_PI) * HORIZONTAL_SWAY_PX
+
+        val twinkle = (sin(drift * TWO_PI) + 1f) * 0.5f
+        val alphaBright = 0.55f + twinkle * 0.35f
+        val alphaDim = 0.90f - twinkle * 0.35f
+
+        // `1 - p²` holds the cloud near-opaque while the left→right sweep front is still
+        // crossing (so late-starting right-hand dots don't ghost out before they move),
+        // then drops fast in the back half.
+        val dispersionAlphaScale = (1f - dispersionProgress * dispersionProgress).coerceIn(0f, 1f)
+        val radiusScale = 1f - 0.4f * dispersionProgress
+
+        cursor.fill(0)
+        val dispersing = dispersionProgress > 0f
+        for (i in 0 until n) {
+            val px = baseX[i] + swayXPx
+            val py = ((baseYFraction[i] * wrap + driftYPx) % wrap) - VERTICAL_DRIFT_PX * 0.5f
+
+            var fx = px
+            var fy = py
+            if (dispersing) {
+                // Left→right sweep: a particle only starts dissolving once the wave front
+                // reaches its column. Mirrors TG's
+                // `particleFraction = clamp(.1 + t - uv.x*uvOffset, 0, .2)/.2`.
+                val uvx = (px / w).coerceIn(0f, 1f)
+                val start = uvx * DISPERSE_SWEEP_FRACTION
+                val t = ((dispersionProgress - start) / (1f - DISPERSE_SWEEP_FRACTION))
+                    .coerceIn(0f, 1f)
+                if (t > 0f) {
+                    // Fixed-pixel travel (NOT size-proportional) so big photos crumble
+                    // evenly instead of exploding from the centre; an accelerating (t²)
+                    // upward wind drift keeps every dot moving through the fade.
+                    val ease = 1f - (1f - t) * (1f - t)
+                    val travel = DISPERSE_TRAVEL_PX * speed[i] * ease
+                    fx = px + cos(angle[i]) * travel
+                    fy = py + sin(angle[i]) * travel - DISPERSE_DRIFT_PX * t * t
+                }
+            }
+
+            val b = bucketOf[i]
+            val arr = coords[b]
+            val j = cursor[b]
+            arr[j] = fx
+            arr[j + 1] = fy
+            cursor[b] = j + 2
+        }
+
+        val canvas = scope.drawContext.canvas.nativeCanvas
+        val argb = color.toArgb()
+        // Buckets: 0/1 = small dim/bright, 2/3 = mid, 4/5 = big.
+        stamp(canvas, argb, 0, DOT_SMALL_PX, alphaDim, dispersionAlphaScale, radiusScale)
+        stamp(canvas, argb, 1, DOT_SMALL_PX, alphaBright, dispersionAlphaScale, radiusScale)
+        stamp(canvas, argb, 2, DOT_MID_PX, alphaDim, dispersionAlphaScale, radiusScale)
+        stamp(canvas, argb, 3, DOT_MID_PX, alphaBright, dispersionAlphaScale, radiusScale)
+        stamp(canvas, argb, 4, DOT_BIG_PX, alphaDim, dispersionAlphaScale, radiusScale)
+        stamp(canvas, argb, 5, DOT_BIG_PX, alphaBright, dispersionAlphaScale, radiusScale)
+    }
+
+    private fun stamp(
+        canvas: android.graphics.Canvas,
+        argb: Int,
+        bucket: Int,
+        dotPx: Float,
+        alpha: Float,
+        dispersionAlphaScale: Float,
+        radiusScale: Float,
+    ) {
+        val count = cursor[bucket]
+        if (count == 0) return
+        val outAlpha = (alpha * dispersionAlphaScale).coerceIn(0f, 1f)
+        if (outAlpha <= 0f) return
+        paint.color = argb
+        paint.alpha = (outAlpha * 255f + 0.5f).toInt().coerceIn(0, 255)
+        paint.strokeWidth = dotPx * radiusScale
+        canvas.drawPoints(coords[bucket], 0, count, paint)
+    }
+
+    private companion object {
+        const val BUCKETS = 6
+    }
+}
+
+/**
+ * Stamps [field]'s particle cloud into the current [DrawScope]. The field is rebuilt only
+ * when seed/size/density change; steady-state frames allocate nothing.
+ */
 fun DrawScope.drawSpoilerShimmer(
+    field: SpoilerField,
     seed: Int,
     drift: Float,
     color: Color = Color.White,
@@ -70,93 +228,8 @@ fun DrawScope.drawSpoilerShimmer(
     val h = size.height
     if (w <= 0f || h <= 0f) return
     if (dispersionProgress >= 1f) return
-
-    val area = w * h
-    // Default density is tuned against Telegram-Android's GPU spoiler
-    // (SpoilerEffect2.particlesCount: ~1000 particles per 500×500 tile ≈ 1/250 px²).
-    // Text spoilers pass a denser value (smaller px-per-dot) because TG's CPU spoiler
-    // densities the cloud per-character there, not per-area.
-    val count = (area / densityPxPerDot).toInt().coerceIn(MIN_DOTS, MAX_DOTS)
-
-    val rng = Random(seed)
-    val wrap = h + VERTICAL_DRIFT_PX
-    val driftYPx = drift * wrap
-    val swayXPx = sin(drift * TWO_PI) * HORIZONTAL_SWAY_PX
-
-    val twinkle = (sin(drift * TWO_PI) + 1f) * 0.5f
-    val alphaBright = 0.55f + twinkle * 0.35f
-    val alphaDim = 0.90f - twinkle * 0.35f
-
-    // Scatter magnitude scales with the spoiler area so particles always escape past the
-    // bounds in the final 200ms. The floor keeps tiny inline-text spoilers from looking
-    // anemic in the dispersion.
-    val dispersionScale = maxOf(w, h) * 0.45f + DISPERSE_MIN_PX
-
-    val small = ArrayList<Offset>(count / 2)
-    val mid = ArrayList<Offset>(count / 3)
-    val big = ArrayList<Offset>(count / 6 + 1)
-    val smallBright = ArrayList<Offset>(count / 4)
-    val midBright = ArrayList<Offset>(count / 6)
-    val bigBright = ArrayList<Offset>(count / 8 + 1)
-
-    // Per-call (not per-point) dispersion alpha / radius scaling. The seeded delay
-    // distribution is tight enough that one shared multiplier reads correctly to the
-    // eye — and a per-point alpha would force one drawPoints call per particle,
-    // collapsing the whole batching win.
-    val dispersionAlphaScale = (1f - dispersionProgress).coerceIn(0f, 1f)
-    val radiusScale = 1f - 0.35f * dispersionProgress
-
-    repeat(count) {
-        val px = rng.nextFloat() * w + swayXPx
-        val py = ((rng.nextFloat() * wrap + driftYPx) % wrap) - VERTICAL_DRIFT_PX * 0.5f
-
-        // Seeded direction + delay per particle. Without the delay the cloud pops as a
-        // single mass; with it dots leave the field in waves, which is the whole point
-        // of the Thanos shot.
-        val angle = rng.nextFloat() * TWO_PI
-        val delay = rng.nextFloat() * DISPERSE_DELAY_FRACTION
-        val localProgress = if (dispersionProgress <= delay) 0f
-            else ((dispersionProgress - delay) / (1f - delay)).coerceIn(0f, 1f)
-
-        val finalOffset = if (localProgress == 0f) {
-            Offset(px, py)
-        } else {
-            // Ease-out (1 - (1-t)^2) so the surge is fast at first then settles — the
-            // signature "pieces of you flying off" motion.
-            val ease = 1f - (1f - localProgress) * (1f - localProgress)
-            val dx = cos(angle) * dispersionScale * ease
-            val dy = sin(angle) * dispersionScale * ease - localProgress * DISPERSE_LIFT_PX
-            Offset(px + dx, py + dy)
-        }
-
-        val bucket = rng.nextInt(8)
-        val brightHalf = rng.nextBoolean()
-        when {
-            bucket < 5 -> if (brightHalf) smallBright += finalOffset else small += finalOffset
-            bucket < 7 -> if (brightHalf) midBright += finalOffset else mid += finalOffset
-            else -> if (brightHalf) bigBright += finalOffset else big += finalOffset
-        }
-    }
-
-    fun stamp(points: ArrayList<Offset>, widthPx: Float, alpha: Float) {
-        if (points.isEmpty()) return
-        val outAlpha = (alpha * dispersionAlphaScale).coerceIn(0f, 1f)
-        if (outAlpha <= 0f) return
-        drawPoints(
-            points = points,
-            pointMode = PointMode.Points,
-            color = color.copy(alpha = outAlpha),
-            strokeWidth = widthPx * radiusScale,
-            cap = StrokeCap.Round,
-        )
-    }
-
-    stamp(small, DOT_SMALL_PX, alphaDim)
-    stamp(smallBright, DOT_SMALL_PX, alphaBright)
-    stamp(mid, DOT_MID_PX, alphaDim)
-    stamp(midBright, DOT_MID_PX, alphaBright)
-    stamp(big, DOT_BIG_PX, alphaDim)
-    stamp(bigBright, DOT_BIG_PX, alphaBright)
+    field.ensure(seed, w, h, densityPxPerDot)
+    field.draw(this, drift, color, dispersionProgress)
 }
 
 private const val MIN_DOTS = 60
@@ -173,7 +246,12 @@ private const val DOT_MID_PX = 5.4f
 private const val DOT_BIG_PX = 7.2f
 private const val VERTICAL_DRIFT_PX = 28f
 private const val HORIZONTAL_SWAY_PX = 3f
-private const val DISPERSE_MIN_PX = 24f
-private const val DISPERSE_LIFT_PX = 14f
-private const val DISPERSE_DELAY_FRACTION = 0.55f
+// Disintegration tuning. Travel/drift are fixed device-px (≈ TG's constant px/s velocity),
+// independent of spoiler size. SWEEP_FRACTION is the share of the timeline the left→right
+// wave front consumes before the rightmost column begins to dissolve.
+private const val DISPERSE_TRAVEL_PX = 120f
+private const val DISPERSE_DRIFT_PX = 70f
+private const val DISPERSE_SWEEP_FRACTION = 0.4f
+private const val DISPERSE_SPEED_MIN = 0.6f
+private const val DISPERSE_SPEED_SPAN = 0.8f
 private const val TWO_PI = (2.0 * Math.PI).toFloat()
