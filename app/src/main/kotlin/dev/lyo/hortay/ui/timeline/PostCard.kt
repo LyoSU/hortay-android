@@ -421,40 +421,47 @@ private fun HeaderRow(
         modifier = Modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Sender-name region — the ONLY clickable surface that drills into the channel.
-        // Previously the whole HeaderRow consumed taps; that swallowed taps on the edit
-        // chip and made it impossible to tell from the tap target which action would
-        // fire. Now: name+badge+chevron drills into channel; trailing region (pencil /
-        // chip / badge) keeps its own click semantics.
-        // `weight(1f, fill = false)` (not `weight(1f)`) is load-bearing: fill=true makes
-        // the Row physically span the full free slot so the hit-target reaches into the
-        // empty gap before the trailing time. Inner Text still ellipsizes correctly via
-        // its own `weight(1f, fill = false)` when name + badge + chevron exceed the slot.
-        Row(
-            modifier = Modifier
-                .weight(1f, fill = false)
-                .clip(RoundedCornerShape(6.dp))
-                .clickable(role = Role.Button, onClick = onChannelClick),
-            verticalAlignment = Alignment.CenterVertically,
+        // Sender-name region — name+badge+chevron is the ONLY clickable surface that
+        // drills into the channel; the trailing region (pencil / chip / date) keeps its
+        // own click semantics. Two-layer layout is load-bearing: the outer `Box(weight(1f))`
+        // owns the full horizontal slot so the trailing date stays pinned to the right
+        // edge, while the inner `Row` sizes to its content and carries the clickable
+        // surface — taps on the empty gap between name end and trailing block fall
+        // through (they're inside the Box, outside the Row).
+        // History: a previous iteration put `weight(1f, fill = true)` directly on the
+        // clickable Row. That kept the date pinned right but the hit-target swallowed
+        // the empty gap, so users complained that "the whole header taps". Then
+        // `fill = false` shrank the hit-target but also collapsed the slot so the date
+        // un-pinned from the right edge. The Box wrapper resolves both.
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.CenterStart,
         ) {
-            Text(
-                text = annotated,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            verification?.let {
-                Spacer(Modifier.width(4.dp))
-                VerificationBadge(it)
-            }
-            if (showDrillChevron) {
-                Spacer(Modifier.width(2.dp))
-                Symbol(
-                    name = "chevron_right",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    size = 14.dp,
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(role = Role.Button, onClick = onChannelClick),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = annotated,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
+                verification?.let {
+                    Spacer(Modifier.width(4.dp))
+                    VerificationBadge(it)
+                }
+                if (showDrillChevron) {
+                    Spacer(Modifier.width(2.dp))
+                    Symbol(
+                        name = "chevron_right",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        size = 14.dp,
+                    )
+                }
             }
         }
         Spacer(Modifier.width(8.dp))
