@@ -117,7 +117,6 @@ fun CustomEmojiInlineView(
         firstVisibleFileId == null -> true
         else -> binding.isReady
     }
-    val needsPlaceholder = !contentReady
 
     Box(modifier = modifier) {
         if (sticker == null) {
