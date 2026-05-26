@@ -53,3 +53,35 @@ private val NeverCentered = mutableStateOf(false)
  * cheap booleans and reader-side recomposition is bounded to the PostCard.
  */
 val LocalIsHighlightedItem = staticCompositionLocalOf<Boolean> { false }
+
+/**
+ * "Is the media under this subtree passive (observe-only)?" flag. `true` for the
+ * body of a deleted-post tombstone, `false` everywhere else.
+ *
+ * Why this exists: a deleted post keeps its original [dev.lyo.hortay.data.PostContent]
+ * (with valid TDLib `fileId`s) so the feed can still show what was there — but TDLib
+ * has removed the message server-side, and deleted-message media is *not* recoverable
+ * through TDLib (Lev Lam, [tdlib/td#3493](https://github.com/tdlib/td/issues/3493);
+ * see also [dev.lyo.hortay.data.archive.ArchivedMediaStore]). Issuing
+ * [dev.lyo.hortay.data.MediaCache.ensure] for those files spins a doomed download
+ * through the single-writer reducer, and the viewport-centre promotion
+ * ([LocalIsCenteredItem]) makes it jump the queue *ahead* of live posts on the tight
+ * per-DC pool — so scrolling past a tombstone starves the cards the user is actually
+ * looking at. That was the user-reported "scroll hangs / everything loads slowly near
+ * deleted posts" symptom.
+ *
+ * When `true`, [dev.lyo.hortay.ui.media.rememberMediaBinding] degrades to *observe-only*:
+ * it still reports the file's [dev.lyo.hortay.data.MediaState] (so a slot that happens
+ * to be on disk renders), but issues no `ensure` / `resync` / `cancelDeferred` and skips
+ * the centre-of-viewport priority bump. Renderers additionally suppress download/retry
+ * affordances and inline autoplay, falling back to the inline minithumb as a blurred
+ * preview. The contract: *a tombstone never initiates network I/O.*
+ *
+ * Scoped to the post body only — [dev.lyo.hortay.ui.timeline.PostCard] provides it around
+ * [dev.lyo.hortay.ui.timeline.PostBody], leaving the channel avatar (small, shared across
+ * the channel's live posts, already cached) on the normal download path.
+ *
+ * Static for the same reason as [LocalIsCenteredItem]/[LocalIsHighlightedItem]: the value
+ * is a cheap per-card boolean and reader-side recomposition is bounded to one card.
+ */
+val LocalMediaPassive = staticCompositionLocalOf<Boolean> { false }

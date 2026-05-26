@@ -47,6 +47,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
+import dev.lyo.hortay.ui.media.LocalMediaPassive
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.text.LocalHashtagTap
@@ -108,7 +109,8 @@ fun PostCard(
     // dependency on this post's chatId only, so an UpdateChatReadInbox for
     // a different chat does not invalidate this card.
     val cursor = LocalReadCursors.current[post.chatId]
-    val isUnread = !expanded && post.parentId == null && post.isUnreadAt(cursor)
+    // A tombstone is terminal, not "yet to be read" — never paint the unread strip on it.
+    val isUnread = !expanded && !post.isDeleted && post.parentId == null && post.isUnreadAt(cursor)
     // Twin animations on the strip transition: alpha fade (effects spec) for the
     // colour disappearing, and a spatial-spring shrink that compresses the strip
     // toward its vertical centre. Together they read as "the read marker just
@@ -129,7 +131,10 @@ fun PostCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .alpha(if (post.isDeleted) 0.55f else 1f)
+            // Only deleted posts dim. `.then(...)` instead of `.alpha(if … 1f)` so a live
+            // post never installs an offscreen compositing layer it doesn't need — the
+            // common case stays layer-free.
+            .then(if (post.isDeleted) Modifier.alpha(0.55f) else Modifier)
             .background(highlightColor)
             .drawBehind {
                 if (unreadAlpha <= 0f) return@drawBehind
@@ -271,14 +276,24 @@ fun PostCard(
                         PollVoting { indices -> interactions.onPollVote(post, indices) }
                     } else null
                 }
-                PostBody(
-                    content = post.content,
-                    onMediaClick = { _, idx -> interactions.onMediaClick(post, idx) },
-                    expanded = expanded,
-                    translation = translation,
-                    onOpenInSource = { interactions.onOpenClick(post) },
-                    pollVoting = pollVoting,
-                )
+                // A deleted post keeps its original content (with valid TDLib fileIds) so
+                // the card can still show what was there — but the message is gone
+                // server-side and its media can't be re-fetched. [LocalMediaPassive] flips
+                // every media renderer under this body to observe-only: render the cached
+                // file / inline minithumb, but issue no downloads, autoplay or retry. This
+                // is the fix for the "scroll hangs near deleted posts" report — see
+                // [dev.lyo.hortay.ui.media.LocalMediaPassive]. Scoped to the body only; the
+                // channel avatar above stays on the normal (shared, cached) download path.
+                CompositionLocalProvider(LocalMediaPassive provides post.isDeleted) {
+                    PostBody(
+                        content = post.content,
+                        onMediaClick = { _, idx -> interactions.onMediaClick(post, idx) },
+                        expanded = expanded,
+                        translation = translation,
+                        onOpenInSource = { interactions.onOpenClick(post) },
+                        pollVoting = pollVoting,
+                    )
+                }
 
                 if (!post.isDeleted && (post.views > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty())) {
                     Spacer(Modifier.height(10.dp))

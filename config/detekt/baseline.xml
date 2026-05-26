@@ -11,6 +11,7 @@
     <ID>ComposableParamOrder:UserProfileSheet.kt$UserProfileSheet</ID>
     <ID>CompositionLocalAllowlist:LocalCenteredItem.kt$LocalIsCenteredItem</ID>
     <ID>CompositionLocalAllowlist:LocalCenteredItem.kt$LocalIsHighlightedItem</ID>
+    <ID>CompositionLocalAllowlist:LocalCenteredItem.kt$LocalMediaPassive</ID>
     <ID>CompositionLocalAllowlist:LocalCustomEmojiAnimator.kt$LocalCustomEmojiAnimator</ID>
     <ID>CompositionLocalAllowlist:LocalHashtagTap.kt$LocalHashtagTap</ID>
     <ID>CompositionLocalAllowlist:LocalInlineVideoAutoplay.kt$LocalInlineVideoAutoplay</ID>

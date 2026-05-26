@@ -45,6 +45,7 @@ import dev.lyo.hortay.data.isSecret
 import dev.lyo.hortay.data.isUnplayableVideo
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay
+import dev.lyo.hortay.ui.media.LocalMediaPassive
 import dev.lyo.hortay.ui.media.SpoilerKind
 import dev.lyo.hortay.ui.media.SpoilerOverlay
 import dev.lyo.hortay.ui.media.TdMediaImage
@@ -98,6 +99,11 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
     }
     val unplayable = item.isUnplayableVideo
     val inlineAutoplayEnabled = LocalInlineVideoAutoplay.current
+    // Deleted-post tombstone: media is observe-only. No autoplay (would mount an
+    // ExoPlayer + drive playback on a server-deleted file), no tap-to-open (the card
+    // tap already routes to the revision sheet), no play badge (implies tappable
+    // playback we don't offer). See [LocalMediaPassive].
+    val passive = LocalMediaPassive.current
     // Cache-presence gate. The user's contract for inline autoplay is "play only
     // what auto-download already pulled to disk" — anything else would override
     // the auto-download policy by stealthily downloading the playback file just
@@ -127,6 +133,7 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
         && !unplayable
         && asVideo.durationSec in 1..INLINE_AUTOPLAY_MAX_SEC
         && inlineAutoplayEnabled
+        && !passive
     // K2 smart-casts asVideo to AlbumItem.Video — autoplayEligible's chain
     // includes `asVideo != null` and short-circuit && propagates the cast.
     val autoplayVideo = autoplayEligible && isCachedReady(
@@ -162,7 +169,7 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .clickable(enabled = revealed, onClick = onClick),
+            .clickable(enabled = revealed && !passive, onClick = onClick),
     ) {
         // When the autoplayer mounts on top, suppress the poster's own progress spinner —
         // TdVideoPlayer renders its own MediaLoadingOverlay for the playback file, and a
@@ -198,7 +205,7 @@ private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boo
                 modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
             )
         } else {
-            MediaOverlay(item, hidePlayBadge = posterLoading)
+            MediaOverlay(item, hidePlayBadge = posterLoading || passive)
         }
         if (!revealed) {
             SpoilerOverlay(
@@ -353,6 +360,9 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
     var revealed by remember(content.playbackFileId) {
         mutableStateOf(!content.hasSpoiler && !content.isSecret)
     }
+    // Tombstone: keep the static (minithumb/cached) poster, but never mount the
+    // autoplayer or route a tap to a server-deleted file. See [LocalMediaPassive].
+    val passive = LocalMediaPassive.current
 
     MediaCaption(caption, maxLines, above = true, show = content.captionAbove)
     Box(
@@ -360,7 +370,7 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
             .fillMaxWidth()
             .aspectRatio(ratio)
             .clip(MaterialTheme.shapes.medium)
-            .clickable(enabled = revealed) { onMediaClick(items, 0) },
+            .clickable(enabled = revealed && !passive) { onMediaClick(items, 0) },
     ) {
         // Same suppression as MediaWithSpoiler: when the GIF autoplayer is mounted, its own
         // MediaLoadingOverlay covers the loading state — the poster's spinner would just
@@ -376,21 +386,25 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
         // Only mount the video player once the spoiler is revealed — otherwise we'd start
         // an ExoPlayer + TDLib download for content the user explicitly hasn't asked to see
         // yet, which is exactly the leak the spoiler/secret flags are meant to prevent.
+        // Passive tombstones likewise keep the static poster only — the "GIF" chip stays so
+        // the reader still knows what the deleted post carried.
         if (revealed) {
-            TdVideoPlayer(
-                fileId = content.playbackFileId,
-                remoteUrl = content.remoteVideoUrl,
-                autoPlay = true,
-                autoLoop = true,
-                showControls = false,
-                muted = true,
-                // Same seed-before-decoder pattern as the inline video branch
-                // above; the GIF's [TdMedia.width] / [TdMedia.height] match the
-                // animation stream so the poster and the player layout in a
-                // single frame.
-                initialAspect = content.media.aspectRatio,
-                modifier = Modifier.fillMaxSize(),
-            )
+            if (!passive) {
+                TdVideoPlayer(
+                    fileId = content.playbackFileId,
+                    remoteUrl = content.remoteVideoUrl,
+                    autoPlay = true,
+                    autoLoop = true,
+                    showControls = false,
+                    muted = true,
+                    // Same seed-before-decoder pattern as the inline video branch
+                    // above; the GIF's [TdMedia.width] / [TdMedia.height] match the
+                    // animation stream so the poster and the player layout in a
+                    // single frame.
+                    initialAspect = content.media.aspectRatio,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             DurationChip(text = "GIF", modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
         } else {
             SpoilerOverlay(
