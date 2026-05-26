@@ -45,6 +45,7 @@ import dev.lyo.hortay.data.archive.ArchiveSettings
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.settings.SectionLabel
 import dev.lyo.hortay.ui.settings.SettingsRow
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.launch
 
 /**
@@ -337,7 +338,7 @@ private fun DropdownRow(
     symbol: String,
     title: String,
     value: String,
-    options: List<Int>,
+    options: ImmutableList<Int>,
     labelOf: @Composable (Int) -> String,
     onPick: (Int) -> Unit,
     index: Int,
