@@ -121,8 +121,8 @@ private fun GuestModeWebmPlayer(
     remoteUrl: String?,
     thumb: TdMedia?,
     contentDescription: String?,
-    modifier: Modifier,
     priority: DownloadPriority,
+    modifier: Modifier = Modifier,
 ) {
     val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current

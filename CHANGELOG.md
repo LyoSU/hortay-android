@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- Video stickers and animated custom emoji now show their real transparency and animate inline, instead of appearing as a flat square or a frozen image.
+
 ### Changed
 - Tapping a post's channel name now opens that channel scrolled straight to the post you tapped, with a brief highlight, instead of landing at your last-read position.
 

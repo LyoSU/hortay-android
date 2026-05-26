@@ -35,7 +35,10 @@ class WebmFrameCache(
 
     private fun ensure(key: Key, path: String) {
         scope.launch(decodeDispatcher) {
-            mutex.withLock { if (key in inFlight || lru[key] != null) return@launch; inFlight += key }
+            mutex.withLock {
+                if (key in inFlight || lru[key] != null) return@launch
+                inFlight += key
+            }
             val decoded = runCatching { decode(path, key.sizePx) }.getOrNull()
             mutex.withLock {
                 inFlight -= key

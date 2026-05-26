@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Paint
@@ -31,7 +32,8 @@ fun WebmAlphaImage(
     val decoded by remember(key, sizePx, path) { cache.observe(WebmFrameCache.Key(key, sizePx), path) }
         .collectAsStateWithLifecycle()
 
-    LaunchedEffect(decoded != null) { if (decoded != null) onFirstFrame() }
+    val latestOnFirstFrame by rememberUpdatedState(onFirstFrame)
+    LaunchedEffect(decoded != null) { if (decoded != null) latestOnFirstFrame() }
     val base = remember(decoded, animate) { clock.nowMs }
     val d = decoded ?: return
     val idx = if (animate) d.frameAt(clock.nowMs - base) else 0
