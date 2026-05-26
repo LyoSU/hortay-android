@@ -8,6 +8,7 @@
 - Switching to Channels or Settings and back to the feed no longer flashes a skeleton — the feed paints in place at the same scroll position instead of replaying a loading state.
 - Channel avatar on a deleted-post tombstone no longer flickers between the initial letter and the photo when other channels in the archive update.
 - Settings → Source code row and the long-press link sheet's Share action now show their proper icons instead of a generic `?` placeholder.
+- Tapping the empty space between a post's channel name and its timestamp no longer drills into the channel — only the channel name, verification badge and chevron itself respond now.
 
 ## [0.8.0] — 2026-05-25
 

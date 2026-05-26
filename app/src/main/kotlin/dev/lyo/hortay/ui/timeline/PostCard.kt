@@ -426,9 +426,13 @@ private fun HeaderRow(
         // chip and made it impossible to tell from the tap target which action would
         // fire. Now: name+badge+chevron drills into channel; trailing region (pencil /
         // chip / badge) keeps its own click semantics.
+        // `weight(1f, fill = false)` (not `weight(1f)`) is load-bearing: fill=true makes
+        // the Row physically span the full free slot so the hit-target reaches into the
+        // empty gap before the trailing time. Inner Text still ellipsizes correctly via
+        // its own `weight(1f, fill = false)` when name + badge + chevron exceed the slot.
         Row(
             modifier = Modifier
-                .weight(1f)
+                .weight(1f, fill = false)
                 .clip(RoundedCornerShape(6.dp))
                 .clickable(role = Role.Button, onClick = onChannelClick),
             verticalAlignment = Alignment.CenterVertically,
