@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Tapping a post's channel name now opens that channel scrolled straight to the post you tapped, with a brief highlight, instead of landing at your last-read position.
+
 ### Fixed
 - Switching to Channels or Settings and back to the feed no longer flashes a skeleton — the feed paints in place at the same scroll position instead of replaying a loading state.
 - Channel avatar on a deleted-post tombstone no longer flickers between the initial letter and the photo when other channels in the archive update.

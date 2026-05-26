@@ -1200,7 +1200,12 @@ fun TimelineScreen(
                     viewer.openFor(post.content, idx)
                 }
             },
-            onChannelClick = { post -> onChannelOpenState.value(post.chatId, null) },
+            // Tapping a feed post's channel name/avatar drills into that channel
+            // landed ON the tapped post — anchored with a highlight pulse — instead
+            // of at the read/unread boundary. Reuses the same loadHistoryAround +
+            // highlight contract as the forward-chip and reply-quote taps; `post.id`
+            // is the TDLib message id ChannelViewModel matches against scrollToMessageId.
+            onChannelClick = { post -> onChannelOpenState.value(post.chatId, post.id) },
             onAuthorChatClick = { id -> onChannelOpenState.value(id, null) },
             onForwardSourceClick = { post ->
                 val origin = post.forwardOrigin
