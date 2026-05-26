@@ -1558,6 +1558,12 @@ fun TimelineScreen(
                                 // priority-aware scheduler then serves visible first
                                 // regardless of LIFO ordering inside each lane.
                                 for (post in item.posts()) {
+                                    // Deleted-post tombstone: the message is gone server-side
+                                    // and its media can't be re-fetched (tdlib/td#3493), so
+                                    // prefetching its files only spins doomed downloads through
+                                    // the reducer ahead of live posts. The card renders
+                                    // observe-only via [LocalMediaPassive]; skip it here too.
+                                    if (post.isDeleted) continue
                                     for (fileId in post.content.posterFileIds()) {
                                         cache.ensure(fileId, DownloadPriority.Prefetch)
                                     }

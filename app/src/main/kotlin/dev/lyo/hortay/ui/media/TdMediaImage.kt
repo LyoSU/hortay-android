@@ -21,6 +21,7 @@ import coil3.request.crossfade
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.TdMedia
+import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -91,6 +92,13 @@ fun TdMediaImage(
     // contract that every TDLib renderer must honour, in one place.
     val binding = rememberMediaBinding(fileId = fileId, priority = priority)
     val state = binding.state
+
+    // Deleted-post tombstone: the binding is observe-only (no download will ever
+    // complete), so the progress / retry affordances would lie. We keep the Ready
+    // image and the blurred inline minithumb — which is a free, already-in-memory
+    // preview of what the media was — and drop the spinner/retry chrome. See
+    // [LocalMediaPassive].
+    val passive = LocalMediaPassive.current
 
     // Loading overlay only paints after a 600 ms grace window — fast loads stay invisible
     // under the blurred minithumb. See [rememberDeferredLoading].
@@ -179,7 +187,7 @@ fun TdMediaImage(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            is MediaState.Downloading -> if (showLoadingOverlay && showProgress && fileId != null) {
+            is MediaState.Downloading -> if (showLoadingOverlay && showProgress && fileId != null && !passive) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     MediaLoadingOverlay(
                         progress = s.progress,
@@ -189,7 +197,7 @@ fun TdMediaImage(
                     )
                 }
             }
-            is MediaState.Failed -> if (showProgress && fileId != null) {
+            is MediaState.Failed -> if (showProgress && fileId != null && !passive) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     val coScope = rememberCoroutineScope()
                     MediaFailedOverlay(
@@ -198,6 +206,16 @@ fun TdMediaImage(
                 }
             }
             MediaState.Idle -> Unit
+        }
+        // Passive tombstone with neither an on-disk file nor an inline minithumb to
+        // preview (rare — TDLib almost always ships a minithumbnail): a decorative
+        // "image unavailable" glyph reads better than a bare placeholder rectangle.
+        // contentDescription is null because the PostCard's DeletedBadge already
+        // announces the card's deleted state to TalkBack.
+        if (passive && state !is MediaState.Ready && minithumb == null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Symbol(name = "hide_image", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

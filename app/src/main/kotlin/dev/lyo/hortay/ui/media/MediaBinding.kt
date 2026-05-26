@@ -81,10 +81,21 @@ fun rememberMediaBinding(
     // media-heavy stretches. With the gate, resync waits for scroll to
     // settle, then runs for every card the user actually landed on (which
     // is when the stale-slot recovery actually matters).
+    // Passive (observe-only) mode — set by [LocalMediaPassive] for a deleted-post
+    // tombstone. The message is gone server-side and TDLib can't re-fetch its media
+    // (tdlib/td#3493), so we must NOT issue ensure/resync or claim a download slot:
+    // doing so spins doomed jobs through the single-writer reducer and — via the
+    // viewport-centre promotion below — jumps them ahead of the live posts the user
+    // is actually reading. We keep [cache.observe] so a slot that's still on disk
+    // renders, and degrade everything else to no-ops. See [LocalMediaPassive] for the
+    // full rationale (the "scroll hangs near deleted posts" report). `passive` rides
+    // the effect keys so a live post turning into a tombstone mid-download tears the
+    // in-flight job down via the [DisposableEffect] below.
+    val passive = LocalMediaPassive.current
     val gate = LocalScrollGate.current
     val gateOpen = gate.value
-    LaunchedEffect(fileId, isRemote, gateOpen) {
-        if (gateOpen && !isRemote) fileId?.let(cache::resync)
+    LaunchedEffect(fileId, isRemote, gateOpen, passive) {
+        if (gateOpen && !isRemote && !passive) fileId?.let(cache::resync)
     }
 
     // Scroll-gate-aware ensure. Re-runs on gate flips so a fling-then-settle
@@ -108,17 +119,23 @@ fun rememberMediaBinding(
     // every [LocalIsCenteredItem.value] flip so a card sliding into / out of the
     // centre re-issues `ensure` with the new priority and TDLib promotes /
     // demotes the in-flight job in place.
-    val isCentered = LocalIsCenteredItem.current.value
+    // Short-circuit `&&`: in passive mode we never read [LocalIsCenteredItem.value],
+    // so a tombstone doesn't even subscribe to centre-flip recompositions during scroll.
+    val isCentered = !passive && LocalIsCenteredItem.current.value
     val effectivePriority = if (isCentered && priority == DownloadPriority.VisibleMedia) {
         DownloadPriority.VisibleCenter
     } else {
         priority
     }
-    LaunchedEffect(fileId, effectivePriority, gateOpen, isRemote) {
-        if (gateOpen && !isRemote) fileId?.let { cache.ensure(it, effectivePriority) }
+    LaunchedEffect(fileId, effectivePriority, gateOpen, isRemote, passive) {
+        if (gateOpen && !isRemote && !passive) fileId?.let { cache.ensure(it, effectivePriority) }
     }
-    DisposableEffect(fileId, isRemote) {
-        onDispose { if (!isRemote) fileId?.let(cache::cancelDeferred) }
+    // `passive` keys the dispose: when a live, mid-download card flips to a tombstone the
+    // old (active) effect disposes and cancels the now-doomed in-flight job. The passive
+    // effect's onDispose is a no-op — a tombstone scrolling off-screen never queued
+    // anything to cancel, and cancelling could clip a sibling live card sharing the file.
+    DisposableEffect(fileId, isRemote, passive) {
+        onDispose { if (!isRemote && !passive) fileId?.let(cache::cancelDeferred) }
     }
 
     return remember(state, fileId, isRemote, cache) {

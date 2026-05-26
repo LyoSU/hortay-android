@@ -432,7 +432,13 @@ class PostsRepository(
                 val seeded = revCounts[p.chatId to p.id] ?: 0
                 if (seeded > p.revisionCount) p.copy(revisionCount = seeded) else p
             }
-            if (tombstones.isEmpty()) return@combine filtered.toPersistentList()
+            if (tombstones.isEmpty()) {
+                ghostCache.clear()
+                return@combine filtered.toPersistentList()
+            }
+            // Drop cached ghosts for messages that are no longer tombstoned (un-deleted is
+            // impossible, but a chat un-subscribe / archive purge can retract one).
+            ghostCache.keys.retainAll(tombstones.mapTo(HashSet(tombstones.size)) { it.primaryMessageId })
             // Merge ghosts: skip any tombstone whose primary message id is already
             // present (live post is the source of truth — TDLib hasn't yet propagated
             // the delete OR the chat lacks the message). Apply chat-list gating to
@@ -448,7 +454,7 @@ class PostsRepository(
                             t.chatId in mainIds || t.chatId in archivedIds) &&
                         t.chatId !in ignored
                 }
-                .map { buildTombstoneGhost(it) }
+                .map { reuseGhost(it) }
                 .toList()
             if (ghosts.isEmpty()) filtered.toPersistentList()
             else (filtered + ghosts).sortedByDescending { it.date }.toPersistentList()
@@ -457,10 +463,40 @@ class PostsRepository(
     }
 
     /**
+     * Reference-stable ghost memo, keyed by [TombstoneRecord.primaryMessageId]. The
+     * [subscribedPosts] combine re-runs on every `_posts` emission — and `_posts` re-emits
+     * roughly once per second during scroll as `updateMessageInteractionInfo` heartbeats
+     * land on the open chat. Without memoisation each heartbeat called [buildTombstoneGhost]
+     * afresh for every tombstone, which (a) churned GC with a new ByteArray-bearing
+     * [TimelinePost] per ghost and (b) — because [TimelinePost]'s data-class `equals` is
+     * reference-based on its `avatarThumb` array — handed PostCard a "different" instance
+     * every time, defeating its `@Immutable` skip and recomposing every visible ghost on
+     * every heartbeat.
+     *
+     * The `===` check is deliberate: between heartbeats the `tombstones` list is the same
+     * instance held by `combine`, so its records are identity-equal and we reuse the cached
+     * ghost. Only a genuine archive-db re-emission produces fresh record instances, and that
+     * is exactly when the ghost's content may have changed and a rebuild is warranted.
+     *
+     * Touched only inside the [subscribedPosts] combine, which `stateIn` collects serially,
+     * so the plain [HashMap] needs no synchronisation. Pruned to the live tombstone set on
+     * each pass and cleared when no tombstones remain.
+     */
+    private val ghostCache = HashMap<Long, Pair<TombstoneRecord, TimelinePost>>()
+
+    private fun reuseGhost(t: TombstoneRecord): TimelinePost {
+        ghostCache[t.primaryMessageId]?.let { (rec, ghost) -> if (rec === t) return ghost }
+        return buildTombstoneGhost(t).also { ghostCache[t.primaryMessageId] = t to it }
+    }
+
+    /**
      * Build a minimal "ghost" [TimelinePost] from a [TombstoneRecord]. The feed shows it
      * with [PostCard]'s deleted-mode treatment (alpha 0.55, hidden reactions, "deleted"
      * badge). Tap routes through the existing onTapRevisions handler to open the
      * revision sheet — that's where the rich history lives.
+     *
+     * Always go through [reuseGhost] from the feed combine — calling this directly on every
+     * emission reintroduces the recomposition churn its memo exists to prevent.
      */
     private fun buildTombstoneGhost(t: TombstoneRecord): TimelinePost = TimelinePost(
         id = t.primaryMessageId,
