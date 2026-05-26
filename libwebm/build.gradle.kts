@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "dev.lyo.hortay.webm"
     compileSdk = 36
+    ndkVersion = "27.2.12479018"
 
     defaultConfig {
         minSdk = 26
@@ -14,6 +15,13 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
+        externalNativeBuild {
+            cmake { cFlags += "-std=c11" }
+        }
+    }
+
+    externalNativeBuild {
+        cmake { path = file("src/main/cpp/CMakeLists.txt") }
     }
 
     sourceSets {
