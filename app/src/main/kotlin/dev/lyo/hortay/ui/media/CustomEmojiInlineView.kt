@@ -223,10 +223,12 @@ fun CustomEmojiInlineView(
                     }
                     // Animated overlay — mounted whenever there's a decodable fileId.
                     if (canAnimate) {
+                        // Inline emoji boxes are square (100x100 glyphs) — same w/h.
                         WebmAlphaImage(
                             key = "emoji_${sticker.customEmojiId}",
                             path = webmBinding?.readyPath,
-                            sizePx = sizePx,
+                            widthPx = sizePx,
+                            heightPx = sizePx,
                             modifier = Modifier.fillMaxSize(),
                             animate = !reducedMotion,
                             onFirstFrame = { firstFrameRendered = true },

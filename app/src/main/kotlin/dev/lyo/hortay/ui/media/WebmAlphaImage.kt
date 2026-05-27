@@ -16,21 +16,25 @@ import dev.lyo.hortay.data.media.WebmFrameCache
 /** Draws an animated VP9+alpha WebM via the shared decode cache + clock. No SurfaceView, no
  *  ExoPlayer; the current frame is a plain ImageBitmap drawn with native alpha (srcOver).
  *  [animate]=false paints frame 0 (reduced-motion / off-focus). Renders nothing until [path] is
- *  non-null and decode completes — callers keep a static thumb underneath until [onFirstFrame]. */
+ *  non-null and decode completes — callers keep a static thumb underneath until [onFirstFrame].
+ *  [widthPx]/[heightPx] are the laid-out pixel box; frames decode straight to that size, so
+ *  non-square stickers keep their aspect ratio and the cache budget reflects the real footprint. */
 @Composable
 fun WebmAlphaImage(
     key: String,
     path: String?,
-    sizePx: Int,
+    widthPx: Int,
+    heightPx: Int,
     modifier: Modifier = Modifier,
     animate: Boolean = true,
     onFirstFrame: () -> Unit = {},
 ) {
-    if (path == null || sizePx <= 0) return
+    if (path == null || widthPx <= 0 || heightPx <= 0) return
     val cache = LocalWebmFrameCache.current
     val clock = LocalWebmClock.current
-    val decoded by remember(key, sizePx, path) { cache.observe(WebmFrameCache.Key(key, sizePx), path) }
-        .collectAsStateWithLifecycle()
+    val decoded by remember(key, widthPx, heightPx, path) {
+        cache.observe(WebmFrameCache.Key(key, widthPx, heightPx), path)
+    }.collectAsStateWithLifecycle()
 
     val latestOnFirstFrame by rememberUpdatedState(onFirstFrame)
     LaunchedEffect(decoded != null) { if (decoded != null) latestOnFirstFrame() }

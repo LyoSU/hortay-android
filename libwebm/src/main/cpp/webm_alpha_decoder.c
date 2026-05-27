@@ -17,6 +17,12 @@
 #include <libswscale/swscale.h>
 #include <libavutil/imgutils.h>
 
+// Hard ceiling on decoded frames. Telegram video stickers/emoji are short loops (tens of frames);
+// this only fires if a non-sticker WebM ever reaches this path, bounding the all-into-RAM decode
+// (count*W*H*4 bytes) so a pathological input can't OOM the process. We stop cleanly and return
+// what we have.
+#define MAX_FRAMES 512
+
 typedef struct { int *pixels; int *delays; int count; int w; int h; } Decoded;
 
 static void free_decoded(Decoded *d) {
@@ -47,22 +53,25 @@ static Decoded *decode_all(const char *path, int outW, int outH) {
 
     int W = outW > 0 ? outW : ctx->width;
     int H = outH > 0 ? outH : ctx->height;
+    size_t frameStride = (size_t)W * H;
     struct SwsContext *sws = NULL; // created once the source pix_fmt is known
     int cap = 16, count = 0;
     int *pixels = NULL;
     int *delays = malloc(sizeof(int) * cap);
-    size_t frameStride = (size_t)W * H;
 
     AVPacket *pkt = av_packet_alloc();
     AVFrame *frm = av_frame_alloc();
     AVFrame *rgba = av_frame_alloc();
+    // Bail out (freeing whatever was allocated) if any allocation failed, rather than
+    // dereferencing NULL below.
+    if (!delays || !pkt || !frm || !rgba) goto done;
     rgba->format = AV_PIX_FMT_BGRA;
     rgba->width = W;
     rgba->height = H;
-    av_frame_get_buffer(rgba, 0);
+    if (av_frame_get_buffer(rgba, 0) < 0) goto done;
 
     int prev_pts = 0;
-    while (av_read_frame(fmt, pkt) >= 0) {
+    while (count < MAX_FRAMES && av_read_frame(fmt, pkt) >= 0) {
         if (pkt->stream_index == vs && avcodec_send_packet(ctx, pkt) == 0) {
             while (avcodec_receive_frame(ctx, frm) == 0) {
                 if (!sws) {
@@ -75,10 +84,19 @@ static Decoded *decode_all(const char *path, int outW, int outH) {
                           frm->height, rgba->data, rgba->linesize);
                 if (!pixels) {
                     pixels = malloc(sizeof(int) * frameStride * cap);
+                    if (!pixels) { av_packet_unref(pkt); goto done; }
                 } else if (count == cap) {
-                    cap *= 2;
-                    delays = realloc(delays, sizeof(int) * cap);
-                    pixels = realloc(pixels, sizeof(int) * frameStride * cap);
+                    // realloc into temps and assign back only on success, so a failure leaves the
+                    // already-decoded `count` frames intact in the original buffers (realloc keeps
+                    // the old block on NULL return). Then bail with the partial loop.
+                    int newCap = cap * 2;
+                    int *np = realloc(pixels, sizeof(int) * frameStride * newCap);
+                    if (!np) { av_packet_unref(pkt); goto done; }
+                    pixels = np;
+                    int *nd = realloc(delays, sizeof(int) * newCap);
+                    if (!nd) { av_packet_unref(pkt); goto done; }
+                    delays = nd;
+                    cap = newCap;
                 }
                 for (int y = 0; y < H; y++) {
                     memcpy((uint8_t *)(pixels + (size_t)count * frameStride + (size_t)y * W),
@@ -104,6 +122,7 @@ done:
 
     if (count == 0) { free(pixels); free(delays); return NULL; }
     Decoded *d = malloc(sizeof(Decoded));
+    if (!d) { free(pixels); free(delays); return NULL; }
     d->pixels = pixels;
     d->delays = delays;
     d->count = count;

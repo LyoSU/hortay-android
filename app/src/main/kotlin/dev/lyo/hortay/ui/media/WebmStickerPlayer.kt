@@ -80,13 +80,14 @@ fun WebmStickerPlayer(
         )
     } else {
         // ── TDLib mode: WebmAlphaImage (ffmpeg VP9+alpha software decode) ────
-        // sizePx: the sticker box is always constrained to STICKER_MAX_SIDE on its
-        // longer axis (see stickerBoxModifier). We read the actual laid-out size from
-        // BoxWithConstraints so the cache key reflects the real pixel budget and
-        // non-square stickers (shorter side < maxSide) don't over-allocate.
+        // The sticker box is sized to the sticker's aspect ratio, capped at STICKER_MAX_SIDE on
+        // its longer axis (see stickerBoxModifier), so it's often non-square. We read both laid-out
+        // dimensions from BoxWithConstraints and decode straight to that box — the cache key
+        // reflects the real pixel budget and non-square stickers keep their aspect ratio.
         BoxWithConstraints(modifier = modifier) {
             val density = LocalDensity.current
-            val sizePx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
+            val widthPx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
+            val heightPx = with(density) { maxHeight.roundToPx() }.coerceAtLeast(1)
             var firstFrameRendered by remember(fileId) { mutableStateOf(false) }
 
             // Thumb stays under the canvas until WebmAlphaImage reports onFirstFrame.
@@ -104,7 +105,8 @@ fun WebmStickerPlayer(
             WebmAlphaImage(
                 key = fileId.toString(),
                 path = binding.readyPath,
-                sizePx = sizePx,
+                widthPx = widthPx,
+                heightPx = heightPx,
                 modifier = Modifier.fillMaxSize(),
                 animate = true,
                 onFirstFrame = { firstFrameRendered = true },
