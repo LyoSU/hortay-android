@@ -94,9 +94,10 @@ class TimelineUiStateBuilderTest {
 
     @Test
     fun `Ready at first-unread boundary in OldestUnreadFirst`() {
-        // Reverse feed: items already asc-by-date by caller's orderedFor.
-        // Items [98=read, 99=unread, 100=unread]. First unread = index 1.
-        val items = listOf(item(98L), item(99L), item(100L)).toPersistentList()
+        // Reverse feed: post data is always desc (newest = index 0). With the
+        // cursor at 98, ids 99/100 are unread. continueReadingIndex returns the
+        // OLDEST unread (resume boundary) = id 99 = indexOfLast{unread} = index 1.
+        val items = listOf(item(100L), item(99L), item(98L)).toPersistentList()
         val cursors = persistentMapOf(1L to 98L)
         val s = buildTimelineUiState(
             items = items,
@@ -133,15 +134,14 @@ class TimelineUiStateBuilderTest {
 
     @Test
     fun `OldestUnreadFirst with recency floor lands past the dormant unread`() {
-        // Aggregated feed: dormant channel A has a weeks-old unread post,
-        // active channel B has fresh unread. With minUnreadDate between the
-        // two dates, the builder skips the dormant post and lands on the
-        // fresh one — the cold-start protection against "I open the feed,
-        // it lands on a weeks-old post".
+        // Aggregated feed (desc by date): active channel B's fresh unread on top,
+        // dormant channel A's weeks-old unread at the bottom. With minUnreadDate
+        // between the two dates, only B's posts qualify; the resume boundary is
+        // the OLDEST qualifying unread = id 70 = indexOfLast{qualifies} = index 1.
         val items = listOf(
-            item(60L, chatId = 1L, date = 100L),  // dormant unread
-            item(70L, chatId = 2L, date = 600L),  // fresh unread — target
             item(80L, chatId = 2L, date = 700L),  // fresh unread
+            item(70L, chatId = 2L, date = 600L),  // fresh unread — boundary
+            item(60L, chatId = 1L, date = 100L),  // dormant unread (below floor)
         ).toPersistentList()
         val cursors = persistentMapOf(1L to 50L, 2L to 50L)
         val s = buildTimelineUiState(
