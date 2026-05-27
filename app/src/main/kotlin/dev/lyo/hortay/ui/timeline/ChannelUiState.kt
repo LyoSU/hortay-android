@@ -123,10 +123,11 @@ sealed interface ChannelUiState {
  * [FeedOrder.OldestUnreadFirst]: in that mode, with no deep-link target
  * and outside search, [Ready.initialIndex] lands at the first FeedItem
  * containing an unread post (asc-by-date sort = oldest unread at the top
- * of the unread block, chat-app idiom). Falls back to `lastIndex`
- * ("caught up, here's the latest") when nothing is unread. Default
- * [cursors] = [EmptyReadCursors] keeps the Newest-mode call sites
- * unchanged.
+ * of the unread block, chat-app idiom). Falls back to index 0 (newest;
+ * sits at the bottom under reverseLayout) when nothing is unread — post
+ * data is always descending so 0 == newest == "caught up, here's the
+ * latest". Default [cursors] = [EmptyReadCursors] keeps the Newest-mode
+ * call sites unchanged.
  */
 internal fun buildChannelUiState(
     data: ChannelData,
@@ -143,7 +144,7 @@ internal fun buildChannelUiState(
         val initialIndex = if (feedOrder == FeedOrder.OldestUnreadFirst && items.isNotEmpty()) {
             val anchorPosts: List<TimelinePost> = items.map { it.posts().first() }
             val boundary = continueReadingIndex(feedOrder, anchorPosts, cursors)
-            if (boundary >= 0) boundary else items.lastIndex.coerceAtLeast(0)
+            if (boundary >= 0) boundary else 0
         } else {
             0
         }

@@ -178,6 +178,28 @@ class ChannelUiStateBuilderTest {
     }
 
     @Test
+    fun `OldestUnreadFirst caught up lands at index 0 when no deep-link`() {
+        // All posts read (cursor at 103L, highest id). continueReadingIndex returns -1.
+        // Fallback must be 0 (newest; sits at the bottom under reverseLayout=true),
+        // not lastIndex — post data is always desc (newest = index 0) in the new model.
+        val items = listOf(item(103L), item(102L), item(101L), item(100L)).toPersistentList()
+        val s = buildChannelUiState(
+            data = loaded(items),
+            items = items,
+            scrollToMessageId = null,
+            attemptedAround = false,
+            searchActive = false,
+            chatId = 1L,
+            feedOrder = FeedOrder.OldestUnreadFirst,
+            cursors = persistentMapOf(1L to 103L), // all read
+        )
+        assertTrue(s is ChannelUiState.Ready)
+        s as ChannelUiState.Ready
+        assertEquals(0, s.initialIndex) // newest; bottom-of-viewport under reverseLayout
+        assertNull(s.highlightedMessageId)
+    }
+
+    @Test
     fun `Search mode suppresses deep-link landing`() {
         // When user activates in-channel search, the deep-link anchor
         // doesn't apply — search results are their own context. Builder
