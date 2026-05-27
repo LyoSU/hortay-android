@@ -37,18 +37,18 @@ internal const val SMART_SCROLL_THRESHOLD_ROWS = 8
  * index. Used by all three "jump" pills: NewPostsPill, UnreadCounterPill,
  * home-tap. Suspends until scroll completes.
  *
- * [centerTarget]: land [target] in the VERTICAL CENTRE of the viewport (the
- * jump-to-post idiom — small posts sit centred, you see the whole card). The
- * centring offset `-((viewport - itemSize) / 2)` is symmetric, so it works
- * identically in forward AND reverseLayout — no direction-dependent sign. Posts
- * at the very edge of the list (nothing on one side to fill the gap) clamp
- * naturally. Posts taller than the viewport land showing their start.
+ * [centerTarget]: land [target] nicely (the jump-to-post idiom). A post that
+ * FITS the viewport sits centred — you see the whole card; a post TALLER than
+ * the viewport top-aligns so you read from the start instead of having both
+ * ends clipped. The offset math and the forward/reverse sign handling live in
+ * the pure, unit-tested [alignedScrollOffset]. Posts at the very edge of the
+ * list (nothing on one side to fill the gap) clamp naturally.
  *
- * Centring needs the target's measured height, so when the target isn't already
+ * Landing needs the target's measured height, so when the target isn't already
  * laid out we first bring it on-screen with an INSTANT [scrollToItem] and then
  * position it — both passes instant in that case, so the user never sees a
  * snap-then-animate jerk. When the target is already visible we animate straight
- * to the centred offset in one smooth motion.
+ * to the resolved offset in one smooth motion.
  */
 internal suspend fun LazyListState.smartScrollTo(
     target: Int,
@@ -78,16 +78,50 @@ internal suspend fun LazyListState.smartScrollTo(
 }
 
 /**
- * Pixel offset that centres [index] in the viewport, for use as the `scrollOffset`
- * of [scrollToItem]/[animateScrollToItem]. Negative = the item is pushed down from
- * the layout start by half the leftover space. Reads the item's measured size from
- * [layoutInfo]; returns 0 when it isn't laid out (caller falls back to top-anchor).
+ * Scroll offset that lands [index] nicely in the viewport, for use as the
+ * `scrollOffset` of [scrollToItem]/[animateScrollToItem]. Delegates the math to
+ * the pure, unit-tested [alignedScrollOffset]; this wrapper only supplies the
+ * measured geometry (and the live [LazyListLayoutInfo.reverseLayout]). Returns 0
+ * when the item isn't laid out, so the caller falls back to a plain top-anchor
+ * scroll.
  */
 private fun LazyListState.centeredOffsetFor(index: Int): Int {
     val info = layoutInfo
     val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return 0
     val viewport = info.viewportEndOffset - info.viewportStartOffset
-    return -((viewport - item.size) / 2)
+    return alignedScrollOffset(viewport = viewport, itemSize = item.size, reverseLayout = info.reverseLayout)
+}
+
+/**
+ * Pure offset math for "land this post nicely", separated from [LazyListState]
+ * so it's unit-testable (the layout internals aren't reachable from JUnit).
+ *
+ * Both args are px on the vertical scroll axis. The result is a
+ * `firstVisibleItemScrollOffset` value: negative = an empty gap before the item,
+ * positive = the item scrolled past the layout's start edge.
+ *
+ * Two regimes, matching the chat-app "scroll to message" idiom:
+ *
+ *   • Post FITS (`itemSize <= viewport`): centre it. The leftover space splits
+ *     evenly, so the offset is `-(gap / 2)` — symmetric, identical in forward
+ *     AND reverseLayout (this is the long-confirmed small-post behaviour).
+ *   • Post TALLER than the viewport: align its TOP to the viewport's top edge so
+ *     the reader starts at the beginning. Centring a tall post clips BOTH ends
+ *     (the reported bug — the top runs off the screen); top-aligning shows the
+ *     start and lets the tail overflow off the bottom. The offset that
+ *     top-aligns depends on layout direction:
+ *       – forward → 0                   (item top == top == layout start)
+ *       – reverse → `itemSize - viewport`  (the layout start is the BOTTOM, so
+ *                    push the item down by its overflow to bring the top edge up
+ *                    to the viewport top)
+ */
+internal fun alignedScrollOffset(viewport: Int, itemSize: Int, reverseLayout: Boolean): Int {
+    val gap = viewport - itemSize
+    return when {
+        gap >= 0 -> -(gap / 2)
+        reverseLayout -> -gap
+        else -> 0
+    }
 }
 
 /**

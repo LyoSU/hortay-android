@@ -29,4 +29,44 @@ class SmartScrollDistanceTest {
     fun `same index is Animated noop`() {
         assertEquals(ScrollKind.Animated, scrollKindFor(currentIndex = 5, target = 5, threshold = 8))
     }
+
+    // --- alignedScrollOffset: "land this post nicely" geometry ---
+
+    @Test
+    fun `post that fits is centred — forward`() {
+        // gap = 1000 - 400 = 600, split evenly → -300.
+        assertEquals(-300, alignedScrollOffset(viewport = 1000, itemSize = 400, reverseLayout = false))
+    }
+
+    @Test
+    fun `post that fits is centred — reverse, identical to forward`() {
+        // Small-post centring is symmetric, so reverseLayout must not change it.
+        assertEquals(-300, alignedScrollOffset(viewport = 1000, itemSize = 400, reverseLayout = true))
+    }
+
+    @Test
+    fun `exact-fit post anchors flush (no gap)`() {
+        assertEquals(0, alignedScrollOffset(viewport = 1000, itemSize = 1000, reverseLayout = false))
+        assertEquals(0, alignedScrollOffset(viewport = 1000, itemSize = 1000, reverseLayout = true))
+    }
+
+    @Test
+    fun `tall post top-aligns to zero — forward`() {
+        // Taller than the viewport: top at the layout start (= top) → offset 0,
+        // tail overflows off the bottom. The old code returned +300 here and
+        // clipped the top — the reported bug.
+        assertEquals(0, alignedScrollOffset(viewport = 1000, itemSize = 1600, reverseLayout = false))
+    }
+
+    @Test
+    fun `tall post top-aligns by overflow — reverse`() {
+        // reverse layout starts at the bottom; push the item down by its overflow
+        // (itemSize - viewport = 600) so the top edge reaches the viewport top.
+        assertEquals(600, alignedScrollOffset(viewport = 1000, itemSize = 1600, reverseLayout = true))
+    }
+
+    @Test
+    fun `very tall post — reverse overflow scales`() {
+        assertEquals(1200, alignedScrollOffset(viewport = 800, itemSize = 2000, reverseLayout = true))
+    }
 }

@@ -10,6 +10,7 @@
 - Screen readers now announce which posts are unread, matching the unread strip sighted users see.
 
 ### Changed
+- Jumping to a post — the "X new posts" and "next unread" buttons — now centres a short post on screen and shows a long post from its top, instead of landing with the top cut off.
 - Tapping a post's channel name now opens that channel scrolled straight to the post you tapped, with a brief highlight, instead of landing at your last-read position.
 - Revealing a spoiler now disintegrates the dot cloud as a left-to-right sweep that crumbles evenly and blows away, matching Telegram's dissolve, instead of the old uniform burst from the centre.
 - Ukrainian interface now speaks in a consistent informal tone, with wording and grammar fixes throughout.
