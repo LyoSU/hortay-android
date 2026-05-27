@@ -77,7 +77,6 @@ class WebmFrameCache(
                 // decoded, or the sticker would vanish the moment it finished decoding.
                 flows[key]?.value = decoded
                 evictDown(keep = key)
-                Log.d(TAG, "cached ${key.id} ${decoded.frames.size}f ${decoded.width}x${decoded.height} bytes=$bytes")
             }
         }
     }
@@ -95,7 +94,6 @@ class WebmFrameCache(
             // Prune the flow entry too (not just null its value) so it doesn't leak across a long
             // session and a later observe() of the same key re-decodes from scratch.
             flows.remove(e.key)?.value = null
-            Log.d(TAG, "evicted ${e.key.id} bytes=$bytes")
         }
     }
 
