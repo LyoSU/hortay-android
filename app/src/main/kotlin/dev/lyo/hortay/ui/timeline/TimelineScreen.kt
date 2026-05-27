@@ -776,9 +776,15 @@ fun TimelineScreen(
     // and read as a tool stage with active input — those must stay pinned.
     // The behavior helper reads `enabled` live so toggling it doesn't
     // re-allocate the NestedScrollConnection.
-    // The feed bar always participates in scroll-hide — there is no channel-filter
-    // tool stage to pin it in place (that case is now owned by ChannelScreen).
-    val floatingBar = rememberFloatingTopBarBehavior()
+    // Scroll-hide participates only in Newest (top-down) order. In
+    // OldestUnreadFirst the feed is a reverse/chat layout where the header is
+    // pinned (Telegram-chat idiom): hide-on-scroll there reacts to the inverted
+    // reading direction and reads as "the header vanished the moment I scrolled".
+    // Pinning is the clean, layout-direction-agnostic fix — `enabled=false` makes
+    // the connection a no-op, so the bar stays fully shown at full height.
+    val floatingBar = rememberFloatingTopBarBehavior(
+        enabled = { feedOrder == dev.lyo.hortay.data.FeedOrder.Newest },
+    )
     val topBarFullHeightPx = floatingBar.fullHeightPx
     val topBarOffsetPx = floatingBar.offsetPx
     val topBarNestedScroll = floatingBar.nestedScroll
@@ -1636,17 +1642,20 @@ fun TimelineScreen(
                             ScrollableDefaults.flingBehavior()
                         }
 
-                        // In OldestUnreadFirst, locate the read→unread boundary
-                        // in the asc-by-date sort (read block on top, unread
-                        // queue below). Paint a [UnreadBoundaryRow] divider
-                        // above the first item containing an unread post per
-                        // the FROZEN [boundaryCursors] snapshot — explicitly
-                        // not the live [readCursors] map. The rationale lives
-                        // alongside [boundaryCursorsState] above; tl;dr the
-                        // divider is a session anchor, so dwell-acks must not
-                        // migrate it under the user's scroll. Telegram-Android,
-                        // Slack and Discord all do the same with their
-                        // "New messages" rule.
+                        // In OldestUnreadFirst, locate the read→unread boundary.
+                        // Data is descending (newest = index 0), so the unread
+                        // block is the LOW indices (newest) and the read block is
+                        // the HIGH indices (older); the boundary is the OLDEST
+                        // unread = the LAST item containing an unread post =
+                        // `lastOrNull` (under the old ascending model this was
+                        // `firstOrNull`). The [UnreadBoundaryRow] divider is drawn
+                        // at the top of that item per the FROZEN [boundaryCursors]
+                        // snapshot — explicitly not the live [readCursors] map. The
+                        // rationale lives alongside [boundaryCursorsState] above;
+                        // tl;dr the divider is a session anchor, so dwell-acks must
+                        // not migrate it under the user's scroll. Telegram-Android,
+                        // Slack and Discord all do the same with their "New
+                        // messages" rule.
                         val unreadBoundaryKey by remember(
                             feedItems, boundaryCursors, feedOrder,
                         ) {
@@ -1654,7 +1663,7 @@ fun TimelineScreen(
                                 if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
                                     return@derivedStateOf null
                                 }
-                                feedItems.firstOrNull { feedItem ->
+                                feedItems.lastOrNull { feedItem ->
                                     feedItem.posts().any { it.isUnreadIn(boundaryCursors) }
                                 }?.key
                             }

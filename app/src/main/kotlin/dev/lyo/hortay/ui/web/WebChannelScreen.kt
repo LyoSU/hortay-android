@@ -39,6 +39,7 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.isUnreadIn
 import dev.lyo.hortay.data.orderedFor
+import dev.lyo.hortay.ui.timeline.reverseLayout
 import dev.lyo.hortay.data.web.WebPostAdapter
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.timeline.ChannelHeaderAvatar
@@ -123,12 +124,15 @@ fun WebChannelScreen(
     val listState = rememberLazyListState()
 
     // Cold-entry scroll for OldestUnreadFirst (chat-app idiom). Same contract
-    // as ChannelScreen: fires once per WebChannelScreen instance, only when
-    // the LazyListState is at its default 0/0 (respect any saveable restore
-    // from a drill-out/drill-in). Boundary picker: first post that's unread
-    // per [LocalReadCursors]; fallback to [List.lastIndex] = newest at bottom
-    // when caught up. Guest mode has no per-channel async load step, so
-    // we wait only for the list to become non-empty.
+    // and same descending+reverseLayout model as ChannelScreen: data is newest-
+    // first (index 0), the LazyColumn flips to reverseLayout so newest sits at
+    // the bottom. Fires once per WebChannelScreen instance, only when the
+    // LazyListState is at its default 0/0 (respect any saveable restore from a
+    // drill-out/drill-in). Boundary picker: the OLDEST unread per
+    // [LocalReadCursors] = the highest-index unread = indexOfLast (the resume
+    // boundary); fallback to index 0 (newest, at the bottom under reverseLayout)
+    // when caught up. Guest mode has no per-channel async load step, so we wait
+    // only for the list to become non-empty.
     val cursorHolder = LocalReadCursors.current
     val orderedPostsState = rememberUpdatedState(orderedPosts)
     LaunchedEffect(chatId, feedOrder) {
@@ -147,8 +151,8 @@ fun WebChannelScreen(
         }
         val items = orderedPostsState.value
         val cursors = cursorHolder.snapshot()
-        val boundary = items.indexOfFirst { it.isUnreadIn(cursors) }
-        val target = if (boundary >= 0) boundary else items.lastIndex
+        val boundary = items.indexOfLast { it.isUnreadIn(cursors) }
+        val target = if (boundary >= 0) boundary else 0
         if (target > 0) listState.scrollToItem(target)
     }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
@@ -220,6 +224,7 @@ fun WebChannelScreen(
         )
         LazyColumn(
             state = listState,
+            reverseLayout = feedOrder.reverseLayout,
             contentPadding = mergedPadding,
             modifier = Modifier.fillMaxSize(),
         ) {
