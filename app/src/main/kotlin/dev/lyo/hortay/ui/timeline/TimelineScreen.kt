@@ -776,14 +776,11 @@ fun TimelineScreen(
     // and read as a tool stage with active input — those must stay pinned.
     // The behavior helper reads `enabled` live so toggling it doesn't
     // re-allocate the NestedScrollConnection.
-    // The feed bar hide-on-scrolls in BOTH orders. In OldestUnreadFirst the feed
-    // is a reverse/chat layout, so the gesture↔reading relationship is flipped —
-    // [reverseLayout] tells the behavior to hide on the opposite delta sign so the
-    // bar still collapses while reading forward (toward newer) and reappears on the
-    // way back, instead of the inverted "vanishes when I scroll back" feel.
-    val floatingBar = rememberFloatingTopBarBehavior(
-        reverseLayout = { feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst },
-    )
+    // The feed bar hide-on-scrolls in BOTH orders via pure gesture deltas — the
+    // hide/show direction is gesture-based (finger-up = reading = hide), which is
+    // the same in Newest and OldestUnreadFirst, so the behavior needs no
+    // layout-direction awareness.
+    val floatingBar = rememberFloatingTopBarBehavior()
     val topBarFullHeightPx = floatingBar.fullHeightPx
     val topBarOffsetPx = floatingBar.offsetPx
     val topBarNestedScroll = floatingBar.nestedScroll

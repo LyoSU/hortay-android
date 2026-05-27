@@ -37,33 +37,31 @@ class FloatingTopBarBehavior(
 @Composable
 fun rememberFloatingTopBarBehavior(
     enabled: () -> Boolean = { true },
-    reverseLayout: () -> Boolean = { false },
 ): FloatingTopBarBehavior {
     val fullHeightPx = remember { mutableFloatStateOf(0f) }
     val offsetPx = remember { mutableFloatStateOf(0f) }
     val enabledState = rememberUpdatedState(enabled)
-    val reverseState = rememberUpdatedState(reverseLayout)
     val nestedScroll = remember(fullHeightPx, offsetPx) {
         object : NestedScrollConnection {
-            // In a reverse / chat layout the gesture↔reading-direction relationship
-            // is flipped: reading forward (toward newer) is a downward drag, so the
-            // bar must hide on the OPPOSITE delta sign from the top-down case. `dir`
-            // folds that inversion into one factor — the hide/show math and the amount
-            // of scroll the bar consumes stay identical, only the trigger direction
-            // flips. Read live via [rememberUpdatedState] so toggling feed order
-            // doesn't re-allocate the connection.
+            // Pure gesture-delta hide-on-scroll, identical in both feed orders.
+            // `available.y` is a raw screen-space pointer delta — `reverseLayout`
+            // does NOT transform it. Progressing through the feed (reading) is a
+            // finger-up gesture (`available.y < 0`) regardless of order: in Newest
+            // you scroll down into older posts; in OldestUnreadFirst the newest sit
+            // at the visual bottom, so advancing toward them also brings lower
+            // content up — finger up. So hide on negative delta and reveal on
+            // positive in BOTH cases; no direction-dependent fold (an earlier
+            // reverse-aware `dir` factor inverted this and was reverted).
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (!enabledState.value()) return Offset.Zero
-                val dir = if (reverseState.value()) -1f else 1f
-                val dy = available.y * dir
-                if (dy >= 0f) return Offset.Zero
+                if (available.y >= 0f) return Offset.Zero
                 val limit = -fullHeightPx.floatValue
                 if (limit == 0f) return Offset.Zero
                 val previous = offsetPx.floatValue
-                val next = (previous + dy).coerceIn(limit, 0f)
+                val next = (previous + available.y).coerceIn(limit, 0f)
                 if (next == previous) return Offset.Zero
                 offsetPx.floatValue = next
-                return Offset(0f, (next - previous) * dir)
+                return Offset(0f, next - previous)
             }
 
             override fun onPostScroll(
@@ -72,15 +70,13 @@ fun rememberFloatingTopBarBehavior(
                 source: NestedScrollSource,
             ): Offset {
                 if (!enabledState.value()) return Offset.Zero
-                val dir = if (reverseState.value()) -1f else 1f
-                val dy = available.y * dir
-                if (dy <= 0f) return Offset.Zero
+                if (available.y <= 0f) return Offset.Zero
                 val previous = offsetPx.floatValue
                 if (previous == 0f) return Offset.Zero
-                val next = (previous + dy).coerceIn(-fullHeightPx.floatValue, 0f)
+                val next = (previous + available.y).coerceIn(-fullHeightPx.floatValue, 0f)
                 if (next == previous) return Offset.Zero
                 offsetPx.floatValue = next
-                return Offset(0f, (next - previous) * dir)
+                return Offset(0f, next - previous)
             }
         }
     }

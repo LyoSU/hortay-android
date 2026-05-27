@@ -121,13 +121,14 @@ sealed interface ChannelUiState {
  *
  * [feedOrder] + [cursors] drive the cold-entry boundary for
  * [FeedOrder.OldestUnreadFirst]: in that mode, with no deep-link target
- * and outside search, [Ready.initialIndex] lands at the first FeedItem
- * containing an unread post (asc-by-date sort = oldest unread at the top
- * of the unread block, chat-app idiom). Falls back to index 0 (newest;
- * sits at the bottom under reverseLayout) when nothing is unread — post
- * data is always descending so 0 == newest == "caught up, here's the
- * latest". Default [cursors] = [EmptyReadCursors] keeps the Newest-mode
- * call sites unchanged.
+ * and outside search, [Ready.initialIndex] lands at the read→unread
+ * boundary via [continueReadingIndex]. Post data is always DESCENDING
+ * (newest = index 0), so that boundary is the OLDEST unread = the
+ * highest-index unread (`indexOfLast`); reverseLayout=true then renders it
+ * as the chat-app "resume here, newer below" anchor. Falls back to index 0
+ * (newest; sits at the bottom under reverseLayout) when nothing is unread —
+ * "caught up, here's the latest". Default [cursors] = [EmptyReadCursors]
+ * keeps the Newest-mode call sites unchanged.
  */
 internal fun buildChannelUiState(
     data: ChannelData,
