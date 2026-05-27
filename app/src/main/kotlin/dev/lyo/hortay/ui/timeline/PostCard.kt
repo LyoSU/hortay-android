@@ -26,6 +26,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -127,10 +129,15 @@ fun PostCard(
         label = "post-unread-strip-shrink",
     )
     val unreadStripColor = MaterialTheme.colorScheme.primary
+    // The unread strip is a colour-only visual cue — invisible to TalkBack. Mirror
+    // it into the accessibility tree as a state description so screen-reader users
+    // get the same "this post is new" signal sighted users read from the strip.
+    val unreadStateDescription = stringResource(R.string.post_unread_state)
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .semantics { if (isUnread) stateDescription = unreadStateDescription }
             // Only deleted posts dim. `.then(...)` instead of `.alpha(if … 1f)` so a live
             // post never installs an offscreen compositing layer it doesn't need — the
             // common case stays layer-free.
