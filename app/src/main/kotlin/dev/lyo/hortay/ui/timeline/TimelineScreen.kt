@@ -613,7 +613,9 @@ fun TimelineScreen(
                             cursors = cursorHolder.snapshot(),
                             minUnreadDate = recencyCutoffMs,
                         )
-                        if (boundary >= 0) boundary else feedItems.lastIndex.coerceAtLeast(0)
+                        // Newest = index 0 under the descending data model; fall back
+                        // to 0 (newest post) when no unread boundary is found.
+                        if (boundary >= 0) boundary else 0
                     }
                 }
             }
@@ -1669,6 +1671,7 @@ fun TimelineScreen(
                             TimelineFeedColumn(
                                 state = listState,
                                 flingBehavior = flingBehavior,
+                                reverseLayout = feedOrder.reverseLayout,
                                 bottomPadding = contentPadding.calculateBottomPadding(),
                                 feedItems = state.items,
                                 unreadBoundaryKey = unreadBoundaryKey,
@@ -1778,7 +1781,9 @@ fun TimelineScreen(
                                         fi.posts().any { (it.chatId to it.id) in ackedSet }
                                     }
                                     if (firstNew >= 0) firstNew
-                                    else items.lastIndex.coerceAtLeast(0)
+                                    // Newest = index 0 under the descending data model;
+                                    // arrivals land near index 0 after acceptIds.
+                                    else 0
                                 }
                             }
                             listState.smartScrollTo(target)

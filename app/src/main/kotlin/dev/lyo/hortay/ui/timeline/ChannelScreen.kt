@@ -346,26 +346,13 @@ fun ChannelScreen(
         },
     )
 
-    // Pagination: direction-aware near-edge snapshotFlow → VM.loadOlderIfPossible().
-    // Older history lives at opposite ends of the list depending on feedOrder, so the
-    // "near the older edge" condition flips with it:
-    //
-    //   - Newest (newest-first sort):        older = BOTTOM → trigger on
-    //     `lastVisibleIndex >= total - threshold`.
-    //   - OldestUnreadFirst (asc-by-date):   older = TOP → trigger on
-    //     `firstVisibleIndex <= threshold`.
-    //
-    // Using the Newest-mode trigger in OldestUnreadFirst was a load-bearing bug:
-    // [buildChannelUiState] lands the channel at `lastIndex` (newest, at the BOTTOM
-    // of the asc-sort) on cold entry, so `lastVisibleIndex == total - 1` immediately
-    // — the trigger fires before any user gesture. Each [loadOlder] inserts ~30 older
-    // posts at the TOP of the asc-sort; LazyColumn's keyed anchor preserves the
-    // user's row, so its index shifts deeper into the list, `lastVisibleIndex` stays
-    // ~= `total - 1`, and the trigger re-fires. Runaway pagination continued until
-    // TDLib exhausted its local history and `pageEnded` flipped — at which point
-    // further scroll-up never paginates because the chat is already marked
-    // "page-ended" — exactly the user-reported "ліміт скільки листаю вверх, далі
-    // запиняє прогружати" symptom.
+    // Pagination: near-older-edge snapshotFlow → VM.loadOlderIfPossible().
+    // Post data is always descending (newest = index 0, oldest = index total-1), so
+    // older history is always at the HIGH-index end regardless of reverseLayout.
+    // A single `last >= total - threshold` condition covers both feed orders.
+    // (The previous per-order branch with `first <= threshold` for OldestUnreadFirst
+    // was an ascending-layout artifact; see git history for the runaway-pagination
+    // bug it caused.)
     LaunchedEffect(listState, chatId, feedOrder) {
         androidx.compose.runtime.snapshotFlow {
             val info = listState.layoutInfo
@@ -377,10 +364,10 @@ fun ChannelScreen(
             .distinctUntilChanged()
             .collect { (total, first, last) ->
                 if (total == 0 || first < 0 || last < 0) return@collect
-                val nearOlderEdge = when (feedOrder) {
-                    FeedOrder.Newest -> last >= total - CHANNEL_PAGINATION_THRESHOLD
-                    FeedOrder.OldestUnreadFirst -> first <= CHANNEL_PAGINATION_THRESHOLD
-                }
+                // Older history is always the high-index (oldest) end of the
+                // descending data, independent of reverseLayout — one condition
+                // for both orders.
+                val nearOlderEdge = shouldLoadOlder(first, last, total, CHANNEL_PAGINATION_THRESHOLD)
                 if (nearOlderEdge) {
                     vm.loadOlderIfPossible()
                 }
@@ -757,6 +744,7 @@ fun ChannelScreen(
                         CompositionLocalProvider(LocalScrollGate provides scrollGate) {
                             LazyColumn(
                                 state = listState,
+                                reverseLayout = feedOrder.reverseLayout,
                                 contentPadding = PaddingValues(
                                     top = 8.dp,
                                     bottom = contentPadding.calculateBottomPadding(),

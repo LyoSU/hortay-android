@@ -45,6 +45,7 @@ import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
 internal fun TimelineFeedColumn(
     state: LazyListState,
     flingBehavior: FlingBehavior,
+    reverseLayout: Boolean,
     bottomPadding: Dp,
     feedItems: List<FeedItem>,
     unreadBoundaryKey: Any?,
@@ -57,6 +58,7 @@ internal fun TimelineFeedColumn(
     LazyColumn(
         state = state,
         flingBehavior = flingBehavior,
+        reverseLayout = reverseLayout,
         contentPadding = PaddingValues(
             top = 8.dp,
             bottom = bottomPadding,
