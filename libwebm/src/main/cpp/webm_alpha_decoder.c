@@ -1,12 +1,14 @@
-// Minimal WebM (VP9 yuva420p) decoder: decodes a short sticker loop entirely into RGBA
+// Minimal WebM (VP9 + alpha) decoder: decodes a short sticker loop entirely into BGRA
 // frames scaled to a target size, returned to Kotlin as a flat ARGB_8888-packed int[].
-// Android/MediaCodec can't decode the VP9 alpha plane (androidx/media#1388); ffmpeg's
-// software VP9 decoder + swscale to RGBA preserves it. See scripts/build-ffmpeg.sh.
+// Android/MediaCodec can't decode the VP9 alpha plane (androidx/media#1388). Telegram stores
+// the alpha as a separate VP9 stream in the WebM BlockAdditional; only the *libvpx* decoder
+// reconstructs it as yuva420p (the native ffmpeg vp9 decoder drops it). swscale yuva420p->BGRA
+// preserves the alpha plane. See scripts/build-ffmpeg.sh (--enable-libvpx).
 //
-// Pixel order: ffmpeg AV_PIX_FMT_RGBA is byte order R,G,B,A. Android Bitmap.Config.ARGB_8888
-// stores each pixel as a little-endian int whose bytes are R,G,B,A — so the packed RGBA bytes
-// load directly via Bitmap.setPixels with no swizzle. (Verified by the instrumented test that
-// asserts transparent corners; if a device shows red/alpha swapped, switch to AV_PIX_FMT_BGRA.)
+// Pixel order: AV_PIX_FMT_BGRA is memory bytes B,G,R,A. Android Bitmap.Config.ARGB_8888 +
+// Bitmap.setPixels expect each int as 0xAARRGGBB; on little-endian ARM the BGRA byte run loads
+// as exactly that int, so colours land right. (RGBA here swaps red<->blue — the "broken
+// colours" symptom observed on-device.)
 #include <jni.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,7 +34,12 @@ static Decoded *decode_all(const char *path, int outW, int outH) {
     int vs = av_find_best_stream(fmt, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
     if (vs < 0) { avformat_close_input(&fmt); return NULL; }
     AVStream *st = fmt->streams[vs];
-    const AVCodec *codec = avcodec_find_decoder(st->codecpar->codec_id);
+    // Telegram stores the alpha as a second VP9 stream in the WebM BlockAdditional. Only the
+    // libvpx decoder reconstructs it (yuva420p, 4 planes); ffmpeg's *native* vp9 decoder ignores
+    // the alpha block and yields opaque yuv420p (the "still a square" symptom). Prefer libvpx-vp9,
+    // fall back to whatever decoder is available for the codec id.
+    const AVCodec *codec = avcodec_find_decoder_by_name("libvpx-vp9");
+    if (!codec) codec = avcodec_find_decoder(st->codecpar->codec_id);
     if (!codec) { avformat_close_input(&fmt); return NULL; }
     AVCodecContext *ctx = avcodec_alloc_context3(codec);
     avcodec_parameters_to_context(ctx, st->codecpar);
@@ -49,7 +56,7 @@ static Decoded *decode_all(const char *path, int outW, int outH) {
     AVPacket *pkt = av_packet_alloc();
     AVFrame *frm = av_frame_alloc();
     AVFrame *rgba = av_frame_alloc();
-    rgba->format = AV_PIX_FMT_RGBA;
+    rgba->format = AV_PIX_FMT_BGRA;
     rgba->width = W;
     rgba->height = H;
     av_frame_get_buffer(rgba, 0);
@@ -61,7 +68,7 @@ static Decoded *decode_all(const char *path, int outW, int outH) {
                 if (!sws) {
                     // yuva420p -> RGBA preserves the alpha plane.
                     sws = sws_getContext(frm->width, frm->height, frm->format,
-                                         W, H, AV_PIX_FMT_RGBA, SWS_BILINEAR, NULL, NULL, NULL);
+                                         W, H, AV_PIX_FMT_BGRA, SWS_BILINEAR, NULL, NULL, NULL);
                     if (!sws) { av_packet_unref(pkt); goto done; }
                 }
                 sws_scale(sws, (const uint8_t * const *)frm->data, frm->linesize, 0,

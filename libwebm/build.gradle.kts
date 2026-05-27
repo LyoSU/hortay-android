@@ -13,7 +13,10 @@ android {
         minSdk = 26
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            // arm64-v8a only for now: libvpx's armv7 NEON asm path doesn't cross-compile cleanly
+            // under NDK r27 clang (see scripts/build-ffmpeg.sh TODO). 32-bit devices simply lack
+            // libhortaywebm.so and WebmAlphaDecoder falls back to the static thumbnail.
+            abiFilters += listOf("arm64-v8a")
         }
         externalNativeBuild {
             cmake { cFlags += "-std=c11" }

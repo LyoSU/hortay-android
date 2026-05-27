@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# Minimal ffmpeg for VP9+alpha WebM decode only — vendored into :libwebm.
-# Android/MediaCodec can't decode VP9 alpha (androidx/media#1388); this software path can.
+# Minimal ffmpeg + libvpx for Telegram WebM (VP9 + alpha) decode only — vendored into :libwebm.
+# Android/MediaCodec can't decode the VP9 alpha plane (androidx/media#1388). Telegram stores the
+# alpha as a separate VP9 stream in the WebM BlockAdditional; ONLY libvpx reconstructs it as
+# yuva420p (ffmpeg's native vp9 decoder drops it -> opaque square). So we must build libvpx and
+# enable ffmpeg's libvpx_vp9 decoder.
 #
-# Builds on the HOST using the Android NDK (no Docker): ffmpeg cross-compiles for Android
-# cleanly from a macOS/Linux host, and the official NDK ships only host-native (x86_64/darwin)
-# toolchains — so a host build avoids the qemu/Rosetta emulation that a Linux-x86_64 NDK would
-# need inside an arm64 container. Output: static libs in libwebm/src/main/jniLibs/<abi>/ and
-# headers in libwebm/src/main/cpp/include-<abi>/ (both gitignored). Pin written to ffmpeg-version.txt.
+# Builds on the HOST via the Android NDK (no Docker): the official NDK ships host-native
+# toolchains only, so a host cross-compile avoids the qemu emulation a Linux-x86_64 NDK needs in
+# an arm64 container. Output: static .a in libwebm/src/main/jniLibs/<abi>/ + headers in
+# libwebm/src/main/cpp/include-<abi>/ (both gitignored). Pins written to ffmpeg-version.txt.
 #
-# Requires: git, make, and the Android NDK. Install the NDK with:
-#   sdkmanager "ndk;27.2.12479018"
+# Requires: git, make, and the Android NDK (sdkmanager "ndk;27.2.12479018").
 set -euo pipefail
 FFMPEG_REF="${1:-n7.1}"
+VPX_REF="${2:-v1.14.1}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# --- locate the NDK -----------------------------------------------------------
 find_ndk() {
   if [ -n "${ANDROID_NDK_HOME:-}" ] && [ -d "$ANDROID_NDK_HOME" ]; then echo "$ANDROID_NDK_HOME"; return; fi
   local sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/opt/homebrew/share/android-commandlinetools}}"
@@ -25,41 +26,61 @@ NDK="$(find_ndk)"
 case "$(uname -s)" in Darwin) HOST_TAG=darwin-x86_64 ;; Linux) HOST_TAG=linux-x86_64 ;; *) echo "unsupported host"; exit 1 ;; esac
 TOOL="$NDK/toolchains/llvm/prebuilt/$HOST_TAG/bin"
 [ -x "$TOOL/clang" ] || { echo "ERROR: NDK toolchain missing at $TOOL"; exit 1; }
+NPROC="$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
 echo "Using NDK: $NDK ($HOST_TAG)"
 
-# --- fetch ffmpeg -------------------------------------------------------------
 WORK="$ROOT/build/ffmpeg-src"
 mkdir -p "$WORK"
-if [ ! -d "$WORK/ffmpeg/.git" ]; then
-  git clone --depth 1 --branch "$FFMPEG_REF" https://github.com/FFmpeg/FFmpeg.git "$WORK/ffmpeg"
-fi
+[ -d "$WORK/libvpx/.git" ] || git clone --depth 1 --branch "$VPX_REF" https://chromium.googlesource.com/webm/libvpx "$WORK/libvpx"
+[ -d "$WORK/ffmpeg/.git" ] || git clone --depth 1 --branch "$FFMPEG_REF" https://github.com/FFmpeg/FFmpeg.git "$WORK/ffmpeg"
 
 build_abi() {
-  local ABI="$1" TRIPLE="$2" CPU="$3"
-  echo "=== building ffmpeg for $ABI ==="
-  local OUT="$WORK/out-$ABI" BLD="$WORK/bld-$ABI"
-  rm -rf "$BLD"; mkdir -p "$BLD"; ( cd "$BLD"
+  local ABI="$1" TRIPLE="$2" FF_ARCH="$3" VPX_TARGET="$4"
+  local OUT="$WORK/out-$ABI"
+  rm -rf "$OUT"
+  local CC="$TOOL/${TRIPLE}21-clang"
+
+  echo "=== libvpx for $ABI ==="
+  # All archive tools must be the NDK llvm-* ones — otherwise libvpx runs the host macOS
+  # ranlib/strip on the ELF objects ("not a mach-o file") and ships an empty libvpx.a.
+  local VBLD="$WORK/vbld-$ABI"; rm -rf "$VBLD"; mkdir -p "$VBLD"; ( cd "$VBLD"
+    CC="$CC" CXX="$TOOL/${TRIPLE}21-clang++" LD="$CC" AS="$CC" \
+    AR="$TOOL/llvm-ar" NM="$TOOL/llvm-nm" RANLIB="$TOOL/llvm-ranlib" STRIP="$TOOL/llvm-strip" \
+    "$WORK/libvpx/configure" --target="$VPX_TARGET" \
+      --disable-examples --disable-tools --disable-docs --disable-unit-tests \
+      --enable-vp9-decoder --disable-vp9-encoder --disable-vp8 \
+      --enable-static --disable-shared --enable-pic --disable-runtime-cpu-detect \
+      --prefix="$OUT"
+    make -j"$NPROC" && make install
+  )
+
+  echo "=== ffmpeg for $ABI ==="
+  local FBLD="$WORK/fbld-$ABI"; rm -rf "$FBLD"; mkdir -p "$FBLD"; ( cd "$FBLD"
     "$WORK/ffmpeg/configure" \
-      --target-os=android --arch="$CPU" --enable-cross-compile \
-      --cc="$TOOL/${TRIPLE}21-clang" --cxx="$TOOL/${TRIPLE}21-clang++" \
+      --target-os=android --arch="$FF_ARCH" --enable-cross-compile \
+      --cc="$CC" --cxx="$TOOL/${TRIPLE}21-clang++" \
       --ar="$TOOL/llvm-ar" --ranlib="$TOOL/llvm-ranlib" --strip="$TOOL/llvm-strip" --nm="$TOOL/llvm-nm" \
       --disable-everything --disable-programs --disable-doc --disable-avdevice --disable-postproc \
       --enable-avformat --enable-avcodec --enable-avutil --enable-swscale \
-      --enable-decoder=vp9 --enable-parser=vp9 \
+      --enable-libvpx --enable-decoder=libvpx_vp9 --enable-decoder=vp9 --enable-parser=vp9 \
       --enable-demuxer=matroska --enable-protocol=file \
       --enable-static --disable-shared --enable-pic \
+      --extra-cflags="-I$OUT/include" --extra-ldflags="-L$OUT/lib" \
       --prefix="$OUT"
-    make -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
-    make install
+    make -j"$NPROC" && make install
   )
+
   mkdir -p "$ROOT/libwebm/src/main/jniLibs/$ABI"
-  cp "$OUT"/lib/*.a "$ROOT/libwebm/src/main/jniLibs/$ABI/"
+  cp "$OUT"/lib/*.a "$ROOT/libwebm/src/main/jniLibs/$ABI/"   # ffmpeg libs + libvpx.a
   rm -rf "$ROOT/libwebm/src/main/cpp/include-$ABI"
   mkdir -p "$ROOT/libwebm/src/main/cpp"
   cp -R "$OUT/include" "$ROOT/libwebm/src/main/cpp/include-$ABI"
 }
 
-build_abi arm64-v8a   aarch64-linux-android arm64
-build_abi armeabi-v7a armv7a-linux-androideabi arm
-echo "$FFMPEG_REF" > "$ROOT/scripts/ffmpeg-version.txt"
-echo "ffmpeg $FFMPEG_REF built into libwebm/src/main/jniLibs/"
+build_abi arm64-v8a   aarch64-linux-android   arm64 arm64-android-gcc
+# TODO(armv7): libvpx's armv7 NEON .asm path mis-links under NDK clang ("undefined symbol: main"
+# on *.asm.S.o). Until that's resolved, ship arm64-v8a only; 32-bit devices fall back to the
+# static sticker thumbnail (WebmAlphaDecoder degrades gracefully when libhortaywebm.so is absent).
+# build_abi armeabi-v7a armv7a-linux-androideabi arm   armv7-android-gcc
+echo "$FFMPEG_REF (libvpx $VPX_REF)" > "$ROOT/scripts/ffmpeg-version.txt"
+echo "ffmpeg $FFMPEG_REF + libvpx $VPX_REF built into libwebm/src/main/jniLibs/"
