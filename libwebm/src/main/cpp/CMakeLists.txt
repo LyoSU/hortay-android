@@ -18,3 +18,7 @@ find_library(log-lib log)
 target_link_libraries(hortaywebm
   avformat avcodec swscale swresample avutil
   ${log-lib} z)
+
+# Android 15 / 16 KB page support: align the .so's LOAD segments to 16 KB so the loader
+# accepts it on 16 KB-page devices (otherwise System.loadLibrary fails there).
+target_link_options(hortaywebm PRIVATE "-Wl,-z,max-page-size=16384")
