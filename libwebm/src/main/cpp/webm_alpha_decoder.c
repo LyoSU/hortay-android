@@ -121,7 +121,16 @@ Java_dev_lyo_hortay_webm_WebmAlphaNative_nativeDecode(JNIEnv *env, jclass clazz,
     (*env)->SetIntArrayRegion(env, delays, 0, d->count, d->delays);
 
     jclass holder = (*env)->FindClass(env, "dev/lyo/hortay/webm/WebmAlphaNative$Raw");
-    jmethodID ctor = (*env)->GetMethodID(env, holder, "<init>", "([I[III I)V");
+    // JNI descriptor for Raw(int[] pixels, int[] delays, int count, int width, int height).
+    // NOTE: no spaces allowed in JNI signatures — 2× int[] (`[I`) + 3× int (`I`).
+    jmethodID ctor = holder ? (*env)->GetMethodID(env, holder, "<init>", "([I[IIII)V") : NULL;
+    // Degrade gracefully on any JNI lookup miss: clear the pending exception and return null
+    // (callers fall back to the static thumb) rather than letting NewObject abort the process.
+    if (!holder || !ctor) {
+        (*env)->ExceptionClear(env);
+        free_decoded(d);
+        return NULL;
+    }
     jobject obj = (*env)->NewObject(env, holder, ctor, pixels, delays, d->count, d->w, d->h);
     free_decoded(d);
     return obj;
