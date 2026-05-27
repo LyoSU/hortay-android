@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
@@ -36,16 +37,40 @@ internal const val SMART_SCROLL_THRESHOLD_ROWS = 8
  * Jump or animate to [target] based on distance from current first-visible
  * index. Used by all three "jump" pills: NewPostsPill, UnreadCounterPill,
  * home-tap. Suspends until scroll completes.
+ *
+ * [reverseLayout]: in a reverse/chat list `scrollToItem` lands the target at the
+ * BOTTOM edge (it becomes firstVisibleItem). For a "jump to this post and read
+ * forward" intent we re-anchor it to the viewport TOP via
+ * [anchorToViewportTopInReverse] so the user sees the START of the post with newer
+ * content below to scroll into — instead of landing on the post's tail.
  */
 internal suspend fun LazyListState.smartScrollTo(
     target: Int,
     threshold: Int = SMART_SCROLL_THRESHOLD_ROWS,
+    reverseLayout: Boolean = false,
 ) {
     val current = firstVisibleItemIndex
     when (scrollKindFor(current, target, threshold)) {
         ScrollKind.Instant -> scrollToItem(target)
         ScrollKind.Animated -> animateScrollToItem(target)
     }
+    if (reverseLayout) anchorToViewportTopInReverse(target)
+}
+
+/**
+ * Re-anchor [index] from the reverseLayout bottom edge (where [scrollToItem] leaves
+ * it) to the viewport TOP. Reveal the newer (lower-index) items sitting below the
+ * target by scrolling toward index 0 — which is BACKWARD (negative delta) in a
+ * reverseLayout list — by one viewport minus the target's own height. Targets near
+ * the newest end (nothing newer below) clamp naturally and rest at the bottom, which
+ * is the correct "caught up, newest at the bottom" landing.
+ */
+private suspend fun LazyListState.anchorToViewportTopInReverse(index: Int) {
+    val info = layoutInfo
+    val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+    val viewport = info.viewportEndOffset - info.viewportStartOffset
+    val shift = (viewport - item.size).coerceAtLeast(0)
+    if (shift > 0) animateScrollBy(-shift.toFloat())
 }
 
 /**

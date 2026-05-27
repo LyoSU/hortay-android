@@ -776,14 +776,13 @@ fun TimelineScreen(
     // and read as a tool stage with active input — those must stay pinned.
     // The behavior helper reads `enabled` live so toggling it doesn't
     // re-allocate the NestedScrollConnection.
-    // Scroll-hide participates only in Newest (top-down) order. In
-    // OldestUnreadFirst the feed is a reverse/chat layout where the header is
-    // pinned (Telegram-chat idiom): hide-on-scroll there reacts to the inverted
-    // reading direction and reads as "the header vanished the moment I scrolled".
-    // Pinning is the clean, layout-direction-agnostic fix — `enabled=false` makes
-    // the connection a no-op, so the bar stays fully shown at full height.
+    // The feed bar hide-on-scrolls in BOTH orders. In OldestUnreadFirst the feed
+    // is a reverse/chat layout, so the gesture↔reading relationship is flipped —
+    // [reverseLayout] tells the behavior to hide on the opposite delta sign so the
+    // bar still collapses while reading forward (toward newer) and reappears on the
+    // way back, instead of the inverted "vanishes when I scroll back" feel.
     val floatingBar = rememberFloatingTopBarBehavior(
-        enabled = { feedOrder == dev.lyo.hortay.data.FeedOrder.Newest },
+        reverseLayout = { feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst },
     )
     val topBarFullHeightPx = floatingBar.fullHeightPx
     val topBarOffsetPx = floatingBar.offsetPx
@@ -850,7 +849,7 @@ fun TimelineScreen(
         if (atTarget) {
             vm.refresh()
         } else {
-            listState.smartScrollTo(target)
+            listState.smartScrollTo(target, reverseLayout = feedOrder.reverseLayout)
             // Brief surface-tint pulse on the destination card — canonical
             // chat-UI pattern (Telegram/Slack/Discord: "you just landed here").
             // Reuses the same [highlightedPostKey] pipeline that deep-link and
@@ -1796,7 +1795,7 @@ fun TimelineScreen(
                                     else 0
                                 }
                             }
-                            listState.smartScrollTo(target)
+                            listState.smartScrollTo(target, reverseLayout = feedOrder.reverseLayout)
                         }
                     },
                 )
@@ -1872,7 +1871,7 @@ fun TimelineScreen(
                                 item.posts().any { it.isUnreadAt(cursorHolder[it.chatId]) }
                             }
                             val target = if (boundary >= 0) boundary else homeScrollIndexState.intValue
-                            scope.launch { listState.smartScrollTo(target) }
+                            scope.launch { listState.smartScrollTo(target, reverseLayout = feedOrder.reverseLayout) }
                         },
                     )
                 }
