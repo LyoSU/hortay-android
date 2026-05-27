@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data.media
 
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import dev.lyo.hortay.webm.WebmAlphaNative
@@ -26,7 +27,10 @@ object WebmAlphaDecoder {
             frames += bmp.asImageBitmap()
         }
         DecodedWebm(frames, raw.delays, raw.width, raw.height)
-    } catch (_: Throwable) {
+    } catch (t: Throwable) {
+        // Surfaces a missing/incompatible libhortaywebm.so (UnsatisfiedLinkError) or a native
+        // decode crash, which would otherwise silently fall back to the static thumb.
+        Log.w("WebmAlphaDecoder", "decode($path, ${widthPx}x$heightPx) failed", t)
         null
     }
 }

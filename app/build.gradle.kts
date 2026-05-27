@@ -202,6 +202,13 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        // JVM unit tests run against stubbed Android framework classes; without this, any
+        // production code path they exercise that touches android.util.Log (etc.) throws
+        // "not mocked". Returning defaults makes those calls no-ops in tests instead.
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",

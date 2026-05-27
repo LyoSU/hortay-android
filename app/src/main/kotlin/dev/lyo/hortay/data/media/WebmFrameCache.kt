@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data.media
 
+import android.util.Log
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,7 +27,11 @@ import kotlinx.coroutines.launch
  *  bites under genuine memory pressure. */
 class WebmFrameCache(
     private val scope: CoroutineScope,
-    private val maxBytes: Long = 24L * 1024 * 1024,
+    // A single full-size video sticker can decode to tens of MB of RGBA frames (a ~3 s loop at a
+    // ~320 px box is ~30 MB), so the budget has to hold at least a couple of those plus a screenful
+    // of small emoji — otherwise one sticker's decode evicts everything around it. Only on-screen
+    // loops are ever decoded, and eviction keeps the steady state bounded.
+    private val maxBytes: Long = 96L * 1024 * 1024,
     private val decodeDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val decode: (path: String, widthPx: Int, heightPx: Int) -> DecodedWebm? =
         WebmAlphaDecoder::decode,
@@ -55,33 +60,48 @@ class WebmFrameCache(
 
     private fun launchDecode(key: Key, path: String) {
         scope.launch(decodeDispatcher) {
-            val decoded = runCatching { decode(path, key.widthPx, key.heightPx) }.getOrNull()
+            val decoded = runCatching { decode(path, key.widthPx, key.heightPx) }
+                .onFailure { Log.w(TAG, "decode failed for $path", it) }
+                .getOrNull()
             synchronized(lock) {
                 inFlight -= key
-                if (decoded != null) {
-                    lru[key] = decoded
-                    bytes += sizeOf(decoded)
-                    evictDown()
-                    flows[key]?.value = decoded
+                if (decoded == null) {
+                    Log.w(TAG, "decode returned null for $path (${key.widthPx}x${key.heightPx})")
+                    return@synchronized
                 }
+                lru[key] = decoded
+                bytes += sizeOf(decoded)
+                // Deliver to observers FIRST so the decoded frames always reach the screen — even
+                // when this single entry is larger than the whole budget (a long full-size sticker
+                // can be). evictDown then trims OTHERS; it must never strand the entry we just
+                // decoded, or the sticker would vanish the moment it finished decoding.
+                flows[key]?.value = decoded
+                evictDown(keep = key)
+                Log.d(TAG, "cached ${key.id} ${decoded.frames.size}f ${decoded.width}x${decoded.height} bytes=$bytes")
             }
         }
     }
 
     private fun sizeOf(d: DecodedWebm): Long = d.frames.size.toLong() * d.width * d.height * 4
 
-    /** Caller holds [lock]. */
-    private fun evictDown() {
+    /** Caller holds [lock]. [keep] is exempt so a just-decoded entry is never evicted mid-deliver. */
+    private fun evictDown(keep: Key) {
         val it = lru.entries.iterator()
         while (bytes > maxBytes && it.hasNext()) {
             val e = it.next()
+            if (e.key == keep) continue
             bytes -= sizeOf(e.value)
             it.remove()
             // Prune the flow entry too (not just null its value) so it doesn't leak across a long
             // session and a later observe() of the same key re-decodes from scratch.
             flows.remove(e.key)?.value = null
+            Log.d(TAG, "evicted ${e.key.id} bytes=$bytes")
         }
     }
 
     internal fun currentBytes() = synchronized(lock) { bytes }
+
+    private companion object {
+        const val TAG = "WebmFrameCache"
+    }
 }
