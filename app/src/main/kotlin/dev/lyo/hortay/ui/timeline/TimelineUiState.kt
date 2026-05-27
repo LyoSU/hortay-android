@@ -53,9 +53,10 @@ sealed interface TimelineUiState {
  * arrive was the source of the "starts on a random ancient post" symptom.
  * Holding Loading until cursorsLanded is the type-level fix.
  *
- * [continueReadingIndex] returns -1 when caught up. We map that to lastIndex
- * for reverse feed (= newest at the bottom, the "you're caught up" landing)
- * and to 0 for Newest (= top of feed, the canonical "newest at top" fallback).
+ * [continueReadingIndex] returns -1 when caught up. Both orders map that to
+ * index 0: post data is always descending (newest = index 0), and the
+ * LazyColumn uses reverseLayout=true so index 0 appears at the bottom of
+ * the viewport — the "you're caught up, here's the latest" landing.
  */
 fun buildTimelineUiState(
     items: PersistentList<FeedItem>,
@@ -78,10 +79,7 @@ fun buildTimelineUiState(
     // KDoc for the dormant-channel rationale.
     val anchorPosts = items.map { it.posts().first() }
     val boundary = continueReadingIndex(feedOrder, anchorPosts, frozenCursors, minUnreadDate)
-    val initialIndex = when (feedOrder) {
-        FeedOrder.Newest -> if (boundary >= 0) boundary else 0
-        FeedOrder.OldestUnreadFirst -> if (boundary >= 0) boundary else items.lastIndex.coerceAtLeast(0)
-    }
+    val initialIndex = if (boundary >= 0) boundary else 0
     return TimelineUiState.Ready(
         items = items,
         initialIndex = initialIndex,

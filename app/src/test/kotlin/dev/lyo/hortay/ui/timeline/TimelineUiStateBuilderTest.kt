@@ -112,8 +112,12 @@ class TimelineUiStateBuilderTest {
     }
 
     @Test
-    fun `Ready at lastIndex in OldestUnreadFirst when caught up`() {
-        val items = listOf(item(98L), item(99L), item(100L)).toPersistentList()
+    fun `Ready at index 0 in OldestUnreadFirst when caught up`() {
+        // Post data is always desc (newest = index 0); reverseLayout=true in the
+        // LazyColumn flips the visual order so index 0 appears at the bottom.
+        // "Caught up" (boundary == -1) must land at 0 == newest == bottom-of-viewport,
+        // not lastIndex. This is the unified fallback for both feed orders.
+        val items = listOf(item(100L), item(99L), item(98L)).toPersistentList()
         val cursors = persistentMapOf(1L to 100L) // all read
         val s = buildTimelineUiState(
             items = items,
@@ -124,7 +128,7 @@ class TimelineUiStateBuilderTest {
         )
         assertTrue(s is TimelineUiState.Ready)
         s as TimelineUiState.Ready
-        assertEquals(2, s.initialIndex) // lastIndex of 3-element list
+        assertEquals(0, s.initialIndex) // newest post; sits at the bottom under reverseLayout
     }
 
     @Test
@@ -154,13 +158,13 @@ class TimelineUiStateBuilderTest {
     }
 
     @Test
-    fun `OldestUnreadFirst with recency floor falls back to newest when every unread is dormant`() {
-        // Only ancient unread exists. The fallback is `lastIndex` (= newest,
-        // bottom of asc-by-date), which reads as "you're caught up on
+    fun `OldestUnreadFirst with recency floor falls back to index 0 when every unread is dormant`() {
+        // Only ancient unread exists. The fallback is index 0 (newest; bottom of
+        // viewport under reverseLayout), which reads as "you're caught up on
         // anything recent". The dormant post itself stays in the feed.
         val items = listOf(
-            item(60L, date = 100L),
-            item(70L, date = 200L),
+            item(70L, date = 200L), // newest  — index 0 under desc ordering
+            item(60L, date = 100L), // dormant unread — index 1
         ).toPersistentList()
         val cursors = persistentMapOf(1L to 50L)
         val s = buildTimelineUiState(
@@ -173,6 +177,6 @@ class TimelineUiStateBuilderTest {
         )
         assertTrue(s is TimelineUiState.Ready)
         s as TimelineUiState.Ready
-        assertEquals(1, s.initialIndex)
+        assertEquals(0, s.initialIndex) // newest; sits at the bottom under reverseLayout
     }
 }
