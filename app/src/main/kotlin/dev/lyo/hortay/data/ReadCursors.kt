@@ -88,66 +88,54 @@ fun firstUnreadIndex(posts: List<TimelinePost>, cursors: ReadCursors): Int =
     posts.indexOfFirst { it.isUnreadIn(cursors) }
 
 /**
- * Reorder [posts] for the requested [FeedOrder]. [posts] arrives in the
- * canonical newest-first chronological order that [PostsRepository] /
- * [WebFeedSource] emit; both branches return a fresh list so the caller can
- * hand the result straight to a [androidx.compose.foundation.lazy.LazyColumn]
- * without worrying about stable identity on the source list.
+ * Returns [posts] unchanged for both [FeedOrder] values. This is a no-op shim.
  *
- * `OldestUnreadFirst` is the **reverse-feed idiom**: strict ascending by
- * date — OLDEST on top, NEWEST at the bottom, chronological reading direction
- * (scroll DOWN to advance forward in time). The TimelineScreen cold-start
- * scroll-target picker lands the user at the first unread post (chat-app
- * idiom: "where you left off") for accounts with unread, or at the bottom
- * (= newest) for caught-up accounts.
+ * **Why it's an identity:** the repository layer ([PostsRepository] /
+ * [WebFeedSource]) owns the single canonical sort: **descending by date,
+ * tie-broken descending by id** (newest = index 0). All callers now rely on
+ * that invariant.  [FeedOrder] controls only the `reverseLayout` boolean
+ * passed to [androidx.compose.foundation.lazy.LazyColumn] — it does NOT
+ * re-sort the list.
  *
- * Read/unread state is rendered via [dev.lyo.hortay.ui.timeline.UnreadStrip]
- * per-card and the [dev.lyo.hortay.ui.timeline.UnreadBoundaryRow] divider —
- * it does NOT influence the sort. The previous design ran a stable sort with
- * a read/unread compound key, which could lift a newer read post above an
- * older unread post and read as "broken sort" in a reverse-feed.
+ * The function is kept (rather than deleted) so call sites don't all need
+ * touching in the same commit.  It accepts `this` by receiver and returns
+ * `this` — no copy, no allocation, no recomposition churn from identity
+ * change.
+ *
+ * **Deterministic tie-break lives in the repository.** The previous
+ * `OldestUnreadFirst` branch ran `thenBy { it.id }` here to prevent
+ * same-date posts from swapping between refreshes.  That guarantee is now
+ * upheld by `PostsRepository`'s `sortedByDescending` + secondary key, which
+ * is the single authoritative sort location.
  */
-fun List<TimelinePost>.orderedFor(order: FeedOrder): List<TimelinePost> = when (order) {
-    FeedOrder.Newest -> this
-    // Tie-break by id ascending so same-date posts hold a deterministic
-    // position across re-sorts. PostFilterStrategy emits same-date posts in
-    // a non-deterministic HashMap iteration order, and Kotlin's stable
-    // sortedBy preserves that — meaning two posts with `date = 1715607123`
-    // could swap places between refreshes and read as "feed jitters" in
-    // the reverse-feed layout.
-    FeedOrder.OldestUnreadFirst ->
-        sortedWith(compareBy<TimelinePost> { it.date }.thenBy { it.id })
-}
+fun List<TimelinePost>.orderedFor(@Suppress("UNUSED_PARAMETER") order: FeedOrder): List<TimelinePost> = this
 
 /**
- * Cold-start scroll target for [order]. Returns `-1` when there's no
- * meaningful target (caught up, empty feed, or cursors not loaded yet).
+ * Cold-start scroll target. Returns the index of the **oldest unread post**
+ * in [posts], or `-1` when nothing qualifies (caught up, empty feed, or
+ * cursors not yet loaded).
  *
- *   - `Newest` (newest-first): the oldest unread post is the LAST entry in
- *     the unread block — `indexOfLast { isUnread }`.
- *   - `OldestUnreadFirst` (asc-by-date with read above unread): the first
- *     unread is the boundary between the read block and the unread queue —
- *     `indexOfFirst { isUnread }`. Scrolling there lands the user at "where
- *     they left off", with read history above and unread below.
+ * **Descending contract.** [posts] is always newest-first (index 0 = newest),
+ * owned by [PostsRepository] / [WebFeedSource]. On that layout, the resume
+ * boundary is the LAST entry in the unread block — the oldest unread post
+ * sits at the highest index among all unread posts. Both [FeedOrder] values
+ * produce the same list order, so the result is **identical regardless of
+ * [order]**.  The parameter is retained for API / test compatibility.
  *
- * Returns `-1` when nothing is unread — TimelineScreen's caller falls back
- * to `lastIndex` (= newest, at the bottom of the asc-by-date sort) for the
- * canonical "you're caught up, here's the latest" landing.
+ * Fallback. Callers map `-1` to index 0 (newest, top of the descending list)
+ * for the "you're caught up" landing.
  *
  * Recency floor ([minUnreadDate]). An aggregated feed across 100+ channels
- * has a different problem from a single-chat unread queue: a dormant
- * channel with a single weeks-old unread post sits at the top of the
- * asc-by-date sort, and `indexOfFirst { isUnread }` strands the user on
- * it — the symptom is "I open the feed, it lands on an old post".
- * Callers pass the minimum date an unread post must carry to qualify as
- * a landing target. Older unread posts are still rendered (the user can
- * scroll up to them), they just don't pull the cold-start anchor. The
- * default `0L` disables the floor — appropriate for single-channel
- * landings where the user opened a specific chat intentionally and the
- * chronology IS the entry point.
+ * has a different problem from a single-chat unread queue: a dormant channel
+ * with a weeks-old unread post sits near the bottom of the descending list
+ * and would pull the anchor there. Callers pass the minimum date an unread
+ * post must carry to qualify. Older unread posts are still rendered (the user
+ * can scroll to them); they just don't influence the cold-start anchor.
+ * Default `0L` disables the floor — appropriate for single-channel landings
+ * where the user opened a specific chat intentionally.
  */
 fun continueReadingIndex(
-    order: FeedOrder,
+    @Suppress("UNUSED_PARAMETER") order: FeedOrder,
     posts: List<TimelinePost>,
     cursors: ReadCursors,
     minUnreadDate: Long = 0L,
@@ -155,8 +143,5 @@ fun continueReadingIndex(
     val qualifies: (TimelinePost) -> Boolean =
         if (minUnreadDate <= 0L) ({ it.isUnreadIn(cursors) })
         else ({ it.isUnreadIn(cursors) && it.date >= minUnreadDate })
-    return when (order) {
-        FeedOrder.Newest -> posts.indexOfLast(qualifies)
-        FeedOrder.OldestUnreadFirst -> posts.indexOfFirst(qualifies)
-    }
+    return posts.indexOfLast(qualifies)
 }

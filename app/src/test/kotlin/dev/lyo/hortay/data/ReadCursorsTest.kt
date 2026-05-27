@@ -3,6 +3,7 @@ package dev.lyo.hortay.data
 import kotlinx.collections.immutable.persistentMapOf
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -84,7 +85,7 @@ class ReadCursorsTest {
     }
 
     @Test
-    fun `Newest order is a no-op on already-chronological input`() {
+    fun `Newest order is a no-op on already-descending input`() {
         val newestFirst = listOf(
             post(id = 70L, date = 700L), // unread, newest
             post(id = 60L, date = 600L), // unread
@@ -96,149 +97,154 @@ class ReadCursorsTest {
     }
 
     @Test
-    fun `OldestUnreadFirst sorts strictly ascending by date — oldest at top, newest at bottom`() {
-        // Reverse-feed: chronological order, scroll DOWN to advance forward
-        // in time. Read / unread state doesn't affect the sort (would have
-        // lifted a newer read post above an older unread post in the old
-        // block model — reads as a broken sort in a reverse feed).
+    fun `OldestUnreadFirst is identity — sort is owned by the repository`() {
+        // Since PostsRepository always emits newest-first (descending), orderedFor
+        // is a no-op shim for both orders. FeedOrder controls reverseLayout only.
+        // Tie-break determinism lives in the repository's descending sort.
         val newestFirst = listOf(
-            post(id = 70L, date = 700L), // unread, newest
-            post(id = 60L, date = 600L), // unread
-            post(id = 40L, date = 400L), // read
-            post(id = 30L, date = 300L), // read, oldest
+            post(id = 70L, date = 700L),
+            post(id = 60L, date = 600L),
+            post(id = 40L, date = 400L),
+            post(id = 30L, date = 300L),
         )
         val ordered = newestFirst.orderedFor(FeedOrder.OldestUnreadFirst)
-        assertEquals(listOf(30L, 40L, 60L, 70L), ordered.map { it.id })
+        assertEquals(listOf(70L, 60L, 40L, 30L), ordered.map { it.id })
     }
 
     @Test
-    fun `OldestUnreadFirst is a stable sort — preserves input order on date ties`() {
-        // Telegram emits album members with the same whole-second date, and
-        // PostFilterStrategy already anchors albums on a deterministic id.
-        // The asc-by-date sort must not disturb that ordering.
+    fun `orderedFor preserves input reference identity for both orders`() {
+        // Both branches must return `this` — no copy, no re-sort.
         val posts = listOf(
             post(id = 10L, date = 500L),
             post(id = 11L, date = 500L),
             post(id = 12L, date = 500L),
         )
-        val ordered = posts.orderedFor(FeedOrder.OldestUnreadFirst)
-        assertEquals(listOf(10L, 11L, 12L), ordered.map { it.id })
+        assertSame(posts, posts.orderedFor(FeedOrder.Newest))
+        assertSame(posts, posts.orderedFor(FeedOrder.OldestUnreadFirst))
     }
 
     @Test
-    fun `OldestUnreadFirst new unread arrival lands at the END of the list`() {
-        // New posts via UpdateNewMessage carry the highest date, so they
-        // sort to the bottom of the asc-by-date list — the canonical
-        // "newest at the bottom" position in a reverse feed.
-        val initial = listOf(
-            post(id = 60L, date = 600L),
-            post(id = 70L, date = 700L),
-            post(id = 40L, date = 400L),
-        )
-        val withArrival = listOf(post(id = 80L, date = 800L)) + initial
-        val ordered = withArrival.orderedFor(FeedOrder.OldestUnreadFirst)
-        assertEquals(listOf(40L, 60L, 70L, 80L), ordered.map { it.id })
-    }
-
-    @Test
-    fun `continueReadingIndex points to oldest unread in Newest order`() {
-        // Newest-first orientation: oldest unread is the LAST entry in the
-        // unread block.
+    fun `continueReadingIndex points to oldest unread (highest index) on descending data`() {
+        // Descending data (newest=index 0): the resume boundary is the LAST
+        // entry in the unread block — indexOfLast. Same for both orders.
         val cursors = persistentMapOf(CHAT_ID to 50L)
-        val newestFirst = listOf(
+        val descending = listOf(
             post(id = 70L, date = 700L), // index 0, unread (newest)
-            post(id = 60L, date = 600L), // index 1, unread (oldest unread)
+            post(id = 60L, date = 600L), // index 1, unread — oldest unread, the target
             post(id = 40L, date = 400L), // index 2, read
             post(id = 30L, date = 300L), // index 3, read
         )
-        assertEquals(1, continueReadingIndex(FeedOrder.Newest, newestFirst, cursors))
+        assertEquals(1, continueReadingIndex(FeedOrder.Newest, descending, cursors))
+        // OldestUnreadFirst yields the same result — data contract is identical
+        assertEquals(1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors))
     }
 
     @Test
     fun `continueReadingIndex returns -1 when everything is read`() {
         val cursors = persistentMapOf(CHAT_ID to 1_000L)
-        val newestFirst = listOf(
+        val descending = listOf(
             post(id = 70L, date = 700L),
             post(id = 30L, date = 300L),
         )
-        assertEquals(-1, continueReadingIndex(FeedOrder.Newest, newestFirst, cursors))
-        assertEquals(-1, continueReadingIndex(FeedOrder.OldestUnreadFirst, newestFirst, cursors))
+        assertEquals(-1, continueReadingIndex(FeedOrder.Newest, descending, cursors))
+        assertEquals(-1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors))
     }
 
     @Test
-    fun `continueReadingIndex points to first unread (read-tail boundary) in OldestUnreadFirst`() {
-        // Layout: read history above (asc by date) → unread queue below. The
-        // "continue reading" target is the boundary — first unread index =
-        // top of unread block. Scrolling there lands the user at "where they
-        // left off".
+    fun `continueReadingIndex is identical for Newest and OldestUnreadFirst on descending input`() {
+        // Both orders share the same "indexOfLast unread" logic — this test
+        // proves that the order parameter no longer forks the result.
         val cursors = persistentMapOf(CHAT_ID to 50L)
-        val displayed = listOf(
-            post(id = 30L, date = 300L), // read
+        val descending = listOf(
+            post(id = 80L, date = 800L), // unread
+            post(id = 70L, date = 700L), // unread
+            post(id = 60L, date = 600L), // unread — oldest unread, target
             post(id = 40L, date = 400L), // read
-            post(id = 60L, date = 600L), // first unread — the target
-            post(id = 70L, date = 700L),
         )
-        assertEquals(2, continueReadingIndex(FeedOrder.OldestUnreadFirst, displayed, cursors))
+        val forNewest = continueReadingIndex(FeedOrder.Newest, descending, cursors)
+        val forOldest = continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors)
+        assertEquals(forNewest, forOldest)
+        assertEquals(2, forNewest)
     }
 
     @Test
-    fun `OldestUnreadFirst recency floor skips dormant unread and lands on the next fresh unread`() {
-        // Aggregated feed with a dormant channel: a single weeks-old unread
-        // post at the top of asc-by-date sort, and a fresh unread post below
-        // it. With minUnreadDate between the two dates, the picker ignores
-        // the dormant post and lands on the fresh one — the user opens the
-        // feed and is taken to recent reading, not into the dormant tail.
+    fun `continueReadingIndex returns -1 when feed is caught up`() {
+        // -1 signals the caller to fall back to index 0 (newest, top of descending list).
+        val cursors = persistentMapOf(CHAT_ID to 1_000L)
+        val descending = listOf(post(id = 70L, date = 700L), post(id = 30L, date = 300L))
+        assertEquals(-1, continueReadingIndex(FeedOrder.Newest, descending, cursors))
+        assertEquals(-1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors))
+    }
+
+    @Test
+    fun `recency floor skips dormant unread and lands on the oldest fresh unread`() {
+        // Aggregated feed (descending). A dormant channel post at the bottom
+        // (low date) and fresh unread above it. With minUnreadDate between
+        // the two dates, the picker skips the dormant post — indexOfLast
+        // of posts qualifying (isUnread && date >= floor) stops at the
+        // oldest fresh unread, not the dormant one.
         val cursors = persistentMapOf(CHAT_ID to 50L, CHAT_ID + 1 to 50L)
-        val displayed = listOf(
-            post(id = 60L, chatId = CHAT_ID, date = 100L),         // dormant unread
-            post(id = 70L, chatId = CHAT_ID + 1, date = 600L),     // fresh unread
-            post(id = 80L, chatId = CHAT_ID + 1, date = 700L),     // fresh unread
+        val descending = listOf(
+            post(id = 80L, chatId = CHAT_ID + 1, date = 700L),     // fresh unread, index 0
+            post(id = 70L, chatId = CHAT_ID + 1, date = 600L),     // fresh unread, index 1 — target
+            post(id = 60L, chatId = CHAT_ID, date = 100L),         // dormant unread, index 2
         )
         assertEquals(
             1,
-            continueReadingIndex(FeedOrder.OldestUnreadFirst, displayed, cursors, minUnreadDate = 500L),
+            continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors, minUnreadDate = 500L),
+        )
+        assertEquals(
+            1,
+            continueReadingIndex(FeedOrder.Newest, descending, cursors, minUnreadDate = 500L),
         )
     }
 
     @Test
-    fun `OldestUnreadFirst recency floor returns -1 when every unread is dormant`() {
+    fun `recency floor returns -1 when every unread is dormant`() {
         // Only ancient unread exists. Caller (TimelineUiState) maps -1 to
-        // lastIndex = newest, so the user lands "caught up on anything
-        // recent". Dormant unread remains in the feed for the user to
-        // scroll up to.
+        // index 0 (newest, top of descending list). Dormant unread remains
+        // in the feed for the user to scroll to.
         val cursors = persistentMapOf(CHAT_ID to 50L)
-        val displayed = listOf(
-            post(id = 60L, date = 100L), // dormant unread
+        val descending = listOf(
             post(id = 70L, date = 200L), // dormant unread
+            post(id = 60L, date = 100L), // dormant unread
         )
         assertEquals(
             -1,
-            continueReadingIndex(FeedOrder.OldestUnreadFirst, displayed, cursors, minUnreadDate = 500L),
+            continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors, minUnreadDate = 500L),
+        )
+        assertEquals(
+            -1,
+            continueReadingIndex(FeedOrder.Newest, descending, cursors, minUnreadDate = 500L),
         )
     }
 
     @Test
-    fun `Newest recency floor scopes the oldest-unread anchor to recent posts`() {
-        // Newest order: oldest unread = LAST unread in iteration order
-        // (newest-first input). With the floor, the picker still wants the
-        // oldest unread *within the recent window* — so it lands just above
-        // the read tail rather than going back weeks for a dormant unread.
+    fun `recency floor scopes the oldest-unread anchor to the recent window`() {
+        // Descending input: newest-first. With the floor, the picker wants the
+        // oldest unread *within the recent window* — indexOfLast of qualifying
+        // posts. Mixed-age unread: the dormant one at the bottom doesn't count.
         val cursors = persistentMapOf(CHAT_ID to 50L, CHAT_ID + 1 to 50L)
-        val newestFirst = listOf(
-            post(id = 90L, chatId = CHAT_ID + 1, date = 900L),     // fresh unread
-            post(id = 80L, chatId = CHAT_ID + 1, date = 800L),     // fresh unread — boundary
-            post(id = 60L, chatId = CHAT_ID, date = 100L),         // dormant unread (skipped)
-            post(id = 40L, chatId = CHAT_ID, date = 90L),          // read
+        val descending = listOf(
+            post(id = 90L, chatId = CHAT_ID + 1, date = 900L),     // fresh unread, index 0
+            post(id = 80L, chatId = CHAT_ID + 1, date = 800L),     // fresh unread — boundary, index 1
+            post(id = 60L, chatId = CHAT_ID, date = 100L),         // dormant unread (skipped), index 2
+            post(id = 40L, chatId = CHAT_ID, date = 90L),          // read, index 3
         )
         assertEquals(
             1,
-            continueReadingIndex(FeedOrder.Newest, newestFirst, cursors, minUnreadDate = 500L),
+            continueReadingIndex(FeedOrder.Newest, descending, cursors, minUnreadDate = 500L),
+        )
+        assertEquals(
+            1,
+            continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors, minUnreadDate = 500L),
         )
     }
 
     @Test
     fun `zero or negative minUnreadDate disables the floor`() {
-        // Default and explicit 0 must match the pre-floor behaviour exactly.
+        // Default and explicit 0 must ignore the date — dormant unread qualifies.
+        // Single-element descending list: indexOfLast of the only unread = 0.
         val cursors = persistentMapOf(CHAT_ID to 50L)
         val posts = listOf(post(id = 60L, date = 100L)) // dormant unread
         assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, posts, cursors))
