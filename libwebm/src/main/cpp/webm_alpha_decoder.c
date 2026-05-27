@@ -23,6 +23,14 @@
 // what we have.
 #define MAX_FRAMES 512
 
+// Target number of frames to KEEP. Cached frames are held as RGBA bitmaps (count*W*H*4 bytes), so
+// a long loop dominates memory: a 219-frame 320x320 sticker is ~90 MB — enough to evict everything
+// else from the shared cache and thrash. We decode every frame (libvpx needs the full stream for
+// the alpha plane) but keep only ~this many, evenly spaced, folding dropped frames' durations into
+// the kept ones so the loop still plays full-length at a lower fps. Short stickers (<= this) are
+// untouched.
+#define TARGET_FRAMES 80
+
 typedef struct { int *pixels; int *delays; int count; int w; int h; } Decoded;
 
 static void free_decoded(Decoded *d) {
@@ -54,6 +62,23 @@ static Decoded *decode_all(const char *path, int outW, int outH) {
     int W = outW > 0 ? outW : ctx->width;
     int H = outH > 0 ? outH : ctx->height;
     size_t frameStride = (size_t)W * H;
+
+    // Estimate the source frame count to derive a keep-stride that caps cached frames at
+    // ~TARGET_FRAMES (see the #define). nb_frames is often unset for matroska/VP9, so fall back to
+    // duration * average frame rate. Unknown -> stride 1 (keep all, MAX_FRAMES still bounds it).
+    int64_t est = st->nb_frames;
+    if (est <= 0) {
+        double dur_s = 0.0;
+        if (st->duration != AV_NOPTS_VALUE && st->time_base.den)
+            dur_s = (double)st->duration * av_q2d(st->time_base);
+        else if (fmt->duration != AV_NOPTS_VALUE)
+            dur_s = (double)fmt->duration / AV_TIME_BASE;
+        double fps = av_q2d(st->avg_frame_rate);
+        if (dur_s > 0.0 && fps > 0.0) est = (int64_t)(dur_s * fps + 0.5);
+    }
+    int keepStride = 1;
+    if (est > TARGET_FRAMES) keepStride = (int)((est + TARGET_FRAMES - 1) / TARGET_FRAMES);
+    int rawIdx = 0; // counts every decoded frame; we keep 1 in every keepStride
     struct SwsContext *sws = NULL; // created once the source pix_fmt is known
     int cap = 16, count = 0;
     int *pixels = NULL;
@@ -74,6 +99,11 @@ static Decoded *decode_all(const char *path, int outW, int outH) {
     while (count < MAX_FRAMES && av_read_frame(fmt, pkt) >= 0) {
         if (pkt->stream_index == vs && avcodec_send_packet(ctx, pkt) == 0) {
             while (avcodec_receive_frame(ctx, frm) == 0) {
+                // Decimate: decode every frame (libvpx needs the full stream) but keep only every
+                // keepStride-th. Dropped frames' durations fold into the next kept frame because
+                // prev_pts only advances on kept frames, so the loop keeps its full wall-clock
+                // length at a lower fps.
+                if ((rawIdx++ % keepStride) != 0) continue;
                 if (!sws) {
                     // yuva420p -> RGBA preserves the alpha plane.
                     sws = sws_getContext(frm->width, frm->height, frm->format,
