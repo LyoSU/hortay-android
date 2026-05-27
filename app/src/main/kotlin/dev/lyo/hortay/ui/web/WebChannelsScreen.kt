@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.util.Locale
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.web.ChannelEntry
@@ -76,6 +79,12 @@ fun WebChannelsScreen(
     contentPadding: PaddingValues,
     onChannelClick: (String) -> Unit,
     onAddChannel: () -> Unit = {},
+    /**
+     * Tapping a curated quick-pick in the empty state. Carries the channel handle
+     * so the host can open the add sheet pre-filled — one tap surfaces the preview
+     * instead of making a fresh user type a handle they don't know yet.
+     */
+    onAddCurated: (String) -> Unit = {},
 ) {
     val channels by graph.webFeedSource.channels.collectAsStateWithLifecycle()
     // Hidden chatIds for the inline "hide from feed" toggle on each row. Same
@@ -109,11 +118,20 @@ fun WebChannelsScreen(
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (subscribed.isEmpty()) {
+            // Curated quick-picks defuse the empty-state "paralysis of choice":
+            // a brand-new user with nothing subscribed gets a few popular handles
+            // to tap instead of a blank field. Capped to keep the centred layout
+            // from overflowing on short screens.
+            val curated = remember {
+                curatedSuggestions(Locale.getDefault().language.lowercase()).take(5)
+            }
             EmptyChannelsState(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
                 onAddChannel = onAddChannel,
+                curated = curated,
+                onPickCurated = onAddCurated,
             )
             return@Scaffold
         }
@@ -182,10 +200,13 @@ fun WebChannelsScreen(
  * landed on the Channels tab via the bottom nav doesn't have to discover
  * the FAB to make progress.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun EmptyChannelsState(
     modifier: Modifier = Modifier,
     onAddChannel: () -> Unit,
+    curated: List<CuratedChannel> = emptyList(),
+    onPickCurated: (String) -> Unit = {},
 ) {
     Column(
         modifier = modifier.padding(horizontal = 32.dp),
@@ -227,6 +248,30 @@ private fun EmptyChannelsState(
             Symbol(name = "add", contentDescription = null, size = 18.dp)
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.web_add_channel))
+        }
+        if (curated.isNotEmpty()) {
+            Spacer(Modifier.size(28.dp))
+            Text(
+                text = stringResource(R.string.web_add_curated_title),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.size(12.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                curated.forEach { suggestion ->
+                    AssistChip(
+                        onClick = { onPickCurated(suggestion.username) },
+                        label = { Text("@${suggestion.username}") },
+                        leadingIcon = {
+                            Symbol(name = "add", contentDescription = null, size = 16.dp)
+                        },
+                        colors = AssistChipDefaults.assistChipColors(),
+                    )
+                }
+            }
         }
     }
 }

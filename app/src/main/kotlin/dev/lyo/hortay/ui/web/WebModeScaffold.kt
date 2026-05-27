@@ -479,6 +479,10 @@ fun WebModeScaffold(graph: AppGraph) {
                             pushWebChannel(username)
                         },
                         onAddChannel = { addSheetOpen = true },
+                        onAddCurated = { username ->
+                            deepLinkPrefill = username
+                            addSheetOpen = true
+                        },
                     )
 
                     NavTab.Saved -> TimelineScreen(
