@@ -1763,10 +1763,11 @@ fun TimelineScreen(
                     onClick = {
                         // Ack only scope-visible pending; archive / other-folder
                         // pending stays unread for those tabs. Scroll target lands
-                        // the user at the FIRST of the just-accepted posts in
-                        // row-space — canonical chat-app "New messages" jump
-                        // (oldest of the arrivals, read top → down). In Newest
-                        // the home target IS index 0 = newest, same idea.
+                        // the user at the OLDEST of the just-accepted posts so the
+                        // new batch reads forward in time — canonical chat-app
+                        // "New messages" jump. Data is descending (newest = index 0),
+                        // so the oldest arrival is the HIGHEST-index acked row =
+                        // indexOfLast. In Newest the home target IS index 0 = newest.
                         val ackedKeys = scopedPendingNew.map { it.chatId to it.id }
                         val preTotal = listState.layoutInfo.totalItemsCount
                         vm.acceptIds(ackedKeys)
@@ -1777,12 +1778,12 @@ fun TimelineScreen(
                                 dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> {
                                     val ackedSet = ackedKeys.toHashSet()
                                     val items = feedItemsState.value
-                                    val firstNew = items.indexOfFirst { fi ->
+                                    val oldestNew = items.indexOfLast { fi ->
                                         fi.posts().any { (it.chatId to it.id) in ackedSet }
                                     }
-                                    if (firstNew >= 0) firstNew
-                                    // Newest = index 0 under the descending data model;
-                                    // arrivals land near index 0 after acceptIds.
+                                    if (oldestNew >= 0) oldestNew
+                                    // Fallback: arrivals cluster at index 0 (newest)
+                                    // under the descending data model.
                                     else 0
                                 }
                             }
@@ -1827,46 +1828,41 @@ fun TimelineScreen(
                     UnreadCounterPill(
                         count = unreadRemaining,
                         onClick = {
-                            // Jump to the first STILL-unread FeedItem per the live
-                            // cursor — row-space, because LazyColumn renders folded
-                            // reply chains as single rows. This is the
-                            // "continue where you left off" semantic: the target is
-                            // the boundary between the read block and the unread
-                            // queue, NOT the newest unread at the bottom.
+                            // Jump to the read→unread BOUNDARY per the live cursor —
+                            // the "continue where you left off" anchor, NOT the newest
+                            // unread. Row-space, because LazyColumn renders folded
+                            // reply chains as single rows.
                             //
-                            // Conscious tradeoff against the literal ↓ glyph
-                            // direction. In OldestUnreadFirst the queue's
-                            // boundary IS the load-bearing UX anchor — it's "the
-                            // place I was reading" — so the pill's job is to
-                            // restore that position, not to dump the user at the
-                            // newest post. In the typical read-history-above
-                            // case `indexOfFirst` lands BELOW current and the
-                            // scroll is genuinely downward; in the active
-                            // reading case it's a noop (already at the
-                            // boundary), which is the correct visual cue that
-                            // there is nothing to jump to. `indexOfLast` was
-                            // tried in commit efce192 and reverted here: it
-                            // broke the "continue where you left off" anchor
-                            // without buying enough glyph-literal correctness
-                            // to be worth the loss.
+                            // Data is descending (newest = index 0), so the boundary —
+                            // the OLDEST unread, sitting just past the last post you
+                            // read — is the HIGHEST-index unread = indexOfLast. This is
+                            // the same end the unified [continueReadingIndex] / cold-
+                            // start picker land on; keeping the pill in sync with it is
+                            // what makes the jump feel like "resume", not "teleport to
+                            // newest". (Under the OLD ascending model this was
+                            // indexOfFirst; the reverseLayout migration inverted the
+                            // data order, so the boundary moved to the other end.)
+                            //
+                            // The ↓ glyph reads true: under reverseLayout the boundary
+                            // lies below the read history in the scroll-forward
+                            // (downward → newer) direction. In the active-reading case
+                            // the jump is a noop (already at the boundary) — the right
+                            // cue that there's nothing left to resume.
                             //
                             // Falls back to the snapshot's cold-start boundary
-                            // (homeScrollIndex) if every visible post is
-                            // live-read in the race between this click and a
-                            // refresh — that index is the same "where you left
-                            // off" anchor frozen at the previous boundary
-                            // computation, so the fallback path stays
-                            // semantically consistent with the primary path.
+                            // (homeScrollIndex) if every visible post is live-read in
+                            // the race between this click and a refresh — that index is
+                            // the same "where you left off" anchor, so the fallback path
+                            // stays semantically consistent with the primary path.
                             //
-                            // Read through [feedItemsState] (live) so a feed
-                            // refresh / new-post arrival that lands between this
-                            // composition and the click doesn't leave us indexing
-                            // a stale captured list.
+                            // Read through [feedItemsState] (live) so a feed refresh /
+                            // new-post arrival that lands between this composition and
+                            // the click doesn't leave us indexing a stale captured list.
                             val items = feedItemsState.value
-                            val live = items.indexOfFirst { item ->
+                            val boundary = items.indexOfLast { item ->
                                 item.posts().any { it.isUnreadAt(cursorHolder[it.chatId]) }
                             }
-                            val target = if (live >= 0) live else homeScrollIndexState.intValue
+                            val target = if (boundary >= 0) boundary else homeScrollIndexState.intValue
                             scope.launch { listState.smartScrollTo(target) }
                         },
                     )

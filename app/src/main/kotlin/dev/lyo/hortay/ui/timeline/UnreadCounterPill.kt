@@ -39,15 +39,16 @@ import dev.lyo.hortay.ui.theme.MorphShape
  *   - Count is the LIVE remaining-unread total in the visible feed
  *     (driven by [LocalReadCursors], not the frozen sort snapshot), so it
  *     ticks down as viewport-dwell acks land.
- *   - Tap → scroll the LazyColumn to the FIRST still-unread post per the
- *     live cursor — "continue where you left off" semantic. The target is
- *     the boundary between the read block and the unread queue, not the
- *     newest unread at the bottom. Conscious tradeoff against the literal
- *     `arrow_downward` glyph direction: the boundary is the load-bearing
- *     UX anchor in OldestUnreadFirst, so the pill restores reading
- *     position rather than dumping the user at the bottom of the feed.
- *     See the `onClick` body in TimelineScreen.kt for the full rationale,
- *     including why `indexOfLast` was tried and reverted.
+ *   - Tap → scroll the LazyColumn to the read→unread BOUNDARY per the live
+ *     cursor — "continue where you left off" semantic, not the newest unread.
+ *     Data is descending (newest = index 0), so the boundary (oldest unread)
+ *     is the highest-index unread = `indexOfLast` — the same end the unified
+ *     [dev.lyo.hortay.data.continueReadingIndex] cold-start picker lands on.
+ *     The `arrow_downward` glyph reads true under reverseLayout: the boundary
+ *     lies below the read history in the scroll-forward (downward → newer)
+ *     direction. See the `onClick` body in TimelineScreen.kt for the full
+ *     rationale (including how the reverseLayout migration moved the boundary
+ *     from `indexOfFirst` to `indexOfLast`).
  *
  * Silhouette-based hierarchy contrast with [NewPostsPill]:
  *   - [NewPostsPill] = ALERT — horizontal stadium with avatar stack +
