@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
@@ -36,9 +37,13 @@ import dev.lyo.hortay.data.TdMedia
  * requires a local file path and cannot decode a URL; guest-mode alpha rendering is an
  * explicit follow-up.
  *
- * The static thumbnail underlays the renderer until the first frame arrives.
- * [onFirstFrame] (from [WebmAlphaImage]) / `Player.Listener.onRenderedFirstFrame` (guest)
- * is the precise boundary: a real frame is on-canvas and any thumb hide afterwards is safe.
+ * The static thumbnail underlays the renderer until the FIRST FRAME actually arrives —
+ * [onFirstFrame] (from [WebmAlphaImage], TDLib) / `Player.Listener.onRenderedFirstFrame`
+ * (ExoPlayer, guest). Gating on `mediaState is Ready` is insufficient: bytes-on-disk land
+ * well before a frame is decoded, and guest mode has no MediaCache state at all. Once the
+ * real frame is on-canvas the thumb crossfades out via [rememberRevealAlpha] /
+ * [rememberPlaceholderLinger] (it fades rather than hard-cuts, so the swap doesn't pop, and
+ * holding it opaque under a moving frame would double the silhouette in transparent regions).
  *
  * Guest-mode looping: ExoPlayer `REPEAT_MODE_ONE` is unsafe for short Telegram WebM
  * stickers in media3 1.10 — re-prepare reuses the tail of the previous read and the
@@ -90,12 +95,15 @@ fun WebmStickerPlayer(
             val heightPx = with(density) { maxHeight.roundToPx() }.coerceAtLeast(1)
             var firstFrameRendered by remember(fileId) { mutableStateOf(false) }
 
-            // Thumb stays under the canvas until WebmAlphaImage reports onFirstFrame.
-            if (thumb != null && !firstFrameRendered) {
+            // Thumb underlays the canvas and crossfades out once WebmAlphaImage reports its
+            // first decoded frame — same no-pop dissolve as the guest path.
+            val crossAlpha = rememberRevealAlpha(firstFrameRendered)
+            val keepThumb = rememberPlaceholderLinger(firstFrameRendered, key = fileId)
+            if (thumb != null && keepThumb) {
                 TdMediaImage(
                     media = thumb,
                     contentDescription = contentDescription,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - crossAlpha },
                     contentScale = ContentScale.Fit,
                     placeholderColor = null,
                     showProgress = false,
@@ -175,12 +183,19 @@ private fun GuestModeWebmPlayer(
     }
 
     Box(modifier = modifier) {
-        // Thumb stays under the texture until ExoPlayer has put a real frame on it.
-        if (thumb != null && !firstFrameRendered) {
+        // Thumb stays under the texture and fades OUT once ExoPlayer has put a real
+        // frame on it. Hiding earlier (e.g. on `Ready` bytes-on-disk) leaves a window
+        // where the TextureView is transparent and exposes the surface behind; holding
+        // it at full alpha under the running animation would double the silhouette in
+        // transparent regions of a moving frame. So we crossfade (1 - alpha) rather than
+        // hard-cut. The linger gate keeps it composed through the fade, then drops it.
+        val crossAlpha = rememberRevealAlpha(firstFrameRendered)
+        val keepThumb = rememberPlaceholderLinger(firstFrameRendered, key = remoteUrl)
+        if (thumb != null && keepThumb) {
             TdMediaImage(
                 media = thumb,
                 contentDescription = contentDescription,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - crossAlpha },
                 contentScale = ContentScale.Fit,
                 placeholderColor = null,
                 showProgress = false,

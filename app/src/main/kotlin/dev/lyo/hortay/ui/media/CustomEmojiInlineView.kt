@@ -1,6 +1,5 @@
 package dev.lyo.hortay.ui.media
 
-import android.animation.ValueAnimator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -19,12 +18,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.data.CustomEmojiSticker
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.StickerFormat
+import dev.lyo.hortay.data.animatorDurationScale
 
 /**
  * Compact renderer for a Telegram `custom_emoji_id`. Used in two places:
@@ -115,7 +116,6 @@ fun CustomEmojiInlineView(
         firstVisibleFileId == null -> true
         else -> binding.isReady
     }
-    val needsPlaceholder = !contentReady
 
     Box(modifier = modifier) {
         if (sticker == null) {
@@ -189,11 +189,11 @@ fun CustomEmojiInlineView(
                 // Per-instance/off-screen pausing is handled by the shared clock, which
                 // only advances while the app produces frames — same as the TGS animator.
                 //
-                // reducedMotion: off-switch mirroring effectiveSkeletonGrace's test —
-                // animator scale at 0 means the user disabled animations; we then draw
-                // frame 0 instead of running the clock.
+                // reducedMotion: off-switch via the shared [animatorDurationScale] accessor (same
+                // source as effectiveSkeletonGrace / media-reveal). Scale 0 means the user disabled
+                // animations; we then draw frame 0 instead of running the clock.
                 val canAnimate = sticker.media.fileId != null
-                val reducedMotion = ValueAnimator.getDurationScale() == 0f
+                val reducedMotion = animatorDurationScale() == 0f
 
                 // Separate binding for the .webm playback file: the `firstVisibleFileId`
                 // binding above targets the thumb (placeholder gating); we need the webm
@@ -248,8 +248,16 @@ fun CustomEmojiInlineView(
         // justify dropping the underlay variant. The composables underneath stay
         // mounted so they keep driving their MediaCache / LottieUrlStore loads.
         // sticker is guaranteed non-null here — the null branch returned above.
-        if (needsPlaceholder) {
-            PlaceholderDisc()
+        //
+        // Fade the disc OUT (1 - alpha) as content becomes ready instead of unmounting it
+        // instantly; the linger gate keeps it composed through the fade. Under reduced
+        // motion the alpha snaps, collapsing back to the old instant disappear.
+        val discAlpha = rememberRevealAlpha(revealed = contentReady)
+        val keepDisc = rememberPlaceholderLinger(contentReady, key = firstVisibleFileId)
+        if (keepDisc) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - discAlpha }) {
+                PlaceholderDisc()
+            }
         }
     }
 }

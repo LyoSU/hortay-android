@@ -151,18 +151,24 @@ fun TdVideoPlayer(
     LaunchedEffect(autoPlay) { exoPlayer.playWhenReady = autoPlay }
 
     // Swap the source when the file becomes Ready, or when the caller picks a
-    // different quality (different fileId → new MediaState.Ready with a new path).
-    // We preserve playback position across the swap so a quality flip resumes
-    // mid-frame instead of restarting from zero.
-    LaunchedEffect(mediaState, fileId, isRemote, remoteUrl) {
+    // different quality (different fileId → new readyPath). We preserve playback position
+    // across the swap so a quality flip resumes mid-frame instead of restarting from zero.
+    //
+    // Keyed on [binding.readyPath] (the actual usable transition) rather than the whole
+    // [mediaState] object — matching WebM/Lottie/InlineEmoji. MediaState.Downloading emits
+    // a fresh data-class instance per throttled progress tick; keying on the whole object
+    // re-launched this effect on every tick (harmless — it early-returned — but churny).
+    val readyPath = binding.readyPath
+    LaunchedEffect(readyPath, fileId, isRemote, remoteUrl) {
         val uri: String = if (isRemote) {
             // K2 smart-casts remoteUrl to String via the isRemote val above
             // (`fileId == 0 && remoteUrl != null`).
             remoteUrl
         } else {
-            val ready = mediaState as? MediaState.Ready ?: return@LaunchedEffect
-            if (ready.path.isEmpty()) return@LaunchedEffect
-            "file://${ready.path}"
+            // readyPath is null for both "not Ready" and "Ready but path empty" (TDLib's
+            // transient post-completion-rename snapshot) — the single null-check covers both.
+            val path = readyPath ?: return@LaunchedEffect
+            "file://$path"
         }
         val resumeAt = exoPlayer.currentPosition.coerceAtLeast(0L)
         val wasPlaying = exoPlayer.playWhenReady

@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
+import dev.lyo.hortay.ui.media.SpoilerField
 import dev.lyo.hortay.ui.media.TEXT_DENSITY_PX_PER_DOT
 import dev.lyo.hortay.ui.media.drawSpoilerShimmer
 import dev.lyo.hortay.ui.media.rememberSpoilerDrift
@@ -61,14 +62,20 @@ fun LinkAwareText(
     val spoilerDispersion = renderable.spoilerDispersion
     val spoilerColor = MaterialTheme.colorScheme.onSurface
     val spoilerDrift by rememberSpoilerDrift()
-    val spoilerMod = if (spoilerGroups.isNotEmpty()) {
-        Modifier.drawWithContent {
-            drawContent()
-            val layout = layoutResult ?: return@drawWithContent
-            val textLen = layout.layoutInput.text.length
+
+    // One particle field per group, reused across frames so steady-state shimmer allocates
+    // nothing (see [SpoilerField]).
+    val spoilerFields = remember(renderable.contentKey) { HashMap<Int, SpoilerField>() }
+
+    // Merged clip path per group, rebuilt ONLY when the text layout changes — never per
+    // frame. `Path.op(Union)` and `getPathForRange` are heavy, and the layout is stable
+    // across the whole dispersion animation, so caching here removes the per-frame Path
+    // churn that the animating drift/dispersion would otherwise trigger.
+    val mergedPaths: Map<Int, Path> = remember(layoutResult, spoilerGroups) {
+        val layout = layoutResult ?: return@remember emptyMap()
+        val textLen = layout.layoutInput.text.length
+        buildMap {
             for (group in spoilerGroups) {
-                val progress = spoilerDispersion(group.groupId) ?: continue
-                if (progress >= 1f) continue
                 val merged = Path()
                 var any = false
                 for (r in group.ranges) {
@@ -79,9 +86,23 @@ fun LinkAwareText(
                     if (any) merged.op(merged, sub, PathOperation.Union) else merged.addPath(sub)
                     any = true
                 }
-                if (!any) continue
-                clipPath(merged) {
+                if (any) put(group.groupId, merged)
+            }
+        }
+    }
+
+    val spoilerMod = if (spoilerGroups.isNotEmpty()) {
+        Modifier.drawWithContent {
+            drawContent()
+            if (mergedPaths.isEmpty()) return@drawWithContent
+            for (group in spoilerGroups) {
+                val progress = spoilerDispersion(group.groupId) ?: continue
+                if (progress >= 1f) continue
+                val path = mergedPaths[group.groupId] ?: continue
+                val field = spoilerFields.getOrPut(group.groupId) { SpoilerField() }
+                clipPath(path) {
                     drawSpoilerShimmer(
+                        field = field,
                         seed = group.seed,
                         drift = spoilerDrift,
                         color = spoilerColor,

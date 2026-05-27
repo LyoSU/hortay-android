@@ -9,8 +9,10 @@
 
 ### Changed
 - Tapping a post's channel name now opens that channel scrolled straight to the post you tapped, with a brief highlight, instead of landing at your last-read position.
+- Revealing a spoiler now disintegrates the dot cloud as a left-to-right sweep that crumbles evenly and blows away, matching Telegram's dissolve, instead of the old uniform burst from the centre.
 
 ### Fixed
+- Media now dissolves into place as it loads instead of popping in — photos, channel and author avatars, stickers, custom emoji and GIFs no longer blink a grey placeholder before appearing.
 - Switching to Channels or Settings and back to the feed no longer flashes a skeleton — the feed paints in place at the same scroll position instead of replaying a loading state.
 - Channel avatar on a deleted-post tombstone no longer flickers between the initial letter and the photo when other channels in the archive update.
 - Settings → Source code row and the long-press link sheet's Share action now show their proper icons instead of a generic `?` placeholder.
