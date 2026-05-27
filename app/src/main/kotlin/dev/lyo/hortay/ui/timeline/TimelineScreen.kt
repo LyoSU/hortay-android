@@ -849,7 +849,7 @@ fun TimelineScreen(
         if (atTarget) {
             vm.refresh()
         } else {
-            listState.smartScrollTo(target, reverseLayout = feedOrder.reverseLayout)
+            listState.smartScrollTo(target, centerTarget = true)
             // Brief surface-tint pulse on the destination card — canonical
             // chat-UI pattern (Telegram/Slack/Discord: "you just landed here").
             // Reuses the same [highlightedPostKey] pipeline that deep-link and
@@ -1795,7 +1795,7 @@ fun TimelineScreen(
                                     else 0
                                 }
                             }
-                            listState.smartScrollTo(target, reverseLayout = feedOrder.reverseLayout)
+                            listState.smartScrollTo(target, centerTarget = true)
                         }
                     },
                 )
@@ -1871,7 +1871,7 @@ fun TimelineScreen(
                                 item.posts().any { it.isUnreadAt(cursorHolder[it.chatId]) }
                             }
                             val target = if (boundary >= 0) boundary else homeScrollIndexState.intValue
-                            scope.launch { listState.smartScrollTo(target, reverseLayout = feedOrder.reverseLayout) }
+                            scope.launch { listState.smartScrollTo(target, centerTarget = true) }
                         },
                     )
                 }
