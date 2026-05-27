@@ -8,6 +8,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import dev.lyo.hortay.data.StartupCoordinator
 import dev.lyo.hortay.data.TimelinePost
 import kotlinx.coroutines.delay
@@ -154,6 +157,12 @@ fun rememberReadAckDwell(
 ): MutableSet<Pair<Long, Long>> {
     val ackedRead = remember(ackKey) { HashSet<Pair<Long, Long>>() }
     val itemsState = rememberUpdatedState(displayedItems)
+    // Gate the ack on the screen actually being foreground+interactive. A post left
+    // in the viewport when the user locks the phone or backgrounds the app would
+    // otherwise get marked read by the dwell timer firing against a composition that
+    // is still alive but not on screen. We can't detect "eyes off a lit screen", but
+    // screen-off / backgrounded is a real, fixable false-read window.
+    val lifecycleState = LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     if (markAsRead != null) {
         LaunchedEffect(listState, ackKey) {
             // Track viewport by item KEY, not by index. During the dwell delay a
@@ -193,15 +202,25 @@ fun rememberReadAckDwell(
                         item.size >= viewportSize && visibleSpan * 2 >= viewportSize
                     if (fullyVisible || dominatesViewport) item.key else null
                 }
-                keys to scrolling
+                // resumed is part of the emitted tuple so toggling foreground
+                // re-arms the dwell: a post skipped while backgrounded gets a
+                // fresh ack window when the user returns and it's still visible.
+                val resumed = lifecycleState.value.isAtLeast(Lifecycle.State.RESUMED)
+                Triple(keys, scrolling, resumed)
             }
                 .distinctUntilChanged()
-                .collectLatest { (keys, scrolling) ->
+                .collectLatest { (keys, scrolling, resumed) ->
                     // Skip while motion is in progress; the next emission once
                     // the list settles will re-arm the dwell with the
-                    // post-settle fully-visible set.
-                    if (keys.isEmpty() || scrolling) return@collectLatest
+                    // post-settle fully-visible set. Skip while not resumed so a
+                    // backgrounded/locked screen never auto-reads the visible row.
+                    if (keys.isEmpty() || scrolling || !resumed) return@collectLatest
                     delay(dwellMs)
+                    // The user can lock or background the app during the dwell
+                    // window — re-check before committing the ack.
+                    if (!lifecycleState.value.isAtLeast(Lifecycle.State.RESUMED)) {
+                        return@collectLatest
+                    }
                     val snapshot = itemsState.value
                     if (snapshot.isEmpty()) return@collectLatest
                     val keySet = keys.toHashSet()

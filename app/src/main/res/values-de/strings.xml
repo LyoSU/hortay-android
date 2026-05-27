@@ -715,4 +715,6 @@
     <string name="revision_sheet_title">Bearbeitungsverlauf</string>
     <string name="revision_sheet_title_deleted">Gelöschter Beitrag</string>
     <string name="settings_archive_title">Beitragsarchiv</string>
+    <string name="settings_logout_dialog_text_archive">Dein lokales Archiv bearbeiteter und gelöschter Beiträge wird endgültig gelöscht. Du musst Nummer und Bestätigungscode erneut eingeben</string>
+    <string name="post_unread_state">Ungelesen</string>
 </resources>

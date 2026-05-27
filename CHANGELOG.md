@@ -6,12 +6,17 @@
 
 ### Added
 - Video stickers and animated custom emoji now show their real transparency and animate inline, instead of appearing as a flat square or a frozen image.
+- Guest mode's empty Channels screen now offers a few popular channels to add with one tap, instead of leaving you with a blank field.
+- Screen readers now announce which posts are unread, matching the unread strip sighted users see.
 
 ### Changed
 - Tapping a post's channel name now opens that channel scrolled straight to the post you tapped, with a brief highlight, instead of landing at your last-read position.
 - Revealing a spoiler now disintegrates the dot cloud as a left-to-right sweep that crumbles evenly and blows away, matching Telegram's dissolve, instead of the old uniform burst from the centre.
+- Ukrainian interface now speaks in a consistent informal tone, with wording and grammar fixes throughout.
 
 ### Fixed
+- Signing out now warns that it will erase your local post archive — shown only when the archive is turned on.
+- A post you're viewing no longer gets marked as read while the screen is off or the app is in the background.
 - Media now dissolves into place as it loads instead of popping in — photos, channel and author avatars, stickers, custom emoji and GIFs no longer blink a grey placeholder before appearing.
 - Switching to Channels or Settings and back to the feed no longer flashes a skeleton — the feed paints in place at the same scroll position instead of replaying a loading state.
 - Channel avatar on a deleted-post tombstone no longer flickers between the initial letter and the photo when other channels in the archive update.

@@ -732,4 +732,6 @@
     <string name="revision_sheet_title">Cronologia modifiche</string>
     <string name="revision_sheet_title_deleted">Post eliminato</string>
     <string name="settings_archive_title">Archivio post</string>
+    <string name="settings_logout_dialog_text_archive">Il tuo archivio locale dei post modificati ed eliminati verrà cancellato per sempre. Dovrai inserire di nuovo il numero e il codice di conferma</string>
+    <string name="post_unread_state">Non letto</string>
 </resources>

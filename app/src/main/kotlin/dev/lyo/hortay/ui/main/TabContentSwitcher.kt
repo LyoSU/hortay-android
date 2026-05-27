@@ -173,6 +173,7 @@ internal fun TabContentSwitcher(
                 )
                 NavTab.Profile -> {
                     val me by graph.tdClient.me.collectAsStateWithLifecycle()
+                    val archiveSettings by graph.archiveSettingsState.collectAsStateWithLifecycle()
                     SettingsScreen(
                         settings = graph.settingsStore,
                         stats = graph.statsRepository,
@@ -186,6 +187,7 @@ internal fun TabContentSwitcher(
                         onNavigateToArchiveSettings = {
                             graph.nav.push(dev.lyo.hortay.data.NavEntry.ArchiveSettings())
                         },
+                        archiveLossOnLogout = archiveSettings.enabled,
                     )
                 }
             }

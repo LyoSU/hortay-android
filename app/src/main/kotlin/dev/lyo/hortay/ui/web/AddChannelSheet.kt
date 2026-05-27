@@ -493,7 +493,7 @@ data class CuratedChannel(
 //
 // Mix favours culture / tech / science over hard news so first-launch
 // doesn't feel like a news firehose. No Russian-language channels.
-private fun curatedSuggestions(locale: String): List<CuratedChannel> = when (locale) {
+internal fun curatedSuggestions(locale: String): List<CuratedChannel> = when (locale) {
     "uk" -> listOf(
         CuratedChannel("durov", "Засновник Telegram"),
         CuratedChannel("telegram", "Офіційні новини Telegram"),

@@ -697,4 +697,6 @@
     <string name="revision_sheet_title">Riwayat pengeditan</string>
     <string name="revision_sheet_title_deleted">Kiriman yang dihapus</string>
     <string name="settings_archive_title">Arsip kiriman</string>
+    <string name="settings_logout_dialog_text_archive">Arsip lokal kiriman yang diedit dan dihapus akan terhapus permanen. Kamu perlu memasukkan nomor dan kode konfirmasi lagi</string>
+    <string name="post_unread_state">Belum dibaca</string>
 </resources>

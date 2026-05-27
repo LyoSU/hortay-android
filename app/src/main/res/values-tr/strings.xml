@@ -710,4 +710,6 @@
     <string name="revision_sheet_title">Düzenleme geçmişi</string>
     <string name="revision_sheet_title_deleted">Silinen gönderi</string>
     <string name="settings_archive_title">Gönderi arşivi</string>
+    <string name="settings_logout_dialog_text_archive">Düzenlenen ve silinen gönderilerin yerel arşivi kalıcı olarak silinecek. Numaran ve doğrulama kodunu yeniden girmek gerekecek</string>
+    <string name="post_unread_state">Okunmadı</string>
 </resources>

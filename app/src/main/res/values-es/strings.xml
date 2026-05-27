@@ -735,4 +735,6 @@
     <string name="revision_sheet_title">Historial de ediciones</string>
     <string name="revision_sheet_title_deleted">Publicación eliminada</string>
     <string name="settings_archive_title">Archivo de publicaciones</string>
+    <string name="settings_logout_dialog_text_archive">Tu archivo local de publicaciones editadas y eliminadas se borrará para siempre. Tendrás que ingresar tu número y código de confirmación de nuevo</string>
+    <string name="post_unread_state">No leído</string>
 </resources>

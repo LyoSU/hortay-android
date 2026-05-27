@@ -134,6 +134,13 @@ fun SettingsScreen(
      * null in guest mode (archive requires an authenticated session).
      */
     onNavigateToArchiveSettings: (() -> Unit)? = null,
+    /**
+     * True when the post archive is enabled, so logging out will irreversibly wipe
+     * the locally-stored edit/delete history (cleared in [AppGraph.runLogoutCleanup]).
+     * Drives the logout dialog to add a data-loss warning — but only for users who
+     * actually opted into archiving, so the 99% with it off see the plain message.
+     */
+    archiveLossOnLogout: Boolean = false,
 ) {
     // Sub-screen nav lives inside Settings — the auto-download list and category
     // screens are conceptually "deeper" pages of the same tab. Using AnimatedContent
@@ -208,6 +215,7 @@ fun SettingsScreen(
                 me = me,
                 userMessages = userMessages,
                 onNavigateToArchiveSettings = onNavigateToArchiveSettings,
+                archiveLossOnLogout = archiveLossOnLogout,
             )
         }
     }
@@ -240,6 +248,7 @@ private fun SettingsMain(
     me: TdApi.User?,
     userMessages: UserMessageBus?,
     onNavigateToArchiveSettings: (() -> Unit)? = null,
+    archiveLossOnLogout: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -628,7 +637,17 @@ private fun SettingsMain(
                 TextButton(onClick = { confirmLogout = false }) { Text(stringResource(R.string.settings_logout_cancel)) }
             },
             title = { Text(stringResource(R.string.settings_logout_dialog_title)) },
-            text = { Text(stringResource(R.string.settings_logout_dialog_text)) },
+            text = {
+                Text(
+                    stringResource(
+                        if (archiveLossOnLogout) {
+                            R.string.settings_logout_dialog_text_archive
+                        } else {
+                            R.string.settings_logout_dialog_text
+                        },
+                    ),
+                )
+            },
         )
     }
 
