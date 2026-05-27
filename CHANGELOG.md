@@ -15,6 +15,7 @@
 - Ukrainian interface now speaks in a consistent informal tone, with wording and grammar fixes throughout.
 
 ### Fixed
+- The "Newest at the bottom" feed now behaves like a real chat — the newest post sits at the bottom, new posts arrive there and the channel follows them as they come in, and switching feed direction no longer leaves the scroll in a strange spot.
 - Signing out now warns that it will erase your local post archive — shown only when the archive is turned on.
 - A post you're viewing no longer gets marked as read while the screen is off or the app is in the background.
 - Media now dissolves into place as it loads instead of popping in — photos, channel and author avatars, stickers, custom emoji and GIFs no longer blink a grey placeholder before appearing.
