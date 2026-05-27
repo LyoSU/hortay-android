@@ -729,4 +729,6 @@
     <string name="revision_sheet_title">Historique des modifications</string>
     <string name="revision_sheet_title_deleted">Publication supprimée</string>
     <string name="settings_archive_title">Archive des publications</string>
+    <string name="settings_logout_dialog_text_archive">Ton archive locale des publications modifiées et supprimées sera effacée définitivement. Tu devras entrer à nouveau ton numéro et ton code de confirmation</string>
+    <string name="post_unread_state">Non lu</string>
 </resources>

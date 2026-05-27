@@ -745,4 +745,6 @@
         <item quantity="one">%d snapshot</item>
         <item quantity="other">%d snapshots</item>
     </plurals>
+    <string name="settings_logout_dialog_text_archive">Your local archive of edited and deleted posts will be erased for good. You\'ll need to enter your number and confirmation code again</string>
+    <string name="post_unread_state">Unread</string>
 </resources>

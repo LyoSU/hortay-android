@@ -771,4 +771,6 @@
     <string name="revision_sheet_title">سجل التعديلات</string>
     <string name="revision_sheet_title_deleted">منشور محذوف</string>
     <string name="settings_archive_title">أرشيف المنشورات</string>
+    <string name="settings_logout_dialog_text_archive">سيُحذف نهائياً أرشيفك المحلي للمنشورات المعدّلة والمحذوفة. ستحتاج إلى إدخال رقمك ورمز التأكيد مجدداً</string>
+    <string name="post_unread_state">غير مقروء</string>
 </resources>

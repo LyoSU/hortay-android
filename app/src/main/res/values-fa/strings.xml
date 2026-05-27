@@ -709,4 +709,6 @@
     <string name="revision_sheet_title">تاریخچه‌ی ویرایش</string>
     <string name="revision_sheet_title_deleted">پست حذف‌شده</string>
     <string name="settings_archive_title">آرشیو پست</string>
+    <string name="settings_logout_dialog_text_archive">بایگانی محلی پست‌های ویرایش‌شده و حذف‌شده برای همیشه پاک می‌شود. باید دوباره شماره و کد تأیید را وارد کنید</string>
+    <string name="post_unread_state">خوانده‌نشده</string>
 </resources>

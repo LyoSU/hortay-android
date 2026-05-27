@@ -740,4 +740,6 @@
     <string name="revision_sheet_title">Historia edycji</string>
     <string name="revision_sheet_title_deleted">Usunięty wpis</string>
     <string name="settings_archive_title">Archiwum wpisów</string>
+    <string name="settings_logout_dialog_text_archive">Lokalne archiwum edytowanych i usuniętych postów zostanie trwale skasowane. Trzeba będzie ponownie podać numer i kod weryfikacyjny</string>
+    <string name="post_unread_state">Nieprzeczytane</string>
 </resources>

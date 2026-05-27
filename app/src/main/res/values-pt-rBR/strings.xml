@@ -733,4 +733,6 @@
     <string name="revision_sheet_title">Histórico de edições</string>
     <string name="revision_sheet_title_deleted">Publicação excluída</string>
     <string name="settings_archive_title">Arquivo de publicações</string>
+    <string name="settings_logout_dialog_text_archive">Seu arquivo local de posts editados e excluídos será apagado para sempre. Você precisará digitar seu número e o código de confirmação novamente</string>
+    <string name="post_unread_state">Não lido</string>
 </resources>
