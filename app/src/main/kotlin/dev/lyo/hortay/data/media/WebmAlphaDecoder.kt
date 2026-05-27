@@ -17,6 +17,9 @@ import dev.lyo.hortay.webm.WebmAlphaNative
  *  the [WebmAlphaNative] class-init `loadLibrary` throws there, so we must catch [Throwable],
  *  not just [Exception]. */
 object WebmAlphaDecoder {
+    // catch(Throwable) is deliberate: a missing/incompatible libhortaywebm.so surfaces as
+    // UnsatisfiedLinkError (an Error, not an Exception), which a narrower catch would miss.
+    @Suppress("TooGenericExceptionCaught")
     fun decode(path: String, widthPx: Int, heightPx: Int): DecodedWebm? = try {
         val raw = WebmAlphaNative.nativeDecode(path, widthPx, heightPx) ?: return null
         val stride = raw.width * raw.height
