@@ -39,6 +39,7 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.isUnreadIn
 import dev.lyo.hortay.data.orderedFor
+import dev.lyo.hortay.ui.timeline.alignedScrollOffset
 import dev.lyo.hortay.ui.timeline.reverseLayout
 import dev.lyo.hortay.data.web.WebPostAdapter
 import dev.lyo.hortay.ui.media.LocalMediaViewer
@@ -153,7 +154,27 @@ fun WebChannelScreen(
         val cursors = cursorHolder.snapshot()
         val boundary = items.indexOfLast { it.isUnreadIn(cursors) }
         val target = if (boundary >= 0) boundary else 0
-        if (target > 0) listState.scrollToItem(target)
+        if (target > 0) {
+            // Bring the boundary on-screen, then align it. Under reverseLayout a
+            // plain scrollToItem leaves the boundary glued to the viewport's
+            // BOTTOM edge with the unread queue stranded off-screen below it;
+            // re-reading layoutInfo after the first scroll gives the measured
+            // height alignedScrollOffset needs to centre it (or top-align a post
+            // taller than the viewport).
+            listState.scrollToItem(target)
+            val info = listState.layoutInfo
+            val item = info.visibleItemsInfo.firstOrNull { it.index == target }
+            if (item != null) {
+                listState.scrollToItem(
+                    target,
+                    alignedScrollOffset(
+                        viewport = info.viewportEndOffset - info.viewportStartOffset,
+                        itemSize = item.size,
+                        reverseLayout = info.reverseLayout,
+                    ),
+                )
+            }
+        }
     }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     val onPostClickState = rememberUpdatedState(onPostClick)

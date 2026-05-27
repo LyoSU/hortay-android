@@ -681,6 +681,24 @@ fun ChannelScreen(
                         }
                     }
                     else -> {
+                        // Cold-entry boundary reveal (reverseLayout only). The
+                        // LazyColumn mounts seeded at the boundary, which under
+                        // reverseLayout is the viewport's BOTTOM edge — so without
+                        // this the oldest-unread boundary glues to the bottom with
+                        // the unread queue stranded off-screen below it. The gate
+                        // keeps the [SkeletonFeed] cover (below) painted while the
+                        // list measures the boundary's height underneath, then one
+                        // instant [alignedScrollOffset] reposition lands it with the
+                        // unread queue visible and the cover lifts — no wrong-frame
+                        // flash. Disabled for deep-link landings (own anchor +
+                        // highlight) and Newest mode. See [rememberBoundaryReveal].
+                        val readyState = channelUiState as? ChannelUiState.Ready
+                        val boundaryRevealed = rememberBoundaryReveal(
+                            listState = listState,
+                            targetIndex = readyState?.initialIndex ?: 0,
+                            enabled = feedOrder.reverseLayout && readyState?.highlightedMessageId == null,
+                            routeKey = chatId,
+                        )
                         // Scroll gate: defer media ensure() while the list is scrolling.
                         // See TimelineScreen for reasoning; identical gate, same intent.
                         val scrollGate = remember(listState) {
@@ -741,6 +759,7 @@ fun ChannelScreen(
                             }
                         }
 
+                        Box(modifier = Modifier.fillMaxSize()) {
                         CompositionLocalProvider(LocalScrollGate provides scrollGate) {
                             LazyColumn(
                                 state = listState,
@@ -771,6 +790,15 @@ fun ChannelScreen(
                                     }
                                 }
                             }
+                        }
+                        // Cover the seeded-at-bottom mount until the boundary is
+                        // repositioned (see [rememberBoundaryReveal]). Reuses the
+                        // same SkeletonFeed the Resolving gate shows, so the
+                        // skeleton → content transition is the one users already
+                        // know — no new affordance, no wrong-frame flash.
+                        if (!boundaryRevealed) {
+                            SkeletonFeed(modifier = Modifier.fillMaxSize())
+                        }
                         }
                     }
                 }

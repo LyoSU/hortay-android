@@ -1,7 +1,14 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
@@ -123,6 +130,74 @@ internal fun alignedScrollOffset(viewport: Int, itemSize: Int, reverseLayout: Bo
         else -> 0
     }
 }
+
+/**
+ * Cold-entry "land on the resume boundary" reveal gate for a `reverseLayout`
+ * feed. Returns `false` until the boundary post has been positioned, then
+ * `true`; the caller keeps its existing skeleton/cover painted on top while
+ * this is `false`.
+ *
+ * **Why it's needed.** `LazyListState(boundary, 0)` makes `boundary` the
+ * `firstVisibleItem`, which under `reverseLayout` is the BOTTOM of the
+ * viewport — so the oldest-unread boundary glues to the bottom edge with
+ * already-read history filling the screen above and the unread queue stranded
+ * off the bottom. Before the reverseLayout migration the same seed (forward
+ * layout) put the boundary at the TOP with unread below; the migration
+ * silently flipped the anchor edge. The documented intent is "read on top,
+ * unread queue below, lands at boundary".
+ *
+ * **Why a one-frame seed can't fix it.** Pixel-accurate alignment needs the
+ * boundary's measured height (`alignedScrollOffset` → `itemSize - viewport` in
+ * reverse), which doesn't exist until the first layout pass. Repositioning
+ * AFTER the first paint shows the wrong, bottom-glued frame for ~16 ms — the
+ * exact flash the cold-start mount was built to avoid. So instead: the caller
+ * mounts the list and keeps its skeleton on top while this returns `false`;
+ * the list composes + measures underneath, we issue ONE instant
+ * [scrollToItem] with the measured [alignedScrollOffset], and the cover lifts
+ * on the frame the corrected position paints.
+ *
+ * **Fires once per genuine cold entry.** The reveal flag is a [rememberSaveable]
+ * keyed on [routeKey], so a drill-out/drill-in restore (where
+ * `LazyListState.Saver` brings back the user's real scroll) sees it already
+ * `true` and skips repositioning. When [enabled] is false or [targetIndex] is
+ * `<= 0` (Newest mode, caught-up feeds, deep-link landings) it initialises
+ * `true` immediately so those paths keep their untouched one-frame mount with
+ * no skeleton beat.
+ */
+@Composable
+internal fun rememberBoundaryReveal(
+    listState: LazyListState,
+    targetIndex: Int,
+    enabled: Boolean,
+    routeKey: Any,
+): Boolean {
+    val active = enabled && targetIndex > 0
+    var revealed by rememberSaveable(routeKey) { mutableStateOf(!active) }
+    LaunchedEffect(routeKey) {
+        if (revealed) return@LaunchedEffect
+        // `targetIndex` is the seeded anchor, so it's laid out on frame one; the
+        // timeout is a safety net in case it never measures (clamped / empty).
+        withTimeoutOrNull(BOUNDARY_REVEAL_TIMEOUT_MS) {
+            val offset = snapshotFlow {
+                val info = listState.layoutInfo
+                val item = info.visibleItemsInfo.firstOrNull { it.index == targetIndex }
+                item?.let {
+                    alignedScrollOffset(
+                        viewport = info.viewportEndOffset - info.viewportStartOffset,
+                        itemSize = it.size,
+                        reverseLayout = info.reverseLayout,
+                    )
+                }
+            }.filterNotNull().first()
+            listState.scrollToItem(targetIndex, offset)
+        }
+        revealed = true
+    }
+    return revealed
+}
+
+/** Safety-net cap on how long [rememberBoundaryReveal] holds the cover. */
+private const val BOUNDARY_REVEAL_TIMEOUT_MS = 700L
 
 /**
  * Suspend until LazyColumn's laid-out item count exceeds [previousTotal] (i.e.

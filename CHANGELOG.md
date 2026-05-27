@@ -17,6 +17,7 @@
 
 ### Fixed
 - The "Newest at the bottom" feed now behaves like a real chat — the newest post sits at the bottom, new posts arrive there and the channel follows them as they come in, and switching feed direction no longer leaves the scroll in a strange spot.
+- Opening a channel in "Newest at the bottom" now lands on your oldest unread post with the unread queue visible below it, instead of pinning it to the bottom edge with already-read posts filling the screen above.
 - Signing out now warns that it will erase your local post archive — shown only when the archive is turned on.
 - A post you're viewing no longer gets marked as read while the screen is off or the app is in the background.
 - Media now dissolves into place as it loads instead of popping in — photos, channel and author avatars, stickers, custom emoji and GIFs no longer blink a grey placeholder before appearing.
