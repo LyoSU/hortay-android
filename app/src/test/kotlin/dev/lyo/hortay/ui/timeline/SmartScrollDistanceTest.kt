@@ -81,26 +81,28 @@ class SmartScrollDistanceTest {
     }
 
     @Test
-    fun `topAnchored reverseLayout short item returns negative offset`() {
-        // In reverseLayout, scrollToItem(idx, 0) bottom-anchors (visual top y =
-        // viewport - itemSize). Passing a NEGATIVE scrollOffset shifts the item
-        // away from the layout start (= visual bottom) toward the visual top.
-        // For a small divider (84 px) in a 1800 px viewport: offset = -1716.
-        // Compose's backward-composition fill then drags lower-indexed items in
-        // below the divider visually, so the user sees the divider at the very
-        // top with the unread queue stacking under it.
-        assertEquals(40 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 40, reverseLayout = true))
-        assertEquals(1200 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 1200, reverseLayout = true))
+    fun `topAnchored reverseLayout short item returns positive layout-end offset`() {
+        // In reverseLayout, scrollToItem(idx, 0) BOTTOM-anchors the row: item.offset
+        // = 0 maps to visual top y = layoutSize - 0 - itemSize, so the row sits at
+        // the visual bottom. Passing scrollOffset = (viewport - itemSize) makes
+        // item.offset = viewport - itemSize, and visual top y = layoutSize -
+        // (viewport - itemSize) - itemSize = 0. For a 28 dp divider (84 px)
+        // in an 1800 px viewport the offset is +1716. Compose's backward-
+        // composition fill then drags lower-indexed items BELOW the divider
+        // visually so the unread queue stacks under it.
+        assertEquals(1800 - 40, topAnchoredScrollOffset(viewport = 1800, itemSize = 40, reverseLayout = true))
+        assertEquals(1800 - 1200, topAnchoredScrollOffset(viewport = 1800, itemSize = 1200, reverseLayout = true))
     }
 
     @Test
-    fun `topAnchored reverseLayout tall item returns positive overflow offset`() {
-        // Tall item (taller than viewport): positive offset pushes the item past
-        // the layout start so its TOP reaches the viewport top; the bottom
+    fun `topAnchored reverseLayout tall item returns negative overflow offset`() {
+        // Tall item (taller than viewport): NEGATIVE scrollOffset pulls the item
+        // past the layout-end edge so its visual top reaches y=0; the bottom
         // overflows off-screen below. This is the canonical "show me the header
-        // of this long post" landing.
-        assertEquals(3000 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 3000, reverseLayout = true))
-        assertEquals(2400 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 2400, reverseLayout = true))
+        // of this long post" landing. For a 3000 px post in an 1800 px viewport:
+        // visual top y = 1800 - (-1200) - 3000 = 0. ✓
+        assertEquals(1800 - 3000, topAnchoredScrollOffset(viewport = 1800, itemSize = 3000, reverseLayout = true))
+        assertEquals(1800 - 2400, topAnchoredScrollOffset(viewport = 1800, itemSize = 2400, reverseLayout = true))
     }
 
     @Test
