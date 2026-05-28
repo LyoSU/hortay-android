@@ -876,17 +876,28 @@ fun TimelineScreen(
         if (atTarget) {
             vm.refresh()
         } else {
-            listState.smartScrollTo(target, centerTarget = true)
             // Brief surface-tint pulse on the destination card — canonical
             // chat-UI pattern (Telegram/Slack/Discord: "you just landed here").
             // Reuses the same [highlightedPostKey] pipeline that deep-link and
             // quote-tap landings drive, so there is a single rendering path for
             // the highlight. The set happens after the scroll call so the card
             // is already in the visible viewport by the time Compose reads the key.
-            val destinationPost = feedItemsForEffectsState.value
-                .getOrNull(target)?.posts()?.firstOrNull()
-            if (destinationPost != null) {
-                highlightedPostKey = destinationPost.chatId to destinationPost.id
+            val items = feedItemsForEffectsState.value
+            val bIdx = items.boundaryIndex()
+            if (bIdx > 0) {
+                listState.scrollToBoundary(boundaryIndex = bIdx, animated = true)
+                items.boundaryAnchorPost()?.let { post ->
+                    highlightedPostKey = post.chatId to post.id
+                }
+            } else {
+                // Caught-up state (no divider): land on the home target
+                // (newest in Newest mode, computed home-scroll-index in
+                // OldestUnreadFirst).
+                listState.smartScrollTo(target)
+                val destinationPost = items.getOrNull(target)?.posts()?.firstOrNull()
+                if (destinationPost != null) {
+                    highlightedPostKey = destinationPost.chatId to destinationPost.id
+                }
             }
         }
     }
@@ -1799,7 +1810,13 @@ fun TimelineScreen(
                                     else 0
                                 }
                             }
-                            listState.smartScrollTo(target, centerTarget = true)
+                            listState.smartScrollTo(target)
+                            // Pulse on the landing post — matches the divider-anchored jump path.
+                            val destinationPost = feedItemsForEffectsState.value
+                                .getOrNull(target)?.posts()?.firstOrNull()
+                            if (destinationPost != null) {
+                                highlightedPostKey = destinationPost.chatId to destinationPost.id
+                            }
                         }
                     },
                 )
@@ -1840,42 +1857,37 @@ fun TimelineScreen(
                     UnreadCounterPill(
                         count = unreadRemaining,
                         onClick = {
-                            // Jump to the read→unread BOUNDARY per the live cursor —
-                            // the "continue where you left off" anchor, NOT the newest
-                            // unread. Row-space, because LazyColumn renders folded
-                            // reply chains as single rows.
+                            // Jump to the read→unread BOUNDARY divider — the
+                            // "continue where you left off" anchor, NOT the newest
+                            // unread. Uses [scrollToBoundary], which lands the
+                            // [FeedItem.Boundary] divider's TOP at the viewport
+                            // TOP — the canonical "next unread" landing.
                             //
-                            // Data is descending (newest = index 0), so the boundary —
-                            // the OLDEST unread, sitting just past the last post you
-                            // read — is the HIGHEST-index unread = indexOfLast. This is
-                            // the same end the unified [continueReadingIndex] / cold-
-                            // start picker land on; keeping the pill in sync with it is
-                            // what makes the jump feel like "resume", not "teleport to
-                            // newest". (Under the OLD ascending model this was
-                            // indexOfFirst; the reverseLayout migration inverted the
-                            // data order, so the boundary moved to the other end.)
-                            //
-                            // The ↓ glyph reads true: under reverseLayout the boundary
-                            // lies below the read history in the scroll-forward
-                            // (downward → newer) direction. In the active-reading case
-                            // the jump is a noop (already at the boundary) — the right
-                            // cue that there's nothing left to resume.
+                            // The pulse fires on the OLDEST unread post (the row
+                            // just before the divider in iteration order) so the
+                            // user reads it as "here is where you left off".
                             //
                             // Falls back to the snapshot's cold-start boundary
-                            // (homeScrollIndex) if every visible post is live-read in
-                            // the race between this click and a refresh — that index is
-                            // the same "where you left off" anchor, so the fallback path
-                            // stays semantically consistent with the primary path.
+                            // (homeScrollIndex) when no divider is present — caught-up
+                            // state in the race between this click and a refresh.
                             //
                             // Read through [feedItemsState] (live) so a feed refresh /
                             // new-post arrival that lands between this composition and
                             // the click doesn't leave us indexing a stale captured list.
                             val items = feedItemsState.value
-                            val boundary = items.indexOfLast { item ->
-                                item.posts().any { it.isUnreadAt(cursorHolder[it.chatId]) }
+                            val bIdx = items.boundaryIndex()
+                            scope.launch {
+                                if (bIdx > 0) {
+                                    listState.scrollToBoundary(boundaryIndex = bIdx, animated = true)
+                                    items.boundaryAnchorPost()?.let { post ->
+                                        highlightedPostKey = post.chatId to post.id
+                                    }
+                                } else {
+                                    // No divider (already caught up by the time the click landed):
+                                    // fall back to the home-scroll target.
+                                    listState.smartScrollTo(homeScrollIndexState.intValue)
+                                }
                             }
-                            val target = if (boundary >= 0) boundary else homeScrollIndexState.intValue
-                            scope.launch { listState.smartScrollTo(target, centerTarget = true) }
                         },
                     )
                 }
