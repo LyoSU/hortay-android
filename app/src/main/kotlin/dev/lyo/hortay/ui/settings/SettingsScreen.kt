@@ -205,11 +205,9 @@ fun SettingsScreen(
             )
             SettingsRoute.Main -> SettingsMain(
                 settings = settings,
-                stats = stats,
                 contentPadding = contentPadding,
                 onLogout = onLogout,
                 onSignIn = onSignIn,
-                onClearWebCache = onClearWebCache,
                 ignoredChannels = ignoredChannels,
                 onOpenHiddenChannels = { stack.add(SettingsRoute.HiddenChannels) },
                 onOpenDataStorage = { stack.add(SettingsRoute.DataStorage) },
@@ -243,11 +241,9 @@ private enum class SettingsRoute(val depth: Int) {
 @Composable
 private fun SettingsMain(
     settings: SettingsStore,
-    stats: StatsRepository?,
     contentPadding: PaddingValues,
     onLogout: (() -> Unit)?,
     onSignIn: (() -> Unit)?,
-    onClearWebCache: (suspend () -> Unit)?,
     ignoredChannels: IgnoredChannelsStore?,
     onOpenHiddenChannels: () -> Unit,
     onOpenDataStorage: () -> Unit,

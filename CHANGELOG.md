@@ -14,6 +14,7 @@
 - The post menu now has a "Select text" action that opens the text so you can select and copy any part of it; long-pressing a comment also offers "Copy text".
 - Channel posts now show their forward count alongside views and comments.
 - Settings → Appearance lets you keep Hortay's own colours instead of your wallpaper's palette (Android 12+).
+- Your profile and other people's profiles now show their own Telegram colour — a matching gradient behind the photo and a coloured ring around the avatar.
 
 ### Changed
 - Unread posts now carry a faint tint across the whole card, not just the edge strip, so the read/unread boundary reads at a glance and fades away as a post is marked read.
@@ -23,6 +24,7 @@
 - Tapping a post's channel name now opens that channel scrolled straight to the post you tapped, with a brief highlight, instead of landing at your last-read position.
 - Revealing a spoiler now disintegrates the dot cloud as a left-to-right sweep that crumbles evenly and blows away, matching Telegram's dissolve, instead of the old uniform burst from the centre.
 - Ukrainian interface now speaks in a consistent informal tone, with wording and grammar fixes throughout.
+- The Profile tab is reorganised Telegram-style: quick Appearance and Feed switches stay up top, while Data & storage, Privacy and About each open as their own page.
 
 ### Fixed
 - Posts now get marked as read as soon as 60% of the card is on screen for half a second, instead of staying unread until you scroll them further into view — including posts taller than the screen, which would previously stay unread forever and trap the "next unread" pill on the same row.

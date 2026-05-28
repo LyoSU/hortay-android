@@ -9,6 +9,7 @@
     <ID>ComposableParamOrder:SkeletonFeed.kt$SkeletonFeed</ID>
     <ID>ComposableParamOrder:TimelineFeedColumn.kt$TimelineFeedColumn</ID>
     <ID>ComposableParamOrder:UserProfileSheet.kt$UserProfileSheet</ID>
+    <ID>ComposableParamOrder:WebChannelsScreen.kt$EmptyChannelsState</ID>
     <ID>CompositionLocalAllowlist:LocalCenteredItem.kt$LocalIsCenteredItem</ID>
     <ID>CompositionLocalAllowlist:LocalCenteredItem.kt$LocalIsHighlightedItem</ID>
     <ID>CompositionLocalAllowlist:LocalCenteredItem.kt$LocalMediaPassive</ID>
@@ -60,9 +61,10 @@
     <ID>InstanceOfCheckForException:WebFeedSource.kt$WebFeedSource$t is kotlinx.coroutines.CancellationException</ID>
     <ID>InstanceOfCheckForException:WebModeScaffold.kt$t is kotlin.coroutines.cancellation.CancellationException</ID>
     <ID>LambdaParameterEventTrailing:SpoilerOverlay.kt$onReveal</ID>
-    <ID>LambdaParameterEventTrailing:WebChannelsScreen.kt$onAddChannel</ID>
     <ID>LambdaParameterInRestartableEffect:ChannelScreen.kt$onScrollHandled</ID>
     <ID>LambdaParameterInRestartableEffect:ChannelScreen.kt$onScrollMissed</ID>
+    <ID>LambdaParameterInRestartableEffect:CommentsScreen.kt$fetchAvailableReactions</ID>
+    <ID>LambdaParameterInRestartableEffect:CommentsScreen.kt$onDismiss</ID>
     <ID>LambdaParameterInRestartableEffect:DeepLinkDispatcher.kt$onOpenUser</ID>
     <ID>LambdaParameterInRestartableEffect:DeepLinkDispatcher.kt$onPushChannel</ID>
     <ID>LambdaParameterInRestartableEffect:DeepLinkDispatcher.kt$previewChatInvite</ID>
@@ -86,7 +88,6 @@
     <ID>LoopWithTooManyJumpStatements:MediaCache.kt$MediaCache$for</ID>
     <ID>LoopWithTooManyJumpStatements:MediaCache.kt$MediaCache$while</ID>
     <ID>LoopWithTooManyJumpStatements:PostsRepository.kt$PostsRepository$for</ID>
-    <ID>LoopWithTooManyJumpStatements:WebFeedSource.kt$WebFeedSource$for</ID>
     <ID>MatchingDeclarationName:ChannelHeaderBar.kt$ChannelHeaderAvatar</ID>
     <ID>MatchingDeclarationName:CommentsScreen.kt$CommentsDisabledOverride</ID>
     <ID>MatchingDeclarationName:FloatingTopBar.kt$FloatingTopBarBehavior</ID>
@@ -129,6 +130,8 @@
     <ID>ParameterNaming:TimelineScreen.kt$onScrollHandled</ID>
     <ID>ParameterNaming:TimelineScreen.kt$onScrollMissed</ID>
     <ID>ParameterNaming:VideoPlayerControls.kt$onSliderChangeFinished</ID>
+    <ID>ParameterNaming:WebChannelsScreen.kt$onAddCurated</ID>
+    <ID>ParameterNaming:WebChannelsScreen.kt$onPickCurated</ID>
     <ID>RethrowCaughtException:TdErrorMapping.kt$throw e</ID>
     <ID>TooGenericExceptionCaught:CommentsRepository.kt$CommentsRepository$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:CustomEmojiAnimator.kt$CustomEmojiAnimator$t: Throwable</ID>
@@ -150,11 +153,15 @@
     <ID>UnstableCollections:MigrationProposalSheet.kt$List&lt;String&gt;</ID>
     <ID>UnstableCollections:NavOverlayRenderer.kt$List&lt;NavEntry&gt;</ID>
     <ID>UnstableCollections:NewPostsPill.kt$List&lt;ChannelBadge&gt;</ID>
+    <ID>UnstableCollections:PostCard.kt$List&lt;ReactionKind&gt;</ID>
+    <ID>UnstableCollections:PostCard.kt$Set&lt;String&gt;</ID>
     <ID>UnstableCollections:PostMediaBlocks.kt$List&lt;AlbumItem&gt;</ID>
     <ID>UnstableCollections:ReportFlowSheet.kt$List&lt;org.drinkless.tdlib.TdApi.ReportOption&gt;</ID>
     <ID>UnstableCollections:RichText.kt$Map&lt;String, InlineTextContent&gt;</ID>
     <ID>UnstableCollections:TimelineFeedColumn.kt$List&lt;FeedItem&gt;</ID>
+    <ID>UnstableCollections:WebChannelsScreen.kt$List&lt;CuratedChannel&gt;</ID>
     <ID>UnusedParameter:NavOverlayRenderer.kt$onPushChannel: (chatId: Long, scrollTo: Long?) -&gt; Unit</ID>
+    <ID>UnusedParameter:ReverseFeedLayout.kt$firstVisible: Int</ID>
     <ID>UnusedParameter:WebRepository.kt$WebRepository$_fetched_at_ms: Long</ID>
     <ID>UnusedParameter:WebRepository.kt$WebRepository$_id: String</ID>
     <ID>UnusedParameter:WebRepository.kt$WebRepository$_is_bookmarked: Boolean</ID>
