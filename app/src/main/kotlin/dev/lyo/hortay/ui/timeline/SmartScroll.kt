@@ -220,3 +220,48 @@ internal suspend fun LazyListState.awaitItemsCommitted(
         snapshotFlow { layoutInfo.totalItemsCount }.first { it > previousTotal }
     }
 }
+
+/**
+ * Fraction of an item's pixel span that lies inside the viewport, in `[0f, 1f]`.
+ *
+ * Pure function so it can be unit-tested without [LazyListState]. The caller
+ * supplies item edges and viewport edges in the same scroll-axis coordinate
+ * space [LazyListLayoutInfo] uses (item.offset + item.size for the bottom;
+ * viewportStartOffset/viewportEndOffset, optionally tightened by
+ * before/afterContentPadding).
+ *
+ * Zero-size items return 0f (can't be "read" — collapse states shouldn't
+ * dwell-ack). Items entirely outside the viewport return 0f. Items fully
+ * contained return 1f.
+ */
+internal fun visibleFraction(itemStart: Int, itemEnd: Int, vStart: Int, vEnd: Int): Float {
+    val itemSize = itemEnd - itemStart
+    if (itemSize <= 0) return 0f
+    val clippedStart = maxOf(itemStart, vStart)
+    val clippedEnd = minOf(itemEnd, vEnd)
+    val visibleSpan = (clippedEnd - clippedStart).coerceAtLeast(0)
+    return visibleSpan.toFloat() / itemSize
+}
+
+/**
+ * `scrollOffset` to pass to [LazyListState.scrollToItem]/[animateScrollToItem] so the
+ * boundary divider row lands with its TOP at the viewport's TOP.
+ *
+ * Forward layout: `scrollOffset = 0` because the layout start IS the viewport top —
+ * the item's top aligns with it for free.
+ *
+ * `reverseLayout = true`: the layout start is the viewport BOTTOM and `scrollOffset`
+ * is measured FROM that bottom (positive = pushed deeper "past" the start). To bring
+ * the divider's TOP up to the viewport top, we shift the item by
+ * `(dividerSize - viewport)` — a negative value that pulls the divider's bottom up
+ * to `viewport - dividerSize` above the layout start, equivalent to dividerSize
+ * below the viewport top.
+ *
+ * Clamps to 0 when dividerSize > viewport (pathological — divider is ~84 px against
+ * a >1000 px viewport in practice — but a clamp keeps the result well-defined).
+ */
+internal fun scrollOffsetForBoundary(viewport: Int, dividerSize: Int, reverseLayout: Boolean): Int {
+    if (!reverseLayout) return 0
+    val offset = dividerSize - viewport
+    return offset.coerceAtMost(0)
+}
