@@ -3,7 +3,9 @@
 package dev.lyo.hortay.ui.comments
 
 import androidx.activity.BackEventCompat
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +13,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,6 +43,7 @@ import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.Reactions
+import dev.lyo.hortay.data.stableKey
 import dev.lyo.hortay.data.ReplyMediaKind
 import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.ThreadRow
@@ -58,6 +63,7 @@ import dev.lyo.hortay.ui.timeline.formatRelative
 import dev.lyo.hortay.ui.timeline.PostCard
 import dev.lyo.hortay.ui.timeline.PostInteractions
 import dev.lyo.hortay.ui.timeline.ReactionChip
+import dev.lyo.hortay.ui.timeline.ReactionPickerStrip
 import dev.lyo.hortay.ui.timeline.label
 import dev.lyo.hortay.ui.timeline.symbolName
 import kotlinx.coroutines.delay
@@ -467,7 +473,16 @@ fun CommentsScreen(
                 // this card without remounting the screen. Falls back to the
                 // frozen [NavEntry] snapshot for posts that aren't in the feed
                 // window.
-                PostCard(post = anchor, interactions = pinnedPostInteractions, clickable = false, expanded = true)
+                // clickable = false (tapping the anchor would re-open this very screen),
+                // but actionsEnabled = true so long-press still surfaces the reaction
+                // picker + share/open sheet.
+                PostCard(
+                    post = anchor,
+                    interactions = pinnedPostInteractions,
+                    clickable = false,
+                    actionsEnabled = true,
+                    expanded = true,
+                )
             }
 
             // The previous inline "X replies" / "no comments yet" label has been
@@ -524,6 +539,7 @@ fun CommentsScreen(
                         // per `Ready` emission so a re-resolved anchor (rare, but
                         // possible if TDLib migrates the discussion group) routes
                         // subsequent taps to the new chat without a screen rebuild.
+                        var pickerOpen by remember(row.message.id) { mutableStateOf(false) }
                         CommentNode(
                             row = row,
                             onMediaClick = { items, idx -> viewer.open(items, idx) },
@@ -536,7 +552,26 @@ fun CommentsScreen(
                                     item.isChosen,
                                 )
                             },
+                            // Long-press a comment to react with a reaction it doesn't
+                            // already carry — same picker the feed/anchor uses.
+                            onLongPress = { pickerOpen = true },
                         )
+                        if (pickerOpen) {
+                            CommentReactionSheet(
+                                currentReactions = row.message.reactions,
+                                fetchAvailableReactions = { fetchAvailableReactions(s.threadChatId, row.message.id) },
+                                onPick = { kind, alreadyChosen ->
+                                    onReactionToggle(
+                                        s.threadChatId,
+                                        row.message.id,
+                                        row.message.reactions,
+                                        kind,
+                                        alreadyChosen,
+                                    )
+                                },
+                                onDismiss = { pickerOpen = false },
+                            )
+                        }
                     }
                 }
                 is CommentsRepository.ThreadState.Error -> item(key = "disabled") {
@@ -626,6 +661,7 @@ private fun CommentNode(
     row: ThreadRow,
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
     onReactionTap: (ReactionItem) -> Unit,
+    onLongPress: () -> Unit,
 ) {
     val indent = (row.depth * INDENT_DP).dp
     Row(
@@ -652,6 +688,7 @@ private fun CommentNode(
             row = row,
             onMediaClick = onMediaClick,
             onReactionTap = onReactionTap,
+            onLongPress = onLongPress,
             modifier = Modifier.weight(1f),
         )
     }
@@ -664,15 +701,18 @@ private fun CommentNode(
  * so any media type the timeline shows works here too — including new content types the
  * old comment renderer missed (animated emoji, checklists, expired-media placeholders).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CommentBubble(
     row: ThreadRow,
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
     onReactionTap: (ReactionItem) -> Unit,
+    onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val message = row.message
     val opener = dev.lyo.hortay.ui.users.LocalUserProfileOpener.current
+    val haptics = LocalHapticFeedback.current
     // Tap surface for the avatar + author name → user-profile sheet. Guarded by
     // senderUserId because comments authored by a chat (channel posting on behalf
     // of the discussion supergroup, rare anonymous-admin case) have no human
@@ -681,6 +721,14 @@ private fun CommentBubble(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .combinedClickable(
+                // No tap action on a comment — long-press opens the reaction picker.
+                onClick = {},
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongPress()
+                },
+            )
             .padding(vertical = 10.dp),
     ) {
         TdAvatar(
@@ -769,6 +817,64 @@ private fun CommentBubble(
                         ReactionChip(item, onClick = { onReactionTap(item) })
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Long-press reaction picker for a single comment. Mirrors the strip at the top of the
+ * feed's post action sheet ([dev.lyo.hortay.ui.timeline.ReactionPickerStrip]); reuses the
+ * same component so feed and thread reactions look and behave identically. While the
+ * available reactions load the sheet shows a spinner; if the chat exposes none it
+ * dismisses itself rather than sitting empty.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CommentReactionSheet(
+    currentReactions: Reactions,
+    fetchAvailableReactions: suspend () -> List<ReactionKind>,
+    onPick: (kind: ReactionKind, alreadyChosen: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    var available by remember { mutableStateOf<List<ReactionKind>>(emptyList()) }
+    var loaded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        available = fetchAvailableReactions()
+        loaded = true
+    }
+    // No reactions available for this chat → don't leave an empty sheet hanging.
+    LaunchedEffect(loaded, available) {
+        if (loaded && available.isEmpty()) onDismiss()
+    }
+    val chosenKeys = remember(currentReactions) {
+        currentReactions.items.filter { it.isChosen }.map { it.kind.stableKey }.toSet()
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.padding(bottom = 24.dp)) {
+            if (!loaded) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    LoadingIndicator()
+                }
+            } else if (available.isNotEmpty()) {
+                ReactionPickerStrip(
+                    reactions = available,
+                    chosenKeys = chosenKeys,
+                    onPick = { kind ->
+                        val already = kind.stableKey in chosenKeys
+                        haptics.performHapticFeedback(
+                            if (already) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+                        )
+                        onPick(kind, already)
+                        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+                    },
+                )
             }
         }
     }

@@ -73,6 +73,13 @@ fun PostCard(
     post: TimelinePost,
     interactions: PostInteractions = PostInteractions.Noop,
     clickable: Boolean = true,
+    /**
+     * Whether long-press opens the action sheet (reactions / share / open). Defaults to
+     * [clickable] so feed + channel cards are unchanged, but the comments anchor passes
+     * `actionsEnabled = true` while `clickable = false`: tapping it would just re-open the
+     * screen you're already on, yet the user still needs the reaction picker + share/open.
+     */
+    actionsEnabled: Boolean = clickable,
     expanded: Boolean = false,
     onTapRevisions: (TimelinePost) -> Unit = {},
 ) {
@@ -169,9 +176,9 @@ fun PostCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    enabled = clickable,
-                    onClick = { interactions.onPostClick(post) },
-                    onLongClick = { sheetOpen = true },
+                    enabled = clickable || actionsEnabled,
+                    onClick = { if (clickable) interactions.onPostClick(post) },
+                    onLongClick = if (actionsEnabled) ({ sheetOpen = true }) else null,
                 )
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
@@ -1181,7 +1188,7 @@ private fun PostActionSheet(
  * matching the existing [ReactionChip] a11y contract.
  */
 @Composable
-private fun ReactionPickerStrip(
+internal fun ReactionPickerStrip(
     reactions: List<ReactionKind>,
     chosenKeys: Set<String>,
     onPick: (ReactionKind) -> Unit,
