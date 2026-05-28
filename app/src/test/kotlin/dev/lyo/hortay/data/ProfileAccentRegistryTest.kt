@@ -88,4 +88,50 @@ class ProfileAccentRegistryTest {
         )
         assertTrue(c.backgroundArgb(dark = false).isEmpty())
     }
+
+    @Test
+    fun `resolver returns null for unset id -1`() {
+        val reg = ProfileAccentRegistry()
+        reg.ingest(arrayOf(accent(5,
+            colors(intArrayOf(), intArrayOf(0x112233), intArrayOf()),
+            colors(intArrayOf(), intArrayOf(0x112233), intArrayOf()))))
+        assertNull(reg.backgroundArgb(accentId = -1, dark = false))
+    }
+
+    @Test
+    fun `resolver returns null on map miss`() {
+        val reg = ProfileAccentRegistry()
+        assertNull(reg.backgroundArgb(accentId = 5, dark = false))
+    }
+
+    @Test
+    fun `resolver returns colours after ingest`() {
+        val reg = ProfileAccentRegistry()
+        reg.ingest(arrayOf(accent(5,
+            colors(intArrayOf(), intArrayOf(0x112233, 0x445566), intArrayOf()),
+            colors(intArrayOf(), intArrayOf(0x112233), intArrayOf()))))
+        assertArrayEquals(
+            intArrayOf(0xFF112233.toInt(), 0xFF445566.toInt()),
+            reg.backgroundArgb(accentId = 5, dark = false),
+        )
+    }
+
+    @Test
+    fun `clear empties the map`() {
+        val reg = ProfileAccentRegistry()
+        reg.ingest(arrayOf(accent(5,
+            colors(intArrayOf(), intArrayOf(0x112233), intArrayOf()),
+            colors(intArrayOf(), intArrayOf(0x112233), intArrayOf()))))
+        reg.clear()
+        assertNull(reg.backgroundArgb(accentId = 5, dark = false))
+    }
+
+    @Test
+    fun `empty background after ingest resolves to null not empty array`() {
+        val reg = ProfileAccentRegistry()
+        reg.ingest(arrayOf(accent(5,
+            colors(intArrayOf(), intArrayOf(), intArrayOf()),
+            colors(intArrayOf(), intArrayOf(), intArrayOf()))))
+        assertNull(reg.backgroundArgb(accentId = 5, dark = false))
+    }
 }
