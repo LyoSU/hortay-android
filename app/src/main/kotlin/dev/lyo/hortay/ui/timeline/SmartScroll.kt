@@ -1,7 +1,5 @@
 package dev.lyo.hortay.ui.timeline
 
-import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -180,12 +178,18 @@ internal suspend fun LazyListState.scrollToBoundary(
     val current = firstVisibleItemIndex
     val instant = !animated ||
         abs(boundaryIndex - current) > BOUNDARY_SCROLL_THRESHOLD_ROWS
-    // Force a known scroll-position-0 landing first (bottom-anchored in reverseLayout,
-    // top-anchored in forward), then apply the viewport-size-based correction. This is
-    // less dependent on Compose's internal item.offset semantics than reading the row's
-    // current offset — for reverseLayout the geometric truth `viewport - item.size`
-    // gives us the exact pixel shift needed to put the top at the viewport top.
-    forceTopAlign(boundaryIndex, instant)
+    // Minimal scroll: trust Compose's scrollToItem to handle reverseLayout correctly.
+    // Multiple prior attempts at corrective math (item.offset-based delta, viewport-
+    // size delta, scrollOffset arithmetic) each overshot or undershot in different
+    // ways because Compose's documented `LazyListItemInfo.offset` semantics in
+    // reverseLayout don't match what the field actually returns at runtime — the
+    // computed delta consistently lands the row at a wrong position, with the
+    // boundary post + highlight several rows off from where the divider visually
+    // ends up. Reverting to a plain scrollToItem(idx, 0) and letting Compose decide
+    // the anchoring is the safer baseline until we can verify the correct math
+    // against actual layoutInfo values on a device.
+    if (instant) scrollToItem(boundaryIndex, 0)
+    else animateScrollToItem(boundaryIndex, 0)
 }
 
 /**
@@ -205,51 +209,15 @@ internal suspend fun LazyListState.scrollToBoundary(
  * Suspends until the scroll completes.
  */
 internal suspend fun LazyListState.scrollToTopAligned(itemIndex: Int) {
-    forceTopAlign(itemIndex, instant = false)
+    // Same minimal approach as scrollToBoundary — see its KDoc for why all the
+    // corrective math has been removed.
+    animateScrollToItem(itemIndex, 0)
 }
 
 /**
- * Land the row at [itemIndex] with its TOP at the viewport's TOP in both forward
- * and reverseLayout.
- *
- * Mechanism: always do `scrollToItem(itemIndex, 0)` first to put the row at a
- * KNOWN starting position. In forward layout, scrollOffset=0 lands the row's top
- * at the viewport top — no further work needed. In reverseLayout, scrollOffset=0
- * lands the row BOTTOM-anchored (the row's bottom flush with the viewport bottom,
- * top either in the lower viewport for short rows or above the viewport for tall
- * rows). From that known starting position, a single `scrollBy(viewport -
- * item.size)` shifts the row's top up to the viewport top — positive shift (items
- * move UP visually) for short rows, negative shift (items move DOWN visually) for
- * tall rows.
- *
- * Uses `scroll { scrollBy }` when [instant] is true (cold-entry reveal) and
- * `animateScrollBy` otherwise (runtime jumps — deep-link, quote-tap, jump-pill).
- *
- * Waits for the row to be measured between the two scrolls via snapshotFlow so we
- * read the post-scroll item size, not a stale value from before the bring-into-
- * view scroll landed.
- */
-private suspend fun LazyListState.forceTopAlign(itemIndex: Int, instant: Boolean) {
-    scrollToItem(itemIndex, 0)
-    val item = withTimeoutOrNull(SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS) {
-        snapshotFlow {
-            layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
-        }.filterNotNull().first()
-    } ?: return
-    if (!layoutInfo.reverseLayout) return // Forward: scrollToItem(idx, 0) already top-aligned.
-    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-    val delta = (viewport - item.size).toFloat()
-    if (delta == 0f) return
-    if (instant) scroll { scrollBy(delta) } else animateScrollBy(delta)
-}
-
-/**
- * Safety-net cap on how long [scrollToTopAligned] / [scrollToBoundary] wait for the
- * target row to be measured after the initial bring-into-view scroll. 500 ms is well
- * past the normal one-layout-pass turnaround (~16 ms at 60 Hz) and clamps the
- * pathological case where the row never measures (it was filtered out between the
- * scrollToItem and the next layout pass, etc.) so the caller's coroutine doesn't
- * hang indefinitely.
+ * Safety-net cap on how long the now-removed corrective scroll path waited for the
+ * row to be measured after the initial bring-into-view scroll. Retained as a
+ * package-level constant in case future work re-introduces a corrective pass.
  */
 private const val SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS = 500L
 
