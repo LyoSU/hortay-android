@@ -25,6 +25,22 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
+ * Fraction of an item's pixel span that must be visible inside the (padding-tightened)
+ * viewport for [READ_DWELL_MS] before the post counts as read.
+ *
+ * 0.6 is the canonical chat-app threshold (Slack ~0.5, Telegram ~0.6). Two reasons we
+ * sit at 0.6 and not the stricter "fully visible":
+ *   1. Landings from the divider-anchored jump (and any centred legacy path) could
+ *      leave 2-3 px of clip at the top/bottom edge due to layout-pass rounding;
+ *      "fully visible" would never satisfy and the post would stay un-acked until
+ *      the user scrolled further. This is the user-reported bug the rewrite fixes.
+ *   2. Long-form posts (taller than the viewport) need a fallback — 0.6 captures
+ *      both regimes uniformly without the dual `fullyVisible || dominatesViewport`
+ *      split the legacy code carried.
+ */
+private const val READ_DWELL_VISIBLE_FRACTION = 0.6f
+
+/**
  * Locates the (chatId, messageId) target in [items]. Returns the row index, or
  * -1 when not found. Albums hit on any member id.
  */
@@ -161,7 +177,8 @@ fun rememberReadAckDwell(
     // in the viewport when the user locks the phone or backgrounds the app would
     // otherwise get marked read by the dwell timer firing against a composition that
     // is still alive but not on screen. We can't detect "eyes off a lit screen", but
-    // screen-off / backgrounded is a real, fixable false-read window.
+    // screen-off / backgrounded is a real, fixable false-read window — see CHANGELOG
+    // "A post you're viewing no longer gets marked as read while the screen is off".
     val lifecycleState = LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     if (markAsRead != null) {
         LaunchedEffect(listState, ackKey) {
@@ -186,21 +203,15 @@ fun rememberReadAckDwell(
                 // of the post is visually hidden behind the bar.
                 val vStart = info.viewportStartOffset + info.beforeContentPadding
                 val vEnd = info.viewportEndOffset - info.afterContentPadding
-                val viewportSize = (vEnd - vStart).coerceAtLeast(1)
                 val scrolling = listState.isScrollInProgress
                 val keys = info.visibleItemsInfo.mapNotNull { item ->
-                    val itemEnd = item.offset + item.size
-                    val fullyVisible = item.offset >= vStart && itemEnd <= vEnd
-                    // Posts taller than the viewport can never satisfy strict
-                    // containment. Allow them through once they occupy at least
-                    // half of the viewport — otherwise long-form posts would
-                    // never get marked read.
-                    val visibleSpan =
-                        (minOf(itemEnd, vEnd) - maxOf(item.offset, vStart))
-                            .coerceAtLeast(0)
-                    val dominatesViewport =
-                        item.size >= viewportSize && visibleSpan * 2 >= viewportSize
-                    if (fullyVisible || dominatesViewport) item.key else null
+                    val fraction = visibleFraction(
+                        itemStart = item.offset,
+                        itemEnd = item.offset + item.size,
+                        vStart = vStart,
+                        vEnd = vEnd,
+                    )
+                    if (fraction >= READ_DWELL_VISIBLE_FRACTION) item.key else null
                 }
                 // resumed is part of the emitted tuple so toggling foreground
                 // re-arms the dwell: a post skipped while backgrounded gets a
