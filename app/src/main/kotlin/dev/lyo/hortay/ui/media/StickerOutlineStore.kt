@@ -8,7 +8,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.drinkless.tdlib.TdApi
 import java.util.Collections
-import java.util.LinkedHashMap
 
 /**
  * Process-wide cache of parsed sticker outline silhouettes, keyed by sticker fileId.
@@ -43,10 +42,7 @@ import java.util.LinkedHashMap
  */
 class StickerOutlineStore(private val td: TdSender) {
 
-    private val lru = object : LinkedHashMap<Int, Path>(MAX_ENTRIES, 0.75f, /* accessOrder */ true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Path>?): Boolean =
-            size > MAX_ENTRIES
-    }
+    private val lru = boundedLruCache<Int, Path>(MAX_ENTRIES, accessOrder = true)
     private val negative: MutableSet<Int> = Collections.synchronizedSet(HashSet())
 
     /**

@@ -15,6 +15,7 @@ import dev.lyo.hortay.data.VideoQualities
 import dev.lyo.hortay.data.VideoQuality
 import dev.lyo.hortay.data.WebPreview as TdWebPreview
 import dev.lyo.hortay.data.WebPreviewKind
+import dev.lyo.hortay.ui.media.boundedLruCache
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
@@ -270,9 +271,7 @@ object WebPostAdapter {
         return result
     }
 
-    private val formattedCache = object : LinkedHashMap<String, FormattedText>(64, 0.75f, /* accessOrder */ true) {
-        override fun removeEldestEntry(eldest: Map.Entry<String, FormattedText>?): Boolean = size > 1024
-    }
+    private val formattedCache = boundedLruCache<String, FormattedText>(1024, accessOrder = true)
 
     /** Phase 1 output: untrimmed, un-collapsed text + spans referencing it. */
     private data class RawWalk(val text: String, val spans: List<FormattedText.Span>)

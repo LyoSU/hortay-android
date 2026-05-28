@@ -5,8 +5,6 @@ import dev.lyo.hortay.data.PostFilterStrategy
 import dev.lyo.hortay.data.TimelinePost
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.toPersistentList
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Cold-start snapshot helpers and the canonical raw → live-feed fold.
@@ -19,10 +17,6 @@ import kotlinx.coroutines.withTimeoutOrNull
  *    load / pagination / live ingest / snapshot upgrade. Same partial-album
  *    downgrade guard + album-id-aware dedup the long-form KDoc below
  *    describes.
- *  - [suspendUntilOrTimeout] — predicate poll with timeout. Unused in
- *    production after the event-driven ingest rework (the cold-start
- *    `UpdateNewChat` wait it serviced is gone), kept as a small utility
- *    helper because it's covered by [SuspendUntilOrTimeoutTest].
  */
 
 /**
@@ -122,31 +116,4 @@ internal fun foldRawIntoCurrent(
         )
     }
     return PostFilterStrategy.apply(rawMerged + keptOld).toPersistentList()
-}
-
-/**
- * Poll [predicate] every [pollIntervalMs] until it returns true OR [timeoutMs] elapses.
- * Returns true on success, false on timeout. Predicate is checked once synchronously
- * before any delay, so a pre-satisfied condition costs zero suspensions.
- *
- * Assumes [predicate] is monotonic / one-shot — once it has been observed true, callers
- * expect that fact to stay true. The function returns at the first observed true and
- * does not re-poll; a flip-flop predicate would yield a snapshot value that may not
- * hold by the time the caller acts on it.
- *
- * Lives at file scope rather than inside [PostsRepository] so the unit test can call it
- * without standing up the full repository graph. `internal` (not file-private) because
- * Kotlin top-level `private` is file-scoped, and the test lives in a separate file in
- * the same module; `internal` is the minimum visibility that allows that access.
- */
-internal suspend fun suspendUntilOrTimeout(
-    timeoutMs: Long,
-    pollIntervalMs: Long,
-    predicate: () -> Boolean,
-): Boolean {
-    if (predicate()) return true
-    return withTimeoutOrNull(timeoutMs) {
-        while (!predicate()) delay(pollIntervalMs)
-        true
-    } ?: false
 }

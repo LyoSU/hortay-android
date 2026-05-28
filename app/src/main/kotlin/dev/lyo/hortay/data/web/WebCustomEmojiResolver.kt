@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data.web
 
 import android.util.Log
+import dev.lyo.hortay.ui.media.boundedLruCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -69,10 +70,7 @@ class WebCustomEmojiResolver(
     // ResolvedEmoji is small (5 strings), so 1024 entries cap memory at ~100 KB
     // worst case while still serving the hot path (recent emoji on screen) from
     // RAM. accessOrder=true makes `removeEldestEntry` evict by recency.
-    private val cache = object : LinkedHashMap<String, ResolvedEmoji>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: Map.Entry<String, ResolvedEmoji>?): Boolean =
-            size > CACHE_LIMIT
-    }
+    private val cache = boundedLruCache<String, ResolvedEmoji>(CACHE_LIMIT, accessOrder = true)
     private val cacheMutex = Mutex()
 
     // Per-request 200 ms spacing between outbound calls (5 req/s ceiling). Mirrors

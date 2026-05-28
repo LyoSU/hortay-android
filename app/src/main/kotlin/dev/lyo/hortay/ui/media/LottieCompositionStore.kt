@@ -9,7 +9,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
-import java.util.LinkedHashMap
 import java.util.zip.GZIPInputStream
 
 /**
@@ -68,19 +67,13 @@ import java.util.zip.GZIPInputStream
  */
 internal object LottieCompositionStore {
 
-    private val lru = object : LinkedHashMap<String, LottieComposition>(MAX_ENTRIES, 0.75f, /* accessOrder */ true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, LottieComposition>?): Boolean =
-            size > MAX_ENTRIES
-    }
+    private val lru = boundedLruCache<String, LottieComposition>(MAX_ENTRIES, accessOrder = true)
 
     /**
      * Bounded negative cache. Access-ordered so paths the user is actively bumping
      * into stay near the top and stale entries fall off when the user moves on.
      */
-    private val failedPaths = object : LinkedHashMap<String, Unit>(MAX_FAILED, 0.75f, /* accessOrder */ true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Unit>?): Boolean =
-            size > MAX_FAILED
-    }
+    private val failedPaths = boundedLruCache<String, Unit>(MAX_FAILED, accessOrder = true)
 
     /** In-flight parses, keyed by path. Synchronised access; deferred is released on completion. */
     private val inFlight = HashMap<String, CompletableDeferred<LottieComposition?>>()

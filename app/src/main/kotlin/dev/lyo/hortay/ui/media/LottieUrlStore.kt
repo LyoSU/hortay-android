@@ -8,7 +8,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
-import java.util.LinkedHashMap
 import java.util.zip.GZIPInputStream
 
 /**
@@ -28,10 +27,7 @@ import java.util.zip.GZIPInputStream
  */
 internal object LottieUrlStore {
 
-    private val lru = object : LinkedHashMap<String, LottieComposition>(MAX_ENTRIES, 0.75f, /* accessOrder */ true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, LottieComposition>?): Boolean =
-            size > MAX_ENTRIES
-    }
+    private val lru = boundedLruCache<String, LottieComposition>(MAX_ENTRIES, accessOrder = true)
 
     suspend fun load(url: String, http: OkHttpClient): LottieComposition? {
         synchronized(lru) { lru[url]?.let { return it } }
