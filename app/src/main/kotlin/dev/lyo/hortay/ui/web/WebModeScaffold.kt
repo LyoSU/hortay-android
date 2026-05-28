@@ -29,6 +29,8 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -123,6 +125,7 @@ fun WebModeScaffold(graph: AppGraph) {
 
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val locale = remember { Locale.getDefault().language.lowercase() }
     val signInRequiredMsg = stringResource(R.string.web_deeplink_signin_required)
     val signInActionLabel = stringResource(R.string.action_sign_in)
@@ -380,7 +383,12 @@ fun WebModeScaffold(graph: AppGraph) {
                 // on top of Scaffold's own offset and floated the button much too
                 // high above the FloatingNavBar.
                 ExtendedFloatingActionButton(
-                    onClick = { addSheetOpen = true },
+                    onClick = {
+                        // Discrete "open add-channel sheet" action — ContextClick before
+                        // the sheet opens.
+                        haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                        addSheetOpen = true
+                    },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     expanded = !hasChannels,

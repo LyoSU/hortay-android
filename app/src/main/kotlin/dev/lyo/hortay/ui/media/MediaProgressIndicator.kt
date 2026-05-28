@@ -63,7 +63,7 @@ import dev.lyo.hortay.ui.theme.asComposeShape
 fun MediaProgressIndicator(
     progress: Float,
     modifier: Modifier = Modifier,
-    size: Dp = 44.dp,
+    size: Dp = 48.dp,
     iconName: String = "arrow_downward",
     onClick: (() -> Unit)? = null,
 ) {
@@ -146,7 +146,7 @@ fun MediaProgressIndicator(
 @Composable
 fun MediaIndeterminateIndicator(
     modifier: Modifier = Modifier,
-    size: Dp = 44.dp,
+    size: Dp = 48.dp,
     onClick: (() -> Unit)? = null,
 ) {
     // Indeterminate state — the brief window before progress data lands —
@@ -230,7 +230,7 @@ fun MediaLoadingOverlay(
 @Composable
 fun MediaFailedOverlay(
     modifier: Modifier = Modifier,
-    size: Dp = 44.dp,
+    size: Dp = 48.dp,
     onRetry: (() -> Unit)? = null,
 ) {
     val diskShape = HortayExpressive.ReactionSelected.asComposeShape()

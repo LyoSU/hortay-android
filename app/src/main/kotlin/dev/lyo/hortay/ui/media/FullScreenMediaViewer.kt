@@ -1,7 +1,9 @@
 package dev.lyo.hortay.ui.media
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
@@ -50,6 +52,7 @@ import dev.lyo.hortay.data.VideoQuality
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
+import dev.lyo.hortay.ui.util.rememberReducedMotion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -90,6 +93,13 @@ fun FullScreenMediaViewer(
         val maxFadePx = remember(density) { with(density) { 320.dp.toPx() } }
         val offsetY = remember { Animatable(0f) }
         val scope = rememberCoroutineScope()
+        // Reduced motion (system "Remove animations"): the drag-dismiss snap-back and the
+        // double-tap zoom settle skip their spring physics and jump to the end state, so
+        // motion-sensitive users don't get bouncy overshoot. The gestures themselves are
+        // unchanged — only the post-release animation is neutralised.
+        val reducedMotion = rememberReducedMotion()
+        val settleSpec: AnimationSpec<Float> =
+            if (reducedMotion) snap() else spring(dampingRatio = Spring.DampingRatioMediumBouncy)
         val draggable = rememberDraggableState { delta ->
             scope.launch { offsetY.snapTo(offsetY.value + delta) }
         }
@@ -112,7 +122,7 @@ fun FullScreenMediaViewer(
                         if (abs(offsetY.value) > dismissThresholdPx) {
                             onDismiss()
                         } else {
-                            offsetY.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                            offsetY.animateTo(0f, settleSpec)
                         }
                     },
                 ),
@@ -442,6 +452,12 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
     val offsetX = remember(item.fullscreen.fileId) { Animatable(0f) }
     val offsetY = remember(item.fullscreen.fileId) { Animatable(0f) }
     val scope = rememberCoroutineScope()
+    // Reduced motion: double-tap zoom jumps to its target instead of springing. Pinch
+    // already uses snapTo, so only the double-tap animateTo path needs neutralising.
+    val reducedMotion = rememberReducedMotion()
+    val scaleSpec: AnimationSpec<Float> =
+        if (reducedMotion) snap() else spring(dampingRatio = Spring.DampingRatioNoBouncy)
+    val offsetSpec: AnimationSpec<Float> = if (reducedMotion) snap() else spring()
     // Viewport size for offset clamping. Without bounds, pinch-pan let the user
     // fling the image completely off-screen (visible black rectangle with no
     // way back); Telegram clamps so the image edges can never cross the
@@ -474,9 +490,9 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
                     val zoomed = scale.value > 1f
                     scope.launch {
                         if (zoomed) {
-                            launch { scale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioNoBouncy)) }
-                            launch { offsetX.animateTo(0f, spring()) }
-                            launch { offsetY.animateTo(0f, spring()) }
+                            launch { scale.animateTo(1f, scaleSpec) }
+                            launch { offsetX.animateTo(0f, offsetSpec) }
+                            launch { offsetY.animateTo(0f, offsetSpec) }
                         } else {
                             val target = DOUBLE_TAP_SCALE
                             val cx = (containerSize.width / 2f - tap.x) * (target - 1f)
@@ -484,16 +500,16 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
                             launch {
                                 offsetX.animateTo(
                                     cx.coerceIn(-maxOffsetX(target), maxOffsetX(target)),
-                                    spring(),
+                                    offsetSpec,
                                 )
                             }
                             launch {
                                 offsetY.animateTo(
                                     cy.coerceIn(-maxOffsetY(target), maxOffsetY(target)),
-                                    spring(),
+                                    offsetSpec,
                                 )
                             }
-                            scale.animateTo(target, spring(dampingRatio = Spring.DampingRatioNoBouncy))
+                            scale.animateTo(target, scaleSpec)
                         }
                     }
                 })

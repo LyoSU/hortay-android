@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.em
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.LocalCustomEmoji
+import dev.lyo.hortay.ui.util.rememberReducedMotion
 import kotlinx.coroutines.launch
 
 /**
@@ -145,21 +146,28 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
         mutableStateMapOf<Int, Animatable<Float, AnimationVector1D>>()
     }
     val scope = rememberCoroutineScope()
+    // Reduced motion (system "Remove animations"): snap the cover straight to the
+    // revealed state with no dispersal sweep instead of the multi-hundred-ms reveal.
+    val reducedMotion = rememberReducedMotion()
 
-    val revealGroup: (Int) -> Unit = remember(spoilerStateKey) {
+    val revealGroup: (Int) -> Unit = remember(spoilerStateKey, reducedMotion) {
         { groupId ->
             if (groupId !in revealedGroups.value) {
                 revealedGroups.value = revealedGroups.value + groupId
                 val anim = Animatable(0f)
                 dispersing[groupId] = anim
                 scope.launch {
-                    anim.animateTo(
-                        targetValue = 1f,
-                        animationSpec = tween(
-                            durationMillis = SPOILER_REVEAL_MS,
-                            easing = SpoilerEaseInQuad,
-                        ),
-                    )
+                    if (reducedMotion) {
+                        anim.snapTo(1f)
+                    } else {
+                        anim.animateTo(
+                            targetValue = 1f,
+                            animationSpec = tween(
+                                durationMillis = SPOILER_REVEAL_MS,
+                                easing = SpoilerEaseInQuad,
+                            ),
+                        )
+                    }
                     dispersing.remove(groupId)
                 }
             }

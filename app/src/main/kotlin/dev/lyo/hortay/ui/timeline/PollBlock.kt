@@ -1,10 +1,11 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,7 +48,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -292,6 +295,7 @@ private fun PollDescription(content: PostContent.Poll) {
 
 @Composable
 private fun PollOptionsList(content: PostContent.Poll, voting: PollVoting?) {
+    val haptics = LocalHapticFeedback.current
     val multi = (content.kind as? PollKind.Regular)?.allowsMultipleAnswers == true
     // Local val so Kotlin's smart-cast carries through the lambda capture below — using
     // `voting` directly inside the lambda would force a `voting?.` even though `canVote`
@@ -320,6 +324,7 @@ private fun PollOptionsList(content: PostContent.Poll, voting: PollVoting?) {
                                 staged.value + option.index
                             }
                         } else {
+                            haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                             v.onCommit(intArrayOf(option.index))
                         }
                     }
@@ -337,6 +342,7 @@ private fun PollOptionsList(content: PostContent.Poll, voting: PollVoting?) {
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                         v?.onCommit(staged.value.sorted().toIntArray())
                         staged.value = emptySet()
                     },
@@ -385,14 +391,14 @@ private fun PollOptionRow(
             option.isChosen && showResults -> cs.primaryContainer.copy(alpha = 0.20f)
             else -> Color.Transparent
         },
-        animationSpec = tween(durationMillis = 220),
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "pollRowContainer",
     )
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(container)
             .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
             .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -470,7 +476,7 @@ private fun PollResultBar(percent: Int, accent: Color, isBeingChosen: Boolean) {
     val target = (percent.coerceIn(0, 100) / 100f)
     val animated by animateFloatAsState(
         targetValue = target,
-        animationSpec = tween(durationMillis = 600),
+        animationSpec = MaterialTheme.motionScheme.slowEffectsSpec(),
         label = "pollResultBar",
     )
     if (isBeingChosen) {

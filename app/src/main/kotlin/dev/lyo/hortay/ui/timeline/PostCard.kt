@@ -24,7 +24,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -830,6 +832,7 @@ private fun ActionRow(
      */
     onPaidReactionOpenPost: () -> Unit = {},
 ) {
+    val haptics = LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -887,7 +890,17 @@ private fun ActionRow(
                         )
                     }
                 } else {
-                    { onReactionTap(item) }
+                    {
+                        // Toggle haptic on a real reaction add/remove — ToggleOff when
+                        // un-reacting (the chip was already the user's choice), ToggleOn
+                        // otherwise. Paid reactions skip this: their tap raises an
+                        // explainer snackbar, not a state change.
+                        haptics.performHapticFeedback(
+                            if (item.isChosen) HapticFeedbackType.ToggleOff
+                            else HapticFeedbackType.ToggleOn,
+                        )
+                        onReactionTap(item)
+                    }
                 }
                 ReactionChip(item, onClick = tapHandler, disabled = isPaid)
             }
@@ -1054,6 +1067,7 @@ private fun PostActionSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     val isBookmarked = interactions.isBookmarked(post)
 
     // Run the user action immediately, then animate the sheet out and tell the parent to forget us.
@@ -1070,7 +1084,14 @@ private fun PostActionSheet(
             SheetItem(
                 symbol = "bookmark",
                 label = stringResource(if (isBookmarked) R.string.post_unsave else R.string.post_save),
-                onClick = { runAndDismiss { interactions.onBookmarkClick(post) } },
+                onClick = {
+                    // Toggle haptic on the save/unsave state flip, before the action runs.
+                    haptics.performHapticFeedback(
+                        if (isBookmarked) HapticFeedbackType.ToggleOff
+                        else HapticFeedbackType.ToggleOn,
+                    )
+                    runAndDismiss { interactions.onBookmarkClick(post) }
+                },
             )
             if (post.content.captionPlain.isNotBlank()) {
                 SheetItem(

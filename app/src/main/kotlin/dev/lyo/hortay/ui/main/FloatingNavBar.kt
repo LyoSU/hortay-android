@@ -16,6 +16,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.ui.icons.Symbol
@@ -81,6 +83,7 @@ private fun NavTabButton(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val haptics = LocalHapticFeedback.current
     // Three-state corner-radius morph — canonical M3 Expressive vocabulary.
     // 14 dp rest → 6 dp pressed (squish) → 24 dp selected (pill).
     val cornerRadius by rememberPressedSelectedCornerRadius(
@@ -116,7 +119,13 @@ private fun NavTabButton(
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
-                onClick = onClick,
+                onClick = {
+                    // Discrete destination switch (or home re-tap → scroll-to-top) —
+                    // one ContextClick per deliberate tab press. Fires before the
+                    // callback so the tick lands with the press, not after navigation.
+                    haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    onClick()
+                },
             )
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center,

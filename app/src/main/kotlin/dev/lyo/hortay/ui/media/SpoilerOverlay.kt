@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.util.rememberReducedMotion
 
 /**
  * Telegram-style spoiler / sensitive-content cover for media. Sits on top of an already-
@@ -67,20 +68,27 @@ fun SpoilerOverlay(
     val dispersion = remember { Animatable(0f) }
     var dismissing by remember { mutableStateOf(false) }
     val dispersionProgress = dispersion.value
+    // Reduced motion (system "Remove animations"): skip the dispersal sweep and reveal
+    // in one frame instead of the ~1.1 s Thanos-style crumble.
+    val reducedMotion = rememberReducedMotion()
 
     LaunchedEffect(dismissing) {
         if (dismissing) {
-            // easeInQuad — slow start, fast finish. Matches Telegram-Android's spoiler
-            // ripple (Easings.easeInQuad in SpoilerEffect.java). It drives the wave front:
-            // the left edge starts crumbling gently, then the sweep rips across the field
-            // faster through the back half — the "lift off" feel.
-            dispersion.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(
-                    durationMillis = REVEAL_DURATION_MS,
-                    easing = EaseInQuad,
-                ),
-            )
+            if (reducedMotion) {
+                dispersion.snapTo(1f)
+            } else {
+                // easeInQuad — slow start, fast finish. Matches Telegram-Android's spoiler
+                // ripple (Easings.easeInQuad in SpoilerEffect.java). It drives the wave front:
+                // the left edge starts crumbling gently, then the sweep rips across the field
+                // faster through the back half — the "lift off" feel.
+                dispersion.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(
+                        durationMillis = REVEAL_DURATION_MS,
+                        easing = EaseInQuad,
+                    ),
+                )
+            }
             onReveal()
         }
     }
