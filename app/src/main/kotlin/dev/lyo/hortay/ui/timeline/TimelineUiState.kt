@@ -89,8 +89,28 @@ fun buildTimelineUiState(
             post.isUnreadIn(frozenCursors) &&
             (minUnreadDate <= 0L || post.date >= minUnreadDate)
     }
-    val boundary = items.indexOfLast(qualifies)
-    val initialIndex = if (boundary >= 0) boundary else 0
+    val boundaryPost = items.indexOfLast(qualifies)
+    // Cold-entry landing target: the [FeedItem.Boundary] divider row, NOT the
+    // boundary post itself. [withBoundary] inserts the divider at boundaryPost + 1
+    // (after the oldest unread in iteration order). Under reverseLayout this places
+    // the divider visually ABOVE the boundary post — so anchoring the divider at
+    // the viewport top puts the divider at the top of the screen with the oldest
+    // unread post immediately below it and the unread queue continuing down. That
+    // is the canonical "you came in here, unread is on this side of the line"
+    // landing the user expects; anchoring the boundary POST instead leaves the
+    // divider off-screen above the viewport (higher data index = higher visually
+    // in reverseLayout) and the user never sees it.
+    //
+    // Falls back to the boundary post itself when the divider isn't present (it
+    // is always inserted alongside an unread block, so this guards against a feed
+    // ingest race where the scan finds an unread post but withBoundary hasn't
+    // re-grouped yet). Falls back to 0 (newest) when no unread qualifies.
+    val initialIndex = when {
+        boundaryPost < 0 -> 0
+        boundaryPost + 1 <= items.lastIndex && items[boundaryPost + 1] is FeedItem.Boundary ->
+            boundaryPost + 1
+        else -> boundaryPost
+    }
     return TimelineUiState.Ready(
         items = items,
         initialIndex = initialIndex,

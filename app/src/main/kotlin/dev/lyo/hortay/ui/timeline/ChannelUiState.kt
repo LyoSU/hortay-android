@@ -161,8 +161,18 @@ internal fun buildChannelUiState(
                     post.isUnreadIn(cursors) &&
                     (recencyCutoffMs <= 0L || post.date >= recencyCutoffMs)
             }
-            val boundary = items.indexOfLast(qualifies)
-            if (boundary >= 0) boundary else 0
+            val boundaryPost = items.indexOfLast(qualifies)
+            // Cold-entry landing target = the [FeedItem.Boundary] divider row, NOT
+            // the boundary post. See buildTimelineUiState's matching block for the
+            // full rationale (divider visually above the boundary post under
+            // reverseLayout; anchoring the divider top-aligns the divider with the
+            // boundary post + unread queue visible below it).
+            when {
+                boundaryPost < 0 -> 0
+                boundaryPost + 1 <= items.lastIndex && items[boundaryPost + 1] is FeedItem.Boundary ->
+                    boundaryPost + 1
+                else -> boundaryPost
+            }
         } else {
             0
         }

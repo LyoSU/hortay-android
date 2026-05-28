@@ -219,4 +219,33 @@ class ChannelUiStateBuilderTest {
         assertEquals(0, s.initialIndex)
         assertNull(s.highlightedMessageId)
     }
+
+    @Test
+    fun `OldestUnreadFirst with FeedItem dot Boundary present targets the divider row`() {
+        // Mirrors the merged-feed test in TimelineUiStateBuilderTest: when the
+        // upstream withBoundary helper has inserted a divider row at
+        // boundaryPost + 1, the cold-entry landing should be the DIVIDER index,
+        // not the boundary post. Top-aligning the divider puts the divider at
+        // the screen top with the oldest unread post immediately below it.
+        val items = persistentListOf<FeedItem>(
+            FeedItem.Post(testPost(chatId = 1L, id = 103L)), // unread
+            FeedItem.Post(testPost(chatId = 1L, id = 102L)), // unread — boundary post (index 1)
+            FeedItem.Boundary(epoch = 11L),                  // divider (index 2)
+            FeedItem.Post(testPost(chatId = 1L, id = 101L)), // read
+            FeedItem.Post(testPost(chatId = 1L, id = 100L)), // read
+        )
+        val s = buildChannelUiState(
+            data = loaded(items),
+            items = items,
+            scrollToMessageId = null,
+            attemptedAround = false,
+            searchActive = false,
+            chatId = 1L,
+            feedOrder = FeedOrder.OldestUnreadFirst,
+            cursors = persistentMapOf(1L to 101L),
+        )
+        assertTrue(s is ChannelUiState.Ready)
+        s as ChannelUiState.Ready
+        assertEquals(2, s.initialIndex) // FeedItem.Boundary, NOT the boundary post (index 1)
+    }
 }

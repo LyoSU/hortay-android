@@ -1688,6 +1688,26 @@ fun TimelineScreen(
                         // row inserted by [withBoundary] at the feedItems build site
                         // (see above). The LazyColumn renders it directly via
                         // [TimelineFeedColumn]; no derived key lookup is needed here.
+                        //
+                        // Cold-entry top-align reveal (reverseLayout only). LazyListState
+                        // mounts seeded at `state.initialIndex` with scrollOffset = 0,
+                        // which under reverseLayout glues the target item's BOTTOM to
+                        // the viewport bottom — the divider + unread queue would be
+                        // stranded off-screen below. The reveal waits one layout pass
+                        // for the target row to measure, then one instant
+                        // [topAlignedScrollOffset] reposition lands it at the viewport
+                        // top with no wrong-frame flash; the SkeletonFeed cover stays
+                        // painted on top until the reveal flips true.
+                        //
+                        // Skipped in Newest mode (forward layout's scrollOffset = 0
+                        // already top-aligns) and on drill-out/drill-in restore
+                        // (routeKey unchanged → revealed flag preserved across re-mount).
+                        val boundaryRevealed = rememberBoundaryReveal(
+                            listState = listState,
+                            boundaryIndex = state.initialIndex,
+                            enabled = feedOrder.reverseLayout,
+                            routeKey = routeKey,
+                        )
 
                         CompositionLocalProvider(LocalScrollGate provides scrollGate) {
                             // The reverse-feed cold-start gate is now upstream:
@@ -1697,20 +1717,25 @@ fun TimelineScreen(
                             // First paint of [TimelineFeedColumn] lands at the
                             // [Ready.initialIndex] row in one frame — no
                             // animate-through, no transient wrong-order frame.
-                            TimelineFeedColumn(
-                                state = listState,
-                                flingBehavior = flingBehavior,
-                                reverseLayout = feedOrder.reverseLayout,
-                                bottomPadding = contentPadding.calculateBottomPadding(),
-                                feedItems = state.items,
-                                centeredItemKeyState = centeredItemKeyState,
-                                highlightedPostKey = highlightedPostKey,
-                                interactions = interactions,
-                                onTapRevisions = { post ->
-                                    if (archiveRepository != null) revisionsForPost = post
-                                },
-                                modifier = Modifier.fillMaxSize(),
-                            )
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                TimelineFeedColumn(
+                                    state = listState,
+                                    flingBehavior = flingBehavior,
+                                    reverseLayout = feedOrder.reverseLayout,
+                                    bottomPadding = contentPadding.calculateBottomPadding(),
+                                    feedItems = state.items,
+                                    centeredItemKeyState = centeredItemKeyState,
+                                    highlightedPostKey = highlightedPostKey,
+                                    interactions = interactions,
+                                    onTapRevisions = { post ->
+                                        if (archiveRepository != null) revisionsForPost = post
+                                    },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                if (!boundaryRevealed) {
+                                    SkeletonFeed(modifier = Modifier.fillMaxSize())
+                                }
+                            }
                         }
                         }
                     }

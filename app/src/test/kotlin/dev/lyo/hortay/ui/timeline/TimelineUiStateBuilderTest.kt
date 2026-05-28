@@ -3,6 +3,7 @@ package dev.lyo.hortay.ui.timeline
 import dev.lyo.hortay.data.EmptyReadCursors
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.testutil.testPost
+import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toPersistentList
@@ -178,5 +179,32 @@ class TimelineUiStateBuilderTest {
         assertTrue(s is TimelineUiState.Ready)
         s as TimelineUiState.Ready
         assertEquals(0, s.initialIndex) // newest; sits at the bottom under reverseLayout
+    }
+
+    @Test
+    fun `OldestUnreadFirst with FeedItem dot Boundary present targets the divider row`() {
+        // When the upstream withBoundary helper has inserted a divider row at
+        // boundaryPost + 1, the cold-entry landing should be the DIVIDER index, not
+        // the boundary post. This is the visible-divider fix: anchoring the divider
+        // at the viewport top puts the divider at the screen top with the oldest
+        // unread post immediately below it, instead of leaving the divider stranded
+        // off-screen above the boundary post in reverseLayout.
+        val items: PersistentList<FeedItem> = persistentListOf(
+            item(100L), // unread
+            item(99L),  // unread — oldest unread, the boundary post (index 1)
+            FeedItem.Boundary(epoch = 7L),  // divider inserted by withBoundary (index 2)
+            item(98L),  // read history
+        )
+        val cursors = persistentMapOf(1L to 98L)
+        val s = buildTimelineUiState(
+            items = items,
+            cursorsLanded = true,
+            frozenCursors = cursors,
+            feedOrder = FeedOrder.OldestUnreadFirst,
+            refreshing = false,
+        )
+        assertTrue(s is TimelineUiState.Ready)
+        s as TimelineUiState.Ready
+        assertEquals(2, s.initialIndex) // FeedItem.Boundary row, NOT the boundary post (index 1)
     }
 }

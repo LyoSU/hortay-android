@@ -742,22 +742,30 @@ fun ChannelScreen(
                         }
                     }
                     else -> {
-                        // Cold-entry boundary reveal (reverseLayout only). The
-                        // LazyColumn mounts seeded at the boundary, which under
-                        // reverseLayout is the viewport's BOTTOM edge — so without
-                        // this the oldest-unread boundary glues to the bottom with
-                        // the unread queue stranded off-screen below it. The gate
-                        // keeps the [SkeletonFeed] cover (below) painted while the
-                        // list measures the boundary's height underneath, then one
-                        // instant [alignedScrollOffset] reposition lands it with the
-                        // unread queue visible and the cover lifts — no wrong-frame
-                        // flash. Disabled for deep-link landings (own anchor +
-                        // highlight) and Newest mode. See [rememberBoundaryReveal].
+                        // Cold-entry top-align reveal (reverseLayout only). The
+                        // LazyColumn mounts seeded at `initialIndex`, which under
+                        // reverseLayout glues that item's BOTTOM to the viewport
+                        // bottom — for the boundary case the divider + unread
+                        // queue would be stranded off-screen below; for the
+                        // deep-link case (channel-name tap landing at a specific
+                        // post) a TALL target would have its header clipped
+                        // above the viewport and the user would see the bottom
+                        // of the post. The reveal keeps the [SkeletonFeed] cover
+                        // painted while the list measures the target row's
+                        // height underneath, then one instant
+                        // [topAlignedScrollOffset] reposition lands it at the
+                        // viewport top with no wrong-frame flash.
+                        //
+                        // Enabled for BOTH boundary and deep-link landings —
+                        // both share the bottom-anchored cold-mount problem and
+                        // the same fix. Newest mode skips the reveal because
+                        // forward layout's scrollOffset=0 already top-aligns.
+                        // See [rememberBoundaryReveal] for the reveal mechanics.
                         val readyState = channelUiState as? ChannelUiState.Ready
                         val boundaryRevealed = rememberBoundaryReveal(
                             listState = listState,
                             boundaryIndex = readyState?.initialIndex ?: 0,
-                            enabled = feedOrder.reverseLayout && readyState?.highlightedMessageId == null,
+                            enabled = feedOrder.reverseLayout,
                             routeKey = chatId,
                         )
                         // Scroll gate: defer media ensure() while the list is scrolling.
