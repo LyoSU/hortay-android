@@ -379,6 +379,10 @@
     <string name="settings_author_developer_title">المطوّر</string>
     <string name="settings_author_source_title">الكود المصدري</string>
     <string name="settings_section_about">حول التطبيق</string>
+    <string name="settings_category_data_title">البيانات والتخزين</string>
+    <string name="settings_category_data_subtitle">البيانات، التخزين، التنزيل التلقائي</string>
+    <string name="settings_category_privacy_subtitle">القراءة الخفية، السياسات</string>
+    <string name="settings_category_about_subtitle">المؤلف، اللغة، الإصدار</string>
     <string name="settings_language">اللغة</string>
     <string name="settings_language_summary_system">افتراضي النظام</string>
     <string name="settings_language_dialog_title">لغة التطبيق</string>

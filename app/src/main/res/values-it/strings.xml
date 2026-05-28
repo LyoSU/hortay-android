@@ -357,6 +357,10 @@
     <string name="settings_author_developer_title">Sviluppatore</string>
     <string name="settings_author_source_title">Codice sorgente</string>
     <string name="settings_section_about">Informazioni</string>
+    <string name="settings_category_data_title">Dati e archiviazione</string>
+    <string name="settings_category_data_subtitle">Traffico, archiviazione, download automatico</string>
+    <string name="settings_category_privacy_subtitle">Lettura invisibile, criteri</string>
+    <string name="settings_category_about_subtitle">Autore, lingua, versione</string>
     <string name="settings_language">Lingua</string>
     <string name="settings_language_summary_system">Predefinita del sistema</string>
     <string name="settings_language_dialog_title">Lingua dell\'app</string>

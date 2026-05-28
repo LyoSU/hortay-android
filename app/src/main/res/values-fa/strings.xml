@@ -347,6 +347,10 @@
     <string name="settings_author_developer_title">توسعه‌دهنده</string>
     <string name="settings_author_source_title">کد منبع</string>
     <string name="settings_section_about">درباره</string>
+    <string name="settings_category_data_title">داده‌ها و فضای ذخیره‌سازی</string>
+    <string name="settings_category_data_subtitle">ترافیک، فضای ذخیره‌سازی، دانلود خودکار</string>
+    <string name="settings_category_privacy_subtitle">خواندن نامرئی، سیاست‌ها</string>
+    <string name="settings_category_about_subtitle">نویسنده، زبان، نسخه</string>
     <string name="settings_language">زبان</string>
     <string name="settings_language_summary_system">پیش‌فرض سیستم</string>
     <string name="settings_language_dialog_title">زبان برنامه</string>

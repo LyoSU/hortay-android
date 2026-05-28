@@ -365,6 +365,10 @@
     <string name="settings_author_developer_title">Разработчик</string>
     <string name="settings_author_source_title">Исходный код</string>
     <string name="settings_section_about">О приложении</string>
+    <string name="settings_category_data_title">Данные и хранилище</string>
+    <string name="settings_category_data_subtitle">Трафик, хранилище, автозагрузка</string>
+    <string name="settings_category_privacy_subtitle">Невидимое чтение, политики</string>
+    <string name="settings_category_about_subtitle">Автор, язык, версия</string>
     <string name="settings_language">Язык</string>
     <string name="settings_language_summary_system">Системный</string>
     <string name="settings_language_dialog_title">Язык приложения</string>

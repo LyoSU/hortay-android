@@ -357,6 +357,10 @@
     <string name="settings_author_developer_title">Développeur</string>
     <string name="settings_author_source_title">Code source</string>
     <string name="settings_section_about">À propos</string>
+    <string name="settings_category_data_title">Données et stockage</string>
+    <string name="settings_category_data_subtitle">Trafic, stockage, téléchargement auto</string>
+    <string name="settings_category_privacy_subtitle">Lecture invisible, politiques</string>
+    <string name="settings_category_about_subtitle">Auteur, langue, version</string>
     <string name="settings_language">Langue</string>
     <string name="settings_language_summary_system">Par défaut du système</string>
     <string name="settings_language_dialog_title">Langue de l\'application</string>

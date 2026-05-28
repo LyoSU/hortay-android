@@ -363,6 +363,10 @@
     <string name="settings_author_developer_title">Deweloper</string>
     <string name="settings_author_source_title">Kod źródłowy</string>
     <string name="settings_section_about">O aplikacji</string>
+    <string name="settings_category_data_title">Dane i pamięć</string>
+    <string name="settings_category_data_subtitle">Transfer, pamięć, autopobieranie</string>
+    <string name="settings_category_privacy_subtitle">Niewidoczne czytanie, zasady</string>
+    <string name="settings_category_about_subtitle">Autor, język, wersja</string>
     <string name="settings_language">Język</string>
     <string name="settings_language_summary_system">Domyślny systemowy</string>
     <string name="settings_language_dialog_title">Język aplikacji</string>

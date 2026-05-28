@@ -349,6 +349,10 @@
     <string name="settings_author_developer_title">Geliştirici</string>
     <string name="settings_author_source_title">Kaynak kodu</string>
     <string name="settings_section_about">Hakkında</string>
+    <string name="settings_category_data_title">Veri ve depolama</string>
+    <string name="settings_category_data_subtitle">Trafik, depolama, otomatik indirme</string>
+    <string name="settings_category_privacy_subtitle">Görünmez okuma, ilkeler</string>
+    <string name="settings_category_about_subtitle">Yazar, dil, sürüm</string>
     <string name="settings_language">Dil</string>
     <string name="settings_language_summary_system">Sistem varsayılanı</string>
     <string name="settings_language_dialog_title">Uygulama dili</string>

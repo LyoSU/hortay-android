@@ -360,6 +360,10 @@
     <string name="settings_author_developer_title">Розробник</string>
     <string name="settings_author_source_title">Вихідний код</string>
     <string name="settings_section_about">Про застосунок</string>
+    <string name="settings_category_data_title">Дані та сховище</string>
+    <string name="settings_category_data_subtitle">Трафік, сховище, автозавантаження</string>
+    <string name="settings_category_privacy_subtitle">Невидиме читання, політики</string>
+    <string name="settings_category_about_subtitle">Автор, мова, версія</string>
     <string name="settings_language">Мова</string>
     <string name="settings_language_summary_system">Системна</string>
     <string name="settings_language_dialog_title">Мова застосунку</string>

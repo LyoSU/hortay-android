@@ -339,6 +339,10 @@
     <string name="settings_author_developer_title">Pengembang</string>
     <string name="settings_author_source_title">Kode sumber</string>
     <string name="settings_section_about">Tentang</string>
+    <string name="settings_category_data_title">Data dan penyimpanan</string>
+    <string name="settings_category_data_subtitle">Lalu lintas, penyimpanan, unduh otomatis</string>
+    <string name="settings_category_privacy_subtitle">Membaca tanpa terlihat, kebijakan</string>
+    <string name="settings_category_about_subtitle">Penulis, bahasa, versi</string>
     <string name="settings_language">Bahasa</string>
     <string name="settings_language_summary_system">Default sistem</string>
     <string name="settings_language_dialog_title">Bahasa aplikasi</string>

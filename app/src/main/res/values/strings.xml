@@ -347,6 +347,10 @@
     <string name="settings_author_developer_title">Developer</string>
     <string name="settings_author_source_title">Source code</string>
     <string name="settings_section_about">About</string>
+    <string name="settings_category_data_title">Data and storage</string>
+    <string name="settings_category_data_subtitle">Traffic, storage, auto-download</string>
+    <string name="settings_category_privacy_subtitle">Invisible reading, policies</string>
+    <string name="settings_category_about_subtitle">Author, language, version</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_summary_system">System default</string>
     <!-- Native names shown as-is in every UI locale (Telegram convention). -->
