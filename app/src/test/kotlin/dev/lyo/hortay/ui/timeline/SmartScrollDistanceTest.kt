@@ -70,43 +70,71 @@ class SmartScrollDistanceTest {
         assertEquals(1200, alignedScrollOffset(viewport = 800, itemSize = 2000, reverseLayout = true))
     }
 
-    // --- topAnchoredScrollOffset: "land the row top at the viewport top" ---
+    // --- topAnchoredScrollOffset: "land the row top at the VISIBLE viewport top" ---
+    //
+    // Formula: itemSize - mainAxisAvailableSize - beforeContentPadding (reverseLayout)
+    // → places the row at visual y = afterContentPadding (= visible-area top) in the
+    // layout container, NOT at y=0 of the layout (which would be inside the
+    // afterContentPadding strip in reverseLayout).
+    //
+    // Real-world setup for the timeline LazyColumn:
+    //   contentPadding = PaddingValues(top = 8.dp, bottom = ~80.dp)
+    //   reverseLayout = true (Newest at the bottom)
+    //   → beforeContentPadding = bottomPadding ≈ 240 px (NavBar reservation)
+    //   → afterContentPadding = topPadding ≈ 24 px
+    //   → mainAxisAvailableSize = visible-area height ≈ 1800 px
 
     @Test
-    fun `topAnchored forward returns 0 regardless of item size`() {
+    fun `topAnchored forward returns 0 regardless of item size or padding`() {
         // Forward layout: scrollToItem(idx, 0) already top-aligns; no extra offset.
-        assertEquals(0, topAnchoredScrollOffset(viewport = 1800, itemSize = 40, reverseLayout = false))
-        assertEquals(0, topAnchoredScrollOffset(viewport = 1800, itemSize = 1200, reverseLayout = false))
-        assertEquals(0, topAnchoredScrollOffset(viewport = 1800, itemSize = 3000, reverseLayout = false))
+        assertEquals(0, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 40, reverseLayout = false))
+        assertEquals(0, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 0, itemSize = 1200, reverseLayout = false))
+        assertEquals(0, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 3000, reverseLayout = false))
     }
 
     @Test
-    fun `topAnchored reverseLayout short item returns negative scroll offset`() {
-        // Per LazyListMeasure line 199 (currentMainAxisOffset = -firstVisibleItemScrollOffset)
-        // a negative scrollOffset becomes a positive item.offset after the measure pass.
-        // Combined with the place-time reverseLayout transform
-        // (visualY = layoutSize - item.offset - itemSize), the divider lands at y=0
-        // exactly when scrollOffset = itemSize - viewport. The measure pass's
-        // backward-composition loop (line 177-184) fills the visual space under the
-        // divider with lower-indexed items (the unread queue).
-        assertEquals(40 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 40, reverseLayout = true))
-        assertEquals(1200 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 1200, reverseLayout = true))
+    fun `topAnchored reverseLayout short divider with NavBar padding`() {
+        // 28 dp boundary divider (~84 px), 80 dp NavBar (~240 px before-padding):
+        // scrollOffset = 84 - 1800 - 240 = -1956. After the measure pass's backward-
+        // composition loop, the divider lands at scroll-axis 1956, visual y =
+        // (1800 + 240 + afterContentPadding) - 1956 - 84 = afterContentPadding. ✓
+        assertEquals(84 - 1800 - 240, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 84, reverseLayout = true))
     }
 
     @Test
-    fun `topAnchored reverseLayout tall item returns positive overflow offset`() {
-        // Tall item taller than viewport: the formula is positive. The backward-
-        // composition loop doesn't run (offset already ≥ 0). The item's visual top
-        // lands at y=0 with the bottom overflowing off-screen below. For a 3000 px
-        // post in an 1800 px viewport: scrollOffset = 1200, item.offset = -1200,
-        // visual y = layoutSize - item.offset - itemSize = 1800 - (-1200) - 3000 = 0. ✓
-        assertEquals(3000 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 3000, reverseLayout = true))
-        assertEquals(2400 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 2400, reverseLayout = true))
+    fun `topAnchored reverseLayout short divider with no padding falls back to itemSize - viewport`() {
+        // When beforeContentPadding=0 the formula collapses to the original
+        // itemSize - mainAxisAvailableSize — the c64b4c4 form.
+        assertEquals(40 - 1800, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 0, itemSize = 40, reverseLayout = true))
+        assertEquals(1200 - 1800, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 0, itemSize = 1200, reverseLayout = true))
     }
 
     @Test
-    fun `topAnchored reverseLayout exact-fit returns zero`() {
-        // Item exactly fills viewport: top already at top, no offset needed.
-        assertEquals(0, topAnchoredScrollOffset(viewport = 1800, itemSize = 1800, reverseLayout = true))
+    fun `topAnchored reverseLayout tall post overflow with padding`() {
+        // 3000 px post in 1800 px visible area, 240 px NavBar:
+        // scrollOffset = 3000 - 1800 - 240 = 960. Formula is positive → backward-
+        // composition loop skipped. Post's visual top reaches `afterContentPadding`;
+        // the bottom overflows off-screen below the visible area.
+        assertEquals(960, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 3000, reverseLayout = true))
+        assertEquals(360, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 2400, reverseLayout = true))
+    }
+
+    @Test
+    fun `topAnchored reverseLayout tall post no padding falls back to itemSize - viewport`() {
+        assertEquals(3000 - 1800, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 0, itemSize = 3000, reverseLayout = true))
+    }
+
+    @Test
+    fun `topAnchored reverseLayout exact-fit with no padding returns zero`() {
+        // Item exactly fills the visible area and no NavBar → scrollOffset = 0.
+        assertEquals(0, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 0, itemSize = 1800, reverseLayout = true))
+    }
+
+    @Test
+    fun `topAnchored reverseLayout exact-fit with NavBar padding`() {
+        // Exact-fit + padding: scrollOffset = 1800 - 1800 - 240 = -240. The
+        // backward-composition loop consumes the -240 across the beforeContentPadding
+        // zone so the item still lands top-aligned with the visible area.
+        assertEquals(-240, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 1800, reverseLayout = true))
     }
 }

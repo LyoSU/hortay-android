@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -168,54 +169,67 @@ internal const val BOUNDARY_LANDING_PULSE_MS = 2200L
 
 /**
  * Pure offset math: the `scrollOffset` to pass to [LazyListState.scrollToItem] so
- * the row at the target index lands with its TOP at the viewport's TOP — in both
- * forward and reverseLayout modes.
+ * the row at the target index lands with its TOP at the viewport's **visible top**
+ * — i.e. just below the [afterContentPadding] strip — in both forward and
+ * reverseLayout modes.
  *
  * **Forward layout**: returns 0. `scrollToItem(idx, 0)` already places the item's
- * top at the viewport top.
+ * top at the content area's top edge (which sits below the top contentPadding).
  *
- * **ReverseLayout**: returns `itemSize - viewport`. Derivation from the actual
- * Compose foundation measure pass (`LazyListMeasure.measureLazyList`,
- * androidx-main/.../lazy/LazyListMeasure.kt):
+ * **ReverseLayout**: returns `itemSize - mainAxisAvailableSize - beforeContentPadding`.
+ * Derived from a step-through of `LazyListMeasure.measureLazyList`
+ * (androidx-main/.../lazy/LazyListMeasure.kt):
  *
- *   1. `scrollToItem(idx, scrollOffset)` stores the value as
- *      `firstVisibleItemScrollOffset`.
- *   2. In the measure pass (line 199) the first visible item's leading edge is
- *      placed at scroll-axis position `-currentFirstItemScrollOffset` — i.e.
- *      `item.offset = -scrollOffset` for the requested item.
- *   3. If that value is negative (the typical reverseLayout top-align case for
- *      short items), the measure pass enters its backward-composition loop
- *      (line 177-184): it composes items at LOWER indices ahead of the target,
- *      accumulating their sizes until the offset becomes non-negative. The
- *      target row ends up at the END of the visible-items range — i.e. visually
- *      at the TOP in reverseLayout — with the lower-index items stacking below.
- *   4. `place()` then applies the reverseLayout transform
- *      `visualY = layoutSize - item.offset - itemSize`. For the target row
- *      after the loop runs, the relationship that holds at the moment of
- *      placement gives `visualY = 0` exactly when the originally-requested
- *      `scrollOffset = itemSize - layoutSize` (i.e. `itemSize - viewport`).
+ *   1. `scrollToItem(idx, X)` stores `firstVisibleItemScrollOffset = X`.
+ *   2. Line 164 temporarily adds `minOffset = -beforeContentPadding` to the running
+ *      offset (so items in the start-padding zone can be composed).
+ *   3. Lines 177-184: backward-composition loop fires while the running offset is
+ *      negative, composing items at lower indices and adding their sizes until the
+ *      offset turns non-negative. This is what makes the divider land "at the top"
+ *      in reverseLayout: lower-indexed items stack BELOW it visually.
+ *   4. Line 195 removes the temporary `minOffset` shift.
+ *   5. Line 199 sets `currentMainAxisOffset = -currentFirstItemScrollOffset`. The
+ *      requested target row therefore lands at scroll-axis position `-X` (the
+ *      backward-composition's `+= minOffset / -= minOffset` cancel out).
+ *   6. `place()` applies the reverseLayout transform
+ *      `visualY = layoutSize - item.offset - itemSize`, where `layoutSize` is the
+ *      FULL layout container size, equal to
+ *      `mainAxisAvailableSize + beforeContentPadding + afterContentPadding`.
  *
- *   - **Short items** (itemSize < viewport): formula is negative. The
- *     backward-composition loop fills the empty space under the divider with
- *     lower-indexed unread posts; the divider visually sits at y=0.
- *   - **Tall items** (itemSize > viewport): formula is positive. The
- *     backward-composition loop is skipped (offset already ≥ 0). The item is
- *     placed with its visual top at y=0; its bottom overflows off-screen below.
- *   - **Exact fit**: returns 0; `scrollToItem(idx, 0)` top-aligns regardless of
- *     layout direction in this degenerate case.
+ * Substituting (with `item.offset = -X` for the requested row, in the typical case
+ * where backward composition consumed exactly the right amount) and solving for
+ * `visualY = afterContentPadding` (= visible-area top in reverseLayout, since the
+ * `afterContentPadding` strip occupies layout y in `[0, afterContentPadding]`):
  *
- * The prior 10457e9 reversal to `viewport - itemSize` was based on a misread
- * of the measure flow — it forgot the `item.offset = -scrollOffset` step at
- * line 199 and double-applied the reverseLayout transform mentally, ending up
- * with the wrong sign. With the wrong sign, short dividers wound up placed at
- * `item.offset = -(viewport - itemSize) = itemSize - viewport`, which after the
- * place-time transform put them at `visualY = layoutSize - (itemSize - viewport) - itemSize`
- * `= 2*layoutSize - 2*itemSize`, i.e. far below the viewport bottom for a 28 dp
- * divider in an 1800 px viewport.
+ *     afterContentPadding = layoutSize - (-X) - itemSize
+ *     X = itemSize - layoutSize + afterContentPadding
+ *     X = itemSize - (mainAxisAvailableSize + beforeContentPadding + afterContentPadding) + afterContentPadding
+ *     X = itemSize - mainAxisAvailableSize - beforeContentPadding
+ *
+ * The previous formula `itemSize - (viewportEndOffset - viewportStartOffset)`
+ * (commits c64b4c4 / ba2c762) used the FULL layout span — including both
+ * paddings — as the divisor. That placed the divider's visual top at y=0 of the
+ * layout container, NOT y=afterContentPadding of the visible area. For our
+ * LazyColumn (top contentPadding = 8 dp, bottom = NavBar reservation ≈ 80 dp),
+ * the divider landed ~80 dp below the visible top in reverseLayout, with the
+ * boundary post offset proportionally — exactly the "throws to wrong post / shows
+ * bottom of post" user report.
+ *
+ *   - **Short items** (itemSize < mainAxisAvailableSize): formula is negative.
+ *     Backward composition kicks in.
+ *   - **Tall items** (itemSize > mainAxisAvailableSize): formula is positive.
+ *     The item's visual top lands at `afterContentPadding`; bottom overflows
+ *     off-screen below.
+ *   - **Exact fit + no padding**: returns 0.
  */
-internal fun topAnchoredScrollOffset(viewport: Int, itemSize: Int, reverseLayout: Boolean): Int {
+internal fun topAnchoredScrollOffset(
+    mainAxisAvailableSize: Int,
+    beforeContentPadding: Int,
+    itemSize: Int,
+    reverseLayout: Boolean,
+): Int {
     if (!reverseLayout) return 0
-    return itemSize - viewport
+    return itemSize - mainAxisAvailableSize - beforeContentPadding
 }
 
 /**
@@ -269,8 +283,13 @@ internal suspend fun LazyListState.scrollToTopAligned(itemIndex: Int) {
 private suspend fun LazyListState.scrollToTopOfRow(itemIndex: Int, instant: Boolean) {
     val measured = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
     if (measured != null) {
-        val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-        val offset = topAnchoredScrollOffset(viewport, measured.size, layoutInfo.reverseLayout)
+        val available = layoutInfo.mainAxisAvailableSize()
+        val offset = topAnchoredScrollOffset(
+            mainAxisAvailableSize = available,
+            beforeContentPadding = layoutInfo.beforeContentPadding,
+            itemSize = measured.size,
+            reverseLayout = layoutInfo.reverseLayout,
+        )
         if (instant) scrollToItem(itemIndex, offset)
         else animateScrollToItem(itemIndex, offset)
         return
@@ -287,12 +306,26 @@ private suspend fun LazyListState.scrollToTopOfRow(itemIndex: Int, instant: Bool
             layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
         }.filterNotNull().first()
     } ?: return
-    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-    val offset = topAnchoredScrollOffset(viewport, measuredAfter.size, layoutInfo.reverseLayout)
+    val available = layoutInfo.mainAxisAvailableSize()
+    val offset = topAnchoredScrollOffset(
+        mainAxisAvailableSize = available,
+        beforeContentPadding = layoutInfo.beforeContentPadding,
+        itemSize = measuredAfter.size,
+        reverseLayout = layoutInfo.reverseLayout,
+    )
     if (offset == 0) return
     if (instant) scrollToItem(itemIndex, offset)
     else animateScrollToItem(itemIndex, offset)
 }
+
+/**
+ * The space available for items, excluding before/after content padding. Equivalent
+ * to Compose's internal `mainAxisAvailableSize` — the value the layout actually
+ * arranges items into. `viewportSize` reports the full layout container including
+ * padding zones, which is the wrong divisor for top-anchoring landings.
+ */
+private fun LazyListLayoutInfo.mainAxisAvailableSize(): Int =
+    (viewportEndOffset - afterContentPadding) - (viewportStartOffset + beforeContentPadding)
 
 /**
  * Safety-net cap on how long [scrollToBoundary] / [scrollToTopAligned] wait for
