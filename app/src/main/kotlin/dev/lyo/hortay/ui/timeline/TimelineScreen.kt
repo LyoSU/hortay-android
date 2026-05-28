@@ -561,7 +561,7 @@ fun TimelineScreen(
     // `groupReplies` reshape that promoted Single → Thread on the fly was deleted —
     // see [FeedItem] for the full rationale.
     val feedItems: List<FeedItem> = remember(visiblePosts) {
-        visiblePosts.map(::FeedItem)
+        visiblePosts.map(FeedItem::Post)
     }
     // Keep the forward-declared holder current so the home-tap LaunchedEffect
     // can read the latest list without capturing a stale reference. Wrapped
@@ -1679,7 +1679,6 @@ fun TimelineScreen(
                                 reverseLayout = feedOrder.reverseLayout,
                                 bottomPadding = contentPadding.calculateBottomPadding(),
                                 feedItems = state.items,
-                                unreadBoundaryKey = unreadBoundaryKey,
                                 centeredItemKeyState = centeredItemKeyState,
                                 highlightedPostKey = highlightedPostKey,
                                 interactions = interactions,

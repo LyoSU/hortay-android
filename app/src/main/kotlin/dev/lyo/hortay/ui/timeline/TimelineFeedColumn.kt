@@ -48,7 +48,6 @@ internal fun TimelineFeedColumn(
     reverseLayout: Boolean,
     bottomPadding: Dp,
     feedItems: List<FeedItem>,
-    unreadBoundaryKey: Any?,
     centeredItemKeyState: State<Any?>,
     highlightedPostKey: Pair<Long, Long>?,
     interactions: PostInteractions,
@@ -68,39 +67,40 @@ internal fun TimelineFeedColumn(
         items(
             items = feedItems,
             key = { it.key },
-            contentType = { "post" },
+            contentType = { item ->
+                when (item) {
+                    is FeedItem.Boundary -> "boundary"
+                    is FeedItem.Post -> "post"
+                }
+            },
         ) { item ->
-            // "Unread starts here" divider rendered above the first
-            // item that contains an unread post (OldestUnreadFirst
-            // only). Composed at the start of the item lambda so it
-            // sticks to the same FeedItem in LazyColumn — pull-to-
-            // refresh updates the boundary cursors and the rule moves
-            // naturally with the new snapshot.
-            if (item.key == unreadBoundaryKey) {
-                UnreadBoundaryRow()
-            }
-            // Per-item [derivedStateOf] reads [centeredItemKeyState]
-            // INSIDE its lambda, not at the items() body level — so the
-            // centre-flip stream invalidates only the two items whose
-            // boolean output actually changed (old centre → false, new
-            // centre → true). The previous `mutableStateOf` + write-
-            // during-composition pattern was an antipattern (state
-            // mutation in composition phase) and didn't even achieve
-            // the localised-recomposition it claimed: every items()
-            // lambda read centeredItemKey directly, so all visible item
-            // lambdas re-ran on every centre flip during scroll.
-            val isCenteredState = remember(item.key) {
-                derivedStateOf { centeredItemKeyState.value == item.key }
-            }
-            val post = item.post
-            val highlighted = highlightedPostKey?.let { (cid, mid) ->
-                post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
-            } == true
-            CompositionLocalProvider(
-                LocalIsCenteredItem provides isCenteredState,
-                LocalIsHighlightedItem provides highlighted,
-            ) {
-                PostCard(post = post, interactions = interactions, onTapRevisions = onTapRevisions)
+            when (item) {
+                is FeedItem.Boundary -> UnreadBoundaryRow()
+                is FeedItem.Post -> {
+                    // Per-item [derivedStateOf] reads [centeredItemKeyState]
+                    // INSIDE its lambda, not at the items() body level — so the
+                    // centre-flip stream invalidates only the two items whose
+                    // boolean output actually changed (old centre → false, new
+                    // centre → true). The previous `mutableStateOf` + write-
+                    // during-composition pattern was an antipattern (state
+                    // mutation in composition phase) and didn't even achieve
+                    // the localised-recomposition it claimed: every items()
+                    // lambda read centeredItemKey directly, so all visible item
+                    // lambdas re-ran on every centre flip during scroll.
+                    val isCenteredState = remember(item.key) {
+                        derivedStateOf { centeredItemKeyState.value == item.key }
+                    }
+                    val post = item.post
+                    val highlighted = highlightedPostKey?.let { (cid, mid) ->
+                        post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
+                    } == true
+                    CompositionLocalProvider(
+                        LocalIsCenteredItem provides isCenteredState,
+                        LocalIsHighlightedItem provides highlighted,
+                    ) {
+                        PostCard(post = post, interactions = interactions, onTapRevisions = onTapRevisions)
+                    }
+                }
             }
         }
     }

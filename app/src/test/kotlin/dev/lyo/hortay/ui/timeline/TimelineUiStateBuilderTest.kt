@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test
 class TimelineUiStateBuilderTest {
 
     private fun item(id: Long, chatId: Long = 1L, date: Long = id): FeedItem =
-        FeedItem(testPost(id = id, chatId = chatId, date = date))
+        FeedItem.Post(testPost(id = id, chatId = chatId, date = date))
 
     @Test
     fun `Loading when items empty and refreshing`() {

@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test
 class LatchTimelineUiStateTest {
 
     private fun item(id: Long): FeedItem =
-        FeedItem(testPost(id = id, chatId = 1L, date = id))
+        FeedItem.Post(testPost(id = id, chatId = 1L, date = id))
 
     private fun ready(items: List<FeedItem>, initialIndex: Int, cursorsValue: Long = 100L): TimelineUiState.Ready =
         TimelineUiState.Ready(

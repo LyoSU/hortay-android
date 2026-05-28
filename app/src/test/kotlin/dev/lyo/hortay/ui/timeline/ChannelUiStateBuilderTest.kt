@@ -14,10 +14,10 @@ import org.junit.jupiter.api.Test
 class ChannelUiStateBuilderTest {
 
     private fun item(id: Long, album: List<Long> = emptyList()): FeedItem =
-        FeedItem(testPost(id = id, chatId = 1L, date = id, albumMessageIds = album))
+        FeedItem.Post(testPost(id = id, chatId = 1L, date = id, albumMessageIds = album))
 
     private fun loaded(items: PersistentList<FeedItem>): ChannelData =
-        ChannelData.Loaded(items.map { it.post }.toPersistentList())
+        ChannelData.Loaded(items.flatMap { it.posts() }.toPersistentList())
 
     @Test
     fun `Resolving while data is Loading`() {

@@ -36,9 +36,9 @@ class PendingScrollResolverTest {
     @Test
     fun `returns index of direct match`() {
         val items = listOf(
-            FeedItem(post(1L, 100L)),
-            FeedItem(post(1L, 200L)),
-            FeedItem(post(1L, 300L)),
+            FeedItem.Post(post(1L, 100L)),
+            FeedItem.Post(post(1L, 200L)),
+            FeedItem.Post(post(1L, 300L)),
         )
         assertEquals(1, resolveTargetIndex(items, 1L, 200L))
     }
@@ -46,21 +46,21 @@ class PendingScrollResolverTest {
     @Test
     fun `returns index of album member match`() {
         val items = listOf(
-            FeedItem(post(1L, 100L)),
-            FeedItem(post(1L, 200L, album = listOf(200L, 201L, 202L))),
+            FeedItem.Post(post(1L, 100L)),
+            FeedItem.Post(post(1L, 200L, album = listOf(200L, 201L, 202L))),
         )
         assertEquals(1, resolveTargetIndex(items, 1L, 202L))
     }
 
     @Test
     fun `returns minus one when target missing`() {
-        val items = listOf(FeedItem(post(1L, 100L)))
+        val items = listOf(FeedItem.Post(post(1L, 100L)))
         assertEquals(-1, resolveTargetIndex(items, 1L, 999L))
     }
 
     @Test
     fun `returns minus one for different chatId`() {
-        val items = listOf(FeedItem(post(1L, 100L)))
+        val items = listOf(FeedItem.Post(post(1L, 100L)))
         assertEquals(-1, resolveTargetIndex(items, 2L, 100L))
     }
 }

@@ -42,8 +42,8 @@ class FeedItemKeyTest {
             albumMessageIds = listOf(1L, 2L, 3L, 4L, 5L),
         )
 
-        val beforeKey = FeedItem(coldStartFragment).key
-        val afterKey = FeedItem(afterFullLoad).key
+        val beforeKey = FeedItem.Post(coldStartFragment).key
+        val afterKey = FeedItem.Post(afterFullLoad).key
 
         // The id flipped (5 → 1) but the album identity didn't.
         assertEquals("album_1_42", beforeKey)
@@ -55,7 +55,7 @@ class FeedItemKeyTest {
         // Standalone (non-album) posts key on `post.id` — they have no mediaAlbumId
         // to fall back to, and the post id IS the stable identity for a single message.
         val post = testPost(chatId = 1L, id = 200L)
-        assertEquals("post_1_200", FeedItem(post).key)
+        assertEquals("post_1_200", FeedItem.Post(post).key)
     }
 
     @Test
@@ -84,6 +84,6 @@ class FeedItemKeyTest {
                 replyToMessageId = 100L,
             ),
         )
-        assertEquals("post_1_200", FeedItem(reply).key)
+        assertEquals("post_1_200", FeedItem.Post(reply).key)
     }
 }

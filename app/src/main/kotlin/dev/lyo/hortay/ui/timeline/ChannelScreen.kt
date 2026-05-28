@@ -224,7 +224,7 @@ fun ChannelScreen(
     val cursorHolder = LocalReadCursors.current
     val displayedItems = remember(posts, searchActive, searchResults, feedOrder) {
         val source = if (searchActive) searchResults else posts.orderedFor(feedOrder)
-        source.map(::FeedItem).toPersistentList()
+        source.map(FeedItem::Post).toPersistentList()
     }
 
     // [ChannelUiState] is the single source of truth for what gets mounted on
@@ -773,20 +773,30 @@ fun ChannelScreen(
                                 items(
                                     items = displayedList,
                                     key = { it.key },
-                                    contentType = { "post" },
+                                    contentType = { item ->
+                                        when (item) {
+                                            is FeedItem.Boundary -> "boundary"
+                                            is FeedItem.Post -> "post"
+                                        }
+                                    },
                                 ) { item ->
-                                    val isCenteredState = remember(item.key) {
-                                        derivedStateOf { centeredItemKeyState.value == item.key }
-                                    }
-                                    val post = item.post
-                                    val highlighted = highlightedPostKey?.let { (cid, mid) ->
-                                        post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
-                                    } == true
-                                    CompositionLocalProvider(
-                                        LocalIsCenteredItem provides isCenteredState,
-                                        LocalIsHighlightedItem provides highlighted,
-                                    ) {
-                                        PostCard(post = post, interactions = interactions)
+                                    when (item) {
+                                        is FeedItem.Boundary -> UnreadBoundaryRow()
+                                        is FeedItem.Post -> {
+                                            val isCenteredState = remember(item.key) {
+                                                derivedStateOf { centeredItemKeyState.value == item.key }
+                                            }
+                                            val post = item.post
+                                            val highlighted = highlightedPostKey?.let { (cid, mid) ->
+                                                post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
+                                            } == true
+                                            CompositionLocalProvider(
+                                                LocalIsCenteredItem provides isCenteredState,
+                                                LocalIsHighlightedItem provides highlighted,
+                                            ) {
+                                                PostCard(post = post, interactions = interactions)
+                                            }
+                                        }
                                     }
                                 }
                             }

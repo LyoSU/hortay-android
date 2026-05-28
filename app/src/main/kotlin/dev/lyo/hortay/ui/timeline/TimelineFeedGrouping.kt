@@ -159,9 +159,37 @@ internal fun PostContent.playbackFileIds(): List<Int> = buildList {
  * index + offset across process death, so we never need it to be globally unique — only
  * stable for the duration of one app process, which it is.
  */
+/**
+ * One row of the merged feed. Two variants:
+ *
+ * - [Post] — a regular post (or album). Carries [post] and uses [TimelinePost]'s
+ *   chatId/mediaAlbumId for a stable key (see [feedItemKey]).
+ * - [Boundary] — the "Нові пости" / "New posts" divider rendered between the
+ *   read-history prefix and the unread queue. Inserted at most once per feed
+ *   snapshot by `withBoundary` (added in a later task) using the snapshot's
+ *   `epoch` so its key stays constant across per-card dwell-acks but advances
+ *   on PTR / drill-out-in / FeedOrder switch (the canonical "session anchor"
+ *   Telegram-Android uses).
+ *
+ * Implemented as a sealed interface (not `sealed class`) so [Post] and [Boundary]
+ * stay simple Kotlin `@Immutable` data classes — Compose stability is preserved
+ * end-to-end. The compatibility shim [posts] returns an empty list for
+ * [Boundary], so iterators that fan visible rows into posts skip boundaries
+ * naturally.
+ */
 @Immutable
-data class FeedItem(val post: TimelinePost) {
-    val key: String get() = feedItemKey(post)
+sealed interface FeedItem {
+    val key: String
+
+    @Immutable
+    data class Post(val post: TimelinePost) : FeedItem {
+        override val key: String get() = feedItemKey(post)
+    }
+
+    @Immutable
+    data class Boundary(val epoch: Long) : FeedItem {
+        override val key: String get() = "boundary_$epoch"
+    }
 }
 
 /**
@@ -175,11 +203,14 @@ private fun feedItemKey(post: TimelinePost): String =
 
 /**
  * Compatibility shim for downstream call sites that derive a [TimelinePost] from a feed
- * row. After the Thread variant was removed there is always exactly one post per item,
- * but call sites that iterate visible-row → post lists still read better as
- * `item.posts().first()` than `item.post`.
+ * row. After the Thread variant was removed there is always at most one post per item
+ * (zero for [FeedItem.Boundary]); call sites that iterate visible-row → post lists
+ * still read better as `item.posts().first()` than `item.post`.
  */
-internal fun FeedItem.posts(): List<TimelinePost> = listOf(post)
+internal fun FeedItem.posts(): List<TimelinePost> = when (this) {
+    is FeedItem.Post -> listOf(post)
+    is FeedItem.Boundary -> emptyList()
+}
 
 /**
  * Compact subscriber count formatter — Telegram convention. 12 345 → "12.3K", 1 050 000
