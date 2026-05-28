@@ -1,5 +1,7 @@
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
@@ -168,96 +170,84 @@ internal const val BOUNDARY_SCROLL_THRESHOLD_ROWS = 16
 internal const val BOUNDARY_LANDING_PULSE_MS = 2200L
 
 /**
- * Pure offset math: the `scrollOffset` to pass to [LazyListState.scrollToItem] so
- * the row at the target index lands with its TOP at the viewport's **visible top**
- * — i.e. just below the [afterContentPadding] strip — in both forward and
- * reverseLayout modes.
+ * Pure viewport arithmetic: the pixel delta to feed [LazyListState.scrollBy] so the row
+ * described by [rowOffset]/[rowSize] lands with its TOP edge on the viewport's **visible
+ * top** — just inside the top content-padding strip — in both forward and reverseLayout
+ * modes.
  *
- * **Forward layout**: returns 0. `scrollToItem(idx, 0)` already places the item's
- * top at the content area's top edge (which sits below the top contentPadding).
+ * **No Compose-internal measure/place math is reverse-engineered here.** The previous
+ * `topAnchoredScrollOffset` derived a `scrollToItem` offset by stepping through
+ * `LazyListMeasure`'s private `minOffset` shift + backward-composition loop + `place()`
+ * transform; that interaction doesn't compose obviously and produced a string of
+ * wrong-on-device landings. The robust alternative the caller uses instead:
+ * `scrollToItem` to bring the row on-screen, read its ACTUAL laid-out position from
+ * [LazyListLayoutInfo], and close the remaining gap with one [scrollBy]. This function
+ * is just that gap. "Measure reality, nudge by the difference" can't drift from
+ * undocumented internals because it reads the real geometry every time.
  *
- * **ReverseLayout**: returns `itemSize - mainAxisAvailableSize - beforeContentPadding`.
- * Derived from a step-through of `LazyListMeasure.measureLazyList`
- * (androidx-main/.../lazy/LazyListMeasure.kt):
+ * Coordinate model (confirmed by on-device measurement of the reverseLayout feed —
+ * `before`/`after` swap under reverseLayout, so the visible top is `viewportEndOffset -
+ * afterContentPadding`, not `+ beforeContentPadding`):
+ *   - [androidx.compose.foundation.lazy.LazyListItemInfo.offset] grows in the
+ *     index-increasing direction: toward the visual BOTTOM in forward layout, toward the
+ *     visual TOP in reverseLayout.
+ *   - The visible content area excludes the padding strips. Its visual-top edge is
+ *     `viewportStartOffset + beforeContentPadding` (forward) or
+ *     `viewportEndOffset - afterContentPadding` (reverse).
+ *   - A positive [scrollBy] scrolls toward the END (higher indices), which decreases
+ *     item offsets in BOTH modes. So the delta that drives the row's top edge onto the
+ *     visible top is simply `currentTopEdge - desiredTopEdge`.
  *
- *   1. `scrollToItem(idx, X)` stores `firstVisibleItemScrollOffset = X`.
- *   2. Line 164 temporarily adds `minOffset = -beforeContentPadding` to the running
- *      offset (so items in the start-padding zone can be composed).
- *   3. Lines 177-184: backward-composition loop fires while the running offset is
- *      negative, composing items at lower indices and adding their sizes until the
- *      offset turns non-negative. This is what makes the divider land "at the top"
- *      in reverseLayout: lower-indexed items stack BELOW it visually.
- *   4. Line 195 removes the temporary `minOffset` shift.
- *   5. Line 199 sets `currentMainAxisOffset = -currentFirstItemScrollOffset`. The
- *      requested target row therefore lands at scroll-axis position `-X` (the
- *      backward-composition's `+= minOffset / -= minOffset` cancel out).
- *   6. `place()` applies the reverseLayout transform
- *      `visualY = layoutSize - item.offset - itemSize`, where `layoutSize` is the
- *      FULL layout container size, equal to
- *      `mainAxisAvailableSize + beforeContentPadding + afterContentPadding`.
+ * Works uniformly whether the row is shorter or taller than the viewport: a tall post
+ * gets its TOP aligned and its tail overflows off the bottom (the canonical "show me the
+ * start of this message" landing), with no special-case branch.
  *
- * Substituting (with `item.offset = -X` for the requested row, in the typical case
- * where backward composition consumed exactly the right amount) and solving for
- * `visualY = afterContentPadding` (= visible-area top in reverseLayout, since the
- * `afterContentPadding` strip occupies layout y in `[0, afterContentPadding]`):
- *
- *     afterContentPadding = layoutSize - (-X) - itemSize
- *     X = itemSize - layoutSize + afterContentPadding
- *     X = itemSize - (mainAxisAvailableSize + beforeContentPadding + afterContentPadding) + afterContentPadding
- *     X = itemSize - mainAxisAvailableSize - beforeContentPadding
- *
- * The previous formula `itemSize - (viewportEndOffset - viewportStartOffset)`
- * (commits c64b4c4 / ba2c762) used the FULL layout span — including both
- * paddings — as the divisor. That placed the divider's visual top at y=0 of the
- * layout container, NOT y=afterContentPadding of the visible area. For our
- * LazyColumn (top contentPadding = 8 dp, bottom = NavBar reservation ≈ 80 dp),
- * the divider landed ~80 dp below the visible top in reverseLayout, with the
- * boundary post offset proportionally — exactly the "throws to wrong post / shows
- * bottom of post" user report.
- *
- *   - **Short items** (itemSize < mainAxisAvailableSize): formula is negative.
- *     Backward composition kicks in.
- *   - **Tall items** (itemSize > mainAxisAvailableSize): formula is positive.
- *     The item's visual top lands at `afterContentPadding`; bottom overflows
- *     off-screen below.
- *   - **Exact fit + no padding**: returns 0.
+ * The returned delta is what [LazyListState.scrollBy] needs to *close the gap*; at the
+ * very edge of the content (e.g. the oldest row in reverseLayout) the list may not have
+ * that many pixels left to scroll, in which case `scrollBy` consumes only what's
+ * available and the row lands as close to the top as the content allows — the same
+ * graceful degradation any scroll API gives at a boundary.
  */
-internal fun topAnchoredScrollOffset(
-    mainAxisAvailableSize: Int,
+internal fun topAlignDelta(
+    rowOffset: Int,
+    rowSize: Int,
+    viewportStartOffset: Int,
+    viewportEndOffset: Int,
     beforeContentPadding: Int,
-    itemSize: Int,
+    afterContentPadding: Int,
     reverseLayout: Boolean,
-): Int {
-    if (!reverseLayout) return 0
-    return itemSize - mainAxisAvailableSize - beforeContentPadding
+): Float = if (reverseLayout) {
+    ((rowOffset + rowSize) - (viewportEndOffset - afterContentPadding)).toFloat()
+} else {
+    (rowOffset - (viewportStartOffset + beforeContentPadding)).toFloat()
 }
 
 /**
- * Land the boundary divider's TOP at the viewport's TOP. The single jump API used
- * by every "next unread" pill (NewPostsPill, UnreadCounterPill, home-tap) and by
- * the cold-entry [rememberBoundaryReveal].
+ * Land the read→unread boundary row's TOP at the viewport's TOP. The single jump API
+ * used by every "next unread" affordance and by the cold-entry [rememberBoundaryReveal].
+ * "Boundary row" is the row that sits at the read/unread frontier for the caller:
+ *   - cold-entry reveal passes the frozen [FeedItem.Boundary] divider's row index;
+ *   - the UnreadCounterPill / home-tap pass the LIVE oldest-unread post's row index
+ *     ([dev.lyo.hortay.ui.timeline.TimelineScreen]'s `homeScrollIndex`), so the jump
+ *     advances post-by-post as the live cursors mark posts read.
  *
  * Animates inside [BOUNDARY_SCROLL_THRESHOLD_ROWS] rows of the current first-visible
- * index, instantly jumps further. Reads the divider's measured size from
- * [layoutInfo] to compute the reverseLayout offset; if the boundary isn't measured
- * yet (cold mount before first layout, or jump-pill from a faraway scroll position),
- * brings it on-screen with one `scrollToItem(boundaryIndex, 0)`, waits for the
- * layout pass, then re-scrolls to the correct offset. Visually one continuous motion.
+ * index, instantly jumps further. Delegates to [scrollToTopOfRow], which reads the row's
+ * ACTUAL measured position and nudges by [topAlignDelta] — no Compose-internal offset
+ * math. Suspends until the scroll completes.
  *
- * Suspends until the scroll completes.
- *
- * @param boundaryIndex Row index of the `FeedItem.Boundary` divider in the LazyColumn.
+ * @param rowIndex Row index to land at the visible top (boundary divider or oldest-unread post).
  * @param animated When false, always uses an instant scroll regardless of distance.
  *   Cold-entry reveal passes false; jump-pills pass true.
  */
 internal suspend fun LazyListState.scrollToBoundary(
-    boundaryIndex: Int,
+    rowIndex: Int,
     animated: Boolean = true,
 ) {
     val current = firstVisibleItemIndex
     val instant = !animated ||
-        abs(boundaryIndex - current) > BOUNDARY_SCROLL_THRESHOLD_ROWS
-    scrollToTopOfRow(boundaryIndex, instant)
+        abs(rowIndex - current) > BOUNDARY_SCROLL_THRESHOLD_ROWS
+    scrollToTopOfRow(rowIndex, instant)
 }
 
 /**
@@ -273,59 +263,42 @@ internal suspend fun LazyListState.scrollToTopAligned(itemIndex: Int) {
 }
 
 /**
- * Shared implementation for [scrollToBoundary] and [scrollToTopAligned]. Lands the
- * row at [itemIndex] with its TOP at the viewport's TOP using
- * [topAnchoredScrollOffset]'s formula. When the row is already measured, does it
- * in one scroll call; otherwise brings the row into view first via
- * `scrollToItem(idx, 0)`, waits for the layout pass to publish the row's measured
- * size, then re-scrolls with the correct offset.
+ * Shared implementation for [scrollToBoundary] and [scrollToTopAligned]. Lands the row
+ * at [itemIndex] with its TOP edge on the viewport's visible top in both forward and
+ * reverseLayout modes, via the "measure reality, nudge by the difference" pattern: bring
+ * the row on-screen (if it isn't already), read its ACTUAL laid-out position, then close
+ * the gap returned by [topAlignDelta] with one [scrollBy]. No Compose-internal offset
+ * math — see [topAlignDelta] for why the prior derivation approach was abandoned.
  */
 private suspend fun LazyListState.scrollToTopOfRow(itemIndex: Int, instant: Boolean) {
-    val measured = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
-    if (measured != null) {
-        val available = layoutInfo.mainAxisAvailableSize()
-        val offset = topAnchoredScrollOffset(
-            mainAxisAvailableSize = available,
-            beforeContentPadding = layoutInfo.beforeContentPadding,
-            itemSize = measured.size,
-            reverseLayout = layoutInfo.reverseLayout,
-        )
-        if (instant) scrollToItem(itemIndex, offset)
-        else animateScrollToItem(itemIndex, offset)
-        return
+    // Ensure the row is measured. If already visible we align in one scroll; otherwise
+    // bring it on-screen first (instant — it's off-screen, there's nothing to animate
+    // through), then wait for the layout pass to publish its measured position. The
+    // snapshotFlow wait is required: reading layoutInfo synchronously after scrollToItem
+    // can still see the OLD visibleItemsInfo (scroll applied, new layout not yet flushed).
+    var row = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
+    if (row == null) {
+        scrollToItem(itemIndex)
+        row = withTimeoutOrNull(SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS) {
+            snapshotFlow {
+                layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
+            }.filterNotNull().first()
+        } ?: return
     }
-    // Row not yet laid out — typical for cold-entry or a jump-pill targeting a row
-    // far from the current viewport. Bring it in with offset=0, wait for the layout
-    // pass to publish its measured size, then re-scroll with the correct top-anchored
-    // offset. The snapshotFlow wait is required: reading layoutInfo synchronously
-    // after scrollToItem can see the OLD visibleItemsInfo (scroll position updated
-    // but new layout not yet flushed).
-    scrollToItem(itemIndex, 0)
-    val measuredAfter = withTimeoutOrNull(SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS) {
-        snapshotFlow {
-            layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
-        }.filterNotNull().first()
-    } ?: return
-    val available = layoutInfo.mainAxisAvailableSize()
-    val offset = topAnchoredScrollOffset(
-        mainAxisAvailableSize = available,
-        beforeContentPadding = layoutInfo.beforeContentPadding,
-        itemSize = measuredAfter.size,
-        reverseLayout = layoutInfo.reverseLayout,
+    val info = layoutInfo
+    val delta = topAlignDelta(
+        rowOffset = row.offset,
+        rowSize = row.size,
+        viewportStartOffset = info.viewportStartOffset,
+        viewportEndOffset = info.viewportEndOffset,
+        beforeContentPadding = info.beforeContentPadding,
+        afterContentPadding = info.afterContentPadding,
+        reverseLayout = info.reverseLayout,
     )
-    if (offset == 0) return
-    if (instant) scrollToItem(itemIndex, offset)
-    else animateScrollToItem(itemIndex, offset)
+    if (delta != 0f) {
+        if (instant) scrollBy(delta) else animateScrollBy(delta)
+    }
 }
-
-/**
- * The space available for items, excluding before/after content padding. Equivalent
- * to Compose's internal `mainAxisAvailableSize` — the value the layout actually
- * arranges items into. `viewportSize` reports the full layout container including
- * padding zones, which is the wrong divisor for top-anchoring landings.
- */
-private fun LazyListLayoutInfo.mainAxisAvailableSize(): Int =
-    (viewportEndOffset - afterContentPadding) - (viewportStartOffset + beforeContentPadding)
 
 /**
  * Safety-net cap on how long [scrollToBoundary] / [scrollToTopAligned] wait for
@@ -342,8 +315,8 @@ private const val SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS = 500L
  * its existing skeleton/cover painted on top while this is `false`.
  *
  * **Why a gate is needed.** Pixel-accurate alignment for the boundary's landing
- * needs its measured height (`scrollOffsetForBoundary` → `dividerSize - viewport`
- * in reverseLayout), which doesn't exist until the first layout pass.
+ * needs the divider's ACTUAL measured offset/size ([topAlignDelta] reads it from
+ * [layoutInfo]), which doesn't exist until the first layout pass.
  * Repositioning AFTER the first paint shows the wrong, bottom-glued frame for
  * ~16 ms — the exact flash the cold-start mount was built to avoid. So instead:
  * the caller mounts the list and keeps its skeleton on top while this returns

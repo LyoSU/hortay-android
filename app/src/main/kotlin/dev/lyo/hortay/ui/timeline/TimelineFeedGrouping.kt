@@ -266,27 +266,6 @@ internal fun withBoundary(
 }
 
 /**
- * Row index of the [FeedItem.Boundary] divider in this feed list, or -1 if not
- * present (caught-up state, Newest-mode skip path, or initial cold load).
- */
-internal fun List<FeedItem>.boundaryIndex(): Int = indexOfFirst { it is FeedItem.Boundary }
-
-/**
- * Post the boundary divider visually points at — i.e. the first [FeedItem.Post]
- * immediately after the boundary in iteration order. With descending data + the
- * "Boundary inserted at boundaryPostIdx + 1" convention from [withBoundary], that
- * "next" row is actually the read-history row just past the divider. For the
- * jump-pill pulse we want the OLDEST UNREAD post — the row JUST BEFORE the
- * boundary divider. Returns null when no boundary is present or the divider
- * sits at the start of the list.
- */
-internal fun List<FeedItem>.boundaryAnchorPost(): TimelinePost? {
-    val idx = boundaryIndex()
-    if (idx <= 0) return null
-    return (this[idx - 1] as? FeedItem.Post)?.post
-}
-
-/**
  * Compact subscriber count formatter — Telegram convention. 12 345 → "12.3K", 1 050 000
  * → "1.1M". Round numbers drop the decimal so the label reads as "12K" rather than "12.0K".
  */

@@ -171,6 +171,12 @@ fun rememberReadAckDwell(
     scope: CoroutineScope,
     dwellMs: Long = 500L,
 ): MutableSet<Pair<Long, Long>> {
+    // Dedup set, reset whenever [ackKey] changes (mode-specific wrapper / chat swap).
+    // Once a (chatId, id) is in here the dwell never re-acks it — safe to suppress
+    // permanently ONLY because the read cursor it feeds is monotonic: PostsRepository's
+    // UpdateChatReadInbox handler clamps with monoMax, so a post can't legitimately flip
+    // back to unread within a session. If that clamp is ever relaxed, this set would
+    // silently swallow the re-ack. Growth is bounded by what one session actually reads.
     val ackedRead = remember(ackKey) { HashSet<Pair<Long, Long>>() }
     val itemsState = rememberUpdatedState(displayedItems)
     // Gate the ack on the screen actually being foreground+interactive. A post left

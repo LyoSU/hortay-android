@@ -70,71 +70,57 @@ class SmartScrollDistanceTest {
         assertEquals(1200, alignedScrollOffset(viewport = 800, itemSize = 2000, reverseLayout = true))
     }
 
-    // --- topAnchoredScrollOffset: "land the row top at the VISIBLE viewport top" ---
+    // --- topAlignDelta: pixel nudge for scrollBy that lands a row's TOP edge on the
+    //     VISIBLE viewport top, in both layout directions ---
     //
-    // Formula: itemSize - mainAxisAvailableSize - beforeContentPadding (reverseLayout)
-    // → places the row at visual y = afterContentPadding (= visible-area top) in the
-    // layout container, NOT at y=0 of the layout (which would be inside the
-    // afterContentPadding strip in reverseLayout).
+    // delta = currentTopEdge - desiredTopEdge, fed to scrollBy (positive = scroll toward
+    // the END = item offsets decrease in BOTH modes).
+    //   - forward: top edge = rowOffset;            desired = viewportStartOffset + beforeContentPadding
+    //   - reverse: top edge = rowOffset + rowSize;  desired = viewportEndOffset - afterContentPadding
     //
-    // Real-world setup for the timeline LazyColumn:
-    //   contentPadding = PaddingValues(top = 8.dp, bottom = ~80.dp)
-    //   reverseLayout = true (Newest at the bottom)
-    //   → beforeContentPadding = bottomPadding ≈ 240 px (NavBar reservation)
-    //   → afterContentPadding = topPadding ≈ 24 px
-    //   → mainAxisAvailableSize = visible-area height ≈ 1800 px
+    // On-device reverseLayout feed (Samsung SM, density 2.625) — the ground-truth the
+    // rewrite was anchored to: viewportStartOffset = -290, viewportEndOffset = 1786,
+    // beforeContentPadding = 290 (NavBar bottom), afterContentPadding = 23 (top 8 dp).
+    // before/after SWAP under reverseLayout, so the visible top = 1786 - 23 = 1763.
 
     @Test
-    fun `topAnchored forward returns 0 regardless of item size or padding`() {
-        // Forward layout: scrollToItem(idx, 0) already top-aligns; no extra offset.
-        assertEquals(0, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 40, reverseLayout = false))
-        assertEquals(0, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 0, itemSize = 1200, reverseLayout = false))
-        assertEquals(0, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 3000, reverseLayout = false))
+    fun `topAlignDelta forward nudges row offset onto the content-top padding`() {
+        // Row 120 px down, visible top at 24 → scroll down (forward) by 96.
+        assertEquals(96f, topAlignDelta(rowOffset = 120, rowSize = 400, viewportStartOffset = 0, viewportEndOffset = 1800, beforeContentPadding = 24, afterContentPadding = 0, reverseLayout = false))
+        // Row exactly at the visible top → no scroll.
+        assertEquals(0f, topAlignDelta(rowOffset = 24, rowSize = 400, viewportStartOffset = 0, viewportEndOffset = 1800, beforeContentPadding = 24, afterContentPadding = 0, reverseLayout = false))
+        // Row above the visible top → negative delta scrolls backward to reveal it.
+        assertEquals(-50f, topAlignDelta(rowOffset = -26, rowSize = 400, viewportStartOffset = 0, viewportEndOffset = 1800, beforeContentPadding = 24, afterContentPadding = 0, reverseLayout = false))
     }
 
     @Test
-    fun `topAnchored reverseLayout short divider with NavBar padding`() {
-        // 28 dp boundary divider (~84 px), 80 dp NavBar (~240 px before-padding):
-        // scrollOffset = 84 - 1800 - 240 = -1956. After the measure pass's backward-
-        // composition loop, the divider lands at scroll-axis 1956, visual y =
-        // (1800 + 240 + afterContentPadding) - 1956 - 84 = afterContentPadding. ✓
-        assertEquals(84 - 1800 - 240, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 84, reverseLayout = true))
+    fun `topAlignDelta reverse short divider freshly brought to the bottom start`() {
+        // scrollToItem(divider) lands it at offset 0 (reverse start = visual bottom); the
+        // 71 px divider's top edge is 71. Visible top = 1763. Nudge = 71 - 1763 = -1692
+        // (negative scrollBy = backward = reverse content moves up to lift it to the top).
+        assertEquals(-1692f, topAlignDelta(rowOffset = 0, rowSize = 71, viewportStartOffset = -290, viewportEndOffset = 1786, beforeContentPadding = 290, afterContentPadding = 23, reverseLayout = true))
     }
 
     @Test
-    fun `topAnchored reverseLayout short divider with no padding falls back to itemSize - viewport`() {
-        // When beforeContentPadding=0 the formula collapses to the original
-        // itemSize - mainAxisAvailableSize — the c64b4c4 form.
-        assertEquals(40 - 1800, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 0, itemSize = 40, reverseLayout = true))
-        assertEquals(1200 - 1800, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 0, itemSize = 1200, reverseLayout = true))
+    fun `topAlignDelta reverse divider already at the visible top needs no scroll`() {
+        // top edge = 1692 + 71 = 1763 = visible top → delta 0.
+        assertEquals(0f, topAlignDelta(rowOffset = 1692, rowSize = 71, viewportStartOffset = -290, viewportEndOffset = 1786, beforeContentPadding = 290, afterContentPadding = 23, reverseLayout = true))
     }
 
     @Test
-    fun `topAnchored reverseLayout tall post overflow with padding`() {
-        // 3000 px post in 1800 px visible area, 240 px NavBar:
-        // scrollOffset = 3000 - 1800 - 240 = 960. Formula is positive → backward-
-        // composition loop skipped. Post's visual top reaches `afterContentPadding`;
-        // the bottom overflows off-screen below the visible area.
-        assertEquals(960, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 3000, reverseLayout = true))
-        assertEquals(360, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 2400, reverseLayout = true))
+    fun `topAlignDelta reverse tall post taller than viewport still top-aligns`() {
+        // The exact failing case: a 2250 px post (taller than the 1763 px visible area)
+        // landed by the old formula with its top edge at 1982 — above the visible top, so
+        // the divider and the post's start were clipped off above. delta = 1982 - 1763 =
+        // 219 scrolls it DOWN so the top edge sits at 1763; the tail overflows off-bottom.
+        assertEquals(219f, topAlignDelta(rowOffset = -268, rowSize = 2250, viewportStartOffset = -290, viewportEndOffset = 1786, beforeContentPadding = 290, afterContentPadding = 23, reverseLayout = true))
     }
 
     @Test
-    fun `topAnchored reverseLayout tall post no padding falls back to itemSize - viewport`() {
-        assertEquals(3000 - 1800, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 0, itemSize = 3000, reverseLayout = true))
-    }
-
-    @Test
-    fun `topAnchored reverseLayout exact-fit with no padding returns zero`() {
-        // Item exactly fills the visible area and no NavBar → scrollOffset = 0.
-        assertEquals(0, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 0, itemSize = 1800, reverseLayout = true))
-    }
-
-    @Test
-    fun `topAnchored reverseLayout exact-fit with NavBar padding`() {
-        // Exact-fit + padding: scrollOffset = 1800 - 1800 - 240 = -240. The
-        // backward-composition loop consumes the -240 across the beforeContentPadding
-        // zone so the item still lands top-aligned with the visible area.
-        assertEquals(-240, topAnchoredScrollOffset(mainAxisAvailableSize = 1800, beforeContentPadding = 240, itemSize = 1800, reverseLayout = true))
+    fun `topAlignDelta reverse uses only after-padding, forward uses only before-padding`() {
+        // Reverse top edge is driven by (vEnd - after); beforeContentPadding is irrelevant.
+        assertEquals((150 - (1786 - 23)).toFloat(), topAlignDelta(rowOffset = 100, rowSize = 50, viewportStartOffset = -290, viewportEndOffset = 1786, beforeContentPadding = 290, afterContentPadding = 23, reverseLayout = true))
+        // Forward top edge is driven by (vStart + before); afterContentPadding is irrelevant.
+        assertEquals((500 - 24).toFloat(), topAlignDelta(rowOffset = 500, rowSize = 50, viewportStartOffset = 0, viewportEndOffset = 1800, beforeContentPadding = 24, afterContentPadding = 99, reverseLayout = false))
     }
 }

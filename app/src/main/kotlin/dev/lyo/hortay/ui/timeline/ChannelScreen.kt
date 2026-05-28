@@ -752,8 +752,8 @@ fun ChannelScreen(
                         // above the viewport and the user would see the bottom
                         // of the post. The reveal keeps the [SkeletonFeed] cover
                         // painted while the list measures the target row's
-                        // height underneath, then one instant
-                        // [topAlignedScrollOffset] reposition lands it at the
+                        // height underneath, then one instant measured-delta
+                        // ([topAlignDelta]) reposition lands it at the
                         // viewport top with no wrong-frame flash.
                         //
                         // Enabled for BOTH boundary and deep-link landings —

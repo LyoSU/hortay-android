@@ -10,7 +10,7 @@
 - Screen readers now announce which posts are unread, matching the unread strip sighted users see.
 
 ### Changed
-- "Next unread" and home-tap jumps now land the read→unread divider at the top of the screen with the oldest unread post just below it and a brief highlight on that post, instead of trying to centre the destination card.
+- "Next unread" and home-tap jumps now land your oldest still-unread post at the top of the screen with its header fully visible and a brief highlight, and step forward to the next unread as you read — instead of bouncing back onto a post you had already opened or landing it cut off under the bar.
 - Tapping a post's channel name now opens that channel scrolled straight to the post you tapped, with a brief highlight, instead of landing at your last-read position.
 - Revealing a spoiler now disintegrates the dot cloud as a left-to-right sweep that crumbles evenly and blows away, matching Telegram's dissolve, instead of the old uniform burst from the centre.
 - Ukrainian interface now speaks in a consistent informal tone, with wording and grammar fixes throughout.

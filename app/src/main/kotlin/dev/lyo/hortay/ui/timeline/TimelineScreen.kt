@@ -882,22 +882,20 @@ fun TimelineScreen(
             // quote-tap landings drive, so there is a single rendering path for
             // the highlight. The set happens after the scroll call so the card
             // is already in the visible viewport by the time Compose reads the key.
+            // Land on the LIVE "continue reading" target ([homeScrollIndexState],
+            // recomputed over the live cursor map), top-aligned in OldestUnreadFirst
+            // so reading starts at the oldest-unread post's top. NOT the frozen
+            // [FeedItem.Boundary] divider anchor, which doesn't advance as you read and
+            // would land you back on an already-read post (same bug as the unread pill).
             val items = feedItemsForEffectsState.value
-            val bIdx = items.boundaryIndex()
-            if (bIdx > 0) {
-                listState.scrollToBoundary(boundaryIndex = bIdx, animated = true)
-                items.boundaryAnchorPost()?.let { post ->
-                    highlightedPostKey = post.chatId to post.id
-                }
+            if (target > 0) {
+                listState.scrollToBoundary(rowIndex = target, animated = true)
             } else {
-                // Caught-up state (no divider): land on the home target
-                // (newest in Newest mode, computed home-scroll-index in
-                // OldestUnreadFirst).
+                // Newest mode / caught-up (target == 0): natural landing on newest.
                 listState.smartScrollTo(target)
-                val destinationPost = items.getOrNull(target)?.posts()?.firstOrNull()
-                if (destinationPost != null) {
-                    highlightedPostKey = destinationPost.chatId to destinationPost.id
-                }
+            }
+            items.getOrNull(target)?.posts()?.firstOrNull()?.let { post ->
+                highlightedPostKey = post.chatId to post.id
             }
         }
     }
@@ -1694,8 +1692,8 @@ fun TimelineScreen(
                         // which under reverseLayout glues the target item's BOTTOM to
                         // the viewport bottom — the divider + unread queue would be
                         // stranded off-screen below. The reveal waits one layout pass
-                        // for the target row to measure, then one instant
-                        // [topAlignedScrollOffset] reposition lands it at the viewport
+                        // for the target row to measure, then one instant measured-delta
+                        // ([topAlignDelta]) reposition lands it at the viewport
                         // top with no wrong-frame flash; the SkeletonFeed cover stays
                         // painted on top until the reveal flips true.
                         //
@@ -1887,35 +1885,33 @@ fun TimelineScreen(
                     UnreadCounterPill(
                         count = unreadRemaining,
                         onClick = {
-                            // Jump to the read→unread BOUNDARY divider — the
-                            // "continue where you left off" anchor, NOT the newest
-                            // unread. Uses [scrollToBoundary], which lands the
-                            // [FeedItem.Boundary] divider's TOP at the viewport
-                            // TOP — the canonical "next unread" landing.
+                            // Jump to the LIVE oldest-unread post — top-aligned so
+                            // reading starts at its top, with a brief highlight.
+                            // [homeScrollIndexState] tracks `continueReadingIndex` over
+                            // the LIVE cursor map (recompute on every dwell-ack), so the
+                            // target advances as you read: tap → read → tap → the NEXT
+                            // unread, never the same post twice.
                             //
-                            // The pulse fires on the OLDEST unread post (the row
-                            // just before the divider in iteration order) so the
-                            // user reads it as "here is where you left off".
+                            // NOT the frozen [FeedItem.Boundary] divider's anchor: that
+                            // divider is a session marker captured at the last refresh
+                            // ([boundaryCursors]) and does NOT move as you read, so
+                            // jumping to it sent you back onto a post you had already
+                            // read — the "unread pill lands on an already-read post" bug.
                             //
-                            // Falls back to the snapshot's cold-start boundary
-                            // (homeScrollIndex) when no divider is present — caught-up
-                            // state in the race between this click and a refresh.
-                            //
-                            // Read through [feedItemsState] (live) so a feed refresh /
-                            // new-post arrival that lands between this composition and
-                            // the click doesn't leave us indexing a stale captured list.
+                            // Read [feedItemsState] (live) so a refresh / arrival between
+                            // this composition and the click doesn't index a stale list.
                             val items = feedItemsState.value
-                            val bIdx = items.boundaryIndex()
+                            val target = homeScrollIndexState.intValue
                             scope.launch {
-                                if (bIdx > 0) {
-                                    listState.scrollToBoundary(boundaryIndex = bIdx, animated = true)
-                                    items.boundaryAnchorPost()?.let { post ->
-                                        highlightedPostKey = post.chatId to post.id
-                                    }
+                                if (target > 0) {
+                                    listState.scrollToBoundary(rowIndex = target, animated = true)
                                 } else {
-                                    // No divider (already caught up by the time the click landed):
-                                    // fall back to the home-scroll target.
-                                    listState.smartScrollTo(homeScrollIndexState.intValue)
+                                    // Caught up (target == 0): land on newest by its
+                                    // natural reverseLayout position, no top-align.
+                                    listState.smartScrollTo(target)
+                                }
+                                items.getOrNull(target)?.posts()?.firstOrNull()?.let { post ->
+                                    highlightedPostKey = post.chatId to post.id
                                 }
                             }
                         },
