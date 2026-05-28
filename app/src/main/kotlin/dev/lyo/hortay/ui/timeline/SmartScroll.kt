@@ -1,5 +1,8 @@
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -133,34 +136,6 @@ internal fun visibleFraction(itemStart: Int, itemEnd: Int, vStart: Int, vEnd: In
     return visibleSpan.toFloat() / itemSize
 }
 
-/**
- * `scrollOffset` to pass to [LazyListState.scrollToItem]/[animateScrollToItem] so
- * the row at the target index lands with its TOP at the viewport's TOP — regardless
- * of the row's height and the layout direction.
- *
- * Forward layout: `scrollOffset = 0` because the layout start IS the viewport top —
- * the item's top aligns with it for free.
- *
- * `reverseLayout = true`: the layout start is the viewport BOTTOM and `scrollOffset`
- * is measured FROM that bottom (positive = pushed deeper "past" the start). The
- * unified formula `itemSize - viewport` covers both regimes:
- *
- *   - **Short items** (`itemSize <= viewport`): offset is `<= 0`, pulling the item's
- *     bottom up to `viewport - itemSize` above the layout start — equivalent to
- *     `itemSize` below the viewport top. The item sits at the visual top with empty
- *     space (or sibling items) below.
- *   - **Tall items** (`itemSize > viewport`): offset is positive, shifting the item
- *     past the start so its TOP comes up to the viewport top; the bottom overflows
- *     off-screen below. This is the regime the user wants for "tall post — show me
- *     the header" — `scrollToItem(index, 0)` in reverseLayout otherwise glues the
- *     item's BOTTOM to the viewport bottom and clips the header above the viewport.
- *     That bottom-anchored default is the source of the "centred / no header"
- *     symptom for deep-link and quote-tap landings; this helper is the fix.
- */
-internal fun topAlignedScrollOffset(viewport: Int, itemSize: Int, reverseLayout: Boolean): Int {
-    if (!reverseLayout) return 0
-    return itemSize - viewport
-}
 
 /**
  * Threshold (rows) above which `scrollToBoundary` jumps instantly. Bumped from the
@@ -206,81 +181,84 @@ internal suspend fun LazyListState.scrollToBoundary(
     val current = firstVisibleItemIndex
     val instant = !animated ||
         abs(boundaryIndex - current) > BOUNDARY_SCROLL_THRESHOLD_ROWS
-
-    val measured = layoutInfo.visibleItemsInfo.firstOrNull { it.index == boundaryIndex }
-
-    if (measured != null) {
-        val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-        val offset = topAlignedScrollOffset(viewport, measured.size, layoutInfo.reverseLayout)
-        if (instant) scrollToItem(boundaryIndex, offset)
-        else animateScrollToItem(boundaryIndex, offset)
-        return
-    }
-
-    // Boundary not yet measured. Bring it into view at offset 0 first, then wait for
-    // the layout pass that publishes its measured size before we re-position. Without
-    // the snapshotFlow wait, reading layoutInfo synchronously after scrollToItem could
-    // see the OLD visibleItemsInfo (no pending layout pass yet flushed) → measuredAfter
-    // = null → re-position skipped → boundary stays at the wrong (bottom-anchored)
-    // position scrollToItem(idx, 0) leaves it at in reverseLayout. With the wait, the
-    // re-position is guaranteed to land on the measured row.
-    scrollToItem(boundaryIndex, 0)
-    val measuredAfter = withTimeoutOrNull(SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS) {
-        snapshotFlow {
-            layoutInfo.visibleItemsInfo.firstOrNull { it.index == boundaryIndex }
-        }.filterNotNull().first()
-    } ?: return
-    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-    val offset = topAlignedScrollOffset(viewport, measuredAfter.size, layoutInfo.reverseLayout)
-    if (offset != 0) scrollToItem(boundaryIndex, offset)
+    val item = ensureMeasured(boundaryIndex) ?: return
+    correctToTop(item, instant)
 }
 
 /**
  * Land the row at [itemIndex] with its TOP at the viewport's TOP — in both forward
- * and reverseLayout modes. The runtime analogue of [topAlignedScrollOffset] for
- * deep-link, quote-tap, and reply-source landings, where the canonical "show me the
- * start of this message" intent applies regardless of post height.
+ * and reverseLayout modes. Used by deep-link, quote-tap, and reply-source landings,
+ * where the canonical "show me the start of this message" intent applies regardless
+ * of post height.
  *
  * Plain `scrollToItem(index, 0)` in reverseLayout glues the item's BOTTOM to the
  * viewport bottom — for a TALL post the header (top) ends up clipped off-screen
- * above. This helper computes the per-call offset against the row's measured size
- * and uses it for the actual scroll, so the header is always visible.
- *
- * If the row isn't measured yet (the user is jumping to an item that hasn't entered
- * any prior viewport), brings it on-screen with one instant scroll first, then
- * re-positions with the measured size. The two scrolls happen on consecutive
- * layout passes — visually one continuous motion.
+ * above. This helper brings the row into view (any anchor), reads its actual
+ * measured y-position, and then scrolls by exactly the delta needed to put its
+ * top at the viewport's top. Works uniformly in both layout directions because
+ * the delta is computed from the row's measured position, not from a layout-
+ * direction-dependent scrollOffset formula.
  *
  * Suspends until the scroll completes.
  */
 internal suspend fun LazyListState.scrollToTopAligned(itemIndex: Int) {
-    val measured = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
-    if (measured != null) {
-        val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-        scrollToItem(itemIndex, topAlignedScrollOffset(viewport, measured.size, layoutInfo.reverseLayout))
-        return
-    }
-    // Target row isn't laid out yet — typical for deep-link landings where the user
-    // is jumping into a far-away post that hasn't entered any prior viewport. Bring
-    // it on-screen with offset=0 first, then WAIT for the layout pass that publishes
-    // its measured size before we re-position.
-    //
-    // The wait matters: reading layoutInfo synchronously after scrollToItem can see
-    // the OLD visibleItemsInfo (the scroll position updated but the new layout pass
-    // hasn't flushed yet). measuredAfter = null → re-position skipped → the row is
-    // left at the offset=0 landing, which in reverseLayout is BOTTOM-anchored — for
-    // a tall post the header is clipped above and the bottom is what the user sees.
-    // snapshotFlow.filterNotNull().first() waits for the post-layout snapshot, then
-    // we apply the top-aligned offset against the measured size.
+    val item = ensureMeasured(itemIndex) ?: return
+    correctToTop(item, instant = false)
+}
+
+/**
+ * Bring the row at [itemIndex] into the visible items set, returning its
+ * [LazyListItemInfo] once it has been measured by a layout pass. Returns null
+ * when the item never measures within [SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS] —
+ * the caller should bail rather than scroll against stale geometry.
+ *
+ * If the item is already in `visibleItemsInfo`, returns it immediately. Otherwise
+ * does one `scrollToItem(itemIndex, 0)` to bring it in (which places the row at
+ * the layout start — top in forward, visual bottom in reverseLayout) and then
+ * snapshotFlow-waits for the row to appear in the post-scroll layoutInfo. Without
+ * the wait, reading layoutInfo synchronously after scrollToItem can see the OLD
+ * visibleItemsInfo (the scroll position updated but the new layout pass hasn't
+ * flushed yet).
+ */
+private suspend fun LazyListState.ensureMeasured(itemIndex: Int): LazyListItemInfo? {
+    val already = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
+    if (already != null) return already
     scrollToItem(itemIndex, 0)
-    val measuredAfter = withTimeoutOrNull(SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS) {
+    return withTimeoutOrNull(SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS) {
         snapshotFlow {
             layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
         }.filterNotNull().first()
-    } ?: return
-    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-    val offset = topAlignedScrollOffset(viewport, measuredAfter.size, layoutInfo.reverseLayout)
-    if (offset != 0) scrollToItem(itemIndex, offset)
+    }
+}
+
+/**
+ * Scroll so the [item]'s TOP lines up with the viewport's TOP, computing the delta
+ * from the row's measured y-position. Works uniformly in forward and reverseLayout
+ * because Compose's [LazyListItemInfo.offset] is the row's main-axis position
+ * relative to the viewport start in screen coords — the same reference point in
+ * both layout directions.
+ *
+ * In a forward-layout LazyColumn after `scrollToItem(idx, 0)`, the row's `offset`
+ * equals `viewportStartOffset` (item top at viewport top), so the delta is 0 — no
+ * scroll needed. In reverseLayout after the same call, the row is bottom-anchored:
+ * its `offset` is `viewportStartOffset + (viewport - itemSize)` for short items
+ * (item top in the lower half of the viewport) or `viewportStartOffset + (viewport
+ * - itemSize)` (negative for tall items, item top above viewport top). The delta
+ * carries the correct sign in both regimes.
+ *
+ * Positive delta scrolls the list forward in the main axis (in Compose terms, the
+ * firstVisibleItemScrollOffset increases); this shifts items UP visually in BOTH
+ * layout directions. Negative delta scrolls the opposite way and shifts items DOWN
+ * visually. So `scrollBy(item.offset - viewportStartOffset)` always brings the
+ * row's top up to (or back down to) the viewport's top.
+ *
+ * Uses `scroll { scrollBy }` for instant corrections (cold-entry reveal) and
+ * `animateScrollBy` for runtime jumps (deep-link, quote-tap, jump-pill).
+ */
+private suspend fun LazyListState.correctToTop(item: LazyListItemInfo, instant: Boolean) {
+    val delta = (item.offset - layoutInfo.viewportStartOffset).toFloat()
+    if (delta == 0f) return
+    if (instant) scroll { scrollBy(delta) } else animateScrollBy(delta)
 }
 
 /**
