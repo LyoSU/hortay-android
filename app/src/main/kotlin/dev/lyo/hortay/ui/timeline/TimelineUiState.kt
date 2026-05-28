@@ -7,7 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.ReadCursors
-import dev.lyo.hortay.data.continueReadingIndex
+import dev.lyo.hortay.data.isUnreadIn
 import kotlinx.collections.immutable.PersistentList
 
 /**
@@ -72,13 +72,24 @@ fun buildTimelineUiState(
     if (feedOrder == FeedOrder.OldestUnreadFirst && !cursorsLanded) {
         return TimelineUiState.Loading
     }
-    // continueReadingIndex operates on TimelinePost; for albums the anchor
-    // post drives the unread check. Flatten items → first post per item, then
-    // compute the boundary in row-space. [minUnreadDate] is the recency floor
-    // for what counts as a landing-eligible unread post — see the function's
-    // KDoc for the dormant-channel rationale.
-    val anchorPosts = items.map { it.posts().first() }
-    val boundary = continueReadingIndex(feedOrder, anchorPosts, frozenCursors, minUnreadDate)
+    // Row-space scan over [items] (which may include a [FeedItem.Boundary]
+    // divider inserted by [withBoundary]). The boundary row carries no post
+    // and is treated as "not unread"; only [FeedItem.Post] rows contribute
+    // to the scan. Album anchor semantics ([isUnreadIn] reads the highest
+    // member id) flow through unchanged. [minUnreadDate] is the recency
+    // floor — older unread posts don't qualify as landing targets; see
+    // [continueReadingIndex]'s KDoc for the dormant-channel rationale.
+    //
+    // Both FeedOrder values use [indexOfLast] — same semantics as the original
+    // [continueReadingIndex] on TimelinePost. Data is descending (newest = idx 0),
+    // so the boundary = oldest unread = the LAST qualifying row.
+    val qualifies: (FeedItem) -> Boolean = { row ->
+        val post = (row as? FeedItem.Post)?.post
+        post != null &&
+            post.isUnreadIn(frozenCursors) &&
+            (minUnreadDate <= 0L || post.date >= minUnreadDate)
+    }
+    val boundary = items.indexOfLast(qualifies)
     val initialIndex = if (boundary >= 0) boundary else 0
     return TimelineUiState.Ready(
         items = items,

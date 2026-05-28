@@ -7,8 +7,11 @@ package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.runtime.Immutable
 import dev.lyo.hortay.data.AlbumItem
+import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.PostContent
+import dev.lyo.hortay.data.ReadCursors
 import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.data.isUnreadIn
 
 /**
  * Hard cap on inline-autoplay video duration we're willing to *speculatively* prefetch the
@@ -210,6 +213,56 @@ private fun feedItemKey(post: TimelinePost): String =
 internal fun FeedItem.posts(): List<TimelinePost> = when (this) {
     is FeedItem.Post -> listOf(post)
     is FeedItem.Boundary -> emptyList()
+}
+
+/**
+ * Inserts a single [FeedItem.Boundary] divider into a posts-only feed-item list at the
+ * cut between read history and the unread queue. Returns the input unchanged when
+ * everything is read, everything is unread, or no cursors are loaded yet.
+ *
+ * **Position.** Boundary is placed at `boundaryPostIndex + 1` — i.e. immediately AFTER
+ * the oldest-unread post in data order. With descending data (newest = idx 0), the
+ * oldest unread sits at the highest index of the unread block; the boundary then
+ * separates that unread block (idx ≤ boundaryPostIndex) from the read prefix
+ * (idx ≥ boundaryPostIndex + 2 after insertion).
+ *
+ * The visual position is decided by [TimelineFeedColumn]'s `reverseLayout` flag:
+ *   - reverseLayout = true (Newest at the bottom): divider sits at the visual TOP of
+ *     the unread block, read history flows above it (off-screen until scrolled).
+ *   - reverseLayout = false (Newest on top): divider sits at the visual BOTTOM of the
+ *     unread block, read history below it.
+ *
+ * **Epoch.** The caller's [epoch] must be stable across per-card dwell-acks and
+ * advance on PTR / drill-out-in / FeedOrder switch — the canonical session anchor.
+ *
+ * **Recency floor.** Mirrors `continueReadingIndex`: [recencyCutoffMs] is an absolute
+ * minimum-date floor (milliseconds since the Unix epoch — same units as
+ * [TimelinePost.date], which [dev.lyo.hortay.data.MessageMapper] emits as
+ * `message.date * 1000L`). When non-zero, posts older than the cutoff don't qualify
+ * as the oldest unread for boundary placement. `0L` disables the floor.
+ */
+internal fun withBoundary(
+    items: List<FeedItem.Post>,
+    cursors: ReadCursors,
+    @Suppress("UNUSED_PARAMETER") order: FeedOrder,
+    epoch: Long,
+    recencyCutoffMs: Long,
+): List<FeedItem> {
+    if (items.isEmpty()) return items
+    val boundaryPostIdx = items.indexOfLast { feedItem ->
+        val post = feedItem.post
+        val isUnread = post.isUnreadIn(cursors)
+        val recentEnough = recencyCutoffMs == 0L || post.date >= recencyCutoffMs
+        isUnread && recentEnough
+    }
+    if (boundaryPostIdx < 0) return items
+    // Every post is unread → no read prefix to separate from. Skip.
+    if (boundaryPostIdx == items.lastIndex) return items
+    return buildList(items.size + 1) {
+        addAll(items.subList(0, boundaryPostIdx + 1))
+        add(FeedItem.Boundary(epoch))
+        addAll(items.subList(boundaryPostIdx + 1, items.size))
+    }
 }
 
 /**

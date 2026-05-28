@@ -535,6 +535,16 @@ fun TimelineScreen(
             else dev.lyo.hortay.data.EmptyReadCursors,
         )
     }
+    // Epoch counter that rotates in lock-step with [boundaryCursorsState]. The
+    // [FeedItem.Boundary] key embeds this epoch (`boundary_$epoch`) so the divider
+    // row keeps a stable LazyColumn identity across per-card dwell-acks (which
+    // don't rotate the snapshot and don't advance the epoch) but rotates on the
+    // discrete session-anchor events that DO re-latch the snapshot — cold-start
+    // landing, PTR completion, and feed/order identity change (the `remember`
+    // key list below).
+    val cursorEpochState = remember(feed, feedOrder) {
+        androidx.compose.runtime.mutableLongStateOf(0L)
+    }
     LaunchedEffect(feed, feedOrder, cursorsHaveLanded, refreshing) {
         if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) return@LaunchedEffect
         if (!cursorsHaveLanded) return@LaunchedEffect
@@ -550,9 +560,11 @@ fun TimelineScreen(
             // advances — the frozen reference only refreshes when the
             // effect re-keys (cold-start landing, refresh idle, feed swap).
             boundaryCursorsState.value = cursorHolder.snapshot()
+            cursorEpochState.longValue = cursorEpochState.longValue + 1L
         }
     }
     val boundaryCursors = boundaryCursorsState.value
+    val cursorEpoch = cursorEpochState.longValue
 
     // One TimelinePost → one [FeedItem] row. Single source of row identity through
     // [FeedItem.key], stable across every ingest path (`loadChannelHistory`,
@@ -560,8 +572,21 @@ fun TimelineScreen(
     // preservation carries the user's anchor through any reorder. The previous
     // `groupReplies` reshape that promoted Single → Thread on the fly was deleted —
     // see [FeedItem] for the full rationale.
-    val feedItems: List<FeedItem> = remember(visiblePosts) {
-        visiblePosts.map(FeedItem::Post)
+    val feedItems: List<FeedItem> = remember(
+        visiblePosts, boundaryCursors, feedOrder, cursorEpoch, recencyCutoffMs,
+    ) {
+        val postItems = visiblePosts.map(FeedItem::Post)
+        if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
+            withBoundary(
+                items = postItems,
+                cursors = boundaryCursors,
+                order = feedOrder,
+                epoch = cursorEpoch,
+                recencyCutoffMs = recencyCutoffMs,
+            )
+        } else {
+            postItems
+        }
     }
     // Keep the forward-declared holder current so the home-tap LaunchedEffect
     // can read the latest list without capturing a stale reference. Wrapped
@@ -606,15 +631,20 @@ fun TimelineScreen(
                     if (feedItems.isEmpty()) 0
                     else if (!cursorsHaveLanded) 0
                     else {
-                        val anchorPosts = feedItems.map { it.posts().first() }
-                        val boundary = dev.lyo.hortay.data.continueReadingIndex(
-                            order = dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst,
-                            posts = anchorPosts,
-                            cursors = cursorHolder.snapshot(),
-                            minUnreadDate = recencyCutoffMs,
-                        )
-                        // Newest = index 0 under the descending data model; fall back
-                        // to 0 (newest post) when no unread boundary is found.
+                        // Row-space scan that skips [FeedItem.Boundary] divider rows
+                        // (the divider never qualifies as a landing target). Mirrors
+                        // the descending-order semantics of [continueReadingIndex] —
+                        // unread block on the low indices, read block on the high
+                        // indices, boundary = oldest unread = last unread row that
+                        // also satisfies the recency floor.
+                        val live = cursorHolder.snapshot()
+                        val boundary = feedItems.indexOfLast { row ->
+                            val post = (row as? FeedItem.Post)?.post ?: return@indexOfLast false
+                            post.isUnreadIn(live) &&
+                                (recencyCutoffMs <= 0L || post.date >= recencyCutoffMs)
+                        }
+                        // Fall back to newest (index 0) when no unread boundary
+                        // qualifies — same fallback main's continueReadingIndex path used.
                         if (boundary >= 0) boundary else 0
                     }
                 }
@@ -1638,32 +1668,10 @@ fun TimelineScreen(
                             ScrollableDefaults.flingBehavior()
                         }
 
-                        // In OldestUnreadFirst, locate the read→unread boundary.
-                        // Data is descending (newest = index 0), so the unread
-                        // block is the LOW indices (newest) and the read block is
-                        // the HIGH indices (older); the boundary is the OLDEST
-                        // unread = the LAST item containing an unread post =
-                        // `lastOrNull` (under the old ascending model this was
-                        // `firstOrNull`). The [UnreadBoundaryRow] divider is drawn
-                        // at the top of that item per the FROZEN [boundaryCursors]
-                        // snapshot — explicitly not the live [readCursors] map. The
-                        // rationale lives alongside [boundaryCursorsState] above;
-                        // tl;dr the divider is a session anchor, so dwell-acks must
-                        // not migrate it under the user's scroll. Telegram-Android,
-                        // Slack and Discord all do the same with their "New
-                        // messages" rule.
-                        val unreadBoundaryKey by remember(
-                            feedItems, boundaryCursors, feedOrder,
-                        ) {
-                            derivedStateOf {
-                                if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
-                                    return@derivedStateOf null
-                                }
-                                feedItems.lastOrNull { feedItem ->
-                                    feedItem.posts().any { it.isUnreadIn(boundaryCursors) }
-                                }?.key
-                            }
-                        }
+                        // The read→unread divider is now a real [FeedItem.Boundary]
+                        // row inserted by [withBoundary] at the feedItems build site
+                        // (see above). The LazyColumn renders it directly via
+                        // [TimelineFeedColumn]; no derived key lookup is needed here.
 
                         CompositionLocalProvider(LocalScrollGate provides scrollGate) {
                             // The reverse-feed cold-start gate is now upstream:
