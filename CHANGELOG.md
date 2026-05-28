@@ -37,6 +37,7 @@
 - Settings → Source code row and the long-press link sheet's Share action now show their proper icons instead of a generic `?` placeholder.
 - Tapping the empty space between a post's channel name and its timestamp no longer drills into the channel — only the channel name, verification badge and chevron itself respond now.
 - Scrolling past deleted posts no longer stalls the feed or slows neighbouring posts from loading — a deleted post shows its cached preview instead of endlessly retrying media Telegram has already removed.
+- Photo albums now reopen with all their photos after relaunching the app, instead of showing a single photo until you scrolled to the post.
 - Tapping Submit twice in quick succession on the phone-number screen no longer clears the number you typed.
 
 ## [0.8.0] — 2026-05-25

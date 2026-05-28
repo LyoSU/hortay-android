@@ -727,6 +727,25 @@ class PostsRepository(
                 .filter { !it }
                 .collect { saveSnapshotNow() }
         }
+
+        // Reactive cold-start album repair. The streaming LoadChats drain builds
+        // the merged feed incrementally over several seconds; TimelineViewModel's
+        // single restoreFromSnapshot fires once at construction — too early to
+        // upgrade channels that stream in afterwards, so their cold-cache-degraded
+        // albums (1 photo) would survive until the user opens the post. When the
+        // drain settles ([_initialSyncDone] flips true) re-run the snapshot pass:
+        // every degraded album is rebuilt from the previous session's saved member
+        // ids via local GetMessage — no network, no FLOOD_WAIT. A healthy feed is
+        // a no-op ([upgradeDegradedAlbums]). `filter { it }` re-arms on the next
+        // logout→login Ready edge (initialSyncDone resets to false on logout).
+        scope.launch {
+            initialSyncDone
+                .filter { it }
+                .collect {
+                    runCatching { restoreFromSnapshotInternal() }
+                        .warnUnlessCancelled(TAG, "postDrainAlbumUpgrade")
+                }
+        }
     }
 
     private suspend fun saveSnapshotNow() {
@@ -949,7 +968,10 @@ class PostsRepository(
                 ?: runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()?.also { chatCache[chatId] = it }
                 ?: return@flatMap emptyList()
             if (!chat.isChannel()) emptyList()
-            else coalesceAlbumFragments(chatId, msgs).map { mapper.toChannelPost(it, chat) }
+            // Snapshot restore is a cold-start path and already has every member
+            // id (fetched via local GetMessage upstream), so coalesce stays
+            // offline — no networked GetChatHistory while the feed bootstraps.
+            else coalesceAlbumFragments(chatId, msgs, onlyLocal = true).map { mapper.toChannelPost(it, chat) }
         }
     }
 
@@ -1211,7 +1233,9 @@ class PostsRepository(
         if (!chat.isChannel()) return false
 
         val history = td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limit, false))
-        val raw = coalesceAlbumFragments(chatId, history.messages.orEmpty().toList())
+        // On-demand single-channel open: one chat at a time, so a networked
+        // surround fetch is within the FLOOD_WAIT budget.
+        val raw = coalesceAlbumFragments(chatId, history.messages.orEmpty().toList(), onlyLocal = false)
         val mapped = raw.map { mapper.toChannelPost(it, chat) }
         if (mapped.isEmpty()) return false
 
@@ -1265,7 +1289,8 @@ class PostsRepository(
         }
             .warnUnlessCancelled(TAG, "loadHistoryAround($chatId, $anchorMessageId)")
             .getOrNull() ?: return false
-        val raw = coalesceAlbumFragments(chatId, history.messages.orEmpty().toList())
+        // On-demand deep-link / next-unread jump: networked surround fetch is fine.
+        val raw = coalesceAlbumFragments(chatId, history.messages.orEmpty().toList(), onlyLocal = false)
         val mapped = raw.map { mapper.toChannelPost(it, chat) }
         if (mapped.isEmpty()) return false
 
@@ -1327,7 +1352,8 @@ class PostsRepository(
             pageEnded += chatId
             return 0
         }
-        val coalesced = coalesceAlbumFragments(chatId, raw)
+        // Pagination scroll-down inside one channel: networked surround fetch is fine.
+        val coalesced = coalesceAlbumFragments(chatId, raw, onlyLocal = false)
         val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
 
         var prevChannelSize = 0
@@ -1388,7 +1414,8 @@ class PostsRepository(
             .getOrNull() ?: return emptyList()
 
         val raw = result.messages.orEmpty().toList()
-        val coalesced = coalesceAlbumFragments(chatId, raw)
+        // In-channel search result: networked surround fetch is fine.
+        val coalesced = coalesceAlbumFragments(chatId, raw, onlyLocal = false)
         val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
         return PostFilterStrategy.apply(mapped)
     }
@@ -1766,7 +1793,15 @@ class PostsRepository(
         // If a real-time burst still left an album fragmented (e.g. members spread across
         // >600 ms by upstream), probe the chat for the missing siblings before mapping.
         // Cheap if there are no fragments — early-returns immediately.
-        val full = coalesceAlbumFragments(chatId, messages)
+        //
+        // Stay OFFLINE during the cold-start drain ([_initialSyncDone] still
+        // false): ~200 channels stream their lastMessage at once, so a networked
+        // surround fetch per album member would be the GetChatHistory x N storm
+        // the cold-start contract forbids (FLOOD_WAIT — levlam, tdlib/td#743).
+        // Locally-cached siblings still merge; the rest are repaired by the
+        // post-drain snapshot pass or an on-demand open. After the drain settles
+        // a live arrival is one chat at a time, so networking is back on.
+        val full = coalesceAlbumFragments(chatId, messages, onlyLocal = !_initialSyncDone.value)
 
         val newPosts = full
             .map { mapper.toChannelPost(it, chat) }
@@ -1927,6 +1962,15 @@ class PostsRepository(
     private suspend fun coalesceAlbumFragments(
         chatId: Long,
         messages: List<TdApi.Message>,
+        // `false` allows a server round-trip (on-demand paths: one chat at a
+        // time, within the 30 req / 30 s budget). `true` makes the surround
+        // fetch an offline TDLib request — mandatory on the cold-start ingest
+        // path, where ~200 channels stream their lastMessage at once and a
+        // networked GetChatHistory x N would trip account-global FLOOD_WAIT
+        // (levlam, tdlib/td#743). Locally-cached siblings still come back;
+        // never-cached ones stay degraded until the snapshot pass or an
+        // on-demand open repairs them.
+        onlyLocal: Boolean,
     ): List<TdApi.Message> {
         val fragments = messages
             .filter { it.mediaAlbumId != 0L }
@@ -1951,7 +1995,7 @@ class PostsRepository(
                                 /* fromMessageId */ fragment.id,
                                 /* offset */ -(TELEGRAM_MAX_ALBUM_SIZE - 1),
                                 /* limit */ 2 * TELEGRAM_MAX_ALBUM_SIZE - 1,
-                                /* onlyLocal */ false,
+                                /* onlyLocal */ onlyLocal,
                             ),
                         )
                     }.warnUnlessCancelled(TAG, "coalesceAlbum($chatId,${fragment.id})").getOrNull()
