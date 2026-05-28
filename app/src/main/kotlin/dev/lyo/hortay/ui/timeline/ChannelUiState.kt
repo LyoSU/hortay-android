@@ -9,7 +9,7 @@ import dev.lyo.hortay.data.EmptyReadCursors
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.ReadCursors
 import dev.lyo.hortay.data.TimelinePost
-import dev.lyo.hortay.data.continueReadingIndex
+import dev.lyo.hortay.data.isUnreadIn
 import kotlinx.collections.immutable.PersistentList
 
 /**
@@ -139,12 +139,29 @@ internal fun buildChannelUiState(
     chatId: Long,
     feedOrder: FeedOrder = FeedOrder.Newest,
     cursors: ReadCursors = EmptyReadCursors,
+    recencyCutoffMs: Long = 0L,
 ): ChannelUiState {
     if (data is ChannelData.Loading) return ChannelUiState.Resolving
     if (scrollToMessageId == null || searchActive) {
         val initialIndex = if (feedOrder == FeedOrder.OldestUnreadFirst && items.isNotEmpty()) {
-            val anchorPosts: List<TimelinePost> = items.map { it.posts().first() }
-            val boundary = continueReadingIndex(feedOrder, anchorPosts, cursors)
+            // Row-space scan over [items], which may include a [FeedItem.Boundary]
+            // divider inserted by [withBoundary]. Boundary rows carry no post and
+            // never qualify as a landing target; only [FeedItem.Post] rows
+            // contribute. Album anchor semantics ([isUnreadIn] reads the highest
+            // member id) flow through unchanged. [recencyCutoffMs] is the recency
+            // floor — older unread posts don't qualify; mirrors
+            // [continueReadingIndex]'s dormant-channel rationale.
+            //
+            // [indexOfLast] matches the descending-data semantics of the original
+            // [continueReadingIndex] call this replaced: data is newest→oldest, so
+            // the boundary = oldest unread = the LAST qualifying row.
+            val qualifies: (FeedItem) -> Boolean = { row ->
+                val post = (row as? FeedItem.Post)?.post
+                post != null &&
+                    post.isUnreadIn(cursors) &&
+                    (recencyCutoffMs <= 0L || post.date >= recencyCutoffMs)
+            }
+            val boundary = items.indexOfLast(qualifies)
             if (boundary >= 0) boundary else 0
         } else {
             0

@@ -65,6 +65,8 @@ import dev.lyo.hortay.ui.theme.asComposeShape
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 // FlowPreview opt-in stays: Flow.debounce(Long) is still preview-marked in
@@ -222,9 +224,66 @@ fun ChannelScreen(
     // the reverse-feed layout exactly like TimelineScreen does on the all-feed;
     // search results stay in their RPC relevance order regardless.
     val cursorHolder = LocalReadCursors.current
-    val displayedItems = remember(posts, searchActive, searchResults, feedOrder) {
+
+    // Recency floor for OldestUnreadFirst boundary placement — mirrors the
+    // merged-feed wiring in [TimelineScreen]. Captured once per mount so the
+    // cutoff is stable across recompositions; on re-entry the channel
+    // re-samples, which is correct because "recent" is defined relative to
+    // when the user opened this channel.
+    val recencyCutoffMs = remember { System.currentTimeMillis() - BOUNDARY_RECENCY_WINDOW_MS }
+
+    // Frozen cursor snapshot + epoch counter for the boundary row. Mirrors the
+    // pattern in [TimelineScreen]; the channel-screen analogue rotates on the
+    // discrete session-anchor events:
+    //   1. Channel identity / feedOrder change (`remember` key list below).
+    //   2. Pull-to-refresh completion (`refreshing` falls true → false).
+    // Per-card dwell-acks update the LIVE [cursorHolder] but neither rotate
+    // the latched snapshot nor advance the epoch — so the [FeedItem.Boundary]
+    // divider row keeps a stable LazyColumn identity ("here is where you came
+    // in"), not a live read-edge that migrates under the user's scroll. See
+    // [TimelineScreen]'s `boundaryCursorsState` KDoc for the full rationale —
+    // same shape, same reasoning, different rotation triggers (no cold-start
+    // cursor-settle dance: a channel only opens once cursors are live).
+    val boundaryCursorsState = remember(chatId, feedOrder) {
+        mutableStateOf(cursorHolder.snapshot())
+    }
+    val cursorEpochState = remember(chatId, feedOrder) {
+        mutableLongStateOf(0L)
+    }
+    LaunchedEffect(chatId, feedOrder, refreshing) {
+        // Re-latch only on PTR-completion edges (refreshing : true → false).
+        // The initial latch happens at `remember` construction above, so the
+        // first frame already has the right snapshot; this effect rotates on
+        // explicit refresh round-trips that ask for a fresh view of the world.
+        snapshotFlow { refreshing }
+            .drop(1)
+            .filter { !it }
+            .collect {
+                boundaryCursorsState.value = cursorHolder.snapshot()
+                cursorEpochState.longValue = cursorEpochState.longValue + 1L
+            }
+    }
+    val boundaryCursors = boundaryCursorsState.value
+    val cursorEpoch = cursorEpochState.longValue
+
+    val displayedItems = remember(
+        posts, searchActive, searchResults, feedOrder,
+        boundaryCursors, cursorEpoch, recencyCutoffMs,
+    ) {
         val source = if (searchActive) searchResults else posts.orderedFor(feedOrder)
-        source.map(FeedItem::Post).toPersistentList()
+        val postItems = source.map(FeedItem::Post)
+        val withDivider = if (!searchActive && feedOrder == FeedOrder.OldestUnreadFirst) {
+            withBoundary(
+                items = postItems,
+                cursors = boundaryCursors,
+                order = feedOrder,
+                epoch = cursorEpoch,
+                recencyCutoffMs = recencyCutoffMs,
+            )
+        } else {
+            postItems
+        }
+        withDivider.toPersistentList()
     }
 
     // [ChannelUiState] is the single source of truth for what gets mounted on
@@ -234,14 +293,12 @@ fun ChannelScreen(
     // link lands. On [ChannelUiState.Missing] the screen falls back to the
     // normal newest-first view and surfaces a snackbar via [onScrollMissed].
     //
-    // Cursors snapshot is latched on (chatId, feedOrder) — the only inputs
-    // that change the boundary semantics for a single-channel feed (channel
-    // identity + sort direction). [continueReadingIndex] inside
-    // [buildChannelUiState] is one-shot per Ready latch in
-    // [rememberLatchedChannelUiState], so we don't need live cursors here;
-    // capturing once per channel open also avoids the per-recomposition
-    // `map.toMap().toPersistentMap()` allocation the inline call had.
-    val channelCursors = remember(chatId, feedOrder) { cursorHolder.snapshot() }
+    // Cursors flow through [boundaryCursors] above — same latched snapshot the
+    // [FeedItem.Boundary] divider uses, so [continueReadingIndex] inside
+    // [buildChannelUiState] and the divider always agree on the read/unread
+    // split. The cold-start cursor-settle dance from [TimelineScreen] is not
+    // needed here: by the time a channel is opened, cursors are live and the
+    // initial `remember` seed already captures them.
     val candidateChannelUiState = buildChannelUiState(
         data = data,
         items = displayedItems,
@@ -250,7 +307,8 @@ fun ChannelScreen(
         searchActive = searchActive,
         chatId = chatId,
         feedOrder = feedOrder,
-        cursors = channelCursors,
+        cursors = boundaryCursors,
+        recencyCutoffMs = recencyCutoffMs,
     )
     val channelUiState = rememberLatchedChannelUiState(
         candidate = candidateChannelUiState,
@@ -1054,3 +1112,11 @@ private const val CHANNEL_COMMENTS_PREFETCH_LIMIT = 1
 
 /** Posts ahead of first visible to eagerly prefetch. Matches TimelineScreen's PREFETCH_AHEAD. */
 private const val CHANNEL_PREFETCH_AHEAD = 2
+
+/**
+ * Recency floor for the OldestUnreadFirst boundary picker — posts older than
+ * `now - BOUNDARY_RECENCY_WINDOW_MS` don't qualify as the oldest-unread
+ * landing target / [FeedItem.Boundary] anchor. Matches the merged-feed
+ * window in [TimelineScreen]; same dormant-channel rationale.
+ */
+private const val BOUNDARY_RECENCY_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
