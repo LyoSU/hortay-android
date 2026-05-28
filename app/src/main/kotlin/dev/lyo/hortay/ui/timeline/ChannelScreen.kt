@@ -753,7 +753,7 @@ fun ChannelScreen(
                         val readyState = channelUiState as? ChannelUiState.Ready
                         val boundaryRevealed = rememberBoundaryReveal(
                             listState = listState,
-                            targetIndex = readyState?.initialIndex ?: 0,
+                            boundaryIndex = readyState?.initialIndex ?: 0,
                             enabled = feedOrder.reverseLayout && readyState?.highlightedMessageId == null,
                             routeKey = chatId,
                         )
