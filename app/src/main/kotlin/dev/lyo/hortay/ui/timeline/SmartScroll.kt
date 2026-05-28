@@ -207,26 +207,32 @@ internal suspend fun LazyListState.scrollToBoundary(
     val instant = !animated ||
         abs(boundaryIndex - current) > BOUNDARY_SCROLL_THRESHOLD_ROWS
 
-    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-    val reverseLayout = layoutInfo.reverseLayout
     val measured = layoutInfo.visibleItemsInfo.firstOrNull { it.index == boundaryIndex }
 
     if (measured != null) {
-        val offset = topAlignedScrollOffset(viewport, measured.size, reverseLayout)
+        val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+        val offset = topAlignedScrollOffset(viewport, measured.size, layoutInfo.reverseLayout)
         if (instant) scrollToItem(boundaryIndex, offset)
         else animateScrollToItem(boundaryIndex, offset)
         return
     }
 
-    // Boundary not yet measured. Bring it into view at offset 0 first, then reposition
-    // once a measured size is available. The two scrolls happen on consecutive layout
-    // passes — visually one continuous motion.
+    // Boundary not yet measured. Bring it into view at offset 0 first, then wait for
+    // the layout pass that publishes its measured size before we re-position. Without
+    // the snapshotFlow wait, reading layoutInfo synchronously after scrollToItem could
+    // see the OLD visibleItemsInfo (no pending layout pass yet flushed) → measuredAfter
+    // = null → re-position skipped → boundary stays at the wrong (bottom-anchored)
+    // position scrollToItem(idx, 0) leaves it at in reverseLayout. With the wait, the
+    // re-position is guaranteed to land on the measured row.
     scrollToItem(boundaryIndex, 0)
-    val measuredAfter = layoutInfo.visibleItemsInfo.firstOrNull { it.index == boundaryIndex }
-    if (measuredAfter != null) {
-        val offset = topAlignedScrollOffset(viewport, measuredAfter.size, reverseLayout)
-        if (offset != 0) scrollToItem(boundaryIndex, offset)
-    }
+    val measuredAfter = withTimeoutOrNull(SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS) {
+        snapshotFlow {
+            layoutInfo.visibleItemsInfo.firstOrNull { it.index == boundaryIndex }
+        }.filterNotNull().first()
+    } ?: return
+    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+    val offset = topAlignedScrollOffset(viewport, measuredAfter.size, layoutInfo.reverseLayout)
+    if (offset != 0) scrollToItem(boundaryIndex, offset)
 }
 
 /**
@@ -248,20 +254,44 @@ internal suspend fun LazyListState.scrollToBoundary(
  * Suspends until the scroll completes.
  */
 internal suspend fun LazyListState.scrollToTopAligned(itemIndex: Int) {
-    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
-    val reverseLayout = layoutInfo.reverseLayout
     val measured = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
     if (measured != null) {
-        scrollToItem(itemIndex, topAlignedScrollOffset(viewport, measured.size, reverseLayout))
+        val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+        scrollToItem(itemIndex, topAlignedScrollOffset(viewport, measured.size, layoutInfo.reverseLayout))
         return
     }
+    // Target row isn't laid out yet — typical for deep-link landings where the user
+    // is jumping into a far-away post that hasn't entered any prior viewport. Bring
+    // it on-screen with offset=0 first, then WAIT for the layout pass that publishes
+    // its measured size before we re-position.
+    //
+    // The wait matters: reading layoutInfo synchronously after scrollToItem can see
+    // the OLD visibleItemsInfo (the scroll position updated but the new layout pass
+    // hasn't flushed yet). measuredAfter = null → re-position skipped → the row is
+    // left at the offset=0 landing, which in reverseLayout is BOTTOM-anchored — for
+    // a tall post the header is clipped above and the bottom is what the user sees.
+    // snapshotFlow.filterNotNull().first() waits for the post-layout snapshot, then
+    // we apply the top-aligned offset against the measured size.
     scrollToItem(itemIndex, 0)
-    val measuredAfter = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
-    if (measuredAfter != null) {
-        val offset = topAlignedScrollOffset(viewport, measuredAfter.size, reverseLayout)
-        if (offset != 0) scrollToItem(itemIndex, offset)
-    }
+    val measuredAfter = withTimeoutOrNull(SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS) {
+        snapshotFlow {
+            layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
+        }.filterNotNull().first()
+    } ?: return
+    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+    val offset = topAlignedScrollOffset(viewport, measuredAfter.size, layoutInfo.reverseLayout)
+    if (offset != 0) scrollToItem(itemIndex, offset)
 }
+
+/**
+ * Safety-net cap on how long [scrollToTopAligned] / [scrollToBoundary] wait for the
+ * target row to be measured after the initial bring-into-view scroll. 500 ms is well
+ * past the normal one-layout-pass turnaround (~16 ms at 60 Hz) and clamps the
+ * pathological case where the row never measures (it was filtered out between the
+ * scrollToItem and the next layout pass, etc.) so the caller's coroutine doesn't
+ * hang indefinitely.
+ */
+private const val SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS = 500L
 
 /**
  * Cold-entry "land on the resume boundary" reveal gate for the feed. Returns
