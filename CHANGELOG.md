@@ -10,12 +10,13 @@
 - Screen readers now announce which posts are unread, matching the unread strip sighted users see.
 
 ### Changed
-- Jumping to a post — the "X new posts" and "next unread" buttons — now centres a short post on screen and shows a long post from its top, instead of landing with the top cut off.
+- "Next unread" and home-tap jumps now land the read→unread divider at the top of the screen with the oldest unread post just below it and a brief highlight on that post, instead of trying to centre the destination card.
 - Tapping a post's channel name now opens that channel scrolled straight to the post you tapped, with a brief highlight, instead of landing at your last-read position.
 - Revealing a spoiler now disintegrates the dot cloud as a left-to-right sweep that crumbles evenly and blows away, matching Telegram's dissolve, instead of the old uniform burst from the centre.
 - Ukrainian interface now speaks in a consistent informal tone, with wording and grammar fixes throughout.
 
 ### Fixed
+- Posts now get marked as read as soon as 60% of the card is on screen for half a second, instead of staying unread until you scroll them further into view.
 - The "Newest at the bottom" feed now behaves like a real chat — the newest post sits at the bottom, new posts arrive there and the channel follows them as they come in, and switching feed direction no longer leaves the scroll in a strange spot.
 - Opening a channel in "Newest at the bottom" now lands on your oldest unread post with the unread queue visible below it, instead of pinning it to the bottom edge with already-read posts filling the screen above.
 - Signing out now warns that it will erase your local post archive — shown only when the archive is turned on.
