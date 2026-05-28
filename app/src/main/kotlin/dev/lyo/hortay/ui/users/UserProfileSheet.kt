@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +55,8 @@ import dev.lyo.hortay.data.PresenceStatus
 import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.UserProfile
 import dev.lyo.hortay.ui.components.PremiumStatusBadge
+import dev.lyo.hortay.ui.theme.profileAccentBrush
+import dev.lyo.hortay.ui.theme.profileRingBrush
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
 import java.text.NumberFormat
@@ -185,35 +188,59 @@ private fun ProfileHero(
     val avatarThumb = profile?.avatarThumb ?: seedAvatarThumb
     val avatarFileId = profile?.avatarFileId ?: seedAvatarFileId
 
+    val accentId = profile?.profileAccentColorId ?: -1
+    val accentBrush = profileAccentBrush(accentId)
+    val ringBrush = profileRingBrush(accentId)
+
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Avatar disc with a soft tonal ring — anchors the eye and dresses up the small
-        // initial-letter fallback so a fresh placeholder doesn't read as "broken".
-        Box(
-            modifier = Modifier
-                .size(96.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .border(
-                    width = 2.dp,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = CircleShape,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            TdAvatar(
-                name = resolvedName,
-                thumb = avatarThumb,
-                fileId = avatarFileId,
-                size = 88.dp,
-                textStyle = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.SemiBold),
+        // Accent band behind the avatar — the user's own profile gradient (or the brand
+        // fallback). Fades into the sheet surface so the name below stays on plain surface.
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(96.dp)
+                    .background(accentBrush),
             )
+            // Faint scrim so a bright user-chosen accent never fights the avatar ring.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(96.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, MaterialTheme.colorScheme.surface),
+                        ),
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .padding(top = 48.dp)
+                    .size(96.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .border(width = 2.5.dp, brush = ringBrush, shape = CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                TdAvatar(
+                    name = resolvedName,
+                    thumb = avatarThumb,
+                    fileId = avatarFileId,
+                    size = 88.dp,
+                    textStyle = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.SemiBold),
+                )
+            }
         }
         Spacer(Modifier.height(12.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = resolvedName,
@@ -276,6 +303,7 @@ private fun ProfileHero(
                     tint = MaterialTheme.colorScheme.secondaryContainer,
                 )
             }
+        }
         }
     }
 }
