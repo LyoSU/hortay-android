@@ -60,3 +60,6 @@ keystore.properties
 
 # --- Compose previews / generated reports ---
 reports/
+
+# Local planning artifacts (specs/plans) — never ship to prod
+docs/superpowers/
