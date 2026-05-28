@@ -219,6 +219,7 @@
     <string name="post_save">Beitrag speichern</string>
     <string name="post_unsave">Aus Gespeichert entfernen</string>
     <string name="post_copy_text">Text kopieren</string>
+    <string name="post_select_text">Text auswählen</string>
     <string name="post_share">Teilen</string>
     <string name="post_open_telegram">In Telegram öffnen</string>
     <string name="post_copied_toast">Kopiert</string>

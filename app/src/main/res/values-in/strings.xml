@@ -213,6 +213,7 @@
     <string name="post_save">Simpan kiriman</string>
     <string name="post_unsave">Hapus dari tersimpan</string>
     <string name="post_copy_text">Salin teks</string>
+    <string name="post_select_text">Pilih teks</string>
     <string name="post_share">Bagikan</string>
     <string name="post_open_telegram">Buka di Telegram</string>
     <string name="post_copied_toast">Disalin</string>

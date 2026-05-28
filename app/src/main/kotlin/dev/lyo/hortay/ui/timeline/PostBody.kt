@@ -53,6 +53,14 @@ fun PostBody(
     /** When true, text is rendered without `maxLines` clamps — used in detail screens. */
     expanded: Boolean = false,
     /**
+     * When true, the body is wrapped in a [SelectionContainer] so text can be selected.
+     * Decoupled from [expanded]: inline surfaces (feed, comment rows, comments anchor) keep
+     * this false because they own a long-press → action-sheet gesture that would race the
+     * selection detector. Selection happens only in the dedicated "Select text" sheet, which
+     * renders [PostBody] with `selectable = true` and no surrounding long-press.
+     */
+    selectable: Boolean = false,
+    /**
      * Translated body. When non-null, text/caption blocks render this instead of the
      * original `content.formatted` / `content.caption`. Other variants (sticker, poll,
      * location…) ignore the translation — they have nothing to translate.
@@ -77,14 +85,13 @@ fun PostBody(
 ) {
     val textLimit = if (expanded) Int.MAX_VALUE else 18
     val captionLimit = if (expanded) Int.MAX_VALUE else 12
-    // Text selection is gated on [expanded] — only the "full post" surfaces
-    // (comments-thread anchor in CommentsScreen, future detail screens)
-    // enable it. In the feed PostCard owns its own long-press via
-    // `combinedClickable { onLongClick = { sheetOpen = true } }` (post action
-    // sheet); wrapping the feed body in a SelectionContainer would race the
-    // long-press detector and a feed press would alternately raise the action
-    // sheet or the selection handles. Detail surfaces have no long-press card
-    // gesture so selection runs uncontested there.
+    // Text selection is gated on [selectable], NOT [expanded]. Every inline surface
+    // (feed, comment rows, comments anchor) owns a long-press → action-sheet gesture;
+    // wrapping the body in a SelectionContainer there would race the long-press detector
+    // (a press would alternately raise the sheet or the selection handles). So inline
+    // renders stay non-selectable and the action sheet offers an explicit "Select text"
+    // entry that re-renders this body with `selectable = true` in a sheet of its own,
+    // where no long-press competes.
     val body: @Composable () -> Unit = {
         Column {
             when (content) {
@@ -111,7 +118,7 @@ fun PostBody(
             }
         }
     }
-    if (expanded) {
+    if (selectable) {
         SelectionContainer(modifier = modifier) { body() }
     } else {
         Box(modifier = modifier) { body() }

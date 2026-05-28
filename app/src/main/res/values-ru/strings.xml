@@ -227,6 +227,7 @@
     <string name="post_save">Сохранить пост</string>
     <string name="post_unsave">Убрать из сохранённых</string>
     <string name="post_copy_text">Копировать текст</string>
+    <string name="post_select_text">Выделить текст</string>
     <string name="post_share">Поделиться</string>
     <string name="post_open_telegram">Открыть в Telegram</string>
     <string name="post_copied_toast">Скопировано</string>

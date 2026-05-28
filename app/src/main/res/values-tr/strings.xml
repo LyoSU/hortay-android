@@ -219,6 +219,7 @@
     <string name="post_save">Gönderiyi kaydet</string>
     <string name="post_unsave">Kaydedilenlerden kaldır</string>
     <string name="post_copy_text">Metni kopyala</string>
+    <string name="post_select_text">Metni seç</string>
     <string name="post_share">Paylaş</string>
     <string name="post_open_telegram">Telegram\'da aç</string>
     <string name="post_copied_toast">Kopyalandı</string>

@@ -9,6 +9,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -84,6 +86,9 @@ fun PostCard(
     onTapRevisions: (TimelinePost) -> Unit = {},
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
+    // Hosted at the card level (not inside the action sheet) so it survives the
+    // action sheet dismissing when the user taps "Select text".
+    var selectTextOpen by remember { mutableStateOf(false) }
 
     // Hand each section ONLY the primitive fields it actually paints. When TDLib emits
     // an UpdateMessageInteractionInfo and the post's `views` change, Compose passes a
@@ -344,8 +349,12 @@ fun PostCard(
         PostActionSheet(
             post = post,
             interactions = interactions,
+            onSelectText = { selectTextOpen = true },
             onDismiss = { sheetOpen = false },
         )
+    }
+    if (selectTextOpen) {
+        SelectTextSheet(post = post, onDismiss = { selectTextOpen = false })
     }
 }
 
@@ -1082,6 +1091,7 @@ private fun StatPill(
 private fun PostActionSheet(
     post: TimelinePost,
     interactions: PostInteractions,
+    onSelectText: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1154,6 +1164,11 @@ private fun PostActionSheet(
                     label = stringResource(R.string.post_copy_text),
                     onClick = { runAndDismiss { interactions.onCopyClick(post) } },
                 )
+                SheetItem(
+                    symbol = "description",
+                    label = stringResource(R.string.post_select_text),
+                    onClick = { runAndDismiss { onSelectText() } },
+                )
                 if (interactions.translateEnabled) {
                     val translated = interactions.isTranslated(post)
                     SheetItem(
@@ -1173,6 +1188,31 @@ private fun PostActionSheet(
                     symbol = "flag",
                     label = stringResource(R.string.report_action),
                     onClick = { runAndDismiss { interactions.onReportClick(post) } },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * "Select text" sheet — renders the post's caption inside a [SelectionContainer] with no
+ * surrounding long-press gesture, so the system text toolbar (Copy / Select all / Share)
+ * works uncontested. Opened from the action sheet's "Select text" item; this is how the
+ * feed reconciles "long-press = action menu" with "let me select part of the text".
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectTextSheet(post: TimelinePost, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            SelectionContainer {
+                Text(
+                    text = post.content.captionPlain,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier
+                        .padding(horizontal = 24.dp)
+                        .padding(bottom = 40.dp),
                 )
             }
         }

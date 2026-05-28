@@ -217,6 +217,7 @@
     <string name="post_save">ذخیره پست</string>
     <string name="post_unsave">حذف از ذخیره‌شده‌ها</string>
     <string name="post_copy_text">کپی متن</string>
+    <string name="post_select_text">انتخاب متن</string>
     <string name="post_share">اشتراک‌گذاری</string>
     <string name="post_open_telegram">باز کردن در Telegram</string>
     <string name="post_copied_toast">کپی شد</string>

@@ -13,8 +13,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -559,6 +563,7 @@ fun CommentsScreen(
                         if (pickerOpen) {
                             CommentReactionSheet(
                                 currentReactions = row.message.reactions,
+                                commentText = row.message.content.captionPlain,
                                 fetchAvailableReactions = { fetchAvailableReactions(s.threadChatId, row.message.id) },
                                 onPick = { kind, alreadyChosen ->
                                     onReactionToggle(
@@ -833,6 +838,7 @@ private fun CommentBubble(
 @Composable
 private fun CommentReactionSheet(
     currentReactions: Reactions,
+    commentText: String,
     fetchAvailableReactions: suspend () -> List<ReactionKind>,
     onPick: (kind: ReactionKind, alreadyChosen: Boolean) -> Unit,
     onDismiss: () -> Unit,
@@ -840,18 +846,23 @@ private fun CommentReactionSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val canCopy = commentText.isNotBlank()
     var available by remember { mutableStateOf<List<ReactionKind>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         available = fetchAvailableReactions()
         loaded = true
     }
-    // No reactions available for this chat → don't leave an empty sheet hanging.
+    // Nothing to offer at all (no reactions AND no text) → don't leave an empty sheet.
     LaunchedEffect(loaded, available) {
-        if (loaded && available.isEmpty()) onDismiss()
+        if (loaded && available.isEmpty() && !canCopy) onDismiss()
     }
     val chosenKeys = remember(currentReactions) {
         currentReactions.items.filter { it.isChosen }.map { it.kind.stableKey }.toSet()
+    }
+    fun dismissAnimated() {
+        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
     }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.padding(bottom = 24.dp)) {
@@ -862,19 +873,47 @@ private fun CommentReactionSheet(
                 ) {
                     LoadingIndicator()
                 }
-            } else if (available.isNotEmpty()) {
-                ReactionPickerStrip(
-                    reactions = available,
-                    chosenKeys = chosenKeys,
-                    onPick = { kind ->
-                        val already = kind.stableKey in chosenKeys
-                        haptics.performHapticFeedback(
-                            if (already) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+            } else {
+                if (available.isNotEmpty()) {
+                    ReactionPickerStrip(
+                        reactions = available,
+                        chosenKeys = chosenKeys,
+                        onPick = { kind ->
+                            val already = kind.stableKey in chosenKeys
+                            haptics.performHapticFeedback(
+                                if (already) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+                            )
+                            onPick(kind, already)
+                            dismissAnimated()
+                        },
+                    )
+                }
+                if (canCopy) {
+                    if (available.isNotEmpty()) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                         )
-                        onPick(kind, already)
-                        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
-                    },
-                )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(role = Role.Button) {
+                                val cm = context.getSystemService(ClipboardManager::class.java)
+                                cm?.setPrimaryClip(ClipData.newPlainText("comment", commentText))
+                                dismissAnimated()
+                            }
+                            .padding(horizontal = 24.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Symbol(name = "content_copy", tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 22.dp)
+                        Spacer(Modifier.width(20.dp))
+                        Text(
+                            text = stringResource(R.string.post_copy_text),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
             }
         }
     }

@@ -10,7 +10,8 @@
 - Screen readers now announce which posts are unread, matching the unread strip sighted users see.
 - Screen readers now announce the "new posts" divider as a section heading, so the read/unread boundary is reachable by heading navigation.
 - Reactions, bookmarks, poll votes and the main action buttons now answer with a subtle haptic tap.
-- Long-press a post (or a comment's pinned post) to react with any available reaction, not just the ones already on it — picked from a Telegram-style strip at the top of the menu.
+- Long-press a post or a comment to react with any available reaction, not just the ones already on it — picked from a Telegram-style strip at the top of the menu.
+- The post menu now has a "Select text" action that opens the text so you can select and copy any part of it; long-pressing a comment also offers "Copy text".
 - Channel posts now show their forward count alongside views and comments.
 
 ### Changed

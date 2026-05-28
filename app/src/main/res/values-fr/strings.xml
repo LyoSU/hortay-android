@@ -223,6 +223,7 @@
     <string name="post_save">Enregistrer la publication</string>
     <string name="post_unsave">Retirer des enregistrés</string>
     <string name="post_copy_text">Copier le texte</string>
+    <string name="post_select_text">Sélectionner le texte</string>
     <string name="post_share">Partager</string>
     <string name="post_open_telegram">Ouvrir dans Telegram</string>
     <string name="post_copied_toast">Copié</string>

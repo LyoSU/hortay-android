@@ -233,6 +233,7 @@
     <string name="post_save">حفظ المنشور</string>
     <string name="post_unsave">إزالة من المحفوظات</string>
     <string name="post_copy_text">نسخ النص</string>
+    <string name="post_select_text">تحديد النص</string>
     <string name="post_share">مشاركة</string>
     <string name="post_open_telegram">فتح في Telegram</string>
     <string name="post_copied_toast">تم النسخ</string>

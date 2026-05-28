@@ -223,6 +223,7 @@
     <string name="post_save">Salva post</string>
     <string name="post_unsave">Rimuovi dai salvati</string>
     <string name="post_copy_text">Copia testo</string>
+    <string name="post_select_text">Seleziona testo</string>
     <string name="post_share">Condividi</string>
     <string name="post_open_telegram">Apri in Telegram</string>
     <string name="post_copied_toast">Copiato</string>
