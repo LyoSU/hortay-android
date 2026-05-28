@@ -305,6 +305,57 @@ class ArchiveRepositoryTest {
         assertEquals(1, webRows.size)
     }
 
+    /**
+     * A corrupt or version-drifted blob (e.g. a user installing an older build
+     * over a newer archive.db) must NOT crash the read flow. [ContentBlobCodec]
+     * promises a graceful "unsupported" surface; [ArchiveRepository.toDomain]
+     * realises it by falling back to an empty placeholder so the rest of the
+     * revisions still render.
+     */
+    @Test
+    fun observeRevisions_corruptBlob_yieldsPlaceholderInsteadOfCrashing() = runTest {
+        val (repo, db) = newRepo()
+        // Bad magic — decode() throws IllegalArgumentException.
+        db.postSnapshotQueries.insert(
+            source_kind = "TDLIB", source_key = "42", message_key = "100",
+            album_key = null, kind = "VERSION", seen_at_ms = 500L, edited_at_ms = null,
+            content_kind = "tdlib", content_blob = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8),
+            content_hash = "deadbeef", text_preview = "garbage",
+            media_minithumb = null, deleted_msg_keys = null, is_comment = 0,
+        )
+
+        val revisions = repo.observeRevisions(ChatRef.tdlib(42), "100").first()
+        assertEquals(1, revisions.size)
+        assertEquals("", (revisions[0].content as ArchivedContent.Tdlib).meta.text)
+    }
+
+    /**
+     * Version drift: a valid TDLB magic but a future version number. Same
+     * graceful-degradation contract — no crash, empty placeholder.
+     */
+    @Test
+    fun observe_versionDriftBlob_doesNotCrashFilterFlow() = runTest {
+        val (repo, db) = newRepo()
+        val future = java.io.ByteArrayOutputStream().also { out ->
+            java.io.DataOutputStream(out).use { dos ->
+                dos.writeInt(0x54444C42) // "TDLB" magic
+                dos.writeInt(99)         // unsupported version
+                dos.write(byteArrayOf(0, 1, 2))
+            }
+        }.toByteArray()
+        db.postSnapshotQueries.insert(
+            source_kind = "TDLIB", source_key = "42", message_key = "100",
+            album_key = null, kind = "VERSION", seen_at_ms = 500L, edited_at_ms = null,
+            content_kind = "tdlib", content_blob = future,
+            content_hash = "cafe", text_preview = "future",
+            media_minithumb = null, deleted_msg_keys = null, is_comment = 0,
+        )
+
+        val all = repo.observe(ArchiveFilter()).first()
+        assertEquals(1, all.size)
+        assertEquals("", (all[0].content as ArchivedContent.Tdlib).meta.text)
+    }
+
     private fun toContent(row: dev.lyo.hortay.data.archive.db.PostSnapshot): ArchivedContent.Tdlib =
         ArchivedContent.Tdlib(ContentBlobCodec.decode(row.content_blob))
 }

@@ -93,7 +93,7 @@ class ArchiveRepository(
      * capture path then saw the edit row as "latest" and either dropped the
      * baseline as a dup (when content matched) or wrote it with `clock()` as
      * `seen_at_ms` (when it didn't) — both broke the timeline ordering. The
-     * `selectBaselineForMessage` existence check is invariant under that race.
+     * `selectFirstSeenForMessage` existence check is invariant under that race.
      *
      * @param meta extracted from `TdApi.MessageContent`. Repository stays TDLib-free.
      * @param originalDateMs the post's publication time in ms. Required —
@@ -412,11 +412,13 @@ class ArchiveRepository(
     suspend fun purge(ids: List<Long>) {
         if (ids.isEmpty()) return
         val shasToRelease: List<String> = writeMutex.withLock {
-            val blobs = db.postSnapshotQueries.selectBlobsByIds(ids).executeAsList()
-            db.postSnapshotQueries.deleteByIds(ids)
-            blobs.mapNotNull { blob ->
-                runCatching { ContentBlobCodec.decode(blob).mediaRef?.localArchiveSha }
-                    .getOrNull()?.takeIf { it.isNotEmpty() }
+            db.transactionWithResult {
+                val blobs = db.postSnapshotQueries.selectBlobsByIds(ids).executeAsList()
+                db.postSnapshotQueries.deleteByIds(ids)
+                blobs.mapNotNull { blob ->
+                    runCatching { ContentBlobCodec.decode(blob).mediaRef?.localArchiveSha }
+                        .getOrNull()?.takeIf { it.isNotEmpty() }
+                }
             }
         }
         // Release outside the writeMutex: mediaStore takes its own mutex, and
@@ -600,8 +602,16 @@ class ArchiveRepository(
             db.postSnapshotQueries.deleteByCap(cap.toLong())
             return
         }
-        val blobs = db.postSnapshotQueries.selectBlobsByCap(cap.toLong()).executeAsList()
-        db.postSnapshotQueries.deleteByCap(cap.toLong())
+        // Atomic select+delete: deleteByCap recomputes MAX(id) at delete time,
+        // so a write landing between the SELECT and the DELETE would shift the
+        // cutoff and evict a row whose blob we never collected — orphaning its
+        // media file. The transaction pins both statements to one consistent
+        // snapshot (the nightly ArchiveSweep wraps the same pair likewise).
+        val blobs = db.transactionWithResult {
+            val snapshot = db.postSnapshotQueries.selectBlobsByCap(cap.toLong()).executeAsList()
+            db.postSnapshotQueries.deleteByCap(cap.toLong())
+            snapshot
+        }
         if (blobs.isEmpty()) return
         rs.launch {
             for (blob in blobs) {
@@ -615,21 +625,47 @@ class ArchiveRepository(
         }
     }
 
-    private fun toDomain(row: dev.lyo.hortay.data.archive.db.PostSnapshot): PostSnapshot {
-        val content = when (row.content_kind) {
-            "tdlib" -> ArchivedContent.Tdlib(ContentBlobCodec.decode(row.content_blob))
-            "web" -> ArchivedContent.Web(
-                webPostFromJson(
-                    Json.decodeFromString(JsonObject.serializer(),
-                        row.content_blob.toString(Charsets.UTF_8))
+    /** Empty stand-in for a row we can't decode — see [decodeContent]. */
+    private fun unsupportedContent(): ArchivedContent.Tdlib = ArchivedContent.Tdlib(
+        TdlibContentMeta(
+            text = "", entitiesJson = "[]",
+            mediaSummaryJson = null, pollJson = null,
+            forwardJson = null, replyJson = null,
+        ),
+    )
+
+    /**
+     * Decode a row's `content_blob` into an [ArchivedContent], degrading
+     * gracefully on failure.
+     *
+     * [ContentBlobCodec] is versioned precisely so a format drift surfaces as
+     * "snapshot format unsupported" rather than a deserialization crash — but
+     * that promise only holds if the read path actually catches the throw. A
+     * single corrupt blob, or an install of an older build over a newer
+     * `archive.db` (decode hits `require(version == VERSION)`), would otherwise
+     * propagate out of this `map` and terminate the entire [observe] /
+     * [observeRevisions] flow, blanking the whole archive screen. Every other
+     * blob-reading path already wraps decode in `runCatching`
+     * ([buildTombstoneFromJoinedRow], [purge], [maybeEvictByCap], ArchiveSweep);
+     * this was the last one. The empty placeholder matches the unknown-`content_kind`
+     * fallback so the row renders as a blank revision, not an exception.
+     */
+    private fun decodeContent(row: dev.lyo.hortay.data.archive.db.PostSnapshot): ArchivedContent =
+        runCatching {
+            when (row.content_kind) {
+                "tdlib" -> ArchivedContent.Tdlib(ContentBlobCodec.decode(row.content_blob))
+                "web" -> ArchivedContent.Web(
+                    webPostFromJson(
+                        Json.decodeFromString(JsonObject.serializer(),
+                            row.content_blob.toString(Charsets.UTF_8))
+                    )
                 )
-            )
-            else -> ArchivedContent.Tdlib(TdlibContentMeta(
-                text = "", entitiesJson = "[]",
-                mediaSummaryJson = null, pollJson = null,
-                forwardJson = null, replyJson = null,
-            ))
-        }
+                else -> unsupportedContent()
+            }
+        }.getOrElse { unsupportedContent() }
+
+    private fun toDomain(row: dev.lyo.hortay.data.archive.db.PostSnapshot): PostSnapshot {
+        val content = decodeContent(row)
         val deletedKeys = row.deleted_msg_keys?.let {
             Json.decodeFromString(ListSerializer(String.serializer()), it)
         } ?: emptyList()

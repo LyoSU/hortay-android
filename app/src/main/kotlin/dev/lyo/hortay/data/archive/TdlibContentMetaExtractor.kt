@@ -147,7 +147,11 @@ object TdlibContentMetaExtractor {
 
     private fun mediaSummary(c: TdApi.MessageContent): String? = when (c) {
         is TdApi.MessagePhoto -> {
-            val largest = c.photo.sizes.lastOrNull()
+            // Pick the largest size the same way [extractMediaRef] does — the
+            // normalizer hashes the w/h emitted here, so selecting by area
+            // keeps the hash geometry consistent with the displayed media
+            // instead of trusting `sizes` to be ordered ascending.
+            val largest = c.photo.sizes.maxByOrNull { it.width.toLong() * it.height }
             buildJsonObject {
                 put("type", JsonPrimitive("photo"))
                 put("w", JsonPrimitive(largest?.width ?: 0))

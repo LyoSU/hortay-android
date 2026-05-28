@@ -27,19 +27,34 @@ class ArchiveSweep(
         val s = settings.value
         val retentionMs = if (s.retentionDays == Int.MAX_VALUE) Long.MAX_VALUE
                           else s.retentionDays.toLong() * 86_400_000L
+        // Each select-blobs+delete pair runs inside one transaction so a
+        // concurrent capture (running under ArchiveRepository.writeMutex, but
+        // NOT this sweep's mutex) can't slip a write between the SELECT and the
+        // DELETE. That matters most for the cap branch: deleteByCap recomputes
+        // `MAX(id)` at delete time, so an interleaved insert would shift the
+        // cutoff and evict a row whose blob we never collected — its media file
+        // would then never have its refcount released and leak on disk. On the
+        // single-connection Android/JDBC drivers a write transaction serialises
+        // against every other writer, making the pair effectively atomic.
         if (retentionMs != Long.MAX_VALUE) {
             val cutoff = clock() - retentionMs
-            val shasToRelease = collectMediaShas(
-                db.postSnapshotQueries.selectBlobsOlderThan(cutoff).executeAsList(),
-            )
-            db.postSnapshotQueries.deleteOlderThan(cutoff)
+            val shasToRelease = db.transactionWithResult {
+                val shas = collectMediaShas(
+                    db.postSnapshotQueries.selectBlobsOlderThan(cutoff).executeAsList(),
+                )
+                db.postSnapshotQueries.deleteOlderThan(cutoff)
+                shas
+            }
             releaseAll(shasToRelease)
         }
         if (s.maxRecords != Int.MAX_VALUE) {
-            val shasToRelease = collectMediaShas(
-                db.postSnapshotQueries.selectBlobsByCap(s.maxRecords.toLong()).executeAsList(),
-            )
-            db.postSnapshotQueries.deleteByCap(s.maxRecords.toLong())
+            val shasToRelease = db.transactionWithResult {
+                val shas = collectMediaShas(
+                    db.postSnapshotQueries.selectBlobsByCap(s.maxRecords.toLong()).executeAsList(),
+                )
+                db.postSnapshotQueries.deleteByCap(s.maxRecords.toLong())
+                shas
+            }
             releaseAll(shasToRelease)
         }
     }

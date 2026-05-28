@@ -1872,7 +1872,7 @@ class PostsRepository(
     /**
      * Captures the as-published baseline VERSION row for a freshly-ingested
      * message. The archive repository pins `seen_at_ms = originalDateMs` and
-     * uses `selectBaselineForMessage` existence — not content hash — as its
+     * uses `selectFirstSeenForMessage` existence — not content hash — as its
      * idempotency check, so this call is race-safe against an
      * `UpdateMessageEdited` that lands for the same message before the
      * baseline coroutine wins `writeMutex` (see
