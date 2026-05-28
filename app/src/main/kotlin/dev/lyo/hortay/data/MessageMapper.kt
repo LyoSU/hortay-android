@@ -91,6 +91,7 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
             avatarFileId = displayFileId,
             content = MessageContentMapper.map(message.content, res),
             views = message.interactionInfo?.viewCount ?: 0,
+            forwardCount = message.interactionInfo?.forwardCount ?: 0,
             date = message.date.toLong() * 1000L,
             editDate = message.editDate.toLong() * 1000L,
             forwardOrigin = message.forwardInfo?.origin?.let { mapForwardOrigin(it) },

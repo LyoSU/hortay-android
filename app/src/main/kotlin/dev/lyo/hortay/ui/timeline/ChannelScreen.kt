@@ -606,6 +606,10 @@ fun ChannelScreen(
                     if (!ok) repo.applyOptimisticReaction(post.chatId, target, item.kind, item.isChosen)
                 }
             },
+            availableReactions = { post ->
+                val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
+                channelActions.availableReactions(post.chatId, target)
+            },
             onPostClick = { post ->
                 markPostReadState.value(post)
                 onOpenCommentsState.value(post)

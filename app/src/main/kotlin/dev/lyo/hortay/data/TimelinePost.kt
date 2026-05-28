@@ -42,6 +42,8 @@ data class TimelinePost(
     val content: PostContent,
     /** Channel post views. Always 0 for comments. */
     val views: Int,
+    /** Channel post forward count. Always 0 for comments. */
+    val forwardCount: Int = 0,
     val date: Long,
     /** Server-side edit timestamp; 0 if never edited. */
     val editDate: Long,

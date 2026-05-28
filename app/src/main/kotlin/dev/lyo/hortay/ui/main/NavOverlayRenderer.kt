@@ -291,6 +291,9 @@ private fun RenderNavEntry(
                     }
                 }
             },
+            fetchAvailableReactions = { chatId, messageId ->
+                graph.channelActions.availableReactions(chatId, messageId)
+            },
             onPollVote = { chatId, messageId, indices ->
                 // Optimistic flip on the anchor's poll → SetPollAnswer → clear pending.
                 // The pinned post in CommentsScreen is always the feed's anchor; the

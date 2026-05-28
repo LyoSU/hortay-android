@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +48,7 @@ import dev.lyo.hortay.data.ReplyPreview
 import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.isUnreadAt
+import dev.lyo.hortay.data.stableKey
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import dev.lyo.hortay.ui.icons.Symbol
@@ -304,10 +306,11 @@ fun PostCard(
                     )
                 }
 
-                if (!post.isDeleted && (post.views > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty())) {
+                if (!post.isDeleted && (post.views > 0 || post.forwardCount > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty())) {
                     Spacer(Modifier.height(10.dp))
                     ActionRow(
                         views = post.views,
+                        forwardCount = post.forwardCount,
                         commentCount = post.commentCount,
                         reactions = post.reactions,
                         onCommentsClick = { interactions.onPostClick(post) },
@@ -820,6 +823,7 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
 @Composable
 private fun ActionRow(
     views: Int,
+    forwardCount: Int,
     commentCount: Int?,
     reactions: dev.lyo.hortay.data.Reactions,
     onCommentsClick: () -> Unit,
@@ -857,8 +861,16 @@ private fun ActionRow(
                 onClick = onCommentsClick,
             )
         }
+        // Forward (share) count — read-only, mirrors the stat Telegram shows on a
+        // channel post. Uses the `share` glyph (distinct from the action sheet's
+        // `ios_share`) since a forward IS a share from the reader's point of view.
+        val hasForwards = forwardCount > 0
+        if (hasForwards) {
+            if (views > 0 || hasComments) Spacer(Modifier.width(14.dp))
+            StatPill(symbol = "share", text = formatViews(forwardCount))
+        }
         if (reactions.items.isNotEmpty()) {
-            if (views > 0 || hasComments) {
+            if (views > 0 || hasComments || hasForwards) {
                 Spacer(Modifier.width(14.dp))
                 VerticalSeparator()
                 Spacer(Modifier.width(14.dp))
@@ -1081,6 +1093,42 @@ private fun PostActionSheet(
         sheetState = sheetState,
     ) {
         Column(modifier = Modifier.padding(bottom = 24.dp)) {
+            // Reaction picker strip — cast a reaction the post doesn't already carry,
+            // Telegram-style. Available reactions are fetched once when the sheet opens
+            // (a single on-demand RPC; empty in guest mode → strip is hidden).
+            var available by remember(post.id) { mutableStateOf<List<ReactionKind>>(emptyList()) }
+            LaunchedEffect(post.id) { available = interactions.availableReactions(post) }
+            if (available.isNotEmpty()) {
+                val chosenKeys = remember(post.reactions) {
+                    post.reactions.items.filter { it.isChosen }.map { it.kind.stableKey }.toSet()
+                }
+                ReactionPickerStrip(
+                    reactions = available,
+                    chosenKeys = chosenKeys,
+                    onPick = { kind ->
+                        val already = kind.stableKey in chosenKeys
+                        haptics.performHapticFeedback(
+                            if (already) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+                        )
+                        runAndDismiss {
+                            interactions.onReactionToggle(post, ReactionItem(kind, count = 0, isChosen = already))
+                        }
+                    },
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                )
+            }
+            // Primary actions live in an Expressive ButtonGroup; Comments only when the
+            // channel has a linked discussion group (commentCount != null).
+            PostQuickActions(
+                showComments = post.commentCount != null,
+                onComments = { runAndDismiss { interactions.onPostClick(post) } },
+                onShare = { runAndDismiss { interactions.onShareClick(post) } },
+                onOpen = { runAndDismiss { interactions.onOpenClick(post) } },
+            )
+            // Secondary actions stay a vertical list.
             SheetItem(
                 symbol = "bookmark",
                 label = stringResource(if (isBookmarked) R.string.post_unsave else R.string.post_save),
@@ -1113,16 +1161,6 @@ private fun PostActionSheet(
                     )
                 }
             }
-            SheetItem(
-                symbol = "ios_share",
-                label = stringResource(R.string.post_share),
-                onClick = { runAndDismiss { interactions.onShareClick(post) } },
-            )
-            SheetItem(
-                symbol = "open_in_new",
-                label = stringResource(R.string.post_open_telegram),
-                onClick = { runAndDismiss { interactions.onOpenClick(post) } },
-            )
             if (interactions.canReport(post)) {
                 SheetItem(
                     symbol = "flag",
@@ -1131,6 +1169,100 @@ private fun PostActionSheet(
                 )
             }
         }
+    }
+}
+
+/**
+ * Telegram-style reaction picker: a horizontally-scrollable row of circular reaction
+ * targets. Reactions the user already cast read as "selected" (tertiaryContainer); the
+ * rest sit on surfaceContainerHigh. Tapping casts (or retracts) via the same optimistic
+ * [PostInteractions.onReactionToggle] path the inline chips use. The emoji glyph itself
+ * is the screen-reader label for unicode reactions; custom-emoji targets stay unlabeled,
+ * matching the existing [ReactionChip] a11y contract.
+ */
+@Composable
+private fun ReactionPickerStrip(
+    reactions: List<ReactionKind>,
+    chosenKeys: Set<String>,
+    onPick: (ReactionKind) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        reactions.forEach { kind ->
+            val chosen = kind.stableKey in chosenKeys
+            val background =
+                if (chosen) MaterialTheme.colorScheme.tertiaryContainer
+                else MaterialTheme.colorScheme.surfaceContainerHigh
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(background)
+                    .clickable(role = Role.Button) { onPick(kind) },
+                contentAlignment = Alignment.Center,
+            ) {
+                when (kind) {
+                    is ReactionKind.Emoji -> Text(
+                        text = kind.text,
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
+                        customEmojiId = kind.customEmojiId,
+                        modifier = Modifier.size(24.dp),
+                        contentDescription = null,
+                    )
+                    // Paid reactions are filtered out upstream (can't be cast from Hortay).
+                    is ReactionKind.Paid -> Unit
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Primary post actions as a Material 3 Expressive [ButtonGroup] — connected buttons with
+ * the press-squeeze morph. Comments is conditional on a linked discussion group existing.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun PostQuickActions(
+    showComments: Boolean,
+    onComments: () -> Unit,
+    onShare: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    val commentsLabel = stringResource(R.string.archive_scope_comments)
+    val shareLabel = stringResource(R.string.post_share)
+    val openLabel = stringResource(R.string.post_open_telegram)
+    ButtonGroup(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        // clickableItem renders [label] as the button text; [icon] is the leading glyph.
+        if (showComments) {
+            clickableItem(
+                onClick = onComments,
+                label = commentsLabel,
+                icon = { Symbol(name = "chat_bubble", size = 18.dp) },
+            )
+        }
+        clickableItem(
+            onClick = onShare,
+            label = shareLabel,
+            icon = { Symbol(name = "ios_share", size = 18.dp) },
+        )
+        clickableItem(
+            onClick = onOpen,
+            label = openLabel,
+            icon = { Symbol(name = "open_in_new", size = 18.dp) },
+        )
     }
 }
 

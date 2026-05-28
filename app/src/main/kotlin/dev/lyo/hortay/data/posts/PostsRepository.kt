@@ -2052,6 +2052,12 @@ class PostsRepository(
                         // updates that flow through this loop — never downgrades a card
                         // that already showed a higher number.
                         views = maxOf(post.views, info.viewCount),
+                        // forwardCount is monotonic like views; the same per-album-member
+                        // burst can fire against this anchor's idx, so take the max so a
+                        // lagging member's update never downgrades the shown count. The
+                        // drained buffer already kept the prior non-zero value when a
+                        // heartbeat reported 0 (see handleInteractionInfo merge).
+                        forwardCount = maxOf(post.forwardCount, info.forwardCount),
                         // Preserve current reactions/comments when the inner field is null —
                         // TDLib often omits sub-fields it hasn't recomputed. Per
                         // tdlib/td#2312, only the first album member ever carries non-null

@@ -10,8 +10,11 @@
 - Screen readers now announce which posts are unread, matching the unread strip sighted users see.
 - Screen readers now announce the "new posts" divider as a section heading, so the read/unread boundary is reachable by heading navigation.
 - Reactions, bookmarks, poll votes and the main action buttons now answer with a subtle haptic tap.
+- Long-press a post (or a comment's pinned post) to react with any available reaction, not just the ones already on it — picked from a Telegram-style strip at the top of the menu.
+- Channel posts now show their forward count alongside views and comments.
 
 ### Changed
+- The post long-press menu now leads with Comments, Share and Open as a single button group, with the remaining actions listed below.
 - Spoiler reveals and the fullscreen photo viewer now honour the system "remove animations" setting, staying still for motion-sensitive users.
 - "Next unread" and home-tap jumps now land your oldest still-unread post at the top of the screen with its header fully visible and a brief highlight, and step forward to the next unread as you read — instead of bouncing back onto a post you had already opened or landing it cut off under the bar.
 - Tapping a post's channel name now opens that channel scrolled straight to the post you tapped, with a brief highlight, instead of landing at your last-read position.

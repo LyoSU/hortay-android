@@ -70,6 +70,37 @@ class ChannelActionsRepository(
         return outcome.isSuccess || outcome.exceptionOrNull().isTdSilent()
     }
 
+    /** Top + recent + popular reactions available for [messageId] in [chatId], de-duplicated
+     *  and ordered for a picker strip. Returns empty on failure (cosmetic read — stays silent,
+     *  does NOT surface to UserMessageBus). Custom-emoji reactions are included; toggleReaction
+     *  already routes premium-gated rejections through the existing error path on tap. */
+    suspend fun availableReactions(chatId: Long, messageId: Long): List<ReactionKind> {
+        val available = runCatching {
+            // rowSize is the picker layout hint (TDLib enforces 5-25); the value doesn't
+            // affect which reactions come back, only their intended per-row grouping.
+            td.send(TdApi.GetMessageAvailableReactions(chatId, messageId, /* rowSize */ 8))
+        }
+            .warnUnlessCancelled(TAG, "availableReactions($chatId, $messageId)")
+            .getOrNull() ?: return emptyList()
+        val ordered = sequenceOf(
+            available.topReactions,
+            available.recentReactions,
+            available.popularReactions,
+        )
+            .filterNotNull()
+            .flatMap { it.asSequence() }
+            .mapNotNull { it.type.toReactionKind() }
+        val seen = HashSet<String>()
+        val result = ArrayList<ReactionKind>(REACTION_STRIP_CAP)
+        for (kind in ordered) {
+            if (seen.add(kind.stableKey)) {
+                result.add(kind)
+                if (result.size >= REACTION_STRIP_CAP) break
+            }
+        }
+        return result
+    }
+
     /**
      * Cast (or retract) a vote on a poll. [optionIds] is the 0-based [PollOption.index]
      * array TDLib expects in [TdApi.SetPollAnswer.optionIds]:
@@ -133,6 +164,16 @@ class ChannelActionsRepository(
         // gated, so reaching this branch in production would be a bug;
         // surface it as an IllegalStateException for the crash reporter.
         is ReactionKind.Paid -> error("Paid reactions are read-only in this client")
+    }
+
+    // Inverse of [toTd] for the picker read path. Mirrors the forward mapping field-for-field:
+    // ReactionTypeEmoji.emoji → Emoji(text), ReactionTypeCustomEmoji.customEmojiId → CustomEmoji.
+    // ReactionTypePaid is dropped — we can't send paid reactions (see [toTd]), so offering one in
+    // the picker would dead-end; the inbound star count still renders via the post's own buckets.
+    private fun TdApi.ReactionType.toReactionKind(): ReactionKind? = when (this) {
+        is TdApi.ReactionTypeEmoji -> ReactionKind.Emoji(emoji)
+        is TdApi.ReactionTypeCustomEmoji -> ReactionKind.CustomEmoji(customEmojiId)
+        else -> null
     }
 
     /**
@@ -335,6 +376,9 @@ class ChannelActionsRepository(
         // 365 days. TDLib treats very-large positive muteFor as "muted indefinitely"; this
         // matches the official client's "Mute forever" preset.
         const val MUTE_FOREVER_SECONDS = 365 * 24 * 60 * 60
+        // Hard cap on the de-duplicated picker strip so a chat with an unusually long
+        // available-reaction list can't blow up the row TDLib hands back.
+        const val REACTION_STRIP_CAP = 24
     }
 }
 

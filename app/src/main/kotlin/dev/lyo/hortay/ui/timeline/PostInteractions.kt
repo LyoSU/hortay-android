@@ -3,6 +3,7 @@ package dev.lyo.hortay.ui.timeline
 import androidx.compose.runtime.Immutable
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.ReactionItem
+import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.TimelinePost
 
 /**
@@ -54,6 +55,13 @@ class PostInteractions(
     val translateEnabled: Boolean = false,
     /** Toggle the user's reaction (emoji or custom-emoji) on the given post. */
     val onReactionToggle: (post: TimelinePost, item: ReactionItem) -> Unit = { _, _ -> },
+    /**
+     * Fetch the reactions available to cast on [post] — the picker strip in the
+     * long-press sheet uses this to offer reactions the user hasn't applied yet.
+     * On-demand per-message read (one call per sheet open, FLOOD_WAIT-safe). Default
+     * returns empty so guest mode / previews / tests render no picker.
+     */
+    val availableReactions: suspend (post: TimelinePost) -> List<ReactionKind> = { emptyList() },
     /**
      * Cast a poll vote against [post]. [chosenIndices] is the post-tap selection set keyed
      * off [dev.lyo.hortay.data.PollOption.index]: empty = retract (regular polls only),

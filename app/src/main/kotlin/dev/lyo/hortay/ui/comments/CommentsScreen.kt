@@ -168,6 +168,13 @@ fun CommentsScreen(
      */
     onReactionToggle: (chatId: Long, messageId: Long, snapshot: Reactions, kind: ReactionKind, isChosen: Boolean) -> Unit = { _, _, _, _, _ -> },
     /**
+     * Fetch the reactions available to cast on a message (anchor post or comment) so the
+     * long-press picker can offer reactions not yet applied. On-demand per-message read.
+     * Default returns empty (guest mode / previews / tests show no picker). Production
+     * wiring routes to [ChannelActionsRepository.availableReactions].
+     */
+    fetchAvailableReactions: suspend (chatId: Long, messageId: Long) -> List<ReactionKind> = { _, _ -> emptyList() },
+    /**
      * Fired when the user votes on the pinned anchor post's poll. Default no-op so the
      * screen stays self-contained in previews/tests; production wiring lives in
      * [MainScaffold] and routes to `PostsRepository.applyOptimisticPollAnswer` +
@@ -234,6 +241,7 @@ fun CommentsScreen(
         onAuthorChatClick,
         onQuotedSourceClick,
         onReactionToggle,
+        fetchAvailableReactions,
         onPollVote,
     ) {
         PostInteractions(
@@ -252,6 +260,10 @@ fun CommentsScreen(
             onReactionToggle = { p, item ->
                 val target = p.albumMessageIds.firstOrNull() ?: p.id
                 onReactionToggle(p.chatId, target, p.reactions, item.kind, item.isChosen)
+            },
+            availableReactions = { p ->
+                val target = p.albumMessageIds.firstOrNull() ?: p.id
+                fetchAvailableReactions(p.chatId, target)
             },
             // Poll votes on the pinned post follow the same pattern as the feed — the
             // album-anchor convention applies, but in practice polls never share a
