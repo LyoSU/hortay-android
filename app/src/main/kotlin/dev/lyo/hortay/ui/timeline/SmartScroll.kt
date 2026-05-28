@@ -41,62 +41,20 @@ internal const val SMART_SCROLL_THRESHOLD_ROWS = 8
 
 /**
  * Jump or animate to [target] based on distance from current first-visible
- * index. Used by all three "jump" pills: NewPostsPill, UnreadCounterPill,
- * home-tap. Suspends until scroll completes.
- *
- * [centerTarget]: land [target] nicely (the jump-to-post idiom). A post that
- * FITS the viewport sits centred — you see the whole card; a post TALLER than
- * the viewport top-aligns so you read from the start instead of having both
- * ends clipped. The offset math and the forward/reverse sign handling live in
- * the pure, unit-tested [alignedScrollOffset]. Posts at the very edge of the
- * list (nothing on one side to fill the gap) clamp naturally.
- *
- * Landing needs the target's measured height, so when the target isn't already
- * laid out we first bring it on-screen with an INSTANT [scrollToItem] and then
- * position it — both passes instant in that case, so the user never sees a
- * snap-then-animate jerk. When the target is already visible we animate straight
- * to the resolved offset in one smooth motion.
+ * index. Used by callers that want a plain top-anchored landing (NewPostsPill
+ * arrival, caught-up fallback for home-tap and UnreadCounterPill). Divider-
+ * anchored landings (the canonical "next unread") go through [scrollToBoundary]
+ * instead. Suspends until scroll completes.
  */
 internal suspend fun LazyListState.smartScrollTo(
     target: Int,
     threshold: Int = SMART_SCROLL_THRESHOLD_ROWS,
-    centerTarget: Boolean = false,
 ) {
     val current = firstVisibleItemIndex
-    val kind = scrollKindFor(current, target, threshold)
-    if (!centerTarget) {
-        when (kind) {
-            ScrollKind.Instant -> scrollToItem(target)
-            ScrollKind.Animated -> animateScrollToItem(target)
-        }
-        return
+    when (scrollKindFor(current, target, threshold)) {
+        ScrollKind.Instant -> scrollToItem(target)
+        ScrollKind.Animated -> animateScrollToItem(target)
     }
-    val alreadyVisible = layoutInfo.visibleItemsInfo.any { it.index == target }
-    if (!alreadyVisible) scrollToItem(target)
-    val offset = centeredOffsetFor(target)
-    if (alreadyVisible && kind == ScrollKind.Animated) {
-        animateScrollToItem(target, offset)
-    } else {
-        // Target was just snapped in instantly (or it's a far jump) — keep this
-        // pass instant too so the centred position appears in a single frame
-        // instead of snap-then-animate.
-        scrollToItem(target, offset)
-    }
-}
-
-/**
- * Scroll offset that lands [index] nicely in the viewport, for use as the
- * `scrollOffset` of [scrollToItem]/[animateScrollToItem]. Delegates the math to
- * the pure, unit-tested [alignedScrollOffset]; this wrapper only supplies the
- * measured geometry (and the live [LazyListLayoutInfo.reverseLayout]). Returns 0
- * when the item isn't laid out, so the caller falls back to a plain top-anchor
- * scroll.
- */
-private fun LazyListState.centeredOffsetFor(index: Int): Int {
-    val info = layoutInfo
-    val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return 0
-    val viewport = info.viewportEndOffset - info.viewportStartOffset
-    return alignedScrollOffset(viewport = viewport, itemSize = item.size, reverseLayout = info.reverseLayout)
 }
 
 /**
