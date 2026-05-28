@@ -399,7 +399,11 @@ class TdClient private constructor(
         // because the exception was silently swallowed by the caller's scope.launch and
         // we never bounced back. TDLib will emit AuthorizationStateWaitCode itself on
         // success, which onAuthState turns into AuthStage.WaitCode(lastAttemptedPhone).
-        lastAttemptedPhone = phone
+        // Only remember a non-blank phone: a stray/blank submit would fail
+        // SetAuthenticationPhoneNumber anyway (no WaitCode follows), so storing it
+        // would only risk clobbering a previously-good fallback that a WaitCode from
+        // an earlier in-flight submit might still need to display.
+        if (phone.isNotBlank()) lastAttemptedPhone = phone
         _authError.value = null
         runCatching { send(TdApi.SetAuthenticationPhoneNumber(phone, null)) }
             .reportAuthFailure()
