@@ -122,6 +122,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "notifications_active" -> R.drawable.sym_notifications_active
         "notifications_off" -> R.drawable.sym_notifications_off
         "open_in_new" -> R.drawable.sym_open_in_new
+        "palette" -> R.drawable.sym_palette
         "pause" -> R.drawable.sym_pause
         "person" -> R.drawable.sym_person
         "photo_camera" -> R.drawable.sym_photo_camera
