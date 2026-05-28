@@ -16,7 +16,7 @@
 - Ukrainian interface now speaks in a consistent informal tone, with wording and grammar fixes throughout.
 
 ### Fixed
-- Posts now get marked as read as soon as 60% of the card is on screen for half a second, instead of staying unread until you scroll them further into view.
+- Posts now get marked as read as soon as 60% of the card is on screen for half a second, instead of staying unread until you scroll them further into view — including posts taller than the screen, which would previously stay unread forever and trap the "next unread" pill on the same row.
 - Tapping a reply quote, a forwarded source, or a channel name now lands with the post's header at the top of the screen — tall posts no longer open with the header cut off above and the middle of the post in view.
 - The "Newest at the bottom" feed now behaves like a real chat — the newest post sits at the bottom, new posts arrive there and the channel follows them as they come in, and switching feed direction no longer leaves the scroll in a strange spot.
 - Opening a channel in "Newest at the bottom" now lands on your oldest unread post with the unread queue visible below it, instead of pinning it to the bottom edge with already-read posts filling the screen above.

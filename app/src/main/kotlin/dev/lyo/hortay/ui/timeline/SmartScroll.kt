@@ -121,16 +121,31 @@ internal suspend fun LazyListState.awaitItemsCommitted(
  * before/afterContentPadding).
  *
  * Zero-size items return 0f (can't be "read" — collapse states shouldn't
- * dwell-ack). Items entirely outside the viewport return 0f. Items fully
- * contained return 1f.
+ * dwell-ack). Items entirely outside the viewport return 0f.
+ *
+ * **Denominator clamp.** For items SHORTER than the viewport the divisor is
+ * `itemSize`, so 1.0 means "fully visible" and the 60% threshold means "60% of
+ * the card on screen" — the canonical dwell-ack rule (CHANGELOG: "60% of the
+ * card is on screen for half a second"). For items TALLER than the viewport
+ * that rule is mathematically unreachable: a 3000 px post in an 1800 px viewport
+ * tops out at 60% of its own span, and the 28 dp [UnreadBoundaryRow] sitting
+ * above the boundary post in OldestUnreadFirst eats 28 px more — pushing
+ * tall-post visibility to ~59%, JUST under the threshold. The post then never
+ * dwell-acks, the unread counter never decrements, and the next-unread pill
+ * lands on the same row forever. Clamping the divisor to `min(itemSize, viewport)`
+ * degrades the rule to "60% of the viewport occupied by this post" for tall
+ * posts and leaves short-post behaviour unchanged.
  */
 internal fun visibleFraction(itemStart: Int, itemEnd: Int, vStart: Int, vEnd: Int): Float {
     val itemSize = itemEnd - itemStart
     if (itemSize <= 0) return 0f
+    val viewport = vEnd - vStart
+    if (viewport <= 0) return 0f
     val clippedStart = maxOf(itemStart, vStart)
     val clippedEnd = minOf(itemEnd, vEnd)
     val visibleSpan = (clippedEnd - clippedStart).coerceAtLeast(0)
-    return visibleSpan.toFloat() / itemSize
+    val divisor = minOf(itemSize, viewport)
+    return (visibleSpan.toFloat() / divisor).coerceAtMost(1f)
 }
 
 
