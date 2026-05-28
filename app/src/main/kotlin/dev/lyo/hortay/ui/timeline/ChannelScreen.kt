@@ -395,7 +395,10 @@ fun ChannelScreen(
         loadHistoryAround = { cid, mid -> repo.loadHistoryAround(cid, mid) },
         onLanded = { cid, mid, idx ->
             highlightedPostKey = cid to mid
-            listState.scrollToItem(idx)
+            // Top-aligned landing — tall posts must show the header. Plain
+            // scrollToItem(idx, 0) bottom-anchors in reverseLayout and clips the
+            // header above the viewport. See [scrollToTopAligned] KDoc.
+            listState.scrollToTopAligned(idx)
             pendingScrollToMessage = null
         },
         onMissed = {

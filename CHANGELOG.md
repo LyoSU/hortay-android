@@ -17,6 +17,7 @@
 
 ### Fixed
 - Posts now get marked as read as soon as 60% of the card is on screen for half a second, instead of staying unread until you scroll them further into view.
+- Tapping a reply quote, a forwarded source, or a channel name now lands with the post's header at the top of the screen — tall posts no longer open with the header cut off above and the middle of the post in view.
 - The "Newest at the bottom" feed now behaves like a real chat — the newest post sits at the bottom, new posts arrive there and the channel follows them as they come in, and switching feed direction no longer leaves the scroll in a strange spot.
 - Opening a channel in "Newest at the bottom" now lands on your oldest unread post with the unread queue visible below it, instead of pinning it to the bottom edge with already-read posts filling the screen above.
 - Signing out now warns that it will erase your local post archive — shown only when the archive is turned on.

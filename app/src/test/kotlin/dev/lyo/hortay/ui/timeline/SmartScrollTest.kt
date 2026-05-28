@@ -33,16 +33,27 @@ class SmartScrollTest {
         assertEquals(0f, visibleFraction(itemStart = 100, itemEnd = 100, vStart = 0, vEnd = 1000), 0.001f)
     }
 
-    @Test fun `scrollOffsetForBoundary forward layout returns 0 — divider top at viewport top`() {
-        assertEquals(0, scrollOffsetForBoundary(viewport = 1800, dividerSize = 40, reverseLayout = false))
+    @Test fun `topAlignedScrollOffset forward layout returns 0`() {
+        // Forward layout: scrollOffset = 0 puts the item's top at viewport top
+        // regardless of item size.
+        assertEquals(0, topAlignedScrollOffset(viewport = 1800, itemSize = 40, reverseLayout = false))
+        assertEquals(0, topAlignedScrollOffset(viewport = 1800, itemSize = 1200, reverseLayout = false))
+        assertEquals(0, topAlignedScrollOffset(viewport = 1800, itemSize = 3000, reverseLayout = false))
     }
 
-    @Test fun `scrollOffsetForBoundary reverseLayout returns dividerSize minus viewport`() {
-        assertEquals(40 - 1800, scrollOffsetForBoundary(viewport = 1800, dividerSize = 40, reverseLayout = true))
+    @Test fun `topAlignedScrollOffset short item in reverseLayout returns itemSize minus viewport`() {
+        // Negative value pulls the item's bottom up to (viewport - itemSize) above
+        // the layout start = itemSize below the viewport top. Item top at viewport top.
+        assertEquals(40 - 1800, topAlignedScrollOffset(viewport = 1800, itemSize = 40, reverseLayout = true))
+        assertEquals(1200 - 1800, topAlignedScrollOffset(viewport = 1800, itemSize = 1200, reverseLayout = true))
     }
 
-    @Test fun `scrollOffsetForBoundary clamps when divider somehow exceeds viewport`() {
-        assertEquals(0, scrollOffsetForBoundary(viewport = 100, dividerSize = 200, reverseLayout = false))
-        assertEquals(0, scrollOffsetForBoundary(viewport = 100, dividerSize = 200, reverseLayout = true))
+    @Test fun `topAlignedScrollOffset tall item in reverseLayout returns positive offset to keep header visible`() {
+        // The user-facing bug fix: a tall post in reverseLayout would otherwise
+        // bottom-anchor with scrollOffset=0 and clip the header off-screen above.
+        // Positive offset shifts the item past the layout start so its TOP comes
+        // up to viewport top; the bottom overflows below.
+        assertEquals(3000 - 1800, topAlignedScrollOffset(viewport = 1800, itemSize = 3000, reverseLayout = true))
+        assertEquals(2400 - 1800, topAlignedScrollOffset(viewport = 1800, itemSize = 2400, reverseLayout = true))
     }
 }

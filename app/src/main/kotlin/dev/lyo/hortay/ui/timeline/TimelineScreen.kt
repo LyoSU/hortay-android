@@ -953,7 +953,12 @@ fun TimelineScreen(
         loadHistoryAround = { cid, mid -> tdlibRepo?.loadHistoryAround(cid, mid) ?: false },
         onLanded = { cid, mid, idx ->
             highlightedPostKey = cid to mid
-            listState.scrollToItem(idx)
+            // scrollToTopAligned, not scrollToItem: in reverseLayout (OldestUnreadFirst
+            // mode), scrollToItem(idx, 0) glues the target's BOTTOM to the viewport
+            // bottom — for a tall post the header (top) ends up clipped above the
+            // viewport. scrollToTopAligned reads the row's measured size and uses the
+            // matching offset so the header is always visible.
+            listState.scrollToTopAligned(idx)
             pendingScrollToMessage = null
         },
         onMissed = {

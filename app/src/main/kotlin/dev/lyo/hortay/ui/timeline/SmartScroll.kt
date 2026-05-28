@@ -134,26 +134,32 @@ internal fun visibleFraction(itemStart: Int, itemEnd: Int, vStart: Int, vEnd: In
 }
 
 /**
- * `scrollOffset` to pass to [LazyListState.scrollToItem]/[animateScrollToItem] so the
- * boundary divider row lands with its TOP at the viewport's TOP.
+ * `scrollOffset` to pass to [LazyListState.scrollToItem]/[animateScrollToItem] so
+ * the row at the target index lands with its TOP at the viewport's TOP — regardless
+ * of the row's height and the layout direction.
  *
  * Forward layout: `scrollOffset = 0` because the layout start IS the viewport top —
  * the item's top aligns with it for free.
  *
  * `reverseLayout = true`: the layout start is the viewport BOTTOM and `scrollOffset`
- * is measured FROM that bottom (positive = pushed deeper "past" the start). To bring
- * the divider's TOP up to the viewport top, we shift the item by
- * `(dividerSize - viewport)` — a negative value that pulls the divider's bottom up
- * to `viewport - dividerSize` above the layout start, equivalent to dividerSize
- * below the viewport top.
+ * is measured FROM that bottom (positive = pushed deeper "past" the start). The
+ * unified formula `itemSize - viewport` covers both regimes:
  *
- * Clamps to 0 when dividerSize > viewport (pathological — divider is ~84 px against
- * a >1000 px viewport in practice — but a clamp keeps the result well-defined).
+ *   - **Short items** (`itemSize <= viewport`): offset is `<= 0`, pulling the item's
+ *     bottom up to `viewport - itemSize` above the layout start — equivalent to
+ *     `itemSize` below the viewport top. The item sits at the visual top with empty
+ *     space (or sibling items) below.
+ *   - **Tall items** (`itemSize > viewport`): offset is positive, shifting the item
+ *     past the start so its TOP comes up to the viewport top; the bottom overflows
+ *     off-screen below. This is the regime the user wants for "tall post — show me
+ *     the header" — `scrollToItem(index, 0)` in reverseLayout otherwise glues the
+ *     item's BOTTOM to the viewport bottom and clips the header above the viewport.
+ *     That bottom-anchored default is the source of the "centred / no header"
+ *     symptom for deep-link and quote-tap landings; this helper is the fix.
  */
-internal fun scrollOffsetForBoundary(viewport: Int, dividerSize: Int, reverseLayout: Boolean): Int {
+internal fun topAlignedScrollOffset(viewport: Int, itemSize: Int, reverseLayout: Boolean): Int {
     if (!reverseLayout) return 0
-    val offset = dividerSize - viewport
-    return offset.coerceAtMost(0)
+    return itemSize - viewport
 }
 
 /**
@@ -206,7 +212,7 @@ internal suspend fun LazyListState.scrollToBoundary(
     val measured = layoutInfo.visibleItemsInfo.firstOrNull { it.index == boundaryIndex }
 
     if (measured != null) {
-        val offset = scrollOffsetForBoundary(viewport, measured.size, reverseLayout)
+        val offset = topAlignedScrollOffset(viewport, measured.size, reverseLayout)
         if (instant) scrollToItem(boundaryIndex, offset)
         else animateScrollToItem(boundaryIndex, offset)
         return
@@ -218,8 +224,42 @@ internal suspend fun LazyListState.scrollToBoundary(
     scrollToItem(boundaryIndex, 0)
     val measuredAfter = layoutInfo.visibleItemsInfo.firstOrNull { it.index == boundaryIndex }
     if (measuredAfter != null) {
-        val offset = scrollOffsetForBoundary(viewport, measuredAfter.size, reverseLayout)
+        val offset = topAlignedScrollOffset(viewport, measuredAfter.size, reverseLayout)
         if (offset != 0) scrollToItem(boundaryIndex, offset)
+    }
+}
+
+/**
+ * Land the row at [itemIndex] with its TOP at the viewport's TOP — in both forward
+ * and reverseLayout modes. The runtime analogue of [topAlignedScrollOffset] for
+ * deep-link, quote-tap, and reply-source landings, where the canonical "show me the
+ * start of this message" intent applies regardless of post height.
+ *
+ * Plain `scrollToItem(index, 0)` in reverseLayout glues the item's BOTTOM to the
+ * viewport bottom — for a TALL post the header (top) ends up clipped off-screen
+ * above. This helper computes the per-call offset against the row's measured size
+ * and uses it for the actual scroll, so the header is always visible.
+ *
+ * If the row isn't measured yet (the user is jumping to an item that hasn't entered
+ * any prior viewport), brings it on-screen with one instant scroll first, then
+ * re-positions with the measured size. The two scrolls happen on consecutive
+ * layout passes — visually one continuous motion.
+ *
+ * Suspends until the scroll completes.
+ */
+internal suspend fun LazyListState.scrollToTopAligned(itemIndex: Int) {
+    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+    val reverseLayout = layoutInfo.reverseLayout
+    val measured = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
+    if (measured != null) {
+        scrollToItem(itemIndex, topAlignedScrollOffset(viewport, measured.size, reverseLayout))
+        return
+    }
+    scrollToItem(itemIndex, 0)
+    val measuredAfter = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
+    if (measuredAfter != null) {
+        val offset = topAlignedScrollOffset(viewport, measuredAfter.size, reverseLayout)
+        if (offset != 0) scrollToItem(itemIndex, offset)
     }
 }
 
