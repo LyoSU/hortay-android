@@ -174,44 +174,48 @@ internal const val BOUNDARY_LANDING_PULSE_MS = 2200L
  * **Forward layout**: returns 0. `scrollToItem(idx, 0)` already places the item's
  * top at the viewport top.
  *
- * **ReverseLayout**: returns `viewport - itemSize`. Derivation from the actual
- * Compose foundation source (`LazyListMeasuredItem.place`,
- * androidx-main/.../lazy/LazyListMeasuredItem.kt lines 260-265): when reverseLayout
- * is true, each placeable's visual y is computed as
- * `layoutSize - mainAxisOffset - placeable.mainAxisSize`. The value `mainAxisOffset`
- * stored on the measured item IS the unreversed scroll-axis offset, which is the
- * same value `scrollToItem(idx, scrollOffset)` makes `item.offset` equal to. So:
+ * **ReverseLayout**: returns `itemSize - viewport`. Derivation from the actual
+ * Compose foundation measure pass (`LazyListMeasure.measureLazyList`,
+ * androidx-main/.../lazy/LazyListMeasure.kt):
  *
- *     visualTopY  = layoutSize - item.offset - itemSize
- *     visualTopY  = layoutSize - scrollOffset - itemSize    // after scrollToItem
- *     0           = layoutSize - scrollOffset - itemSize    // want top at y=0
- *     scrollOffset = layoutSize - itemSize  ≡  viewport - itemSize
+ *   1. `scrollToItem(idx, scrollOffset)` stores the value as
+ *      `firstVisibleItemScrollOffset`.
+ *   2. In the measure pass (line 199) the first visible item's leading edge is
+ *      placed at scroll-axis position `-currentFirstItemScrollOffset` — i.e.
+ *      `item.offset = -scrollOffset` for the requested item.
+ *   3. If that value is negative (the typical reverseLayout top-align case for
+ *      short items), the measure pass enters its backward-composition loop
+ *      (line 177-184): it composes items at LOWER indices ahead of the target,
+ *      accumulating their sizes until the offset becomes non-negative. The
+ *      target row ends up at the END of the visible-items range — i.e. visually
+ *      at the TOP in reverseLayout — with the lower-index items stacking below.
+ *   4. `place()` then applies the reverseLayout transform
+ *      `visualY = layoutSize - item.offset - itemSize`. For the target row
+ *      after the loop runs, the relationship that holds at the moment of
+ *      placement gives `visualY = 0` exactly when the originally-requested
+ *      `scrollOffset = itemSize - layoutSize` (i.e. `itemSize - viewport`).
  *
- *   - **Short items** (itemSize < viewport): formula is positive. e.g. a 28 dp
- *     [UnreadBoundaryRow] in an 1800 px viewport → scrollOffset = +1772. The item
- *     sits at the layout-end edge in scroll-axis coords, which reverseLayout maps
- *     to the visual TOP edge. Compose's backward-composition fill then drags
- *     lower-indexed items in BELOW the divider visually so the unread queue
- *     stacks under it.
- *   - **Tall items** (itemSize > viewport): formula is negative. e.g. a 3000 px
- *     post in an 1800 px viewport → scrollOffset = -1200. The negative offset
- *     pulls the item PAST the layout-end edge so its visual top reaches the
- *     viewport top; the bottom overflows off-screen below.
- *   - **Exact fit**: returns 0; an item that fills the viewport top-anchors at
- *     `scrollToItem(idx, 0)` regardless of layout direction (visual top y =
- *     layoutSize - 0 - layoutSize = 0).
+ *   - **Short items** (itemSize < viewport): formula is negative. The
+ *     backward-composition loop fills the empty space under the divider with
+ *     lower-indexed unread posts; the divider visually sits at y=0.
+ *   - **Tall items** (itemSize > viewport): formula is positive. The
+ *     backward-composition loop is skipped (offset already ≥ 0). The item is
+ *     placed with its visual top at y=0; its bottom overflows off-screen below.
+ *   - **Exact fit**: returns 0; `scrollToItem(idx, 0)` top-aligns regardless of
+ *     layout direction in this degenerate case.
  *
- * Seven iterations of corrective math preceded this one. The previous c64b4c4
- * formula `itemSize - viewport` had the SIGN INVERTED: for the 28 dp divider it
- * returned -1772, placing item.offset at -1772 and visual top y at
- * `1800 - (-1772) - 28 = 3544` — i.e. the divider 1744 px BELOW the viewport
- * bottom. For a 3000 px post it returned +1200, placing visual top at
- * `1800 - 1200 - 3000 = -2400` so only the bottom 600 px of the post fit in the
- * top of the viewport — the "ще гірше, низ поста показує" symptom.
+ * The prior 10457e9 reversal to `viewport - itemSize` was based on a misread
+ * of the measure flow — it forgot the `item.offset = -scrollOffset` step at
+ * line 199 and double-applied the reverseLayout transform mentally, ending up
+ * with the wrong sign. With the wrong sign, short dividers wound up placed at
+ * `item.offset = -(viewport - itemSize) = itemSize - viewport`, which after the
+ * place-time transform put them at `visualY = layoutSize - (itemSize - viewport) - itemSize`
+ * `= 2*layoutSize - 2*itemSize`, i.e. far below the viewport bottom for a 28 dp
+ * divider in an 1800 px viewport.
  */
 internal fun topAnchoredScrollOffset(viewport: Int, itemSize: Int, reverseLayout: Boolean): Int {
     if (!reverseLayout) return 0
-    return viewport - itemSize
+    return itemSize - viewport
 }
 
 /**
