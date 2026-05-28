@@ -312,6 +312,7 @@ class ChannelActionsRepository(
             verification = user.verificationStatus?.toUserMark(),
             isPremium = user.isPremium,
             emojiStatusId = resolveEmojiStatusId(user.emojiStatus),
+            profileAccentColorId = user.profileAccentColorId,
             isBot = user.type is TdApi.UserTypeBot,
             isSupport = user.isSupport,
             isContact = user.isContact,
@@ -432,6 +433,11 @@ data class UserProfile(
      * premium star.
      */
     val emojiStatusId: Long?,
+    /**
+     * The user's own Telegram profile accent-colour id (`-1` = not set). Resolved to a
+     * gradient + ring via `LocalProfileAccent` in the profile sheet hero.
+     */
+    val profileAccentColorId: Int = -1,
     val isBot: Boolean,
     val isSupport: Boolean,
     val isContact: Boolean,
