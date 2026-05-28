@@ -8,8 +8,11 @@
 - Video stickers and animated custom emoji now show their real transparency and animate inline, instead of appearing as a flat square or a frozen image.
 - Guest mode's empty Channels screen now offers a few popular channels to add with one tap, instead of leaving you with a blank field.
 - Screen readers now announce which posts are unread, matching the unread strip sighted users see.
+- Screen readers now announce the "new posts" divider as a section heading, so the read/unread boundary is reachable by heading navigation.
+- Reactions, bookmarks, poll votes and the main action buttons now answer with a subtle haptic tap.
 
 ### Changed
+- Spoiler reveals and the fullscreen photo viewer now honour the system "remove animations" setting, staying still for motion-sensitive users.
 - "Next unread" and home-tap jumps now land your oldest still-unread post at the top of the screen with its header fully visible and a brief highlight, and step forward to the next unread as you read — instead of bouncing back onto a post you had already opened or landing it cut off under the bar.
 - Tapping a post's channel name now opens that channel scrolled straight to the post you tapped, with a brief highlight, instead of landing at your last-read position.
 - Revealing a spoiler now disintegrates the dot cloud as a left-to-right sweep that crumbles evenly and blows away, matching Telegram's dissolve, instead of the old uniform burst from the centre.
@@ -28,6 +31,7 @@
 - Settings → Source code row and the long-press link sheet's Share action now show their proper icons instead of a generic `?` placeholder.
 - Tapping the empty space between a post's channel name and its timestamp no longer drills into the channel — only the channel name, verification badge and chevron itself respond now.
 - Scrolling past deleted posts no longer stalls the feed or slows neighbouring posts from loading — a deleted post shows its cached preview instead of endlessly retrying media Telegram has already removed.
+- Tapping Submit twice in quick succession on the phone-number screen no longer clears the number you typed.
 
 ## [0.8.0] — 2026-05-25
 
