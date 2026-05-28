@@ -69,7 +69,7 @@ DI built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(applicatio
 | `:libwebm` / `libhortaywebm.so` / `dev.lyo.hortay.webm.WebmAlphaNative` | Vendored minimal-ffmpeg WebM(VP9+alpha) decoder. The JNI method name `Java_dev_lyo_hortay_webm_WebmAlphaNative_nativeDecode` and the `Raw` ctor signature must match the C in `libwebm/src/main/cpp`. Built by `scripts/build-ffmpeg.sh` (host NDK; libs gitignored). |
 | Release keystore (`storeFile` + `keyAlias` from `keystore.properties`) | Release signing identity. Losing it = losing the upgrade path for installed users. |
 | `HortayApp.graph` | Process-singleton DI root. |
-| `LocalMediaCache` / `LocalCustomEmoji` / `LocalExoPlayerPool` / `LocalReadCursors` | CompositionLocal heavy-singleton injection. |
+| `LocalMediaCache` / `LocalCustomEmoji` / `LocalExoPlayerPool` / `LocalReadCursors` / `LocalProfileAccent` | CompositionLocal heavy-singleton injection. |
 
 ## Hard rules
 
