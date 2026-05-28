@@ -30,6 +30,7 @@ import dev.lyo.hortay.ui.media.LocalWebmFrameCache
 import dev.lyo.hortay.ui.media.MediaViewerHost
 import dev.lyo.hortay.ui.media.WebmAnimationClock
 import dev.lyo.hortay.ui.theme.HortayTheme
+import dev.lyo.hortay.ui.theme.LocalProfileAccent
 import dev.lyo.hortay.ui.web.MigrationProposalSheet
 import dev.lyo.hortay.ui.web.WebModeScaffold
 import kotlinx.coroutines.launch
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
                     LocalWebHttpClient provides graph.webHttpClient,
                     LocalWebmFrameCache provides graph.webmFrameCache,
                     LocalWebmClock provides webmClock,
+                    LocalProfileAccent provides graph.profileAccent,
                 ) {
                     LaunchedEffect(webmClock) { webmClock.run() }
                     Surface(modifier = Modifier.fillMaxSize()) {

@@ -22,6 +22,7 @@ import dev.lyo.hortay.data.ColdStartBackfillStoreImpl
 import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.MediaAutoDownloader
 import dev.lyo.hortay.data.MediaCache
+import dev.lyo.hortay.data.ProfileAccentRegistry
 import dev.lyo.hortay.data.MessageMapper
 import dev.lyo.hortay.data.NavStack
 import dev.lyo.hortay.data.posts.PostsRepository
@@ -97,6 +98,14 @@ class AppGraph(context: Context) {
     val timelineSnapshotStore: TimelineSnapshotStore = DataStoreTimelineSnapshotStore(context)
 
     val tdClient: TdClient = TdClient.create(context, settingsStore).also { it.start() }
+
+    /**
+     * Per-user profile accent colours (the gradients Telegram users pick for
+     * themselves). Bound to the update stream + logout signal here; consumed by the
+     * Settings hero and the user-profile sheet via `LocalProfileAccent`.
+     */
+    val profileAccent: ProfileAccentRegistry =
+        ProfileAccentRegistry().also { it.bind(tdClient.updates, tdClient.loggedOut, appScope) }
 
     // Bridge ProcessLifecycleOwner + ConnectivityManager into TDLib so the daemon knows
     // when we're foreground/online and what network it should plan downloads for. The
