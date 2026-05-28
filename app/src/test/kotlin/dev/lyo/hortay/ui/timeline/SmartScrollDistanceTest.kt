@@ -69,4 +69,43 @@ class SmartScrollDistanceTest {
     fun `very tall post — reverse overflow scales`() {
         assertEquals(1200, alignedScrollOffset(viewport = 800, itemSize = 2000, reverseLayout = true))
     }
+
+    // --- topAnchoredScrollOffset: "land the row top at the viewport top" ---
+
+    @Test
+    fun `topAnchored forward returns 0 regardless of item size`() {
+        // Forward layout: scrollToItem(idx, 0) already top-aligns; no extra offset.
+        assertEquals(0, topAnchoredScrollOffset(viewport = 1800, itemSize = 40, reverseLayout = false))
+        assertEquals(0, topAnchoredScrollOffset(viewport = 1800, itemSize = 1200, reverseLayout = false))
+        assertEquals(0, topAnchoredScrollOffset(viewport = 1800, itemSize = 3000, reverseLayout = false))
+    }
+
+    @Test
+    fun `topAnchored reverseLayout short item returns negative offset`() {
+        // In reverseLayout, scrollToItem(idx, 0) bottom-anchors (visual top y =
+        // viewport - itemSize). Passing a NEGATIVE scrollOffset shifts the item
+        // away from the layout start (= visual bottom) toward the visual top.
+        // For a small divider (84 px) in a 1800 px viewport: offset = -1716.
+        // Compose's backward-composition fill then drags lower-indexed items in
+        // below the divider visually, so the user sees the divider at the very
+        // top with the unread queue stacking under it.
+        assertEquals(40 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 40, reverseLayout = true))
+        assertEquals(1200 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 1200, reverseLayout = true))
+    }
+
+    @Test
+    fun `topAnchored reverseLayout tall item returns positive overflow offset`() {
+        // Tall item (taller than viewport): positive offset pushes the item past
+        // the layout start so its TOP reaches the viewport top; the bottom
+        // overflows off-screen below. This is the canonical "show me the header
+        // of this long post" landing.
+        assertEquals(3000 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 3000, reverseLayout = true))
+        assertEquals(2400 - 1800, topAnchoredScrollOffset(viewport = 1800, itemSize = 2400, reverseLayout = true))
+    }
+
+    @Test
+    fun `topAnchored reverseLayout exact-fit returns zero`() {
+        // Item exactly fills viewport: top already at top, no offset needed.
+        assertEquals(0, topAnchoredScrollOffset(viewport = 1800, itemSize = 1800, reverseLayout = true))
+    }
 }

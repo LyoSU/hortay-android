@@ -152,18 +152,48 @@ internal const val BOUNDARY_SCROLL_THRESHOLD_ROWS = 16
 internal const val BOUNDARY_LANDING_PULSE_MS = 2200L
 
 /**
+ * Pure offset math: the `scrollOffset` to pass to [LazyListState.scrollToItem] so
+ * the row at the target index lands with its TOP at the viewport's TOP — in both
+ * forward and reverseLayout modes.
+ *
+ * **Forward layout**: returns 0. `scrollToItem(idx, 0)` already places the item's
+ * top at the viewport top.
+ *
+ * **ReverseLayout**: returns `itemSize - viewport`. Verified against the actual
+ * Compose foundation `LazyListMeasure.kt` source: in reverseLayout, the item's
+ * visual y-coord of TOP after `scrollToItem(idx, absoluteOffset)` is computed as
+ * `viewport - absoluteOffset - itemSize`. To get visual top y = 0 (viewport top),
+ * we need `absoluteOffset = itemSize - viewport`.
+ *
+ *   - **Short items** (itemSize ≤ viewport): formula is ≤ 0. The negative offset
+ *     triggers Compose's backward-composition fill so items with lower indices
+ *     stack BELOW the divider visually (filling the empty space under the divider).
+ *   - **Tall items** (itemSize > viewport): formula is positive. Item top at the
+ *     viewport top, bottom overflows off-screen below.
+ *
+ * Six iterations of corrective math finally converged on this formula; the false
+ * leads were `scrollBy(item.offset - viewportStartOffset)` (wrong because
+ * `item.offset` in reverseLayout is measured from the layout container start in
+ * scroll-axis coords, not visual y), `scrollBy(viewport - item.size)` (wrong because
+ * the sign of `scrollBy` in reverseLayout is reverse-aware), and `scrollToItem(idx, 0)`
+ * alone (bottom-anchored — header clipped above for tall items).
+ */
+internal fun topAnchoredScrollOffset(viewport: Int, itemSize: Int, reverseLayout: Boolean): Int {
+    if (!reverseLayout) return 0
+    return itemSize - viewport
+}
+
+/**
  * Land the boundary divider's TOP at the viewport's TOP. The single jump API used
  * by every "next unread" pill (NewPostsPill, UnreadCounterPill, home-tap) and by
  * the cold-entry [rememberBoundaryReveal].
  *
  * Animates inside [BOUNDARY_SCROLL_THRESHOLD_ROWS] rows of the current first-visible
- * index, instantly jumps further — the canonical chat-app idiom (no one wants to
- * watch a 200-row animation). Reads the divider's measured size from [layoutInfo]
- * for the reverseLayout offset; if the boundary hasn't been measured yet (cold
- * mount before first layout), falls back to one instant `scrollToItem(boundaryIndex, 0)`
- * to bring it into view, then on the next layout pass with a measured size,
- * repositions instantly to the correct offset. The user sees one continuous
- * scroll — no perceptible two-step.
+ * index, instantly jumps further. Reads the divider's measured size from
+ * [layoutInfo] to compute the reverseLayout offset; if the boundary isn't measured
+ * yet (cold mount before first layout, or jump-pill from a faraway scroll position),
+ * brings it on-screen with one `scrollToItem(boundaryIndex, 0)`, waits for the
+ * layout pass, then re-scrolls to the correct offset. Visually one continuous motion.
  *
  * Suspends until the scroll completes.
  *
@@ -178,18 +208,7 @@ internal suspend fun LazyListState.scrollToBoundary(
     val current = firstVisibleItemIndex
     val instant = !animated ||
         abs(boundaryIndex - current) > BOUNDARY_SCROLL_THRESHOLD_ROWS
-    // Minimal scroll: trust Compose's scrollToItem to handle reverseLayout correctly.
-    // Multiple prior attempts at corrective math (item.offset-based delta, viewport-
-    // size delta, scrollOffset arithmetic) each overshot or undershot in different
-    // ways because Compose's documented `LazyListItemInfo.offset` semantics in
-    // reverseLayout don't match what the field actually returns at runtime — the
-    // computed delta consistently lands the row at a wrong position, with the
-    // boundary post + highlight several rows off from where the divider visually
-    // ends up. Reverting to a plain scrollToItem(idx, 0) and letting Compose decide
-    // the anchoring is the safer baseline until we can verify the correct math
-    // against actual layoutInfo values on a device.
-    if (instant) scrollToItem(boundaryIndex, 0)
-    else animateScrollToItem(boundaryIndex, 0)
+    scrollToTopOfRow(boundaryIndex, instant)
 }
 
 /**
@@ -198,26 +217,54 @@ internal suspend fun LazyListState.scrollToBoundary(
  * where the canonical "show me the start of this message" intent applies regardless
  * of post height.
  *
- * Plain `scrollToItem(index, 0)` in reverseLayout glues the item's BOTTOM to the
- * viewport bottom — for a TALL post the header (top) ends up clipped off-screen
- * above. This helper brings the row into view (any anchor), reads its actual
- * measured y-position, and then scrolls by exactly the delta needed to put its
- * top at the viewport's top. Works uniformly in both layout directions because
- * the delta is computed from the row's measured position, not from a layout-
- * direction-dependent scrollOffset formula.
- *
  * Suspends until the scroll completes.
  */
 internal suspend fun LazyListState.scrollToTopAligned(itemIndex: Int) {
-    // Same minimal approach as scrollToBoundary — see its KDoc for why all the
-    // corrective math has been removed.
-    animateScrollToItem(itemIndex, 0)
+    scrollToTopOfRow(itemIndex, instant = false)
 }
 
 /**
- * Safety-net cap on how long the now-removed corrective scroll path waited for the
- * row to be measured after the initial bring-into-view scroll. Retained as a
- * package-level constant in case future work re-introduces a corrective pass.
+ * Shared implementation for [scrollToBoundary] and [scrollToTopAligned]. Lands the
+ * row at [itemIndex] with its TOP at the viewport's TOP using
+ * [topAnchoredScrollOffset]'s formula. When the row is already measured, does it
+ * in one scroll call; otherwise brings the row into view first via
+ * `scrollToItem(idx, 0)`, waits for the layout pass to publish the row's measured
+ * size, then re-scrolls with the correct offset.
+ */
+private suspend fun LazyListState.scrollToTopOfRow(itemIndex: Int, instant: Boolean) {
+    val measured = layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
+    if (measured != null) {
+        val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+        val offset = topAnchoredScrollOffset(viewport, measured.size, layoutInfo.reverseLayout)
+        if (instant) scrollToItem(itemIndex, offset)
+        else animateScrollToItem(itemIndex, offset)
+        return
+    }
+    // Row not yet laid out — typical for cold-entry or a jump-pill targeting a row
+    // far from the current viewport. Bring it in with offset=0, wait for the layout
+    // pass to publish its measured size, then re-scroll with the correct top-anchored
+    // offset. The snapshotFlow wait is required: reading layoutInfo synchronously
+    // after scrollToItem can see the OLD visibleItemsInfo (scroll position updated
+    // but new layout not yet flushed).
+    scrollToItem(itemIndex, 0)
+    val measuredAfter = withTimeoutOrNull(SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS) {
+        snapshotFlow {
+            layoutInfo.visibleItemsInfo.firstOrNull { it.index == itemIndex }
+        }.filterNotNull().first()
+    } ?: return
+    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+    val offset = topAnchoredScrollOffset(viewport, measuredAfter.size, layoutInfo.reverseLayout)
+    if (offset == 0) return
+    if (instant) scrollToItem(itemIndex, offset)
+    else animateScrollToItem(itemIndex, offset)
+}
+
+/**
+ * Safety-net cap on how long [scrollToBoundary] / [scrollToTopAligned] wait for
+ * the target row to be measured after the initial bring-into-view scroll. 500 ms
+ * is well past the normal one-layout-pass turnaround (~16 ms at 60 Hz); the
+ * timeout exists so the caller's coroutine doesn't hang if the row never measures
+ * (filtered out between scrollToItem and the next layout pass, etc.).
  */
 private const val SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS = 500L
 
