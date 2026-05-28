@@ -265,3 +265,70 @@ internal fun scrollOffsetForBoundary(viewport: Int, dividerSize: Int, reverseLay
     val offset = dividerSize - viewport
     return offset.coerceAtMost(0)
 }
+
+/**
+ * Threshold (rows) above which `scrollToBoundary` jumps instantly. Bumped from the
+ * legacy [SMART_SCROLL_THRESHOLD_ROWS] (8) because the divider is the canonical
+ * landing — animating up to ~2 viewports of feed is still smooth on modern devices
+ * and the user reads the in-between rows as part of the "I'm being taken back to
+ * where I left off" affordance.
+ */
+internal const val BOUNDARY_SCROLL_THRESHOLD_ROWS = 16
+
+/**
+ * Pulse duration after a successful boundary landing. Matches the existing
+ * [dev.lyo.hortay.ui.timeline.TimelineScreen] `HIGHLIGHT_DURATION_MS` for the
+ * deep-link path so all jump landings (deep-link, quote, jump-pill, home-tap)
+ * share one timing.
+ */
+internal const val BOUNDARY_LANDING_PULSE_MS = 2200L
+
+/**
+ * Land the boundary divider's TOP at the viewport's TOP. The single jump API used
+ * by every "next unread" pill (NewPostsPill, UnreadCounterPill, home-tap) and by
+ * the cold-entry [rememberBoundaryReveal].
+ *
+ * Animates inside [BOUNDARY_SCROLL_THRESHOLD_ROWS] rows of the current first-visible
+ * index, instantly jumps further — the canonical chat-app idiom (no one wants to
+ * watch a 200-row animation). Reads the divider's measured size from [layoutInfo]
+ * for the reverseLayout offset; if the boundary hasn't been measured yet (cold
+ * mount before first layout), falls back to one instant `scrollToItem(boundaryIndex, 0)`
+ * to bring it into view, then on the next layout pass with a measured size,
+ * repositions instantly to the correct offset. The user sees one continuous
+ * scroll — no perceptible two-step.
+ *
+ * Suspends until the scroll completes.
+ *
+ * @param boundaryIndex Row index of the `FeedItem.Boundary` divider in the LazyColumn.
+ * @param animated When false, always uses an instant scroll regardless of distance.
+ *   Cold-entry reveal passes false; jump-pills pass true.
+ */
+internal suspend fun LazyListState.scrollToBoundary(
+    boundaryIndex: Int,
+    animated: Boolean = true,
+) {
+    val current = firstVisibleItemIndex
+    val instant = !animated ||
+        abs(boundaryIndex - current) > BOUNDARY_SCROLL_THRESHOLD_ROWS
+
+    val viewport = layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset
+    val reverseLayout = layoutInfo.reverseLayout
+    val measured = layoutInfo.visibleItemsInfo.firstOrNull { it.index == boundaryIndex }
+
+    if (measured != null) {
+        val offset = scrollOffsetForBoundary(viewport, measured.size, reverseLayout)
+        if (instant) scrollToItem(boundaryIndex, offset)
+        else animateScrollToItem(boundaryIndex, offset)
+        return
+    }
+
+    // Boundary not yet measured. Bring it into view at offset 0 first, then reposition
+    // once a measured size is available. The two scrolls happen on consecutive layout
+    // passes — visually one continuous motion.
+    scrollToItem(boundaryIndex, 0)
+    val measuredAfter = layoutInfo.visibleItemsInfo.firstOrNull { it.index == boundaryIndex }
+    if (measuredAfter != null) {
+        val offset = scrollOffsetForBoundary(viewport, measuredAfter.size, reverseLayout)
+        if (offset != 0) scrollToItem(boundaryIndex, offset)
+    }
+}
