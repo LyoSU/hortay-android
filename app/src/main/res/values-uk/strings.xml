@@ -335,6 +335,9 @@
     <string name="timeline_subtitle_feed">%1$d каналів</string>
     <string name="timeline_subtitle_saved">Збережені пости</string>
     <string name="settings_section_feed">Стрічка</string>
+    <string name="settings_section_appearance">Вигляд</string>
+    <string name="settings_dynamic_color_title">Кольори зі шпалер</string>
+    <string name="settings_dynamic_color_subtitle">Підбирає палітру застосунку під твої шпалери. Вимкни, щоб використати фірмові кольори Hortay.</string>
     <string name="settings_feed_order_newest_title">Нові зверху</string>
     <string name="settings_feed_order_newest_subtitle">Прокрути вниз, щоб бачити старі</string>
     <string name="settings_feed_order_oldest_title">Нові внизу</string>

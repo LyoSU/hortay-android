@@ -13,8 +13,10 @@
 - Long-press a post or a comment to react with any available reaction, not just the ones already on it — picked from a Telegram-style strip at the top of the menu.
 - The post menu now has a "Select text" action that opens the text so you can select and copy any part of it; long-pressing a comment also offers "Copy text".
 - Channel posts now show their forward count alongside views and comments.
+- Settings → Appearance lets you keep Hortay's own colours instead of your wallpaper's palette (Android 12+).
 
 ### Changed
+- Unread posts now carry a faint tint across the whole card, not just the edge strip, so the read/unread boundary reads at a glance and fades away as a post is marked read.
 - The post long-press menu now leads with Comments, Share and Open as a single button group, with the remaining actions listed below.
 - Spoiler reveals and the fullscreen photo viewer now honour the system "remove animations" setting, staying still for motion-sensitive users.
 - "Next unread" and home-tap jumps now land your oldest still-unread post at the top of the screen with its header fully visible and a brief highlight, and step forward to the next unread as you read — instead of bouncing back onto a post you had already opened or landing it cut off under the bar.

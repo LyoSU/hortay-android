@@ -354,6 +354,9 @@
     <string name="timeline_subtitle_feed">%1$d قناة</string>
     <string name="timeline_subtitle_saved">المنشورات المحفوظة</string>
     <string name="settings_section_feed">الخلاصة</string>
+    <string name="settings_section_appearance">المظهر</string>
+    <string name="settings_dynamic_color_title">ألوان الخلفية</string>
+    <string name="settings_dynamic_color_subtitle">يضبط ألوان التطبيق حسب خلفية شاشتك. أوقفه لاستخدام ألوان Hortay الخاصة.</string>
     <string name="settings_feed_order_newest_title">الأحدث في الأعلى</string>
     <string name="settings_feed_order_newest_subtitle">مرر لأسفل لمشاهدة المنشورات القديمة</string>
     <string name="settings_feed_order_oldest_title">الأحدث في الأسفل</string>

@@ -58,6 +58,25 @@ class SettingsStore(context: Context) {
     }
 
     /**
+     * Material You (wallpaper-derived) dynamic colour vs. the Hortay brand palette.
+     * Only meaningful on Android 12+ ([Build.VERSION_CODES.S]) — below that the
+     * platform has no dynamic-colour API and [HortayTheme] always renders the brand
+     * periwinkle scheme regardless of this flag. The Settings row that drives it is
+     * gated to S+ so the toggle never appears as a dead control.
+     *
+     * Default `true` preserves the shipped behaviour: wallpaper colours on 12+. Users
+     * who prefer Hortay's fixed brand identity flip it off and pin the periwinkle scheme
+     * on every device.
+     */
+    val dynamicColor: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[KEY_DYNAMIC_COLOR] ?: true
+    }
+
+    suspend fun setDynamicColor(enabled: Boolean) {
+        dataStore.edit { it[KEY_DYNAMIC_COLOR] = enabled }
+    }
+
+    /**
      * Reels-style snap-fling toggle. When enabled, fling gestures on the
      * timeline LazyColumn settle on the nearest item boundary — each post
      * "clicks into place" at the top of the viewport instead of free-coasting
@@ -149,6 +168,7 @@ class SettingsStore(context: Context) {
         val KEY_THEME = stringPreferencesKey("theme_mode")
         val KEY_LAST_STORAGE_OPTIMIZE_AT = longPreferencesKey("last_storage_optimize_at")
         val KEY_FEED_ORDER = stringPreferencesKey("feed_order")
+        val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val KEY_SNAP_SCROLL = booleanPreferencesKey("snap_scroll")
         val KEY_INLINE_VIDEO_AUTOPLAY = booleanPreferencesKey("inline_video_autoplay")
         val KEY_HIDE_ONLINE_STATUS = booleanPreferencesKey("hide_online_status")

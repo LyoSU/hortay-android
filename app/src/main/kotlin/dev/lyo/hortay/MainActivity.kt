@@ -63,7 +63,12 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            HortayTheme {
+            // Material You (wallpaper) vs brand palette — user preference, default on.
+            // HortayTheme still guards the actual dynamic-colour call behind SDK >= S,
+            // so passing `true` on pre-12 devices safely falls through to the brand scheme.
+            val dynamicColor by graph.settingsStore.dynamicColor
+                .collectAsStateWithLifecycle(initialValue = true)
+            HortayTheme(dynamicColor = dynamicColor) {
                 val webmClock = remember { WebmAnimationClock() }
                 CompositionLocalProvider(
                     LocalMediaCache provides graph.mediaCache,

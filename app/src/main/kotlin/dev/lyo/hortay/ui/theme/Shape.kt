@@ -51,6 +51,16 @@ val HortayShapes = Shapes(
 )
 
 /**
+ * Inline text-chip hit-target corner. Deliberately one step tighter than
+ * [HortayShapes.extraSmall] (8 dp): these wrap a single line of tappable text — the
+ * header sender name, the forward / in-channel / translation chips — where an 8 dp
+ * ripple would bleed past the glyphs and read as a floating button rather than an
+ * inline affordance. One named token instead of the bare `RoundedCornerShape(6.dp)`
+ * literal that was repeated across every inline chip in `PostCard`.
+ */
+val InlineChipCorner = RoundedCornerShape(6.dp)
+
+/**
  * Expressive shape registry. All values are derived from `MaterialShapes` so the app
  * stays inside Google's curated polygon set.
  *

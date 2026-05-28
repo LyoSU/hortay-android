@@ -332,6 +332,9 @@
     <string name="timeline_subtitle_feed">%1$d canales</string>
     <string name="timeline_subtitle_saved">Publicaciones guardadas</string>
     <string name="settings_section_feed">Inicio</string>
+    <string name="settings_section_appearance">Apariencia</string>
+    <string name="settings_dynamic_color_title">Colores del fondo de pantalla</string>
+    <string name="settings_dynamic_color_subtitle">Adapta la paleta de la app a tu fondo de pantalla. Desactívalo para usar los colores propios de Hortay.</string>
     <string name="settings_feed_order_newest_title">Nuevas arriba</string>
     <string name="settings_feed_order_newest_subtitle">Desplázate hacia abajo para ver publicaciones anteriores</string>
     <string name="settings_feed_order_oldest_title">Nuevas abajo</string>

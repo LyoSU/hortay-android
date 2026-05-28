@@ -340,6 +340,9 @@
     <string name="timeline_subtitle_feed">%1$d каналов</string>
     <string name="timeline_subtitle_saved">Сохранённые посты</string>
     <string name="settings_section_feed">Лента</string>
+    <string name="settings_section_appearance">Оформление</string>
+    <string name="settings_dynamic_color_title">Цвета из обоев</string>
+    <string name="settings_dynamic_color_subtitle">Подбирает палитру приложения под ваши обои. Выключите, чтобы использовать фирменные цвета Hortay.</string>
     <string name="settings_feed_order_newest_title">Новые сверху</string>
     <string name="settings_feed_order_newest_subtitle">Прокрутите вниз, чтобы увидеть старые</string>
     <string name="settings_feed_order_oldest_title">Новые снизу</string>

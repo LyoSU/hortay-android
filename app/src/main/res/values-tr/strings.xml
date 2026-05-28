@@ -324,6 +324,9 @@
     <string name="timeline_subtitle_feed">%1$d kanal</string>
     <string name="timeline_subtitle_saved">Yer imlerine alınan gönderiler</string>
     <string name="settings_section_feed">Akış</string>
+    <string name="settings_section_appearance">Görünüm</string>
+    <string name="settings_dynamic_color_title">Duvar kâğıdı renkleri</string>
+    <string name="settings_dynamic_color_subtitle">Uygulama paletini duvar kâğıdına göre ayarlar. Hortay\'ın kendi renkleri için kapatın.</string>
     <string name="settings_feed_order_newest_title">En yeni üstte</string>
     <string name="settings_feed_order_newest_subtitle">Eski gönderiler için aşağı kaydır</string>
     <string name="settings_feed_order_oldest_title">En yeni altta</string>

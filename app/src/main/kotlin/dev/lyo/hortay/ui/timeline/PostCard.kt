@@ -64,6 +64,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import dev.lyo.hortay.ui.archive.components.DeletedBadge
 import dev.lyo.hortay.ui.archive.components.EditedChip
 import dev.lyo.hortay.ui.theme.HortayExpressive
+import dev.lyo.hortay.ui.theme.InlineChipCorner
 import dev.lyo.hortay.ui.theme.MorphShape
 import dev.lyo.hortay.ui.theme.asComposeShape
 import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
@@ -145,6 +146,16 @@ fun PostCard(
         label = "post-unread-strip-shrink",
     )
     val unreadStripColor = MaterialTheme.colorScheme.primary
+    // Faint full-card wash on unread posts — a tonal companion to the 3 dp edge strip.
+    // The strip alone is a glance-level cue at the leading edge; the wash gives the
+    // read-history / unread-queue divide a second, peripheral signal that survives when
+    // the strip scrolls under a thumb or off the edge. Kept very low (primary @ 5%) so
+    // it reads as "slightly fresher paper", never as a selection highlight, and stays
+    // calm enough not to cost scan rhythm. Rides the same [unreadAlpha] spring as the
+    // strip, so dwell-ack fades the wash and collapses the strip together as one
+    // "marked read" gesture. Sits BENEATH the deep-link highlight so a quote-tap pop
+    // still reads clearly over an unread card.
+    val unreadWash = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f * unreadAlpha)
     // The unread strip is a colour-only visual cue — invisible to TalkBack. Mirror
     // it into the accessibility tree as a state description so screen-reader users
     // get the same "this post is new" signal sighted users read from the strip.
@@ -158,6 +169,7 @@ fun PostCard(
             // post never installs an offscreen compositing layer it doesn't need — the
             // common case stays layer-free.
             .then(if (post.isDeleted) Modifier.alpha(0.55f) else Modifier)
+            .background(unreadWash)
             .background(highlightColor)
             .drawBehind {
                 if (unreadAlpha <= 0f) return@drawBehind
@@ -482,7 +494,7 @@ private fun HeaderRow(
         ) {
             Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(InlineChipCorner)
                     .clickable(role = Role.Button, onClick = onChannelClick),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -568,7 +580,7 @@ private fun HeaderRow(
 private fun TranslationChip(onDismiss: () -> Unit) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(InlineChipCorner)
             .clickable(onClick = onDismiss),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -637,7 +649,7 @@ private fun WarningPill(label: String, color: androidx.compose.ui.graphics.Color
 private fun InChannelChip(ctx: ChannelContext, onClick: () -> Unit) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(InlineChipCorner)
             .clickable(role = Role.Button, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -663,7 +675,7 @@ private fun InChannelChip(ctx: ChannelContext, onClick: () -> Unit) {
 private fun ForwardChip(origin: ForwardOrigin, onClick: (() -> Unit)?) {
     Row(
         modifier = if (onClick != null) {
-            Modifier.clip(RoundedCornerShape(6.dp)).clickable(role = Role.Button, onClick = onClick)
+            Modifier.clip(InlineChipCorner).clickable(role = Role.Button, onClick = onClick)
         } else Modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1075,7 +1087,12 @@ private fun StatPill(
         Symbol(
             name = symbol,
             tint = tint,
-            size = 22.dp,
+            // 18 dp keeps the stat glyph optically matched to its labelMedium-weight
+            // count text. The earlier 22 dp let views / comments / forward icons
+            // visually outweigh their numbers and made the action row read heavier
+            // than the post body above it — Telegram / Threads keep stat glyphs in
+            // the 16–18 dp band for the same reason.
+            size = 18.dp,
         )
         Spacer(Modifier.width(8.dp))
         Text(

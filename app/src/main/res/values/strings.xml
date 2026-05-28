@@ -322,6 +322,9 @@
     <string name="timeline_subtitle_feed">%1$d channels</string>
     <string name="timeline_subtitle_saved">Bookmarked posts</string>
     <string name="settings_section_feed">Feed</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_dynamic_color_title">Wallpaper colours</string>
+    <string name="settings_dynamic_color_subtitle">Tint the app with colours from your wallpaper. Turn off to use Hortay\'s own palette.</string>
     <string name="settings_feed_order_newest_title">Newest on top</string>
     <string name="settings_feed_order_newest_subtitle">Scroll down for older posts</string>
     <string name="settings_feed_order_oldest_title">Newest at the bottom</string>

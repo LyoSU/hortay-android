@@ -322,6 +322,9 @@
     <string name="timeline_subtitle_feed">%1$d کانال</string>
     <string name="timeline_subtitle_saved">پست‌های نشانک‌گذاری‌شده</string>
     <string name="settings_section_feed">فید</string>
+    <string name="settings_section_appearance">ظاهر</string>
+    <string name="settings_dynamic_color_title">رنگ‌های کاغذدیواری</string>
+    <string name="settings_dynamic_color_subtitle">پالت برنامه را با کاغذدیواری شما هماهنگ می‌کند. برای استفاده از رنگ‌های اختصاصی Hortay خاموش کنید.</string>
     <string name="settings_feed_order_newest_title">جدیدترین بالا</string>
     <string name="settings_feed_order_newest_subtitle">برای پست‌های قدیمی‌تر به پایین بکشید</string>
     <string name="settings_feed_order_oldest_title">جدیدترین پایین</string>

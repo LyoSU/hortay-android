@@ -314,6 +314,9 @@
     <string name="timeline_subtitle_feed">%1$d kanal</string>
     <string name="timeline_subtitle_saved">Kiriman yang disimpan</string>
     <string name="settings_section_feed">Feed</string>
+    <string name="settings_section_appearance">Tampilan</string>
+    <string name="settings_dynamic_color_title">Warna wallpaper</string>
+    <string name="settings_dynamic_color_subtitle">Menyesuaikan palet aplikasi dengan wallpaper Anda. Matikan untuk memakai warna khas Hortay.</string>
     <string name="settings_feed_order_newest_title">Terbaru di atas</string>
     <string name="settings_feed_order_newest_subtitle">Gulir ke bawah untuk kiriman lama</string>
     <string name="settings_feed_order_oldest_title">Terbaru di bawah</string>

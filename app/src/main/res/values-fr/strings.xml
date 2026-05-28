@@ -332,6 +332,9 @@
     <string name="timeline_subtitle_feed">%1$d chaînes</string>
     <string name="timeline_subtitle_saved">Publications enregistrées</string>
     <string name="settings_section_feed">Fil</string>
+    <string name="settings_section_appearance">Apparence</string>
+    <string name="settings_dynamic_color_title">Couleurs du fond d\'écran</string>
+    <string name="settings_dynamic_color_subtitle">Adapte la palette de l\'application à votre fond d\'écran. Désactivez pour utiliser les couleurs de Hortay.</string>
     <string name="settings_feed_order_newest_title">Les plus récents en haut</string>
     <string name="settings_feed_order_newest_subtitle">Fais défiler vers le bas pour les publications plus anciennes</string>
     <string name="settings_feed_order_oldest_title">Les plus récents en bas</string>

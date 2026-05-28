@@ -338,6 +338,9 @@
     <string name="timeline_subtitle_feed">%1$d kanałów</string>
     <string name="timeline_subtitle_saved">Zapisane wpisy</string>
     <string name="settings_section_feed">Feed</string>
+    <string name="settings_section_appearance">Wygląd</string>
+    <string name="settings_dynamic_color_title">Kolory tapety</string>
+    <string name="settings_dynamic_color_subtitle">Dopasowuje kolory aplikacji do tapety. Wyłącz, aby użyć własnych kolorów Hortay.</string>
     <string name="settings_feed_order_newest_title">Najnowsze na górze</string>
     <string name="settings_feed_order_newest_subtitle">Przewiń w dół, żeby zobaczyć starsze</string>
     <string name="settings_feed_order_oldest_title">Najnowsze na dole</string>

@@ -303,3 +303,68 @@ internal fun HideOnlineStatusRow(
         },
     )
 }
+
+/**
+ * Standalone [SegmentedListItem] for the dynamic-colour preference. ON =
+ * Material You wallpaper-derived palette; OFF = the fixed Hortay brand
+ * (periwinkle) scheme. Only rendered on Android 12+ — the caller gates the
+ * whole row behind `Build.VERSION.SDK_INT >= S`, because below that the
+ * platform has no dynamic-colour API and the brand scheme is the only option,
+ * so a toggle would be a dead control.
+ *
+ * The `palette` glyph fills (onPrimaryContainer over primaryContainer) when ON
+ * so a glance reads the active state, matching [SnapScrollRow] /
+ * [InlineAutoplayRow]. Single-row segment (`segmentedShapes(0, 1)`) — it sits
+ * alone in the Appearance section.
+ */
+@Composable
+internal fun DynamicColorRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = 0,
+        count = 1,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        onClick = { onToggle(!enabled) },
+        shapes = shapes,
+        leadingContent = {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(
+                        if (enabled) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Symbol(
+                    name = "palette",
+                    tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 22.dp,
+                )
+            }
+        },
+        supportingContent = {
+            Text(
+                text = stringResource(R.string.settings_dynamic_color_subtitle),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        trailingContent = {
+            Switch(checked = enabled, onCheckedChange = onToggle)
+        },
+        content = {
+            Text(
+                text = stringResource(R.string.settings_dynamic_color_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+    )
+}

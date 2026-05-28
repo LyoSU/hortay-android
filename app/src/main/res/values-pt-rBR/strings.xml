@@ -332,6 +332,9 @@
     <string name="timeline_subtitle_feed">%1$d canais</string>
     <string name="timeline_subtitle_saved">Publicações salvas</string>
     <string name="settings_section_feed">Feed</string>
+    <string name="settings_section_appearance">Aparência</string>
+    <string name="settings_dynamic_color_title">Cores do papel de parede</string>
+    <string name="settings_dynamic_color_subtitle">Adapta a paleta do app ao seu papel de parede. Desative para usar as cores do Hortay.</string>
     <string name="settings_feed_order_newest_title">Mais recentes no topo</string>
     <string name="settings_feed_order_newest_subtitle">Role para baixo para ver publicações mais antigas</string>
     <string name="settings_feed_order_oldest_title">Mais recentes no rodapé</string>

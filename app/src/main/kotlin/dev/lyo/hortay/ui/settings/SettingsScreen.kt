@@ -2,6 +2,7 @@
 
 package dev.lyo.hortay.ui.settings
 
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
@@ -306,6 +307,23 @@ private fun SettingsMain(
             if (me != null) {
                 ProfileHero(me)
                 Spacer(Modifier.height(4.dp))
+            }
+
+            // ---- Appearance: Material You (wallpaper) vs Hortay brand palette --------
+            // Android 12+ only — below S the platform can't derive a wallpaper palette,
+            // so the brand periwinkle scheme is the only option and a toggle would be a
+            // dead control. Default on (wallpaper colours); off pins the brand identity.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val currentDynamicColor by settings.dynamicColor.collectAsStateWithLifecycle(true)
+                SectionLabel(stringResource(R.string.settings_section_appearance))
+                DynamicColorRow(
+                    enabled = currentDynamicColor,
+                    onToggle = { next ->
+                        if (next != currentDynamicColor) {
+                            scope.launch { settings.setDynamicColor(next) }
+                        }
+                    },
+                )
             }
 
             // ---- Mode-agnostic: feed-order + snap-scroll preferences -----------------

@@ -332,6 +332,9 @@
     <string name="timeline_subtitle_feed">%1$d canali</string>
     <string name="timeline_subtitle_saved">Post salvati</string>
     <string name="settings_section_feed">Feed</string>
+    <string name="settings_section_appearance">Aspetto</string>
+    <string name="settings_dynamic_color_title">Colori dello sfondo</string>
+    <string name="settings_dynamic_color_subtitle">Adatta la palette dell\'app al tuo sfondo. Disattiva per usare i colori di Hortay.</string>
     <string name="settings_feed_order_newest_title">Più recenti in cima</string>
     <string name="settings_feed_order_newest_subtitle">Scorri verso il basso per i post più vecchi</string>
     <string name="settings_feed_order_oldest_title">Più recenti in fondo</string>

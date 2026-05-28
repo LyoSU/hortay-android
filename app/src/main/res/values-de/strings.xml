@@ -324,6 +324,9 @@
     <string name="timeline_subtitle_feed">%1$d Kanäle</string>
     <string name="timeline_subtitle_saved">Gespeicherte Beiträge</string>
     <string name="settings_section_feed">Feed</string>
+    <string name="settings_section_appearance">Darstellung</string>
+    <string name="settings_dynamic_color_title">Hintergrundfarben</string>
+    <string name="settings_dynamic_color_subtitle">Passt die App-Farben an dein Hintergrundbild an. Deaktivieren für Hortays eigene Farben.</string>
     <string name="settings_feed_order_newest_title">Neuestes oben</string>
     <string name="settings_feed_order_newest_subtitle">Nach unten scrollen für ältere Beiträge</string>
     <string name="settings_feed_order_oldest_title">Neuestes unten</string>
