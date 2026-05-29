@@ -21,7 +21,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -34,7 +33,6 @@ import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
 import dev.lyo.hortay.ui.media.LocalIsCenteredItem
 import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
-import dev.lyo.hortay.ui.text.LocalExpandScrollKeeper
 import dev.lyo.hortay.ui.text.LocalShowFullPost
 
 /**
@@ -57,8 +55,6 @@ internal fun TimelineFeedColumn(
     onTapRevisions: (dev.lyo.hortay.data.TimelinePost) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val scope = rememberCoroutineScope()
-    val expandRetainer = remember(state, scope) { ExpandScrollRetainer(state, scope) }
     LazyColumn(
         state = state,
         flingBehavior = flingBehavior,
@@ -99,40 +95,18 @@ internal fun TimelineFeedColumn(
                     val highlighted = highlightedPostKey?.let { (cid, mid) ->
                         post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
                     } == true
-                    val keepScroll = remember(item.key, expandRetainer) {
-                        { expandRetainer.retainTop(item.key) }
-                    }
-                    // Reverse (Newest-at-bottom): "Показати більше" opens the post's full view positioned at
-                    // the post's current feed Y; forward keeps the smooth inline expand (null).
-                    val showFull = remember(post, reverseLayout, interactions, state) {
-                        if (reverseLayout) {
-                            ({
-                                val off = state.layoutInfo.visibleItemsInfo
-                                    .firstOrNull { it.key == item.key }?.offset ?: 0
-                                interactions.onShowFull(post, off)
-                            })
-                        } else {
-                            null
-                        }
-                    }
-                    // A plain post tap opens the same hero (both feed orders), routed through
-                    // [PostInteractions.onShowFull] with the captured feed offset.
-                    val itemInteractions = remember(post, interactions, state) {
-                        interactions.copy(
-                            onPostClick = {
-                                val off = state.layoutInfo.visibleItemsInfo
-                                    .firstOrNull { it.key == item.key }?.offset ?: 0
-                                interactions.onShowFull(post, off)
-                            },
-                        )
+                    // "Показати більше" opens the post-detail (comments) screen — the same
+                    // destination a plain tap on the card reaches via [onPostClick]. One
+                    // predictable "open the post" action; no inline grow, no scroll nudge.
+                    val showFull = remember(post, interactions) {
+                        { interactions.onPostClick(post) }
                     }
                     CompositionLocalProvider(
                         LocalIsCenteredItem provides isCenteredState,
                         LocalIsHighlightedItem provides highlighted,
-                        LocalExpandScrollKeeper provides keepScroll,
                         LocalShowFullPost provides showFull,
                     ) {
-                        PostCard(post = post, interactions = itemInteractions, onTapRevisions = onTapRevisions)
+                        PostCard(post = post, interactions = interactions, onTapRevisions = onTapRevisions)
                     }
                 }
             }

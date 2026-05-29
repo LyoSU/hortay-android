@@ -60,7 +60,6 @@ import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.media.rememberDeferredLoading
-import dev.lyo.hortay.ui.text.LocalExpandScrollKeeper
 import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
@@ -116,7 +115,6 @@ fun ChannelScreen(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     onOpenComments: (TimelinePost) -> Unit,
-    onShowFullPost: (dev.lyo.hortay.data.TimelinePost, Int) -> Unit = { _, _ -> },
     onChannelOpen: (chatId: Long, scrollToMessageId: Long?) -> Unit,
     scrollToMessage: Pair<Long, Long>? = null,
     onScrollHandled: () -> Unit = {},
@@ -387,10 +385,6 @@ fun ChannelScreen(
     ) {
         androidx.compose.foundation.lazy.LazyListState(initialIndexSeed, 0)
     }
-    // Pins a post's top when it expands "Показати більше" so a reverseLayout channel
-    // reveals downward instead of dumping the reader at the post's end.
-    val expandRetainer = remember(listState, scope) { ExpandScrollRetainer(listState, scope) }
-
     // Resolve in-channel quote-tap scroll-to-message once the target row appears.
     // Shared with [TimelineScreen]; deep-link landings DO NOT use this path — VM
     // owns those. On miss the helper invokes [onScrollMissed] so the host posts a
@@ -482,7 +476,6 @@ fun ChannelScreen(
     val translationsState = rememberUpdatedState(translationsMap)
     val onChannelOpenState = rememberUpdatedState(onChannelOpen)
     val onOpenCommentsState = rememberUpdatedState(onOpenComments)
-    val onShowFullState = rememberUpdatedState(onShowFullPost)
     val markPostReadState = rememberUpdatedState({ post: TimelinePost ->
         val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
         val unacked = ids.filter { (post.chatId to it) !in ackedRead }
@@ -620,10 +613,6 @@ fun ChannelScreen(
             onPostClick = { post ->
                 markPostReadState.value(post)
                 onOpenCommentsState.value(post)
-            },
-            onShowFull = { post, off ->
-                markPostReadState.value(post)
-                onShowFullState.value(post, off)
             },
             // See [TimelineScreen.onPollVote] for the full rationale of the optimistic-flip
             // → RPC → clearPending pattern.
@@ -874,38 +863,18 @@ fun ChannelScreen(
                                             val highlighted = highlightedPostKey?.let { (cid, mid) ->
                                                 post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
                                             } == true
-                                            val keepScroll = remember(item.key, expandRetainer) {
-                                                { expandRetainer.retainTop(item.key) }
-                                            }
-                                            val showFull = remember(post, feedOrder, interactions, listState) {
-                                                if (feedOrder.reverseLayout) {
-                                                    ({
-                                                        val off = listState.layoutInfo.visibleItemsInfo
-                                                            .firstOrNull { it.key == item.key }?.offset ?: 0
-                                                        interactions.onShowFull(post, off)
-                                                    })
-                                                } else {
-                                                    null
-                                                }
-                                            }
-                                            // A plain post tap opens the same hero (both feed orders),
-                                            // routed through [PostInteractions.onShowFull] with the offset.
-                                            val itemInteractions = remember(post, interactions, listState) {
-                                                interactions.copy(
-                                                    onPostClick = {
-                                                        val off = listState.layoutInfo.visibleItemsInfo
-                                                            .firstOrNull { it.key == item.key }?.offset ?: 0
-                                                        interactions.onShowFull(post, off)
-                                                    },
-                                                )
+                                            // "Показати більше" opens the post-detail (comments)
+                                            // screen — same destination as a plain card tap
+                                            // ([onPostClick]). One "open the post" action.
+                                            val showFull = remember(post, interactions) {
+                                                { interactions.onPostClick(post) }
                                             }
                                             CompositionLocalProvider(
                                                 LocalIsCenteredItem provides isCenteredState,
                                                 LocalIsHighlightedItem provides highlighted,
-                                                LocalExpandScrollKeeper provides keepScroll,
                                                 LocalShowFullPost provides showFull,
                                             ) {
-                                                PostCard(post = post, interactions = itemInteractions)
+                                                PostCard(post = post, interactions = interactions)
                                             }
                                         }
                                     }

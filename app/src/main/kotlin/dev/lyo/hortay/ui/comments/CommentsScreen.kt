@@ -117,7 +117,6 @@ data class CommentsDisabledOverride(
 @Composable
 fun CommentsScreen(
     post: TimelinePost,
-    heroTopPaddingPx: Int = 0,
     repo: CommentsRepository?,
     /**
      * Live feed source so the pinned anchor PostCard reflects the same reactions,
@@ -196,7 +195,6 @@ fun CommentsScreen(
     backProgress: Float = 0f,
     backSwipeEdge: Int = BackEventCompat.EDGE_LEFT,
 ) {
-    val density = androidx.compose.ui.platform.LocalDensity.current
     // Live anchor: track the feed entry whose chat+id matches the post we were
     // opened with so reactions / view count / comment count stay fresh while the
     // user is on this screen. `firstOrNull` keys on the anchor id directly —
@@ -463,33 +461,15 @@ fun CommentsScreen(
                 }
             }
         },
-        // Hero-open: keep the Scaffold transparent so the dimmed feed (rendered beneath this
-        // overlay in the nav stack) shows through the extra top contentPadding above the anchor.
-        // Normal open (heroTopPaddingPx == 0) stays opaque, identical to before.
-        containerColor = if (heroTopPaddingPx > 0) {
-            androidx.compose.ui.graphics.Color.Transparent
-        } else {
-            MaterialTheme.colorScheme.background
-        },
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            if (heroTopPaddingPx > 0) {
-                // Dim scrim over the whole screen so the feed underneath reads as dimmed; the
-                // anchor post + comment rows below paint opaque over it.
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)),
-                )
-            }
-            LazyColumn(
-                state = listState,
-                contentPadding = PaddingValues(
-                    top = padding.calculateTopPadding() + with(density) { heroTopPaddingPx.coerceAtLeast(0).toDp() },
-                    bottom = padding.calculateBottomPadding() + 24.dp,
-                ),
-                modifier = Modifier.fillMaxSize(),
-            ) {
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(
+                top = padding.calculateTopPadding(),
+                bottom = padding.calculateBottomPadding() + 24.dp,
+            ),
+            modifier = Modifier.fillMaxSize(),
+        ) {
             item(key = "post") {
                 // Render the live feed entry when available so optimistic toggles
                 // and server-driven UpdateMessageInteractionInfo updates flow into
@@ -499,15 +479,13 @@ fun CommentsScreen(
                 // clickable = false (tapping the anchor would re-open this very screen),
                 // but actionsEnabled = true so long-press still surfaces the reaction
                 // picker + share/open sheet.
-                Box(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
-                    PostCard(
-                        post = anchor,
-                        interactions = pinnedPostInteractions,
-                        clickable = false,
-                        actionsEnabled = true,
-                        expanded = true,
-                    )
-                }
+                PostCard(
+                    post = anchor,
+                    interactions = pinnedPostInteractions,
+                    clickable = false,
+                    actionsEnabled = true,
+                    expanded = true,
+                )
             }
 
             // The previous inline "X replies" / "no comments yet" label has been
@@ -565,24 +543,22 @@ fun CommentsScreen(
                         // possible if TDLib migrates the discussion group) routes
                         // subsequent taps to the new chat without a screen rebuild.
                         var pickerOpen by remember(row.message.id) { mutableStateOf(false) }
-                        Box(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
-                            CommentNode(
-                                row = row,
-                                onMediaClick = { items, idx -> viewer.open(items, idx) },
-                                onReactionTap = { item ->
-                                    onReactionToggle(
-                                        s.threadChatId,
-                                        row.message.id,
-                                        row.message.reactions,
-                                        item.kind,
-                                        item.isChosen,
-                                    )
-                                },
-                                // Long-press a comment to react with a reaction it doesn't
-                                // already carry — same picker the feed/anchor uses.
-                                onLongPress = { pickerOpen = true },
-                            )
-                        }
+                        CommentNode(
+                            row = row,
+                            onMediaClick = { items, idx -> viewer.open(items, idx) },
+                            onReactionTap = { item ->
+                                onReactionToggle(
+                                    s.threadChatId,
+                                    row.message.id,
+                                    row.message.reactions,
+                                    item.kind,
+                                    item.isChosen,
+                                )
+                            },
+                            // Long-press a comment to react with a reaction it doesn't
+                            // already carry — same picker the feed/anchor uses.
+                            onLongPress = { pickerOpen = true },
+                        )
                         if (pickerOpen) {
                             CommentReactionSheet(
                                 currentReactions = row.message.reactions,
@@ -609,7 +585,6 @@ fun CommentsScreen(
                         body = stringResource(R.string.comments_disabled_body),
                     )
                 }
-            }
             }
         }
     }
