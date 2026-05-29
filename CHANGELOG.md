@@ -13,7 +13,9 @@
 
 ### Fixed
 - Tapping "Show more" in the "Newest at the bottom" feed now reveals the rest of the post downward from where you were reading, instead of jerking the post up and landing you at its end.
+- A tapped link, @mention or hashtag that wraps across lines now highlights as one connected shape, instead of a separate rounded pill on each line.
 - Link highlights and entity styling (inline code background, underline, strikethrough, spoiler covers) now hug the actual text instead of spilling onto leading or trailing blank space.
+- A quote or code block at the very top or bottom of a post now keeps its padding instead of sitting flush against the text edge.
 - Posts and quotes no longer render with stray empty lines hanging off the top or bottom, and the gap around quote and code blocks is now consistent.
 - Switching between folder tabs (Archive ↔ All ↔ a folder) no longer flashes a row of skeleton bars over the see-through feed for a moment before the posts settle.
 - Block quotes now show their accent bar and tinted background everywhere — in the feed, channels and comments — not only when a post is opened in full.

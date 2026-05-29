@@ -2,6 +2,7 @@
 
 package dev.lyo.hortay.ui.text
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,9 +44,13 @@ private val CODE_LABEL_PAD = 6.dp
 private val CODE_LABEL_CORNER = 4.dp
 
 // Pressed-link highlight: a rounded fill behind the pressed link, inflated past the
-// glyphs so it reads as a padded pill rather than a tight background.
-private val LINK_HIGHLIGHT_PAD = 3.dp
-private val LINK_HIGHLIGHT_CORNER = 5.dp
+// glyphs so it reads as a padded pill rather than a tight background. [LINK_HIGHLIGHT_VPAD]
+// lifts the fill off the glyph top/bottom; it's applied only to the OUTER edges of a wrapped
+// run (top of the first line, bottom of the last line) so the interior line joins stay flush
+// and the whole run reads as one connected outline, not a stack of separate pills.
+private val LINK_HIGHLIGHT_PAD = 4.dp
+private val LINK_HIGHLIGHT_VPAD = 1.5.dp
+private val LINK_HIGHLIGHT_CORNER = 6.dp
 
 /**
  * Drop-in [Text] replacement with link-tap handling, long-press, spoiler dot-cloud overlay,
@@ -116,7 +121,16 @@ fun LinkAwareText(
             val firstLine = layout.getLineForOffset(startOff)
             val lastLine = layout.getLineForOffset(endOff - 1)
             val padH = LINK_HIGHLIGHT_PAD.toPx()
-            val corner = CornerRadius(LINK_HIGHLIGHT_CORNER.toPx())
+            val padV = LINK_HIGHLIGHT_VPAD.toPx()
+            val cr = CornerRadius(LINK_HIGHLIGHT_CORNER.toPx())
+            val flat = CornerRadius.Zero
+            // Build ONE silhouette across every wrapped line of the run, then fill it in a
+            // single pass. Per-line rects were drawn separately before, so a multi-line link
+            // read as a stack of fully-rounded pills with a darkened seam where the
+            // semi-transparent fills overlapped. Here only the outermost corners are
+            // chamfered (top of the first line, bottom of the last) and the interior line
+            // edges stay square + flush, so the run reads as one connected highlight.
+            val path = Path()
             for (line in firstLine..lastLine) {
                 // Clip to THIS line's slice of the link, bounded by the last VISIBLE glyph.
                 // Use per-glyph bounding boxes for the edges — getHorizontalPosition at a
@@ -132,10 +146,19 @@ fun LinkAwareText(
                 val x = (left - padH).coerceAtLeast(0f)
                 val r = (right + padH).coerceAtMost(size.width)
                 if (r <= x) continue
-                val top = layout.getLineTop(line)
-                val bottom = layout.getLineBottom(line)
-                drawRoundRect(linkHighlight, Offset(x, top), Size(r - x, bottom - top), corner)
+                val top = layout.getLineTop(line) - if (line == firstLine) padV else 0f
+                val bottom = layout.getLineBottom(line) + if (line == lastLine) padV else 0f
+                path.addRoundRect(
+                    RoundRect(
+                        rect = Rect(x, top, r, bottom),
+                        topLeft = if (line == firstLine) cr else flat,
+                        topRight = if (line == firstLine) cr else flat,
+                        bottomRight = if (line == lastLine) cr else flat,
+                        bottomLeft = if (line == lastLine) cr else flat,
+                    ),
+                )
             }
+            drawPath(path, linkHighlight)
         }
     } else Modifier
 
@@ -160,14 +183,21 @@ fun LinkAwareText(
             val lastVisible = layout.getLineEnd(layout.lineCount - 1, visibleEnd = true)
             val corner = CornerRadius(BLOCK_CORNER.toPx())
             val vpad = BLOCK_VPAD.toPx()
+            // The backing Text is inset by [BLOCK_VPAD] vertically (see the chain below), but
+            // this draw runs in the OUTER node space, so every line coordinate is shifted down
+            // by that inset. Folding it in lets the box keep its [vpad] breathing room even
+            // when a block sits at the very top or bottom of the post — there the old
+            // `coerceAtMost(size.height)` clamped the box flush to the last glyph because the
+            // node had no slack past the text. Now the inset provides that slack at both edges.
+            val yOff = BLOCK_VPAD.toPx()
             for (deco in blockDecorations) {
                 if (deco.start >= lastVisible) continue
                 val s = deco.start.coerceIn(0, len - 1)
                 val eIncl = (deco.end - 1).coerceIn(s, lastVisible - 1)
                 val firstLine = layout.getLineForOffset(s)
                 val lastLine = layout.getLineForOffset(eIncl)
-                val top = (layout.getLineTop(firstLine) - vpad).coerceAtLeast(0f)
-                val bottom = (layout.getLineBottom(lastLine) + vpad).coerceAtMost(size.height)
+                val top = (yOff + layout.getLineTop(firstLine) - vpad).coerceAtLeast(0f)
+                val bottom = (yOff + layout.getLineBottom(lastLine) + vpad).coerceAtMost(size.height)
                 if (bottom <= top) continue
                 val boxSize = Size(size.width, bottom - top)
                 when (deco.kind) {
@@ -297,10 +327,18 @@ fun LinkAwareText(
         },
         // Draw order (behind → front): block boxes, pressed-link highlight, then the
         // glyphs, then spoiler shimmer / code labels on top.
+        //
+        // [blockMod] sits OUTSIDE the vertical padding so its boxes can paint into the inset
+        // strip that gives edge-of-post blocks their breathing room; every modifier after the
+        // padding (gestures, link highlight, overlay) runs in the inset text space, so their
+        // coordinates stay aligned with the laid-out glyphs (gesture hit-testing reads
+        // positions relative to its own node — keep it text-relative). The padding collapses
+        // to zero when the post has no blocks, so plain text is unaffected.
         modifier = modifier
+            .then(blockMod)
+            .padding(vertical = if (blockDecorations.isNotEmpty()) BLOCK_VPAD else 0.dp)
             .then(linkMod)
             .then(pressMod)
-            .then(blockMod)
             .then(highlightMod)
             .then(overlayMod),
     )
