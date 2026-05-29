@@ -7,6 +7,7 @@
 ### Fixed
 - The "next unread" button now reliably marks the post it lands you on as read, so the counter ticks down and each tap steps to the next unread instead of occasionally sticking on the same post.
 - A post's reactions, view count and reply count now keep updating live while you're reading its comments, instead of freezing at the values they had when you opened it.
+- Custom-emoji reactions no longer briefly show the same emoji twice when a post's reactions re-order while loading — each reaction now keeps its own image instead of borrowing a neighbour's.
 
 ## [0.9.0] — 2026-05-29
 

@@ -817,9 +817,14 @@ private fun CommentBubble(
                         .horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Key by reaction-bucket identity, not slot — see [ReactionChip] call
+                    // site in PostCard for why a positional loop renders the wrong custom
+                    // emoji when TDLib re-ranks the buckets mid-read.
                     message.reactions.items.forEachIndexed { idx, item ->
-                        if (idx > 0) Spacer(Modifier.width(6.dp))
-                        ReactionChip(item, onClick = { onReactionTap(item) })
+                        key(item.kind.stableKey) {
+                            if (idx > 0) Spacer(Modifier.width(6.dp))
+                            ReactionChip(item, onClick = { onReactionTap(item) })
+                        }
                     }
                 }
             }

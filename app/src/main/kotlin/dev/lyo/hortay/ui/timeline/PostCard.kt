@@ -17,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -915,34 +916,43 @@ private fun ActionRow(
             val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
             val openTelegramLabel = res.getString(R.string.action_open_telegram)
             val paidExplainer = res.getString(R.string.reactions_paid_explainer)
+            // Key each chip by its reaction-bucket identity, NOT by position. TDLib ranks
+            // reaction buckets by frequency and re-orders them on every
+            // UpdateMessageInteractionInfo; a positional (unkeyed) loop would then reuse a
+            // chip slot that was rendering custom emoji A to render custom emoji B, and the
+            // underlying Coil AsyncImage keeps painting A's already-decoded bitmap until B
+            // decodes — so two different reactions momentarily render the SAME custom emoji.
+            // A stable key moves composition state with the bucket instead of reusing by slot.
             reactions.items.forEachIndexed { idx, item ->
-                if (idx > 0) Spacer(Modifier.width(6.dp))
-                val isPaid = item.kind is ReactionKind.Paid
-                val tapHandler: () -> Unit = if (isPaid) {
-                    {
-                        bus?.post(
-                            text = paidExplainer,
-                            severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
-                            action = dev.lyo.hortay.data.UserMessageBus.Action.Run(
-                                label = openTelegramLabel,
-                                onClick = onPaidReactionOpenPost,
-                            ),
-                        )
+                key(item.kind.stableKey) {
+                    if (idx > 0) Spacer(Modifier.width(6.dp))
+                    val isPaid = item.kind is ReactionKind.Paid
+                    val tapHandler: () -> Unit = if (isPaid) {
+                        {
+                            bus?.post(
+                                text = paidExplainer,
+                                severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
+                                action = dev.lyo.hortay.data.UserMessageBus.Action.Run(
+                                    label = openTelegramLabel,
+                                    onClick = onPaidReactionOpenPost,
+                                ),
+                            )
+                        }
+                    } else {
+                        {
+                            // Toggle haptic on a real reaction add/remove — ToggleOff when
+                            // un-reacting (the chip was already the user's choice), ToggleOn
+                            // otherwise. Paid reactions skip this: their tap raises an
+                            // explainer snackbar, not a state change.
+                            haptics.performHapticFeedback(
+                                if (item.isChosen) HapticFeedbackType.ToggleOff
+                                else HapticFeedbackType.ToggleOn,
+                            )
+                            onReactionTap(item)
+                        }
                     }
-                } else {
-                    {
-                        // Toggle haptic on a real reaction add/remove — ToggleOff when
-                        // un-reacting (the chip was already the user's choice), ToggleOn
-                        // otherwise. Paid reactions skip this: their tap raises an
-                        // explainer snackbar, not a state change.
-                        haptics.performHapticFeedback(
-                            if (item.isChosen) HapticFeedbackType.ToggleOff
-                            else HapticFeedbackType.ToggleOn,
-                        )
-                        onReactionTap(item)
-                    }
+                    ReactionChip(item, onClick = tapHandler, disabled = isPaid)
                 }
-                ReactionChip(item, onClick = tapHandler, disabled = isPaid)
             }
         }
     }
