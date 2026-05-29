@@ -4,16 +4,9 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RadialGradientShader
-import androidx.compose.ui.graphics.Shader
-import androidx.compose.ui.graphics.ShaderBrush
-import androidx.compose.ui.graphics.TileMode
 import dev.lyo.hortay.data.ProfileAccentResolver
-import kotlin.math.hypot
 
 /**
  * Resolver for per-user Telegram profile accent colours. Seeded once at
@@ -28,52 +21,42 @@ val LocalProfileAccent = staticCompositionLocalOf<ProfileAccentResolver> {
     ProfileAccentResolver.Empty
 }
 
-/**
- * Radial cover brush for a profile header, faithful to how the official Telegram
- * Android client paints `profileAccentColorId` (`ProfileActivity.TopView` +
- * `PeerColorActivity` use a `RadialGradient`, NOT a linear fade-to-surface):
- *
- *   - centre: horizontally centred, vertically ~40 % down the cover (near the avatar);
- *   - radius: 0.75 × the cover's diagonal, CLAMP tile mode;
- *   - stops: centre → edge = `backgroundColors[1]` → `backgroundColors[0]`.
- *
- * No fade to white — the colour is a solid block; separation from the body below is
- * structural (the cover simply ends and surface begins). The avatar straddles the seam.
- * `storyColors` are deliberately NOT used here — in Telegram they only paint the
- * active-story ring, which we don't draw for a user with no stories.
- */
-private fun radialCover(colors: List<Color>): ShaderBrush = object : ShaderBrush() {
-    override fun createShader(size: Size): Shader = RadialGradientShader(
-        center = Offset(size.width / 2f, size.height * 0.40f),
-        radius = 0.75f * hypot(size.width, size.height),
-        colors = colors,
-        colorStops = listOf(0f, 1f),
-        tileMode = TileMode.Clamp,
-    )
-}
+/** Darken a colour by [fraction] toward black, keeping alpha — for a subtle second stop. */
+private fun Color.darken(fraction: Float): Color =
+    Color(red * (1f - fraction), green * (1f - fraction), blue * (1f - fraction), alpha)
 
 /**
- * Cover brush for a profile hero. The user's own accent gradient when set (radial,
- * two background shades), otherwise a soft brand cover (`primaryContainer →
- * secondaryContainer`) — both branches stay fully coloured, never fading to white.
- * `accentId == -1` (unset) or a registry miss → brand fallback.
+ * Cover brush for a profile header — a **visible** vertical two-tone gradient of the user's
+ * own profile colours (top → bottom), never fading to white.
+ *
+ * Telegram's `ProfileActivity` uses a RadialGradient, but that is calibrated for a tall,
+ * full-screen header where the transition spans the visible area. Our cover is wide and
+ * short (≈360×84 dp); a radial with Telegram's `0.75 × diagonal` radius barely changes
+ * across such a band and reads as a flat block. A vertical two-tone keeps the gradient
+ * clearly visible in a compact cover while still using the user's two colours.
+ *
+ *   - two background colours → `backgroundColors[0]` (top) → `backgroundColors[1]` (bottom);
+ *   - a single colour → that colour with a slightly darker top stop, so it isn't dead-flat;
+ *   - no accent set / registry miss → soft brand cover (`primaryContainer → secondaryContainer`).
+ *
+ * `storyColors` are deliberately unused here — in Telegram they only paint the active-story
+ * ring, which we don't draw for a user with no stories.
  */
 @Composable
 fun profileCoverBrush(accentId: Int): Brush {
     val resolver = LocalProfileAccent.current
     val dark = isSystemInDarkTheme()
     val argb = resolver.backgroundArgb(accentId, dark)
-    val colors = if (argb != null && argb.isNotEmpty()) {
-        // Telegram order: inner stop = backgroundColors[1] (last), outer = backgroundColors[0]
-        // (first). A single-colour accent collapses both stops to a flat wash.
-        val inner = Color(argb.last())
-        val outer = Color(argb.first())
-        listOf(inner, outer)
-    } else {
-        listOf(
+    val colors = when {
+        argb != null && argb.size >= 2 -> listOf(Color(argb[0]), Color(argb[1]))
+        argb != null && argb.size == 1 -> {
+            val c = Color(argb[0])
+            listOf(c.darken(0.14f), c)
+        }
+        else -> listOf(
             MaterialTheme.colorScheme.primaryContainer,
             MaterialTheme.colorScheme.secondaryContainer,
         )
     }
-    return radialCover(colors)
+    return Brush.verticalGradient(colors)
 }
