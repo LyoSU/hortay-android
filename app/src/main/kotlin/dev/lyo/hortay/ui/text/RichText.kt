@@ -96,8 +96,9 @@ fun RichText(
     }
 }
 
-/** Lines a block shows before collapsing: a fixed few for expandable quotes, otherwise the
- *  caller's clamp (so a block on the feed stays bounded, but a full post shows it whole). */
+/** Lines a block shows collapsed: a fixed few on any clamped surface (feed / channel /
+ *  caption) and for an explicitly-collapsible quote, so no block ever previews as a tall
+ *  10+ line wall. A full post / comments surface shows a non-collapsible block whole. */
 private const val COLLAPSED_QUOTE_LINES = 3
 
 /**
@@ -109,11 +110,10 @@ private const val COLLAPSED_QUOTE_LINES = 3
  *  * **Code** — `surfaceContainerHigh` box, monospace body, optional language header.
  *
  * The box hugs its content width rather than filling the row, so a short quote reads as a
- * pulled-in block instead of a full-width band. Collapsing: an expandable quote starts at
- * [COLLAPSED_QUOTE_LINES]; any other block clamps to [maxLines]. The chevron + tap target
- * appear only when the body actually overflows, and toggle both ways. Expanding pins the
- * post's top via [LocalExpandScrollKeeper] so a `reverseLayout` feed reveals the new lines
- * downward instead of dumping the reader at the post's end.
+ * pulled-in block instead of a full-width band. Collapsing: a block previews at
+ * [COLLAPSED_QUOTE_LINES] on any clamped surface (and an explicitly-collapsible quote
+ * everywhere); a full-reading surface shows a non-collapsible block whole. The chevron + tap
+ * target appear only when the body actually overflows, and toggle both ways.
  */
 @Composable
 private fun BlockBox(
@@ -128,7 +128,15 @@ private fun BlockBox(
 
     var expanded by remember(text) { mutableStateOf(false) }
     var canExpand by remember(text) { mutableStateOf(false) }
-    val collapsedBudget = if (expandable) COLLAPSED_QUOTE_LINES else maxLines
+    // Collapsed budget: a few lines on any clamped surface (and for an explicitly-collapsible
+    // quote anywhere), so a long quote previews compactly with a chevron instead of an
+    // 18-line wall. Only a full-reading surface (maxLines == MAX) shows a non-collapsible
+    // block whole.
+    val collapsedBudget = when {
+        expandable -> COLLAPSED_QUOTE_LINES
+        maxLines == Int.MAX_VALUE -> Int.MAX_VALUE
+        else -> COLLAPSED_QUOTE_LINES
+    }
     val effectiveMax = if (expanded) Int.MAX_VALUE else collapsedBudget
     val expandLabel = stringResource(if (expanded) R.string.post_show_less else R.string.post_show_more)
 
