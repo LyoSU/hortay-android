@@ -41,16 +41,13 @@ import dev.lyo.hortay.ui.icons.Symbol
  *
  * The ONE exception is the **expandable** block quote
  * (`TextEntityTypeExpandableBlockQuote`): it needs its own collapsed/expanded state and a
- * per-quote line clamp, which a single shared [Text] cannot express. So when an expandable
- * quote is present AND we're on a full-reading surface (`maxLines == Int.MAX_VALUE` — the
- * comments anchor / a comment bubble, where there is no competing post-level clamp), the
- * body is split into segments: ordinary runs render through [renderer] (→ [LinkAwareText],
- * static blocks still drawn inline), and each expandable quote renders as a collapsible
- * [ExpandableQuote] with its own line budget.
- *
- * On clamped surfaces (feed / channel, finite [maxLines]) we DON'T segment — the
- * post-level clamp + "Показати більше" already bound the length, and the expandable quote
- * renders as an ordinary quote box. Collapsing is a full-reading affordance.
+ * per-quote line clamp, which a single shared [Text] cannot express. So whenever an
+ * expandable quote is present — on EVERY surface, feed included — the body is split into
+ * segments: ordinary runs render through [renderer] (→ [LinkAwareText], static blocks still
+ * drawn inline) keeping their own [maxLines] clamp + "Показати більше", and each expandable
+ * quote renders as a collapsible [ExpandableQuote]. The quote starts collapsed and toggles
+ * both ways; because each segment keeps its own clamp, the post-level truncation still
+ * works around it.
  */
 @Composable
 fun RichText(
@@ -60,7 +57,7 @@ fun RichText(
     renderer: (@Composable (RenderableText, TextStyle, Int) -> Unit),
 ) {
     val expandableRanges = remember(formatted) { formatted.expandableQuoteRanges() }
-    if (expandableRanges.isEmpty() || maxLines != Int.MAX_VALUE) {
+    if (expandableRanges.isEmpty()) {
         renderer(rememberRenderableText(formatted), style, maxLines)
         return
     }
@@ -82,7 +79,7 @@ fun RichText(
             if (segment.isExpandableQuote) {
                 ExpandableQuote(segment.text, style)
             } else {
-                renderer(rememberRenderableText(segment.text), style, Int.MAX_VALUE)
+                renderer(rememberRenderableText(segment.text), style, maxLines)
             }
         }
     }
@@ -97,10 +94,9 @@ private const val COLLAPSED_QUOTE_LINES = 3
  * [LinkAwareText]) around a [LinkAwareText] clamped to [COLLAPSED_QUOTE_LINES] until the
  * user expands it.
  *
- * Expansion is one-way — matching the post-level "Показати більше" idiom (see
- * `ExpandableText`) — so the affordance needs no "show less" string and the interaction
- * reads the same as everywhere else in the app. The chevron + tap target appear only when
- * the quote actually overflows the collapsed budget.
+ * Starts collapsed and toggles both ways (chevron down = expand, up = collapse), matching
+ * Telegram. The chevron + tap target appear only once the quote actually overflows the
+ * collapsed budget. The whole box is the tap target with a state-dependent click label.
  */
 @Composable
 private fun ExpandableQuote(text: FormattedText, style: TextStyle) {
@@ -108,16 +104,15 @@ private fun ExpandableQuote(text: FormattedText, style: TextStyle) {
     var expanded by remember(text) { mutableStateOf(false) }
     var canExpand by remember(text) { mutableStateOf(false) }
     val rt = rememberRenderableText(text)
-    val toggleable = canExpand && !expanded
-    val expandLabel = stringResource(R.string.post_show_more)
+    val clickLabel = stringResource(if (expanded) R.string.post_show_less else R.string.post_show_more)
 
     Box(
         modifier = Modifier
             .clip(MaterialTheme.shapes.extraSmall)
             .background(accent.copy(alpha = 0.10f))
             .then(
-                if (toggleable) {
-                    Modifier.clickable(role = Role.Button, onClickLabel = expandLabel) { expanded = true }
+                if (canExpand) {
+                    Modifier.clickable(role = Role.Button, onClickLabel = clickLabel) { expanded = !expanded }
                 } else {
                     Modifier
                 },
@@ -135,23 +130,23 @@ private fun ExpandableQuote(text: FormattedText, style: TextStyle) {
                 style = style,
                 maxLines = if (expanded) Int.MAX_VALUE else COLLAPSED_QUOTE_LINES,
                 overflow = TextOverflow.Ellipsis,
+                // Detect overflow only while collapsed; once expandable it stays toggleable.
                 onTextLayout = { layout -> if (!expanded && layout.hasVisualOverflow) canExpand = true },
-                // Trailing padding reserves room for the chevron so the last collapsed line
-                // doesn't crash into it.
-                modifier = Modifier.padding(start = 10.dp, end = 26.dp, top = 6.dp, bottom = 6.dp),
+                // Trailing padding reserves room for the chevron so a line never crashes into it.
+                modifier = Modifier.padding(start = 12.dp, end = 30.dp, top = 8.dp, bottom = 8.dp),
             )
         }
-        if (toggleable) {
-            // Downward chevron = "expand". Reuses the bundled `chevron_right` ("›")
-            // rotated 90° rather than shipping a new drawable.
+        if (canExpand) {
+            // Chevron: down ("›" rotated 90°) when collapsed = "expand", up (270°) when
+            // expanded = "collapse". Reuses the bundled `chevron_right` drawable.
             Symbol(
                 name = "chevron_right",
                 tint = accent.copy(alpha = 0.7f),
                 size = 16.dp,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(bottom = 4.dp, end = 6.dp)
-                    .rotate(90f),
+                    .padding(bottom = 6.dp, end = 8.dp)
+                    .rotate(if (expanded) 270f else 90f),
             )
         }
     }

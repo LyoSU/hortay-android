@@ -222,6 +222,7 @@
     <string name="post_open_telegram">Open in Telegram</string>
     <string name="post_copied_toast">Copied</string>
     <string name="post_show_more">Show more</string>
+    <string name="post_show_less">Show less</string>
 
     <!-- Service / expired media -->
     <string name="expired_photo">Self-destructing photo expired</string>

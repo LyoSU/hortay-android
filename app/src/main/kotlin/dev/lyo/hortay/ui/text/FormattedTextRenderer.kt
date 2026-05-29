@@ -410,8 +410,8 @@ private data class BuiltAnnotated(
 // Left text indent (in sp so it tracks font scale) reserving room for the quote bar /
 // the code box padding. Mirrors the dp geometry drawn in [LinkAwareText]; they're
 // calibrated to line up at the default font scale.
-private val QUOTE_TEXT_INDENT = 16.sp
-private val CODE_TEXT_INDENT = 12.sp
+private val QUOTE_TEXT_INDENT = 18.sp
+private val CODE_TEXT_INDENT = 14.sp
 
 private data class CustomEmojiRange(val start: Int, val end: Int, val emojiId: Long)
 

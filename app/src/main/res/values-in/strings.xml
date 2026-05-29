@@ -218,6 +218,7 @@
     <string name="post_open_telegram">Buka di Telegram</string>
     <string name="post_copied_toast">Disalin</string>
     <string name="post_show_more">Tampilkan lebih banyak</string>
+    <string name="post_show_less">Tampilkan lebih sedikit</string>
 
     <!-- Pesan layanan / media kadaluarsa -->
     <string name="expired_photo">Foto merusak diri sudah kedaluwarsa</string>

@@ -37,7 +37,7 @@ import dev.lyo.hortay.ui.media.rememberSpoilerDrift
 // FormattedTextRenderer (QUOTE_TEXT_INDENT / CODE_TEXT_INDENT) at the default font scale.
 private val BLOCK_CORNER = 8.dp
 private val QUOTE_BAR_WIDTH = 3.dp
-private val BLOCK_VPAD = 3.dp
+private val BLOCK_VPAD = 6.dp
 private val CODE_LABEL_FONT = 11.sp
 private val CODE_LABEL_PAD = 6.dp
 private val CODE_LABEL_CORNER = 4.dp

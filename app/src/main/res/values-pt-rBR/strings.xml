@@ -228,6 +228,7 @@
     <string name="post_open_telegram">Abrir no Telegram</string>
     <string name="post_copied_toast">Copiado</string>
     <string name="post_show_more">Ver mais</string>
+    <string name="post_show_less">Ver menos</string>
 
     <!-- Serviço / mídia expirada -->
     <string name="expired_photo">Foto autodestrutiva expirou</string>

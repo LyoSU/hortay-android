@@ -232,6 +232,7 @@
     <string name="post_open_telegram">Открыть в Telegram</string>
     <string name="post_copied_toast">Скопировано</string>
     <string name="post_show_more">Показать больше</string>
+    <string name="post_show_less">Показать меньше</string>
 
     <!-- Service / expired media -->
     <string name="expired_photo">Самоуничтожающееся фото исчезло</string>

@@ -224,6 +224,7 @@
     <string name="post_open_telegram">Telegram\'da aç</string>
     <string name="post_copied_toast">Kopyalandı</string>
     <string name="post_show_more">Daha fazla göster</string>
+    <string name="post_show_less">Daha az göster</string>
 
     <!-- Sistem / süresi dolmuş medya -->
     <string name="expired_photo">Kendiliğinden silinen fotoğraf silindi</string>

@@ -230,6 +230,7 @@
     <string name="post_open_telegram">Otwórz w Telegramie</string>
     <string name="post_copied_toast">Skopiowano</string>
     <string name="post_show_more">Pokaż więcej</string>
+    <string name="post_show_less">Pokaż mniej</string>
 
     <!-- Usługi systemowe / media, które wygasły -->
     <string name="expired_photo">Samozniszczające się zdjęcie wygasło</string>

@@ -238,6 +238,7 @@
     <string name="post_open_telegram">فتح في Telegram</string>
     <string name="post_copied_toast">تم النسخ</string>
     <string name="post_show_more">عرض المزيد</string>
+    <string name="post_show_less">عرض أقل</string>
 
     <!-- رسائل الخدمة / الوسائط المنتهية الصلاحية -->
     <string name="expired_photo">انتهت صلاحية الصورة المدمِّرة ذاتياً</string>

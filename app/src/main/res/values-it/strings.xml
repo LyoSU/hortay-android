@@ -228,6 +228,7 @@
     <string name="post_open_telegram">Apri in Telegram</string>
     <string name="post_copied_toast">Copiato</string>
     <string name="post_show_more">Mostra altro</string>
+    <string name="post_show_less">Mostra meno</string>
 
     <!-- Messaggi di servizio / media scaduti -->
     <string name="expired_photo">Foto a scomparsa scaduta</string>

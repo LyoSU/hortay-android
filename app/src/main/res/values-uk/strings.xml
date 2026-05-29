@@ -228,6 +228,7 @@
     <string name="post_open_telegram">Відкрити в Telegram</string>
     <string name="post_copied_toast">Скопійовано</string>
     <string name="post_show_more">Показати більше</string>
+    <string name="post_show_less">Показати менше</string>
 
     <!-- Service / expired media -->
     <string name="expired_photo">Тимчасове фото зникло</string>

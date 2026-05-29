@@ -224,6 +224,7 @@
     <string name="post_open_telegram">In Telegram öffnen</string>
     <string name="post_copied_toast">Kopiert</string>
     <string name="post_show_more">Mehr anzeigen</string>
+    <string name="post_show_less">Weniger anzeigen</string>
 
     <!-- Dienst- / abgelaufene Medien -->
     <string name="expired_photo">Selbstlöschendes Foto abgelaufen</string>

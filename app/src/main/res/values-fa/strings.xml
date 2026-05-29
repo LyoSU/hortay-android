@@ -222,6 +222,7 @@
     <string name="post_open_telegram">باز کردن در Telegram</string>
     <string name="post_copied_toast">کپی شد</string>
     <string name="post_show_more">نمایش بیشتر</string>
+    <string name="post_show_less">نمایش کمتر</string>
 
     <!-- رسانه‌های خدماتی / منقضی‌شده -->
     <string name="expired_photo">عکس خودکار منقضی شد</string>
