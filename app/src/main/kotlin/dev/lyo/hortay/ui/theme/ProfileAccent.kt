@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import dev.lyo.hortay.data.ProfileAccentResolver
 
 /**
@@ -21,26 +22,13 @@ val LocalProfileAccent = staticCompositionLocalOf<ProfileAccentResolver> {
     ProfileAccentResolver.Empty
 }
 
-/**
- * Cover brush for a profile hero — **one continuous vertical wash over the whole hero**:
- * the user's accent colour(s) at the top, softening into the card/sheet surface by the lower
- * third. There is no hard "colour block / white block" seam — the name sits on a near-neutral
- * background (legible) and the hero blends seamlessly into the content below.
- *
- *   - two background colours → `backgroundColors[0]` (top) → `backgroundColors[1]` (mid) → surface;
- *   - a single colour → that colour top+mid → surface;
- *   - no accent set / registry miss → brand wash (`primaryContainer → secondaryContainer → surface`).
- *
- * `storyColors` are deliberately unused — in Telegram they only paint the active-story ring,
- * which we don't draw for a user with no stories.
- */
+/** The cover's two colours [top, bottom] — the user's accent shades, or the brand fallback. */
 @Composable
-fun profileCoverBrush(accentId: Int): Brush {
+private fun coverColors(accentId: Int): Pair<Color, Color> {
     val resolver = LocalProfileAccent.current
     val dark = isSystemInDarkTheme()
-    val end = MaterialTheme.colorScheme.surfaceContainerLow
     val argb = resolver.backgroundArgb(accentId, dark)
-    val (top, mid) = when {
+    return when {
         argb != null && argb.size >= 2 -> Color(argb[0]) to Color(argb[1])
         argb != null && argb.size == 1 -> {
             val c = Color(argb[0])
@@ -48,9 +36,31 @@ fun profileCoverBrush(accentId: Int): Brush {
         }
         else -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.secondaryContainer
     }
-    return Brush.verticalGradient(
-        0.0f to top,
-        0.45f to mid,
-        1.0f to end,
-    )
+}
+
+/**
+ * Cover brush for a profile hero — a clean vertical gradient of the user's two profile colours
+ * (or the brand fallback). The colours stay fully saturated; we do NOT blend toward the surface,
+ * which produced muddy in-between tones. The hero is the colour; legible text rides on top via
+ * [profileOnCoverColor]. Matches how Telegram fills its profile header with the peer colours.
+ *
+ * `storyColors` are unused — Telegram only paints them as the active-story ring, which we don't
+ * draw for a user with no stories.
+ */
+@Composable
+fun profileCoverBrush(accentId: Int): Brush {
+    val (top, bottom) = coverColors(accentId)
+    return Brush.verticalGradient(listOf(top, bottom))
+}
+
+/**
+ * Foreground colour for text/icons sitting ON the cover — white on a dark cover, near-black on a
+ * light one, picked from the cover's bottom shade (where the name sits) by perceived luminance.
+ * This is the "name is black or white, done properly" contrast rule Telegram applies, instead of
+ * a fixed dark colour that reads as muddy on a saturated background.
+ */
+@Composable
+fun profileOnCoverColor(accentId: Int): Color {
+    val (_, bottom) = coverColors(accentId)
+    return if (bottom.luminance() < 0.5f) Color.White else Color(0xDE000000)
 }

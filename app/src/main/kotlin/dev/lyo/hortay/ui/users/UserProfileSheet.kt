@@ -54,6 +54,7 @@ import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.UserProfile
 import dev.lyo.hortay.ui.components.PremiumStatusBadge
 import dev.lyo.hortay.ui.theme.profileCoverBrush
+import dev.lyo.hortay.ui.theme.profileOnCoverColor
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
 import java.text.NumberFormat
@@ -191,11 +192,12 @@ private fun ProfileHero(
 
     val accentId = profile?.profileAccentColorId ?: -1
     val coverBrush = profileCoverBrush(accentId)
+    val onCover = profileOnCoverColor(accentId)
 
-    // One continuous gradient over the whole hero: accent at the top (handle + avatar),
-    // softening into the sheet surface behind the name, then blending into the content below —
-    // no hard colour-block / white-block seam. Reaches the very top of the sheet (rounded
-    // corners). No story ring — Telegram only paints it for users with active stories.
+    // Coloured hero: a clean two-shade gradient of the user's profile colour reaching the very
+    // top of the sheet (rounded corners). Name / handle / presence ride on top in an adaptive
+    // black/white colour for contrast — the way Telegram paints its profile header. No story
+    // ring — Telegram only paints it for users with active stories.
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -240,13 +242,14 @@ private fun ProfileHero(
                 text = resolvedName,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
+                color = onCover,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
             profile?.verification?.let {
                 Spacer(Modifier.width(6.dp))
-                VerificationGlyph(it)
+                VerificationGlyph(it, tint = onCover)
             }
             if (profile?.isPremium == true || profile?.emojiStatusId != null) {
                 Spacer(Modifier.width(6.dp))
@@ -268,7 +271,7 @@ private fun ProfileHero(
             Text(
                 text = handle,
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
+                color = onCover.copy(alpha = 0.85f),
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .clickable { copyHandle(context, handle) }
@@ -281,7 +284,7 @@ private fun ProfileHero(
             Text(
                 text = statusLine,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = onCover.copy(alpha = 0.7f),
             )
         }
         // Bot / Support chip stack — Telegram surfaces these as small badges next to the
@@ -453,12 +456,12 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun VerificationGlyph(v: SenderVerification) {
+private fun VerificationGlyph(v: SenderVerification, tint: Color = MaterialTheme.colorScheme.primary) {
     when (v) {
         SenderVerification.Verified -> Symbol(
             name = "verified",
             contentDescription = stringResource(R.string.cd_verified_badge),
-            tint = MaterialTheme.colorScheme.primary,
+            tint = tint,
             size = 18.dp,
         )
         SenderVerification.Scam -> Chip(

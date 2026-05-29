@@ -65,6 +65,7 @@ import dev.lyo.hortay.data.resolveEmojiStatusId
 import dev.lyo.hortay.ui.components.PremiumStatusBadge
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.theme.profileCoverBrush
+import dev.lyo.hortay.ui.theme.profileOnCoverColor
 import org.drinkless.tdlib.TdApi
 import kotlin.math.abs
 import kotlinx.collections.immutable.persistentSetOf
@@ -518,15 +519,16 @@ private fun ProfileHero(me: TdApi.User) {
         }
     }
     val coverBrush = profileCoverBrush(me.profileAccentColorId)
-    // One continuous gradient over the whole card: accent at the top (behind the avatar),
-    // softening into the card surface at the bottom (behind the name). No cover band / hard
-    // seam — the avatar sits on the accent, the name on the near-neutral lower part.
+    val onCover = profileOnCoverColor(me.profileAccentColorId)
+    // The whole card is the accent colour (clean two-shade gradient, no muddy surface blend);
+    // the name + handle ride on top in an adaptive black/white colour for contrast — the way
+    // Telegram paints its profile header.
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.large)
             .background(coverBrush)
-            .padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         TdAvatar(
@@ -542,6 +544,7 @@ private fun ProfileHero(me: TdApi.User) {
                 text = displayName,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
+                color = onCover,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -559,7 +562,7 @@ private fun ProfileHero(me: TdApi.User) {
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = onCover.copy(alpha = 0.75f),
             )
         }
     }
