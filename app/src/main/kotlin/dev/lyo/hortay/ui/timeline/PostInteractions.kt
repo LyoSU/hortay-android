@@ -13,9 +13,13 @@ import dev.lyo.hortay.data.TimelinePost
 @Immutable
 data class PostInteractions(
     val onPostClick: (post: TimelinePost) -> Unit = {},
-    /** Open the post's full view (comments overlay) anchored so the post lands at [topOffsetPx]
-     *  from the feed viewport top — used by the reverseLayout "Показати більше" hero-open. */
-    val onShowFull: (post: TimelinePost, topOffsetPx: Int) -> Unit = { _, _ -> },
+    /**
+     * Hero-open the post's full view (comments) anchored at [topYpx] — the post's absolute
+     * on-screen Y captured in the feed — so it lands where it sat. `null` when there's no
+     * post-detail to open (guest mode, previews): the feed then keeps [onPostClick] for taps
+     * and lets "Показати більше" expand inline. Wired only in the authenticated feed/channel.
+     */
+    val onShowFull: ((post: TimelinePost, topYpx: Int) -> Unit)? = null,
     val onMediaClick: (post: TimelinePost, index: Int) -> Unit = { _, _ -> },
     val onChannelClick: (post: TimelinePost) -> Unit = {},
     /**

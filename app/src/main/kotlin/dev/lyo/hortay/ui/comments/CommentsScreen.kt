@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
@@ -119,10 +120,10 @@ fun CommentsScreen(
     post: TimelinePost,
     /**
      * Hero-open anchor: the post's ABSOLUTE on-screen Y (positionInWindow) captured in the
-     * feed at tap time, so the post lands exactly where it sat. `null` = a normal open (deep
-     * link, etc.) that paints opaque with the post at the top. Can be NEGATIVE when the post's
-     * top was scrolled above the viewport (a long post): then there's no room to pad above, so
-     * the list is scrolled INTO the anchor by `-heroAnchorY` instead — same visual result.
+     * feed at tap time. On open the list is scrolled so the anchor lands at that same Y, so the
+     * post keeps its reading position instead of snapping to the top (see the scroll math in
+     * the content body). Can be negative for a long post whose top was above the viewport. The
+     * screen is always opaque. `null` = a normal open (deep link) that lands the post at the top.
      */
     heroAnchorY: Int? = null,
     repo: CommentsRepository?,
@@ -311,15 +312,12 @@ fun CommentsScreen(
     // without any explicit keying here. The rememberLazyListState() participates in
     // that scope automatically via Compose's standard Saver.
     val listState = rememberLazyListState()
-
-    // Hero-open into a LONG post (anchor top was above the feed viewport, heroAnchorY < 0):
-    // there's no room to pad above, so scroll the list INTO the anchor by |heroAnchorY| once,
-    // on first composition, so the post stays at the same on-screen position it had in the
-    // feed instead of snapping to the top. Short posts (heroAnchorY >= 0) are handled purely
-    // by contentPadding below and need no scroll.
-    if (heroAnchorY != null && heroAnchorY < 0) {
-        LaunchedEffect(Unit) { listState.scrollToItem(0, -heroAnchorY) }
-    }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // One-shot guard so the hero scroll runs only on the first open of this entry — not again
+    // after the screen leaves & re-enters composition (e.g. a channel pushed on top then
+    // popped), which would stomp the user's restored scroll position. rememberSaveable lives in
+    // the per-entry SaveableStateProvider scope, so it's true for the rest of this entry's life.
+    var heroScrollApplied by rememberSaveable { mutableStateOf(false) }
 
     // Twitter / Instagram floating-bar pattern — see [TimelineScreen]'s
     // `topBarOffsetPx` block for the full reasoning. Scroll delta directly
@@ -479,6 +477,21 @@ fun CommentsScreen(
             }
         },
     ) { padding ->
+        // Hero-open: land the anchor post where it sat in the feed. [heroAnchorY] is its
+        // absolute on-screen Y; the list content starts [topInsetPx] below the screen top
+        // (status bar + top app bar), so the scroll needed to bring the anchor's top to
+        // heroAnchorY is `topInsetPx - heroAnchorY`. We can only scroll the list DOWN into its
+        // content, so a negative target (a short post sitting below the inset) clamps to 0 and
+        // the post just opens at the top — no gap, no transparency. scrollToItem itself clamps
+        // to available content, so short threads can't over-scroll either.
+        if (heroAnchorY != null && !heroScrollApplied) {
+            val topInsetPx = with(density) { padding.calculateTopPadding().roundToPx() }
+            val target = (topInsetPx - heroAnchorY).coerceAtLeast(0)
+            LaunchedEffect(Unit) {
+                if (target > 0) listState.scrollToItem(0, target)
+                heroScrollApplied = true
+            }
+        }
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(

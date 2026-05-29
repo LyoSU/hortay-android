@@ -113,7 +113,7 @@ fun TimelineScreen(
     translations: TranslationsStore? = null,
     channelActions: ChannelActionsRepository? = null,
     onOpenComments: (TimelinePost) -> Unit = {},
-    onShowFullPost: (dev.lyo.hortay.data.TimelinePost, Int) -> Unit = { _, _ -> },
+    onShowFullPost: ((dev.lyo.hortay.data.TimelinePost, Int) -> Unit)? = null,
     homeTapTrigger: Long = 0L,
     onBrandTap: () -> Unit = {},
     /**
@@ -1366,9 +1366,13 @@ fun TimelineScreen(
                 markPostReadState.value(post)
                 onOpenCommentsState.value(post)
             },
-            onShowFull = { post, off ->
-                markPostReadState.value(post)
-                onShowFullState.value(post, off)
+            // Null in guest mode (no onShowFullPost) so the feed keeps onPostClick for taps
+            // and "Показати більше" expands inline instead of being a dead no-op.
+            onShowFull = onShowFullPost?.let {
+                { post: dev.lyo.hortay.data.TimelinePost, off: Int ->
+                    markPostReadState.value(post)
+                    onShowFullState.value?.invoke(post, off)
+                }
             },
             // Optimistic poll vote: flip the local poll state (chosen rows light up, shimmer
             // ride the result bars) BEFORE the RPC, then dispatch SetPollAnswer. The eventual

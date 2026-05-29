@@ -117,7 +117,7 @@ fun ChannelScreen(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     onOpenComments: (TimelinePost) -> Unit,
-    onShowFullPost: (dev.lyo.hortay.data.TimelinePost, Int) -> Unit = { _, _ -> },
+    onShowFullPost: ((dev.lyo.hortay.data.TimelinePost, Int) -> Unit)? = null,
     onChannelOpen: (chatId: Long, scrollToMessageId: Long?) -> Unit,
     scrollToMessage: Pair<Long, Long>? = null,
     onScrollHandled: () -> Unit = {},
@@ -619,9 +619,11 @@ fun ChannelScreen(
                 markPostReadState.value(post)
                 onOpenCommentsState.value(post)
             },
-            onShowFull = { post, off ->
-                markPostReadState.value(post)
-                onShowFullState.value(post, off)
+            onShowFull = onShowFullPost?.let {
+                { post: dev.lyo.hortay.data.TimelinePost, off: Int ->
+                    markPostReadState.value(post)
+                    onShowFullState.value?.invoke(post, off)
+                }
             },
             // See [TimelineScreen.onPollVote] for the full rationale of the optimistic-flip
             // → RPC → clearPending pattern.
@@ -877,10 +879,15 @@ fun ChannelScreen(
                                             // більше" pin the full-post hero to this exact Y.
                                             val topY = remember(item.key) { floatArrayOf(0f) }
                                             val showFull = remember(post, interactions, topY) {
-                                                { interactions.onShowFull(post, topY[0].toInt()) }
+                                                interactions.onShowFull?.let { hero -> { hero(post, topY[0].toInt()) } }
                                             }
                                             val itemInteractions = remember(post, interactions, topY) {
-                                                interactions.copy(onPostClick = { interactions.onShowFull(post, topY[0].toInt()) })
+                                                val hero = interactions.onShowFull
+                                                if (hero != null) {
+                                                    interactions.copy(onPostClick = { hero(post, topY[0].toInt()) })
+                                                } else {
+                                                    interactions
+                                                }
                                             }
                                             CompositionLocalProvider(
                                                 LocalIsCenteredItem provides isCenteredState,

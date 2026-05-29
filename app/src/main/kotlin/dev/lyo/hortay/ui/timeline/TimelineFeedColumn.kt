@@ -105,11 +105,19 @@ internal fun TimelineFeedColumn(
                     // the reverseLayout-flipped LazyListItemInfo.offset. floatArray (not
                     // State) so the per-frame position writes don't recompose the card.
                     val topY = remember(item.key) { floatArrayOf(0f) }
+                    // Hero-open wiring only when a handler exists (auth feed). In guest mode
+                    // onShowFull is null, so "Показати більше" falls back to inline expand and
+                    // a tap keeps the screen's own onPostClick (guest sign-in snackbar).
                     val showFull = remember(post, interactions, topY) {
-                        { interactions.onShowFull(post, topY[0].toInt()) }
+                        interactions.onShowFull?.let { hero -> { hero(post, topY[0].toInt()) } }
                     }
                     val itemInteractions = remember(post, interactions, topY) {
-                        interactions.copy(onPostClick = { interactions.onShowFull(post, topY[0].toInt()) })
+                        val hero = interactions.onShowFull
+                        if (hero != null) {
+                            interactions.copy(onPostClick = { hero(post, topY[0].toInt()) })
+                        } else {
+                            interactions
+                        }
                     }
                     CompositionLocalProvider(
                         LocalIsCenteredItem provides isCenteredState,
