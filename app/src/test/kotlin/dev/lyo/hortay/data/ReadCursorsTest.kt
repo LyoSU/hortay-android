@@ -252,6 +252,48 @@ class ReadCursorsTest {
         assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, posts, cursors, minUnreadDate = -1L))
     }
 
+    @Test
+    fun `advancing the cursor past the oldest unread moves the boundary to the next`() {
+        // Models the next-unread pill's one-tap skip and the optimistic on-ack cursor
+        // advance: parked on the oldest unread, ack it (advance the cursor to its id),
+        // and the boundary recomputes to the NEXT oldest unread. Descending data.
+        val descending = listOf(
+            post(id = 70L, date = 700L), // index 0, unread (newest)
+            post(id = 60L, date = 600L), // index 1, unread — oldest unread, parked here
+            post(id = 40L, date = 400L), // index 2, read
+        )
+        val before = persistentMapOf(CHAT_ID to 50L)
+        assertEquals(1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, before))
+        // Ack post 60 → cursor advances to 60. Boundary moves up to post 70 (index 0).
+        val after = before.put(CHAT_ID, 60L)
+        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, after))
+    }
+
+    @Test
+    fun `acking the only remaining unread leaves the feed caught up`() {
+        val descending = listOf(
+            post(id = 70L, date = 700L), // unread — the only unread
+            post(id = 40L, date = 400L), // read
+        )
+        val before = persistentMapOf(CHAT_ID to 50L)
+        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, before))
+        // Ack the last unread → -1 (caller maps to index 0 = newest).
+        val after = before.put(CHAT_ID, 70L)
+        assertEquals(-1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, after))
+    }
+
+    @Test
+    fun `acking an album advances past its highest member so it reads as read`() {
+        // The pill advances the cursor to albumMessageIds.maxOrNull(), not the anchor id,
+        // so an album the user skipped past does not re-light as unread.
+        val album = post(id = 100L, date = 600L).copy(albumMessageIds = listOf(100L, 101L, 102L))
+        val descending = listOf(post(id = 200L, date = 700L), album)
+        val before = persistentMapOf(CHAT_ID to 50L)
+        assertEquals(1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, before))
+        val after = before.put(CHAT_ID, album.albumMessageIds.maxOrNull()!!)
+        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, after))
+    }
+
     private companion object {
         const val CHAT_ID = -1001L
     }

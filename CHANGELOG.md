@@ -13,6 +13,7 @@
 - Web link previews now sit in the same accent-bar-and-tint frame as block quotes, so a pulled-in link reads as the same kind of reference.
 
 ### Fixed
+- The "next unread" button now marks the post you were on as read immediately and steps to the next one, instead of sometimes re-landing on the same post and leaving it unread until you scrolled.
 - Tapping "Show more" in the "Newest at the bottom" feed now reveals the rest of the post downward from where you were reading, instead of jerking the post up and landing you at its end.
 - A tapped link, @mention or hashtag that wraps across lines now highlights as one connected shape, instead of a separate rounded pill on each line.
 - Link highlights and entity styling (inline code background, underline, strikethrough, spoiler covers) now hug the actual text instead of spilling onto leading or trailing blank space.

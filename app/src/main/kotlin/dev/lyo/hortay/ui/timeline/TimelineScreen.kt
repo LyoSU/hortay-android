@@ -32,7 +32,6 @@ import dev.lyo.hortay.data.isUnplayableVideo
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
 import dev.lyo.hortay.data.isUnreadAt
-import dev.lyo.hortay.data.isUnreadIn
 import dev.lyo.hortay.data.orderedFor
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.DownloadPriority
@@ -637,10 +636,19 @@ fun TimelineScreen(
                         // unread block on the low indices, read block on the high
                         // indices, boundary = oldest unread = last unread row that
                         // also satisfies the recency floor.
-                        val live = cursorHolder.snapshot()
+                        //
+                        // Per-key live read (`cursorHolder[post.chatId]`), NOT
+                        // `cursorHolder.snapshot()`: snapshot() reads under
+                        // Snapshot.withoutReadObservation, so the derivedStateOf would
+                        // register NO dependency on cursor advances and the target would
+                        // go stale as the user reads — the "pill lands on the same /
+                        // already-read post until you scroll" bug. The per-key read
+                        // subscribes to exactly the chat cursors this scan touches, and
+                        // derivedStateOf dedupes the integer output, so the target
+                        // advances the instant a dwell/tap/jump ack moves a cursor.
                         val boundary = feedItems.indexOfLast { row ->
                             val post = (row as? FeedItem.Post)?.post ?: return@indexOfLast false
-                            post.isUnreadIn(live) &&
+                            post.isUnreadAt(cursorHolder[post.chatId]) &&
                                 (recencyCutoffMs <= 0L || post.date >= recencyCutoffMs)
                         }
                         // Fall back to newest (index 0) when no unread boundary
@@ -1900,56 +1908,72 @@ fun TimelineScreen(
                     UnreadCounterPill(
                         count = unreadRemaining,
                         onClick = {
-                            // Jump to the LIVE oldest-unread post — top-aligned so
-                            // reading starts at its top, with a brief highlight.
-                            // [homeScrollIndexState] tracks `continueReadingIndex` over
-                            // the LIVE cursor map (recompute on every dwell-ack), so the
-                            // target advances as you read: tap → read → tap → the NEXT
-                            // unread, never the same post twice.
+                            // Jump to the LIVE oldest-unread post, top-aligned so reading
+                            // starts at its top, with a brief highlight. The target is the
+                            // live read→unread boundary (the divider's frozen anchor does
+                            // NOT move as you read, so jumping to it lands you back on an
+                            // already-read post). Read [feedItemsState] live so a refresh /
+                            // arrival between composition and the click can't index a stale
+                            // list.
                             //
-                            // NOT the frozen [FeedItem.Boundary] divider's anchor: that
-                            // divider is a session marker captured at the last refresh
-                            // ([boundaryCursors]) and does NOT move as you read, so
-                            // jumping to it sent you back onto a post you had already
-                            // read — the "unread pill lands on an already-read post" bug.
+                            // One tap = one step. When you're already parked on the oldest
+                            // unread and tap again, that's a deliberate "I'm done, next":
+                            // ack the post you're leaving and resolve the jump against the
+                            // post-ack cursor, so the tap lands on the NEXT unread rather
+                            // than re-landing on the row you're already on. When you're NOT
+                            // parked on it (you scrolled away), the tap just navigates back
+                            // to the oldest unread to continue reading — the viewport dwell
+                            // acks it once it settles.
                             //
-                            // Read [feedItemsState] (live) so a refresh / arrival between
-                            // this composition and the click doesn't index a stale list.
+                            // Why this is now race-free: [PostsRepository.viewMessages]
+                            // advances the local read cursor optimistically, so the ack
+                            // moves the cursor on the same tap and the post-ack scan below
+                            // sees the advance immediately (no waiting for TDLib's
+                            // UpdateChatReadInbox echo, which was the old "doesn't mark read
+                            // for a while / pill sticks on the same post" bug).
                             val items = feedItemsState.value
-                            val target = homeScrollIndexState.intValue
-                            val landedPost = items.getOrNull(target)?.posts()?.firstOrNull()
-                            // A deliberate "next unread" jump is itself an explicit read
-                            // signal — at least as strong as tapping a post open. Ack the
-                            // landed post NOW (synchronously on tap, before the scroll) via
-                            // the same explicit-tap path (album-aware + shares the dwell dedup
-                            // set) instead of leaning on the viewport dwell to re-detect it.
-                            //
-                            // Two reasons it must be here, not after the scroll completes:
-                            //  1. After a PROGRAMMATIC scroll the dwell's re-arm is racy. It
-                            //     fires only on a fresh settled `distinctUntilChanged` viewport
-                            //     tuple held idle for READ_DWELL_MS, but once we land the
-                            //     focus-tracker OpenChats this chat and the live interaction-info
-                            //     stream churns card heights, so a neighbour keeps crossing the
-                            //     60% line and collectLatest resets the 500 ms window before it
-                            //     completes; a zero-delta top-align produces no settle transition
-                            //     at all. The cursor then never advanced, the counter never ticked
-                            //     down, and the pill re-landed on the same post — the bug this ack
-                            //     closes.
-                            //  2. Acking inside the launch AFTER `scrollToBoundary` would be
-                            //     skipped if the user grabs the list mid-animation: the gesture
-                            //     cancels `animateScrollBy`, the CancellationException unwinds the
-                            //     coroutine, and the ack never runs — re-opening the same bug in
-                            //     exactly the "I scrolled a bit" path. Doing it on tap is immune.
-                            // Gated on the landed post actually being unread (live cursor),
-                            // NOT on `target > 0`: when the only unread is the newest post it
-                            // sits at index 0, so a `target > 0` gate would skip the ack and
-                            // re-strand that post on every tap. A caught-up landing on an
-                            // already-read post falls through this check as a no-op.
-                            if (landedPost != null &&
-                                landedPost.isUnreadAt(cursorHolder[landedPost.chatId])
-                            ) {
-                                markPostReadState.value(landedPost)
+                            val current = homeScrollIndexState.intValue
+                            // "Parked on the target" = the boundary row is the post under
+                            // the gaze (greatest visible area), the same dominant-visible
+                            // rule the focus tracker uses. Direction-agnostic: in
+                            // OldestUnreadFirst the feed is reverseLayout over descending
+                            // data, so the boundary (high index = oldest unread) sits at the
+                            // visual TOP and `firstVisibleItemIndex` (the visual BOTTOM in
+                            // reverseLayout) would never match it.
+                            val parkedOnTarget = listState.layoutInfo.let { layout ->
+                                layout.visibleItemsInfo.maxByOrNull { item ->
+                                    val itemEnd = item.offset + item.size
+                                    val cs = maxOf(item.offset, layout.viewportStartOffset)
+                                    val ce = minOf(itemEnd, layout.viewportEndOffset)
+                                    (ce - cs).coerceAtLeast(0)
+                                }?.index == current
                             }
+                            val leaving = items.getOrNull(current)?.posts()?.firstOrNull()
+                                ?.takeIf { it.isUnreadAt(cursorHolder[it.chatId]) }
+                                ?.takeIf { parkedOnTarget }
+                            // When skipping, ack the post we're leaving and remember the
+                            // chat + id we advanced it to, so the scan below can simulate
+                            // that advance locally — the optimistic cursor put reaches
+                            // [cursorHolder] a frame later via the off-main diff, so reading
+                            // it back synchronously here would still see the pre-ack value.
+                            var ackedChat: Long? = null
+                            var ackedTo = 0L
+                            if (leaving != null) {
+                                markPostReadState.value(leaving)
+                                ackedChat = leaving.chatId
+                                ackedTo = leaving.albumMessageIds.maxOrNull() ?: leaving.id
+                            }
+                            // Same boundary scan as [homeScrollIndex]; with leaving == null
+                            // (not parked, or already read) it resolves to `current` verbatim.
+                            val target = items.indexOfLast { row ->
+                                val p = (row as? FeedItem.Post)?.post ?: return@indexOfLast false
+                                val cursor =
+                                    if (p.chatId == ackedChat) maxOf(cursorHolder[p.chatId] ?: 0L, ackedTo)
+                                    else cursorHolder[p.chatId]
+                                p.isUnreadAt(cursor) &&
+                                    (recencyCutoffMs <= 0L || p.date >= recencyCutoffMs)
+                            }.let { if (it >= 0) it else 0 }
+                            val landed = items.getOrNull(target)?.posts()?.firstOrNull()
                             scope.launch {
                                 if (target > 0) {
                                     listState.scrollToBoundary(rowIndex = target, animated = true)
@@ -1958,7 +1982,7 @@ fun TimelineScreen(
                                     // natural reverseLayout position, no top-align.
                                     listState.smartScrollTo(target)
                                 }
-                                landedPost?.let { highlightedPostKey = it.chatId to it.id }
+                                landed?.let { highlightedPostKey = it.chatId to it.id }
                             }
                         },
                     )

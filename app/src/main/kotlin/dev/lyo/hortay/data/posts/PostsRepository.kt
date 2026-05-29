@@ -655,13 +655,7 @@ class PostsRepository(
         // observed to emit redundant resets with smaller ids during chat repair
         // flows; clamping to monoMax(...) keeps the cursor from rewinding under us.
         td.updates.filterIsInstance<TdApi.UpdateChatReadInbox>()
-            .onEach { update ->
-                _chatReadCursors.update { current ->
-                    val existing = current[update.chatId] ?: 0L
-                    if (update.lastReadInboxMessageId <= existing) current
-                    else current.put(update.chatId, update.lastReadInboxMessageId)
-                }
-            }
+            .onEach { update -> advanceReadCursor(update.chatId, update.lastReadInboxMessageId) }
             .launchIn(scope)
 
         // UpdateChatLastMessage fires when TDLib (a) discovers a fresh lastMessage for
@@ -1671,8 +1665,20 @@ class PostsRepository(
      * The dwell gate (≥1s viewport-stable before this is called) lives in
      * [TimelineScreen]: that's a UX policy, not a TDLib invariant, so it stays at the
      * call site.
+     *
+     * **Optimistic local advance.** Before the RPC we advance [_chatReadCursors] to the
+     * highest id in [messageIds] (monotonic — see [advanceReadCursor]). The cursor is the
+     * single source of truth the UI reads (unread strip, ↓N counter, next-unread jump
+     * target), and the only other producer — TDLib's `UpdateChatReadInbox` echo — is
+     * monotonic-clamped too, so the echo reconciles as a no-op when it lands. Without this
+     * the cursor moved ONLY on the server round-trip; with `force_read=false` on an open
+     * (focused) chat TDLib defers that echo, so the read posts stayed lit and the
+     * next-unread pill kept re-landing on the same post until something else churned the
+     * feed. This mirrors guest mode (`WebRepository.markChannelRead` writes the cursor
+     * locally) and the optimistic reaction flips elsewhere in the app.
      */
     suspend fun viewMessages(chatId: Long, messageIds: List<Long>) {
+        messageIds.maxOrNull()?.let { advanceReadCursor(chatId, it) }
         val open = ChatPresence.isOpen(chatId)
         ChatPresence.viewMessages(
             td = td,
@@ -1718,6 +1724,28 @@ class PostsRepository(
         hydrateChatListMembership(chat)
         val msg = pendingLastMessages.remove(chat.id) ?: chat.lastMessage
         if (msg != null && chat.isChannel()) ingest(chat.id, listOf(msg))
+    }
+
+    /**
+     * Monotonic advance of the local read cursor for [chatId] to [cursor]. The single
+     * clamp site for the two ADVANCE producers — TDLib's `UpdateChatReadInbox` echo and
+     * the optimistic on-ack advance in [viewMessages]. A put that would rewind the cursor
+     * (id ≤ the stored value) is dropped, so the echo and the optimistic advance can fire
+     * in any order without re-lighting already-read posts. TDLib has been observed to emit
+     * redundant inbox resets with smaller ids during chat-repair flows; the clamp keeps the
+     * cursor from rewinding under us.
+     *
+     * Distinct from [seedReadCursor], which is the SEED producer: it may create an entry at
+     * `cursor == 0` for a freshly-joined channel that has `unreadCount > 0` but no read
+     * position yet, so its posts render the unread strip. This advance path requires a
+     * positive id (`cursor <= 0` is a no-op) — a zero here would never advance anything.
+     */
+    private fun advanceReadCursor(chatId: Long, cursor: Long) {
+        if (cursor <= 0L) return
+        _chatReadCursors.update { current ->
+            val existing = current[chatId] ?: 0L
+            if (cursor <= existing) current else current.put(chatId, cursor)
+        }
     }
 
     private fun seedReadCursor(chat: TdApi.Chat) {
