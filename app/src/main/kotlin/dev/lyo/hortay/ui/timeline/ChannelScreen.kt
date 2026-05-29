@@ -61,6 +61,7 @@ import dev.lyo.hortay.ui.media.LocalScrollGate
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.media.rememberDeferredLoading
 import dev.lyo.hortay.ui.text.LocalExpandScrollKeeper
+import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
 import kotlinx.collections.immutable.toPersistentList
@@ -870,10 +871,22 @@ fun ChannelScreen(
                                             val keepScroll = remember(item.key, expandRetainer) {
                                                 { expandRetainer.retainTop(item.key) }
                                             }
+                                            // Reverse (Newest-at-bottom): "Показати більше"
+                                            // opens the post's full view instead of an inline
+                                            // grow that would blip the scroll; forward keeps the
+                                            // smooth inline expand (null).
+                                            val showFull = remember(post, feedOrder, interactions) {
+                                                if (feedOrder.reverseLayout) {
+                                                    ({ interactions.onPostClick(post) })
+                                                } else {
+                                                    null
+                                                }
+                                            }
                                             CompositionLocalProvider(
                                                 LocalIsCenteredItem provides isCenteredState,
                                                 LocalIsHighlightedItem provides highlighted,
                                                 LocalExpandScrollKeeper provides keepScroll,
+                                                LocalShowFullPost provides showFull,
                                             ) {
                                                 PostCard(post = post, interactions = interactions)
                                             }
