@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-29
+
 ### Added
 - Video stickers and animated custom emoji now show their real transparency and animate inline, instead of appearing as a flat square or a frozen image.
 - Guest mode's empty Channels screen now offers a few popular channels to add with one tap, instead of leaving you with a blank field.
