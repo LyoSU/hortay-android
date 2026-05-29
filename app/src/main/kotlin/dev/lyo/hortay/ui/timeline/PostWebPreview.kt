@@ -21,6 +21,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -70,42 +72,61 @@ internal fun WebPreviewCard(preview: WebPreview) {
 
 @Composable
 private fun CompactWebPreview(preview: WebPreview, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(enabled = preview.url.isNotBlank(), onClick = onClick)
-            .padding(12.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        WebPreviewLeading(preview)
-        Spacer(Modifier.width(12.dp))
-        WebPreviewMetadata(preview, modifier = Modifier.weight(1f))
+    WebPreviewQuoteFrame(enabled = preview.url.isNotBlank(), onClick = onClick) {
+        Row(verticalAlignment = Alignment.Top) {
+            WebPreviewLeading(preview)
+            Spacer(Modifier.width(12.dp))
+            WebPreviewMetadata(preview, modifier = Modifier.weight(1f))
+        }
     }
 }
 
 @Composable
 private fun LargeWebPreview(preview: WebPreview, onClick: () -> Unit) {
-    Column(
+    WebPreviewQuoteFrame(enabled = preview.url.isNotBlank(), onClick = onClick) {
+        Column {
+            val media = @Composable { LargeWebPreviewMedia(preview) }
+            val meta = @Composable { WebPreviewMetadata(preview, modifier = Modifier.fillMaxWidth()) }
+            if (preview.showMediaAboveDescription) {
+                media()
+                Spacer(Modifier.height(10.dp))
+                meta()
+            } else {
+                meta()
+                Spacer(Modifier.height(10.dp))
+                media()
+            }
+        }
+    }
+}
+
+/**
+ * Web-preview cards share the block-quote silhouette: a left [accent] bar over a
+ * `primary @ 10%` tint with [MaterialTheme.shapes.extraSmall] corners — the same look as
+ * [dev.lyo.hortay.ui.text.RichText]'s quote BlockBox, so a pulled-in link reads as the same
+ * kind of reference as a quote. The bar is painted with `drawBehind` (full node height,
+ * clipped to the rounded silhouette) rather than a `fillMaxHeight` child under
+ * [IntrinsicSize.Min]: the large layout nests a `fillMaxWidth().aspectRatio()` image, and
+ * intrinsic-height measurement of that combination is fragile — drawing the bar sidesteps it
+ * and always matches the real content height in both the compact and large layouts.
+ */
+@Composable
+private fun WebPreviewQuoteFrame(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(enabled = preview.url.isNotBlank(), onClick = onClick)
-            .padding(12.dp),
+            .clip(MaterialTheme.shapes.extraSmall)
+            .background(accent.copy(alpha = 0.10f))
+            .drawBehind { drawRect(accent, size = Size(3.dp.toPx(), size.height)) }
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(start = 13.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
     ) {
-        val media = @Composable { LargeWebPreviewMedia(preview) }
-        val meta = @Composable { WebPreviewMetadata(preview, modifier = Modifier.fillMaxWidth()) }
-        if (preview.showMediaAboveDescription) {
-            media()
-            Spacer(Modifier.height(10.dp))
-            meta()
-        } else {
-            meta()
-            Spacer(Modifier.height(10.dp))
-            media()
-        }
+        content()
     }
 }
 

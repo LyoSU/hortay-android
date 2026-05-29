@@ -10,6 +10,7 @@
 
 ### Changed
 - Code blocks now render in a full-width box with their language label, instead of a ragged inline highlight that broke across lines.
+- Web link previews now sit in the same accent-bar-and-tint frame as block quotes, so a pulled-in link reads as the same kind of reference.
 
 ### Fixed
 - Tapping "Show more" in the "Newest at the bottom" feed now reveals the rest of the post downward from where you were reading, instead of jerking the post up and landing you at its end.
