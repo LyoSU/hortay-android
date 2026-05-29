@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -520,6 +519,9 @@ private fun ProfileHero(me: TdApi.User) {
         }
     }
     val coverBrush = profileCoverBrush(me.profileAccentColorId)
+    // One continuous gradient over the whole card: accent at the top (behind the avatar),
+    // softening into the card surface at the bottom (behind the name). No cover band / hard
+    // seam — the avatar sits on the accent, the name on the near-neutral lower part.
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -529,69 +531,42 @@ private fun ProfileHero(me: TdApi.User) {
                 color = MaterialTheme.colorScheme.outlineVariant,
                 shape = MaterialTheme.shapes.large,
             )
-            .background(MaterialTheme.colorScheme.surfaceContainerLow),
+            .background(coverBrush)
+            .padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Accent cover (radial gradient of the user's two profile colours, à la Telegram),
-        // with the avatar straddling its bottom edge. No fade to white, no ring. Top corners
-        // are rounded by the card's clip(shapes.large).
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height(84.dp)
-                    .background(coverBrush),
+        TdAvatar(
+            name = displayName,
+            thumb = me.profilePhoto?.minithumbnail?.data,
+            fileId = me.profilePhoto?.small?.id,
+            size = 80.dp,
+            textStyle = MaterialTheme.typography.headlineSmall,
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = displayName,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 44.dp)
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow),
-                contentAlignment = Alignment.Center,
-            ) {
-                TdAvatar(
-                    name = displayName,
-                    thumb = me.profilePhoto?.minithumbnail?.data,
-                    fileId = me.profilePhoto?.small?.id,
-                    size = 80.dp,
-                    textStyle = MaterialTheme.typography.headlineSmall,
+            val emojiStatusId = remember(me.emojiStatus) { resolveEmojiStatusId(me.emojiStatus) }
+            if (me.isPremium || emojiStatusId != null) {
+                Spacer(Modifier.width(6.dp))
+                PremiumStatusBadge(
+                    isPremium = me.isPremium,
+                    emojiStatusId = emojiStatusId,
+                    size = 18.dp,
                 )
             }
         }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = displayName,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                val emojiStatusId = remember(me.emojiStatus) { resolveEmojiStatusId(me.emojiStatus) }
-                if (me.isPremium || emojiStatusId != null) {
-                    Spacer(Modifier.width(6.dp))
-                    PremiumStatusBadge(
-                        isPremium = me.isPremium,
-                        emojiStatusId = emojiStatusId,
-                        size = 18.dp,
-                    )
-                }
-            }
-            if (subtitle.isNotBlank()) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        if (subtitle.isNotBlank()) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

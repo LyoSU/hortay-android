@@ -192,50 +192,41 @@ private fun ProfileHero(
     val accentId = profile?.profileAccentColorId ?: -1
     val coverBrush = profileCoverBrush(accentId)
 
+    // One continuous gradient over the whole hero: accent at the top (handle + avatar),
+    // softening into the sheet surface behind the name, then blending into the content below —
+    // no hard colour-block / white-block seam. Reaches the very top of the sheet (rounded
+    // corners). No story ring — Telegram only paints it for users with active stories.
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+            .background(coverBrush)
+            .padding(bottom = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Accent cover — faithful to Telegram: a radial gradient of the user's two profile
-        // colours that reaches the very top of the sheet (rounded corners and all). No fade
-        // to white, and no story ring (Telegram only paints the ring when the user has
-        // active stories). The avatar straddles the cover's bottom edge.
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height(132.dp)
-                    .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                    .background(coverBrush),
+        // Our own drag handle on the colour (the sheet's default handle is off).
+        Box(
+            modifier = Modifier
+                .padding(top = 12.dp)
+                .size(width = 32.dp, height = 4.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.6f)),
+        )
+        Spacer(Modifier.height(16.dp))
+        Box(
+            modifier = Modifier
+                .size(96.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            TdAvatar(
+                name = resolvedName,
+                thumb = avatarThumb,
+                fileId = avatarFileId,
+                size = 96.dp,
+                textStyle = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.SemiBold),
             )
-            // Our own drag handle, sitting on the colour (the sheet's default handle is off).
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 10.dp)
-                    .size(width = 32.dp, height = 4.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.6f)),
-            )
-            // Avatar straddles the cover's bottom edge (centre at the 132 dp seam). No ring.
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 84.dp)
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                contentAlignment = Alignment.Center,
-            ) {
-                TdAvatar(
-                    name = resolvedName,
-                    thumb = avatarThumb,
-                    fileId = avatarFileId,
-                    size = 96.dp,
-                    textStyle = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.SemiBold),
-                )
-            }
         }
         Spacer(Modifier.height(12.dp))
         Column(
