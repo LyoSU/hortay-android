@@ -18,15 +18,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.icons.Symbol
@@ -53,10 +58,16 @@ internal val LocalExpandScrollKeeper = compositionLocalOf<(() -> Unit)?> { null 
  * Earlier this routed by surface — a single backing [Text] with draw-behind boxes on clamped
  * surfaces vs. [BlockBox] only when fully expanded — to keep ONE post-level "show more" that
  * counted block lines too. That made quotes look and behave differently in the feed (cramped,
- * never collapsing) than in the open post. Unified on [BlockBox] everywhere instead: a
- * per-block chevron and the post-level "show more" coexist. Posts without any block skip
- * segmentation and render as one [renderer] call. Top-level blocks only — a nested block
- * (rare) still renders inline within its parent box via [LinkAwareText]'s draw-behind path.
+ * never collapsing) than in the open post. Unified on [BlockBox] everywhere instead.
+ *
+ * Clamping moved from per-line to per-height: the segments always render at full length (each
+ * quote self-collapses via its own chevron), and on a clamped surface (finite [maxLines]) the
+ * whole segmented post is wrapped in [ClampedPost], which caps the column to ~`maxLines` worth
+ * of height and shows ONE post-level "Показати більше". So a post with a quote clamps as a
+ * single unit — the cut can fall inside a quote, like Telegram — instead of each segment
+ * clamping on its own. Posts without any block skip segmentation and render as one [renderer]
+ * call (the cheap line-clamped path). Top-level blocks only — a nested block (rare) still
+ * renders inline within its parent box via [LinkAwareText]'s draw-behind path.
  */
 @Composable
 fun RichText(
@@ -76,19 +87,92 @@ fun RichText(
         return
     }
 
-    // Block present → padded composable blocks (every surface) with per-block collapse.
+    // Block present → padded composable blocks. Each segment renders at FULL length; the
+    // post-level clamp (below) governs the feed, not per-segment maxLines.
     val segments = remember(src, blocks) { buildSegments(src, blocks) }
-    Column {
-        segments.forEachIndexed { idx, segment ->
-            // Segments are individually edge-trimmed, so spacing is a single consistent
-            // gap rather than whatever stray newlines the source happened to carry.
-            if (idx > 0) Spacer(Modifier.height(8.dp))
-            val block = segment.block
-            if (block != null) {
-                BlockBox(segment.text, style, block, maxLines)
-            } else {
-                renderer(rememberRenderableText(segment.text), style, maxLines)
+    val segmentsContent: @Composable () -> Unit = {
+        Column {
+            segments.forEachIndexed { idx, segment ->
+                // Segments are individually edge-trimmed, so spacing is a single consistent
+                // gap rather than whatever stray newlines the source happened to carry.
+                if (idx > 0) Spacer(Modifier.height(8.dp))
+                val block = segment.block
+                if (block != null) {
+                    BlockBox(segment.text, style, block, Int.MAX_VALUE)
+                } else {
+                    renderer(rememberRenderableText(segment.text), style, Int.MAX_VALUE)
+                }
             }
+        }
+    }
+    if (maxLines == Int.MAX_VALUE) {
+        // Full-reading surface (comments / open post): no outer clamp.
+        segmentsContent()
+    } else {
+        // Clamped surface (feed / channel / caption): one post-level height clamp.
+        ClampedPost(key = src, maxLines = maxLines, style = style, content = segmentsContent)
+    }
+}
+
+/**
+ * Caps [content] to roughly [maxLines] worth of height and reveals it whole with a single
+ * "Показати більше". Used to clamp a segmented post (text + quote/code boxes) as ONE unit on
+ * the feed / channel, where there's no single backing [Text] to carry a line clamp. Measures
+ * the content's full height, clips to the budget when it overflows, and (in a `reverseLayout`
+ * feed) pins the post's top through [LocalExpandScrollKeeper] so expanding reveals downward.
+ *
+ * Height, not line count: the content is a column of mixed composables, so a per-line clamp
+ * isn't available — the budget is `maxLines × line height`, which lands close enough and lets
+ * the cut fall anywhere (including inside a quote box), matching Telegram's "show more" feel.
+ */
+@Composable
+private fun ClampedPost(
+    key: Any,
+    maxLines: Int,
+    style: TextStyle,
+    content: @Composable () -> Unit,
+) {
+    var expanded by remember(key) { mutableStateOf(false) }
+    var overflow by remember(key) { mutableStateOf(false) }
+    val keepScroll = LocalExpandScrollKeeper.current
+    val density = LocalDensity.current
+    val maxHeightPx = remember(maxLines, style, density) {
+        val line = when {
+            style.lineHeight.isSp -> style.lineHeight
+            style.fontSize.isSp -> style.fontSize * 1.4f
+            else -> 20.sp
+        }
+        with(density) { (line.toPx() * maxLines).toInt() }
+    }
+    Column {
+        Layout(content = content, modifier = Modifier.clipToBounds()) { measurables, constraints ->
+            val placeables = measurables.map {
+                it.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+            }
+            val width = placeables.maxOfOrNull { it.width } ?: 0
+            val full = placeables.sumOf { it.height }
+            val over = full > maxHeightPx
+            // Stable-by-the-second-pass: the button sits OUTSIDE this Layout, so toggling it
+            // never changes what this Layout measures — `over` converges and never loops.
+            if (overflow != over) overflow = over
+            val h = if (expanded || !over) full else maxHeightPx
+            layout(width, h) {
+                var y = 0
+                placeables.forEach { it.place(0, y); y += it.height }
+            }
+        }
+        if (!expanded && overflow) {
+            Text(
+                text = stringResource(R.string.post_show_more),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .clickable {
+                        keepScroll?.invoke()
+                        expanded = true
+                    },
+            )
         }
     }
 }
