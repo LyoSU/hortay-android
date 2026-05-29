@@ -157,11 +157,12 @@ fun MainScaffold(graph: AppGraph) {
         graph.commentsRepository.primeCommentsForOpen(post)
         graph.nav.push(NavEntry.Comments(anchor = post))
     }
-    // Hero-open from "Показати більше": open the post's full view positioned so the post lands
-    // at [topOffsetPx] from the feed viewport top (same on-screen spot it had in the feed).
-    val pushCommentsHero: (TimelinePost, Int) -> Unit = { post, topOffsetPx ->
+    // Hero-open from a feed/channel post tap or its "Показати більше": open the full post
+    // positioned at [anchorY] — the post's absolute on-screen Y captured in the feed — so it
+    // lands exactly where it sat (can be negative for a long post scrolled past its top).
+    val pushCommentsHero: (TimelinePost, Int) -> Unit = { post, anchorY ->
         graph.commentsRepository.primeCommentsForOpen(post)
-        graph.nav.push(NavEntry.Comments(anchor = post, heroTopPaddingPx = topOffsetPx))
+        graph.nav.push(NavEntry.Comments(anchor = post, heroAnchorY = anchorY))
     }
     val popNav: () -> Unit = { graph.nav.pop() }
 

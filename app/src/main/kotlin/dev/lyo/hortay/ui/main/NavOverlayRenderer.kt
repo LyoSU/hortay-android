@@ -216,7 +216,7 @@ private fun RenderNavEntry(
         )
         is NavEntry.Comments -> CommentsScreen(
             post = entry.anchor,
-            heroTopPaddingPx = entry.heroTopPaddingPx,
+            heroAnchorY = entry.heroAnchorY,
             repo = graph.commentsRepository,
             feedRepo = graph.postsRepository,
             onDismiss = onPopNav,

@@ -19,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -60,7 +62,6 @@ import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.media.rememberDeferredLoading
-import dev.lyo.hortay.ui.text.LocalExpandScrollKeeper
 import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
@@ -387,9 +388,6 @@ fun ChannelScreen(
     ) {
         androidx.compose.foundation.lazy.LazyListState(initialIndexSeed, 0)
     }
-    // Pins a post's top when it expands "Показати більше" so a reverseLayout channel
-    // reveals downward instead of dumping the reader at the post's end.
-    val expandRetainer = remember(listState, scope) { ExpandScrollRetainer(listState, scope) }
 
     // Resolve in-channel quote-tap scroll-to-message once the target row appears.
     // Shared with [TimelineScreen]; deep-link landings DO NOT use this path — VM
@@ -874,38 +872,24 @@ fun ChannelScreen(
                                             val highlighted = highlightedPostKey?.let { (cid, mid) ->
                                                 post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
                                             } == true
-                                            val keepScroll = remember(item.key, expandRetainer) {
-                                                { expandRetainer.retainTop(item.key) }
+                                            // Captured ABSOLUTE screen-Y of this card's top (see
+                                            // TimelineFeedColumn for the rationale) — tap / "Показати
+                                            // більше" pin the full-post hero to this exact Y.
+                                            val topY = remember(item.key) { floatArrayOf(0f) }
+                                            val showFull = remember(post, interactions, topY) {
+                                                { interactions.onShowFull(post, topY[0].toInt()) }
                                             }
-                                            val showFull = remember(post, feedOrder, interactions, listState) {
-                                                if (feedOrder.reverseLayout) {
-                                                    ({
-                                                        val off = listState.layoutInfo.visibleItemsInfo
-                                                            .firstOrNull { it.key == item.key }?.offset ?: 0
-                                                        interactions.onShowFull(post, off)
-                                                    })
-                                                } else {
-                                                    null
-                                                }
-                                            }
-                                            // A plain post tap opens the same hero (both feed orders),
-                                            // routed through [PostInteractions.onShowFull] with the offset.
-                                            val itemInteractions = remember(post, interactions, listState) {
-                                                interactions.copy(
-                                                    onPostClick = {
-                                                        val off = listState.layoutInfo.visibleItemsInfo
-                                                            .firstOrNull { it.key == item.key }?.offset ?: 0
-                                                        interactions.onShowFull(post, off)
-                                                    },
-                                                )
+                                            val itemInteractions = remember(post, interactions, topY) {
+                                                interactions.copy(onPostClick = { interactions.onShowFull(post, topY[0].toInt()) })
                                             }
                                             CompositionLocalProvider(
                                                 LocalIsCenteredItem provides isCenteredState,
                                                 LocalIsHighlightedItem provides highlighted,
-                                                LocalExpandScrollKeeper provides keepScroll,
                                                 LocalShowFullPost provides showFull,
                                             ) {
-                                                PostCard(post = post, interactions = itemInteractions)
+                                                Box(modifier = Modifier.onGloballyPositioned { topY[0] = it.positionInWindow().y }) {
+                                                    PostCard(post = post, interactions = itemInteractions)
+                                                }
                                             }
                                         }
                                     }

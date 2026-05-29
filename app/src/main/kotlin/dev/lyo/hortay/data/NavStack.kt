@@ -69,9 +69,10 @@ sealed interface NavEntry {
     @Immutable
     data class Comments(
         val anchor: TimelinePost,
-        /** Px to inset the anchor from the top of the comments list so a "show more" hero-open
-         *  lands the post at the same on-screen Y it had in the feed. 0 for a normal post-tap. */
-        val heroTopPaddingPx: Int = 0,
+        /** Hero-open anchor: the post's absolute on-screen Y captured in the feed, so the
+         *  comments screen lands the post where it sat (positive → pad above; negative → scroll
+         *  into the post). `null` for a normal open (deep link) that lands the post at the top. */
+        val heroAnchorY: Int? = null,
         override val entryId: String = UUID.randomUUID().toString(),
     ) : NavEntry
 
