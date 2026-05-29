@@ -8,7 +8,6 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -526,11 +525,6 @@ private fun ProfileHero(me: TdApi.User) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.large)
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
-                shape = MaterialTheme.shapes.large,
-            )
             .background(coverBrush)
             .padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
