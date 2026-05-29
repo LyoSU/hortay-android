@@ -118,16 +118,19 @@ fun LinkAwareText(
             val padH = LINK_HIGHLIGHT_PAD.toPx()
             val corner = CornerRadius(LINK_HIGHLIGHT_CORNER.toPx())
             for (line in firstLine..lastLine) {
-                // Clip to THIS line's slice, bounded by the last VISIBLE glyph — never
-                // getLineRight, which runs to the margin / a wrap space and reads as
-                // highlighted empty space.
+                // Clip to THIS line's slice of the link, bounded by the last VISIBLE glyph.
+                // Use per-glyph bounding boxes for the edges — getHorizontalPosition at a
+                // wrap-boundary offset is ambiguous (resolves to the next line's start ≈ 0),
+                // which collapsed the highlight to the first character on wrapped lines.
                 val segStart = maxOf(startOff, layout.getLineStart(line))
                 val segEnd = minOf(endOff, layout.getLineEnd(line, visibleEnd = true))
                 if (segStart >= segEnd) continue
-                val left = layout.getHorizontalPosition(segStart, usePrimaryDirection = true)
-                val right = layout.getHorizontalPosition(segEnd, usePrimaryDirection = true)
-                val x = (minOf(left, right) - padH).coerceAtLeast(0f)
-                val r = (maxOf(left, right) + padH).coerceAtMost(size.width)
+                val firstBox = layout.getBoundingBox(segStart)
+                val lastBox = layout.getBoundingBox(segEnd - 1)
+                val left = minOf(firstBox.left, lastBox.left)
+                val right = maxOf(firstBox.right, lastBox.right)
+                val x = (left - padH).coerceAtLeast(0f)
+                val r = (right + padH).coerceAtMost(size.width)
                 if (r <= x) continue
                 val top = layout.getLineTop(line)
                 val bottom = layout.getLineBottom(line)
