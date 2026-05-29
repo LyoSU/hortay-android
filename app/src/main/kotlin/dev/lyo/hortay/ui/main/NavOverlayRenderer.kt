@@ -103,6 +103,7 @@ internal fun NavOverlayRenderer(
     onPopNav: () -> Unit,
     onPushChannel: (chatId: Long, scrollTo: Long?) -> Unit,
     onPushComments: (TimelinePost) -> Unit,
+    onShowFullPost: (TimelinePost, Int) -> Unit,
     onSafelyOpenChannel: (chatId: Long, scrollTo: Long?) -> Unit,
     onOpenReport: (chatId: Long, messageId: Long?) -> Unit,
     onPostReportClick: (TimelinePost) -> Unit,
@@ -149,6 +150,7 @@ internal fun NavOverlayRenderer(
                             onPopNav = onPopNav,
                             onPushChannel = onPushChannel,
                             onPushComments = onPushComments,
+                            onShowFullPost = onShowFullPost,
                             onSafelyOpenChannel = onSafelyOpenChannel,
                             onOpenReport = onOpenReport,
                             onPostReportClick = onPostReportClick,
@@ -180,6 +182,7 @@ private fun RenderNavEntry(
     onPopNav: () -> Unit,
     onPushChannel: (chatId: Long, scrollTo: Long?) -> Unit,
     onPushComments: (TimelinePost) -> Unit,
+    onShowFullPost: (TimelinePost, Int) -> Unit,
     onSafelyOpenChannel: (chatId: Long, scrollTo: Long?) -> Unit,
     onOpenReport: (chatId: Long, messageId: Long?) -> Unit,
     onPostReportClick: (TimelinePost) -> Unit,
@@ -199,6 +202,7 @@ private fun RenderNavEntry(
             onBack = onPopNav,
             onChannelOpen = { cid, scrollTo -> onSafelyOpenChannel(cid, scrollTo) },
             onOpenComments = { post -> onPushComments(post) },
+            onShowFullPost = onShowFullPost,
             scrollToMessage = entry.scrollToMessageId
                 ?.let { entry.chatId to it }
                 ?.takeIf { isCurrent },
@@ -212,6 +216,7 @@ private fun RenderNavEntry(
         )
         is NavEntry.Comments -> CommentsScreen(
             post = entry.anchor,
+            heroTopPaddingPx = entry.heroTopPaddingPx,
             repo = graph.commentsRepository,
             feedRepo = graph.postsRepository,
             onDismiss = onPopNav,

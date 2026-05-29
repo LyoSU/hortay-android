@@ -32,6 +32,7 @@ import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.text.LinkAwareText
 import dev.lyo.hortay.ui.text.LocalExpandScrollKeeper
+import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.text.RenderableText
 import dev.lyo.hortay.ui.text.RichText
 
@@ -299,6 +300,7 @@ internal fun ExpandableText(
     // its end; the feed supplies this to pin the post's top so the new lines reveal
     // downward instead. Null off the feed → no-op.
     val keepScrollOnExpand = LocalExpandScrollKeeper.current
+    val showFullPost = LocalShowFullPost.current
     LinkAwareText(
         renderable = renderable,
         style = style,
@@ -316,8 +318,12 @@ internal fun ExpandableText(
             modifier = Modifier
                 .padding(top = 4.dp)
                 .clickable {
-                    keepScrollOnExpand?.invoke()
-                    expanded = true
+                    if (showFullPost != null) {
+                        showFullPost()
+                    } else {
+                        keepScrollOnExpand?.invoke()
+                        expanded = true
+                    }
                 },
         )
     }
