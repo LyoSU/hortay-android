@@ -3,12 +3,9 @@
 package dev.lyo.hortay.ui.settings
 
 import android.os.Build
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,6 +35,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,12 +45,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
@@ -69,7 +68,9 @@ import dev.lyo.hortay.ui.components.PremiumStatusBadge
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.theme.profileCoverBrush
 import org.drinkless.tdlib.TdApi
+import kotlin.math.abs
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -144,107 +145,134 @@ fun SettingsScreen(
 ) {
     // In-tab sub-screen stack. Plain `remember` (NOT rememberSaveable): process death
     // should return to the Main page, mirroring the cold-launch-to-top rule for the feed.
+    // In-tab sub-screen stack. Plain `remember` (NOT rememberSaveable): process death returns
+    // to the Main page, mirroring the cold-launch-to-top rule for the feed.
     val stack = remember { mutableStateListOf<SettingsRoute>() }
-    val current = stack.lastOrNull() ?: SettingsRoute.Main
-    // Main-page scroll is hoisted to SettingsScreen scope so it survives drilling into a
-    // sub-screen and back. AnimatedContent removes the Main composable from composition while
-    // a sub-screen is up; a Main-local rememberScrollState would be torn down and the page
-    // would reset to the top on return. Hoisting doesn't "remember a position" — the state
-    // simply isn't discarded.
+    // Main scroll is hoisted here so it survives a sub-screen round-trip — Main is rendered as
+    // the always-mounted base layer below the overlays, so its scroll state is never torn down.
     val mainScrollState = rememberScrollState()
+    fun pop() { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
 
-    // Back pops one sub-screen at a time; AnimatedContent's reverse shared-axis-X slide
-    // animates Main back in as the sub-screen slides out. (A finger-following predictive
-    // transform was tried and reverted — these in-tab screens have nothing mounted beneath
-    // them, so it scaled/faded over a blank background instead of peeking the page below.)
-    BackHandler(enabled = stack.isNotEmpty()) { stack.removeAt(stack.lastIndex) }
+    // Predictive back WITH peek — identical to the channel / comments / archive overlay
+    // (ui/main/NavOverlayRenderer): the top sub-screen follows the finger and reveals the layer
+    // beneath (a parent sub-screen, or the Main page) as it drags away. Because Main and any
+    // lower sub-screen stay mounted underneath, the peek shows the real page, not a blank — the
+    // gap the earlier in-place AnimatedContent version couldn't fill.
+    val backCommitSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val backRewindSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val backProgress = remember { Animatable(0f) }
+    var backEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
+    PredictiveBackHandler(enabled = stack.isNotEmpty()) { progress ->
+        try {
+            progress.collect { event ->
+                backEdge = event.swipeEdge
+                val next = event.progress
+                if (abs(next - backProgress.value) >= 0.005f) backProgress.snapTo(next)
+            }
+            backProgress.animateTo(SETTINGS_BACK_EXIT, backCommitSpec)
+            pop()
+            backProgress.snapTo(0f)
+        } catch (_: CancellationException) {
+            backProgress.animateTo(0f, backRewindSpec)
+        }
+    }
 
-    // M3E shared-axis-X via MotionScheme: spatial spring for the slide, effects
-    // spring for the crossfade. Same physics as MaterialTheme reads on every Material
-    // component, so the screen transition feels of-a-piece with chip / card / banner
-    // morphs instead of legacy duration-tween. Captured here (composable scope)
-    // because AnimatedContent.transitionSpec is a non-composable lambda.
-    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
-    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-    AnimatedContent(
-        targetState = current,
-        transitionSpec = {
-            val forward = targetState.depth > initialState.depth
-            val direction = if (forward) SlideDirection.Left else SlideDirection.Right
-            (slideIntoContainer(direction, spatialSpec) + fadeIn(effectsSpec)) togetherWith
-                (slideOutOfContainer(direction, spatialSpec) + fadeOut(effectsSpec))
-        },
-        label = "settings-nav",
-    ) { route ->
-        when (route) {
-            SettingsRoute.AutoDownload -> autoDownload?.let { store ->
-                AutoDownloadHost(
-                    store = store,
-                    contentPadding = contentPadding,
-                    onBack = { stack.remove(SettingsRoute.AutoDownload) },
-                )
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Base layer: the Main page, always mounted (scroll preserved + the predictive-back
+        // peek target).
+        SettingsMain(
+            settings = settings,
+            contentPadding = contentPadding,
+            scrollState = mainScrollState,
+            onLogout = onLogout,
+            onSignIn = onSignIn,
+            ignoredChannels = ignoredChannels,
+            onOpenHiddenChannels = { stack.add(SettingsRoute.HiddenChannels) },
+            onOpenDataStorage = { stack.add(SettingsRoute.DataStorage) },
+            onOpenPrivacy = { stack.add(SettingsRoute.Privacy) },
+            onOpenAbout = { stack.add(SettingsRoute.About) },
+            me = me,
+            userMessages = userMessages,
+            onNavigateToArchiveSettings = onNavigateToArchiveSettings,
+            archiveLossOnLogout = archiveLossOnLogout,
+        )
+
+        // Overlay layers — each opaque sub-screen covers what's beneath. Pushes are immediate
+        // (no slide), matching the archive / channel overlays; the only motion is the
+        // predictive-back transform on the top layer, driven by [backProgress].
+        stack.forEachIndexed { idx, route ->
+            val isTop = idx == stack.lastIndex
+            key(route) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (isTop) {
+                                Modifier.graphicsLayer {
+                                    val p = backProgress.value.coerceIn(0f, SETTINGS_BACK_EXIT)
+                                    val signed = if (backEdge == BackEventCompat.EDGE_RIGHT) -p else p
+                                    translationX = signed * size.width * 0.25f
+                                    val s = 1f - p.coerceAtMost(1f) * 0.05f
+                                    scaleX = s
+                                    scaleY = s
+                                    alpha = (1f - p.coerceAtMost(1f) * 0.9f).coerceAtLeast(0f)
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
+                    when (route) {
+                        SettingsRoute.AutoDownload -> autoDownload?.let { store ->
+                            AutoDownloadHost(store = store, contentPadding = contentPadding, onBack = ::pop)
+                        }
+                        SettingsRoute.HiddenChannels -> ignoredChannels?.let { store ->
+                            HiddenChannelsScreen(
+                                store = store,
+                                contentPadding = contentPadding,
+                                onBack = ::pop,
+                                channelActions = channelActions,
+                                webChannelByChatId = webChannelByChatId,
+                            )
+                        }
+                        SettingsRoute.DataStorage -> DataStorageScreen(
+                            stats = stats,
+                            contentPadding = contentPadding,
+                            onClearWebCache = onClearWebCache,
+                            autoDownloadAvailable = autoDownload != null,
+                            onOpenAutoDownload = { stack.add(SettingsRoute.AutoDownload) },
+                            onBack = ::pop,
+                        )
+                        SettingsRoute.Privacy -> PrivacyScreen(
+                            settings = settings,
+                            contentPadding = contentPadding,
+                            privacyTogglesAvailable = stats != null,
+                            onBack = ::pop,
+                        )
+                        SettingsRoute.About -> AboutScreen(contentPadding = contentPadding, onBack = ::pop)
+                    }
+                }
             }
-            SettingsRoute.HiddenChannels -> ignoredChannels?.let { store ->
-                HiddenChannelsScreen(
-                    store = store,
-                    contentPadding = contentPadding,
-                    onBack = { stack.remove(SettingsRoute.HiddenChannels) },
-                    channelActions = channelActions,
-                    webChannelByChatId = webChannelByChatId,
-                )
-            }
-            SettingsRoute.DataStorage -> DataStorageScreen(
-                stats = stats,
-                contentPadding = contentPadding,
-                onClearWebCache = onClearWebCache,
-                autoDownloadAvailable = autoDownload != null,
-                onOpenAutoDownload = { stack.add(SettingsRoute.AutoDownload) },
-                onBack = { stack.remove(SettingsRoute.DataStorage) },
-            )
-            SettingsRoute.Privacy -> PrivacyScreen(
-                settings = settings,
-                contentPadding = contentPadding,
-                privacyTogglesAvailable = stats != null,
-                onBack = { stack.remove(SettingsRoute.Privacy) },
-            )
-            SettingsRoute.About -> AboutScreen(
-                contentPadding = contentPadding,
-                onBack = { stack.remove(SettingsRoute.About) },
-            )
-            SettingsRoute.Main -> SettingsMain(
-                settings = settings,
-                contentPadding = contentPadding,
-                scrollState = mainScrollState,
-                onLogout = onLogout,
-                onSignIn = onSignIn,
-                ignoredChannels = ignoredChannels,
-                onOpenHiddenChannels = { stack.add(SettingsRoute.HiddenChannels) },
-                onOpenDataStorage = { stack.add(SettingsRoute.DataStorage) },
-                onOpenPrivacy = { stack.add(SettingsRoute.Privacy) },
-                onOpenAbout = { stack.add(SettingsRoute.About) },
-                me = me,
-                userMessages = userMessages,
-                onNavigateToArchiveSettings = onNavigateToArchiveSettings,
-                archiveLossOnLogout = archiveLossOnLogout,
-            )
         }
     }
 }
 
 /**
- * In-tab settings route. `depth` drives the AnimatedContent slide direction so any
- * deeper push slides left and any pop slides right, regardless of which page we're on.
- * Modelled as a stack (depth = index) rather than booleans so Data&Storage → AutoDownload
- * (depth 2) animates as "go deeper" instead of a same-depth crossfade.
+ * In-tab settings sub-screen, rendered as an opaque overlay layer above the always-mounted
+ * Main page. The Main page itself is the base layer, never a route here. Order in the stack is
+ * the layer order; Data&storage → AutoDownload is a two-deep path (both stay mounted so the
+ * predictive-back peek reveals the parent).
  */
-private enum class SettingsRoute(val depth: Int) {
-    Main(0),
-    DataStorage(1),
-    Privacy(1),
-    About(1),
-    HiddenChannels(1),
-    AutoDownload(2),
+private enum class SettingsRoute {
+    DataStorage,
+    Privacy,
+    About,
+    HiddenChannels,
+    AutoDownload,
 }
+
+/** Predictive-back commit target: 1f = peek, 2f = full slide-off + fade before the pop. */
+private const val SETTINGS_BACK_EXIT = 2f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
