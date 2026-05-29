@@ -1906,6 +1906,34 @@ fun TimelineScreen(
                             // this composition and the click doesn't index a stale list.
                             val items = feedItemsState.value
                             val target = homeScrollIndexState.intValue
+                            val landedPost = items.getOrNull(target)?.posts()?.firstOrNull()
+                            // A deliberate "next unread" jump is itself an explicit read
+                            // signal — at least as strong as tapping a post open. Ack the
+                            // landed post NOW (synchronously on tap, before the scroll) via
+                            // the same explicit-tap path (album-aware + shares the dwell dedup
+                            // set) instead of leaning on the viewport dwell to re-detect it.
+                            //
+                            // Two reasons it must be here, not after the scroll completes:
+                            //  1. After a PROGRAMMATIC scroll the dwell's re-arm is racy. It
+                            //     fires only on a fresh settled `distinctUntilChanged` viewport
+                            //     tuple held idle for READ_DWELL_MS, but once we land the
+                            //     focus-tracker OpenChats this chat and the live interaction-info
+                            //     stream churns card heights, so a neighbour keeps crossing the
+                            //     60% line and collectLatest resets the 500 ms window before it
+                            //     completes; a zero-delta top-align produces no settle transition
+                            //     at all. The cursor then never advanced, the counter never ticked
+                            //     down, and the pill re-landed on the same post — the bug this ack
+                            //     closes.
+                            //  2. Acking inside the launch AFTER `scrollToBoundary` would be
+                            //     skipped if the user grabs the list mid-animation: the gesture
+                            //     cancels `animateScrollBy`, the CancellationException unwinds the
+                            //     coroutine, and the ack never runs — re-opening the same bug in
+                            //     exactly the "I scrolled a bit" path. Doing it on tap is immune.
+                            // Gated on target > 0 so the caught-up landing on an already-read
+                            // newest post stays a no-op.
+                            if (target > 0 && landedPost != null) {
+                                markPostReadState.value(landedPost)
+                            }
                             scope.launch {
                                 if (target > 0) {
                                     listState.scrollToBoundary(rowIndex = target, animated = true)
@@ -1914,9 +1942,7 @@ fun TimelineScreen(
                                     // natural reverseLayout position, no top-align.
                                     listState.smartScrollTo(target)
                                 }
-                                items.getOrNull(target)?.posts()?.firstOrNull()?.let { post ->
-                                    highlightedPostKey = post.chatId to post.id
-                                }
+                                landedPost?.let { highlightedPostKey = it.chatId to it.id }
                             }
                         },
                     )

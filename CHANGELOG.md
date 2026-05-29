@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- The "next unread" button now reliably marks the post it lands you on as read, so the counter ticks down and each tap steps to the next unread instead of occasionally sticking on the same post.
+
 ## [0.9.0] — 2026-05-29
 
 ### Added
