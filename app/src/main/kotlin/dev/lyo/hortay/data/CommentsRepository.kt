@@ -263,12 +263,22 @@ class CommentsRepository(
             return@flow
         }
 
-        // Open the thread chat BEFORE the first history fetch so TDLib starts streaming
-        // updates and prioritises caching for it; close it on flow termination via
-        // [ChatPresence.withOpenChat] so a fast back-press still cleans up. Without this
-        // the cold-path `GetMessageThreadHistory` pays full server round-trip latency,
-        // which is the intermittent "1–3 sec Loading" the user sees.
-        ChatPresence.withOpenChat(td, anchor.threadChatId) {
+        // Open BOTH chats for the overlay's lifetime, BEFORE the first history fetch:
+        //   • [anchor.threadChatId] — the discussion-thread chat. Opening it first makes
+        //     TDLib stream thread updates and prioritise caching, so the cold-path
+        //     `GetMessageThreadHistory` doesn't pay full server round-trip latency (the
+        //     intermittent "1–3 sec Loading" the user used to see).
+        //   • [chatId] — the HOST CHANNEL chat. TDLib emits `updateMessageInteractionInfo`
+        //     only for OPEN chats (tdlib/td#2312). In the feed the focus-tracker holds the
+        //     channel open, but it's suspended under the overlay — so without this the
+        //     pinned anchor post's own reactions / views / reply count would freeze at
+        //     their open-time values while the comments below update live. Routing both
+        //     through one [ChatPresence.withOpenChats] keeps the multi-chat presence
+        //     lifecycle centralised here (the single owner of the overlay's chat presence)
+        //     rather than adding an OpenChat in CommentsScreen; both close on flow
+        //     termination (back-press, STOP_TIMEOUT_MS linger) via its NonCancellable
+        //     cleanup. When chatId == threadChatId the refcount folds them into one.
+        ChatPresence.withOpenChats(td, anchor.threadChatId, chatId) {
             // Bootstrap is one shot: collect ALL pages first, emit Ready ONCE at the end.
             // Per-batch progressive emit looked attractive ("surface fast"), but produced
             // an inverted-feeling load order. TDLib paginates GetMessageThreadHistory

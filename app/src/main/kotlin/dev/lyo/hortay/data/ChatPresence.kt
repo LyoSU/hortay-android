@@ -133,6 +133,49 @@ internal object ChatPresence {
     }
 
     /**
+     * Hold every DISTINCT chat in [chatIds] open for the duration of [block], each
+     * closed on exit (even on cancellation, via [NonCancellable]). Opened in
+     * argument order, closed in reverse.
+     *
+     * Closes EXACTLY the chats this call actually opened — tracked in [opened] as
+     * each [openChat] returns — never the raw [chatIds]. This matters because the
+     * open loop has suspension points: if the coroutine is cancelled after opening
+     * the first id but before the second, the `finally` must close only the first.
+     * Blindly closing every requested id would [closeChat] one we never opened and
+     * decrement a refcount another holder owns (e.g. the feed focus-tracker holding
+     * the same channel), wrongly evicting their chat. Duplicate ids are de-duped so
+     * a single (open, close) pair covers a repeated id.
+     *
+     * Use when one surface needs TDLib's open-chat-only streams
+     * (`updateMessageInteractionInfo`, read-state) for MORE than one chat at once.
+     * The comments overlay is the canonical case: it needs the discussion-thread
+     * chat open (so comments stream) AND the host channel chat open (so the pinned
+     * anchor post's own reactions / views / reply count keep streaming — the feed's
+     * focus-tracker that normally holds the channel open is suspended under the
+     * overlay). Keeping this a single primitive means the multi-chat lifecycle lives
+     * in one place instead of nested [withOpenChat] calls or ad-hoc open/close pairs
+     * scattered across screens.
+     */
+    suspend inline fun <T> withOpenChats(
+        td: TdSender,
+        vararg chatIds: Long,
+        block: () -> T,
+    ): T {
+        val opened = ArrayList<Long>(chatIds.size)
+        try {
+            for (id in chatIds.distinct()) {
+                openChat(td, id)
+                opened.add(id)
+            }
+            return block()
+        } finally {
+            withContext(NonCancellable) {
+                for (id in opened.asReversed()) closeChat(td, id)
+            }
+        }
+    }
+
+    /**
      * Tells TDLib the user has seen [messageIds] in [chatId]. Always passes through
      * here so call-site policy (which [TdApi.MessageSource] subtype, whether
      * `forceRead` is set) lives in one place per use case and the read-state TDLib
