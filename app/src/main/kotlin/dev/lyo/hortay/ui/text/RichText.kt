@@ -57,24 +57,22 @@ fun RichText(
     maxLines: Int,
     renderer: (@Composable (RenderableText, TextStyle, Int) -> Unit),
 ) {
-    val blocks = remember(formatted) { formatted.blockRanges() }
+    // Trim blank edges of the whole body first (stray leading / trailing newlines and
+    // spaces TDLib or the web parser leave behind), so no surface renders a post with
+    // empty lines hanging off the top or bottom.
+    val src = remember(formatted) { formatted.trimmedBlankEdges() }
+    val blocks = remember(src) { src.blockRanges() }
     if (blocks.isEmpty()) {
-        renderer(rememberRenderableText(formatted), style, maxLines)
+        renderer(rememberRenderableText(src), style, maxLines)
         return
     }
 
-    val segments = remember(formatted, blocks) { buildSegments(formatted, blocks) }
+    val segments = remember(src, blocks) { buildSegments(src, blocks) }
     Column {
         segments.forEachIndexed { idx, segment ->
-            if (idx > 0) {
-                // Insert an 8 dp Spacer ONLY when the boundary doesn't already carry a
-                // natural paragraph break (the source injects `\n` around blocks);
-                // otherwise the gap would double.
-                val prevText = segments[idx - 1].text.text
-                val curText = segment.text.text
-                val naturalBreak = prevText.endsWith('\n') || curText.startsWith('\n')
-                if (!naturalBreak) Spacer(Modifier.height(8.dp))
-            }
+            // Segments are individually edge-trimmed, so spacing is a single consistent
+            // gap rather than whatever stray newlines the source happened to carry.
+            if (idx > 0) Spacer(Modifier.height(8.dp))
             val block = segment.block
             if (block != null) {
                 BlockBox(segment.text, style, block, maxLines)
@@ -229,52 +227,44 @@ private fun FormattedText.blockRanges(): List<BlockRange> {
 
 /**
  * Slice [source] into alternating plain-text / block pieces. Each piece is a
- * [FormattedText] whose spans are re-anchored to the slice. Boundary trim keeps AT MOST
- * one `\n` of the paragraph-break run the source injects around a block (Compose renders
- * `text\n\n` three lines tall, where one blank line is intended).
+ * [FormattedText] whose spans are re-anchored to the slice, with its blank edges trimmed
+ * — so a block box carries no empty leading / trailing line inside, and plain runs between
+ * blocks shed the `\n\n` the source injects around them. Empty pieces are dropped.
  */
 private fun buildSegments(source: FormattedText, blocks: List<BlockRange>): List<Segment> {
     val out = mutableListOf<Segment>()
     var cursor = 0
+    fun addPlain(start: Int, end: Int) {
+        if (start >= end) return
+        val seg = source.slice(start, end).trimmedBlankEdges()
+        if (seg.text.isNotEmpty()) out += Segment(seg, block = null)
+    }
     for (b in blocks) {
-        if (cursor < b.start) {
-            val end = trimToSingleTrailingNewline(source.text, cursor, b.start)
-            if (end > cursor) out += Segment(source.slice(cursor, end), block = null)
-        }
-        out += Segment(source.slice(b.start, b.end), block = b.style)
+        addPlain(cursor, b.start)
+        val blockSeg = source.slice(b.start, b.end).trimmedBlankEdges()
+        if (blockSeg.text.isNotEmpty()) out += Segment(blockSeg, block = b.style)
         cursor = b.end
     }
-    if (cursor < source.text.length) {
-        val start = trimToSingleLeadingNewline(source.text, cursor, source.text.length)
-        if (start < source.text.length) out += Segment(source.slice(start, source.text.length), block = null)
-    }
-    return out.filter { it.text.text.isNotEmpty() }
+    addPlain(cursor, source.text.length)
+    return out
 }
 
-/** Walk back from [end] over a trailing newline run, keeping at most one `\n`. */
-private fun trimToSingleTrailingNewline(text: String, start: Int, end: Int): Int {
-    var i = end
-    var firstNewlinePos = -1
-    while (i > start) {
-        val c = text[i - 1]
-        if (c == '\n') firstNewlinePos = i - 1
-        else if (c != ' ' && c != '\t') break
-        i--
+/** Drop leading / trailing whitespace (spaces, tabs, newlines) and re-anchor every span. */
+private fun FormattedText.trimmedBlankEdges(): FormattedText {
+    if (text.isEmpty()) return this
+    var s = 0
+    var e = text.length
+    while (s < e && text[s].isWhitespace()) s++
+    while (e > s && text[e - 1].isWhitespace()) e--
+    if (s == 0 && e == text.length) return this
+    if (s >= e) return FormattedText.Empty
+    val sub = text.substring(s, e)
+    val newSpans = spans.mapNotNull { sp ->
+        val ns = (sp.start - s).coerceAtLeast(0)
+        val ne = (sp.end - s).coerceAtMost(e - s)
+        if (ne <= ns) null else FormattedText.Span(ns, ne, sp.style)
     }
-    return if (firstNewlinePos >= 0) firstNewlinePos + 1 else end
-}
-
-/** Mirror of [trimToSingleTrailingNewline] — lands the slice start AT the LAST newline. */
-private fun trimToSingleLeadingNewline(text: String, start: Int, end: Int): Int {
-    var i = start
-    var lastNewlinePos = -1
-    while (i < end) {
-        val c = text[i]
-        if (c == '\n') lastNewlinePos = i
-        else if (c != ' ' && c != '\t') break
-        i++
-    }
-    return if (lastNewlinePos >= 0) lastNewlinePos else start
+    return FormattedText(sub, newSpans)
 }
 
 /**
