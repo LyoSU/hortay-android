@@ -61,6 +61,7 @@ import dev.lyo.hortay.ui.media.LocalScrollGate
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.media.rememberDeferredLoading
 import dev.lyo.hortay.ui.text.LocalExpandScrollKeeper
+import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
 import kotlinx.collections.immutable.toPersistentList
@@ -115,6 +116,7 @@ fun ChannelScreen(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     onOpenComments: (TimelinePost) -> Unit,
+    onShowFullPost: (dev.lyo.hortay.data.TimelinePost, Int) -> Unit = { _, _ -> },
     onChannelOpen: (chatId: Long, scrollToMessageId: Long?) -> Unit,
     scrollToMessage: Pair<Long, Long>? = null,
     onScrollHandled: () -> Unit = {},
@@ -480,6 +482,7 @@ fun ChannelScreen(
     val translationsState = rememberUpdatedState(translationsMap)
     val onChannelOpenState = rememberUpdatedState(onChannelOpen)
     val onOpenCommentsState = rememberUpdatedState(onOpenComments)
+    val onShowFullState = rememberUpdatedState(onShowFullPost)
     val markPostReadState = rememberUpdatedState({ post: TimelinePost ->
         val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
         val unacked = ids.filter { (post.chatId to it) !in ackedRead }
@@ -618,6 +621,7 @@ fun ChannelScreen(
                 markPostReadState.value(post)
                 onOpenCommentsState.value(post)
             },
+            onShowFull = { post, off -> onShowFullState.value(post, off) },
             // See [TimelineScreen.onPollVote] for the full rationale of the optimistic-flip
             // → RPC → clearPending pattern.
             onPollVote = { post, indices ->
@@ -870,10 +874,22 @@ fun ChannelScreen(
                                             val keepScroll = remember(item.key, expandRetainer) {
                                                 { expandRetainer.retainTop(item.key) }
                                             }
+                                            val showFull = remember(post, feedOrder, interactions, listState) {
+                                                if (feedOrder.reverseLayout) {
+                                                    ({
+                                                        val off = listState.layoutInfo.visibleItemsInfo
+                                                            .firstOrNull { it.key == item.key }?.offset ?: 0
+                                                        interactions.onShowFull(post, off)
+                                                    })
+                                                } else {
+                                                    null
+                                                }
+                                            }
                                             CompositionLocalProvider(
                                                 LocalIsCenteredItem provides isCenteredState,
                                                 LocalIsHighlightedItem provides highlighted,
                                                 LocalExpandScrollKeeper provides keepScroll,
+                                                LocalShowFullPost provides showFull,
                                             ) {
                                                 PostCard(post = post, interactions = interactions)
                                             }

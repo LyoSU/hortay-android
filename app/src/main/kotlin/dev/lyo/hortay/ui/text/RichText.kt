@@ -43,6 +43,15 @@ import dev.lyo.hortay.ui.icons.Symbol
 internal val LocalExpandScrollKeeper = compositionLocalOf<(() -> Unit)?> { null }
 
 /**
+ * When non-null, tapping "Показати більше" opens the post's full view instead of expanding
+ * the clamped body inline. Supplied by the Newest-at-bottom (reverseLayout) feed / channel,
+ * where an in-place inline grow can't avoid a one-frame scroll blip; opening the full post at
+ * the same on-screen position sidesteps that. `null` in the Newest-on-top (forward) feed,
+ * where inline expand grows downward smoothly.
+ */
+internal val LocalShowFullPost = compositionLocalOf<(() -> Unit)?> { null }
+
+/**
  * Renderer for [FormattedText]. Block quotes / code blocks render the SAME way on every
  * surface — feed, channel, comments, full post — as padded [BlockBox] composables. A post
  * carrying a block is split into alternating plain-text / block segments stacked in a Column.
