@@ -3,11 +3,9 @@
 package dev.lyo.hortay.ui.settings
 
 import android.os.Build
-import androidx.activity.BackEventCompat
-import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -40,7 +38,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,7 +46,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -73,9 +69,7 @@ import dev.lyo.hortay.ui.components.PremiumStatusBadge
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.theme.profileCoverBrush
 import org.drinkless.tdlib.TdApi
-import kotlin.math.abs
 import kotlinx.collections.immutable.persistentSetOf
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -159,28 +153,11 @@ fun SettingsScreen(
     // simply isn't discarded.
     val mainScrollState = rememberScrollState()
 
-    // Predictive back for the sub-screen stack — same pattern as the channel/comments overlay
-    // (ui/main/NavOverlayRenderer): the current sub-screen follows the finger via graphicsLayer,
-    // commits a pop at the end of the gesture, rewinds on cancel. Enabled only when a sub-screen
-    // is open; on the Main page system back falls through to the host (tab → Feed).
-    val backCommitSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    val backRewindSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    val backProgress = remember { Animatable(0f) }
-    var backEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
-    PredictiveBackHandler(enabled = stack.isNotEmpty()) { progress ->
-        try {
-            progress.collect { event ->
-                backEdge = event.swipeEdge
-                val next = event.progress
-                if (abs(next - backProgress.value) >= 0.005f) backProgress.snapTo(next)
-            }
-            backProgress.animateTo(SETTINGS_BACK_EXIT, backCommitSpec)
-            if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
-            backProgress.snapTo(0f)
-        } catch (_: CancellationException) {
-            backProgress.animateTo(0f, backRewindSpec)
-        }
-    }
+    // Back pops one sub-screen at a time; AnimatedContent's reverse shared-axis-X slide
+    // animates Main back in as the sub-screen slides out. (A finger-following predictive
+    // transform was tried and reverted — these in-tab screens have nothing mounted beneath
+    // them, so it scaled/faded over a blank background instead of peeking the page below.)
+    BackHandler(enabled = stack.isNotEmpty()) { stack.removeAt(stack.lastIndex) }
 
     // M3E shared-axis-X via MotionScheme: spatial spring for the slide, effects
     // spring for the crossfade. Same physics as MaterialTheme reads on every Material
@@ -199,21 +176,6 @@ fun SettingsScreen(
         },
         label = "settings-nav",
     ) { route ->
-        // Sub-screens (depth > 0) carry the predictive-back transform; Main never does.
-        val backModifier = if (route != SettingsRoute.Main) {
-            Modifier.graphicsLayer {
-                val p = backProgress.value.coerceIn(0f, SETTINGS_BACK_EXIT)
-                val signed = if (backEdge == BackEventCompat.EDGE_RIGHT) -p else p
-                translationX = signed * size.width * 0.25f
-                val s = 1f - p.coerceAtMost(1f) * 0.05f
-                scaleX = s
-                scaleY = s
-                alpha = (1f - p.coerceAtMost(1f) * 0.9f).coerceAtLeast(0f)
-            }
-        } else {
-            Modifier
-        }
-        Box(modifier = backModifier) {
         when (route) {
             SettingsRoute.AutoDownload -> autoDownload?.let { store ->
                 AutoDownloadHost(
@@ -266,7 +228,6 @@ fun SettingsScreen(
                 archiveLossOnLogout = archiveLossOnLogout,
             )
         }
-        }
     }
 }
 
@@ -284,9 +245,6 @@ private enum class SettingsRoute(val depth: Int) {
     HiddenChannels(1),
     AutoDownload(2),
 }
-
-/** Predictive-back commit target: 1f = peek, 2f = full slide-off + fade before the pop. */
-private const val SETTINGS_BACK_EXIT = 2f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
