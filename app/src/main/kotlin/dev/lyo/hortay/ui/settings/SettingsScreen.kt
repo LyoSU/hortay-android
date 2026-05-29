@@ -46,8 +46,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -69,8 +67,7 @@ import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.data.resolveEmojiStatusId
 import dev.lyo.hortay.ui.components.PremiumStatusBadge
 import dev.lyo.hortay.ui.media.TdAvatar
-import dev.lyo.hortay.ui.theme.profileAccentBrush
-import dev.lyo.hortay.ui.theme.profileRingBrush
+import dev.lyo.hortay.ui.theme.profileCoverBrush
 import org.drinkless.tdlib.TdApi
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.launch
@@ -480,8 +477,7 @@ private fun ProfileHero(me: TdApi.User) {
             else -> ""
         }
     }
-    val accentBrush = profileAccentBrush(me.profileAccentColorId)
-    val ringBrush = profileRingBrush(me.profileAccentColorId)
+    val coverBrush = profileCoverBrush(me.profileAccentColorId)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -492,78 +488,67 @@ private fun ProfileHero(me: TdApi.User) {
                 shape = MaterialTheme.shapes.large,
             )
             .background(MaterialTheme.colorScheme.surfaceContainerLow),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // Accent cover (radial gradient of the user's two profile colours, à la Telegram),
+        // with the avatar straddling its bottom edge. No fade to white, no ring. Top corners
+        // are rounded by the card's clip(shapes.large).
         Box(modifier = Modifier.fillMaxWidth()) {
-            // Accent band behind the top of the content, fading into the card surface.
             Box(
                 modifier = Modifier
+                    .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .height(56.dp)
-                    .background(accentBrush),
+                    .height(84.dp)
+                    .background(coverBrush),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 44.dp)
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainerLow),
-                            ),
-                        ),
+                TdAvatar(
+                    name = displayName,
+                    thumb = me.profilePhoto?.minithumbnail?.data,
+                    fileId = me.profilePhoto?.small?.id,
+                    size = 80.dp,
+                    textStyle = MaterialTheme.typography.headlineSmall,
                 )
             }
-            // Content overlays the band; top padding (= half the avatar) makes the avatar
-            // straddle the band/surface seam. The Box sizes to this Row, so there is no
-            // reserved dead space below the content (the prior offset(-28dp) left a 28dp gap).
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                        .border(width = 2.5.dp, brush = ringBrush, shape = CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    TdAvatar(
-                        name = displayName,
-                        thumb = me.profilePhoto?.minithumbnail?.data,
-                        fileId = me.profilePhoto?.small?.id,
-                        size = 72.dp,
-                        textStyle = MaterialTheme.typography.headlineSmall,
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val emojiStatusId = remember(me.emojiStatus) { resolveEmojiStatusId(me.emojiStatus) }
+                if (me.isPremium || emojiStatusId != null) {
+                    Spacer(Modifier.width(6.dp))
+                    PremiumStatusBadge(
+                        isPremium = me.isPremium,
+                        emojiStatusId = emojiStatusId,
+                        size = 18.dp,
                     )
                 }
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        val emojiStatusId = remember(me.emojiStatus) { resolveEmojiStatusId(me.emojiStatus) }
-                        if (me.isPremium || emojiStatusId != null) {
-                            Spacer(Modifier.width(6.dp))
-                            PremiumStatusBadge(
-                                isPremium = me.isPremium,
-                                emojiStatusId = emojiStatusId,
-                                size = 18.dp,
-                            )
-                        }
-                    }
-                    if (subtitle.isNotBlank()) {
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+            }
+            if (subtitle.isNotBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

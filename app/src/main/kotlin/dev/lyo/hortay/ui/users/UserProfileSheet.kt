@@ -7,7 +7,6 @@ import android.content.Intent
 import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -55,8 +53,7 @@ import dev.lyo.hortay.data.PresenceStatus
 import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.UserProfile
 import dev.lyo.hortay.ui.components.PremiumStatusBadge
-import dev.lyo.hortay.ui.theme.profileAccentBrush
-import dev.lyo.hortay.ui.theme.profileRingBrush
+import dev.lyo.hortay.ui.theme.profileCoverBrush
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
 import java.text.NumberFormat
@@ -122,6 +119,10 @@ fun UserProfileSheet(
         // Slightly larger top corner radius than the default to lean into M3 Expressive's
         // "more shape" stance — matches the channel-info / report sheets in this project.
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        // No default handle: the accent cover must reach the very top of the sheet (rounded
+        // corners and all), so we draw our own handle ON the cover. The default handle sits
+        // on the surface above the content and left a white strip above the colour band.
+        dragHandle = null,
     ) {
         Column(
             modifier = Modifier
@@ -189,47 +190,49 @@ private fun ProfileHero(
     val avatarFileId = profile?.avatarFileId ?: seedAvatarFileId
 
     val accentId = profile?.profileAccentColorId ?: -1
-    val accentBrush = profileAccentBrush(accentId)
-    val ringBrush = profileRingBrush(accentId)
+    val coverBrush = profileCoverBrush(accentId)
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Accent band behind the avatar — the user's own profile gradient (or the brand
-        // fallback). Fades into the sheet surface so the name below stays on plain surface.
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+        // Accent cover — faithful to Telegram: a radial gradient of the user's two profile
+        // colours that reaches the very top of the sheet (rounded corners and all). No fade
+        // to white, and no story ring (Telegram only paints the ring when the user has
+        // active stories). The avatar straddles the cover's bottom edge.
+        Box(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier
+                    .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .height(96.dp)
-                    .background(accentBrush),
+                    .height(132.dp)
+                    .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                    .background(coverBrush),
             )
-            // Faint scrim so a bright user-chosen accent never fights the avatar ring.
+            // Our own drag handle, sitting on the colour (the sheet's default handle is off).
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(96.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, MaterialTheme.colorScheme.surface),
-                        ),
-                    ),
+                    .align(Alignment.TopCenter)
+                    .padding(top = 10.dp)
+                    .size(width = 32.dp, height = 4.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.6f)),
             )
+            // Avatar straddles the cover's bottom edge (centre at the 132 dp seam). No ring.
             Box(
                 modifier = Modifier
-                    .padding(top = 48.dp)
+                    .align(Alignment.TopCenter)
+                    .padding(top = 84.dp)
                     .size(96.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .border(width = 2.5.dp, brush = ringBrush, shape = CircleShape),
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 contentAlignment = Alignment.Center,
             ) {
                 TdAvatar(
                     name = resolvedName,
                     thumb = avatarThumb,
                     fileId = avatarFileId,
-                    size = 88.dp,
+                    size = 96.dp,
                     textStyle = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.SemiBold),
                 )
             }
