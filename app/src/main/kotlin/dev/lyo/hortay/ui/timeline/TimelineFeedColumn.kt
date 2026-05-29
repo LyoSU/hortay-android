@@ -34,6 +34,7 @@ import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
 import dev.lyo.hortay.ui.media.LocalIsCenteredItem
 import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
+import dev.lyo.hortay.ui.text.LocalExpandScrollKeeper
 
 /**
  * Mechanical extraction of the main feed LazyColumn from [TimelineScreen]. Behaviour

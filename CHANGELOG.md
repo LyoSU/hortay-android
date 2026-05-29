@@ -5,11 +5,12 @@
 ## [Unreleased]
 
 ### Added
-- Collapsible quotes open collapsed to a few lines with a chevron to expand or collapse them when reading a post or its comments in full, instead of always showing whole.
+- Collapsible quotes open collapsed to a few lines with a chevron to expand or collapse them everywhere — feed, channels, comments and the open post — instead of always showing whole.
 - Tapping a link, @mention or hashtag now highlights it with a rounded, padded fill, giving the same clear press feedback across every link type.
 
 ### Changed
-- Code blocks now render in a full-width box with their language label, instead of a ragged inline highlight that broke across lines.
+- Block quotes now look and collapse the same on every surface — a padded accent box sized to its text with a quote mark in the corner — instead of a cramped, always-open band in the feed and channels.
+- Code blocks now render in a box with their language label, instead of a ragged inline highlight that broke across lines.
 - Web link previews now sit in the same accent-bar-and-tint frame as block quotes, so a pulled-in link reads as the same kind of reference.
 
 ### Fixed
@@ -20,7 +21,6 @@
 - A quote or code block at the very top or bottom of a post now keeps its padding instead of sitting flush against the text edge.
 - Posts and quotes no longer render with stray empty lines hanging off the top or bottom, and the gap around quote and code blocks is now consistent.
 - Switching between folder tabs (Archive ↔ All ↔ a folder) no longer flashes a row of skeleton bars over the see-through feed for a moment before the posts settle.
-- Block quotes now show their accent bar and tinted background everywhere — in the feed, channels and comments — not only when a post is opened in full.
 - Custom emoji now display inside poll questions, descriptions and options, instead of showing as an empty placeholder box.
 
 ## [0.9.1] — 2026-05-29

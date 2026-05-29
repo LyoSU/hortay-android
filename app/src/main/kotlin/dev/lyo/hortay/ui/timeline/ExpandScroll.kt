@@ -2,7 +2,6 @@ package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.filterNotNull
@@ -61,10 +60,3 @@ internal class ExpandScrollRetainer(
 }
 
 private const val RETAIN_TIMEOUT_MS = 400L
-
-/**
- * Per-item callback that pins the current post's top right before it expands inline
- * ("Показати більше"). Supplied by the feed / channel LazyColumn (which owns the
- * [LazyListState]); `null` everywhere else, so [ExpandableText] just no-ops.
- */
-internal val LocalExpandScrollKeeper = compositionLocalOf<(() -> Unit)?> { null }

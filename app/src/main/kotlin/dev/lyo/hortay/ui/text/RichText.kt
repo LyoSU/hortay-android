@@ -8,13 +8,13 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,22 +34,31 @@ import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.icons.Symbol
 
 /**
- * Renderer for [FormattedText]. Routes by surface, because block quotes / code blocks have
- * two conflicting needs that no single mechanism satisfies:
+ * Per-post callback that pins the current post's top right before any in-place expansion
+ * grows it ("Показати більше" on a clamped text segment, or a quote/code block's expand
+ * chevron). Supplied by the feed / channel LazyColumn (which owns the LazyListState) so a
+ * `reverseLayout` post reveals downward instead of dumping the reader at its end; `null`
+ * everywhere else (full post / comments), where the surrounding scroll container needs no
+ * nudge. Lives here in `ui.text` so both [BlockBox] and the timeline's `ExpandableText` can
+ * read it without `ui.text` depending on `ui.timeline`.
+ */
+internal val LocalExpandScrollKeeper = compositionLocalOf<(() -> Unit)?> { null }
+
+/**
+ * Renderer for [FormattedText]. Block quotes / code blocks render the SAME way on every
+ * surface — feed, channel, comments, full post — as padded [BlockBox] composables: proper
+ * side padding, a quote marker, content-width sizing, and a collapse toggle. A post that
+ * carries a block is split into alternating plain-text / block segments; the plain-text
+ * segments still flow through [renderer] (so the caller's [maxLines] clamp + "Показати
+ * більше" applies to them), while each block governs its own collapse.
  *
- *  * **Clamped surfaces** (feed / channel / captions — finite [maxLines]): render as ONE
- *    backing [Text] via [renderer]. Blocks paint inline through [LinkAwareText]'s
- *    draw-behind boxes (accent bar + tint), so the post-level `maxLines` clamp and
- *    "Показати більше" count EVERY line — text and quote/code alike. This is what the feed
- *    needs: one unified "show more" over the whole post.
- *  * **Full-reading surfaces** (comments / full post — `maxLines == Int.MAX_VALUE`): split
- *    into segments and render each block as a padded [BlockBox] composable — proper side
- *    padding and a collapse toggle for expandable quotes, where the reader has committed to
- *    the post and there's no competing post-level clamp.
- *
- * One decision point, driven by [maxLines]; both paths are produced from the same core
- * ([rememberRenderableText]), so every surface stays consistent. Posts without any block
- * skip segmentation entirely.
+ * Earlier this routed by surface — a single backing [Text] with draw-behind boxes on clamped
+ * surfaces vs. [BlockBox] only when fully expanded — to keep ONE post-level "show more" that
+ * counted block lines too. That made quotes look and behave differently in the feed (cramped,
+ * never collapsing) than in the open post. Unified on [BlockBox] everywhere instead: a
+ * per-block chevron and the post-level "show more" coexist. Posts without any block skip
+ * segmentation and render as one [renderer] call. Top-level blocks only — a nested block
+ * (rare) still renders inline within its parent box via [LinkAwareText]'s draw-behind path.
  */
 @Composable
 fun RichText(
@@ -63,14 +72,13 @@ fun RichText(
     // empty lines hanging off the top or bottom.
     val src = remember(formatted) { formatted.trimmedBlankEdges() }
     val blocks = remember(src) { src.blockRanges() }
-    // No blocks, OR a clamped surface → single [Text]: blocks (if any) render via
-    // LinkAwareText's draw-behind boxes and the unified clamp counts their lines too.
-    if (blocks.isEmpty() || maxLines != Int.MAX_VALUE) {
+    // No top-level block → one [Text] with the caller's clamp + "Показати більше".
+    if (blocks.isEmpty()) {
         renderer(rememberRenderableText(src), style, maxLines)
         return
     }
 
-    // Full-reading surface: padded composable blocks with per-quote collapse.
+    // Block present → padded composable blocks (every surface) with per-block collapse.
     val segments = remember(src, blocks) { buildSegments(src, blocks) }
     Column {
         segments.forEachIndexed { idx, segment ->
@@ -92,15 +100,19 @@ fun RichText(
 private const val COLLAPSED_QUOTE_LINES = 3
 
 /**
- * A padded block quote or code block.
+ * A padded block quote or code block. Renders identically on every surface (feed, channel,
+ * comments, full post).
  *
- *  * **Quote** — accent bar + `primary @ 10%` tint, body at full readability.
+ *  * **Quote** — accent bar + `primary @ 10%` tint, a quote-mark glyph in the top-right
+ *    corner that marks it as a quote, body at full readability.
  *  * **Code** — `surfaceContainerHigh` box, monospace body, optional language header.
  *
- * Collapsing: an expandable quote starts at [COLLAPSED_QUOTE_LINES]; any other block clamps
- * to [maxLines] (so it stays bounded on the feed, full on detail where `maxLines` is
- * `Int.MAX_VALUE`). The chevron + tap target appear only when the body actually overflows,
- * and toggle both ways.
+ * The box hugs its content width rather than filling the row, so a short quote reads as a
+ * pulled-in block instead of a full-width band. Collapsing: an expandable quote starts at
+ * [COLLAPSED_QUOTE_LINES]; any other block clamps to [maxLines]. The chevron + tap target
+ * appear only when the body actually overflows, and toggle both ways. Expanding pins the
+ * post's top via [LocalExpandScrollKeeper] so a `reverseLayout` feed reveals the new lines
+ * downward instead of dumping the reader at the post's end.
  */
 @Composable
 private fun BlockBox(
@@ -123,7 +135,16 @@ private fun BlockBox(
     val boxBg = if (isCode) MaterialTheme.colorScheme.surfaceContainerHigh else accent.copy(alpha = 0.10f)
     val contentStyle = if (isCode) style.copy(fontFamily = FontFamily.Monospace) else style
     val rt = rememberRenderableText(text)
-    val endPad = if (canExpand) 30.dp else 14.dp
+    // Pin the post's top before the box grows (reverseLayout feed); null off the feed.
+    val keepScroll = LocalExpandScrollKeeper.current
+    // Right gutter clears the corner affordances: a quote always carries the top-right
+    // quote glyph; the expand chevron shares that strip on the bottom-right. Code has no
+    // quote glyph, so it only reserves the gutter when the chevron is present.
+    val endPad = when {
+        !isCode -> 26.dp
+        canExpand -> 26.dp
+        else -> 12.dp
+    }
 
     val body: @Composable () -> Unit = {
         LinkAwareText(
@@ -137,12 +158,14 @@ private fun BlockBox(
 
     Box(
         modifier = Modifier
-            .fillMaxWidth()
             .clip(MaterialTheme.shapes.extraSmall)
             .background(boxBg)
             .then(
                 if (canExpand) {
-                    Modifier.clickable(role = Role.Button, onClickLabel = expandLabel) { expanded = !expanded }
+                    Modifier.clickable(role = Role.Button, onClickLabel = expandLabel) {
+                        keepScroll?.invoke()
+                        expanded = !expanded
+                    }
                 } else {
                     Modifier
                 },
@@ -150,9 +173,7 @@ private fun BlockBox(
     ) {
         if (isCode) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = endPad, top = 8.dp, bottom = 8.dp),
+                modifier = Modifier.padding(start = 12.dp, end = endPad, top = 8.dp, bottom = 8.dp),
             ) {
                 if (!language.isNullOrBlank()) {
                     Text(
@@ -165,21 +186,27 @@ private fun BlockBox(
                 body()
             }
         } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-            ) {
+            Row(modifier = Modifier.height(IntrinsicSize.Min)) {
                 Box(
                     modifier = Modifier
                         .width(3.dp)
                         .fillMaxHeight()
                         .background(accent),
                 )
-                Box(modifier = Modifier.padding(start = 10.dp, end = endPad, top = 8.dp, bottom = 8.dp)) {
+                Box(modifier = Modifier.padding(start = 12.dp, end = endPad, top = 8.dp, bottom = 8.dp)) {
                     body()
                 }
             }
+            // Quote marker — a faint quote-mark glyph in the top-right corner so the block
+            // reads as a quote even before the reader notices the accent bar.
+            Symbol(
+                name = "format_quote",
+                tint = accent.copy(alpha = 0.55f),
+                size = 16.dp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 6.dp, end = 8.dp),
+            )
         }
         if (canExpand) {
             // Chevron: down ("›" rotated 90°) when collapsed = "expand", up (270°) when

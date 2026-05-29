@@ -60,6 +60,7 @@ import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.media.rememberDeferredLoading
+import dev.lyo.hortay.ui.text.LocalExpandScrollKeeper
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
 import kotlinx.collections.immutable.toPersistentList

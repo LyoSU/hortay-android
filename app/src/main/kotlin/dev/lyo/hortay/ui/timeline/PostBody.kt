@@ -31,6 +31,7 @@ import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.text.LinkAwareText
+import dev.lyo.hortay.ui.text.LocalExpandScrollKeeper
 import dev.lyo.hortay.ui.text.RenderableText
 import dev.lyo.hortay.ui.text.RichText
 
