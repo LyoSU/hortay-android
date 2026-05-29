@@ -34,21 +34,22 @@ import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.icons.Symbol
 
 /**
- * Renderer for [FormattedText].
+ * Renderer for [FormattedText]. Routes by surface, because block quotes / code blocks have
+ * two conflicting needs that no single mechanism satisfies:
  *
- * Inline content (styles, links, mentions, spoilers, custom emoji) renders through
- * [renderer] (→ [LinkAwareText]) as a single backing [Text], so the `maxLines` clamp and
- * "Показати більше" toggle work.
+ *  * **Clamped surfaces** (feed / channel / captions — finite [maxLines]): render as ONE
+ *    backing [Text] via [renderer]. Blocks paint inline through [LinkAwareText]'s
+ *    draw-behind boxes (accent bar + tint), so the post-level `maxLines` clamp and
+ *    "Показати більше" count EVERY line — text and quote/code alike. This is what the feed
+ *    needs: one unified "show more" over the whole post.
+ *  * **Full-reading surfaces** (comments / full post — `maxLines == Int.MAX_VALUE`): split
+ *    into segments and render each block as a padded [BlockBox] composable — proper side
+ *    padding and a collapse toggle for expandable quotes, where the reader has committed to
+ *    the post and there's no competing post-level clamp.
  *
- * Paragraph-level blocks — block quotes and code blocks — are NOT inline-able with proper
- * side padding inside a shared [Text] (a [Text] wraps every paragraph at one width). So
- * whenever a block is present the body is split into segments: ordinary runs go through
- * [renderer], and each top-level block renders as a padded [BlockBox]. This is the single
- * place blocks are produced, so every surface (feed / channel / comments / full post) gets
- * the same boxes. Nested blocks (e.g. code inside a quote) are rare and fall back to inline
- * styling within their parent box.
- *
- * Posts WITHOUT any block skip segmentation entirely — the common path is unchanged.
+ * One decision point, driven by [maxLines]; both paths are produced from the same core
+ * ([rememberRenderableText]), so every surface stays consistent. Posts without any block
+ * skip segmentation entirely.
  */
 @Composable
 fun RichText(
@@ -62,11 +63,14 @@ fun RichText(
     // empty lines hanging off the top or bottom.
     val src = remember(formatted) { formatted.trimmedBlankEdges() }
     val blocks = remember(src) { src.blockRanges() }
-    if (blocks.isEmpty()) {
+    // No blocks, OR a clamped surface → single [Text]: blocks (if any) render via
+    // LinkAwareText's draw-behind boxes and the unified clamp counts their lines too.
+    if (blocks.isEmpty() || maxLines != Int.MAX_VALUE) {
         renderer(rememberRenderableText(src), style, maxLines)
         return
     }
 
+    // Full-reading surface: padded composable blocks with per-quote collapse.
     val segments = remember(src, blocks) { buildSegments(src, blocks) }
     Column {
         segments.forEachIndexed { idx, segment ->

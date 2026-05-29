@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### Added
-- Collapsible quotes now start collapsed to a few lines everywhere they appear, with a chevron to expand or collapse them again, instead of always showing in full.
+- Collapsible quotes open collapsed to a few lines with a chevron to expand or collapse them when reading a post or its comments in full, instead of always showing whole.
 - Tapping a link, @mention or hashtag now highlights it with a rounded, padded fill, giving the same clear press feedback across every link type.
 
 ### Changed

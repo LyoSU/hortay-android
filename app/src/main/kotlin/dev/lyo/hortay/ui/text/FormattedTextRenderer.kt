@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
+import androidx.compose.ui.text.ParagraphStyle
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
@@ -34,7 +35,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.LocalCustomEmoji
@@ -66,6 +69,15 @@ data class RenderableText(
     val spoilerGroups: List<SpoilerGroupInfo> = emptyList(),
     val spoilerDispersion: (Int) -> Float? = { _ -> null },
     /**
+     * Paragraph-level block elements (block quotes, code blocks) in dst coordinates.
+     * Drawn as a tinted box + accent bar BEHIND the single [Text] by [LinkAwareText]
+     * (see its KDoc). Kept as metadata rather than separate composables so the whole
+     * body stays one [Text] — the `maxLines` clamp and "Показати більше" toggle keep
+     * working, and every surface (feed / channel / comments / detail) renders the block
+     * identically regardless of the clamp.
+     */
+    val blockDecorations: List<BlockDecoration> = emptyList(),
+    /**
      * Dst ranges of every tappable entity (URL / @mention / inline mention / hashtag).
      * [LinkAwareText] paints a padded rounded highlight behind whichever one is currently
      * pressed, so tapping any link kind gives the same Telegram-style press feedback.
@@ -95,6 +107,20 @@ data class RenderableText(
 @Immutable
 data class LinkRange(val start: Int, val end: Int, val url: String)
 
+/**
+ * A paragraph-level block element to paint behind the text. [start]/[end] are dst
+ * (AnnotatedString) coordinates; [language] is the optional code-block language label
+ * (only meaningful for [Kind.Code], from `TextEntityTypePreCode`).
+ */
+@Immutable
+data class BlockDecoration(
+    val start: Int,
+    val end: Int,
+    val kind: Kind,
+    val language: String? = null,
+) {
+    enum class Kind { Quote, Code }
+}
 
 /**
  * One logical spoiler cover (group of adjacent TDLib Spoiler entities that visually
@@ -284,6 +310,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
         linkRanges = built.linkRanges,
         spoilerGroups = built.spoilerGroups,
         spoilerDispersion = spoilerDispersion,
+        blockDecorations = built.blockDecorations,
         pressableRanges = built.pressableRanges,
         contentKey = formatted.text,
     )
@@ -384,8 +411,15 @@ private data class BuiltAnnotated(
     val linkRanges: List<LinkRange>,
     val spoilerGroups: List<SpoilerGroupInfo>,
     val emojiCoverSrcPositions: Set<Int>,
+    val blockDecorations: List<BlockDecoration>,
     val pressableRanges: List<IntRange>,
 )
+
+// Left text indent (in sp so it tracks font scale) reserving room for the quote bar /
+// the code box padding. Mirrors the dp geometry drawn in [LinkAwareText]; they're
+// calibrated to line up at the default font scale.
+private val QUOTE_TEXT_INDENT = 18.sp
+private val CODE_TEXT_INDENT = 14.sp
 
 private data class CustomEmojiRange(val start: Int, val end: Int, val emojiId: Long)
 
@@ -413,6 +447,7 @@ private fun buildFromFormatted(
     val pressableRanges = mutableListOf<IntRange>()
     val emojiCoverSrcPositions = mutableSetOf<Int>()
     val groupDstRanges = HashMap<Int, MutableList<IntRange>>()
+    val blockDecorations = mutableListOf<BlockDecoration>()
     val annotated = buildAnnotatedString {
     val srcText = formatted.text
     val srcLen = srcText.length
@@ -475,15 +510,40 @@ private fun buildFromFormatted(
         }
     }
 
+    // Block-level entities (quote / code) become ParagraphStyles, which CANNOT overlap
+    // each other — Compose throws at layout time (NOT compile time). Telegram allows
+    // nesting (code inside a quote) and can emit duplicate/adjacent block entities, so
+    // greedily pick a non-overlapping set (outer-first): only those get a ParagraphStyle
+    // indent + a painted box. Nested / overlapping blocks degrade to inline styling.
+    val acceptedBlockIdx = HashSet<Int>()
+    run {
+        val blocks = formatted.spans.withIndex()
+            .mapNotNull { (i, sp) ->
+                val isBlock = sp.style is FormattedText.Style.BlockQuote ||
+                    sp.style is FormattedText.Style.Pre
+                if (!isBlock) return@mapNotNull null
+                val st = sp.start.coerceIn(0, srcLen)
+                val en = sp.end.coerceIn(st, srcLen)
+                if (st >= en) null else Triple(i, st, en)
+            }
+            .sortedWith(compareBy({ it.second }, { -(it.third - it.second) }))
+        var lastEnd = -1
+        for ((i, st, en) in blocks) {
+            if (st >= lastEnd) {
+                acceptedBlockIdx += i
+                lastEnd = en
+            }
+        }
+    }
+
     formatted.spans.forEachIndexed { idx, span ->
         if (span.style is FormattedText.Style.CustomEmoji) return@forEachIndexed
 
         var srcStart = span.start.coerceIn(0, srcLen)
         var srcEnd = span.end.coerceIn(srcStart, srcLen)
         // Trim whitespace off the entity's edges so its styling — inline-code background,
-        // underline / strikethrough, spoiler cover, link tap target + press highlight —
-        // covers only the visible text, not leading / trailing blanks. Also yields a
-        // cleaner substring for Url / Mention / Hashtag.
+        // underline / strikethrough, spoiler cover, link tap target + press highlight,
+        // and the block box — covers only the visible text, not leading / trailing blanks.
         while (srcStart < srcEnd && srcText[srcStart].isWhitespace()) srcStart++
         while (srcEnd > srcStart && srcText[srcEnd - 1].isWhitespace()) srcEnd--
         val start = positionMap[srcStart]
@@ -559,9 +619,44 @@ private fun buildFromFormatted(
                     )
                 }
             }
-            // Block quotes / code blocks are lifted into padded composables by RichText;
-            // here they only contribute their inline fallback (used when nested). Falls
-            // through to the shared toSpanStyle path below.
+            is FormattedText.Style.BlockQuote -> if (idx in acceptedBlockIdx) {
+                // Paragraph-level: indent the text to clear the accent bar, keep the
+                // body at full readability (the tint already signals "quote"), and
+                // record the box for [LinkAwareText] to paint behind it.
+                addStyle(
+                    ParagraphStyle(textIndent = TextIndent(QUOTE_TEXT_INDENT, QUOTE_TEXT_INDENT)),
+                    start,
+                    end,
+                )
+                addStyle(SpanStyle(color = onSurface), start, end)
+                blockDecorations += BlockDecoration(start, end, BlockDecoration.Kind.Quote)
+            } else {
+                // Nested / overlapping quote — degrade to a muted inline span (the
+                // enclosing block already owns the box).
+                addStyle(SpanStyle(color = mute), start, end)
+            }
+            is FormattedText.Style.Pre -> if (idx in acceptedBlockIdx) {
+                // Block code: monospace + indent, full-width box painted behind. NOT the
+                // inline `background` span [Code] uses — the box provides the surface, and
+                // a per-glyph background would double up. The language label (PreCode) is
+                // drawn in the box corner by [LinkAwareText].
+                addStyle(
+                    ParagraphStyle(textIndent = TextIndent(CODE_TEXT_INDENT, CODE_TEXT_INDENT)),
+                    start,
+                    end,
+                )
+                addStyle(SpanStyle(fontFamily = FontFamily.Monospace, color = onSurface), start, end)
+                blockDecorations += BlockDecoration(
+                    start,
+                    end,
+                    BlockDecoration.Kind.Code,
+                    language = s.language,
+                )
+            } else {
+                // Nested / overlapping code (e.g. code inside a quote) — inline monospace
+                // + per-glyph background, no second box, no ParagraphStyle.
+                addStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBg), start, end)
+            }
             else -> span.style.toSpanStyle(accent, codeBg, mute)
                 ?.let { style -> addStyle(style, start, end) }
         }
@@ -581,6 +676,7 @@ private fun buildFromFormatted(
         linkRanges = linkRanges.toList(),
         spoilerGroups = spoilerGroups,
         emojiCoverSrcPositions = emojiCoverSrcPositions.toSet(),
+        blockDecorations = blockDecorations.toList(),
         pressableRanges = pressableRanges.toList(),
     )
 }
@@ -601,11 +697,10 @@ private fun FormattedText.Style.toSpanStyle(
     is FormattedText.Style.MentionName -> SpanStyle(color = accent)
     FormattedText.Style.BotCommand -> SpanStyle(color = accent)
     is FormattedText.Style.CustomEmoji -> null
-    // Top-level block quotes / code blocks are lifted into padded composables by
-    // RichText (see its KDoc). This inline fallback only fires for a block nested inside
-    // another (e.g. code inside a quote), which RichText doesn't segment recursively.
-    is FormattedText.Style.Pre -> SpanStyle(fontFamily = FontFamily.Monospace, background = codeBg)
-    is FormattedText.Style.BlockQuote -> SpanStyle(color = mute)
+    // Block-level — handled explicitly in buildFromFormatted (ParagraphStyle indent +
+    // a box painted behind the text by LinkAwareText), never reaches this inline path.
+    is FormattedText.Style.Pre,
+    is FormattedText.Style.BlockQuote -> null
     FormattedText.Style.Url,
     is FormattedText.Style.TextUrl,
     FormattedText.Style.Mention,
