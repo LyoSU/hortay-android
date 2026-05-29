@@ -12,10 +12,10 @@
 - Block quotes now look and collapse the same on every surface — a padded accent box sized to its text with a quote mark in the corner — instead of a cramped, always-open band in the feed and channels.
 - Code blocks now render in a box with their language label, instead of a ragged inline highlight that broke across lines.
 - Web link previews now sit in the same accent-bar-and-tint frame as block quotes, so a pulled-in link reads as the same kind of reference.
-- Tapping a post or its "Show more" now opens the full post and its comments on their own screen, instead of the feed's "Show more" expanding the text in place.
 
 ### Fixed
 - The "next unread" button now marks the post you were on as read immediately and steps to the next one, instead of sometimes re-landing on the same post and leaving it unread until you scrolled.
+- Opening a post — by tapping it or its "Show more" — now keeps the post where it sits and dims the feed behind it as the full post and its comments open below, so the text never jumps.
 - A tapped link, @mention or hashtag that wraps across lines now highlights as one connected shape, instead of a separate rounded pill on each line.
 - Link highlights and entity styling (inline code background, underline, strikethrough, spoiler covers) now hug the actual text instead of spilling onto leading or trailing blank space.
 - A quote or code block at the very top or bottom of a post now keeps its padding instead of sitting flush against the text edge.

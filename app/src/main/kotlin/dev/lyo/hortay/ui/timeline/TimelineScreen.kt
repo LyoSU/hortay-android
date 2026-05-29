@@ -113,6 +113,7 @@ fun TimelineScreen(
     translations: TranslationsStore? = null,
     channelActions: ChannelActionsRepository? = null,
     onOpenComments: (TimelinePost) -> Unit = {},
+    onShowFullPost: (dev.lyo.hortay.data.TimelinePost, Int) -> Unit = { _, _ -> },
     homeTapTrigger: Long = 0L,
     onBrandTap: () -> Unit = {},
     /**
@@ -1174,6 +1175,7 @@ fun TimelineScreen(
     val onOpenCommentsState = rememberUpdatedState { post: TimelinePost ->
         onOpenComments(post)
     }
+    val onShowFullState = rememberUpdatedState(onShowFullPost)
 
     // Explicit-tap read ack: any deliberate "open this post" action (open comments,
     // open media viewer, open in Telegram) marks the post as read immediately, instead
@@ -1363,6 +1365,10 @@ fun TimelineScreen(
             onPostClick = { post ->
                 markPostReadState.value(post)
                 onOpenCommentsState.value(post)
+            },
+            onShowFull = { post, off ->
+                markPostReadState.value(post)
+                onShowFullState.value(post, off)
             },
             // Optimistic poll vote: flip the local poll state (chosen rows light up, shimmer
             // ride the result bars) BEFORE the RPC, then dispatch SetPollAnswer. The eventual

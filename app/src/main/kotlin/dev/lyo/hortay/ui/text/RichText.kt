@@ -32,13 +32,22 @@ import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.icons.Symbol
 
 /**
- * When non-null, tapping "Показати більше" on a clamped post opens the post-detail
- * (comments) screen instead of expanding the body inline — the same destination a plain tap
- * on the card reaches. Supplied by the feed / channel LazyColumn for both feed orders so
- * "open the post" is one predictable action; `null` off the feed (comments, guest mode),
- * where the body is already expanded or an in-place inline expand is the right fallback.
- * Lives in `ui.text` so the timeline's `ExpandableText` can read it without `ui.text`
- * depending on `ui.timeline`.
+ * Per-post callback that pins the current post's top right before any in-place expansion
+ * grows it ("Показати більше" on a clamped text segment, or a quote/code block's expand
+ * chevron). Supplied by the feed / channel LazyColumn (which owns the LazyListState) so a
+ * `reverseLayout` post reveals downward instead of dumping the reader at its end; `null`
+ * everywhere else (full post / comments), where the surrounding scroll container needs no
+ * nudge. Lives here in `ui.text` so both [BlockBox] and the timeline's `ExpandableText` can
+ * read it without `ui.text` depending on `ui.timeline`.
+ */
+internal val LocalExpandScrollKeeper = compositionLocalOf<(() -> Unit)?> { null }
+
+/**
+ * When non-null, tapping "Показати більше" opens the post's full view instead of expanding
+ * the clamped body inline. Supplied by the Newest-at-bottom (reverseLayout) feed / channel,
+ * where an in-place inline grow can't avoid a one-frame scroll blip; opening the full post at
+ * the same on-screen position sidesteps that. `null` in the Newest-on-top (forward) feed,
+ * where inline expand grows downward smoothly.
  */
 internal val LocalShowFullPost = compositionLocalOf<(() -> Unit)?> { null }
 
