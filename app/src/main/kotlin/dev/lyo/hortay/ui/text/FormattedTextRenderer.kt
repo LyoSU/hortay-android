@@ -478,8 +478,14 @@ private fun buildFromFormatted(
     formatted.spans.forEachIndexed { idx, span ->
         if (span.style is FormattedText.Style.CustomEmoji) return@forEachIndexed
 
-        val srcStart = span.start.coerceIn(0, srcLen)
-        val srcEnd = span.end.coerceIn(srcStart, srcLen)
+        var srcStart = span.start.coerceIn(0, srcLen)
+        var srcEnd = span.end.coerceIn(srcStart, srcLen)
+        // Trim whitespace off the entity's edges so its styling — inline-code background,
+        // underline / strikethrough, spoiler cover, link tap target + press highlight —
+        // covers only the visible text, not leading / trailing blanks. Also yields a
+        // cleaner substring for Url / Mention / Hashtag.
+        while (srcStart < srcEnd && srcText[srcStart].isWhitespace()) srcStart++
+        while (srcEnd > srcStart && srcText[srcEnd - 1].isWhitespace()) srcEnd--
         val start = positionMap[srcStart]
         val end = positionMap[srcEnd]
         if (end == start) return@forEachIndexed

@@ -12,6 +12,7 @@
 - Code blocks now render in a full-width box with their language label, instead of a ragged inline highlight that broke across lines.
 
 ### Fixed
+- Link highlights and entity styling (inline code background, underline, strikethrough, spoiler covers) now hug the actual text instead of spilling onto leading or trailing blank space.
 - Posts and quotes no longer render with stray empty lines hanging off the top or bottom, and the gap around quote and code blocks is now consistent.
 - Switching between folder tabs (Archive ↔ All ↔ a folder) no longer flashes a row of skeleton bars over the see-through feed for a moment before the posts settle.
 - Block quotes now show their accent bar and tinted background everywhere — in the feed, channels and comments — not only when a post is opened in full.

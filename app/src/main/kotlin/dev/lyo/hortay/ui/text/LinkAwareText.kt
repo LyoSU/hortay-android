@@ -88,31 +88,34 @@ fun LinkAwareText(
         Modifier.drawBehind {
             val layout = layoutResult ?: return@drawBehind
             val range = pressedRange ?: return@drawBehind
-            val len = layout.layoutInput.text.length
+            val chars = layout.layoutInput.text
+            val len = chars.length
             if (len == 0) return@drawBehind
-            val startOff = range.first.coerceIn(0, len)
-            val endOff = (range.last + 1).coerceIn(startOff, len)
+            // Trim whitespace off the entity edges so the highlight starts/ends exactly
+            // where the visible glyphs do, not on a leading/trailing space.
+            var startOff = range.first.coerceIn(0, len)
+            var endOff = (range.last + 1).coerceIn(startOff, len)
+            while (startOff < endOff && chars[startOff].isWhitespace()) startOff++
+            while (endOff > startOff && chars[endOff - 1].isWhitespace()) endOff--
             if (endOff <= startOff) return@drawBehind
             val firstLine = layout.getLineForOffset(startOff)
-            val lastLine = layout.getLineForOffset((endOff - 1).coerceAtLeast(startOff))
+            val lastLine = layout.getLineForOffset(endOff - 1)
             val padH = LINK_HIGHLIGHT_PAD.toPx()
             val corner = CornerRadius(LINK_HIGHLIGHT_CORNER.toPx())
             for (line in firstLine..lastLine) {
-                val top = layout.getLineTop(line)
-                val bottom = layout.getLineBottom(line)
-                val left = if (line == firstLine) {
-                    layout.getHorizontalPosition(startOff, usePrimaryDirection = true)
-                } else {
-                    layout.getLineLeft(line)
-                }
-                val right = if (line == lastLine) {
-                    layout.getHorizontalPosition(endOff, usePrimaryDirection = true)
-                } else {
-                    layout.getLineRight(line)
-                }
+                // Clip the highlight to THIS line's slice of the link, bounded by the
+                // line's last VISIBLE glyph — never getLineRight, which runs to the
+                // margin / a trailing wrap space and reads as highlighted empty space.
+                val segStart = maxOf(startOff, layout.getLineStart(line))
+                val segEnd = minOf(endOff, layout.getLineEnd(line, visibleEnd = true))
+                if (segStart >= segEnd) continue
+                val left = layout.getHorizontalPosition(segStart, usePrimaryDirection = true)
+                val right = layout.getHorizontalPosition(segEnd, usePrimaryDirection = true)
                 val x = (minOf(left, right) - padH).coerceAtLeast(0f)
                 val r = (maxOf(left, right) + padH).coerceAtMost(size.width)
                 if (r <= x) continue
+                val top = layout.getLineTop(line)
+                val bottom = layout.getLineBottom(line)
                 drawRoundRect(linkHighlight, Offset(x, top), Size(r - x, bottom - top), corner)
             }
         }
