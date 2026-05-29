@@ -482,13 +482,20 @@ fun CommentsScreen(
         // (status bar + top app bar), so the scroll needed to bring the anchor's top to
         // heroAnchorY is `topInsetPx - heroAnchorY`. We can only scroll the list DOWN into its
         // content, so a negative target (a short post sitting below the inset) clamps to 0 and
-        // the post just opens at the top — no gap, no transparency. scrollToItem itself clamps
-        // to available content, so short threads can't over-scroll either.
-        if (heroAnchorY != null && !heroScrollApplied) {
-            val topInsetPx = with(density) { padding.calculateTopPadding().roundToPx() }
-            val target = (topInsetPx - heroAnchorY).coerceAtLeast(0)
+        // the post just opens at the top — no gap, no transparency.
+        val heroTarget = if (heroAnchorY != null) {
+            (with(density) { padding.calculateTopPadding().roundToPx() } - heroAnchorY).coerceAtLeast(0)
+        } else {
+            0
+        }
+        // Apply the scroll BEFORE the first visible frame: the LazyColumn is held at alpha 0
+        // until the scroll lands, so the user never sees the list paint at the top and then
+        // jump to the anchor (the "fast scroll" blink). scrollToItem suspends until applied,
+        // so the frame that reveals the list (alpha 1) already shows it at the right position.
+        val heroPending = heroTarget > 0 && !heroScrollApplied
+        if (heroPending) {
             LaunchedEffect(Unit) {
-                if (target > 0) listState.scrollToItem(0, target)
+                listState.scrollToItem(0, heroTarget)
                 heroScrollApplied = true
             }
         }
@@ -498,7 +505,9 @@ fun CommentsScreen(
                 top = padding.calculateTopPadding(),
                 bottom = padding.calculateBottomPadding() + 24.dp,
             ),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = if (heroPending) 0f else 1f },
         ) {
             item(key = "post") {
                 // Render the live feed entry when available so optimistic toggles
