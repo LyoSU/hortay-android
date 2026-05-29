@@ -117,7 +117,6 @@ data class CommentsDisabledOverride(
 @Composable
 fun CommentsScreen(
     post: TimelinePost,
-    heroTopPaddingPx: Int = 0,
     repo: CommentsRepository?,
     /**
      * Live feed source so the pinned anchor PostCard reflects the same reactions,
@@ -196,7 +195,6 @@ fun CommentsScreen(
     backProgress: Float = 0f,
     backSwipeEdge: Int = BackEventCompat.EDGE_LEFT,
 ) {
-    val density = androidx.compose.ui.platform.LocalDensity.current
     // Live anchor: track the feed entry whose chat+id matches the post we were
     // opened with so reactions / view count / comment count stay fresh while the
     // user is on this screen. `firstOrNull` keys on the anchor id directly —
@@ -468,7 +466,7 @@ fun CommentsScreen(
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(
-                top = padding.calculateTopPadding() + with(density) { heroTopPaddingPx.coerceAtLeast(0).toDp() },
+                top = padding.calculateTopPadding(),
                 bottom = padding.calculateBottomPadding() + 24.dp,
             ),
             modifier = Modifier.fillMaxSize(),

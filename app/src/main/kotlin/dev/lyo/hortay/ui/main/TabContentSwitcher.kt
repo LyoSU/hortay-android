@@ -58,7 +58,6 @@ internal fun TabContentSwitcher(
     onSafelyOpenChannel: (chatId: Long, scrollTo: Long?) -> Unit,
     onPushChannel: (chatId: Long, scrollTo: Long?) -> Unit,
     onPushComments: (TimelinePost) -> Unit,
-    onShowFullPost: (TimelinePost, Int) -> Unit,
     onPostReportClick: (TimelinePost) -> Unit,
     canReportPost: (TimelinePost) -> Boolean,
     tdlibMarkAsRead: suspend (List<TimelinePost>) -> Unit,
@@ -106,7 +105,6 @@ internal fun TabContentSwitcher(
                             showOnlyBookmarked = false,
                             onChannelOpen = { id, scrollTo -> onSafelyOpenChannel(id, scrollTo) },
                             onOpenComments = { post -> onPushComments(post) },
-                            onShowFullPost = onShowFullPost,
                             homeTapTrigger = homeTapTrigger,
                             onBrandTap = onHomeTapTriggerBump,
                             // Deep-link scroll targets are now baked into the nav-entry
@@ -161,7 +159,6 @@ internal fun TabContentSwitcher(
                         onSafelyOpenChannel(id, scrollTo)
                     },
                     onOpenComments = { post -> onPushComments(post) },
-                    onShowFullPost = onShowFullPost,
                     homeTapTrigger = 0L,
                     onBrandTap = {},
                     startupPhase = graph.startupCoordinator.phase,

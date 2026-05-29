@@ -157,12 +157,6 @@ fun MainScaffold(graph: AppGraph) {
         graph.commentsRepository.primeCommentsForOpen(post)
         graph.nav.push(NavEntry.Comments(anchor = post))
     }
-    // Hero-open from "Показати більше": open the post's full view positioned so the post lands
-    // at [topOffsetPx] from the feed viewport top (same on-screen spot it had in the feed).
-    val pushCommentsHero: (TimelinePost, Int) -> Unit = { post, topOffsetPx ->
-        graph.commentsRepository.primeCommentsForOpen(post)
-        graph.nav.push(NavEntry.Comments(anchor = post, heroTopPaddingPx = topOffsetPx))
-    }
     val popNav: () -> Unit = { graph.nav.pop() }
 
     // Monotonic counter: each re-tap on Home (or brand) bumps it once. The Feed observes the
@@ -509,7 +503,6 @@ fun MainScaffold(graph: AppGraph) {
                         onSafelyOpenChannel = safelyOpenChannel,
                         onPushChannel = pushChannel,
                         onPushComments = pushComments,
-                        onShowFullPost = pushCommentsHero,
                         onPostReportClick = onPostReportClick,
                         canReportPost = canReportPost,
                         tdlibMarkAsRead = tdlibMarkAsRead,
@@ -527,7 +520,6 @@ fun MainScaffold(graph: AppGraph) {
                         onPopNav = popNav,
                         onPushChannel = pushChannel,
                         onPushComments = pushComments,
-                        onShowFullPost = pushCommentsHero,
                         onSafelyOpenChannel = safelyOpenChannel,
                         onOpenReport = openReport,
                         onPostReportClick = onPostReportClick,
