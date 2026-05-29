@@ -294,6 +294,10 @@ internal fun ExpandableText(
     // reactions, edits-that-don't-change-text, and spoiler reveals.
     var expanded by remember(renderable.contentKey) { mutableStateOf(false) }
     var canExpand by remember(renderable.contentKey) { mutableStateOf(false) }
+    // In a reverseLayout feed the post would grow upward on expand and dump the reader at
+    // its end; the feed supplies this to pin the post's top so the new lines reveal
+    // downward instead. Null off the feed → no-op.
+    val keepScrollOnExpand = LocalExpandScrollKeeper.current
     LinkAwareText(
         renderable = renderable,
         style = style,
@@ -310,7 +314,10 @@ internal fun ExpandableText(
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .padding(top = 4.dp)
-                .clickable { expanded = true },
+                .clickable {
+                    keepScrollOnExpand?.invoke()
+                    expanded = true
+                },
         )
     }
 }

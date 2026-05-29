@@ -21,6 +21,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -54,6 +55,8 @@ internal fun TimelineFeedColumn(
     onTapRevisions: (dev.lyo.hortay.data.TimelinePost) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val scope = rememberCoroutineScope()
+    val expandRetainer = remember(state, scope) { ExpandScrollRetainer(state, scope) }
     LazyColumn(
         state = state,
         flingBehavior = flingBehavior,
@@ -94,9 +97,13 @@ internal fun TimelineFeedColumn(
                     val highlighted = highlightedPostKey?.let { (cid, mid) ->
                         post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
                     } == true
+                    val keepScroll = remember(item.key, expandRetainer) {
+                        { expandRetainer.retainTop(item.key) }
+                    }
                     CompositionLocalProvider(
                         LocalIsCenteredItem provides isCenteredState,
                         LocalIsHighlightedItem provides highlighted,
+                        LocalExpandScrollKeeper provides keepScroll,
                     ) {
                         PostCard(post = post, interactions = interactions, onTapRevisions = onTapRevisions)
                     }

@@ -384,6 +384,9 @@ fun ChannelScreen(
     ) {
         androidx.compose.foundation.lazy.LazyListState(initialIndexSeed, 0)
     }
+    // Pins a post's top when it expands "Показати більше" so a reverseLayout channel
+    // reveals downward instead of dumping the reader at the post's end.
+    val expandRetainer = remember(listState, scope) { ExpandScrollRetainer(listState, scope) }
 
     // Resolve in-channel quote-tap scroll-to-message once the target row appears.
     // Shared with [TimelineScreen]; deep-link landings DO NOT use this path — VM
@@ -863,9 +866,13 @@ fun ChannelScreen(
                                             val highlighted = highlightedPostKey?.let { (cid, mid) ->
                                                 post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
                                             } == true
+                                            val keepScroll = remember(item.key, expandRetainer) {
+                                                { expandRetainer.retainTop(item.key) }
+                                            }
                                             CompositionLocalProvider(
                                                 LocalIsCenteredItem provides isCenteredState,
                                                 LocalIsHighlightedItem provides highlighted,
+                                                LocalExpandScrollKeeper provides keepScroll,
                                             ) {
                                                 PostCard(post = post, interactions = interactions)
                                             }

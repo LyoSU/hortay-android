@@ -12,6 +12,7 @@
 - Code blocks now render in a full-width box with their language label, instead of a ragged inline highlight that broke across lines.
 
 ### Fixed
+- Tapping "Show more" in the "Newest at the bottom" feed now reveals the rest of the post downward from where you were reading, instead of jerking the post up and landing you at its end.
 - Link highlights and entity styling (inline code background, underline, strikethrough, spoiler covers) now hug the actual text instead of spilling onto leading or trailing blank space.
 - Posts and quotes no longer render with stray empty lines hanging off the top or bottom, and the gap around quote and code blocks is now consistent.
 - Switching between folder tabs (Archive ↔ All ↔ a folder) no longer flashes a row of skeleton bars over the see-through feed for a moment before the posts settle.
