@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Switching between folder tabs (Archive ↔ All ↔ a folder) no longer flashes a row of skeleton bars over the see-through feed for a moment before the posts settle.
+
 ## [0.9.1] — 2026-05-29
 
 ### Fixed
