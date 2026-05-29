@@ -349,8 +349,8 @@ internal object MessageContentMapper {
         is TdApi.TextEntityTypeBotCommand -> FormattedText.Style.BotCommand
         is TdApi.TextEntityTypeSpoiler -> FormattedText.Style.Spoiler
         is TdApi.TextEntityTypeCustomEmoji -> FormattedText.Style.CustomEmoji(type.customEmojiId)
-        is TdApi.TextEntityTypeBlockQuote -> FormattedText.Style.BlockQuote
-        is TdApi.TextEntityTypeExpandableBlockQuote -> FormattedText.Style.BlockQuote
+        is TdApi.TextEntityTypeBlockQuote -> FormattedText.Style.BlockQuote(expandable = false)
+        is TdApi.TextEntityTypeExpandableBlockQuote -> FormattedText.Style.BlockQuote(expandable = true)
         else -> null
     }
 

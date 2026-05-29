@@ -307,7 +307,7 @@ object WebPostAdapter {
                             text.append("\n\n")
                             val start = text.length
                             node.childNodes().forEach { walk(it) }
-                            spans += FormattedText.Span(start, text.length, FormattedText.Style.BlockQuote)
+                            spans += FormattedText.Span(start, text.length, FormattedText.Style.BlockQuote(expandable = false))
                             text.append("\n\n")
                         }
                         "pre" -> {

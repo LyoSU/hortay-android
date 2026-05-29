@@ -1,6 +1,7 @@
 package dev.lyo.hortay.ui.text
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -10,107 +11,117 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.icons.Symbol
 
 /**
- * Renderer for [FormattedText] that handles inline styles via AnnotatedString AND lifts
- * BlockQuote ranges into separate quoted rows with a Telegram-style tinted block (see
- * [QuoteRow]).
+ * Renderer for [FormattedText].
  *
- * Rationale for the split: BlockQuote is a *paragraph-level* affordance — a left bar plus
- * indentation. AnnotatedString can colour text but cannot draw a bar that wraps across
- * lines, so quoted ranges have to leave the inline flow and become their own composables.
+ * Inline styles and the *static* block elements — plain block quotes and code blocks —
+ * live in [RenderableText.blockDecorations] and are painted as a tinted box + accent bar
+ * behind the single backing [Text] by [LinkAwareText]. Keeping the body in one [Text]
+ * means the `maxLines` clamp and the "Показати більше" toggle keep working, and every
+ * surface (feed / channel / comments / detail) renders those blocks identically.
  *
- * The segmented path runs ONLY on detail surfaces ([maxLines] == [Int.MAX_VALUE]). On feed
- * surfaces (any finite [maxLines]) we fall through to the inline path even when quote
- * spans exist — otherwise a long post / caption with even one quote span would bypass
- * the [maxLines] clamp and the "Показати більше" toggle. Inline quote ranges still read
- * as quotes through the muted-colour SpanStyle from FormattedTextRenderer; the 2dp bar
- * is reserved for detail surfaces where the user has committed to reading the full post.
+ * The ONE exception is the **expandable** block quote
+ * (`TextEntityTypeExpandableBlockQuote`): it needs its own collapsed/expanded state and a
+ * per-quote line clamp, which a single shared [Text] cannot express. So when an expandable
+ * quote is present AND we're on a full-reading surface (`maxLines == Int.MAX_VALUE` — the
+ * comments anchor / a comment bubble, where there is no competing post-level clamp), the
+ * body is split into segments: ordinary runs render through [renderer] (→ [LinkAwareText],
+ * static blocks still drawn inline), and each expandable quote renders as a collapsible
+ * [ExpandableQuote] with its own line budget.
+ *
+ * On clamped surfaces (feed / channel, finite [maxLines]) we DON'T segment — the
+ * post-level clamp + "Показати більше" already bound the length, and the expandable quote
+ * renders as an ordinary quote box. Collapsing is a full-reading affordance.
  */
 @Composable
 fun RichText(
     formatted: FormattedText,
     style: TextStyle,
     maxLines: Int,
-    renderer: (@Composable (dev.lyo.hortay.ui.text.RenderableText, TextStyle, Int) -> Unit),
+    renderer: (@Composable (RenderableText, TextStyle, Int) -> Unit),
 ) {
-    val quoteRanges = remember(formatted) { formatted.blockQuoteRanges() }
-    if (quoteRanges.isEmpty() || maxLines != Int.MAX_VALUE) {
+    val expandableRanges = remember(formatted) { formatted.expandableQuoteRanges() }
+    if (expandableRanges.isEmpty() || maxLines != Int.MAX_VALUE) {
         renderer(rememberRenderableText(formatted), style, maxLines)
         return
     }
 
-    // Build the alternating text / quote segments once; each segment is its own slice of
-    // the original FormattedText (start, end), so AnnotatedString styling carries over.
-    val segments = remember(formatted, quoteRanges) {
-        buildSegments(formatted, quoteRanges)
-    }
-
+    val segments = remember(formatted, expandableRanges) { buildSegments(formatted, expandableRanges) }
     Column {
         segments.forEachIndexed { idx, segment ->
             if (idx > 0) {
-                // Insert a manual 8 dp Spacer ONLY when the segment boundary
-                // doesn't already carry a natural paragraph break in the
-                // source text. If the previous segment ends with `\n` or this
-                // one starts with `\n` (the walker injects `\n\n` around block
-                // elements and the source's own `<br><br>` survives the
-                // normaliser), the rendered Text already produces a blank
-                // line on that side — adding another Spacer on top stacks two
-                // visible gaps and reads as "double newline before quote".
-                // The conditional preserves source-faithful whitespace
-                // ("як в оригіналі") without doubling.
+                // Insert a manual 8 dp Spacer ONLY when the segment boundary doesn't
+                // already carry a natural paragraph break (the source / walker injects
+                // `\n` around block elements). Adding a Spacer on top of an existing
+                // blank line stacks two visible gaps. Preserves source whitespace without
+                // doubling it.
                 val prevText = segments[idx - 1].text.text
                 val curText = segment.text.text
                 val naturalBreak = prevText.endsWith('\n') || curText.startsWith('\n')
                 if (!naturalBreak) Spacer(Modifier.height(8.dp))
             }
-            val rt = rememberRenderableText(segment.text)
-            if (segment.isQuote) QuoteRow(rt.text, rt.inlineContent, style)
-            else renderer(rt, style, Int.MAX_VALUE)
+            if (segment.isExpandableQuote) {
+                ExpandableQuote(segment.text, style)
+            } else {
+                renderer(rememberRenderableText(segment.text), style, Int.MAX_VALUE)
+            }
         }
     }
 }
 
+/** Lines shown before an expandable quote collapses behind its "expand" affordance. */
+private const val COLLAPSED_QUOTE_LINES = 3
+
 /**
- * Telegram-style tinted blockquote, adapted to the M3 Expressive palette.
+ * A collapsible block quote (TDLib `TextEntityTypeExpandableBlockQuote`). Renders the
+ * Telegram-style tinted box + accent bar (same palette as the static quote box drawn by
+ * [LinkAwareText]) around a [LinkAwareText] clamped to [COLLAPSED_QUOTE_LINES] until the
+ * user expands it.
  *
- *   • Tint is `primary @ 10% alpha` over the parent surface — works above both
- *     `surface` and `surfaceContainer` (PostCard / CommentBubble) and adapts to
- *     dynamic-color / dark mode without hardcoded tokens. `primaryContainer`
- *     would have fixed contrast and clash with the host card's own container tint.
- *   • Symmetric 8 dp corners (`shapes.extraSmall`) — small enough that the
- *     3 dp accent bar's corners get only a hair of chamfer from the rounded
- *     clip (reads as designed-in softening, not as a clipping artefact), and
- *     consistent with the M3E nested-radius rule: outer PostCard is
- *     `shapes.medium` (18 dp), nested reply / quote chips drop a tier.
- *   • Body text uses `onSurface` (not `onSurfaceVariant`) — the tint already
- *     conveys "this is a quote", so muting the body sacrifices readability for
- *     redundant signal.
+ * Expansion is one-way — matching the post-level "Показати більше" idiom (see
+ * `ExpandableText`) — so the affordance needs no "show less" string and the interaction
+ * reads the same as everywhere else in the app. The chevron + tap target appear only when
+ * the quote actually overflows the collapsed budget.
  */
 @Composable
-private fun QuoteRow(
-    text: AnnotatedString,
-    inlineContent: Map<String, InlineTextContent>,
-    style: TextStyle,
-) {
+private fun ExpandableQuote(text: FormattedText, style: TextStyle) {
     val accent = MaterialTheme.colorScheme.primary
+    var expanded by remember(text) { mutableStateOf(false) }
+    var canExpand by remember(text) { mutableStateOf(false) }
+    val rt = rememberRenderableText(text)
+    val toggleable = canExpand && !expanded
+    val expandLabel = stringResource(R.string.post_show_more)
+
     Box(
         modifier = Modifier
             .clip(MaterialTheme.shapes.extraSmall)
-            .background(accent.copy(alpha = 0.10f)),
+            .background(accent.copy(alpha = 0.10f))
+            .then(
+                if (toggleable) {
+                    Modifier.clickable(role = Role.Button, onClickLabel = expandLabel) { expanded = true }
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             Box(
@@ -119,38 +130,42 @@ private fun QuoteRow(
                     .fillMaxHeight()
                     .background(accent),
             )
-            Text(
-                text = text,
-                inlineContent = inlineContent,
+            LinkAwareText(
+                renderable = rt,
                 style = style,
-                color = MaterialTheme.colorScheme.onSurface,
-                // Trailing padding reserves room for the corner glyph so a short
-                // single-line quote doesn't crash text into the icon.
+                maxLines = if (expanded) Int.MAX_VALUE else COLLAPSED_QUOTE_LINES,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { layout -> if (!expanded && layout.hasVisualOverflow) canExpand = true },
+                // Trailing padding reserves room for the chevron so the last collapsed line
+                // doesn't crash into it.
                 modifier = Modifier.padding(start = 10.dp, end = 26.dp, top = 6.dp, bottom = 6.dp),
             )
         }
-        // Telegram-style quote glyph in the trailing corner. Decorative, so a
-        // low-alpha tint reads as a "watermark" rather than competing with text.
-        Symbol(
-            name = "format_quote",
-            tint = accent.copy(alpha = 0.45f),
-            size = 14.dp,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 4.dp, end = 6.dp),
-        )
+        if (toggleable) {
+            // Downward chevron = "expand". Reuses the bundled `chevron_right` ("›")
+            // rotated 90° rather than shipping a new drawable.
+            Symbol(
+                name = "chevron_right",
+                tint = accent.copy(alpha = 0.7f),
+                size = 16.dp,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 4.dp, end = 6.dp)
+                    .rotate(90f),
+            )
+        }
     }
 }
 
-private data class Segment(val text: FormattedText, val isQuote: Boolean)
+private data class Segment(val text: FormattedText, val isExpandableQuote: Boolean)
 
 /**
- * Collapse and de-overlap blockquote ranges; the result is a sorted list of
- * non-overlapping `[start, end)` pairs that mark the quoted regions of [text].
+ * Collapse and de-overlap the expandable-quote ranges; the result is a sorted list of
+ * non-overlapping `[start, end)` pairs marking the expandable-quote regions of [text].
  */
-private fun FormattedText.blockQuoteRanges(): List<IntRange> {
+private fun FormattedText.expandableQuoteRanges(): List<IntRange> {
     val raw = spans
-        .filter { it.style is FormattedText.Style.BlockQuote }
+        .filter { (it.style as? FormattedText.Style.BlockQuote)?.expandable == true }
         .map { it.start.coerceIn(0, text.length)..it.end.coerceIn(0, text.length) }
         .filter { it.first < it.last }
         .sortedBy { it.first }
@@ -171,22 +186,13 @@ private fun FormattedText.blockQuoteRanges(): List<IntRange> {
 }
 
 /**
- * Slice [source] into alternating non-quote / quote pieces. Each piece is a
+ * Slice [source] into alternating ordinary / expandable-quote pieces. Each piece is a
  * [FormattedText] whose own spans are re-anchored relative to the slice start.
  *
- * Boundary trim: at quote↔non-quote junctions we keep AT MOST ONE `\n` of the
- * paragraph-break run that the walker injected around the block element. The
- * normaliser caps consecutive newlines at 2, but Compose's Text composable
- * renders `text\n\n` as THREE lines tall (the second `\n` reserves an empty
- * line) — visually two blank rows above the quote where HTML browsers render
- * one. Browsers collapse trailing block-boundary whitespace; we replicate that
- * by cutting the slice off after the first newline of the trailing run (and,
- * mirror, before the last newline of the leading run on the post-quote side).
- *
- * What we DON'T do: drop the newline entirely. That would make text run flush
- * against the left bar — the previous regression "тепер при квотах
- * пропадають преноси". One `\n` keeps the natural HTML paragraph-break visual,
- * matching the source intent without doubling it.
+ * Boundary trim: at a quote↔non-quote junction we keep AT MOST ONE `\n` of the
+ * paragraph-break run the source injects around the block element — Compose renders
+ * `text\n\n` as three lines tall (two blank rows), where one is intended. We cut the
+ * slice off after the first newline of the trailing run (mirror on the leading side).
  */
 private fun buildSegments(source: FormattedText, quoteRanges: List<IntRange>): List<Segment> {
     val out = mutableListOf<Segment>()
@@ -195,27 +201,25 @@ private fun buildSegments(source: FormattedText, quoteRanges: List<IntRange>): L
         if (cursor < range.first) {
             val end = trimToSingleTrailingNewline(source.text, cursor, range.first)
             if (end > cursor) {
-                out += Segment(source.slice(cursor, end), isQuote = false)
+                out += Segment(source.slice(cursor, end), isExpandableQuote = false)
             }
         }
-        out += Segment(source.slice(range.first, range.last), isQuote = true)
+        out += Segment(source.slice(range.first, range.last), isExpandableQuote = true)
         cursor = range.last
     }
     if (cursor < source.text.length) {
         val start = trimToSingleLeadingNewline(source.text, cursor, source.text.length)
         if (start < source.text.length) {
-            out += Segment(source.slice(start, source.text.length), isQuote = false)
+            out += Segment(source.slice(start, source.text.length), isExpandableQuote = false)
         }
     }
     return out.filter { it.text.text.isNotEmpty() }
 }
 
 /**
- * Walks back from [end] over trailing newlines and inline whitespace inside
- * `[start, end)`. Keeps at most one `\n` — the slice's effective end is the
- * position right after the FIRST newline encountered in the run (counting
- * from [end] backwards), so a `text\n\n` source ends up as `text\n` slice,
- * a `text\n` source stays `text\n`, and a `text` source stays `text`.
+ * Walk back from [end] over the trailing newline / inline-whitespace run inside
+ * `[start, end)`, landing the slice's effective end right after the FIRST newline (so
+ * `text\n\n` → `text\n`, `text` → `text`).
  */
 private fun trimToSingleTrailingNewline(text: String, start: Int, end: Int): Int {
     var i = end
@@ -229,11 +233,7 @@ private fun trimToSingleTrailingNewline(text: String, start: Int, end: Int): Int
     return if (firstNewlinePos >= 0) firstNewlinePos + 1 else end
 }
 
-/**
- * Mirror of [trimToSingleTrailingNewline] — walks forward from [start] over
- * the leading whitespace run and lands the slice's effective start AT the
- * LAST newline in the run, so `\n\nfollowing` slices as `\nfollowing`.
- */
+/** Mirror of [trimToSingleTrailingNewline] — lands the slice start AT the LAST newline. */
 private fun trimToSingleLeadingNewline(text: String, start: Int, end: Int): Int {
     var i = start
     var lastNewlinePos = -1
@@ -247,10 +247,10 @@ private fun trimToSingleLeadingNewline(text: String, start: Int, end: Int): Int 
 }
 
 /**
- * Substring of a [FormattedText] preserving overlapping spans (clipped to the slice
- * boundaries and re-anchored). Spans that fall entirely outside `[start, end)` are
- * dropped; BlockQuote spans inside a quoted segment are stripped because the QuoteRow
- * already conveys that styling visually.
+ * Substring of a [FormattedText] preserving overlapping spans (clipped to the slice and
+ * re-anchored). The expandable-BlockQuote wrapper spans are stripped — [ExpandableQuote]
+ * provides that styling — while static quotes, code blocks and inline spans are kept so
+ * they still render inside the segment.
  */
 private fun FormattedText.slice(start: Int, end: Int): FormattedText {
     val s = start.coerceIn(0, text.length)
@@ -258,7 +258,7 @@ private fun FormattedText.slice(start: Int, end: Int): FormattedText {
     if (s == e) return FormattedText.Empty
     val slicedText = text.substring(s, e)
     val slicedSpans = spans.mapNotNull { span ->
-        if (span.style is FormattedText.Style.BlockQuote) return@mapNotNull null
+        if ((span.style as? FormattedText.Style.BlockQuote)?.expandable == true) return@mapNotNull null
         val newStart = (span.start - s).coerceAtLeast(0)
         val newEnd = (span.end - s).coerceAtMost(e - s)
         if (newEnd <= newStart) null

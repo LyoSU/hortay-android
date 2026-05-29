@@ -722,8 +722,9 @@ private fun forwardLabel(origin: ForwardOrigin): String = when (origin) {
  * Telegram-style reply preview, adapted to M3 Expressive.
  *
  *   • Background is `primary @ 10% alpha` over the host card's `surfaceContainer` —
- *     same idiom as the inline [QuoteRow] so quote-in-text and reply-to-post read
- *     as one design family. The previous opaque `surfaceContainer` fill was
+ *     same idiom as the inline block-quote box (see [dev.lyo.hortay.ui.text.LinkAwareText])
+ *     so quote-in-text and reply-to-post read as one design family. The previous
+ *     opaque `surfaceContainer` fill was
  *     legible but visually inert; the tint pulls the chip into the primary-colour
  *     family that already owns the accent bar and author name.
  *   • Outer container is a [Box] so the trailing-corner reply glyph

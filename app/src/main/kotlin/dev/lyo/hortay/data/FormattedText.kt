@@ -36,6 +36,13 @@ data class FormattedText(val text: String, val spans: List<Span>) {
         data object BotCommand : Style
         data object Spoiler : Style
         data class CustomEmoji(val emojiId: Long) : Style
-        data object BlockQuote : Style
+
+        /**
+         * Block quote. [expandable] mirrors TDLib's
+         * `TextEntityTypeExpandableBlockQuote` — when true the quote is shown collapsed
+         * (a few lines + an "expand" affordance) on full-reading surfaces; a plain
+         * `TextEntityTypeBlockQuote` is `expandable = false` and always shown in full.
+         */
+        data class BlockQuote(val expandable: Boolean = false) : Style
     }
 }

@@ -4,8 +4,16 @@
 
 ## [Unreleased]
 
+### Added
+- Collapsible quotes now open collapsed to a few lines with a tap-to-expand chevron when reading a post or its comments in full, instead of always showing in full.
+
+### Changed
+- Code blocks now render in a full-width box with their language label, instead of a ragged inline highlight that broke across lines.
+
 ### Fixed
 - Switching between folder tabs (Archive ↔ All ↔ a folder) no longer flashes a row of skeleton bars over the see-through feed for a moment before the posts settle.
+- Block quotes now show their accent bar and tinted background everywhere — in the feed, channels and comments — not only when a post is opened in full.
+- Custom emoji now display inside poll questions, descriptions and options, instead of showing as an empty placeholder box.
 
 ## [0.9.1] — 2026-05-29
 

@@ -64,7 +64,7 @@ import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdMediaImage
-import dev.lyo.hortay.ui.text.rememberAnnotatedString
+import dev.lyo.hortay.ui.text.rememberRenderableText
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
@@ -272,9 +272,10 @@ private fun PollChip(
 
 @Composable
 private fun PollQuestion(content: PostContent.Poll) {
-    val annotated = rememberAnnotatedString(content.question)
+    val rt = rememberRenderableText(content.question)
     Text(
-        text = annotated,
+        text = rt.text,
+        inlineContent = rt.inlineContent,
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurface,
         fontWeight = FontWeight.SemiBold,
@@ -283,9 +284,10 @@ private fun PollQuestion(content: PostContent.Poll) {
 
 @Composable
 private fun PollDescription(content: PostContent.Poll) {
-    val annotated = rememberAnnotatedString(content.description)
+    val rt = rememberRenderableText(content.description)
     Text(
-        text = annotated,
+        text = rt.text,
+        inlineContent = rt.inlineContent,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 4,
@@ -424,9 +426,10 @@ private fun PollOptionRow(
                 }
                 Spacer(Modifier.width(10.dp))
             }
-            val labelText = rememberAnnotatedString(option.text)
+            val labelRt = rememberRenderableText(option.text)
             Text(
-                text = labelText,
+                text = labelRt.text,
+                inlineContent = labelRt.inlineContent,
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (showResults) cs.onSurface else cs.onSurface,
                 modifier = Modifier.weight(1f),
