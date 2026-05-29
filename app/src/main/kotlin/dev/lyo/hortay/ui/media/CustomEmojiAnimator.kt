@@ -408,11 +408,25 @@ class CustomEmojiAnimator(
         val entry = entries[key] ?: return
         val back = entry.bitmapBack ?: return
         val canvas = entry.bitmapBackCanvas ?: return
+        // The back buffer can be recycled out from under us on the MAIN thread between this
+        // render being posted and running: eviction (removeEldestEntry), clear(), and reportSize
+        // all recycle bitmaps there while this runs on the render thread. Bail if it's already
+        // gone, and guard the mutating ops so a recycle that slips in mid-render drops the frame
+        // instead of crashing (`eraseColor`/`draw` throw IllegalStateException on a recycled
+        // bitmap). This is NOT a broken TGS — don't mark the entry broken; just reset the
+        // in-flight flag on the main thread so the next tick can reschedule.
+        if (back.isRecycled) {
+            mainHandler.post { entries[key]?.renderInFlight = false }
+            return
+        }
         entry.drawable.progress = snappedProgress
-        back.eraseColor(0)
-        entry.drawable.setBounds(0, 0, back.width, back.height)
         try {
+            back.eraseColor(0)
+            entry.drawable.setBounds(0, 0, back.width, back.height)
             entry.drawable.draw(canvas)
+        } catch (_: IllegalStateException) {
+            mainHandler.post { entries[key]?.renderInFlight = false }
+            return
         } catch (t: Throwable) {
             entry.broken = true
             Log.w("CustomEmojiAnimator", "TGS render failed for id=${key.id}; entry marked broken", t)
