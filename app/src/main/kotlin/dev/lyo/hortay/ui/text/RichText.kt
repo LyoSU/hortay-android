@@ -4,13 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,7 +18,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
@@ -135,8 +133,6 @@ private fun BlockBox(
     val boxBg = if (isCode) MaterialTheme.colorScheme.surfaceContainerHigh else accent.copy(alpha = 0.10f)
     val contentStyle = if (isCode) style.copy(fontFamily = FontFamily.Monospace) else style
     val rt = rememberRenderableText(text)
-    // Pin the post's top before the box grows (reverseLayout feed); null off the feed.
-    val keepScroll = LocalExpandScrollKeeper.current
     // Right gutter clears the corner affordances: a quote always carries the top-right
     // quote glyph; the expand chevron shares that strip on the bottom-right. Code has no
     // quote glyph, so it only reserves the gutter when the chevron is present.
@@ -156,16 +152,25 @@ private fun BlockBox(
         )
     }
 
+    // The accent bar is painted with drawBehind (full box height) rather than a
+    // fillMaxHeight child under IntrinsicSize.Min: with the box now sized to its content,
+    // pairing IntrinsicSize.Min height with content-driven width forced a double intrinsic
+    // measure that flickered the box on every collapse/expand toggle. drawBehind sizes off
+    // the laid-out height directly, so there's nothing to re-measure.
     Box(
         modifier = Modifier
             .clip(MaterialTheme.shapes.extraSmall)
             .background(boxBg)
             .then(
+                if (isCode) {
+                    Modifier
+                } else {
+                    Modifier.drawBehind { drawRect(accent, size = Size(3.dp.toPx(), size.height)) }
+                },
+            )
+            .then(
                 if (canExpand) {
-                    Modifier.clickable(role = Role.Button, onClickLabel = expandLabel) {
-                        keepScroll?.invoke()
-                        expanded = !expanded
-                    }
+                    Modifier.clickable(role = Role.Button, onClickLabel = expandLabel) { expanded = !expanded }
                 } else {
                     Modifier
                 },
@@ -186,16 +191,9 @@ private fun BlockBox(
                 body()
             }
         } else {
-            Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-                Box(
-                    modifier = Modifier
-                        .width(3.dp)
-                        .fillMaxHeight()
-                        .background(accent),
-                )
-                Box(modifier = Modifier.padding(start = 12.dp, end = endPad, top = 8.dp, bottom = 8.dp)) {
-                    body()
-                }
+            // Content inset past the drawn 3.dp bar (start = 13) so text never touches it.
+            Box(modifier = Modifier.padding(start = 13.dp, end = endPad, top = 8.dp, bottom = 8.dp)) {
+                body()
             }
             // Quote marker — a faint quote-mark glyph in the top-right corner so the block
             // reads as a quote even before the reader notices the accent bar.
