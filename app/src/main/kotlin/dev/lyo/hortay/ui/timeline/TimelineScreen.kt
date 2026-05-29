@@ -1870,9 +1870,20 @@ fun TimelineScreen(
             // Hidden in Saved tab (no unread concept on bookmarks) and
             // when nothing is left to read.
             if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst && !showOnlyBookmarked) {
-                val unreadRemaining by remember(visiblePosts, feedOrder) {
+                val unreadRemaining by remember(visiblePosts, feedOrder, recencyCutoffMs) {
                     derivedStateOf {
-                        visiblePosts.count { it.isUnreadAt(cursorHolder[it.chatId]) }
+                        // Apply the SAME recency floor the jump target ([homeScrollIndex])
+                        // uses, so the counter reflects exactly what the pill will navigate
+                        // to. A dormant unread older than [recencyCutoffMs] is not a landing
+                        // target (cold-start / home-tap / folder-switch all skip it), so it
+                        // must not be counted here either — otherwise the pill lights up but
+                        // the jump resolves to the newest, already-read post and acks nothing.
+                        // Per-post unread strips on those dormant posts still render via
+                        // PostCard; only the actionable "jump to next unread" counter is floored.
+                        visiblePosts.count {
+                            it.isUnreadAt(cursorHolder[it.chatId]) &&
+                                (recencyCutoffMs <= 0L || it.date >= recencyCutoffMs)
+                        }
                     }
                 }
                 AnimatedVisibility(
@@ -1929,9 +1940,14 @@ fun TimelineScreen(
                             //     cancels `animateScrollBy`, the CancellationException unwinds the
                             //     coroutine, and the ack never runs — re-opening the same bug in
                             //     exactly the "I scrolled a bit" path. Doing it on tap is immune.
-                            // Gated on target > 0 so the caught-up landing on an already-read
-                            // newest post stays a no-op.
-                            if (target > 0 && landedPost != null) {
+                            // Gated on the landed post actually being unread (live cursor),
+                            // NOT on `target > 0`: when the only unread is the newest post it
+                            // sits at index 0, so a `target > 0` gate would skip the ack and
+                            // re-strand that post on every tap. A caught-up landing on an
+                            // already-read post falls through this check as a no-op.
+                            if (landedPost != null &&
+                                landedPost.isUnreadAt(cursorHolder[landedPost.chatId])
+                            ) {
                                 markPostReadState.value(landedPost)
                             }
                             scope.launch {
