@@ -78,6 +78,12 @@ data class RenderableText(
      */
     val blockDecorations: List<BlockDecoration> = emptyList(),
     /**
+     * Dst ranges of every tappable entity (URL / @mention / inline mention / hashtag).
+     * [LinkAwareText] paints a padded rounded highlight behind whichever one is currently
+     * pressed, so tapping any link kind gives the same Telegram-style press feedback.
+     */
+    val pressableRanges: List<IntRange> = emptyList(),
+    /**
      * Identity that downstream composables should pass to `remember(...)` instead of
      * the full [RenderableText] or [text]. Stable across:
      *  * `spoilerDispersion` lambda churn (data-class equality of the wrapping
@@ -305,6 +311,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
         spoilerGroups = built.spoilerGroups,
         spoilerDispersion = spoilerDispersion,
         blockDecorations = built.blockDecorations,
+        pressableRanges = built.pressableRanges,
         contentKey = formatted.text,
     )
 }
@@ -405,6 +412,7 @@ private data class BuiltAnnotated(
     val spoilerGroups: List<SpoilerGroupInfo>,
     val emojiCoverSrcPositions: Set<Int>,
     val blockDecorations: List<BlockDecoration>,
+    val pressableRanges: List<IntRange>,
 )
 
 // Left text indent (in sp so it tracks font scale) reserving room for the quote bar /
@@ -433,6 +441,10 @@ private fun buildFromFormatted(
     revealAtSrcPos: (Int) -> Unit,
 ): BuiltAnnotated {
     val linkRanges = mutableListOf<LinkRange>()
+    // Every tappable entity's dst range (URL / textUrl / @mention / inline mention /
+    // hashtag) — drives the padded pressed-highlight in [LinkAwareText]. Superset of
+    // [linkRanges], which is URL-only because the long-press sheet only fits URLs.
+    val pressableRanges = mutableListOf<IntRange>()
     val emojiCoverSrcPositions = mutableSetOf<Int>()
     val groupDstRanges = HashMap<Int, MutableList<IntRange>>()
     val blockDecorations = mutableListOf<BlockDecoration>()
@@ -536,11 +548,13 @@ private fun buildFromFormatted(
             is FormattedText.Style.TextUrl -> {
                 addLink(LinkAnnotation.Url(s.url, linkStyle, maskedOpen), start, end)
                 linkRanges += LinkRange(start, end, s.url)
+                pressableRanges += (start until end)
             }
             FormattedText.Style.Url -> {
                 val url = normalizeUrl(srcText.substring(srcStart, srcEnd))
                 addLink(LinkAnnotation.Url(url, linkStyle, safeOpen), start, end)
                 linkRanges += LinkRange(start, end, url)
+                pressableRanges += (start until end)
             }
             FormattedText.Style.Mention -> {
                 val handle = srcText.substring(srcStart, srcEnd).trimStart('@')
@@ -548,6 +562,7 @@ private fun buildFromFormatted(
                     val url = "https://t.me/$handle"
                     addLink(LinkAnnotation.Url(url, mentionStyle, safeOpen), start, end)
                     linkRanges += LinkRange(start, end, url)
+                    pressableRanges += (start until end)
                 }
             }
             is FormattedText.Style.MentionName -> {
@@ -564,6 +579,7 @@ private fun buildFromFormatted(
                     start,
                     end,
                 )
+                pressableRanges += (start until end)
             }
             FormattedText.Style.Hashtag -> {
                 val tag = srcText.substring(srcStart, srcEnd)
@@ -576,6 +592,7 @@ private fun buildFromFormatted(
                     start,
                     end,
                 )
+                pressableRanges += (start until end)
             }
             FormattedText.Style.Spoiler -> {
                 val groupId = spoilerSrc.groupOf(idx) ?: return@forEachIndexed
@@ -655,6 +672,7 @@ private fun buildFromFormatted(
         spoilerGroups = spoilerGroups,
         emojiCoverSrcPositions = emojiCoverSrcPositions.toSet(),
         blockDecorations = blockDecorations.toList(),
+        pressableRanges = pressableRanges.toList(),
     )
 }
 

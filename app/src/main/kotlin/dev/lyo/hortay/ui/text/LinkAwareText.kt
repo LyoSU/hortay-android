@@ -42,6 +42,11 @@ private val CODE_LABEL_FONT = 11.sp
 private val CODE_LABEL_PAD = 6.dp
 private val CODE_LABEL_CORNER = 4.dp
 
+// Pressed-link highlight: a rounded fill behind the pressed link, inflated past the
+// glyphs so it reads as a padded pill rather than a tight background.
+private val LINK_HIGHLIGHT_PAD = 3.dp
+private val LINK_HIGHLIGHT_CORNER = 5.dp
+
 /**
  * Drop-in [Text] replacement with link-tap handling, long-press, spoiler dot-cloud overlay,
  * and paragraph-level block decorations (block quotes, code blocks).
@@ -74,6 +79,7 @@ fun LinkAwareText(
     // expand-toggles / spoiler reveals.
     var layoutResult by remember(renderable.contentKey) { mutableStateOf<TextLayoutResult?>(null) }
     var pressedLink by remember(renderable.contentKey) { mutableStateOf<String?>(null) }
+    var pressedRange by remember(renderable.contentKey) { mutableStateOf<IntRange?>(null) }
 
     val linkMod = if (renderable.linkRanges.isNotEmpty()) {
         Modifier.linkLongPress(
@@ -81,6 +87,50 @@ fun LinkAwareText(
             layoutResult = layoutResult,
             onLongPress = { range -> pressedLink = range.url },
         )
+    } else Modifier
+
+    // ---- Pressed-link highlight (all tappable entity kinds) ----
+    val pressableRanges = renderable.pressableRanges
+    val linkHighlight = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    val pressMod = if (pressableRanges.isNotEmpty()) {
+        Modifier.linkPressHighlight(
+            ranges = pressableRanges,
+            layoutResult = layoutResult,
+            onPressedRangeChange = { pressedRange = it },
+        )
+    } else Modifier
+    val highlightMod = if (pressableRanges.isNotEmpty()) {
+        Modifier.drawBehind {
+            val layout = layoutResult ?: return@drawBehind
+            val range = pressedRange ?: return@drawBehind
+            val len = layout.layoutInput.text.length
+            if (len == 0) return@drawBehind
+            val startOff = range.first.coerceIn(0, len)
+            val endOff = (range.last + 1).coerceIn(startOff, len)
+            if (endOff <= startOff) return@drawBehind
+            val firstLine = layout.getLineForOffset(startOff)
+            val lastLine = layout.getLineForOffset((endOff - 1).coerceAtLeast(startOff))
+            val padH = LINK_HIGHLIGHT_PAD.toPx()
+            val corner = CornerRadius(LINK_HIGHLIGHT_CORNER.toPx())
+            for (line in firstLine..lastLine) {
+                val top = layout.getLineTop(line)
+                val bottom = layout.getLineBottom(line)
+                val left = if (line == firstLine) {
+                    layout.getHorizontalPosition(startOff, usePrimaryDirection = true)
+                } else {
+                    layout.getLineLeft(line)
+                }
+                val right = if (line == lastLine) {
+                    layout.getHorizontalPosition(endOff, usePrimaryDirection = true)
+                } else {
+                    layout.getLineRight(line)
+                }
+                val x = (minOf(left, right) - padH).coerceAtLeast(0f)
+                val r = (maxOf(left, right) + padH).coerceAtMost(size.width)
+                if (r <= x) continue
+                drawRoundRect(linkHighlight, Offset(x, top), Size(r - x, bottom - top), corner)
+            }
+        }
     } else Modifier
 
     // ---- Block decorations (quote bar + tint, code box, code language label) ----
@@ -239,7 +289,14 @@ fun LinkAwareText(
             layoutResult = layout
             onTextLayout(layout)
         },
-        modifier = modifier.then(linkMod).then(blockMod).then(overlayMod),
+        // Draw order (behind → front): block boxes, pressed-link highlight, then the
+        // glyphs, then spoiler shimmer / code labels on top.
+        modifier = modifier
+            .then(linkMod)
+            .then(pressMod)
+            .then(blockMod)
+            .then(highlightMod)
+            .then(overlayMod),
     )
 
     pressedLink?.let { url ->

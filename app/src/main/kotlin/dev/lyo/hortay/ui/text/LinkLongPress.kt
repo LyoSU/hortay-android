@@ -55,6 +55,45 @@ fun Modifier.linkLongPress(
     }
 }
 
+/**
+ * Reports which tappable range (if any) the finger is currently pressing, so the caller
+ * can paint a pressed highlight. Pure observer — NEVER consumes, so the built-in
+ * `LinkAnnotation` tap listener and [linkLongPress] keep working unaffected. Clears the
+ * highlight on release, cancel, or a drag past touch-slop (the press became a scroll).
+ */
+@Composable
+fun Modifier.linkPressHighlight(
+    ranges: List<IntRange>,
+    layoutResult: TextLayoutResult?,
+    onPressedRangeChange: (IntRange?) -> Unit,
+): Modifier {
+    if (ranges.isEmpty()) return this
+    val cfg = LocalViewConfiguration.current
+    return this.pointerInput(ranges, layoutResult, cfg) {
+        val layout = layoutResult ?: return@pointerInput
+        val slopSq = cfg.touchSlop * cfg.touchSlop
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val offset = runCatching { layout.getOffsetForPosition(down.position) }.getOrNull()
+                ?: return@awaitEachGesture
+            val range = ranges.firstOrNull { offset in it } ?: return@awaitEachGesture
+            onPressedRangeChange(range)
+            try {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: continue
+                    if (!change.pressed) break
+                    val dx = change.position.x - down.position.x
+                    val dy = change.position.y - down.position.y
+                    if (dx * dx + dy * dy > slopSq) break
+                }
+            } finally {
+                onPressedRangeChange(null)
+            }
+        }
+    }
+}
+
 private suspend fun PointerInputScope.watchLinkLongPress(
     layout: TextLayoutResult,
     linkRanges: List<LinkRange>,

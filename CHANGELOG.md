@@ -5,7 +5,8 @@
 ## [Unreleased]
 
 ### Added
-- Collapsible quotes now open collapsed to a few lines with a tap-to-expand chevron when reading a post or its comments in full, instead of always showing in full.
+- Collapsible quotes now start collapsed to a few lines everywhere they appear, with a chevron to expand or collapse them again, instead of always showing in full.
+- Tapping a link, @mention or hashtag now highlights it with a rounded, padded fill, giving the same clear press feedback across every link type.
 
 ### Changed
 - Code blocks now render in a full-width box with their language label, instead of a ragged inline highlight that broke across lines.
