@@ -21,10 +21,20 @@ import kotlinx.coroutines.withTimeoutOrNull
  * reveal downward.
  *
  * Same "measure reality, nudge by the difference" approach the rest of the feed scroll uses
- * (see [topAlignDelta]): a positive [LazyListState.scrollBy] decreases item offsets in BOTH
- * layout directions, so restoring the pre-expand offset is just `scrollBy(after - before)`.
- * Forward layout keeps the top anchored on its own — the offset doesn't change, the wait
- * times out, and nothing scrolls.
+ * (see [topAlignDelta]), but it must track the item's VISUAL TOP edge, not its raw
+ * [androidx.compose.foundation.lazy.LazyListItemInfo.offset]. Under `reverseLayout` the
+ * coordinate is flipped — `offset` is the item's visual BOTTOM edge, and `offset + size` is
+ * its visual TOP (see the coordinate model in [topAlignDelta]). When the post grows, the
+ * `reverseLayout` LazyColumn keeps the BOTTOM anchored, so `offset` doesn't move at all —
+ * only the top (`offset + size`) climbs by the grown height. The earlier version watched
+ * `offset`, which is invariant here, so the `first { it != before }` wait never fired, timed
+ * out, and nothing scrolled — the post still grew upward and dumped the reader at its end.
+ * Watching `offset + size` captures the real upward growth; a positive [LazyListState.scrollBy]
+ * (which decreases offsets in both modes) then pushes the post back down by the delta so its
+ * top stays pinned and the new lines reveal downward.
+ *
+ * Forward layout anchors the top on its own, so this is a reverse-only mechanism — we
+ * early-return otherwise instead of launching a coroutine that would only time out.
  */
 internal class ExpandScrollRetainer(
     private val listState: LazyListState,
@@ -32,12 +42,16 @@ internal class ExpandScrollRetainer(
 ) {
     /** Pin the item with [itemKey]'s top across the expansion it's about to undergo. */
     fun retainTop(itemKey: Any) {
+        if (!listState.layoutInfo.reverseLayout) return
         val before = listState.layoutInfo.visibleItemsInfo
-            .firstOrNull { it.key == itemKey }?.offset ?: return
+            .firstOrNull { it.key == itemKey }
+            ?.let { it.offset + it.size } ?: return
         scope.launch {
             val after = withTimeoutOrNull(RETAIN_TIMEOUT_MS) {
                 snapshotFlow {
-                    listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == itemKey }?.offset
+                    listState.layoutInfo.visibleItemsInfo
+                        .firstOrNull { it.key == itemKey }
+                        ?.let { it.offset + it.size }
                 }.filterNotNull().first { it != before }
             } ?: return@launch
             val delta = (after - before).toFloat()
