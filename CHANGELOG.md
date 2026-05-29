@@ -15,7 +15,7 @@
 
 ### Fixed
 - The "next unread" button now marks the post you were on as read immediately and steps to the next one, instead of sometimes re-landing on the same post and leaving it unread until you scrolled.
-- Tapping "Show more" in the "Newest at the bottom" feed now opens the post in full anchored at the same spot it sat in the feed, so the text stays put and the rest reads on below, instead of jerking the post up and landing you at its end.
+- Opening a post — by tapping it or its "Show more" — now keeps the post where it sits and dims the feed behind it as the full post and its comments open below, so the text never jumps.
 - A tapped link, @mention or hashtag that wraps across lines now highlights as one connected shape, instead of a separate rounded pill on each line.
 - Link highlights and entity styling (inline code background, underline, strikethrough, spoiler covers) now hug the actual text instead of spilling onto leading or trailing blank space.
 - A quote or code block at the very top or bottom of a post now keeps its padding instead of sitting flush against the text edge.

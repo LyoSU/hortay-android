@@ -1366,7 +1366,10 @@ fun TimelineScreen(
                 markPostReadState.value(post)
                 onOpenCommentsState.value(post)
             },
-            onShowFull = { post, off -> onShowFullState.value(post, off) },
+            onShowFull = { post, off ->
+                markPostReadState.value(post)
+                onShowFullState.value(post, off)
+            },
             // Optimistic poll vote: flip the local poll state (chosen rows light up, shimmer
             // ride the result bars) BEFORE the RPC, then dispatch SetPollAnswer. The eventual
             // `UpdateMessageContent` from TDLib carries the authoritative percentages and

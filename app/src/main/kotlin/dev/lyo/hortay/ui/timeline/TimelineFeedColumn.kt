@@ -115,13 +115,24 @@ internal fun TimelineFeedColumn(
                             null
                         }
                     }
+                    // A plain post tap opens the same hero (both feed orders), routed through
+                    // [PostInteractions.onShowFull] with the captured feed offset.
+                    val itemInteractions = remember(post, interactions, state) {
+                        interactions.copy(
+                            onPostClick = {
+                                val off = state.layoutInfo.visibleItemsInfo
+                                    .firstOrNull { it.key == item.key }?.offset ?: 0
+                                interactions.onShowFull(post, off)
+                            },
+                        )
+                    }
                     CompositionLocalProvider(
                         LocalIsCenteredItem provides isCenteredState,
                         LocalIsHighlightedItem provides highlighted,
                         LocalExpandScrollKeeper provides keepScroll,
                         LocalShowFullPost provides showFull,
                     ) {
-                        PostCard(post = post, interactions = interactions, onTapRevisions = onTapRevisions)
+                        PostCard(post = post, interactions = itemInteractions, onTapRevisions = onTapRevisions)
                     }
                 }
             }

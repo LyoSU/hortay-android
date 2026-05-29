@@ -621,7 +621,10 @@ fun ChannelScreen(
                 markPostReadState.value(post)
                 onOpenCommentsState.value(post)
             },
-            onShowFull = { post, off -> onShowFullState.value(post, off) },
+            onShowFull = { post, off ->
+                markPostReadState.value(post)
+                onShowFullState.value(post, off)
+            },
             // See [TimelineScreen.onPollVote] for the full rationale of the optimistic-flip
             // → RPC → clearPending pattern.
             onPollVote = { post, indices ->
@@ -885,13 +888,24 @@ fun ChannelScreen(
                                                     null
                                                 }
                                             }
+                                            // A plain post tap opens the same hero (both feed orders),
+                                            // routed through [PostInteractions.onShowFull] with the offset.
+                                            val itemInteractions = remember(post, interactions, listState) {
+                                                interactions.copy(
+                                                    onPostClick = {
+                                                        val off = listState.layoutInfo.visibleItemsInfo
+                                                            .firstOrNull { it.key == item.key }?.offset ?: 0
+                                                        interactions.onShowFull(post, off)
+                                                    },
+                                                )
+                                            }
                                             CompositionLocalProvider(
                                                 LocalIsCenteredItem provides isCenteredState,
                                                 LocalIsHighlightedItem provides highlighted,
                                                 LocalExpandScrollKeeper provides keepScroll,
                                                 LocalShowFullPost provides showFull,
                                             ) {
-                                                PostCard(post = post, interactions = interactions)
+                                                PostCard(post = post, interactions = itemInteractions)
                                             }
                                         }
                                     }
