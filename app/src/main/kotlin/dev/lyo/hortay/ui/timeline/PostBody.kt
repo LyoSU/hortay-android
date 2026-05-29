@@ -32,7 +32,6 @@ import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.text.LinkAwareText
 import dev.lyo.hortay.ui.text.LocalExpandScrollKeeper
-import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.text.RenderableText
 import dev.lyo.hortay.ui.text.RichText
 
@@ -296,13 +295,10 @@ internal fun ExpandableText(
     // reactions, edits-that-don't-change-text, and spoiler reveals.
     var expanded by remember(renderable.contentKey) { mutableStateOf(false) }
     var canExpand by remember(renderable.contentKey) { mutableStateOf(false) }
-    // Forward feed: expand inline (grows downward smoothly), pinning the top via
-    // [LocalExpandScrollKeeper] is a no-op there. Reverse feed / channel supplies
-    // [LocalShowFullPost] instead — there an inline grow can't avoid a one-frame scroll blip
-    // (bottom-anchored layout), so "Показати більше" opens the post's full view (an overlay
-    // that leaves the feed scroll untouched underneath) rather than growing in place.
+    // In a reverseLayout feed the post would grow upward on expand and dump the reader at
+    // its end; the feed supplies this to pin the post's top so the new lines reveal
+    // downward instead. Null off the feed → no-op.
     val keepScrollOnExpand = LocalExpandScrollKeeper.current
-    val showFullPost = LocalShowFullPost.current
     LinkAwareText(
         renderable = renderable,
         style = style,
@@ -320,12 +316,8 @@ internal fun ExpandableText(
             modifier = Modifier
                 .padding(top = 4.dp)
                 .clickable {
-                    if (showFullPost != null) {
-                        showFullPost()
-                    } else {
-                        keepScrollOnExpand?.invoke()
-                        expanded = true
-                    }
+                    keepScrollOnExpand?.invoke()
+                    expanded = true
                 },
         )
     }

@@ -35,7 +35,6 @@ import dev.lyo.hortay.ui.main.BrandRow
 import dev.lyo.hortay.ui.media.LocalIsCenteredItem
 import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
 import dev.lyo.hortay.ui.text.LocalExpandScrollKeeper
-import dev.lyo.hortay.ui.text.LocalShowFullPost
 
 /**
  * Mechanical extraction of the main feed LazyColumn from [TimelineScreen]. Behaviour
@@ -102,17 +101,10 @@ internal fun TimelineFeedColumn(
                     val keepScroll = remember(item.key, expandRetainer) {
                         { expandRetainer.retainTop(item.key) }
                     }
-                    // Reverse (Newest-at-bottom): "Показати більше" opens the post's full view
-                    // instead of an inline grow that would blip the scroll; forward feed keeps
-                    // the smooth inline expand (null).
-                    val showFull = remember(post, reverseLayout, interactions) {
-                        if (reverseLayout) ({ interactions.onPostClick(post) }) else null
-                    }
                     CompositionLocalProvider(
                         LocalIsCenteredItem provides isCenteredState,
                         LocalIsHighlightedItem provides highlighted,
                         LocalExpandScrollKeeper provides keepScroll,
-                        LocalShowFullPost provides showFull,
                     ) {
                         PostCard(post = post, interactions = interactions, onTapRevisions = onTapRevisions)
                     }
