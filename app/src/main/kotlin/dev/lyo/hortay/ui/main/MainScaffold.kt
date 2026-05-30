@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.entryProvider
@@ -290,6 +289,11 @@ fun MainScaffold(graph: AppGraph) {
     val onLinkNotFound: () -> Unit = {
         graph.userMessages.post(res.getString(R.string.link_not_found), UserMessageBus.Severity.Info)
     }
+    // Bottom inset handed to full-screen detail screens that aren't self-contained Scaffolds for
+    // the bottom edge (ChannelScreen reads contentPadding.bottom for its list clearance). The
+    // tab scaffold under HomeKey owns the FloatingNavBar inset itself; details only need to clear
+    // the system navigation bar. CommentsScreen / ArchiveScreen are full Scaffolds and ignore it.
+    val detailContentPadding = WindowInsets.navigationBars.asPaddingValues()
 
     // Predictive back for the detail stack is owned by NavDisplay now (it animates the leaving
     // entry and reveals the one below during the gesture — what the hand-rolled top-2 renderer
@@ -397,97 +401,16 @@ fun MainScaffold(graph: AppGraph) {
                         Snackbar(snackbarData = data)
                     }
                 },
-                bottomBar = {
-                    // Hide the nav-bar while a nav-overlay is visible (Telegram /
-                    // Twitter / Instagram all do this for drilled-in screens — the
-                    // overlay owns the bottom edge so the last row of content isn't
-                    // occluded).
-                    //
-                    // Reserved-slot animation, NOT height-collapse: we keep the bar's
-                    // measured height stable across the show/hide transition and
-                    // visually slide-and-fade its content via `graphicsLayer`. The
-                    // earlier [AnimatedVisibility] form used `expandVertically /
-                    // shrinkVertically`, which animates the Scaffold's bottomBar slot
-                    // height — that propagates through [PaddingValues] into
-                    // TimelineScreen's `contentPadding.bottom` and re-lays out the
-                    // LazyColumn every frame of the animation. Stable
-                    // `firstVisibleItemIndex` keeps the top edge anchored, but the
-                    // bottom-padding delta shifts which rows fit in the viewport — read
-                    // by the user as a small scroll jitter on overlay return. The
-                    // overlay covers the full screen anyway, so the reserved space
-                    // sitting behind it is invisible during the navigation window.
-                    val navBarVisible = !hasOverlay
-                    val navBarAlpha by androidx.compose.animation.core.animateFloatAsState(
-                        targetValue = if (navBarVisible) 1f else 0f,
-                        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
-                        label = "navbar-alpha",
-                    )
-                    val navBarSlide by androidx.compose.animation.core.animateFloatAsState(
-                        targetValue = if (navBarVisible) 0f else 1f,
-                        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                        label = "navbar-slide",
-                    )
-                    Box(
-                        modifier = Modifier.graphicsLayer {
-                            alpha = navBarAlpha
-                            // `navBarSlide = 1f` translates the content fully off the
-                            // bottom edge of its own slot — the measured slot height
-                            // stays at the bar's natural value either way.
-                            translationY = navBarSlide * size.height
-                        },
-                    ) {
-                        FloatingNavBar(
-                            selected = selectedTab,
-                            onSelect = { tab ->
-                                // Three distinct cases when the user taps the Home pill while
-                                // selectedTab is already Feed. Telegram-Android / Twitter / X all
-                                // settle on the same rule, surfaced explicitly here:
-                                //  (a) User on Feed AND re-tapping the active Home tab.
-                                //      Canonical "tap home twice" gesture: bump homeTapTrigger
-                                //      so TimelineScreen scrolls to top (or refreshes if already
-                                //      there).
-                                //  (b) User on a different tab. Just switch tabs.
-                                // (Home-tap-while-drilled is unreachable here because the
-                                // nav-bar is hidden in that state — see the early return
-                                // above.)
-                                val reselectingActiveFeed =
-                                    tab == NavTab.Feed && tab == selectedTab
-                                if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
-                                selectedTab = tab
-                            },
-                        )
-                    }
-                },
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            ) { padding ->
-                Box(modifier = Modifier.fillMaxSize()) {
-                    TabContentSwitcher(
-                        selectedTab = selectedTab,
-                        tabStateHolder = tabStateHolder,
-                        graph = graph,
-                        padding = padding,
-                        feedOrder = feedOrder,
-                        snapScroll = snapScroll,
-                        homeTapTrigger = homeTapTrigger,
-                        coveredByOverlay = hasOverlay,
-                        scope = scope,
-                        onHomeTapTriggerBump = { homeTapTrigger = System.nanoTime() },
-                        onSafelyOpenChannel = safelyOpenChannel,
-                        onPushChannel = pushChannel,
-                        onPushComments = pushComments,
-                        onShowFullPost = pushCommentsHero,
-                        onPostReportClick = onPostReportClick,
-                        canReportPost = canReportPost,
-                        tdlibMarkAsRead = tdlibMarkAsRead,
-                    )
-
-                    // Navigation 3 detail stack, rendered ABOVE the always-mounted tab content.
-                    // The [HomeKey] root renders nothing (transparent) so the feed beneath shows
-                    // through at the root and during a predictive-back peek; detail keys render
-                    // their full-screen screens over it. Entry decorators give each entry its own
-                    // saveable-state scope and its own ViewModelStore (cleared on pop) — the
-                    // canonical replacement for the old per-entryId SaveableStateProvider +
-                    // custom ViewModelStoreOwner, and the structural fix for the per-chatId VM leak.
+            ) { scaffoldPadding ->
+                Box(modifier = Modifier.fillMaxSize().padding(scaffoldPadding)) {
+                    // Navigation 3 owns every scene. HomeKey renders the tab scaffold (feed +
+                    // bottom nav bar); detail keys render full-screen over it. A predictive-back
+                    // swipe therefore parallaxes BOTH the leaving detail and the entering tab
+                    // content (the canonical system motion) — no hand-rolled overlay stacking,
+                    // nav-bar hide animation, or transparent-root tricks. Entry decorators give
+                    // each entry its own saveable state + ViewModelStore (cleared on pop),
+                    // replacing the old per-entryId holder and fixing the per-chatId VM leak.
                     NavDisplay(
                         backStack = backStack,
                         onBack = { popNav() },
@@ -496,33 +419,72 @@ fun MainScaffold(graph: AppGraph) {
                             rememberViewModelStoreNavEntryDecorator(),
                         ),
                         entryProvider = entryProvider {
-                            entry<HomeKey> { Box(modifier = Modifier.fillMaxSize()) {} }
+                            entry<HomeKey> {
+                                Scaffold(
+                                    modifier = Modifier.fillMaxSize(),
+                                    bottomBar = {
+                                        FloatingNavBar(
+                                            selected = selectedTab,
+                                            onSelect = { tab ->
+                                                // Re-tapping the active Feed pill bumps
+                                                // homeTapTrigger (scroll-to-top, or refresh if
+                                                // already there); otherwise switch tab.
+                                                val reselectingActiveFeed =
+                                                    tab == NavTab.Feed && tab == selectedTab
+                                                if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
+                                                selectedTab = tab
+                                            },
+                                        )
+                                    },
+                                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                                ) { homePadding ->
+                                    TabContentSwitcher(
+                                        selectedTab = selectedTab,
+                                        tabStateHolder = tabStateHolder,
+                                        graph = graph,
+                                        padding = homePadding,
+                                        feedOrder = feedOrder,
+                                        snapScroll = snapScroll,
+                                        homeTapTrigger = homeTapTrigger,
+                                        coveredByOverlay = hasOverlay,
+                                        scope = scope,
+                                        onHomeTapTriggerBump = { homeTapTrigger = System.nanoTime() },
+                                        onSafelyOpenChannel = safelyOpenChannel,
+                                        onPushChannel = pushChannel,
+                                        onPushComments = pushComments,
+                                        onShowFullPost = pushCommentsHero,
+                                        onPostReportClick = onPostReportClick,
+                                        canReportPost = canReportPost,
+                                        tdlibMarkAsRead = tdlibMarkAsRead,
+                                    )
+                                }
+                            }
                             entry<ChannelKey> { key ->
                                 RenderNavKey(
-                                    key, graph, padding, feedOrder, scope, popNav, pushChannel,
-                                    pushComments, pushCommentsHero, safelyOpenChannel, openReport,
-                                    onPostReportClick, canReportPost, onLinkNotFound,
+                                    key, graph, detailContentPadding, feedOrder, scope, popNav,
+                                    pushChannel, pushComments, pushCommentsHero, safelyOpenChannel,
+                                    openReport, onPostReportClick, canReportPost, onLinkNotFound,
                                 )
                             }
                             entry<CommentsKey> { key ->
                                 RenderNavKey(
-                                    key, graph, padding, feedOrder, scope, popNav, pushChannel,
-                                    pushComments, pushCommentsHero, safelyOpenChannel, openReport,
-                                    onPostReportClick, canReportPost, onLinkNotFound,
+                                    key, graph, detailContentPadding, feedOrder, scope, popNav,
+                                    pushChannel, pushComments, pushCommentsHero, safelyOpenChannel,
+                                    openReport, onPostReportClick, canReportPost, onLinkNotFound,
                                 )
                             }
                             entry<ArchiveKey> { key ->
                                 RenderNavKey(
-                                    key, graph, padding, feedOrder, scope, popNav, pushChannel,
-                                    pushComments, pushCommentsHero, safelyOpenChannel, openReport,
-                                    onPostReportClick, canReportPost, onLinkNotFound,
+                                    key, graph, detailContentPadding, feedOrder, scope, popNav,
+                                    pushChannel, pushComments, pushCommentsHero, safelyOpenChannel,
+                                    openReport, onPostReportClick, canReportPost, onLinkNotFound,
                                 )
                             }
                             entry<ArchiveSettingsKey> { key ->
                                 RenderNavKey(
-                                    key, graph, padding, feedOrder, scope, popNav, pushChannel,
-                                    pushComments, pushCommentsHero, safelyOpenChannel, openReport,
-                                    onPostReportClick, canReportPost, onLinkNotFound,
+                                    key, graph, detailContentPadding, feedOrder, scope, popNav,
+                                    pushChannel, pushComments, pushCommentsHero, safelyOpenChannel,
+                                    openReport, onPostReportClick, canReportPost, onLinkNotFound,
                                 )
                             }
                         },
