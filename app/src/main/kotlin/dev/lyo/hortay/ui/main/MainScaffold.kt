@@ -29,6 +29,7 @@ import dev.lyo.hortay.data.nav.ArchiveSettingsKey
 import dev.lyo.hortay.data.nav.ChannelKey
 import dev.lyo.hortay.data.nav.CommentsKey
 import dev.lyo.hortay.data.nav.HomeKey
+import dev.lyo.hortay.data.nav.WebChannelKey
 import dev.lyo.hortay.data.posts.PublicHandleResult
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.UserMessageBus
@@ -517,6 +518,15 @@ fun MainScaffold(graph: AppGraph) {
                                     openReport, onPostReportClick, canReportPost, onLinkNotFound,
                                 )
                             }
+                            // Defensive: [WebChannelKey] is guest-mode only and never pushed by this
+                            // scaffold. But the back stack is shared across both scaffolds (see
+                            // [AppGraph.backStack]); a guest→auth sign-in performed while a guest drill
+                            // was on the stack can leave a foreign key on top for the first frame after
+                            // MainActivity re-routes here. NavDisplay requires an entry for every key on
+                            // the stack — without this it would crash on that frame. The entry renders
+                            // nothing and pops itself, self-healing the stack back to a valid auth state
+                            // (the Nav3 equivalent of the old guest renderer's defensive `is`-skip).
+                            entry<WebChannelKey> { LaunchedEffect(Unit) { popNav() } }
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

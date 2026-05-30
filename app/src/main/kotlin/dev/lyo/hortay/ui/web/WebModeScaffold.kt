@@ -4,11 +4,16 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -19,8 +24,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -28,17 +31,25 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.ui.NavDisplay
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.DeepLink
-import dev.lyo.hortay.data.NavEntry
+import dev.lyo.hortay.data.nav.ArchiveKey
+import dev.lyo.hortay.data.nav.ArchiveSettingsKey
+import dev.lyo.hortay.data.nav.ChannelKey
+import dev.lyo.hortay.data.nav.CommentsKey
+import dev.lyo.hortay.data.nav.HomeKey
+import dev.lyo.hortay.data.nav.WebChannelKey
 import dev.lyo.hortay.data.web.WebPostAdapter
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.FloatingNavBar
@@ -65,6 +76,16 @@ import java.util.Locale
  *   - [SettingsScreen] — same screen, same SectionLabel / SettingsRow primitives;
  *     guest-mode parameters (onSignIn, onClearWebCache) flip the rendered set
  *     of sections without forking the screen.
+ *
+ * Navigation is the SAME Navigation 3 model MainScaffold uses (migration stage 5):
+ * a single [NavDisplay] over the shared [AppGraph.backStack], with [HomeKey] rendering
+ * the tab scaffold beneath and detail keys pushing on top. Guest mode only ever pushes
+ * [WebChannelKey] (channel drill) and [CommentsKey] (post detail, disabled-comments hero);
+ * the auth-mode keys are owned by MainScaffold. Because the back stack is shared and the
+ * two scaffolds never compose simultaneously ([dev.lyo.hortay.MainActivity] routes between
+ * them), the entryProvider here also carries self-healing no-op entries for the auth-mode
+ * keys — a foreign key can briefly survive a guest→auth→guest mode flip on the shared stack,
+ * and NavDisplay requires an entry for every key it renders.
  *
  * Web-specific UI files remaining: this scaffold (mode router) and
  * [WebChannelsScreen] / [AddChannelSheet] (channel-list + smart-paste flow
@@ -96,31 +117,24 @@ fun WebModeScaffold(graph: AppGraph) {
     // works identically in both modes.
     var homeTapTrigger by rememberSaveable { mutableStateOf(0L) }
 
-    // Channel back-stack — guest-mode counterpart to MainScaffold's TDLib stack.
-    // Single polymorphic nav-stack on [AppGraph.nav]. Guest mode only ever
-    // pushes [NavEntry.WebChannel]; the auth-mode variants (Channel, Comments)
-    // are owned by [dev.lyo.hortay.ui.main.MainScaffold] and never appear here
-    // because the two scaffolds never compose simultaneously
-    // ([dev.lyo.hortay.MainActivity] routes auth.Ready → MainScaffold,
-    // isGuest → WebModeScaffold).
-    //
-    // Same back-stack mechanics as MainScaffold — see [NavStack] KDoc.
-    val stack by graph.nav.stack.collectAsStateWithLifecycle()
-    val topEntry = stack.lastOrNull()
+    // Navigation 3 back stack on the graph — the SAME instance MainScaffold drives. Root is
+    // always [HomeKey] (the tab scaffold renders beneath the NavDisplay); guest detail keys
+    // push on top, so `size > 1` ⇔ a drill overlay is showing. See [AppGraph.backStack] and
+    // the file KDoc for why the stack is shared across both scaffolds.
+    val backStack = graph.backStack
+    val hasOverlay = backStack.size > 1
 
     // The active tab is NOT touched on push — under the nav-overlay the
     // user's originating tab keeps rendering, so a predictive-back swipe
     // reveals the right content underneath. Pop just removes the overlay.
     fun pushWebChannel(name: String) {
-        graph.nav.push(NavEntry.WebChannel(username = name.lowercase()))
+        backStack.add(WebChannelKey(username = name.lowercase()))
     }
 
+    // Pop a detail entry. Guarded so the [HomeKey] root is never removed (NavDisplay always
+    // needs a root; an empty stack would crash it).
     fun popNav() {
-        graph.nav.pop()
-    }
-
-    fun clearNav() {
-        graph.nav.clear()
+        if (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
     }
 
     val scope = rememberCoroutineScope()
@@ -195,30 +209,10 @@ fun WebModeScaffold(graph: AppGraph) {
         }
     }
 
-    // Predictive back for the top nav-entry. Mirrors MainScaffold's
-    // navBackProgress — same M3E fastEffectsSpec, same epsilon-skip,
-    // same EXIT_PROGRESS extension on commit.
-    val backCommitSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    val backRewindSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    val navBackProgress = remember { androidx.compose.animation.core.Animatable(0f) }
-    var navBackEdge by remember { mutableIntStateOf(androidx.activity.BackEventCompat.EDGE_LEFT) }
-    androidx.activity.compose.PredictiveBackHandler(enabled = topEntry != null) { progress ->
-        try {
-            progress.collect { event ->
-                navBackEdge = event.swipeEdge
-                val next = event.progress
-                if (kotlin.math.abs(next - navBackProgress.value) >= 0.005f) {
-                    navBackProgress.snapTo(next)
-                }
-            }
-            navBackProgress.animateTo(2f, backCommitSpec)
-            popNav()
-            navBackProgress.snapTo(0f)
-        } catch (_: kotlinx.coroutines.CancellationException) {
-            navBackProgress.animateTo(0f, backRewindSpec)
-        }
-    }
-    BackHandler(enabled = topEntry == null && selectedTab != NavTab.Feed) {
+    // Back at the tab root (no drill on top) but not on Feed → return to Feed.
+    // When a detail overlay is up, NavDisplay consumes back first (its predictive
+    // back animates the leaving entry and reveals the tab scaffold below).
+    BackHandler(enabled = !hasOverlay && selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
     }
 
@@ -270,12 +264,12 @@ fun WebModeScaffold(graph: AppGraph) {
     // Post-tap in guest mode opens the same post-detail surface TDLib mode
     // uses — [CommentsScreen] with the frozen anchor pinned at the top — but
     // with an empty-state hero in place of the thread body explaining why
-    // replies aren't reachable here. Reuses the auth-mode [NavEntry.Comments]
-    // entry: same nav-stack mechanics (predictive back, saveable state holder),
-    // same screen, just a [CommentsDisabledOverride] supplied below so the
-    // screen short-circuits its repository wiring. Previous behaviour was a
-    // bare snackbar with the same copy — kept the user from getting to the
-    // post detail at all.
+    // replies aren't reachable here. Reuses the auth-mode [CommentsKey] entry:
+    // same nav-stack mechanics (predictive back, saveable state), same screen,
+    // just a [CommentsDisabledOverride] supplied below so the screen
+    // short-circuits its repository wiring. Previous behaviour was a bare
+    // snackbar with the same copy — kept the user from getting to the post
+    // detail at all.
     val commentsDisabledTitle = stringResource(R.string.web_comments_unavailable_title)
     val commentsDisabledBody = stringResource(R.string.web_comments_unavailable)
     val commentsDisabledAction = stringResource(R.string.action_sign_in)
@@ -293,7 +287,7 @@ fun WebModeScaffold(graph: AppGraph) {
         )
     }
     val onGuestPostClick: (TimelinePost) -> Unit = remember(graph) {
-        { post -> graph.nav.push(NavEntry.Comments(anchor = post)) }
+        { post -> backStack.add(CommentsKey(anchor = post)) }
     }
     // Feed → channel-name tap routes through the same WebChannelScreen overlay
     // that the Channels tab uses. resolveUsername returns null for channels not
@@ -307,365 +301,333 @@ fun WebModeScaffold(graph: AppGraph) {
             else systemUriHandler.openUri("https://t.me/")
         }
     }
+
+    // Bottom inset handed to the WebChannelScreen drill (not a self-contained Scaffold for the
+    // bottom edge). The tab scaffold under HomeKey owns the FloatingNavBar/FAB insets itself;
+    // a detail only needs to clear the system navigation bar. CommentsScreen is a full Scaffold
+    // and ignores this.
+    val detailContentPadding = WindowInsets.navigationBars.asPaddingValues()
+    // Fast spatial spec for the forward/pop commit transitions so the entering scene settles
+    // quickly and predictive back (gated on the scene reaching RESUMED) arms sooner — same
+    // calibration MainScaffold uses.
+    val navFastSpatial = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+
     LinkAwareScaffold(graph) {
     CompositionLocalProvider(
         LocalReadCursors provides cursorHolder,
         dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,
         dev.lyo.hortay.ui.main.LocalUserMessageBus provides graph.userMessages,
     ) {
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        snackbarHost = {
-            SnackbarHost(snackbarHostState) { data -> Snackbar(snackbarData = data) }
-        },
-        bottomBar = {
-            // Hide nav-bar inside a drill (same rationale as MainScaffold).
-            // Animated through M3E motion so the surrounding content padding
-            // eases instead of snapping when the overlay pushes / pops.
-            androidx.compose.animation.AnimatedVisibility(
-                visible = topEntry == null,
-                enter = androidx.compose.animation.expandVertically(
-                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                ) + androidx.compose.animation.fadeIn(
-                    MaterialTheme.motionScheme.defaultEffectsSpec(),
-                ),
-                exit = androidx.compose.animation.shrinkVertically(
-                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                ) + androidx.compose.animation.fadeOut(
-                    MaterialTheme.motionScheme.defaultEffectsSpec(),
-                ),
-            ) {
-                FloatingNavBar(
-                    selected = selectedTab,
-                    onSelect = { tab ->
-                        val reselectingActiveFeed =
-                            tab == NavTab.Feed && tab == selectedTab
-                        if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
-                        selectedTab = tab
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            snackbarHost = {
+                SnackbarHost(snackbarHostState) { data -> Snackbar(snackbarData = data) }
+            },
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        ) { scaffoldPadding ->
+            Box(modifier = Modifier.fillMaxSize().padding(scaffoldPadding)) {
+                // Navigation 3 owns every scene (same model as MainScaffold). HomeKey renders the
+                // tab scaffold (feed + bottom nav bar + add-channel FAB); detail keys render
+                // full-screen over it, so a predictive-back swipe parallaxes BOTH the leaving
+                // detail and the entering tab content. Entry decorators give each entry its own
+                // saveable state + ViewModelStore (cleared on pop).
+                NavDisplay(
+                    backStack = backStack,
+                    onBack = { popNav() },
+                    entryDecorators = listOf(
+                        rememberSaveableStateHolderNavEntryDecorator(),
+                        rememberViewModelStoreNavEntryDecorator(),
+                    ),
+                    // Horizontal shared-axis identical to MainScaffold: forward/pop ride the fast
+                    // spatial spec (quick settle → predictive back arms sooner); the predictive
+                    // spec stays BARE so the gesture remains seekable and tracks the finger.
+                    transitionSpec = {
+                        slideInHorizontally(navFastSpatial) { it } togetherWith
+                            slideOutHorizontally(navFastSpatial) { -it / 3 }
                     },
-                )
-            }
-        },
-        floatingActionButton = {
-            // Hide the FAB inside a drill (the overlay owns the surface).
-            // Symmetric M3E fade so it doesn't pop in/out abruptly.
-            androidx.compose.animation.AnimatedVisibility(
-                visible = topEntry == null,
-                enter = androidx.compose.animation.fadeIn(
-                    MaterialTheme.motionScheme.defaultEffectsSpec(),
-                ) + androidx.compose.animation.scaleIn(
-                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                ),
-                exit = androidx.compose.animation.fadeOut(
-                    MaterialTheme.motionScheme.defaultEffectsSpec(),
-                ) + androidx.compose.animation.scaleOut(
-                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                ),
-            ) {
-            // Primary "add channel" action. Surfaced on tabs where adding a
-            // channel is contextually meaningful — Feed (where the user reads)
-            // and Channels (where the list of subscriptions lives). Settings
-            // and Saved hide it: clicking it there would feel context-mismatched.
-            // ExtendedFab (with text label) on the empty-channels case so the
-            // first-time user can't miss it; collapses to icon-only once posts
-            // exist and the affordance becomes secondary.
-            if (selectedTab == NavTab.Feed || selectedTab == NavTab.Channels) {
-                // Subscribed via Lifecycle so the FAB collapses the moment the user
-                // adds their first channel. Earlier `channels.value.any { … }` was a
-                // raw StateFlow read inside composition — Compose never re-subscribed,
-                // so the extended FAB stayed expanded with the "Add channel" label even
-                // after subscriptions existed. derivedStateOf scopes recomposition to
-                // the boolean: only an actual any/none flip propagates further.
-                val channels by graph.webFeedSource.channels.collectAsStateWithLifecycle()
-                val hasChannels = channels.any { it.isSubscribed }
-                // No manual padding here — Scaffold positions the FAB above the
-                // bottomBar automatically. An earlier 88dp bottom padding stacked
-                // on top of Scaffold's own offset and floated the button much too
-                // high above the FloatingNavBar.
-                ExtendedFloatingActionButton(
-                    onClick = {
-                        // Discrete "open add-channel sheet" action — ContextClick before
-                        // the sheet opens.
-                        haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                        addSheetOpen = true
+                    popTransitionSpec = {
+                        slideInHorizontally(navFastSpatial) { -it / 3 } togetherWith
+                            slideOutHorizontally(navFastSpatial) { it }
                     },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    expanded = !hasChannels,
-                    icon = {
-                        Symbol(
-                            name = "add",
-                            contentDescription = stringResource(R.string.web_add_channel),
-                            size = 24.dp,
-                        )
+                    predictivePopTransitionSpec = {
+                        slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
                     },
-                    text = { Text(stringResource(R.string.web_add_channel)) },
-                )
-            }
-            }
-        },
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-    ) { padding ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Tab swap = pure crossfade (no spatial component) — destination
-            // switch, not depth. fastEffectsSpec is M3E's correct channel for
-            // non-spatial state changes. Captured here for the non-composable
-            // transitionSpec lambda.
-            val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-
-            // SaveableStateHolder for tab-level state preservation. Each tab gets
-            // its own independent saveable scope via SaveableStateProvider(tab.name),
-            // so rememberSaveable / rememberLazyListState / rememberScrollState
-            // inside each tab survive AnimatedContent's mount/unmount lifecycle.
-            // The user's scroll position on the guest Feed, Channels, Saved and
-            // Profile tabs is preserved across tab switches without any extra state
-            // in each screen.
-            val tabStateHolder = rememberSaveableStateHolder()
-
-            AnimatedContent(
-                targetState = selectedTab,
-                transitionSpec = {
-                    fadeIn(tabEffectsSpec) togetherWith fadeOut(tabEffectsSpec)
-                },
-                label = "web-tab-switch",
-                modifier = Modifier.fillMaxSize(),
-            ) { tab ->
-                tabStateHolder.SaveableStateProvider(key = tab.name) {
-                when (tab) {
-                    NavTab.Feed -> {
-                        // Overlay pattern (mirror MainScaffold): TimelineScreen is
-                        // ALWAYS mounted in the Feed tab; WebChannelScreen renders
-                        // as a nav-stack overlay outside this tab branch (the top-2
-                        // entries of [graph.nav.stack] drawn below this Box block).
-                        // Keeping the feed mounted preserves scroll position across
-                        // channel drills without the SaveableStateProvider serialise/
-                        // restore cycle that would otherwise mis-anchor the user
-                        // when the underlying post list mutates while they're away.
-                        tabStateHolder.SaveableStateProvider(key = "web-feed:__all__") {
-                            TimelineScreen(
-                                feed = graph.webFeedSource,
-                                bookmarks = graph.bookmarkStore,
-                                contentPadding = padding,
-                                showOnlyBookmarked = false,
-                                onChannelOpen = onFeedChannelOpen,
-                                onOpenComments = onGuestPostClick,
-                                homeTapTrigger = homeTapTrigger,
-                                onBrandTap = { homeTapTrigger = System.nanoTime() },
-                                onSearchClick = { searchOpen = true },
-                                topBarBadge = { GuestModeBadge() },
-                                onReportClick = { post ->
-                                    val outcome = graph.guestReportDelegator.report(
-                                        channelUsername = post.senderHandle?.removePrefix("@"),
-                                        postId = if (post.id != 0L) post.id else null,
+                    entryProvider = entryProvider {
+                        entry<HomeKey> {
+                            Scaffold(
+                                modifier = Modifier.fillMaxSize(),
+                                bottomBar = {
+                                    FloatingNavBar(
+                                        selected = selectedTab,
+                                        onSelect = { tab ->
+                                            val reselectingActiveFeed =
+                                                tab == NavTab.Feed && tab == selectedTab
+                                            if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
+                                            selectedTab = tab
+                                        },
                                     )
-                                    if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
-                                        outcome == GuestReportDelegator.Outcome.OpenedWeb) {
-                                        showReportInstruction = true
+                                },
+                                floatingActionButton = {
+                                    // Primary "add channel" action. Surfaced on tabs where adding a
+                                    // channel is contextually meaningful — Feed (where the user reads)
+                                    // and Channels (where the list of subscriptions lives). Settings
+                                    // and Saved hide it: clicking it there would feel context-mismatched.
+                                    // ExtendedFab (with text label) on the empty-channels case so the
+                                    // first-time user can't miss it; collapses to icon-only once posts
+                                    // exist and the affordance becomes secondary.
+                                    if (selectedTab == NavTab.Feed || selectedTab == NavTab.Channels) {
+                                        // Subscribed via Lifecycle so the FAB collapses the moment the user
+                                        // adds their first channel. Earlier `channels.value.any { … }` was a
+                                        // raw StateFlow read inside composition — Compose never re-subscribed,
+                                        // so the extended FAB stayed expanded with the "Add channel" label even
+                                        // after subscriptions existed. derivedStateOf scopes recomposition to
+                                        // the boolean: only an actual any/none flip propagates further.
+                                        val channels by graph.webFeedSource.channels.collectAsStateWithLifecycle()
+                                        val hasChannels = channels.any { it.isSubscribed }
+                                        ExtendedFloatingActionButton(
+                                            onClick = {
+                                                // Discrete "open add-channel sheet" action — ContextClick
+                                                // before the sheet opens.
+                                                haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                                addSheetOpen = true
+                                            },
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            expanded = !hasChannels,
+                                            icon = {
+                                                Symbol(
+                                                    name = "add",
+                                                    contentDescription = stringResource(R.string.web_add_channel),
+                                                    size = 24.dp,
+                                                )
+                                            },
+                                            text = { Text(stringResource(R.string.web_add_channel)) },
+                                        )
                                     }
                                 },
-                                canReport = { true },
-                                markAsRead = webMarkAsRead,
-                                feedOrder = feedOrder,
-                                snapScroll = snapScroll,
-                                // Reserve room for the "Add channel" FAB that this
-                                // scaffold parks at BottomEnd. Without this the
-                                // floating "↓ N" unread pill (also BottomEnd, owned
-                                // by TimelineScreen) lands directly under the FAB
-                                // and is un-tappable. ExtendedFAB ~56.dp + 16.dp
-                                // gap → 72.dp. Only the Feed tab needs this; the
-                                // Saved-tab call below leaves the default 0.dp
-                                // because the FAB is hidden there.
-                                unreadPillExtraBottomPadding = 72.dp,
-                            )
-                        }
-                    }
+                                contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                            ) { homePadding ->
+                                // Tab swap = pure crossfade (no spatial component) — destination
+                                // switch, not depth. fastEffectsSpec is M3E's correct channel for
+                                // non-spatial state changes. Captured here for the non-composable
+                                // transitionSpec lambda.
+                                val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
 
-                    NavTab.Channels -> WebChannelsScreen(
-                        graph = graph,
-                        contentPadding = padding,
-                        onChannelClick = { username ->
-                            pushWebChannel(username)
-                        },
-                        onAddChannel = { addSheetOpen = true },
-                        onAddCurated = { username ->
-                            deepLinkPrefill = username
-                            addSheetOpen = true
-                        },
-                    )
+                                // SaveableStateHolder for tab-level state preservation. Each tab gets
+                                // its own independent saveable scope via SaveableStateProvider(tab.name),
+                                // so rememberSaveable / rememberLazyListState / rememberScrollState
+                                // inside each tab survive AnimatedContent's mount/unmount lifecycle.
+                                val tabStateHolder = rememberSaveableStateHolder()
 
-                    NavTab.Saved -> TimelineScreen(
-                        feed = graph.webFeedSource,
-                        bookmarks = graph.bookmarkStore,
-                        contentPadding = padding,
-                        showOnlyBookmarked = true,
-                        onChannelOpen = onFeedChannelOpen,
-                        onOpenComments = onGuestPostClick,
-                        onReportClick = { post ->
-                            val outcome = graph.guestReportDelegator.report(
-                                channelUsername = post.senderHandle?.removePrefix("@"),
-                                postId = if (post.id != 0L) post.id else null,
-                            )
-                            if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
-                                outcome == GuestReportDelegator.Outcome.OpenedWeb) {
-                                showReportInstruction = true
-                            }
-                        },
-                        canReport = { true },
-                        markAsRead = webMarkAsRead,
-                        feedOrder = feedOrder,
-                        snapScroll = snapScroll,
-                    )
-
-                    NavTab.Profile -> SettingsScreen(
-                        settings = graph.settingsStore,
-                        stats = null,
-                        contentPadding = padding,
-                        onLogout = null,
-                        onSignIn = { scope.launch { graph.guestMode.setGuest(false) } },
-                        // Combined wipe-and-refetch so the user sees fresh
-                        // content immediately, not an empty feed waiting for
-                        // the next tier-2 sweep. Subscriptions survive.
-                        onClearWebCache = { graph.webFeedSource.clearCacheAndRefresh() },
-                        ignoredChannels = graph.ignoredChannels,
-                        // Guest-mode resolver: walk the in-memory channels
-                        // list for a row whose username hashes to the given
-                        // chatId. Cheap — typical subscription set is < 200,
-                        // resolution happens once per hidden chatId on screen
-                        // entry, and the StateFlow is already a snapshot the
-                        // composable holds.
-                        webChannelByChatId = { chatId ->
-                            graph.webFeedSource.channels.value
-                                .firstOrNull {
-                                    dev.lyo.hortay.data.web.WebPostAdapter.stableChatId(
-                                        it.info.username,
-                                    ) == chatId
-                                }
-                                ?.let {
-                                    dev.lyo.hortay.ui.settings.WebChannelDescriptor(
-                                        title = it.info.title,
-                                        username = it.info.username,
-                                    )
-                                }
-                        },
-                        userMessages = graph.userMessages,
-                    )
-                }
-                }
-            }
-
-            // Top-2 nav-stack entries rendered as stacked layers above the
-            // always-mounted feed. Single forEach so each entry stays in a
-            // stable composition position — after pop, the entry that was at
-            // index 0 stays at index 0 (now `isTop = true`), preserving its
-            // remember-group identity. Mirror of MainScaffold's overlay logic.
-            val visibleEntries = stack.takeLast(2)
-            val navStateHolder = rememberSaveableStateHolder()
-            visibleEntries.forEachIndexed { idx, entry ->
-                val isTop = idx == visibleEntries.lastIndex
-                // Guest mode pushes WebChannel for channel drills and Comments
-                // for post-detail; the auth-mode Channel variant never reaches
-                // this scaffold (MainScaffold owns it). A defensive `else`
-                // skip keeps the code total over [NavEntry] so a future variant
-                // doesn't silently overlay-render here.
-                if (entry !is NavEntry.WebChannel && entry !is NavEntry.Comments) {
-                    return@forEachIndexed
-                }
-                key(entry.entryId) {
-                    navStateHolder.SaveableStateProvider(key = entry.entryId) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .then(
-                                    if (isTop) {
-                                        Modifier.graphicsLayer {
-                                            val p = navBackProgress.value.coerceIn(0f, 2f)
-                                            val signed = when (navBackEdge) {
-                                                androidx.activity.BackEventCompat.EDGE_RIGHT -> -p
-                                                else -> p
-                                            }
-                                            translationX = signed * size.width * 0.25f
-                                            val s = 1f - p.coerceAtMost(1f) * 0.05f
-                                            scaleX = s; scaleY = s
-                                            alpha = (1f - p.coerceAtMost(1f) * 0.9f)
-                                                .coerceAtLeast(0f)
-                                        }
-                                    } else {
-                                        Modifier
+                                AnimatedContent(
+                                    targetState = selectedTab,
+                                    transitionSpec = {
+                                        fadeIn(tabEffectsSpec) togetherWith fadeOut(tabEffectsSpec)
                                     },
-                                ),
-                        ) {
-                            when (entry) {
-                                is NavEntry.WebChannel -> WebChannelScreen(
-                                    username = entry.username,
-                                    graph = graph,
-                                    contentPadding = padding,
-                                    onBack = ::popNav,
-                                    onPostClick = onGuestPostClick,
-                                    feedOrder = feedOrder,
-                                )
-                                is NavEntry.Comments -> dev.lyo.hortay.ui.comments.CommentsScreen(
-                                    post = entry.anchor,
-                                    // Guest mode has no TDLib session → no
-                                    // CommentsRepository, no PostsRepository.posts
-                                    // to live-sync the anchor against. The screen
-                                    // renders the frozen NavEntry snapshot and
-                                    // shows the [webCommentsOverride] empty-state
-                                    // hero in place of the thread body.
-                                    repo = null,
-                                    feedRepo = null,
-                                    onDismiss = ::popNav,
-                                    disabledOverride = webCommentsOverride,
-                                    // Predictive-back transform is owned by the
-                                    // outer Box.graphicsLayer above (same recipe
-                                    // WebChannelScreen rides), so the screen's
-                                    // own backProgress stays at 0f to avoid
-                                    // double-transform.
-                                )
-                                else -> Unit
+                                    label = "web-tab-switch",
+                                    modifier = Modifier.fillMaxSize(),
+                                ) { tab ->
+                                    tabStateHolder.SaveableStateProvider(key = tab.name) {
+                                        when (tab) {
+                                            NavTab.Feed -> {
+                                                // TimelineScreen stays mounted in the Feed tab; the
+                                                // WebChannelScreen drill renders as a NavDisplay scene
+                                                // over this whole tab scaffold. Keeping the feed mounted
+                                                // preserves scroll position across channel drills without
+                                                // the SaveableStateProvider serialise/restore cycle that
+                                                // would otherwise mis-anchor the user when the underlying
+                                                // post list mutates while they're away.
+                                                tabStateHolder.SaveableStateProvider(key = "web-feed:__all__") {
+                                                    TimelineScreen(
+                                                        feed = graph.webFeedSource,
+                                                        bookmarks = graph.bookmarkStore,
+                                                        contentPadding = homePadding,
+                                                        showOnlyBookmarked = false,
+                                                        onChannelOpen = onFeedChannelOpen,
+                                                        onOpenComments = onGuestPostClick,
+                                                        homeTapTrigger = homeTapTrigger,
+                                                        onBrandTap = { homeTapTrigger = System.nanoTime() },
+                                                        onSearchClick = { searchOpen = true },
+                                                        topBarBadge = { GuestModeBadge() },
+                                                        onReportClick = { post ->
+                                                            val outcome = graph.guestReportDelegator.report(
+                                                                channelUsername = post.senderHandle?.removePrefix("@"),
+                                                                postId = if (post.id != 0L) post.id else null,
+                                                            )
+                                                            if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
+                                                                outcome == GuestReportDelegator.Outcome.OpenedWeb) {
+                                                                showReportInstruction = true
+                                                            }
+                                                        },
+                                                        canReport = { true },
+                                                        markAsRead = webMarkAsRead,
+                                                        feedOrder = feedOrder,
+                                                        snapScroll = snapScroll,
+                                                        // Reserve room for the "Add channel" FAB that this
+                                                        // scaffold parks at BottomEnd. Without this the
+                                                        // floating "↓ N" unread pill (also BottomEnd, owned
+                                                        // by TimelineScreen) lands directly under the FAB
+                                                        // and is un-tappable. ExtendedFAB ~56.dp + 16.dp
+                                                        // gap → 72.dp. Only the Feed tab needs this; the
+                                                        // Saved-tab call below leaves the default 0.dp
+                                                        // because the FAB is hidden there.
+                                                        unreadPillExtraBottomPadding = 72.dp,
+                                                    )
+                                                }
+                                            }
+
+                                            NavTab.Channels -> WebChannelsScreen(
+                                                graph = graph,
+                                                contentPadding = homePadding,
+                                                onChannelClick = { username ->
+                                                    pushWebChannel(username)
+                                                },
+                                                onAddChannel = { addSheetOpen = true },
+                                                onAddCurated = { username ->
+                                                    deepLinkPrefill = username
+                                                    addSheetOpen = true
+                                                },
+                                            )
+
+                                            NavTab.Saved -> TimelineScreen(
+                                                feed = graph.webFeedSource,
+                                                bookmarks = graph.bookmarkStore,
+                                                contentPadding = homePadding,
+                                                showOnlyBookmarked = true,
+                                                onChannelOpen = onFeedChannelOpen,
+                                                onOpenComments = onGuestPostClick,
+                                                onReportClick = { post ->
+                                                    val outcome = graph.guestReportDelegator.report(
+                                                        channelUsername = post.senderHandle?.removePrefix("@"),
+                                                        postId = if (post.id != 0L) post.id else null,
+                                                    )
+                                                    if (outcome == GuestReportDelegator.Outcome.OpenedTelegram ||
+                                                        outcome == GuestReportDelegator.Outcome.OpenedWeb) {
+                                                        showReportInstruction = true
+                                                    }
+                                                },
+                                                canReport = { true },
+                                                markAsRead = webMarkAsRead,
+                                                feedOrder = feedOrder,
+                                                snapScroll = snapScroll,
+                                            )
+
+                                            NavTab.Profile -> SettingsScreen(
+                                                settings = graph.settingsStore,
+                                                stats = null,
+                                                contentPadding = homePadding,
+                                                onLogout = null,
+                                                onSignIn = { scope.launch { graph.guestMode.setGuest(false) } },
+                                                // Combined wipe-and-refetch so the user sees fresh
+                                                // content immediately, not an empty feed waiting for
+                                                // the next tier-2 sweep. Subscriptions survive.
+                                                onClearWebCache = { graph.webFeedSource.clearCacheAndRefresh() },
+                                                ignoredChannels = graph.ignoredChannels,
+                                                // Guest-mode resolver: walk the in-memory channels
+                                                // list for a row whose username hashes to the given
+                                                // chatId. Cheap — typical subscription set is < 200,
+                                                // resolution happens once per hidden chatId on screen
+                                                // entry, and the StateFlow is already a snapshot the
+                                                // composable holds.
+                                                webChannelByChatId = { chatId ->
+                                                    graph.webFeedSource.channels.value
+                                                        .firstOrNull {
+                                                            dev.lyo.hortay.data.web.WebPostAdapter.stableChatId(
+                                                                it.info.username,
+                                                            ) == chatId
+                                                        }
+                                                        ?.let {
+                                                            dev.lyo.hortay.ui.settings.WebChannelDescriptor(
+                                                                title = it.info.title,
+                                                                username = it.info.username,
+                                                            )
+                                                        }
+                                                },
+                                                userMessages = graph.userMessages,
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
-                    }
-                }
+
+                        entry<WebChannelKey> { key ->
+                            WebChannelScreen(
+                                username = key.username,
+                                graph = graph,
+                                contentPadding = detailContentPadding,
+                                onBack = { popNav() },
+                                onPostClick = onGuestPostClick,
+                                feedOrder = feedOrder,
+                            )
+                        }
+
+                        entry<CommentsKey> { key ->
+                            dev.lyo.hortay.ui.comments.CommentsScreen(
+                                post = key.anchor,
+                                // Guest mode has no TDLib session → no CommentsRepository, no
+                                // PostsRepository.posts to live-sync the anchor against. The screen
+                                // renders the frozen CommentsKey snapshot and shows the
+                                // [webCommentsOverride] empty-state hero in place of the thread body.
+                                repo = null,
+                                feedRepo = null,
+                                onDismiss = { popNav() },
+                                disabledOverride = webCommentsOverride,
+                            )
+                        }
+
+                        // Defensive self-healing entries for the auth-mode keys. They are owned by
+                        // MainScaffold and never pushed here, but the back stack is shared (see
+                        // [AppGraph.backStack] + file KDoc) so a foreign key can briefly survive an
+                        // auth→guest mode flip on the first frame after MainActivity re-routes. NavDisplay
+                        // requires an entry for every key on the stack; these render nothing and pop
+                        // themselves, healing the stack to a valid guest state (the Nav3 equivalent of the
+                        // old guest renderer's defensive `is`-skip).
+                        entry<ChannelKey> { LaunchedEffect(Unit) { popNav() } }
+                        entry<ArchiveKey> { LaunchedEffect(Unit) { popNav() } }
+                        entry<ArchiveSettingsKey> { LaunchedEffect(Unit) { popNav() } }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
         }
-    }
 
-    if (addSheetOpen) {
-        AddChannelSheet(
-            feedSource = graph.webFeedSource,
-            repository = graph.webRepository,
-            client = graph.webClient,
-            locale = locale,
-            // One-shot: clear the prefill on dismiss so a manual reopen lands
-            // back on the clipboard auto-paste path instead of looping the user
-            // through the same deep-link target every time they tap "Add channel".
-            onDismiss = {
-                addSheetOpen = false
-                deepLinkPrefill = null
-            },
-            onSignIn = { scope.launch { graph.guestMode.setGuest(false) } },
-            prefilledUsername = deepLinkPrefill,
-        )
-    }
+        if (addSheetOpen) {
+            AddChannelSheet(
+                feedSource = graph.webFeedSource,
+                repository = graph.webRepository,
+                client = graph.webClient,
+                locale = locale,
+                // One-shot: clear the prefill on dismiss so a manual reopen lands
+                // back on the clipboard auto-paste path instead of looping the user
+                // through the same deep-link target every time they tap "Add channel".
+                onDismiss = {
+                    addSheetOpen = false
+                    deepLinkPrefill = null
+                },
+                onSignIn = { scope.launch { graph.guestMode.setGuest(false) } },
+                prefilledUsername = deepLinkPrefill,
+            )
+        }
 
-    // Cross-channel local search overlay. Lives at the scaffold level (not as
-    // a tab) so it can grab the full screen, including the area normally
-    // occupied by the FloatingNavBar — search-as-an-overlay is the canonical
-    // Material 3 pattern, and pinning it under nav would make the keyboard
-    // collide with results.
-    if (searchOpen) {
-        WebSearchScreen(
-            repository = graph.webRepository,
-            bookmarks = graph.bookmarkStore,
-            onDismiss = { searchOpen = false },
-        )
-    }
+        // Cross-channel local search overlay. Lives at the scaffold level (not as
+        // a tab) so it can grab the full screen, including the area normally
+        // occupied by the FloatingNavBar — search-as-an-overlay is the canonical
+        // Material 3 pattern, and pinning it under nav would make the keyboard
+        // collide with results.
+        if (searchOpen) {
+            WebSearchScreen(
+                repository = graph.webRepository,
+                bookmarks = graph.bookmarkStore,
+                onDismiss = { searchOpen = false },
+            )
+        }
 
-    // Instruction dialog: shown after guest-mode delegation opens Telegram or a
-    // web tab. Tells the user how to complete the report in the external surface.
-    if (showReportInstruction) {
-        ReportInstructionDialog(onDismiss = { showReportInstruction = false })
-    }
+        // Instruction dialog: shown after guest-mode delegation opens Telegram or a
+        // web tab. Tells the user how to complete the report in the external surface.
+        if (showReportInstruction) {
+            ReportInstructionDialog(onDismiss = { showReportInstruction = false })
+        }
     }
     }
 }
