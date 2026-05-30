@@ -3,6 +3,9 @@
 package dev.lyo.hortay.ui.main
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -418,6 +421,20 @@ fun MainScaffold(graph: AppGraph) {
                             rememberSaveableStateHolderNavEntryDecorator(),
                             rememberViewModelStoreNavEntryDecorator(),
                         ),
+                        // Horizontal shared-axis: detail slides in/out from the side, the scene
+                        // below parallaxes a third of the width — so a predictive-back swipe moves
+                        // BOTH layers (not the default shrink-to-centre). No explicit animationSpec
+                        // and no fade: the bare slide transitions stay seekable, so the gesture
+                        // tracks the finger in real time (a spring/fade override froze the seek).
+                        transitionSpec = {
+                            slideInHorizontally { it } togetherWith slideOutHorizontally { -it / 3 }
+                        },
+                        popTransitionSpec = {
+                            slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
+                        },
+                        predictivePopTransitionSpec = {
+                            slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
+                        },
                         entryProvider = entryProvider {
                             entry<HomeKey> {
                                 Scaffold(
