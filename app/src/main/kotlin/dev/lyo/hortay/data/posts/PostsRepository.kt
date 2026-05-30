@@ -1983,21 +1983,24 @@ class PostsRepository(
      * `lastMessage` is the highest-id member (the canonical cold-start case)
      * returned only 5 of 10.
      *
-     * Concurrency: each fragment fires a parallel GetChatHistory; results
-     * are merged synchronously after [awaitAll] so the seen-set has no race.
+     * Concurrency: each fragment fires parallel requests — [TdApi.GetMessageLocally]
+     * on the cold-start (onlyLocal) path, [TdApi.GetChatHistory] on the networked
+     * path — merged synchronously after [awaitAll] so the seen-set has no race.
      * Bounded by distinct album ids in the input — typically 0..2 per batch.
      */
     private suspend fun coalesceAlbumFragments(
         chatId: Long,
         messages: List<TdApi.Message>,
-        // `false` allows a server round-trip (on-demand paths: one chat at a
-        // time, within the 30 req / 30 s budget). `true` makes the surround
-        // fetch an offline TDLib request — mandatory on the cold-start ingest
-        // path, where ~200 channels stream their lastMessage at once and a
-        // networked GetChatHistory x N would trip account-global FLOOD_WAIT
-        // (levlam, tdlib/td#743). Locally-cached siblings still come back;
-        // never-cached ones stay degraded until the snapshot pass or an
-        // on-demand open repairs them.
+        // `false` allows a server round-trip (on-demand paths + Layer-2 visibility
+        // repair: one chat at a time, within the 30 req / 30 s budget). `true` is the
+        // cold-start path: ~200 channels stream their lastMessage at once, so it must
+        // stay strictly offline. Rather than GetChatHistory(onlyLocal=true) — which
+        // reads the chat's in-memory history list, unbuilt before OpenChat, and so
+        // returns just the lastMessage even when siblings are cached — derive the
+        // sibling ids from the channel id-stride invariant and pull them through the
+        // per-message local index ([GetMessageLocally]). That index works on a cold
+        // history cache (same reason snapshot restore uses GetMessage). Members not in
+        // the local DB stay degraded until the Layer-2 visibility repair fetches them.
         onlyLocal: Boolean,
     ): List<TdApi.Message> {
         val fragments = messages
@@ -2005,10 +2008,6 @@ class PostsRepository(
             .groupBy { it.mediaAlbumId }
             .values
             .filter { it.size < TELEGRAM_MAX_ALBUM_SIZE }
-            // Pick one anchor per under-sized group. Surround fetch returns every
-            // sibling sharing the mediaAlbumId, so one query per group is enough;
-            // using the first member as anchor is arbitrary but stable (groupBy
-            // preserves first-seen order).
             .map { it.first() }
         if (fragments.isEmpty()) return messages
 
@@ -2016,18 +2015,8 @@ class PostsRepository(
         val extras = coroutineScope {
             fragments.map { fragment ->
                 async {
-                    val resp = runCatching {
-                        td.send(
-                            TdApi.GetChatHistory(
-                                chatId,
-                                /* fromMessageId */ fragment.id,
-                                /* offset */ -(TELEGRAM_MAX_ALBUM_SIZE - 1),
-                                /* limit */ 2 * TELEGRAM_MAX_ALBUM_SIZE - 1,
-                                /* onlyLocal */ onlyLocal,
-                            ),
-                        )
-                    }.warnUnlessCancelled(TAG, "coalesceAlbum($chatId,${fragment.id})").getOrNull()
-                    resp?.messages.orEmpty().filter { it.mediaAlbumId == fragment.mediaAlbumId }
+                    if (onlyLocal) fetchAlbumSiblingsLocally(chatId, fragment)
+                    else fetchAlbumSiblingsNetworked(chatId, fragment)
                 }
             }.awaitAll()
         }
@@ -2038,6 +2027,52 @@ class PostsRepository(
             for (m in group) if (seen.add(m.id)) merged += m
         }
         return merged
+    }
+
+    /**
+     * Offline sibling recovery for the cold-start path: address each computed
+     * candidate id via [TdApi.GetMessageLocally] (404 → not in the local DB). Capped
+     * concurrency so a batch of albums doesn't spike TDLib's worker thread during the
+     * drain. Keeps only resolved messages that share the fragment's mediaAlbumId,
+     * so deletions/gaps and a back-to-back neighbouring album filter out naturally.
+     */
+    private suspend fun fetchAlbumSiblingsLocally(
+        chatId: Long,
+        fragment: TdApi.Message,
+    ): List<TdApi.Message> = coroutineScope {
+        val semaphore = Semaphore(SNAPSHOT_RESTORE_CONCURRENCY)
+        albumCandidateIds(fragment.id).map { candidateId ->
+            async {
+                semaphore.withPermit {
+                    runCatching { td.send(TdApi.GetMessageLocally(chatId, candidateId)) }
+                        .getOrElse { e -> if (e is kotlin.coroutines.cancellation.CancellationException) throw e else null }
+                        ?.takeIf { it.mediaAlbumId == fragment.mediaAlbumId }
+                }
+            }
+        }.awaitAll().filterNotNull()
+    }
+
+    /**
+     * Networked sibling recovery (on-demand opens + Layer-2 repair): the surround
+     * GetChatHistory window. offset=-(MAX-1), limit=2*MAX-1 spans a full 10-member
+     * album from any anchor position.
+     */
+    private suspend fun fetchAlbumSiblingsNetworked(
+        chatId: Long,
+        fragment: TdApi.Message,
+    ): List<TdApi.Message> {
+        val resp = runCatching {
+            td.send(
+                TdApi.GetChatHistory(
+                    chatId,
+                    /* fromMessageId */ fragment.id,
+                    /* offset */ -(TELEGRAM_MAX_ALBUM_SIZE - 1),
+                    /* limit */ 2 * TELEGRAM_MAX_ALBUM_SIZE - 1,
+                    /* onlyLocal */ false,
+                ),
+            )
+        }.warnUnlessCancelled(TAG, "coalesceAlbum($chatId,${fragment.id})").getOrNull()
+        return resp?.messages.orEmpty().filter { it.mediaAlbumId == fragment.mediaAlbumId }
     }
 
     /**

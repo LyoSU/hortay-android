@@ -45,99 +45,128 @@ class AlbumCoalesceTest {
     private val baseDate = 1_700_000_000
 
     @Test
-    fun `coalesce dispatches surround fetch for partial 2-member batch`() = runTest {
+    fun `cold-start album rehydrates from local per-message index with zero GetChatHistory`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
-        val chatId = -7000L
-        val albumId = 999L
+        val chatId = -7600L
+        val albumId = 555L
+        val stride = 1L shl 20
+        val firstId = 50L * stride
+        val memberIds = (0L..4L).map { firstId + it * stride } // 5 consecutive stride-aligned ids
+        val lastMember = harness.fakeChannelMessage(chatId, memberIds.last(), date = baseDate, mediaAlbumId = albumId)
 
-        // Seed the chat without driving refresh, so [_mainChatIds] stays empty
-        // and the ingest subscription-gate is permissive. (The CHANGELOG entry
-        // for "PostsRepository.ingest() filters by Chat.positions" documents
-        // the empty-set bypass: cold-start ingest must work before refresh
-        // completes.)
-        harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(id = chatId)))
-        harness.advanceUntilIdle()
-
-        // Album has 5 members. We feed only M1 and M2 via UpdateNewMessage; the
-        // debounce window (whatever the constant is) flushes them as a batch
-        // of 2 — a legitimate partial that the old size==1 filter ignored.
-        // Surround fetch is the only mechanism that can rescue the missing
-        // members, so we assert it was dispatched.
-        var surroundCalled = false
-        harness.td.onAny("GetChatHistory") { req ->
-            val q = req as TdApi.GetChatHistory
-            // Distinguish surround fetches (carry a non-zero fromMessageId
-            // pointing at an album member) from any other GetChatHistory
-            // traffic the harness might pick up.
-            if (q.fromMessageId in 1L..5L) surroundCalled = true
-            val members = (1L..5L).map { id ->
-                harness.fakeChannelMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
+        harness.td.onAny("GetMessageLocally") { req ->
+            val q = req as TdApi.GetMessageLocally
+            if (q.chatId == chatId && q.messageId in memberIds && q.messageId != memberIds.last()) {
+                harness.fakeChannelMessage(chatId, q.messageId, date = baseDate, mediaAlbumId = albumId)
+            } else {
+                TdApi.Error(404, "message not found locally")
             }
-            TdApi.Messages(members.size, members.toTypedArray())
         }
 
-        harness.td.emitUpdate(
-            TdApi.UpdateNewMessage(
-                harness.fakeChannelMessage(chatId, 1L, date = baseDate, mediaAlbumId = albumId),
-            ),
-        )
-        harness.td.emitUpdate(
-            TdApi.UpdateNewMessage(
-                harness.fakeChannelMessage(chatId, 2L, date = baseDate, mediaAlbumId = albumId),
-            ),
-        )
+        harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(id = chatId, lastMessage = lastMember)))
         harness.advanceUntilIdle()
 
-        assertEquals(true, surroundCalled,
-            "partial album with 2 members must trigger surround fetch to recover siblings")
-        assertEquals(1, harness.repo.posts.value.size,
-            "the two partial members must collapse into a single merged album card")
+        assertEquals(1, harness.repo.posts.value.size, "the single lastMessage rehydrates into one merged card")
+        assertEquals(5, harness.repo.posts.value.single().albumMessageIds.size, "all 5 members recovered from the local index")
+        assertEquals(0, harness.td.rpcCount("GetChatHistory"), "cold-start local path must not touch GetChatHistory")
+    }
+
+    @Test
+    fun `cold-start local recovery ignores siblings from a different album`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -7700L
+        val albumId = 555L
+        val otherAlbumId = 556L
+        val stride = 1L shl 20
+        val firstId = 80L * stride
+        val memberIds = (0L..4L).map { firstId + it * stride }
+        val lastMember = harness.fakeChannelMessage(chatId, memberIds.last(), date = baseDate, mediaAlbumId = albumId)
+
+        // The local index answers for the candidate ids, but the two members just
+        // below the album belong to a DIFFERENT album (a back-to-back post). They
+        // must be filtered out by the mediaAlbumId guard.
+        harness.td.onAny("GetMessageLocally") { req ->
+            val q = req as TdApi.GetMessageLocally
+            when (q.messageId) {
+                in memberIds -> harness.fakeChannelMessage(chatId, q.messageId, date = baseDate, mediaAlbumId = albumId)
+                firstId - stride, firstId - 2 * stride ->
+                    harness.fakeChannelMessage(chatId, q.messageId, date = baseDate, mediaAlbumId = otherAlbumId)
+                else -> TdApi.Error(404, "not local")
+            }
+        }
+
+        harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(id = chatId, lastMessage = lastMember)))
+        harness.advanceUntilIdle()
+
+        assertEquals(1, harness.repo.posts.value.size)
         assertEquals(
             5, harness.repo.posts.value.single().albumMessageIds.size,
-            "merged card must carry all 5 album members after coalesce surround fetch",
+            "only same-mediaAlbumId siblings merge; the neighbouring album's members are excluded",
         )
     }
 
     @Test
-    fun `coalesce surround fetch window covers full 10-member album`() = runTest {
+    fun `cold-start partial album batch recovers siblings from the local index`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -7000L
+        val albumId = 999L
+        val stride = 1L shl 20
+        val memberIds = (1L..5L).map { it * stride } // stride-aligned
+
+        harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(id = chatId)))
+        harness.advanceUntilIdle()
+
+        harness.td.onAny("GetMessageLocally") { req ->
+            val q = req as TdApi.GetMessageLocally
+            if (q.chatId == chatId && q.messageId in memberIds) {
+                harness.fakeChannelMessage(chatId, q.messageId, date = baseDate, mediaAlbumId = albumId)
+            } else {
+                TdApi.Error(404, "not local")
+            }
+        }
+
+        // Two members arrive live via UpdateNewMessage (debounced into one batch);
+        // the other three are recovered from the per-message local index.
+        harness.td.emitUpdate(TdApi.UpdateNewMessage(harness.fakeChannelMessage(chatId, memberIds[0], date = baseDate, mediaAlbumId = albumId)))
+        harness.td.emitUpdate(TdApi.UpdateNewMessage(harness.fakeChannelMessage(chatId, memberIds[1], date = baseDate, mediaAlbumId = albumId)))
+        harness.advanceUntilIdle()
+
+        assertEquals(1, harness.repo.posts.value.size, "partial members collapse into one merged album card")
+        assertEquals(5, harness.repo.posts.value.single().albumMessageIds.size, "all 5 members recovered from the local index")
+        assertEquals(0, harness.td.rpcCount("GetChatHistory"), "cold-start path must not touch GetChatHistory")
+    }
+
+    @Test
+    fun `networked surround fetch window covers full 10-member album`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
         val chatId = -7100L
         val albumId = 888L
+        val stride = 1L shl 20
+        val members = (1L..10L).map { id -> harness.fakeChannelMessage(chatId, id * stride, date = baseDate, mediaAlbumId = albumId) }
 
-        // 10-member album, lastMessage = M10 (the canonical case for a fresh
-        // album: the newest member is what Chat.lastMessage carries). With
-        // the old window (-5/10) only 5 of 10 members fit; with -9/19 the
-        // entire 10-member span is reachable from any anchor position.
-        val members = (1L..10L).map { id ->
-            harness.fakeChannelMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
-        }
+        harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(id = chatId)))
+        harness.advanceUntilIdle()
 
-        // Register mocks FIRST: under the event-driven ingest design,
-        // handleNewChat fires coalesceAlbumFragments at UpdateNewChat time,
-        // so GetChatHistory must already have a responder.
-        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
         var capturedOffset: Int? = null
         var capturedLimit: Int? = null
         harness.td.onAny("GetChatHistory") { req ->
             val q = req as TdApi.GetChatHistory
-            if (q.fromMessageId in 1L..10L) {
-                capturedOffset = q.offset
-                capturedLimit = q.limit
+            when {
+                q.fromMessageId == 0L -> TdApi.Messages(1, arrayOf(members.last())) // head load: just M10 (partial → triggers surround)
+                else -> {
+                    capturedOffset = q.offset
+                    capturedLimit = q.limit
+                    TdApi.Messages(members.size, members.toTypedArray())
+                }
             }
-            TdApi.Messages(members.size, members.toTypedArray())
         }
 
-        val chat = harness.fakeChannel(id = chatId, lastMessage = members.last())
-        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
-        harness.repo.refresh()
+        harness.repo.loadChannelHistory(chatId, limit = 80)
         harness.advanceUntilIdle()
 
-        assertNotNull(capturedOffset, "surround fetch must run for the album-member lastMessage")
-        assertEquals(-9, capturedOffset,
-            "surround offset must be -(MAX_ALBUM - 1) so a 10-member album with " +
-                "anchor at the highest id can still reach M1..M9")
-        assertEquals(19, capturedLimit,
-            "surround limit must be 2*MAX_ALBUM - 1 to span both directions around any anchor")
+        assertNotNull(capturedOffset, "surround fetch must run for the partial album head load")
+        assertEquals(-9, capturedOffset, "surround offset must be -(MAX-1) to reach M1..M9 from a top-anchored album")
+        assertEquals(19, capturedLimit, "surround limit must be 2*MAX-1 to span both directions around any anchor")
     }
 
     @Test
@@ -150,11 +179,16 @@ class AlbumCoalesceTest {
         // ingest. The GetChatHistory responder must be registered BEFORE
         // emitting the update — under the event-driven design ingest fires
         // at UpdateNewChat time, not at refresh time.
+        val stride = 1L shl 20
         val full = (1L..5L).map { id ->
-            harness.fakeChannelMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
+            harness.fakeChannelMessage(chatId, id * stride, date = baseDate, mediaAlbumId = albumId)
         }
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
-        harness.td.onAny("GetChatHistory") { TdApi.Messages(full.size, full.toTypedArray()) }
+        // Cold-start ingest recovers siblings via the per-message local index.
+        harness.td.onAny("GetMessageLocally") { req ->
+            val q = req as TdApi.GetMessageLocally
+            full.firstOrNull { it.id == q.messageId } ?: TdApi.Error(404, "not local")
+        }
         val chat = harness.fakeChannel(id = chatId, lastMessage = full.last())
         harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
         harness.repo.refresh()
@@ -164,12 +198,13 @@ class AlbumCoalesceTest {
         assertEquals(5, seeded.albumMessageIds.size,
             "preflight: refresh must seed the feed with a complete 5-photo album")
 
-        // Now: UpdateChatLastMessage arrives with a non-anchor member, and
-        // the surround fetch comes up short (transient FLOOD_WAIT, members
+        // Now: UpdateChatLastMessage arrives with a non-anchor member. After
+        // refresh() initialSyncDone is true, so this ingest takes the NETWORKED
+        // path; its surround fetch comes up short (transient FLOOD_WAIT, members
         // aged out of TDLib's local store, network blip). The partial batch
         // [M1, M2, M3] must NOT downgrade the merged 5-photo card.
         val partial = (1L..3L).map { id ->
-            harness.fakeChannelMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
+            harness.fakeChannelMessage(chatId, id * stride, date = baseDate, mediaAlbumId = albumId)
         }
         harness.td.onAny("GetChatHistory") { TdApi.Messages(partial.size, partial.toTypedArray()) }
         harness.td.emitUpdate(TdApi.UpdateChatLastMessage(chatId, full[1], emptyArray()))
@@ -199,13 +234,18 @@ class AlbumCoalesceTest {
         val chatId = -7300L
         val albumId = 666L
 
+        val stride = 1L shl 20
         val full = (1L..5L).map { id ->
-            harness.fakePhotoAlbumMessage(chatId, id, date = baseDate, mediaAlbumId = albumId)
+            harness.fakePhotoAlbumMessage(chatId, id * stride, date = baseDate, mediaAlbumId = albumId)
         }
         // Mocks registered BEFORE UpdateNewChat — handleNewChat ingest
         // fires immediately and triggers coalesceAlbumFragments.
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
-        harness.td.onAny("GetChatHistory") { TdApi.Messages(full.size, full.toTypedArray()) }
+        // Cold-start ingest recovers siblings via the per-message local index.
+        harness.td.onAny("GetMessageLocally") { req ->
+            val q = req as TdApi.GetMessageLocally
+            full.firstOrNull { it.id == q.messageId } ?: TdApi.Error(404, "not local")
+        }
         // Anchor re-ingest path (the fix) performs a GetMessage(chatId, M1)
         // before handing the result back through handleNewMessage. Make the
         // fake respond with the post-edit anchor message so the test passes
@@ -243,7 +283,7 @@ class AlbumCoalesceTest {
             caption = TdApi.FormattedText("edited caption", emptyArray())
         }
         harness.td.emitUpdate(
-            TdApi.UpdateMessageContent(chatId, /* messageId */ 1L, editedAnchorContent),
+            TdApi.UpdateMessageContent(chatId, /* messageId */ 1L * stride, editedAnchorContent),
         )
         harness.advanceUntilIdle()
 
@@ -535,39 +575,24 @@ class AlbumCoalesceTest {
     }
 
     @Test
-    fun `cold-start album coalesce is an offline request to respect the FLOOD_WAIT budget`() = runTest {
-        // On cold start ~200 channels stream their Chat.lastMessage through
-        // ingest. Every one whose lastMessage is an album member would, with a
-        // networked surround fetch, fire a GetChatHistory — a GetChatHistory x N
-        // fan-out during the UpdateNewChat storm that risks account-global
-        // FLOOD_WAIT (levlam, tdlib/td#743: 30 req / 30 s). During the storm the
-        // surround fetch must be onlyLocal=true: siblings TDLib persisted last
-        // session come back for free, and never-cached ones simply stay degraded
-        // until the snapshot pass or an on-demand open repairs them.
+    fun `cold-start album coalesce stays offline to respect the FLOOD_WAIT budget`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
         val chatId = -9200L
         val albumId = 888L
-        var coldStartOnlyLocal: Boolean? = null
-        harness.td.onAny("GetChatHistory") { req ->
-            coldStartOnlyLocal = (req as TdApi.GetChatHistory).onlyLocal
-            TdApi.Messages(0, emptyArray())
-        }
-        // No refresh yet → initialSyncDone is false → cold-start storm window.
+        val stride = 1L shl 20
+        var localCalls = 0
+        harness.td.onAny("GetMessageLocally") { _ -> localCalls++; TdApi.Error(404, "not local") }
+        harness.td.onAny("GetChatHistory") { _ -> error("cold-start coalesce must not issue a networked GetChatHistory") }
+
         harness.td.emitUpdate(
             TdApi.UpdateNewChat(
-                harness.fakeChannel(
-                    id = chatId,
-                    lastMessage = harness.fakePhotoAlbumMessage(chatId, 5L, date = baseDate, mediaAlbumId = albumId),
-                ),
+                harness.fakeChannel(id = chatId, lastMessage = harness.fakePhotoAlbumMessage(chatId, 5L * stride, date = baseDate, mediaAlbumId = albumId)),
             ),
         )
         harness.advanceUntilIdle()
 
-        assertEquals(
-            true,
-            coldStartOnlyLocal,
-            "cold-start album surround fetch must be onlyLocal=true to avoid a FLOOD_WAIT-class GetChatHistory storm",
-        )
+        assertEquals(0, harness.td.rpcCount("GetChatHistory"), "no networked GetChatHistory during the cold-start storm")
+        assertTrue(localCalls > 0, "cold-start coalesce must probe the offline per-message local index")
     }
 }
 
