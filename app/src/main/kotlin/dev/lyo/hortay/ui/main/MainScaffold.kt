@@ -41,7 +41,7 @@ import kotlinx.coroutines.launch
 
 /**
  * How long a channel-open tap is allowed to wait for
- * [PostsRepository.loadChannelHistory] before pushing [NavEntry.Channel]
+ * [PostsRepository.loadChannelHistory] before pushing [ChannelKey]
  * anyway. See the KDoc on `pushChannel` for the rationale on awaiting the
  * prefetch instead of pushing in parallel.
  *
@@ -61,7 +61,7 @@ private const val CHANNEL_PUSH_PREFETCH_TIMEOUT_MS = 400L
  * Sub-composables split out (all in this package):
  *  - [DeepLinkDispatcher]  — collects [AppGraph.deepLinkRouter] events and routes to nav pushes.
  *  - [TabContentSwitcher]  — Feed / Channels / Saved / Profile AnimatedContent crossfade.
- *  - [NavOverlayRenderer]  — top-2 entries of the polymorphic nav stack as overlay layers.
+ *  - [RenderNavKey]        — maps one Navigation 3 detail key to its screen (per `entry<T>`).
  *  - [MainScaffoldDialogs] — invite preview, report flow sheet, user profile sheet.
  */
 @Composable
@@ -83,15 +83,15 @@ fun MainScaffold(graph: AppGraph) {
     // recoveries within a session preserve in-screen state — only the top-level
     // route resets.
     //
-    // Unified polymorphic nav-stack on [AppGraph.nav]. Each push is a new layer
-    // (no dedup on repeated chatIds) — permits unlimited nesting in the
-    // Telegram-Android pattern: channel → comments → channel → comments → …
+    // Detail navigation runs on the Navigation 3 back stack [AppGraph.backStack]
+    // (a SnapshotStateList of [AppNavKey]); each push appends a key — permits
+    // unlimited nesting in the Telegram-Android pattern: channel → comments →
+    // channel → comments → …
     //
-    // Top entry receives back gestures + predictive back. Each entry has its
-    // own stable [NavEntry.entryId] (UUID), used as the key for the per-entry
-    // [SaveableStateProvider] and `viewModel(key)` so each push is an isolated
-    // screen instance with its own scroll position and ViewModel — pushing the
-    // same channel twice produces two independent screens.
+    // NavDisplay owns back gestures + predictive back, and its entry decorators
+    // give every entry its own saveable-state bag and ViewModelStore (cleared on
+    // pop) — replacing the old per-entryId SaveableStateProvider + viewModel(key)
+    // wiring and the per-chatId ViewModelStore leak it caused.
     var selectedTab by remember { mutableStateOf(NavTab.Feed) }
     // Navigation 3 back stack on the graph. Root is always [HomeKey] (the tab scaffold renders
     // beneath the NavDisplay), detail keys push on top, so `size > 1` ⇔ an overlay is showing.
@@ -109,7 +109,7 @@ fun MainScaffold(graph: AppGraph) {
     //
     // Await-prefetch contract for channel-opens. The push waits for the
     // deep history load to settle (up to [CHANNEL_PUSH_PREFETCH_TIMEOUT_MS])
-    // before mounting [NavEntry.Channel]. On warm re-entry the cooldown
+    // before mounting [ChannelKey]. On warm re-entry the cooldown
     // short-circuit inside [PostsRepository.loadChannelHistory] returns
     // immediately, so the tap → push transition is still effectively
     // instant. On cold first entry — the case where
@@ -218,12 +218,11 @@ fun MainScaffold(graph: AppGraph) {
      * resolve. Hortay's product scope is broadcast channels only, so the right
      * answer for groups is the snackbar — same as the deep-link path.
      *
-     * Smart back-stack shortcut: when the destination matches the [NavEntry.Channel]
+     * Smart back-stack shortcut: when the destination matches the [ChannelKey]
      * directly below the current top and no scroll target is requested, this acts
      * as a pop instead of a push. The user is asking to return to a channel that
      * is already one swipe-back away — stacking a duplicate would force a
-     * double-back to exit AND remount the original (the `stack.takeLast(2)` window
-     * in [NavOverlayRenderer] would evict it). Pop preserves both the existing
+     * double-back to exit AND remount the original. Pop preserves both the existing
      * entry's scroll / ViewModel and natural back semantics. Two surfaces hit
      * this uniformly: tap-channel-chip / tap-author-header inside a Comments
      * overlay anchored at a post of its own channel, and tap-forward-source
@@ -310,17 +309,11 @@ fun MainScaffold(graph: AppGraph) {
         selectedTab = NavTab.Feed
     }
 
-    // SaveableStateHolders must live in MainScaffold's @Composable body, NOT inside
-    // the Scaffold content lambda. The Scaffold body owns the tab AnimatedContent;
-    // the nav-overlay sits OUTSIDE that lambda (above the tab chrome and
-    // FloatingNavBar). Declaring the holder inside the Scaffold lambda would put it
-    // out of scope for the overlay's SaveableStateProvider call. One declaration at
-    // this level lets both call-sites capture the same reference.
-    //
-    // [navStateHolder] keys per-NavEntry by its stable UUID `entryId`. Each push
-    // — channel or comments — gets its own SaveableStateProvider scope, so
-    // pushing the same channel twice (legitimate in unlimited-nesting flows)
-    // produces two independent screens with their own scroll positions.
+    // Saveable-state holder for the tab AnimatedContent inside the HomeKey scene. Each tab
+    // (Feed / Channels / Saved / Profile) gets its own SaveableStateProvider scope keyed by
+    // tab name, so rememberSaveable / list-state / scroll-state inside each tab survives the
+    // AnimatedContent mount/unmount cycle. Detail-screen state (channel, comments) is NOT held
+    // here — NavDisplay's entry decorators own per-entry saveable state + ViewModelStore.
     val tabStateHolder = rememberSaveableStateHolder()
 
     // Live cursor holder collected once, mutated in place via diff-apply so

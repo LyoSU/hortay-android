@@ -110,7 +110,7 @@ internal fun TabContentSwitcher(
                             homeTapTrigger = homeTapTrigger,
                             onBrandTap = onHomeTapTriggerBump,
                             // Deep-link scroll targets are now baked into the nav-entry
-                            // itself (NavEntry.Channel.scrollToMessageId). The all-feed
+                            // itself (ChannelKey.scrollToMessageId). The all-feed
                             // TimelineScreen is never the deep-link landing — links push
                             // a channel entry that owns the scroll-target. Pass null here.
                             scrollToMessage = null,

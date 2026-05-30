@@ -1186,7 +1186,7 @@ class PostsRepository(
      * Note: the channel-open push site
      * ([dev.lyo.hortay.ui.main.MainScaffold]'s `pushChannel`) now awaits
      * [loadChannelHistory] with a short timeout BEFORE pushing
-     * [dev.lyo.hortay.data.NavEntry.Channel], so in practice cold cases
+     * [dev.lyo.hortay.data.nav.ChannelKey], so in practice cold cases
      * still mount with a warm slice unless the network is genuinely slow.
      *
      * Read-only against the cooldown map; no side effects.

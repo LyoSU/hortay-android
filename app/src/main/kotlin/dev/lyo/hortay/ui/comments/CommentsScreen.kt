@@ -130,7 +130,7 @@ fun CommentsScreen(
     /**
      * Live feed source so the pinned anchor PostCard reflects the same reactions,
      * view counts and comment counts the user would see in the feed below. Without
-     * this the anchor is rendered from the frozen [NavEntry.Comments] snapshot
+     * this the anchor is rendered from the frozen CommentsKey snapshot
      * (captured at navigation time) — optimistic toggles and incoming
      * `UpdateMessageInteractionInfo` updates go to `PostsRepository._posts` but
      * never flow back to the visible chip on this screen. When the post is no
@@ -168,7 +168,7 @@ fun CommentsScreen(
      * Fired when the user taps the inline reply quote card on the pinned anchor
      * post. Default no-op preserves the previous behaviour; production wiring in
      * MainScaffold routes this through [safelyOpenChannel] with the replied-to
-     * messageId baked into the new NavEntry so the new screen lands at the target
+     * messageId baked into the new ChannelKey so the new screen lands at the target
      * and pulses the highlight there. The feed beneath is never scrolled — same
      * discipline as [TimelineScreen]'s own `onQuotedSourceClick`.
      */
@@ -208,7 +208,7 @@ fun CommentsScreen(
     // opened with so reactions / view count / comment count stay fresh while the
     // user is on this screen. `firstOrNull` keys on the anchor id directly —
     // `PostsRepository` stores the album-coalesced anchor under its first
-    // member's id, and the NavEntry snapshot was minted from the same source, so
+    // member's id, and the CommentsKey snapshot was minted from the same source, so
     // ids match by construction. `distinctUntilChanged` is implicit via
     // [collectAsStateWithLifecycle] keyed on the post identity; re-keying on
     // post.id keeps a fresh subscription per pushComments(...). When the live
@@ -218,7 +218,7 @@ fun CommentsScreen(
     val anchorChatId = post.chatId
     val anchorId = post.id
     // Skip the live-anchor subscription when there's no PostsRepository to read
-    // from (guest mode). The frozen NavEntry snapshot is the only truth there;
+    // from (guest mode). The frozen CommentsKey snapshot is the only truth there;
     // reactions / view counts can't move because the underlying flow doesn't
     // exist, and Telegram's t.me/s/ rendering doesn't report interaction info
     // we could refresh from anyway.
@@ -522,7 +522,7 @@ fun CommentsScreen(
                 // Render the live feed entry when available so optimistic toggles
                 // and server-driven UpdateMessageInteractionInfo updates flow into
                 // this card without remounting the screen. Falls back to the
-                // frozen [NavEntry] snapshot for posts that aren't in the feed
+                // frozen CommentsKey snapshot for posts that aren't in the feed
                 // window.
                 // clickable = false (tapping the anchor would re-open this very screen),
                 // but actionsEnabled = true so long-press still surfaces the reaction

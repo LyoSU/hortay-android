@@ -130,7 +130,7 @@ fun SettingsScreen(
      */
     userMessages: UserMessageBus? = null,
     /**
-     * Opens the post-archive settings screen. Wired in TDLib mode via NavEntry.ArchiveSettings;
+     * Opens the post-archive settings screen. Wired in TDLib mode via ArchiveSettingsKey;
      * null in guest mode (archive requires an authenticated session).
      */
     onNavigateToArchiveSettings: (() -> Unit)? = null,

@@ -218,7 +218,7 @@ internal fun DeepLinkDispatcher(
                 // Deep-link to a specific channel: push a Channel entry — Back
                 // returns the user to whichever tab they were on, not a forced
                 // reset. The optional message anchor rides
-                // [NavEntry.Channel.scrollToMessageId] so the channel screen
+                // [ChannelKey.scrollToMessageId] so the channel screen
                 // lands on the linked post on first frame.
                 onPushChannel(targetChat, tdMessageId)
             } catch (t: Throwable) {

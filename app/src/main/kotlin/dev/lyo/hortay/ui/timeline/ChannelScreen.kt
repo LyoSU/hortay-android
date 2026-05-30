@@ -564,7 +564,7 @@ fun ChannelScreen(
                         pendingScrollToMessage = chatId to r.replyToMessageId
                     } else {
                         // Different channel: drill in WITH the replied-to messageId
-                        // baked into the new NavEntry.Channel — the freshly mounted
+                        // baked into the new ChannelKey — the freshly mounted
                         // ChannelScreen lands at the target and pulses the highlight
                         // there. Without the messageId the new screen would open cold
                         // (newest-first) and the user would have to scroll-hunt for
@@ -715,7 +715,7 @@ fun ChannelScreen(
                 // history when the channel has surfaced in the merged feed,
                 // helped by `pushChannel` which awaits
                 // [PostsRepository.loadChannelHistory] before pushing
-                // [NavEntry.Channel]. Without a grace window
+                // [ChannelKey]. Without a grace window
                 // [SkeletonFeed] paints for one or two frames and unmounts
                 // — read as flicker. Gated on [SCREEN_MOUNT_GRACE_MS]
                 // (120 ms) so fast resolves paint zero skeleton; only
