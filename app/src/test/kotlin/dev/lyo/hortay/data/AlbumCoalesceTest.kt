@@ -1,5 +1,8 @@
 package dev.lyo.hortay.data
 
+import dev.lyo.hortay.data.posts.ALBUM_ID_STRIDE
+import dev.lyo.hortay.data.posts.TELEGRAM_MAX_ALBUM_SIZE
+import dev.lyo.hortay.data.posts.albumCandidateIds
 import dev.lyo.hortay.testutil.PostsRepositoryTestHarness
 import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
@@ -494,6 +497,41 @@ class AlbumCoalesceTest {
             (card.content as PostContent.PhotoAlbum).items.size,
             "merged card content must carry all 5 items, not 1",
         )
+    }
+
+    @Test
+    fun `albumCandidateIds derives consecutive sibling ids around the anchor`() {
+        // Channel message id = serverId << 20. A 5-member album posted atomically
+        // has server ids S..S+4, i.e. client ids that differ by exactly 1 << 20.
+        // Anchor on the last member (the Chat.lastMessage case); siblings sit below.
+        val stride = 1L shl 20
+        val anchor = 100L * stride
+        val ids = albumCandidateIds(anchor).toSet()
+
+        assertTrue((anchor - stride) in ids, "must include the immediately-lower sibling")
+        assertTrue((anchor - 4 * stride) in ids, "must reach 4 members down (5-member album, last anchored)")
+        assertTrue((anchor + stride) in ids, "must include the immediately-higher sibling (anchor not guaranteed last)")
+        assertTrue(anchor !in ids, "anchor itself is already in hand; not a candidate")
+        assertEquals(2 * (TELEGRAM_MAX_ALBUM_SIZE - 1), ids.size, "9 below + 9 above for MAX=10")
+    }
+
+    @Test
+    fun `albumCandidateIds clamps to positive ids near the id-space floor`() {
+        val stride = 1L shl 20
+        val anchor = 2L * stride // only 1 valid sibling below before crossing 0
+        val ids = albumCandidateIds(anchor)
+        assertTrue(ids.all { it > 0L }, "no zero or negative candidate ids")
+        assertTrue((anchor - stride) in ids)
+        assertEquals(10, ids.size, "one below-sibling survives the clamp, plus all 9 above")
+    }
+
+    @Test
+    fun `albumCandidateIds at the minimum anchor keeps only the above-siblings`() {
+        val stride = 1L shl 20
+        val ids = albumCandidateIds(stride) // anchor == ALBUM_ID_STRIDE: every below-offset is <= 0
+        assertTrue(ids.all { it > 0L }, "no zero or negative candidate ids")
+        assertEquals(TELEGRAM_MAX_ALBUM_SIZE - 1, ids.size, "only the 9 above-siblings remain")
+        assertTrue((stride + stride) in ids, "the immediately-higher sibling is present")
     }
 
     @Test

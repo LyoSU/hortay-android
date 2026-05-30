@@ -2707,14 +2707,7 @@ class PostsRepository(
         // to foreground re-entry.
         const val REFRESH_STALE_MS = 60_000L
 
-        /**
-         * Hard cap on members per Telegram album, per the protocol. Drives
-         * [coalesceAlbumFragments]: a batch with exactly this many members of one
-         * `mediaAlbumId` is provably complete and skips the surround fetch;
-         * anything smaller is potentially partial and triggers a rescue query.
-         * Source: TDLib `sendMessageAlbum` spec.
-         */
-        const val TELEGRAM_MAX_ALBUM_SIZE = 10
+        // TELEGRAM_MAX_ALBUM_SIZE promoted to top-level — see below the class closing brace.
 
         /**
          * How long [handleNewMessage] waits for the rest of an album's
@@ -2775,6 +2768,49 @@ class PostsRepository(
 internal fun TdApi.Chat.isChannel(): Boolean {
     val type = this.type
     return type is TdApi.ChatTypeSupergroup && type.isChannel
+}
+
+/**
+ * Hard cap on members per Telegram album, per the protocol. Drives
+ * [PostsRepository.coalesceAlbumFragments]: a batch with exactly this many members of one
+ * `mediaAlbumId` is provably complete and skips the surround fetch;
+ * anything smaller is potentially partial and triggers a rescue query.
+ * Source: TDLib `sendMessageAlbum` spec.
+ *
+ * Declared at top level (not inside [PostsRepository]'s `private companion object`) so
+ * unit tests in the same module can reference it without reflection.
+ */
+internal const val TELEGRAM_MAX_ALBUM_SIZE = 10
+
+/**
+ * TDLib client-side message id for a channel/supergroup message is the server
+ * message id shifted left 20 bits (`serverId shl 20`). Album members are posted
+ * atomically and carry consecutive server ids, so siblings of an album member
+ * sit at exactly `anchor.id ± k * ALBUM_ID_STRIDE`. Load-bearing for the
+ * cold-start local rehydration in [PostsRepository.coalesceAlbumFragments]: it
+ * lets us address siblings by computed id through the per-message local index
+ * ([TdApi.GetMessageLocally]) instead of [TdApi.GetChatHistory], which needs the
+ * chat's in-memory history list — unbuilt before OpenChat on cold start.
+ */
+internal const val ALBUM_ID_STRIDE: Long = 1L shl 20
+
+/**
+ * Candidate sibling ids for an album member at [anchorId]: up to
+ * `2 * (TELEGRAM_MAX_ALBUM_SIZE - 1)` ids straddling the anchor in both
+ * directions (the anchor is not guaranteed to be the first or last member),
+ * excluding the anchor itself and any non-positive id. Over-generated on
+ * purpose — callers fetch each via [TdApi.GetMessageLocally] and keep only the
+ * ones that resolve AND share the anchor's `mediaAlbumId`, so deletions, gaps,
+ * and a neighbouring album posted back-to-back all filter out naturally.
+ */
+internal fun albumCandidateIds(anchorId: Long): List<Long> {
+    val span = TELEGRAM_MAX_ALBUM_SIZE - 1
+    return ((-span)..span)
+        .asSequence()
+        .filter { it != 0 }
+        .map { anchorId + it * ALBUM_ID_STRIDE }
+        .filter { it > 0L }
+        .toList()
 }
 
 /**
