@@ -1,13 +1,20 @@
 package dev.lyo.hortay.ui.main
 
+import androidx.compose.animation.core.animate
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.unit.Velocity
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 /**
  * Twitter / Instagram floating-bar pattern, extracted from the two screens
@@ -35,6 +42,7 @@ class FloatingTopBarBehavior(
     val nestedScroll: NestedScrollConnection,
 )
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun rememberFloatingTopBarBehavior(
     enabled: () -> Boolean = { true },
@@ -42,8 +50,17 @@ fun rememberFloatingTopBarBehavior(
     val fullHeightPx = remember { mutableFloatStateOf(0f) }
     val offsetPx = remember { mutableFloatStateOf(0f) }
     val enabledState = rememberUpdatedState(enabled)
-    val nestedScroll = remember(fullHeightPx, offsetPx) {
+    // Settle animation: at the end of a gesture the bar snaps to fully open or fully closed so it
+    // never rests half-hidden. Runs on the composition scope (not the nested-scroll dispatch) so a
+    // new grab can cancel it; rides MotionScheme so the snap matches the app's motion language.
+    val scope = rememberCoroutineScope()
+    val settleSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val nestedScroll = remember(fullHeightPx, offsetPx, scope, settleSpec) {
         object : NestedScrollConnection {
+            // The in-flight settle animation, cancelled the moment the user grabs the scroll again
+            // so the finger always wins over the snap.
+            var settleJob: Job? = null
+
             // enter-always hide/reveal driven entirely in onPreScroll, symmetric in both
             // directions: scroll the content up (finger up, `available.y < 0`) and the bar slides
             // out one pixel per pixel; scroll down (finger down, `available.y > 0`) and it slides
@@ -60,6 +77,7 @@ fun rememberFloatingTopBarBehavior(
             // it never steals scroll from a list that is already at rest against the bar.
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (!enabledState.value()) return Offset.Zero
+                settleJob?.cancel()
                 val limit = -fullHeightPx.floatValue
                 if (limit == 0f) return Offset.Zero
                 val previous = offsetPx.floatValue
@@ -67,6 +85,27 @@ fun rememberFloatingTopBarBehavior(
                 if (next == previous) return Offset.Zero
                 offsetPx.floatValue = next
                 return Offset(0f, next - previous)
+            }
+
+            // Gesture end (drag release always flings, even at ~0 velocity): snap the bar to the
+            // nearer edge so it never lingers partly hidden. Past the half-way point → close, else
+            // → open. A no-op when already settled (target == current), so it costs nothing for the
+            // common mid-list fling where the bar is already fully open or fully closed.
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                val full = fullHeightPx.floatValue
+                if (full > 0f) {
+                    val current = offsetPx.floatValue
+                    val target = if (current <= -full / 2f) -full else 0f
+                    if (current != target) {
+                        settleJob?.cancel()
+                        settleJob = scope.launch {
+                            animate(current, target, animationSpec = settleSpec) { value, _ ->
+                                offsetPx.floatValue = value
+                            }
+                        }
+                    }
+                }
+                return Velocity.Zero
             }
         }
     }
