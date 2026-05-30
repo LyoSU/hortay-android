@@ -1154,6 +1154,13 @@ fun TimelineScreen(
                             val ids = focusedPost.albumMessageIds
                                 .ifEmpty { listOf(focusedPost.id) }
                             tdlibRepo.viewMessages(focusChat, ids)
+                            // Layer-2 album repair: if the focused card is a degraded album (one
+                            // member, mediaAlbumId set — the cold-start residual the local index
+                            // couldn't fill), request a throttled networked rebuild. No-op for
+                            // healthy/non-album posts.
+                            if (focusedPost.mediaAlbumId != 0L && focusedPost.albumMessageIds.size <= 1) {
+                                tdlibRepo.requestAlbumRepair(focusChat, focusedPost.id, focusedPost.mediaAlbumId)
+                            }
                         }
                     }
             } finally {
