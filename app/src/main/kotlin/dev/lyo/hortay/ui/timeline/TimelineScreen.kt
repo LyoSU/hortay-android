@@ -13,10 +13,14 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.main.BrandRow
+import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -788,13 +792,13 @@ fun TimelineScreen(
     ) {
         androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
     }
-    // Pinned single-row feed bar. This behaviour only morphs the container colour on scroll
-    // (background → surfaceContainer); the bar does NOT hide on scroll. The previous scroll-hide
-    // (a custom NestedScrollConnection that shrank the topBar slot every frame) braked the scroll
-    // and re-padded the heavy feed body each frame, and its geometry entangled with the
-    // OldestUnreadFirst boundary landing. A slim pinned bar (see [TimelineTopBar]) is smoother and
-    // leaves the scroll / anchor machinery untouched.
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
+    // Twitter-style collapsing header, built on Material's ready-made enter-always scroll
+    // behaviour: it owns the (smooth, snap-on-settle, fling-aware, scroll-direction-based) collapse
+    // maths and works the same in both feed orders because it reacts to raw screen-space scroll
+    // deltas — so no custom NestedScrollConnection / reverse-awareness is needed. The header
+    // (brand row over the folder tabs) collapses together by applying the behaviour's
+    // `state.heightOffset` to its measured height; see the topBar slot below.
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
     // Folder tabs shown in the header. Hoisted above the Scaffold so the single-row header (in the
     // topBar slot) can render them inline next to the brand. A folder is hidden when its resolved
@@ -1386,73 +1390,87 @@ fun TimelineScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            // Two-zone bar:
-            //   1. Persistent status-bar strip — painted with the app background so the system
-            //      status-bar text stays legible. Owns the status-bar inset; [TimelineTopBar]
-            //      below passes WindowInsets(0) so it doesn't double-pad.
-            //   2. The pinned [TimelineTopBar] (slim single-row brand + folder tabs). It no longer
-            //      slides on scroll — see the scrollBehavior KDoc above for why the collapse was
-            //      removed — so no layout-shrinker / offset plumbing is needed here.
+            // Twitter-style collapsing header. Zone 1 (status strip) stays pinned. Zone 2 — the
+            // brand row OVER the folder tabs — collapses together on scroll-down and reappears on
+            // scroll-up, driven by Material's ready-made enter-always [scrollBehavior]: we just
+            // shrink the measured height by its `state.heightOffset` (0 → -fullHeight) and place the
+            // content at that offset. The feed body tracks it through Scaffold padding, so the
+            // header never intercepts the scroll, and Material owns the snap-on-settle / fling /
+            // scroll-direction (and reverse-order) maths — no custom connection.
             Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
                 Spacer(modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsTopHeight(WindowInsets.statusBars)
                 )
-                // Single slim row: brand wordmark (re-tap = home/scroll-to-top), the
-                // horizontally-scrollable folder tabs, and the optional search action. One row
-                // instead of a brand bar + a separate folder row keeps feed chrome minimal, and it
-                // rests on `background` (no scrolled-grey morph) so it reads as part of the feed.
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = if (showOnlyBookmarked) {
-                            stringResource(R.string.timeline_saved_tab)
-                        } else {
-                            "Hortay"
+                Column(
+                    modifier = Modifier
+                        .clipToBounds()
+                        .layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints)
+                            // Allow the behaviour to collapse the header by its full measured height.
+                            scrollBehavior.state.heightOffsetLimit = -placeable.height.toFloat()
+                            val offset = scrollBehavior.state.heightOffset.roundToInt()
+                            val height = (placeable.height + offset).coerceAtLeast(0)
+                            layout(placeable.width, height) { placeable.place(0, offset) }
                         },
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 1,
-                        modifier = Modifier.clickable(role = Role.Button, onClick = onBrandTap),
-                    )
+                ) {
+                    // Brand wordmark (whole row is the home / scroll-to-top tap target) + search.
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(role = Role.Button, onClick = onBrandTap),
+                        ) {
+                            if (showOnlyBookmarked) {
+                                Text(
+                                    text = stringResource(R.string.timeline_saved_tab),
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    maxLines = 1,
+                                )
+                            } else {
+                                BrandRow()
+                            }
+                        }
+                        onSearchClick?.let { handler ->
+                            IconButton(onClick = handler) {
+                                Symbol(
+                                    name = "search",
+                                    contentDescription = stringResource(R.string.web_search_action),
+                                )
+                            }
+                        }
+                        topBarBadge?.invoke()
+                    }
+                    // Folder tabs below the brand — full width so taps land cleanly, scrolls
+                    // horizontally on its own.
                     if (!showOnlyBookmarked && hasFolderUi) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            FoldersBar(
-                                selected = scope_filter,
-                                folders = headerTabs,
-                                showArchive = archivedChatIds.isNotEmpty(),
-                                onSelected = { sel ->
-                                    when (sel) {
-                                        FilterScope.All -> {
-                                            selectedFolderId = null
-                                            archiveSelected = false
-                                        }
-                                        FilterScope.Archive -> {
-                                            selectedFolderId = null
-                                            archiveSelected = true
-                                        }
-                                        is FilterScope.Folder -> {
-                                            selectedFolderId = sel.id
-                                            archiveSelected = false
-                                        }
+                        FoldersBar(
+                            modifier = Modifier.fillMaxWidth(),
+                            selected = scope_filter,
+                            folders = headerTabs,
+                            showArchive = archivedChatIds.isNotEmpty(),
+                            onSelected = { sel ->
+                                when (sel) {
+                                    FilterScope.All -> {
+                                        selectedFolderId = null
+                                        archiveSelected = false
                                     }
-                                },
-                            )
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
+                                    FilterScope.Archive -> {
+                                        selectedFolderId = null
+                                        archiveSelected = true
+                                    }
+                                    is FilterScope.Folder -> {
+                                        selectedFolderId = sel.id
+                                        archiveSelected = false
+                                    }
+                                }
+                            },
+                        )
                     }
-                    onSearchClick?.let { handler ->
-                        IconButton(onClick = handler) {
-                            Symbol(
-                                name = "search",
-                                contentDescription = stringResource(R.string.web_search_action),
-                            )
-                        }
-                    }
-                    topBarBadge?.invoke()
                 }
             }
         },
