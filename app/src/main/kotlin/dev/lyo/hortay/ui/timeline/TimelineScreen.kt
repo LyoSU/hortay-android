@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -1797,6 +1798,15 @@ fun TimelineScreen(
                 }) + fadeOut(pillEffects),
                 modifier = Modifier
                     .align(if (pillAtTop) Alignment.TopCenter else Alignment.BottomCenter)
+                    // Bottom-anchored pill (OldestUnreadFirst) rides the collapsing nav-bar:
+                    // it translates down by exactly the bottom inset the bar vacates, so when
+                    // the bar is fully hidden the pill rests 16.dp above the screen edge —
+                    // visible, never off-screen — and rises back in lockstep on scroll-up. The
+                    // top pill (Newest) stays put: there is no bottom bar beneath it to follow.
+                    .graphicsLayer {
+                        translationY = if (pillAtTop) 0f
+                        else (navBarCollapse?.floatValue ?: 0f) * contentPadding.calculateBottomPadding().toPx()
+                    }
                     .padding(
                         top = if (pillAtTop) pillTopPadding else 0.dp,
                         bottom = if (pillAtTop) 0.dp else pillBottomPadding,
@@ -1883,6 +1893,13 @@ fun TimelineScreen(
                     exit = slideOutVertically(pillSpatial) { it } + fadeOut(pillEffects),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
+                        // Rides the collapsing nav-bar in lockstep with the NewPostsPill above:
+                        // translate down by the inset the bar vacates so the "next unread" FAB
+                        // follows it to the screen edge instead of floating high once it hides.
+                        .graphicsLayer {
+                            translationY = (navBarCollapse?.floatValue ?: 0f) *
+                                contentPadding.calculateBottomPadding().toPx()
+                        }
                         .padding(
                             end = 16.dp,
                             bottom = pillBottomPadding + unreadPillExtraBottomPadding,
