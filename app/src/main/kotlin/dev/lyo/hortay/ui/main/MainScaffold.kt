@@ -297,9 +297,6 @@ fun MainScaffold(graph: AppGraph) {
     // tab scaffold under HomeKey owns the FloatingNavBar inset itself; details only need to clear
     // the system navigation bar. CommentsScreen / ArchiveScreen are full Scaffolds and ignore it.
     val detailContentPadding = WindowInsets.navigationBars.asPaddingValues()
-    // Fast spatial spec for the forward/pop commit transitions so the entering scene settles
-    // quickly and predictive back (gated on the scene reaching RESUMED) becomes available sooner.
-    val navFastSpatial = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.IntOffset>()
 
     // Predictive back for the detail stack is owned by NavDisplay now (it animates the leaving
     // entry and reveals the one below during the gesture — what the hand-rolled top-2 renderer
@@ -422,22 +419,22 @@ fun MainScaffold(graph: AppGraph) {
                         // below parallaxes a third of the width — so a predictive-back swipe moves
                         // BOTH layers (not the default shrink-to-centre).
                         //
-                        // Forward/pop (commit) transitions ride the fast spatial spec so the
-                        // entering scene SETTLES quickly: Nav3 only enables predictive back once
-                        // the scene reaches RESUMED (its enter transition finished), so a slow
-                        // settle leaves a window where an immediate back-swipe can't be scrubbed.
-                        // A snappy finite-ish spec shrinks that window.
-                        //
-                        // The predictive spec stays BARE (no explicit animationSpec, no fade) — the
-                        // plain slide is seekable so the gesture tracks the finger; a spring/fade
-                        // override there had frozen the seek.
+                        // All three specs are left BARE — no explicit animationSpec. This is the
+                        // canonical Navigation 3 configuration (see the official `animate-destinations`
+                        // sample) and it keeps `predictivePopTransitionSpec` seekable, so the gesture
+                        // tracks the finger smoothly from the first pixel. An earlier attempt to ride
+                        // the commit specs on `motionScheme.fastSpatialSpec` made the predictive seek
+                        // jerk at the start of the drag — a fast spring, when scrubbed by raw finger
+                        // progress, has a non-linear response near 0; the default bare-slide spring
+                        // scrubs cleanly. Do NOT add a spec back here to "settle faster": predictive
+                        // back is gated on the entering scene reaching RESUMED, and trading smooth
+                        // scrubbing for a slightly-shorter arm-window is the wrong call (see commit
+                        // history for the reverted fastSpatialSpec experiment).
                         transitionSpec = {
-                            slideInHorizontally(navFastSpatial) { it } togetherWith
-                                slideOutHorizontally(navFastSpatial) { -it / 3 }
+                            slideInHorizontally { it } togetherWith slideOutHorizontally { -it / 3 }
                         },
                         popTransitionSpec = {
-                            slideInHorizontally(navFastSpatial) { -it / 3 } togetherWith
-                                slideOutHorizontally(navFastSpatial) { it }
+                            slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
                         },
                         predictivePopTransitionSpec = {
                             slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }

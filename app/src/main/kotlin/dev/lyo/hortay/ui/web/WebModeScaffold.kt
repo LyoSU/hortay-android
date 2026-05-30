@@ -307,10 +307,6 @@ fun WebModeScaffold(graph: AppGraph) {
     // a detail only needs to clear the system navigation bar. CommentsScreen is a full Scaffold
     // and ignores this.
     val detailContentPadding = WindowInsets.navigationBars.asPaddingValues()
-    // Fast spatial spec for the forward/pop commit transitions so the entering scene settles
-    // quickly and predictive back (gated on the scene reaching RESUMED) arms sooner — same
-    // calibration MainScaffold uses.
-    val navFastSpatial = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.IntOffset>()
 
     LinkAwareScaffold(graph) {
     CompositionLocalProvider(
@@ -338,16 +334,15 @@ fun WebModeScaffold(graph: AppGraph) {
                         rememberSaveableStateHolderNavEntryDecorator(),
                         rememberViewModelStoreNavEntryDecorator(),
                     ),
-                    // Horizontal shared-axis identical to MainScaffold: forward/pop ride the fast
-                    // spatial spec (quick settle → predictive back arms sooner); the predictive
-                    // spec stays BARE so the gesture remains seekable and tracks the finger.
+                    // Horizontal shared-axis identical to MainScaffold: all three specs BARE (no
+                    // explicit animationSpec) — the canonical Nav3 config that keeps the predictive
+                    // seek smooth and finger-tracked. See MainScaffold for why a spring spec here
+                    // jerks the predictive drag.
                     transitionSpec = {
-                        slideInHorizontally(navFastSpatial) { it } togetherWith
-                            slideOutHorizontally(navFastSpatial) { -it / 3 }
+                        slideInHorizontally { it } togetherWith slideOutHorizontally { -it / 3 }
                     },
                     popTransitionSpec = {
-                        slideInHorizontally(navFastSpatial) { -it / 3 } togetherWith
-                            slideOutHorizontally(navFastSpatial) { it }
+                        slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
                     },
                     predictivePopTransitionSpec = {
                         slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
