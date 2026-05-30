@@ -18,15 +18,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.icons.Symbol
@@ -46,17 +51,29 @@ internal val LocalShowFullPost = compositionLocalOf<(() -> Unit)?> { null }
  * surface — feed, channel, comments, full post — as padded [BlockBox] composables. A post
  * carrying a block is split into alternating plain-text / block segments stacked in a Column.
  *
- * Clamping is PER ELEMENT, not post-wide: a plain-text segment flows through [renderer] (the
- * caller's [maxLines] line clamp + "Показати більше"), and each quote/code box collapses on
- * its own via its chevron. A single post-level clamp across these mixed composables can only
- * cut by pixel height — slicing a quote mid-line — or reactively count lines, which flickers
- * on first layout; per-element clamping instead keeps every cut on a whole-line boundary and
- * leaves the quote chevrons with no outer clamp to fight. This is the Telegram-reader model:
- * one "Показати більше" on the body text, a chevron on each long quote.
+ * Clamping is POST-WIDE, not per-element: on a clamped surface (finite [maxLines]) the whole
+ * segmented column is wrapped in [ClampedPost], which caps it to ~`maxLines × line-height` and
+ * shows exactly ONE "Показати більше". Plain-text segments render uncapped (the outer clamp is
+ * the only clamp), so the post reads as a single unit and the cut can fall anywhere — including
+ * inside a quote box — matching Telegram.
  *
- * Posts without any block skip segmentation and render as one [renderer] call. Top-level
- * blocks only — a nested block (rare) still renders inline within its parent box via
- * [LinkAwareText]'s draw-behind path.
+ * Why post-wide and not per-element: per-element clamping (each plain-text run flowing through
+ * [renderer] with its own [maxLines] + its own "Показати більше") splits one post into N+1
+ * toggles once a block divides the body, and the collapsed height balloons to `18 × (N+1)`
+ * lines instead of 18 total — a long post with two quotes showed two or three "Показати більше"
+ * buttons. (Tried that — see commit `32f2472`; it cut on clean line boundaries but fragmented
+ * the toggle.) The earlier post-wide attempt (`5cc8242`) was reverted for two reasons, both
+ * fixed here:
+ *   1. The pixel-height cut fell mid-line inside a quote box — now ACCEPTED (Telegram does it).
+ *   2. The outer clamp fought each quote's own expand chevron (expanding a quote got re-clipped)
+ *      — now [BlockBox] is rendered NON-INTERACTIVE while the post is collapsed (no chevron;
+ *      the single post-level "Показати більше" is the only affordance). Chevrons come back only
+ *      once the post is expanded inline or on a full-reading surface, where there is no clamp
+ *      left to fight.
+ *
+ * Posts without any block skip segmentation and render as one [renderer] call (the cheap
+ * line-clamped path). Top-level blocks only — a nested block (rare) still renders inline within
+ * its parent box via [LinkAwareText]'s draw-behind path.
  */
 @Composable
 fun RichText(
@@ -76,28 +93,116 @@ fun RichText(
         return
     }
 
-    // Block present → padded composable blocks, each clamped on its own by [maxLines]
-    // (text via [renderer], quote/code via [BlockBox]'s chevron). Whole-line cuts, no
-    // outer clamp to fight the per-quote collapse.
     val segments = remember(src, blocks) { buildSegments(src, blocks) }
-    Column {
-        segments.forEachIndexed { idx, segment ->
-            // Segments are individually edge-trimmed, so spacing is a single consistent
-            // gap rather than whatever stray newlines the source happened to carry.
-            if (idx > 0) Spacer(Modifier.height(8.dp))
-            val block = segment.block
-            if (block != null) {
-                BlockBox(segment.text, style, block, maxLines)
-            } else {
-                renderer(rememberRenderableText(segment.text), style, maxLines)
+    // [interactive] = "the post is fully shown" (expanded inline, or a full-reading surface):
+    // plain-text segments render uncapped and quote/code boxes get their own collapse chevron.
+    // When false (clamped preview) blocks are frozen previews — no chevron to fight the outer
+    // [ClampedPost] clamp. Plain-text segments ALWAYS render at MAX so they never grow a second
+    // "Показати більше" of their own; the only toggle is post-level.
+    val segmentsContent: @Composable (interactive: Boolean) -> Unit = { interactive ->
+        Column {
+            segments.forEachIndexed { idx, segment ->
+                // Segments are individually edge-trimmed, so spacing is a single consistent
+                // gap rather than whatever stray newlines the source happened to carry.
+                if (idx > 0) Spacer(Modifier.height(8.dp))
+                val block = segment.block
+                if (block != null) {
+                    BlockBox(
+                        text = segment.text,
+                        style = style,
+                        blockStyle = block,
+                        interactive = interactive,
+                    )
+                } else {
+                    renderer(rememberRenderableText(segment.text), style, Int.MAX_VALUE)
+                }
             }
+        }
+    }
+
+    if (maxLines == Int.MAX_VALUE) {
+        // Full-reading surface (open post / comments): no outer clamp, blocks interactive.
+        segmentsContent(true)
+    } else {
+        // Clamped surface (feed / channel / caption): one post-level height clamp + ONE toggle.
+        ClampedPost(key = src, maxLines = maxLines, style = style) { expanded ->
+            segmentsContent(expanded)
         }
     }
 }
 
-/** Lines a block shows collapsed: a fixed few on any clamped surface (feed / channel /
- *  caption) and for an explicitly-collapsible quote, so no block ever previews as a tall
- *  10+ line wall. A full post / comments surface shows a non-collapsible block whole. */
+/**
+ * Caps [content] to roughly [maxLines] worth of height and reveals it whole with a single
+ * "Показати більше". Used to clamp a segmented post (text + quote/code boxes) as ONE unit on a
+ * clamped surface, where there is no single backing [Text] to carry a line clamp. Measures the
+ * content's full height, clips to the budget when it overflows, and shows one post-level toggle.
+ *
+ * Height, not line count: the content is a column of mixed composables, so a per-line clamp is
+ * unavailable — the budget is `maxLines × line-height`, which lands on the body's line boundary
+ * for plain text and lets the cut fall anywhere else (including inside a quote box), matching
+ * Telegram's "show more" feel.
+ *
+ * [content] receives whether the post is expanded; it forwards that as the blocks' `interactive`
+ * flag so quote/code chevrons stay dormant while the post is a clamped preview (they would
+ * otherwise grow content the outer clip immediately hides — the bug that reverted the first
+ * post-wide clamp). Tapping the toggle opens the full post via [LocalShowFullPost] when present
+ * (feed / channel), else expands in place (guest mode / captions).
+ */
+@Composable
+private fun ClampedPost(
+    key: Any,
+    maxLines: Int,
+    style: TextStyle,
+    content: @Composable (expanded: Boolean) -> Unit,
+) {
+    var expanded by remember(key) { mutableStateOf(false) }
+    var overflow by remember(key) { mutableStateOf(false) }
+    val showFullPost = LocalShowFullPost.current
+    val density = LocalDensity.current
+    val maxHeightPx = remember(maxLines, style, density) {
+        val line = when {
+            style.lineHeight.isSp -> style.lineHeight
+            style.fontSize.isSp -> style.fontSize * 1.4f
+            else -> 20.sp
+        }
+        with(density) { (line.toPx() * maxLines).toInt() }
+    }
+    Column {
+        Layout(content = { content(expanded) }, modifier = Modifier.clipToBounds()) { measurables, constraints ->
+            val placeables = measurables.map {
+                it.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+            }
+            val width = placeables.maxOfOrNull { it.width } ?: 0
+            val full = placeables.sumOf { it.height }
+            val over = full > maxHeightPx
+            // The toggle sits OUTSIDE this Layout, so flipping it never changes what this Layout
+            // measures — `over` converges on the second pass and never loops.
+            if (overflow != over) overflow = over
+            val h = if (expanded || !over) full else maxHeightPx
+            layout(width, h) {
+                var y = 0
+                placeables.forEach { it.place(0, y); y += it.height }
+            }
+        }
+        if (!expanded && overflow) {
+            Text(
+                text = stringResource(R.string.post_show_more),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .clickable {
+                        if (showFullPost != null) showFullPost() else expanded = true
+                    },
+            )
+        }
+    }
+}
+
+/** Lines an explicitly-collapsible quote previews at on an interactive surface (full post /
+ *  comments, or a post expanded inline) before its chevron reveals the rest, so a long
+ *  collapsible quote teases compactly instead of as a tall wall. Frozen previews inside a
+ *  collapsed [ClampedPost] ignore this — they render full and the post-level clip cuts. */
 private const val COLLAPSED_QUOTE_LINES = 3
 
 /**
@@ -109,17 +214,24 @@ private const val COLLAPSED_QUOTE_LINES = 3
  *  * **Code** — `surfaceContainerHigh` box, monospace body, optional language header.
  *
  * The box hugs its content width rather than filling the row, so a short quote reads as a
- * pulled-in block instead of a full-width band. Collapsing: a block previews at
- * [COLLAPSED_QUOTE_LINES] on any clamped surface (and an explicitly-collapsible quote
- * everywhere); a full-reading surface shows a non-collapsible block whole. The chevron + tap
- * target appear only when the body actually overflows, and toggle both ways.
+ * pulled-in block instead of a full-width band.
+ *
+ * [interactive] decides how the block clamps and whether it carries its own chevron:
+ *  * **false** — a frozen preview inside a collapsed [ClampedPost]. The body renders at FULL
+ *    length and the enclosing height clip does the cutting (so a long quote contributes its real
+ *    height to the post-level overflow check and nothing is left unreachable). No chevron: the
+ *    single post-level "Показати більше" is the only affordance, and a per-block expand would
+ *    just grow content the outer clip immediately hides.
+ *  * **true** — the post is fully shown (expanded inline, or a full-reading surface). An
+ *    explicitly-collapsible quote previews at [COLLAPSED_QUOTE_LINES] with a chevron; every other
+ *    block shows whole. The chevron appears once the body overflows and toggles both ways.
  */
 @Composable
 private fun BlockBox(
     text: FormattedText,
     style: TextStyle,
     blockStyle: FormattedText.Style,
-    maxLines: Int,
+    interactive: Boolean,
 ) {
     val isCode = blockStyle is FormattedText.Style.Pre
     val expandable = (blockStyle as? FormattedText.Style.BlockQuote)?.expandable == true
@@ -127,16 +239,17 @@ private fun BlockBox(
 
     var expanded by remember(text) { mutableStateOf(false) }
     var canExpand by remember(text) { mutableStateOf(false) }
-    // Collapsed budget: a few lines on any clamped surface (and for an explicitly-collapsible
-    // quote anywhere), so a long quote previews compactly with a chevron instead of an
-    // 18-line wall. Only a full-reading surface (maxLines == MAX) shows a non-collapsible
-    // block whole.
-    val collapsedBudget = when {
+    // Frozen preview (under a collapsed ClampedPost) renders full and lets the outer clip cut.
+    // Interactive: an explicitly-collapsible quote previews at a few lines with a chevron; any
+    // other block shows whole. (A non-expandable block never overflows at MAX, so no chevron.)
+    val effectiveMax = when {
+        !interactive -> Int.MAX_VALUE
+        expanded -> Int.MAX_VALUE
         expandable -> COLLAPSED_QUOTE_LINES
-        maxLines == Int.MAX_VALUE -> Int.MAX_VALUE
-        else -> COLLAPSED_QUOTE_LINES
+        else -> Int.MAX_VALUE
     }
-    val effectiveMax = if (expanded) Int.MAX_VALUE else collapsedBudget
+    // The chevron only ever shows on an interactive block whose body actually overflows.
+    val showChevron = interactive && canExpand
     val expandLabel = stringResource(if (expanded) R.string.post_show_less else R.string.post_show_more)
 
     val accent = MaterialTheme.colorScheme.primary
@@ -148,7 +261,7 @@ private fun BlockBox(
     // quote glyph, so it only reserves the gutter when the chevron is present.
     val endPad = when {
         !isCode -> 26.dp
-        canExpand -> 26.dp
+        showChevron -> 26.dp
         else -> 12.dp
     }
 
@@ -158,7 +271,9 @@ private fun BlockBox(
             style = contentStyle,
             maxLines = effectiveMax,
             overflow = TextOverflow.Ellipsis,
-            onTextLayout = { layout -> if (!expanded && layout.hasVisualOverflow) canExpand = true },
+            onTextLayout = { layout ->
+                if (interactive && !expanded && layout.hasVisualOverflow) canExpand = true
+            },
         )
     }
 
@@ -179,7 +294,7 @@ private fun BlockBox(
                 },
             )
             .then(
-                if (canExpand) {
+                if (showChevron) {
                     Modifier.clickable(role = Role.Button, onClickLabel = expandLabel) { expanded = !expanded }
                 } else {
                     Modifier
@@ -216,7 +331,7 @@ private fun BlockBox(
                     .padding(top = 6.dp, end = 8.dp),
             )
         }
-        if (canExpand) {
+        if (showChevron) {
             // Chevron: down ("›" rotated 90°) when collapsed = "expand", up (270°) when
             // expanded = "collapse". Reuses the bundled `chevron_right` drawable.
             Symbol(

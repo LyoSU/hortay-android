@@ -18,6 +18,7 @@
 - The "next unread" button now marks the post you were on as read immediately and steps to the next one, instead of sometimes re-landing on the same post and leaving it unread until you scrolled.
 - A tapped link, @mention or hashtag that wraps across lines now highlights as one connected shape, instead of a separate rounded pill on each line.
 - Link highlights and entity styling (inline code background, underline, strikethrough, spoiler covers) now hug the actual text instead of spilling onto leading or trailing blank space.
+- A post with a quote or code block now collapses as one with a single "Show more", instead of showing a separate "Show more" for each stretch of text between the blocks.
 - A quote or code block at the very top or bottom of a post now keeps its padding instead of sitting flush against the text edge.
 - Posts and quotes no longer render with stray empty lines hanging off the top or bottom, and the gap around quote and code blocks is now consistent.
 - Switching between folder tabs (Archive ↔ All ↔ a folder) no longer flashes a row of skeleton bars over the see-through feed for a moment before the posts settle.
