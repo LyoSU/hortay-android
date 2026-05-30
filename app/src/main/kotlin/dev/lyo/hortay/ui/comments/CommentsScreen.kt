@@ -54,8 +54,6 @@ import dev.lyo.hortay.data.TimelinePost
 import kotlinx.coroutines.flow.map
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
-import dev.lyo.hortay.ui.main.LocalPostMorphScope
-import dev.lyo.hortay.ui.main.postMorph
 import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalMediaViewer
@@ -472,12 +470,6 @@ fun CommentsScreen(
         // defer the first paint so the jump is never seen. Reduced-motion (scale 0) collapses the
         // grace to 0 and reveals immediately: with no transition to hide behind, any delay would
         // just stall feedback.
-        // When the container-transform morph is active ([postMorph] / [LocalPostMorphScope] present
-        // in the authenticated scaffold) the morph itself is the entrance animation, so the
-        // anti-strobe alpha gate must NOT hide the list — gating it to 0 would morph the card into
-        // an invisible target. The morph crossfade covers the reposition instead. Without the morph
-        // (guest mode, deep-link opens) the alpha gate stays, hiding the scroll until it settles.
-        val morphActive = LocalPostMorphScope.current != null
         val heroPending = heroTarget > 0 && !heroScrollApplied
         if (heroPending) {
             LaunchedEffect(Unit) {
@@ -494,7 +486,7 @@ fun CommentsScreen(
             ),
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = if (heroPending && !morphActive) 0f else 1f },
+                .graphicsLayer { alpha = if (heroPending) 0f else 1f },
         ) {
             item(key = "post") {
                 // Render the live feed entry when available so optimistic toggles
@@ -505,17 +497,13 @@ fun CommentsScreen(
                 // clickable = false (tapping the anchor would re-open this very screen),
                 // but actionsEnabled = true so long-press still surfaces the reaction
                 // picker + share/open sheet.
-                // Shared-bounds morph target: same key as the feed/channel card the user tapped,
-                // so the card grows into this pinned anchor on open and shrinks back on close.
-                Box(modifier = Modifier.postMorph(anchor)) {
-                    PostCard(
-                        post = anchor,
-                        interactions = pinnedPostInteractions,
-                        clickable = false,
-                        actionsEnabled = true,
-                        expanded = true,
-                    )
-                }
+                PostCard(
+                    post = anchor,
+                    interactions = pinnedPostInteractions,
+                    clickable = false,
+                    actionsEnabled = true,
+                    expanded = true,
+                )
             }
 
             // The previous inline "X replies" / "no comments yet" label has been
