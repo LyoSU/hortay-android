@@ -26,7 +26,6 @@ import dev.lyo.hortay.data.ProfileAccentRegistry
 import dev.lyo.hortay.data.MessageMapper
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
-import dev.lyo.hortay.data.NavStack
 import dev.lyo.hortay.data.nav.AppNavKey
 import dev.lyo.hortay.data.nav.HomeKey
 import dev.lyo.hortay.data.posts.PostsRepository
@@ -388,25 +387,15 @@ class AppGraph(context: Context) {
     val linkDialogs: LinkDialogState = LinkDialogState()
 
     /**
-     * Process-wide polymorphic back-stack for channel-drill and comments
-     * overlays. Replaces the three disjoint stacks that previously lived on
-     * each scaffold (`channelStack`, `commentsForPost`, `pendingScrollTarget`).
-     * See [NavStack] KDoc for the full lifetime contract.
-     *
-     * Lives on the graph because deep-link routing (`DeepLinkRouter`) may
-     * push entries before the UI scaffold composes, and because per-entry
-     * ViewModel keying is keyed on a stable [NavEntry.entryId] that survives
-     * scaffold recompose / tab swap.
-     */
-    val nav: NavStack = NavStack()
-
-    /**
-     * Navigation 3 back stack for the AUTHENTICATED scaffold. (The guest scaffold still
-     * drives [nav] until its own migration stage.) Same lifetime contract as [nav]: lives on
-     * the graph so [DeepLinkRouter] can push keys before the UI composes, and is intentionally
-     * NOT restored across process death — a killed process means the user abandoned the drill
-     * path, so cold launch lands on [HomeKey] (Feed top). Root is always [HomeKey]; detail keys
-     * push on top. Consumed by `NavDisplay` in [dev.lyo.hortay.ui.main.MainScaffold].
+     * Navigation 3 back stack shared by both scaffolds (authenticated
+     * [dev.lyo.hortay.ui.main.MainScaffold] and guest [dev.lyo.hortay.ui.web.WebModeScaffold] —
+     * they never compose simultaneously, [dev.lyo.hortay.MainActivity] routes between them).
+     * Lives on the graph so deep-link routing (`DeepLinkRouter`) can push keys before the UI
+     * scaffold composes, and is intentionally NOT restored across process death — a killed
+     * process means the user abandoned the drill path, so cold launch lands on [HomeKey] (Feed
+     * top). Root is always [HomeKey]; detail keys push on top. Reset on logout via
+     * [runLogoutCleanup]; each scaffold's `entryProvider` carries self-healing no-op entries for
+     * the other mode's keys so a foreign key surviving a mode flip can't crash `NavDisplay`.
      */
     val backStack: SnapshotStateList<AppNavKey> = mutableStateListOf(HomeKey)
 
@@ -670,7 +659,6 @@ class AppGraph(context: Context) {
         // Drop any in-flight drill stack — chatId / messageIds belong to
         // account A's TDLib database and will be invalid the moment the new
         // client spawns.
-        runCatching { nav.clear() }
         runCatching { backStack.apply { clear(); add(HomeKey) } }
         // Archive snapshots belong to the previous account's message ids and
         // chat ids. Wipe on logout so account B doesn't see account A's history
