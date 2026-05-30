@@ -3,6 +3,11 @@
 package dev.lyo.hortay.ui.main
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -291,6 +296,15 @@ fun MainScaffold(graph: AppGraph) {
         graph.userMessages.post(res.getString(R.string.link_not_found), UserMessageBus.Severity.Info)
     }
 
+    // Detail-stack push/pop motion for NavDisplay: a horizontal shared-axis slide + fade on the
+    // app's expressive motion scheme, so nav transitions (and the predictive-back peek, which
+    // rides the same pop spec) feel like the rest of the chrome instead of NavDisplay's default.
+    // Captured here in composable scope because the spec lambdas run outside composition. The
+    // entering "below" layer slides only a fifth of the width (parallax) while the leaving layer
+    // travels the full width — the standard Android detail-pane back motion.
+    val navSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+    val navEffects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+
     // Predictive back for the detail stack is owned by NavDisplay now (it animates the leaving
     // entry and reveals the one below during the gesture — what the hand-rolled top-2 renderer
     // used to do). Only the "at root, not on Feed → return to Feed" case stays a plain
@@ -495,6 +509,18 @@ fun MainScaffold(graph: AppGraph) {
                             rememberSaveableStateHolderNavEntryDecorator(),
                             rememberViewModelStoreNavEntryDecorator(),
                         ),
+                        transitionSpec = {
+                            (slideInHorizontally(navSpatial) { it } + fadeIn(navEffects)) togetherWith
+                                (slideOutHorizontally(navSpatial) { -it / 5 } + fadeOut(navEffects))
+                        },
+                        popTransitionSpec = {
+                            (slideInHorizontally(navSpatial) { -it / 5 } + fadeIn(navEffects)) togetherWith
+                                (slideOutHorizontally(navSpatial) { it } + fadeOut(navEffects))
+                        },
+                        predictivePopTransitionSpec = {
+                            (slideInHorizontally(navSpatial) { -it / 5 } + fadeIn(navEffects)) togetherWith
+                                (slideOutHorizontally(navSpatial) { it } + fadeOut(navEffects))
+                        },
                         entryProvider = entryProvider {
                             entry<HomeKey> { Box(modifier = Modifier.fillMaxSize()) {} }
                             entry<ChannelKey> { key ->
