@@ -2,7 +2,6 @@
 
 package dev.lyo.hortay.ui.main
 
-import androidx.activity.BackEventCompat
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -127,10 +126,6 @@ internal fun RenderNavKey(
                     graph.postsRepository.clearPollPending(chatId, messageId, revert = !ok)
                 }
             },
-            // Predictive back is owned by NavDisplay now; the screen's own back-progress
-            // transform is inert (removed entirely in the predictive-back stage).
-            backProgress = 0f,
-            backSwipeEdge = BackEventCompat.EDGE_LEFT,
         )
 
         is ArchiveKey -> {

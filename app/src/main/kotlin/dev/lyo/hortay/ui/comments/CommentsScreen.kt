@@ -2,7 +2,6 @@
 
 package dev.lyo.hortay.ui.comments
 
-import androidx.activity.BackEventCompat
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -24,7 +23,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
@@ -82,9 +80,9 @@ import kotlinx.coroutines.launch
  * surface, but any future "comments locked / channel migrated / etc." reason
  * can drop into the same shape. When non-null, the screen short-circuits
  * `repo.observeThread` and renders [CommentsEmptyState] directly under the
- * pinned anchor post; the rest of the shell (top bar, back-progress transform,
- * pinned PostCard) is identical to the live-thread path so the user reads it
- * as the same "post detail" surface.
+ * pinned anchor post; the rest of the shell (top bar, pinned PostCard) is
+ * identical to the live-thread path so the user reads it as the same
+ * "post detail" surface.
  */
 @androidx.compose.runtime.Immutable
 data class CommentsDisabledOverride(
@@ -101,12 +99,9 @@ data class CommentsDisabledOverride(
  * we tell TDLib that the linked discussion chat is "open" so view counts register and new
  * messages stream in via the shared updates flow.
  *
- * [backProgress] / [backSwipeEdge] drive the Material 3 predictive-back animation: the
- * overlay translates ~10% of the screen width in the swipe direction, scales down to 0.9
- * and fades to 0.7 alpha as the user pulls. The transform pivot is anchored to the swipe
- * edge so the screen feels "pinned" to the user's thumb while the opposite edge recedes.
- * MainScaffold owns the [Animatable] driving these values; we receive a plain Float so
- * this composable stays trivially testable and reusable from other entry points.
+ * Predictive back (slide + parallax peek) is owned by the host `NavDisplay` — this screen
+ * renders plain and the framework animates it as a scene, so no back-progress plumbing
+ * crosses the call boundary.
  *
  * [repo] / [feedRepo] are nullable so the same screen renders in guest (web) mode where
  * there's no TDLib session and therefore no [CommentsRepository] / no
@@ -201,8 +196,6 @@ fun CommentsScreen(
      * retract (regular polls only).
      */
     onPollVote: (chatId: Long, messageId: Long, chosenIndices: IntArray) -> Unit = { _, _, _ -> },
-    backProgress: Float = 0f,
-    backSwipeEdge: Int = BackEventCompat.EDGE_LEFT,
 ) {
     // Live anchor: track the feed entry whose chat+id matches the post we were
     // opened with so reactions / view count / comment count stay fresh while the
@@ -373,17 +366,6 @@ fun CommentsScreen(
         }
     }
 
-    // Material 3 predictive-back transform. Pivot lives at the swipe edge so the screen
-    // visibly "hinges" away from the user's thumb.
-    //   peek phase (0..1): translate up to 10% width, scale to 0.9, alpha to 0.7 — matches
-    //     the M3 spec for cross-pane back motion.
-    //   exit phase  (1..2): MainScaffold drives this leg after the user commits. Translates
-    //     the rest of the way off-screen, contracts to 0.85 and fades to alpha=0 so the
-    //     overlay actually "leaves" before being removed from composition. Without it the
-    //     screen would freeze at peek and then snap away.
-    val backDirection = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 1f else -1f
-    val backOriginX = if (backSwipeEdge == BackEventCompat.EDGE_LEFT) 0f else 1f
-
     // A hot LRU hit on a previously-opened thread or a fast cold-path resolve
     // (cached anchor + small / empty thread) lands Ready inside ~50-200 ms,
     // helped along by [CommentsRepository.primeCommentsForOpen] which kicks
@@ -408,18 +390,6 @@ fun CommentsScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .graphicsLayer {
-                if (backProgress > 0f) {
-                    val peek = backProgress.coerceAtMost(1f)
-                    val exit = (backProgress - 1f).coerceAtLeast(0f)
-                    translationX = backDirection * size.width * (0.10f * peek + 0.90f * exit)
-                    val s = 1f - 0.10f * peek - 0.05f * exit
-                    scaleX = s
-                    scaleY = s
-                    alpha = (1f - 0.30f * peek) * (1f - exit)
-                    transformOrigin = TransformOrigin(backOriginX, 0.5f)
-                }
-            }
             .nestedScroll(scrollBehavior.nestedScrollConnection)
             .nestedScroll(topBarNestedScroll),
         topBar = {
