@@ -488,14 +488,23 @@ fun CommentsScreen(
         } else {
             0
         }
-        // Apply the scroll BEFORE the first visible frame: the LazyColumn is held at alpha 0
-        // until the scroll lands, so the user never sees the list paint at the top and then
-        // jump to the anchor (the "fast scroll" blink). scrollToItem suspends until applied,
-        // so the frame that reveals the list (alpha 1) already shows it at the right position.
+        // Apply the scroll while the list is held at alpha 0, then reveal it only after a short
+        // motion-scaled grace so the repositioned layout paints in one settled frame instead of
+        // strobing the scroll. scrollToItem suspends until applied, but padding / floating-bar
+        // measurement and onGloballyPositioned can still settle a frame or two later — revealing
+        // the instant the scroll lands let that residual settle read as a "fast scroll" blink.
+        // This is the app's "defer the paint a hair" anti-blink pattern — the same
+        // [dev.lyo.hortay.data.effectiveSkeletonGrace] / [dev.lyo.hortay.data.SCREEN_MOUNT_GRACE_MS]
+        // budget [rememberDeferredLoading] uses for destination skeletons and the media reveal —
+        // applied to a reposition rather than a skeleton. Telegram / Apple bind instantly but
+        // defer the first paint so the jump is never seen. Reduced-motion (scale 0) collapses the
+        // grace to 0 and reveals immediately: with no transition to hide behind, any delay would
+        // just stall feedback.
         val heroPending = heroTarget > 0 && !heroScrollApplied
         if (heroPending) {
             LaunchedEffect(Unit) {
                 listState.scrollToItem(0, heroTarget)
+                delay(dev.lyo.hortay.data.effectiveSkeletonGrace(dev.lyo.hortay.data.SCREEN_MOUNT_GRACE_MS))
                 heroScrollApplied = true
             }
         }
