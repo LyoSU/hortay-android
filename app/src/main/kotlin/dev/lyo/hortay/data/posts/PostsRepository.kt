@@ -278,6 +278,9 @@ class PostsRepository(
      * window.
      */
     private val _initialSyncDone = MutableStateFlow(false)
+
+    // Exposed for tests / potential future consumers; internally `_initialSyncDone`
+    // gates ingest's onlyLocal decision. No external consumer at present.
     val initialSyncDone: StateFlow<Boolean> = _initialSyncDone.asStateFlow()
 
     // Album coalescing: TDLib emits one UpdateNewMessage per album member with no
@@ -296,20 +299,18 @@ class PostsRepository(
     //      boundary (cold-start lastMessage harvest, window edge on
     //      `loadOlderLocked`) reaches the mapper whole. Second line — costs an
     //      RPC per under-sized group, bounded by distinct album ids in the batch.
-    //   3. [SnapshotRestorer.foldRawIntoCurrent] + [upgradeDegradedAlbums] —
-    //      partial-album-downgrade guard + per-member-id GetMessage rescue from
-    //      the persisted snapshot, so a degraded card (anchor present but
-    //      siblings dropped) cannot poison the on-disk snapshot AND a degraded
-    //      anchor on cold restart upgrades to the full card via the
-    //      last-known-good member ids saved in the previous session. Third line
-    //      — works even when the chat-history hydration race makes layers 1+2
-    //      come up short.
+    //   3. [requestAlbumRepair] — Layer-2 visibility repair: a throttled,
+    //      network-backed re-fetch of the residual degraded album when its card
+    //      becomes visible, for the rare case the local index in layer 2 still
+    //      came up short. The persisted snapshot is NO LONGER a membership
+    //      source — it is a cold-paint fallback only ([fullRestore]);
+    //      [preserveDegradedAlbumSiblings] merely keeps a background save from
+    //      shrinking that fallback below last-known-good.
     //
     // Removing any one of these reopens a corresponding CHANGELOG bug: "1 photo
     // → 2 photos → ..." flicker (layer 1), partial album on PTR or deep-load
-    // (layer 2), "5-photo album restore on relaunch" / "Snapshot preserves
-    // saved album siblings" / "Editing an album caption no longer collapses"
-    // (layer 3).
+    // (layer 2), "5-photo album restore on relaunch" / "Snapshot preserves saved
+    // album siblings" / "Editing an album caption no longer collapses" (layer 3).
     private val albumBuffers = ConcurrentHashMap<Pair<Long, Long>, MutableList<TdApi.Message>>()
     private val albumDebounce = ConcurrentHashMap<Pair<Long, Long>, Job>()
 
@@ -731,25 +732,6 @@ class PostsRepository(
                 .collect { saveSnapshotNow() }
         }
 
-        // Reactive cold-start album repair. The streaming LoadChats drain builds
-        // the merged feed incrementally over several seconds; TimelineViewModel's
-        // single restoreFromSnapshot fires once at construction — too early to
-        // upgrade channels that stream in afterwards, so their cold-cache-degraded
-        // albums (1 photo) would survive until the user opens the post. When the
-        // drain settles ([_initialSyncDone] flips true) re-run the snapshot pass:
-        // every degraded album is rebuilt from the previous session's saved member
-        // ids via local GetMessage — no network, no FLOOD_WAIT. A healthy feed is
-        // a no-op ([upgradeDegradedAlbums]). `filter { it }` re-arms on the next
-        // logout→login Ready edge (initialSyncDone resets to false on logout).
-        scope.launch {
-            initialSyncDone
-                .filter { it }
-                .collect {
-                    runCatching { restoreFromSnapshotInternal() }
-                        .warnUnlessCancelled(TAG, "postDrainAlbumUpgrade")
-                }
-        }
-
         // Layer-2 album repair drain: single consumer, one dispatch per throttle window.
         // The (chatId, mediaAlbumId) dedup key is held until AFTER the throttle delay so
         // the dedup window IS the throttle window — a card re-focused within the window
@@ -778,9 +760,9 @@ class PostsRepository(
         val current = subscribedPosts.value
         if (current.isEmpty()) return
         val newEntries = current.take(SNAPSHOT_SIZE).flatMap { post ->
-            // Persist every album member id, not just the anchor — restoreFromSnapshot
-            // re-runs PostFilterStrategy.mergeAlbums, which needs all siblings present
-            // to rebuild the merged card.
+            // Persist every album member id, not just the anchor — fullRestore's
+            // GetMessage pass needs all ids to fetch every sibling, so that
+            // coalesceAlbumFragments can reassemble the full album card on cold paint.
             val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
             ids.map { post.chatId to it }
         }
@@ -790,24 +772,22 @@ class PostsRepository(
 
     /**
      * Anti-poisoning guard for [saveSnapshotNow]. If [current] contains any
-     * degraded album (`mediaAlbumId != 0 && albumMessageIds.size <= 1`),
-     * the natural save would shrink that album's member set on disk to a
-     * single id — destroying the last-known-good membership the next cold
-     * start relies on for [upgradeDegradedAlbums].
+     * degraded album (`mediaAlbumId != 0 && albumMessageIds.size <= 1`), the
+     * natural save would shrink that album's member set on disk to a single id
+     * — destroying the last-known-good membership the next cold start's
+     * [fullRestore] cold-paint fallback relies on.
      *
-     * The save typically runs on a foreground→background transition. If
-     * the in-memory feed was already degraded at that moment — either
-     * because [restoreFromSnapshot]'s upgrade pass hadn't fired yet, or
-     * because the matching album wasn't in the previous snapshot's top
-     * slice — overwriting the on-disk snapshot is irreversible. The next
-     * cold start has no source-of-truth to recover from.
+     * The save typically runs on a foreground→background transition. If the
+     * in-memory feed was momentarily degraded at that moment (Layer-1 local
+     * rehydration hadn't finished, or Layer-2 visibility repair hadn't fired),
+     * overwriting the on-disk snapshot with the shrunken set is irreversible.
      *
-     * Mitigation: load the previous snapshot, look up the mediaAlbumId of
-     * each id not already in [newEntries] via `GetMessage` (TDLib's
-     * per-message local index — sub-millisecond, network-free), and
-     * preserve any whose `(chatId, mediaAlbumId)` matches a currently-
-     * degraded album. The next cold start's [upgradeDegradedAlbums] will
-     * regroup them by mediaAlbumId and rebuild the full card.
+     * Mitigation: for any chat that currently holds a degraded album, carry the
+     * previous snapshot's entries for that chat that aren't already in
+     * [newEntries] forward, so the on-disk member set is never smaller than
+     * last-known-good. No `GetMessage` rescue — membership is owned by Layer 1 +
+     * Layer 2 at read time; here we only avoid actively destroying the saved
+     * fallback.
      *
      * No-op when [current] has no degraded albums — the common path saves
      * exactly the fresh view with zero extra I/O.
@@ -816,35 +796,17 @@ class PostsRepository(
         current: PersistentList<TimelinePost>,
         newEntries: List<Pair<Long, Long>>,
     ): List<Pair<Long, Long>> {
-        val degradedAlbums = current
+        val degradedChats = current
+            .asSequence()
             .filter { it.mediaAlbumId != 0L && it.albumMessageIds.size <= 1 }
-            .mapTo(HashSet()) { it.chatId to it.mediaAlbumId }
-        if (degradedAlbums.isEmpty()) return newEntries
-
+            .mapTo(HashSet()) { it.chatId }
+        if (degradedChats.isEmpty()) return newEntries
         val previous = runCatching { snapshotStore.load() }
-            .warnUnlessCancelled(TAG, "loadSnapshotForSave")
-            .getOrDefault(emptyList())
+            .warnUnlessCancelled(TAG, "loadSnapshotForSave").getOrDefault(emptyList())
         if (previous.isEmpty()) return newEntries
-
         val newSet = newEntries.toHashSet()
-        val degradedChats = degradedAlbums.mapTo(HashSet()) { it.first }
-        val candidates = previous.filter { entry -> entry.first in degradedChats && entry !in newSet }
-        if (candidates.isEmpty()) return newEntries
-
-        val rescued = coroutineScope {
-            val semaphore = Semaphore(SNAPSHOT_RESTORE_CONCURRENCY)
-            candidates.map { (chatId, msgId) ->
-                async {
-                    semaphore.withPermit {
-                        val msg = runCatching { td.send(TdApi.GetMessage(chatId, msgId)) }.getOrNull()
-                        if (msg != null && msg.mediaAlbumId != 0L &&
-                            (chatId to msg.mediaAlbumId) in degradedAlbums
-                        ) chatId to msgId else null
-                    }
-                }
-            }.awaitAll().filterNotNull()
-        }
-        return if (rescued.isEmpty()) newEntries else newEntries + rescued
+        val carried = previous.filter { it.first in degradedChats && it !in newSet }
+        return if (carried.isEmpty()) newEntries else newEntries + carried
     }
 
     /**
@@ -868,31 +830,24 @@ class PostsRepository(
     /**
      * Returns the number of posts written — exposed for callers that care.
      *
-     * Two modes, picked by the current state of [_posts]:
-     *  - **Empty feed**: refresh failed (offline, RPC error, no subscriptions
-     *    drained yet). Restore the snapshot in full as a last-known-good
-     *    fallback.
-     *  - **Non-empty feed with degraded albums**: refresh produced a 1-photo
-     *    card for an album because TDLib's local message DB hadn't finished
-     *    hydrating when [coalesceAlbumFragments]' surround fetch fired. The
-     *    snapshot from the previous healthy session has every member id saved
-     *    per-post (see [saveSnapshotNow]), and `GetMessage` uses TDLib's
-     *    per-message local index — working even when the chat history slice
-     *    isn't loaded yet. Fetch the saved siblings directly and let
-     *    [foldRawIntoCurrent] swap the degraded card for the rebuilt
-     *    full-album card cleanly.
-     *
-     * A healthy non-empty feed is a no-op.
+     * Cold-paint fallback ONLY: fill an empty feed fast from the previous
+     * session's persisted top-of-feed. Album completeness is no longer derived
+     * here — it is owned by the Layer-1 local rehydration in
+     * [coalesceAlbumFragments] (deterministic, from TDLib's per-message local
+     * index) plus the Layer-2 visibility repair ([requestAlbumRepair]). A
+     * non-empty feed is therefore a no-op.
      */
     suspend fun restoreFromSnapshotInternal(): Int {
         val snapshot = runCatching { snapshotStore.load() }
             .warnUnlessCancelled(TAG, "loadSnapshot")
             .getOrDefault(emptyList())
         if (snapshot.isEmpty()) return 0
-
-        val current = _posts.value
-        return if (current.isEmpty()) fullRestore(snapshot)
-            else upgradeDegradedAlbums(current, snapshot)
+        // Snapshot is a COLD-PAINT fallback only: fill an empty feed fast. Album
+        // completeness is owned by the Layer-1 local rehydration in
+        // coalesceAlbumFragments + the Layer-2 visibility repair (requestAlbumRepair) —
+        // not by re-deriving membership from the previous session's snapshot. A
+        // non-empty feed is a no-op.
+        return if (_posts.value.isEmpty()) fullRestore(snapshot) else 0
     }
 
     private suspend fun fullRestore(snapshot: List<Pair<Long, Long>>): Int {
@@ -912,47 +867,6 @@ class PostsRepository(
             }
         }
         return added
-    }
-
-    private suspend fun upgradeDegradedAlbums(
-        current: PersistentList<TimelinePost>,
-        snapshot: List<Pair<Long, Long>>,
-    ): Int {
-        // Index degraded albums by (chatId, mediaAlbumId). The snapshot stores
-        // (chatId, msgId) pairs flat — we need mediaAlbumId per snapshot
-        // message to know which saved ids belong to which degraded album, so
-        // we fetch first, then filter.
-        val degradedAlbumKeys = current
-            .asSequence()
-            .filter { it.mediaAlbumId != 0L && it.albumMessageIds.size <= 1 }
-            .mapTo(HashSet()) { it.chatId to it.mediaAlbumId }
-        if (degradedAlbumKeys.isEmpty()) return 0
-
-        val candidateChats = degradedAlbumKeys.mapTo(HashSet()) { it.first }
-        val candidates = snapshot.filter { (chatId, _) -> chatId in candidateChats }
-        if (candidates.isEmpty()) return 0
-
-        val messages = fetchSnapshotMessages(candidates)
-        // Keep only messages that belong to a currently-degraded album. Solo
-        // posts and unrelated albums saved in the same chat's snapshot slice
-        // are noise here — we don't want to re-add yesterday's top-of-feed
-        // standalones the user has already scrolled past.
-        val albumMembers = messages.filter { msg ->
-            msg.mediaAlbumId != 0L && (msg.chatId to msg.mediaAlbumId) in degradedAlbumKeys
-        }
-        if (albumMembers.isEmpty()) return 0
-
-        val mapped = mapSnapshotMessages(albumMembers)
-        if (mapped.isEmpty()) return 0
-
-        var upgraded = 0
-        _posts.update { live ->
-            val before = live.mapTo(HashSet()) { it.chatId to it.id }
-            val next = foldRawIntoCurrent(live, mapped)
-            upgraded = next.count { (it.chatId to it.id) !in before }
-            next
-        }
-        return upgraded
     }
 
     private suspend fun fetchSnapshotMessages(
