@@ -297,6 +297,9 @@ fun MainScaffold(graph: AppGraph) {
     // tab scaffold under HomeKey owns the FloatingNavBar inset itself; details only need to clear
     // the system navigation bar. CommentsScreen / ArchiveScreen are full Scaffolds and ignore it.
     val detailContentPadding = WindowInsets.navigationBars.asPaddingValues()
+    // Fast spatial spec for the forward/pop commit transitions so the entering scene settles
+    // quickly and predictive back (gated on the scene reaching RESUMED) becomes available sooner.
+    val navFastSpatial = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.IntOffset>()
 
     // Predictive back for the detail stack is owned by NavDisplay now (it animates the leaving
     // entry and reveals the one below during the gesture — what the hand-rolled top-2 renderer
@@ -423,14 +426,24 @@ fun MainScaffold(graph: AppGraph) {
                         ),
                         // Horizontal shared-axis: detail slides in/out from the side, the scene
                         // below parallaxes a third of the width — so a predictive-back swipe moves
-                        // BOTH layers (not the default shrink-to-centre). No explicit animationSpec
-                        // and no fade: the bare slide transitions stay seekable, so the gesture
-                        // tracks the finger in real time (a spring/fade override froze the seek).
+                        // BOTH layers (not the default shrink-to-centre).
+                        //
+                        // Forward/pop (commit) transitions ride the fast spatial spec so the
+                        // entering scene SETTLES quickly: Nav3 only enables predictive back once
+                        // the scene reaches RESUMED (its enter transition finished), so a slow
+                        // settle leaves a window where an immediate back-swipe can't be scrubbed.
+                        // A snappy finite-ish spec shrinks that window.
+                        //
+                        // The predictive spec stays BARE (no explicit animationSpec, no fade) — the
+                        // plain slide is seekable so the gesture tracks the finger; a spring/fade
+                        // override there had frozen the seek.
                         transitionSpec = {
-                            slideInHorizontally { it } togetherWith slideOutHorizontally { -it / 3 }
+                            slideInHorizontally(navFastSpatial) { it } togetherWith
+                                slideOutHorizontally(navFastSpatial) { -it / 3 }
                         },
                         popTransitionSpec = {
-                            slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
+                            slideInHorizontally(navFastSpatial) { -it / 3 } togetherWith
+                                slideOutHorizontally(navFastSpatial) { it }
                         },
                         predictivePopTransitionSpec = {
                             slideInHorizontally { -it / 3 } togetherWith slideOutHorizontally { it }
