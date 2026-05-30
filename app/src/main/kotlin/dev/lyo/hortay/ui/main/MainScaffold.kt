@@ -2,10 +2,7 @@
 
 package dev.lyo.hortay.ui.main
 
-import androidx.activity.BackEventCompat
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.PredictiveBackHandler
-import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -19,10 +16,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlin.coroutines.cancellation.CancellationException
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.ui.NavDisplay
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.R
-import dev.lyo.hortay.data.NavEntry
+import dev.lyo.hortay.data.nav.ArchiveKey
+import dev.lyo.hortay.data.nav.ArchiveSettingsKey
+import dev.lyo.hortay.data.nav.ChannelKey
+import dev.lyo.hortay.data.nav.CommentsKey
+import dev.lyo.hortay.data.nav.HomeKey
 import dev.lyo.hortay.data.posts.PublicHandleResult
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.UserMessageBus
@@ -31,15 +35,6 @@ import dev.lyo.hortay.ui.timeline.LocalReadCursors
 import dev.lyo.hortay.ui.users.LocalUserProfileOpener
 import dev.lyo.hortay.ui.users.UserProfileOpener
 import kotlinx.coroutines.launch
-
-/**
- * Predictive-back progress contract shared with [dev.lyo.hortay.ui.comments.CommentsScreen]'s
- * graphicsLayer:
- *  - 0f .. 1f = gesture peek (translate ~10%, scale to 0.9, alpha to 0.7)
- *  - 1f .. EXIT_PROGRESS = commit exit (translate to full width, scale to 0.85, alpha to 0)
- * Going past 1f on commit keeps the overlay visually "leaving" instead of freezing at peek.
- */
-private const val EXIT_PROGRESS = 2f
 
 /**
  * How long a channel-open tap is allowed to wait for
@@ -95,8 +90,10 @@ fun MainScaffold(graph: AppGraph) {
     // screen instance with its own scroll position and ViewModel — pushing the
     // same channel twice produces two independent screens.
     var selectedTab by remember { mutableStateOf(NavTab.Feed) }
-    val stack by graph.nav.stack.collectAsStateWithLifecycle()
-    val topEntry = stack.lastOrNull()
+    // Navigation 3 back stack on the graph. Root is always [HomeKey] (the tab scaffold renders
+    // beneath the NavDisplay), detail keys push on top, so `size > 1` ⇔ an overlay is showing.
+    val backStack = graph.backStack
+    val hasOverlay = backStack.size > 1
 
     val scope = rememberCoroutineScope()
 
@@ -144,7 +141,7 @@ fun MainScaffold(graph: AppGraph) {
             kotlinx.coroutines.withTimeoutOrNull(CHANNEL_PUSH_PREFETCH_TIMEOUT_MS) {
                 graph.postsRepository.loadChannelHistory(chatId)
             }
-            graph.nav.push(NavEntry.Channel(chatId = chatId, scrollToMessageId = scrollTo))
+            graph.backStack.add(ChannelKey(chatId = chatId, scrollToMessageId = scrollTo))
         }
         Unit
     }
@@ -155,16 +152,20 @@ fun MainScaffold(graph: AppGraph) {
     // loading overlay.
     val pushComments: (TimelinePost) -> Unit = { post ->
         graph.commentsRepository.primeCommentsForOpen(post)
-        graph.nav.push(NavEntry.Comments(anchor = post))
+        graph.backStack.add(CommentsKey(anchor = post))
     }
     // Hero-open from a feed/channel post tap or its "Показати більше": open the full post
     // positioned at [anchorY] — the post's absolute on-screen Y captured in the feed — so it
     // lands exactly where it sat (can be negative for a long post scrolled past its top).
     val pushCommentsHero: (TimelinePost, Int) -> Unit = { post, anchorY ->
         graph.commentsRepository.primeCommentsForOpen(post)
-        graph.nav.push(NavEntry.Comments(anchor = post, heroAnchorY = anchorY))
+        graph.backStack.add(CommentsKey(anchor = post, heroAnchorY = anchorY))
     }
-    val popNav: () -> Unit = { graph.nav.pop() }
+    // Pop a detail entry. Guarded so the [HomeKey] root is never removed (NavDisplay always
+    // needs a root; an empty stack would crash it).
+    val popNav: () -> Unit = {
+        if (graph.backStack.size > 1) graph.backStack.removeAt(graph.backStack.lastIndex)
+    }
 
     // Monotonic counter: each re-tap on Home (or brand) bumps it once. The Feed observes the
     // value and decides scroll-to-top vs refresh based on its own scroll position.
@@ -242,15 +243,15 @@ fun MainScaffold(graph: AppGraph) {
         scope.launch {
             when (val resolved = graph.postsRepository.resolveChatKind(chatId)) {
                 is PublicHandleResult.Channel -> {
-                    val below = graph.nav.stack.value.dropLast(1).lastOrNull()
+                    val below = graph.backStack.getOrNull(graph.backStack.lastIndex - 1)
                     val matchesBelow = scrollTo == null &&
-                        below is NavEntry.Channel &&
+                        below is ChannelKey &&
                         below.chatId == resolved.chatId
-                    if (matchesBelow) graph.nav.pop()
+                    if (matchesBelow) popNav()
                     else pushChannel(resolved.chatId, scrollTo)
                 }
                 is PublicHandleResult.User -> {
-                    if (graph.nav.top is NavEntry.Comments) graph.nav.pop()
+                    if (graph.backStack.lastOrNull() is CommentsKey) popNav()
                     userProfileOpener.open(resolved.userId)
                 }
                 is PublicHandleResult.Unsupported -> {
@@ -286,50 +287,15 @@ fun MainScaffold(graph: AppGraph) {
     val openReport: (Long, Long?) -> Unit = { chatId, messageId ->
         graph.reportDialogs.open(ReportTarget(chatId, messageId, System.nanoTime()))
     }
-
-    // Single predictive-back handler for the top nav-entry. Translates,
-    // scales, fades the visible top layer under the user's finger; edge
-    // (LEFT vs RIGHT) is forwarded because users can bind back to either
-    // edge — a hard-coded translateX direction would invert the motion on
-    // right-handed setups. Motion springs captured here in @Composable scope
-    // (`progress.collect` is a plain coroutine; `MaterialTheme` reads require
-    // composable context) — same M3E `fastEffectsSpec` the tab AnimatedContent
-    // rides, so the predictive-back commit / rewind shares physics with the
-    // rest of the chrome instead of riding a one-off duration-tween.
-    val backCommitSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    val backRewindSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    val navBackProgress = remember { Animatable(0f) }
-    var navBackEdge by remember { mutableIntStateOf(BackEventCompat.EDGE_LEFT) }
-    PredictiveBackHandler(enabled = topEntry != null) { progress ->
-        try {
-            progress.collect { event ->
-                navBackEdge = event.swipeEdge
-                // System emits at pointer-move rate (60–120 Hz). Epsilon-skip
-                // sub-pixel deltas so we don't pay an Animatable snapshot write
-                // (and the resulting graphicsLayer re-evaluation in the top
-                // entry's content) for invisible motion. 0.005f ≈ half a pixel
-                // on a 1080px-wide screen at translation 0.1 — below perceptual
-                // threshold.
-                val next = event.progress
-                if (kotlin.math.abs(next - navBackProgress.value) >= 0.005f) {
-                    navBackProgress.snapTo(next)
-                }
-            }
-            // Commit: extend past peek (1f) to full exit (2f) so the top
-            // layer continues translating off-screen and fades to zero alpha
-            // before we drop it from composition. Without this leg the
-            // overlay would freeze at peek (~70% visible) for the duration
-            // of the commit animation and then snap away — janky on flagship.
-            navBackProgress.animateTo(EXIT_PROGRESS, backCommitSpec)
-            popNav()
-            navBackProgress.snapTo(0f)
-        } catch (_: CancellationException) {
-            navBackProgress.animateTo(0f, backRewindSpec)
-        }
+    val onLinkNotFound: () -> Unit = {
+        graph.userMessages.post(res.getString(R.string.link_not_found), UserMessageBus.Severity.Info)
     }
-    // Stack empty + not on Feed: return to Feed tab. Plain BackHandler — no
-    // overlay to animate at this point.
-    BackHandler(enabled = topEntry == null && selectedTab != NavTab.Feed) {
+
+    // Predictive back for the detail stack is owned by NavDisplay now (it animates the leaving
+    // entry and reveals the one below during the gesture — what the hand-rolled top-2 renderer
+    // used to do). Only the "at root, not on Feed → return to Feed" case stays a plain
+    // BackHandler; when a detail overlay is up, NavDisplay consumes back first.
+    BackHandler(enabled = !hasOverlay && selectedTab != NavTab.Feed) {
         selectedTab = NavTab.Feed
     }
 
@@ -345,7 +311,6 @@ fun MainScaffold(graph: AppGraph) {
     // pushing the same channel twice (legitimate in unlimited-nesting flows)
     // produces two independent screens with their own scroll positions.
     val tabStateHolder = rememberSaveableStateHolder()
-    val navStateHolder = rememberSaveableStateHolder()
 
     // Live cursor holder collected once, mutated in place via diff-apply so
     // per-key Compose snapshot subscribers (PostCard, ↓N counter, boundary
@@ -451,7 +416,7 @@ fun MainScaffold(graph: AppGraph) {
                     // by the user as a small scroll jitter on overlay return. The
                     // overlay covers the full screen anyway, so the reserved space
                     // sitting behind it is invisible during the navigation window.
-                    val navBarVisible = topEntry == null
+                    val navBarVisible = !hasOverlay
                     val navBarAlpha by androidx.compose.animation.core.animateFloatAsState(
                         targetValue = if (navBarVisible) 1f else 0f,
                         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
@@ -504,7 +469,7 @@ fun MainScaffold(graph: AppGraph) {
                         feedOrder = feedOrder,
                         snapScroll = snapScroll,
                         homeTapTrigger = homeTapTrigger,
-                        coveredByOverlay = stack.isNotEmpty(),
+                        coveredByOverlay = hasOverlay,
                         scope = scope,
                         onHomeTapTriggerBump = { homeTapTrigger = System.nanoTime() },
                         onSafelyOpenChannel = safelyOpenChannel,
@@ -516,23 +481,52 @@ fun MainScaffold(graph: AppGraph) {
                         tdlibMarkAsRead = tdlibMarkAsRead,
                     )
 
-                    NavOverlayRenderer(
-                        visibleEntries = stack.takeLast(2),
-                        navStateHolder = navStateHolder,
-                        navBackProgress = navBackProgress.value,
-                        navBackEdge = navBackEdge,
-                        graph = graph,
-                        padding = padding,
-                        feedOrder = feedOrder,
-                        scope = scope,
-                        onPopNav = popNav,
-                        onPushChannel = pushChannel,
-                        onPushComments = pushComments,
-                        onShowFullPost = pushCommentsHero,
-                        onSafelyOpenChannel = safelyOpenChannel,
-                        onOpenReport = openReport,
-                        onPostReportClick = onPostReportClick,
-                        canReportPost = canReportPost,
+                    // Navigation 3 detail stack, rendered ABOVE the always-mounted tab content.
+                    // The [HomeKey] root renders nothing (transparent) so the feed beneath shows
+                    // through at the root and during a predictive-back peek; detail keys render
+                    // their full-screen screens over it. Entry decorators give each entry its own
+                    // saveable-state scope and its own ViewModelStore (cleared on pop) — the
+                    // canonical replacement for the old per-entryId SaveableStateProvider +
+                    // custom ViewModelStoreOwner, and the structural fix for the per-chatId VM leak.
+                    NavDisplay(
+                        backStack = backStack,
+                        onBack = { popNav() },
+                        entryDecorators = listOf(
+                            rememberSaveableStateHolderNavEntryDecorator(),
+                            rememberViewModelStoreNavEntryDecorator(),
+                        ),
+                        entryProvider = entryProvider {
+                            entry<HomeKey> { Box(modifier = Modifier.fillMaxSize()) {} }
+                            entry<ChannelKey> { key ->
+                                RenderNavKey(
+                                    key, graph, padding, feedOrder, scope, popNav, pushChannel,
+                                    pushComments, pushCommentsHero, safelyOpenChannel, openReport,
+                                    onPostReportClick, canReportPost, onLinkNotFound,
+                                )
+                            }
+                            entry<CommentsKey> { key ->
+                                RenderNavKey(
+                                    key, graph, padding, feedOrder, scope, popNav, pushChannel,
+                                    pushComments, pushCommentsHero, safelyOpenChannel, openReport,
+                                    onPostReportClick, canReportPost, onLinkNotFound,
+                                )
+                            }
+                            entry<ArchiveKey> { key ->
+                                RenderNavKey(
+                                    key, graph, padding, feedOrder, scope, popNav, pushChannel,
+                                    pushComments, pushCommentsHero, safelyOpenChannel, openReport,
+                                    onPostReportClick, canReportPost, onLinkNotFound,
+                                )
+                            }
+                            entry<ArchiveSettingsKey> { key ->
+                                RenderNavKey(
+                                    key, graph, padding, feedOrder, scope, popNav, pushChannel,
+                                    pushComments, pushCommentsHero, safelyOpenChannel, openReport,
+                                    onPostReportClick, canReportPost, onLinkNotFound,
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
                     )
 
                     ConnectionBanner(

@@ -24,7 +24,11 @@ import dev.lyo.hortay.data.MediaAutoDownloader
 import dev.lyo.hortay.data.MediaCache
 import dev.lyo.hortay.data.ProfileAccentRegistry
 import dev.lyo.hortay.data.MessageMapper
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import dev.lyo.hortay.data.NavStack
+import dev.lyo.hortay.data.nav.AppNavKey
+import dev.lyo.hortay.data.nav.HomeKey
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StartupCoordinator
@@ -397,6 +401,16 @@ class AppGraph(context: Context) {
     val nav: NavStack = NavStack()
 
     /**
+     * Navigation 3 back stack for the AUTHENTICATED scaffold. (The guest scaffold still
+     * drives [nav] until its own migration stage.) Same lifetime contract as [nav]: lives on
+     * the graph so [DeepLinkRouter] can push keys before the UI composes, and is intentionally
+     * NOT restored across process death — a killed process means the user abandoned the drill
+     * path, so cold launch lands on [HomeKey] (Feed top). Root is always [HomeKey]; detail keys
+     * push on top. Consumed by `NavDisplay` in [dev.lyo.hortay.ui.main.MainScaffold].
+     */
+    val backStack: SnapshotStateList<AppNavKey> = mutableStateListOf(HomeKey)
+
+    /**
      * Anonymous-mode SQLDelight database. Stores channel metadata, post payloads,
      * resolved custom-emoji assets and curated/discovery suggestions. Construction
      * triggers schema creation on first launch and migration validation on every
@@ -657,6 +671,7 @@ class AppGraph(context: Context) {
         // account A's TDLib database and will be invalid the moment the new
         // client spawns.
         runCatching { nav.clear() }
+        runCatching { backStack.apply { clear(); add(HomeKey) } }
         // Archive snapshots belong to the previous account's message ids and
         // chat ids. Wipe on logout so account B doesn't see account A's history
         // in the archive screen.

@@ -51,6 +51,12 @@ data class ChannelKey(
 @Immutable
 data class CommentsKey(
     val anchor: TimelinePost,
+    /**
+     * Hero-open anchor: the post's absolute on-screen Y captured in the feed. Retained through
+     * the NavDisplay cutover so behaviour is unchanged; the shared-element container transform
+     * replaces (and deletes) it in the morph stage. `null` for a normal/deep-link open.
+     */
+    val heroAnchorY: Int? = null,
 ) : AppNavKey
 
 /** Archive browser. Mirror of `NavEntry.Archive`. */

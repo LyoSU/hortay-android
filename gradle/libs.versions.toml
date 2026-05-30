@@ -25,7 +25,9 @@ navigation3 = "1.1.2"
 coreKtx = "1.16.0"
 appcompat = "1.7.0"
 activityCompose = "1.10.0"
-lifecycle = "2.9.0"
+# lifecycle 2.10.0 — aligned with lifecycle-viewmodel-navigation3 (entry-scoped
+# ViewModelStore for Nav3). All lifecycle-* artifacts share this version.
+lifecycle = "2.10.0"
 coroutines = "1.10.1"
 serialization = "1.7.3"
 datastore = "1.2.0"
@@ -78,6 +80,7 @@ compose-ui-text-google-fonts = { group = "androidx.compose.ui", name = "ui-text-
 
 androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigation3-runtime", version.ref = "navigation3" }
 androidx-navigation3-ui = { group = "androidx.navigation3", name = "navigation3-ui", version.ref = "navigation3" }
+androidx-lifecycle-viewmodel-navigation3 = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-navigation3", version.ref = "lifecycle" }
 
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }

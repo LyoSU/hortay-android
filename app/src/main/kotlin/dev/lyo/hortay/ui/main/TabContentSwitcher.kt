@@ -188,7 +188,7 @@ internal fun TabContentSwitcher(
                         me = me,
                         userMessages = graph.userMessages,
                         onNavigateToArchiveSettings = {
-                            graph.nav.push(dev.lyo.hortay.data.NavEntry.ArchiveSettings())
+                            graph.backStack.add(dev.lyo.hortay.data.nav.ArchiveSettingsKey)
                         },
                         archiveLossOnLogout = archiveSettings.enabled,
                     )

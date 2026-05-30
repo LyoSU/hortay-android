@@ -374,6 +374,7 @@ dependencies {
     // (entry-scoped ViewModelStore) is added later when the VM scoping migrates off the custom owner.
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
+    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.tooling.preview)
