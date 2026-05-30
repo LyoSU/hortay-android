@@ -54,6 +54,7 @@ import dev.lyo.hortay.data.TimelinePost
 import kotlinx.coroutines.flow.map
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
+import dev.lyo.hortay.ui.main.postMorph
 import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalMediaViewer
@@ -497,13 +498,17 @@ fun CommentsScreen(
                 // clickable = false (tapping the anchor would re-open this very screen),
                 // but actionsEnabled = true so long-press still surfaces the reaction
                 // picker + share/open sheet.
-                PostCard(
-                    post = anchor,
-                    interactions = pinnedPostInteractions,
-                    clickable = false,
-                    actionsEnabled = true,
-                    expanded = true,
-                )
+                // Shared-bounds morph target: same key as the feed/channel card the user tapped,
+                // so the card grows into this pinned anchor on open and shrinks back on close.
+                Box(modifier = Modifier.postMorph(anchor)) {
+                    PostCard(
+                        post = anchor,
+                        interactions = pinnedPostInteractions,
+                        clickable = false,
+                        actionsEnabled = true,
+                        expanded = true,
+                    )
+                }
             }
 
             // The previous inline "X replies" / "no comments yet" label has been

@@ -1,8 +1,12 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class,
+    androidx.compose.animation.ExperimentalSharedTransitionApi::class,
+)
 
 package dev.lyo.hortay.ui.main
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -157,12 +161,14 @@ fun MainScaffold(graph: AppGraph) {
         graph.commentsRepository.primeCommentsForOpen(post)
         graph.backStack.add(CommentsKey(anchor = post))
     }
-    // Hero-open from a feed/channel post tap or its "Показати більше": open the full post
-    // positioned at [anchorY] — the post's absolute on-screen Y captured in the feed — so it
-    // lands exactly where it sat (can be negative for a long post scrolled past its top).
-    val pushCommentsHero: (TimelinePost, Int) -> Unit = { post, anchorY ->
+    // Open the full post from a feed/channel post tap or its "Показати більше". The post-card →
+    // open-post container-transform morph (see [postMorph]) now carries the visual continuity, so
+    // the detail opens at the top (heroAnchorY = null) and the tapped card grows into the pinned
+    // anchor. The anchorY the feed measured is no longer needed (the shared-bounds transform reads
+    // the live on-screen bounds of both ends directly).
+    val pushCommentsHero: (TimelinePost, Int) -> Unit = { post, _ ->
         graph.commentsRepository.primeCommentsForOpen(post)
-        graph.backStack.add(CommentsKey(anchor = post, heroAnchorY = anchorY))
+        graph.backStack.add(CommentsKey(anchor = post))
     }
     // Pop a detail entry. Guarded so the [HomeKey] root is never removed (NavDisplay always
     // needs a root; an empty stack would crash it).
@@ -408,9 +414,17 @@ fun MainScaffold(graph: AppGraph) {
                     // nav-bar hide animation, or transparent-root tricks. Entry decorators give
                     // each entry its own saveable state + ViewModelStore (cleared on pop),
                     // replacing the old per-entryId holder and fixing the per-chatId VM leak.
+                    // SharedTransitionLayout wraps the NavDisplay so the feed/channel card and the
+                    // open-post pinned anchor can morph into each other (Apple/Telegram container
+                    // transform). The scope is published via [LocalPostMorphScope] so [postMorph]
+                    // call sites (feed cards, comments anchor) can tag their shared bounds.
+                    SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
+                      val morphScope = this
+                      CompositionLocalProvider(LocalPostMorphScope provides morphScope) {
                     NavDisplay(
                         backStack = backStack,
                         onBack = { popNav() },
+                        sharedTransitionScope = morphScope,
                         entryDecorators = listOf(
                             rememberSaveableStateHolderNavEntryDecorator(),
                             rememberViewModelStoreNavEntryDecorator(),
@@ -520,6 +534,8 @@ fun MainScaffold(graph: AppGraph) {
                         },
                         modifier = Modifier.fillMaxSize(),
                     )
+                      }
+                    }
 
                     ConnectionBanner(
                         status = connection,

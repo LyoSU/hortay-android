@@ -33,6 +33,7 @@ import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
+import dev.lyo.hortay.ui.main.postMorph
 import dev.lyo.hortay.ui.media.LocalIsCenteredItem
 import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
 import dev.lyo.hortay.ui.text.LocalShowFullPost
@@ -124,7 +125,11 @@ internal fun TimelineFeedColumn(
                         LocalIsHighlightedItem provides highlighted,
                         LocalShowFullPost provides showFull,
                     ) {
-                        Box(modifier = Modifier.onGloballyPositioned { topY[0] = it.positionInWindow().y }) {
+                        Box(
+                            modifier = Modifier
+                                .onGloballyPositioned { topY[0] = it.positionInWindow().y }
+                                .postMorph(post),
+                        ) {
                             PostCard(post = post, interactions = itemInteractions, onTapRevisions = onTapRevisions)
                         }
                     }
