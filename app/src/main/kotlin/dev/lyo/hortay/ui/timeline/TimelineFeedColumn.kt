@@ -149,14 +149,17 @@ internal fun TimelineTopBar(
     // travelling into the system status-bar area when the layout shrinker
     // pushes the bar upward on scroll).
     val barInsets = WindowInsets(0)
-    // Both destinations (Bookmarks and Home) are top-level: M3 Expressive
-    // canon uses the Medium-size flexible bar — larger title on first paint
-    // that collapses to compact 64 dp on scroll. Tool stages (search,
-    // channel filter) now live in the dedicated [ChannelScreen].
+    // Pinned single-row (Compact) bar for both top-level destinations (Home / Bookmarks).
+    // Deliberately NOT a collapsing Medium/Large flexible bar: collapsing the feed header on
+    // scroll meant resizing the Scaffold's top slot every frame (and re-padding the heavy feed
+    // body), which read as the scroll "braking" / lagging, and it entangled with the
+    // OldestUnreadFirst boundary-landing geometry. A slim pinned row keeps the brand + folder
+    // tabs always reachable, costs little vertical space, and leaves the feed's scroll / anchor
+    // machinery untouched. Tool stages (search, channel filter) live in [ChannelScreen].
     if (showOnlyBookmarked) {
         HortayTopBar(
             title = stringResource(R.string.timeline_saved_tab),
-            size = HortayTopBarSize.Medium,
+            size = HortayTopBarSize.Compact,
             scrollBehavior = scrollBehavior,
             windowInsets = barInsets,
         )
@@ -167,7 +170,7 @@ internal fun TimelineTopBar(
                     BrandRow()
                 }
             },
-            size = HortayTopBarSize.Medium,
+            size = HortayTopBarSize.Compact,
             actions = {
                 onGlobalSearchClick?.let { handler ->
                     IconButton(onClick = handler) {

@@ -20,7 +20,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,8 +44,6 @@ import dev.lyo.hortay.data.archive.ChatRef
 import dev.lyo.hortay.ui.archive.PostRevisionSheet
 import kotlinx.collections.immutable.persistentListOf
 import dev.lyo.hortay.ui.actions.PostActions
-import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
-import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.media.LocalScrollGate
@@ -786,54 +783,13 @@ fun TimelineScreen(
     ) {
         androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
     }
-    // Pinned color-only scroll behavior — height transitions are owned by
-    // [topBarOffsetPx] below so we don't fight two systems for the same dp.
+    // Pinned single-row feed bar. This behaviour only morphs the container colour on scroll
+    // (background → surfaceContainer); the bar does NOT hide on scroll. The previous scroll-hide
+    // (a custom NestedScrollConnection that shrank the topBar slot every frame) braked the scroll
+    // and re-padded the heavy feed body each frame, and its geometry entangled with the
+    // OldestUnreadFirst boundary landing. A slim pinned bar (see [TimelineTopBar]) is smoother and
+    // leaves the scroll / anchor machinery untouched.
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
-
-    // Twitter / Instagram floating-bar pattern: scroll delta directly drives
-    // the destination-style bar's vertical offset, in sync with the user's
-    // finger. No separate timed animation = no reflow jolt.
-    //
-    // Earlier iterations tried `AnimatedVisibility` wrapped around the topBar
-    // slot — that runs a 150 ms shrink tween on the bar's height while the
-    // user is mid-scroll. Scaffold re-measured the topBar slot every frame
-    // of the tween, body's `padding(top = topPadding)` jumped along, the
-    // FoldersBar / LazyColumn underneath shifted up at ~750 dp/s for those
-    // 150 ms while the user's own scroll continued at ~200 dp/s. The
-    // combined velocity discontinuity was the visible jank.
-    //
-    // The fix is to drive the bar's "exit" purely by scroll delta via a
-    // [NestedScrollConnection]: every pixel the user pulls the content up
-    // moves the bar one pixel further out of view, until the bar is fully
-    // hidden. Scrolling back down at the top of the list passes leftover
-    // delta through to reveal the bar — Twitter / Instagram canonical. The
-    // bar's measured height shrinks via [Modifier.layout] in lockstep with
-    // its visual offset so Scaffold's body padding tracks the same signal,
-    // never a competing timeline.
-    // Only the destination-style bars (home, bookmarks) participate in the
-    // scroll-hide. Filter / search-inside-filter use [HortayTopBarSize.Compact]
-    // and read as a tool stage with active input — those must stay pinned.
-    // The behavior helper reads `enabled` live so toggling it doesn't
-    // re-allocate the NestedScrollConnection.
-    // The feed bar hide-on-scrolls in BOTH orders via pure gesture deltas — the
-    // hide/show direction is gesture-based (finger-up = reading = hide), which is
-    // the same in Newest and OldestUnreadFirst, so the behavior needs no
-    // layout-direction awareness.
-    val floatingBar = rememberFloatingTopBarBehavior()
-    val topBarFullHeightPx = floatingBar.fullHeightPx
-    val topBarOffsetPx = floatingBar.offsetPx
-    val topBarNestedScroll = floatingBar.nestedScroll
-    // Reset the bar to fully visible whenever the user switches between
-    // top-level destinations (home ↔ bookmarks) or in/out of channel filter
-    // mode. Without this the bar stayed at its last hidden offset across
-    // navigation, so a fresh destination would briefly orphan the user
-    // looking at chrome they didn't expect to be missing.
-    // Reset the bar to fully visible when switching between top-level destinations
-    // (Home ↔ Saved). Without this the bar stays at its last hidden offset across
-    // navigation.
-    LaunchedEffect(showOnlyBookmarked) {
-        topBarOffsetPx.floatValue = 0f
-    }
 
     // One-shot "scroll to this messageId once it lands in the list". Two producers feed
     // this: in-app quote-card taps (see [PostInteractions.onQuotedSourceClick]) and
@@ -1399,61 +1355,27 @@ fun TimelineScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .nestedScroll(scrollBehavior.nestedScrollConnection)
-            .nestedScroll(topBarNestedScroll),
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             // Two-zone bar:
-            //   1. Persistent status-bar strip (always visible, painted with
-            //      the app's background) — keeps the system status bar text
-            //      legible against a stable backdrop regardless of how far
-            //      the bar content has slid. Sits OUTSIDE the layout-shrinking
-            //      block so it never moves.
-            //   2. Sliding bar content — the [TimelineTopBar] itself with
-            //      `windowInsets = WindowInsets(0)`, so its internal status-
-            //      bar padding doesn't double up with our zone-1 strip. The
-            //      [Modifier.layout] wrapper shrinks measured height in
-            //      lockstep with [topBarOffsetPx] so Scaffold's body padding
-            //      tracks the same signal — no separate animation timeline.
-            //
-            // Earlier iterations left status-bar handling inside the
-            // [HortayTopBar] (default windowInsets) and clipped at
-            // the layout-shrinker's bounds. That clipped the bar's outline
-            // correctly but the bar's INTERNAL coordinate system put title
-            // content right after its 24 dp status-bar pad — when offset = -50
-            // shifted the placeable up, title pixels ended up at screen y =
-            // 0..24, leaking onto the status bar. Splitting status-bar into
-            // its own non-moving zone fixes that root cause.
+            //   1. Persistent status-bar strip — painted with the app background so the system
+            //      status-bar text stays legible. Owns the status-bar inset; [TimelineTopBar]
+            //      below passes WindowInsets(0) so it doesn't double-pad.
+            //   2. The pinned [TimelineTopBar] (slim single-row brand + folder tabs). It no longer
+            //      slides on scroll — see the scrollBehavior KDoc above for why the collapse was
+            //      removed — so no layout-shrinker / offset plumbing is needed here.
             Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
                 Spacer(modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsTopHeight(WindowInsets.statusBars)
                 )
-                Box(modifier = Modifier
-                    .clipToBounds()
-                    .layout { measurable, constraints ->
-                        val placeable = measurable.measure(constraints)
-                        // Capture the bar's natural full height the first
-                        // time we see a non-zero measure; the
-                        // [topBarNestedScroll] connection reads this to know
-                        // how far the bar can travel.
-                        if (topBarFullHeightPx.floatValue == 0f && placeable.height > 0) {
-                            topBarFullHeightPx.floatValue = placeable.height.toFloat()
-                        }
-                        val offset = topBarOffsetPx.floatValue.toInt()
-                        val height = (placeable.height + offset).coerceAtLeast(0)
-                        layout(placeable.width, height) {
-                            placeable.placeRelative(0, offset)
-                        }
-                    }
-                ) {
-                    TimelineTopBar(
-                        showOnlyBookmarked = showOnlyBookmarked,
-                        onBrandTap = onBrandTap,
-                        onGlobalSearchClick = onSearchClick,
-                        topBarBadge = topBarBadge,
-                        scrollBehavior = scrollBehavior,
-                    )
-                }
+                TimelineTopBar(
+                    showOnlyBookmarked = showOnlyBookmarked,
+                    onBrandTap = onBrandTap,
+                    onGlobalSearchClick = onSearchClick,
+                    topBarBadge = topBarBadge,
+                    scrollBehavior = scrollBehavior,
+                )
             }
         },
         containerColor = MaterialTheme.colorScheme.background,
