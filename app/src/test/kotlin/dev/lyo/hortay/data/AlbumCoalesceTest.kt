@@ -575,6 +575,29 @@ class AlbumCoalesceTest {
     }
 
     @Test
+    fun `never-cached album survives cold start as a single-member card without crashing`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -7800L
+        val albumId = 1001L
+        val stride = 1L shl 20
+        val anchorId = 90L * stride
+        val lastMember = harness.fakeChannelMessage(chatId, anchorId, date = baseDate, mediaAlbumId = albumId)
+
+        // Genuinely cold: every sibling lookup 404s.
+        harness.td.onAny("GetMessageLocally") { _ -> TdApi.Error(404, "not local") }
+
+        harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(id = chatId, lastMessage = lastMember)))
+        harness.advanceUntilIdle()
+
+        assertEquals(1, harness.repo.posts.value.size, "card present, not dropped")
+        assertTrue(
+            harness.repo.posts.value.single().albumMessageIds.size <= 1,
+            "stays degraded (at most 1 member) when nothing is local — Layer 2 repairs on focus",
+        )
+        assertEquals(0, harness.td.rpcCount("GetChatHistory"), "no network on the cold-start local path")
+    }
+
+    @Test
     fun `cold-start album coalesce stays offline to respect the FLOOD_WAIT budget`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
         val chatId = -9200L
