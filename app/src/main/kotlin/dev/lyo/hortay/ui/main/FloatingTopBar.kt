@@ -35,6 +35,22 @@ import kotlinx.coroutines.launch
  * that toggles it (Timeline does — the bar stays pinned during channel
  * filter / search-inside-filter tool stages) doesn't have to re-allocate
  * the connection.
+ *
+ * [consumeScroll] picks between the two ways a caller reclaims the space the
+ * bar vacates, and it is load-bearing:
+ *  - `true` (default — Comments / Channel): the bar lives in a height-shrinking
+ *    layout slot, so the body padding contracts by the SAME scroll delta that
+ *    moves the bar. The connection MUST consume that delta, otherwise the body
+ *    would travel twice (once from the padding shrink, once from the list
+ *    scrolling). The cost is the "enter-always" feel — while the bar collapses,
+ *    the list is frozen and ALL motion comes from the shrinking header.
+ *  - `false` (main feed): the bar is an OVERLAY over a list whose top
+ *    `contentPadding` is a CONSTANT (the bar's full height) that scrolls off
+ *    with the content. Nothing in the layout moves when the bar slides, so the
+ *    connection consumes NOTHING — the list scrolls 1:1 with the finger and the
+ *    bar glides away in parallel, with no "spend effort to close the bar first"
+ *    braking. This is why the feed (tall header → long braking zone) needs it
+ *    while the short Comments / Channel bars stay on the consuming variant.
  */
 class FloatingTopBarBehavior(
     val fullHeightPx: MutableFloatState,
@@ -46,6 +62,7 @@ class FloatingTopBarBehavior(
 @Composable
 fun rememberFloatingTopBarBehavior(
     enabled: () -> Boolean = { true },
+    consumeScroll: Boolean = true,
 ): FloatingTopBarBehavior {
     val fullHeightPx = remember { mutableFloatStateOf(0f) }
     val offsetPx = remember { mutableFloatStateOf(0f) }
@@ -55,7 +72,7 @@ fun rememberFloatingTopBarBehavior(
     // new grab can cancel it; rides MotionScheme so the snap matches the app's motion language.
     val scope = rememberCoroutineScope()
     val settleSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
-    val nestedScroll = remember(fullHeightPx, offsetPx, scope, settleSpec) {
+    val nestedScroll = remember(fullHeightPx, offsetPx, scope, settleSpec, consumeScroll) {
         object : NestedScrollConnection {
             // The in-flight settle animation, cancelled the moment the user grabs the scroll again
             // so the finger always wins over the snap.
@@ -72,9 +89,11 @@ fun rememberFloatingTopBarBehavior(
             //
             // `available.y` is a raw screen-space pointer delta — `reverseLayout` does NOT transform
             // it, so the same sign rule holds in both feed orders (an earlier reverse-aware `dir`
-            // factor inverted this and was reverted). The bar only consumes scroll while it is
-            // actually moving (the `next == previous` guard returns Zero once fully open/closed), so
-            // it never steals scroll from a list that is already at rest against the bar.
+            // factor inverted this and was reverted). When [consumeScroll] is true the bar only
+            // consumes scroll while it is actually moving (the `next == previous` guard returns Zero
+            // once fully open/closed), so it never steals scroll from a list already at rest against
+            // the bar. When false it consumes nothing at all — the offset still tracks the gesture so
+            // the bar slides, but the list keeps the full delta (overlay model — see the class KDoc).
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (!enabledState.value()) return Offset.Zero
                 settleJob?.cancel()
@@ -84,7 +103,7 @@ fun rememberFloatingTopBarBehavior(
                 val next = (previous + available.y).coerceIn(limit, 0f)
                 if (next == previous) return Offset.Zero
                 offsetPx.floatValue = next
-                return Offset(0f, next - previous)
+                return if (consumeScroll) Offset(0f, next - previous) else Offset.Zero
             }
 
             // Gesture end (drag release always flings, even at ~0 velocity): snap the bar to the

@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.Role
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
+import dev.lyo.hortay.ui.main.rememberFloatingTopBarBehavior
 import kotlin.math.roundToInt
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -31,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -793,13 +795,19 @@ fun TimelineScreen(
     ) {
         androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
     }
-    // Twitter-style collapsing header, built on Material's ready-made enter-always scroll
-    // behaviour: it owns the (smooth, snap-on-settle, fling-aware, scroll-direction-based) collapse
-    // maths and works the same in both feed orders because it reacts to raw screen-space scroll
-    // deltas — so no custom NestedScrollConnection / reverse-awareness is needed. The header
-    // (brand row over the folder tabs) collapses together by applying the behaviour's
-    // `state.heightOffset` to its measured height; see the topBar slot below.
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
+    // Twitter-style collapsing header in the NON-CONSUMING (overlay) variant — see
+    // [rememberFloatingTopBarBehavior]'s `consumeScroll` KDoc. The feed's header is tall (brand row
+    // OVER the folder tabs, ~112dp), so the old Material `enterAlwaysScrollBehavior` — which collapses
+    // by CONSUMING that many pixels of scroll before the list moves — read as "the scroll brakes; you
+    // spend effort closing the bar first". Here the bar is an overlay over a list whose top
+    // `contentPadding` is a constant (the bar's full measured height) that scrolls off with the
+    // content, so the connection consumes nothing: the list tracks the finger 1:1 and the bar glides
+    // away in parallel. `offsetPx` (0 → -fullHeightPx) drives both the overlay's [Modifier.layout]
+    // shrink and the bottom nav-bar collapse below.
+    val headerBehavior = rememberFloatingTopBarBehavior(consumeScroll = false)
+    val headerFullHeightPx = headerBehavior.fullHeightPx
+    val headerOffsetPx = headerBehavior.offsetPx
+    val density = LocalDensity.current
 
     // Drive the bottom nav-bar's hide-on-scroll from the SAME header collapse signal, so the bar
     // slides away in lockstep with the brand + folders. Auth feed only — [LocalNavBarCollapse] is
@@ -807,9 +815,11 @@ fun TimelineScreen(
     // leaves composition (tab switch) so Channels / Profile never inherit a hidden bar.
     val navBarCollapse = dev.lyo.hortay.ui.main.LocalNavBarCollapse.current
     if (navBarCollapse != null) {
-        LaunchedEffect(scrollBehavior, navBarCollapse) {
-            snapshotFlow { scrollBehavior.state.collapsedFraction }
-                .collect { navBarCollapse.floatValue = it }
+        LaunchedEffect(headerBehavior, navBarCollapse) {
+            snapshotFlow {
+                val full = headerFullHeightPx.floatValue
+                if (full <= 0f) 0f else (-headerOffsetPx.floatValue / full).coerceIn(0f, 1f)
+            }.collect { navBarCollapse.floatValue = it }
         }
         DisposableEffect(navBarCollapse) {
             onDispose { navBarCollapse.floatValue = 0f }
@@ -1411,94 +1421,33 @@ fun TimelineScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .nestedScroll(scrollBehavior.nestedScrollConnection),
+            .nestedScroll(headerBehavior.nestedScroll),
         topBar = {
-            // Twitter-style collapsing header. Zone 1 (status strip) stays pinned. Zone 2 — the
-            // brand row OVER the folder tabs — collapses together on scroll-down and reappears on
-            // scroll-up, driven by Material's ready-made enter-always [scrollBehavior]: we just
-            // shrink the measured height by its `state.heightOffset` (0 → -fullHeight) and place the
-            // content at that offset. The feed body tracks it through Scaffold padding, so the
-            // header never intercepts the scroll, and Material owns the snap-on-settle / fling /
-            // scroll-direction (and reverse-order) maths — no custom connection.
-            Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
-                Spacer(modifier = Modifier
-                    .fillMaxWidth()
-                    .windowInsetsTopHeight(WindowInsets.statusBars)
-                )
-                Column(
-                    modifier = Modifier
-                        .clipToBounds()
-                        .layout { measurable, constraints ->
-                            val placeable = measurable.measure(constraints)
-                            // Allow the behaviour to collapse the header by its full measured height.
-                            scrollBehavior.state.heightOffsetLimit = -placeable.height.toFloat()
-                            val offset = scrollBehavior.state.heightOffset.roundToInt()
-                            val height = (placeable.height + offset).coerceAtLeast(0)
-                            layout(placeable.width, height) { placeable.place(0, offset) }
-                        },
-                ) {
-                    // Brand wordmark (whole row is the home / scroll-to-top tap target) + search.
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable(role = Role.Button, onClick = onBrandTap),
-                        ) {
-                            if (showOnlyBookmarked) {
-                                Text(
-                                    text = stringResource(R.string.timeline_saved_tab),
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    maxLines = 1,
-                                )
-                            } else {
-                                BrandRow()
-                            }
-                        }
-                        onSearchClick?.let { handler ->
-                            IconButton(onClick = handler) {
-                                Symbol(
-                                    name = "search",
-                                    contentDescription = stringResource(R.string.web_search_action),
-                                )
-                            }
-                        }
-                        topBarBadge?.invoke()
-                    }
-                    // Folder tabs below the brand — full width so taps land cleanly, scrolls
-                    // horizontally on its own.
-                    if (!showOnlyBookmarked && hasFolderUi) {
-                        FoldersBar(
-                            modifier = Modifier.fillMaxWidth(),
-                            selected = scope_filter,
-                            folders = headerTabs,
-                            showArchive = archivedChatIds.isNotEmpty(),
-                            onSelected = { sel ->
-                                when (sel) {
-                                    FilterScope.All -> {
-                                        selectedFolderId = null
-                                        archiveSelected = false
-                                    }
-                                    FilterScope.Archive -> {
-                                        selectedFolderId = null
-                                        archiveSelected = true
-                                    }
-                                    is FilterScope.Folder -> {
-                                        selectedFolderId = sel.id
-                                        archiveSelected = false
-                                    }
-                                }
-                            },
-                        )
-                    }
-                }
-            }
+            // Only the pinned zone-1 status strip lives in the Scaffold slot now, so the body
+            // padding it produces is a CONSTANT (status-bar height) — nothing here shrinks on scroll.
+            // The collapsing zone-2 (brand row over folder tabs) is rendered as an overlay at the top
+            // of the body (see `CollapsingHeaderOverlay` below); reclaiming its space via the list's
+            // constant top `contentPadding` instead of a shrinking Scaffold slot is what lets the
+            // header NOT consume scroll (overlay model — see [headerBehavior] above).
+            Spacer(modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsTopHeight(WindowInsets.statusBars)
+                .background(MaterialTheme.colorScheme.background)
+            )
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
+        // Constant top inset for the collapsing zone-2 overlay: its measured full height once known,
+        // else a per-state estimate so the very first cold-start frame paints content below the bar
+        // instead of under it (the screen's no-flash-on-first-paint contract). Brand row ≈ 56dp; the
+        // folder-tabs row adds ≈ 56dp when shown.
+        val headerOverlayHeightDp = if (headerFullHeightPx.floatValue > 0f) {
+            with(density) { headerFullHeightPx.floatValue.toDp() }
+        } else if (!showOnlyBookmarked && hasFolderUi) {
+            112.dp
+        } else {
+            56.dp
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1522,7 +1471,13 @@ fun TimelineScreen(
                         .LoadingIndicator(
                             state = pullState,
                             isRefreshing = refreshing,
-                            modifier = Modifier.align(Alignment.TopCenter),
+                            // Sits below the collapsing header overlay (the body no longer pads
+                            // down by the header — only the status strip — so without this the
+                            // spinner would land behind the bar). PTR fires at the top, where the
+                            // bar is shown, so offsetting by its full height is correct.
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = headerOverlayHeightDp),
                         )
                 },
             ) {
@@ -1723,6 +1678,12 @@ fun TimelineScreen(
                                     state = listState,
                                     flingBehavior = flingBehavior,
                                     reverseLayout = feedOrder.reverseLayout,
+                                    // Constant top inset reserving the collapsing header-overlay's
+                                    // full height (+ the 8dp gap the feed always had). This is what
+                                    // the overlay model trades the shrinking Scaffold slot for: the
+                                    // reserved space lives in the scrollable list, so it scrolls off
+                                    // as the bar hides — no gap, and the bar consumes no scroll.
+                                    topPadding = headerOverlayHeightDp + 8.dp,
                                     bottomPadding = contentPadding.calculateBottomPadding(),
                                     feedItems = state.items,
                                     centeredItemKeyState = centeredItemKeyState,
@@ -1781,10 +1742,10 @@ fun TimelineScreen(
             val pillVisible = !showOnlyBookmarked &&
                 !refreshing && scopedPendingChannels.isNotEmpty()
             val pillAtTop = feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst
-            // Folder chips occupy the top ~56dp inside the same Box; offset the pill
-            // so it lands just below them instead of overlapping.
-            val chipsVisible = !showOnlyBookmarked
-            val pillTopPadding = if (chipsVisible) 64.dp else 8.dp
+            // Newest-mode pill is top-anchored; the collapsing header is now an overlay drawn on
+            // top of this Box, so the pill lands just below the header's full height (instead of the
+            // old fixed 64dp that assumed the body was already padded down past the header).
+            val pillTopPadding = headerOverlayHeightDp + 8.dp
             val pillBottomPadding = contentPadding.calculateBottomPadding() + 16.dp
             val pillSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
             val pillEffects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
@@ -1996,6 +1957,91 @@ fun TimelineScreen(
                 }
             }
 
+            // Collapsing zone-2 header overlay (brand row over folder tabs), rendered LAST so it
+            // draws on top of the feed — content scrolls UNDERNEATH it. Sits at the top of the body,
+            // just below the pinned status strip. It slides up via the same [Modifier.layout] shrink
+            // the old in-slot header used, but reading [headerOffsetPx] (non-consuming) instead of
+            // Material's heightOffset. The list reserves this height as a constant top contentPadding
+            // (which scrolls off), so shrinking the overlay reclaims no layout space — it only clips
+            // the draw — and the header therefore costs the scroll nothing. See [headerBehavior].
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .clipToBounds()
+                        .layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints)
+                            if (headerFullHeightPx.floatValue == 0f && placeable.height > 0) {
+                                headerFullHeightPx.floatValue = placeable.height.toFloat()
+                            }
+                            val offset = headerOffsetPx.floatValue.roundToInt()
+                            val height = (placeable.height + offset).coerceAtLeast(0)
+                            layout(placeable.width, height) { placeable.place(0, offset) }
+                        },
+                ) {
+                    // Brand wordmark (whole row is the home / scroll-to-top tap target) + search.
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(role = Role.Button, onClick = onBrandTap),
+                        ) {
+                            if (showOnlyBookmarked) {
+                                Text(
+                                    text = stringResource(R.string.timeline_saved_tab),
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    maxLines = 1,
+                                )
+                            } else {
+                                BrandRow()
+                            }
+                        }
+                        onSearchClick?.let { handler ->
+                            IconButton(onClick = handler) {
+                                Symbol(
+                                    name = "search",
+                                    contentDescription = stringResource(R.string.web_search_action),
+                                )
+                            }
+                        }
+                        topBarBadge?.invoke()
+                    }
+                    // Folder tabs below the brand — full width so taps land cleanly, scrolls
+                    // horizontally on its own.
+                    if (!showOnlyBookmarked && hasFolderUi) {
+                        FoldersBar(
+                            modifier = Modifier.fillMaxWidth(),
+                            selected = scope_filter,
+                            folders = headerTabs,
+                            showArchive = archivedChatIds.isNotEmpty(),
+                            onSelected = { sel ->
+                                when (sel) {
+                                    FilterScope.All -> {
+                                        selectedFolderId = null
+                                        archiveSelected = false
+                                    }
+                                    FilterScope.Archive -> {
+                                        selectedFolderId = null
+                                        archiveSelected = true
+                                    }
+                                    is FilterScope.Folder -> {
+                                        selectedFolderId = sel.id
+                                        archiveSelected = false
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 

@@ -37,6 +37,10 @@ internal fun TimelineFeedColumn(
     state: LazyListState,
     flingBehavior: FlingBehavior,
     reverseLayout: Boolean,
+    // Reserves the collapsing header-overlay's full height (see TimelineScreen's overlay model);
+    // the feed's old fixed 8dp top gap is folded into the caller's value. Default keeps the bare
+    // 8dp for any caller that mounts the column without a floating header.
+    topPadding: Dp = 8.dp,
     bottomPadding: Dp,
     feedItems: List<FeedItem>,
     centeredItemKeyState: State<Any?>,
@@ -50,7 +54,7 @@ internal fun TimelineFeedColumn(
         flingBehavior = flingBehavior,
         reverseLayout = reverseLayout,
         contentPadding = PaddingValues(
-            top = 8.dp,
+            top = topPadding,
             bottom = bottomPadding,
         ),
         modifier = modifier,

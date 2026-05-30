@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Changed
+- The home feed's top bar and bottom navigation now slide away as you scroll without dragging on the gesture — the feed follows your finger 1:1 instead of stalling while the bar collapses.
+
 ## [0.10.0] — 2026-05-30
 
 ### Added
