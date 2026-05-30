@@ -1903,6 +1903,9 @@ class PostsRepository(
     private suspend fun performAlbumRepair(req: AlbumRepairRequest) {
         val chat = chatCache[req.chatId] ?: return
         if (!chat.isChannel()) return
+        // The anchor is the degraded card already in _posts, so this GetMessage is
+        // a local cache hit (per-message index); the only call that actually reaches
+        // the server is the sibling window below (coalesceAlbumFragments onlyLocal=false).
         val anchor = runCatching { td.send(TdApi.GetMessage(req.chatId, req.anchorId)) }
             .warnUnlessCancelled(TAG, "albumRepairAnchor(${req.chatId},${req.anchorId})").getOrNull() ?: return
         val coalesced = coalesceAlbumFragments(req.chatId, listOf(anchor), onlyLocal = false)
