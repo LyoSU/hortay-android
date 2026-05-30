@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-30
+
 ### Added
 - Collapsible quotes open collapsed to a few lines with a chevron to expand or collapse them everywhere — feed, channels, comments and the open post — instead of always showing whole.
 - Tapping a link, @mention or hashtag now highlights it with a rounded, padded fill, giving the same clear press feedback across every link type.
