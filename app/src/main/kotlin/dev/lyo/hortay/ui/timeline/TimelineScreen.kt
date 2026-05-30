@@ -800,6 +800,21 @@ fun TimelineScreen(
     // `state.heightOffset` to its measured height; see the topBar slot below.
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
+    // Drive the bottom nav-bar's hide-on-scroll from the SAME header collapse signal, so the bar
+    // slides away in lockstep with the brand + folders. Auth feed only — [LocalNavBarCollapse] is
+    // null in guest mode / other hosts, where this is a no-op. Reset to 0 (shown) when the feed
+    // leaves composition (tab switch) so Channels / Profile never inherit a hidden bar.
+    val navBarCollapse = dev.lyo.hortay.ui.main.LocalNavBarCollapse.current
+    if (navBarCollapse != null) {
+        LaunchedEffect(scrollBehavior, navBarCollapse) {
+            snapshotFlow { scrollBehavior.state.collapsedFraction }
+                .collect { navBarCollapse.floatValue = it }
+        }
+        DisposableEffect(navBarCollapse) {
+            onDispose { navBarCollapse.floatValue = 0f }
+        }
+    }
+
     // Folder tabs shown in the header. Hoisted above the Scaffold so the single-row header (in the
     // topBar slot) can render them inline next to the brand. A folder is hidden when its resolved
     // rule is equivalent to "All" (would duplicate "Усі") or no visible channel falls inside it;

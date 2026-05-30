@@ -16,7 +16,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
@@ -53,6 +55,14 @@ import kotlinx.coroutines.launch
  * once mounted so the user gets visible feedback rather than a hanging tap.
  */
 private const val CHANNEL_PUSH_PREFETCH_TIMEOUT_MS = 400L
+
+/**
+ * 0..1 collapse fraction for the bottom nav-bar's hide-on-scroll, shared between the feed
+ * (writer: [dev.lyo.hortay.ui.timeline.TimelineScreen], from its header scrollBehavior's
+ * `collapsedFraction`) and the [FloatingNavBar] (reader). 0 = fully shown, 1 = slid off-screen.
+ * Null when no collapsing feed is driving it, in which case the bar stays put.
+ */
+val LocalNavBarCollapse = staticCompositionLocalOf<MutableFloatState?> { null }
 
 /**
  * Top-level container that owns nav-tab state, the global channel filter and the comments
@@ -441,6 +451,15 @@ fun MainScaffold(graph: AppGraph) {
                         },
                         entryProvider = entryProvider {
                             entry<HomeKey> {
+                                // Bottom nav-bar hides in sync with the feed's collapsing header:
+                                // TimelineScreen writes the header scrollBehavior's collapsedFraction
+                                // (0 shown .. 1 hidden) into this state, and the FloatingNavBar slides
+                                // off-screen by it. Reusing the header's existing Material signal keeps
+                                // both in lockstep with no extra scroll plumbing; it resets to 0 (shown)
+                                // when the feed leaves composition (tab switch) via TimelineScreen's
+                                // DisposableEffect.
+                                val navBarCollapse = remember { mutableFloatStateOf(0f) }
+                                CompositionLocalProvider(LocalNavBarCollapse provides navBarCollapse) {
                                 Scaffold(
                                     modifier = Modifier.fillMaxSize(),
                                     bottomBar = {
@@ -454,6 +473,9 @@ fun MainScaffold(graph: AppGraph) {
                                                     tab == NavTab.Feed && tab == selectedTab
                                                 if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
                                                 selectedTab = tab
+                                            },
+                                            modifier = Modifier.graphicsLayer {
+                                                translationY = navBarCollapse.floatValue * (size.height + 24.dp.toPx())
                                             },
                                         )
                                     },
@@ -478,6 +500,7 @@ fun MainScaffold(graph: AppGraph) {
                                         canReportPost = canReportPost,
                                         tdlibMarkAsRead = tdlibMarkAsRead,
                                     )
+                                }
                                 }
                             }
                             entry<ChannelKey> { key ->
