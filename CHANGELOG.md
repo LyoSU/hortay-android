@@ -23,6 +23,9 @@
 - Switching between folder tabs (Archive ↔ All ↔ a folder) no longer flashes a row of skeleton bars over the see-through feed for a moment before the posts settle.
 - Custom emoji now display inside poll questions, descriptions and options, instead of showing as an empty placeholder box.
 
+### Architecture
+- Navigation migrated to Jetpack Navigation 3 (`NavDisplay`), replacing the hand-rolled overlay stack across both authenticated and guest modes — predictive back, per-screen saved state and view-models are now framework-owned.
+
 ## [0.9.1] — 2026-05-29
 
 ### Fixed
