@@ -17,6 +17,11 @@ composeMaterial3 = "1.5.0-alpha19"
 # theme module reference Morph / RoundedPolygon directly without depending on
 # material3's internal export surface.
 graphicsShapes = "1.1.0"
+# androidx.navigation3 — modern back-stack-as-state navigation (stable 1.1.2, May 2026).
+# Not managed by the Compose BOM (separate group), so it coexists with the pinned
+# material3 alpha. Shared-element / container-transform comes from compose-animation
+# (BOM-managed) via SharedTransitionLayout; nav3 supplies NavDisplay + entry-scoping.
+navigation3 = "1.1.2"
 coreKtx = "1.16.0"
 appcompat = "1.7.0"
 activityCompose = "1.10.0"
@@ -70,6 +75,9 @@ compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling
 compose-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "composeMaterial3" }
 androidx-graphics-shapes = { group = "androidx.graphics", name = "graphics-shapes", version.ref = "graphicsShapes" }
 compose-ui-text-google-fonts = { group = "androidx.compose.ui", name = "ui-text-google-fonts" }
+
+androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigation3-runtime", version.ref = "navigation3" }
+androidx-navigation3-ui = { group = "androidx.navigation3", name = "navigation3-ui", version.ref = "navigation3" }
 
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
