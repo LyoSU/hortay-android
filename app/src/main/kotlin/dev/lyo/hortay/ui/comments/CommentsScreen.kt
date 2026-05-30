@@ -400,7 +400,14 @@ fun CommentsScreen(
             // below. Subtitle surfaces only when there ARE replies (count via
             // pluralStringResource); Loading / empty / Error keep the chrome
             // calm and let the body's empty-state hero communicate the situation.
-            val replyCount = (state as? CommentsRepository.ThreadState.Ready)?.rows?.size ?: 0
+            // Seed the count from the post's already-known [TimelinePost.commentCount] so the
+            // subtitle is present from the first frame. Deriving it only from the loaded thread
+            // (rows.size) meant the subtitle popped in when the thread resolved and reflowed the
+            // title — the "Допис" header visibly jumped as the count loaded. Once the thread is
+            // Ready the live row count takes over (it's the authoritative figure); until then the
+            // header sits at its final position with the cached count already shown.
+            val replyCount = (state as? CommentsRepository.ThreadState.Ready)?.rows?.size
+                ?: (post.commentCount ?: 0)
             val subtitleText = if (replyCount > 0) {
                 pluralStringResource(R.plurals.comments_count, replyCount, replyCount)
             } else {

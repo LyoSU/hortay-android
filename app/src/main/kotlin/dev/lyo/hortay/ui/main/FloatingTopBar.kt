@@ -16,8 +16,9 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
  *
  * Behaviour, as documented at the original call site in TimelineScreen:
  * every pixel of upward content scroll moves the bar one pixel further out
- * of view (down to `-topBarFullHeightPx`); every pixel of downward scroll at
- * the top of the list moves it back. The bar's measured height is shrunk in
+ * of view (down to `-topBarFullHeightPx`); every pixel of downward scroll
+ * moves it back (enter-always — it reappears the instant you reverse, not only
+ * at the top of the list). The bar's measured height is shrunk in
  * lockstep via [Modifier.layout] in the caller — same scroll delta drives
  * both the visual offset AND Scaffold's body padding, so they never desync
  * (which is what made the canonical M3 [exitUntilCollapsedScrollBehavior]
@@ -43,37 +44,26 @@ fun rememberFloatingTopBarBehavior(
     val enabledState = rememberUpdatedState(enabled)
     val nestedScroll = remember(fullHeightPx, offsetPx) {
         object : NestedScrollConnection {
-            // Pure gesture-delta hide-on-scroll, identical in both feed orders.
-            // `available.y` is a raw screen-space pointer delta — `reverseLayout`
-            // does NOT transform it. Progressing through the feed (reading) is a
-            // finger-up gesture (`available.y < 0`) regardless of order: in Newest
-            // you scroll down into older posts; in OldestUnreadFirst the newest sit
-            // at the visual bottom, so advancing toward them also brings lower
-            // content up — finger up. So hide on negative delta and reveal on
-            // positive in BOTH cases; no direction-dependent fold (an earlier
-            // reverse-aware `dir` factor inverted this and was reverted).
+            // enter-always hide/reveal driven entirely in onPreScroll, symmetric in both
+            // directions: scroll the content up (finger up, `available.y < 0`) and the bar slides
+            // out one pixel per pixel; scroll down (finger down, `available.y > 0`) and it slides
+            // straight back — so the brand bar reappears the instant you reverse, instead of only
+            // at the very top of the list. (The previous split — hide in onPreScroll, reveal only
+            // in onPostScroll — meant the bar revealed solely when the list could no longer consume
+            // the downward scroll, i.e. at the top edge, so mid-list it stayed hidden and read as
+            // "appears at unpredictable times".)
+            //
+            // `available.y` is a raw screen-space pointer delta — `reverseLayout` does NOT transform
+            // it, so the same sign rule holds in both feed orders (an earlier reverse-aware `dir`
+            // factor inverted this and was reverted). The bar only consumes scroll while it is
+            // actually moving (the `next == previous` guard returns Zero once fully open/closed), so
+            // it never steals scroll from a list that is already at rest against the bar.
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (!enabledState.value()) return Offset.Zero
-                if (available.y >= 0f) return Offset.Zero
                 val limit = -fullHeightPx.floatValue
                 if (limit == 0f) return Offset.Zero
                 val previous = offsetPx.floatValue
                 val next = (previous + available.y).coerceIn(limit, 0f)
-                if (next == previous) return Offset.Zero
-                offsetPx.floatValue = next
-                return Offset(0f, next - previous)
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                if (!enabledState.value()) return Offset.Zero
-                if (available.y <= 0f) return Offset.Zero
-                val previous = offsetPx.floatValue
-                if (previous == 0f) return Offset.Zero
-                val next = (previous + available.y).coerceIn(-fullHeightPx.floatValue, 0f)
                 if (next == previous) return Offset.Zero
                 offsetPx.floatValue = next
                 return Offset(0f, next - previous)
