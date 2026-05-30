@@ -161,14 +161,14 @@ fun MainScaffold(graph: AppGraph) {
         graph.commentsRepository.primeCommentsForOpen(post)
         graph.backStack.add(CommentsKey(anchor = post))
     }
-    // Open the full post from a feed/channel post tap or its "Показати більше". The post-card →
-    // open-post container-transform morph (see [postMorph]) now carries the visual continuity, so
-    // the detail opens at the top (heroAnchorY = null) and the tapped card grows into the pinned
-    // anchor. The anchorY the feed measured is no longer needed (the shared-bounds transform reads
-    // the live on-screen bounds of both ends directly).
-    val pushCommentsHero: (TimelinePost, Int) -> Unit = { post, _ ->
+    // Hero-open from a feed/channel post tap or its "Показати більше": open the full post at the
+    // reading position the user left — [anchorY] is the post's absolute on-screen Y in the feed, so
+    // a long post the user scrolled into opens showing the SAME content, not jumped to the top. The
+    // post-card → open-post container-transform morph ([postMorph]) layers on top: with the anchor
+    // landing where the card sat, the morph reads as the card expanding in place into the full post.
+    val pushCommentsHero: (TimelinePost, Int) -> Unit = { post, anchorY ->
         graph.commentsRepository.primeCommentsForOpen(post)
-        graph.backStack.add(CommentsKey(anchor = post))
+        graph.backStack.add(CommentsKey(anchor = post, heroAnchorY = anchorY))
     }
     // Pop a detail entry. Guarded so the [HomeKey] root is never removed (NavDisplay always
     // needs a root; an empty stack would crash it).

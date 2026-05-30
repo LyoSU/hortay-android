@@ -7,6 +7,8 @@ package dev.lyo.hortay.ui.main
 
 import androidx.compose.animation.BoundsTransform
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -51,8 +53,15 @@ fun Modifier.postMorph(post: TimelinePost): Modifier {
         this@postMorph.sharedBounds(
             sharedContentState = rememberSharedContentState(key = "post-morph:${post.chatId}:${post.id}"),
             animatedVisibilityScope = anim,
+            enter = fadeIn(),
+            exit = fadeOut(),
             boundsTransform = boundsTransform,
-            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
+            // ScaleToBounds, not RemeasureToBounds: the card is heavy (media, text, reactions) and
+            // RemeasureToBounds re-lays-it-out every frame of the morph — the source of the jank.
+            // Per the official shared-element guidance, text/heavy content should scale (measure
+            // once at the target, then graphical-scale to the animating bounds), which is also what
+            // the container-transform sample uses.
+            resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
         )
     }
 }
