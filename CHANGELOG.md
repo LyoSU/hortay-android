@@ -23,6 +23,7 @@
 - Posts and quotes no longer render with stray empty lines hanging off the top or bottom, and the gap around quote and code blocks is now consistent.
 - Switching between folder tabs (Archive ↔ All ↔ a folder) no longer flashes a row of skeleton bars over the see-through feed for a moment before the posts settle.
 - Custom emoji now display inside poll questions, descriptions and options, instead of showing as an empty placeholder box.
+- Photo and video albums now open complete on the first launch instead of occasionally showing a single item until you tapped the post.
 
 ### Architecture
 - Navigation migrated to Jetpack Navigation 3 (`NavDisplay`), replacing the hand-rolled overlay stack across both authenticated and guest modes — predictive back, per-screen saved state and view-models are now framework-owned.
