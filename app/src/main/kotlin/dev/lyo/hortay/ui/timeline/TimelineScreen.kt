@@ -11,7 +11,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.icons.Symbol
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -791,6 +796,30 @@ fun TimelineScreen(
     // leaves the scroll / anchor machinery untouched.
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
 
+    // Folder tabs shown in the header. Hoisted above the Scaffold so the single-row header (in the
+    // topBar slot) can render them inline next to the brand. A folder is hidden when its resolved
+    // rule is equivalent to "All" (would duplicate "Усі") or no visible channel falls inside it;
+    // unresolved rules keep the tab so it doesn't flicker out during cold start.
+    val headerVisibleChatIds = remember(posts) {
+        posts.asSequence().map { it.chatId }.toSet()
+    }
+    val headerTabs = remember(foldersList, fullFoldersMap, folderChatIdsMap, headerVisibleChatIds, folders) {
+        val repo = folders
+        foldersList.mapNotNull { info ->
+            val full = fullFoldersMap[info.id]
+            val ids = folderChatIdsMap[info.id]
+            val keep = when {
+                full == null || repo == null -> true
+                repo.isEquivalentToAll(full) -> false
+                ids == null -> true
+                headerVisibleChatIds.isEmpty() -> true
+                else -> headerVisibleChatIds.any { it in ids }
+            }
+            if (keep) FolderTab(info.id, info.name?.text?.text.orEmpty()) else null
+        }
+    }
+    val hasFolderUi = headerTabs.isNotEmpty() || archivedChatIds.isNotEmpty()
+
     // One-shot "scroll to this messageId once it lands in the list". Two producers feed
     // this: in-app quote-card taps (see [PostInteractions.onQuotedSourceClick]) and
     // external deep links (the [scrollToMessage] parameter from MainScaffold). One
@@ -1369,13 +1398,62 @@ fun TimelineScreen(
                     .fillMaxWidth()
                     .windowInsetsTopHeight(WindowInsets.statusBars)
                 )
-                TimelineTopBar(
-                    showOnlyBookmarked = showOnlyBookmarked,
-                    onBrandTap = onBrandTap,
-                    onGlobalSearchClick = onSearchClick,
-                    topBarBadge = topBarBadge,
-                    scrollBehavior = scrollBehavior,
-                )
+                // Single slim row: brand wordmark (re-tap = home/scroll-to-top), the
+                // horizontally-scrollable folder tabs, and the optional search action. One row
+                // instead of a brand bar + a separate folder row keeps feed chrome minimal, and it
+                // rests on `background` (no scrolled-grey morph) so it reads as part of the feed.
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (showOnlyBookmarked) {
+                            stringResource(R.string.timeline_saved_tab)
+                        } else {
+                            "Hortay"
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        modifier = Modifier.clickable(role = Role.Button, onClick = onBrandTap),
+                    )
+                    if (!showOnlyBookmarked && hasFolderUi) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            FoldersBar(
+                                selected = scope_filter,
+                                folders = headerTabs,
+                                showArchive = archivedChatIds.isNotEmpty(),
+                                onSelected = { sel ->
+                                    when (sel) {
+                                        FilterScope.All -> {
+                                            selectedFolderId = null
+                                            archiveSelected = false
+                                        }
+                                        FilterScope.Archive -> {
+                                            selectedFolderId = null
+                                            archiveSelected = true
+                                        }
+                                        is FilterScope.Folder -> {
+                                            selectedFolderId = sel.id
+                                            archiveSelected = false
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                    onSearchClick?.let { handler ->
+                        IconButton(onClick = handler) {
+                            Symbol(
+                                name = "search",
+                                contentDescription = stringResource(R.string.web_search_action),
+                            )
+                        }
+                    }
+                    topBarBadge?.invoke()
+                }
             }
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -1408,68 +1486,8 @@ fun TimelineScreen(
                 },
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // FoldersBar is hidden when there's nothing to switch between:
-                    //   - User has no custom folders AND no archive
-                    //   - Or we're in showOnlyBookmarked / channelFilter context
-                    //   - Or we're in guest mode (folders == null → empty list)
-                    // Showing a single "All" tab on its own is a vestigial control
-                    // that takes vertical space without giving the user a choice.
-                    // Tabs we actually show in the bar. A folder is hidden when:
-                    //   1. Its full rule is resolved AND every subscribed channel falls
-                    //      outside it (the tab would land on an empty feed), OR
-                    //   2. Its full rule is resolved AND is indistinguishable from the
-                    //      default "All" scope (`includeChannels=true`, no pins / explicit
-                    //      includes / excludes / archive-mute-read narrowing) — the chip
-                    //      would just duplicate "Усі".
-                    // While rules haven't been resolved yet (cold start / between
-                    // UpdateChatFolders and the GetChatFolder fan-out landing), we render
-                    // the raw list so the bar doesn't briefly drop folders.
-                    val visibleChatIds = remember(posts) {
-                        posts.asSequence().map { it.chatId }.toSet()
-                    }
-                    val tabs = remember(foldersList, fullFoldersMap, folderChatIdsMap, visibleChatIds, folders) {
-                        val repo = folders
-                        foldersList.mapNotNull { info ->
-                            val full = fullFoldersMap[info.id]
-                            val ids = folderChatIdsMap[info.id]
-                            val keep = when {
-                                full == null || repo == null -> true
-                                repo.isEquivalentToAll(full) -> false
-                                // Membership not yet resolved — keep the tab so it doesn't
-                                // briefly drop out between UpdateChatFolders and the eager
-                                // folderChatIds warm-up landing.
-                                ids == null -> true
-                                visibleChatIds.isEmpty() -> true
-                                else -> visibleChatIds.any { it in ids }
-                            }
-                            if (keep) FolderTab(info.id, info.name?.text?.text.orEmpty()) else null
-                        }
-                    }
-                    val hasFolderUi = tabs.isNotEmpty() || archivedChatIds.isNotEmpty()
-                    if (!showOnlyBookmarked && hasFolderUi) {
-                        FoldersBar(
-                            selected = scope_filter,
-                            folders = tabs,
-                            showArchive = archivedChatIds.isNotEmpty(),
-                            onSelected = { sel ->
-                                when (sel) {
-                                    FilterScope.All -> {
-                                        selectedFolderId = null
-                                        archiveSelected = false
-                                    }
-                                    FilterScope.Archive -> {
-                                        selectedFolderId = null
-                                        archiveSelected = true
-                                    }
-                                    is FilterScope.Folder -> {
-                                        selectedFolderId = sel.id
-                                        archiveSelected = false
-                                    }
-                                }
-                            },
-                        )
-                    }
-
+                    // Folder tabs now live in the single-row header (topBar slot) next to the brand,
+                    // so the body is just the feed render gate.
                     // Render gate. The latched [TimelineUiState] is the single source
                     // of truth for what gets mounted:
                     //   • Loading → [SkeletonFeed]: refresh in flight on an empty

@@ -5,17 +5,12 @@
 
 package dev.lyo.hortay.ui.timeline
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
@@ -24,15 +19,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dev.lyo.hortay.R
-import dev.lyo.hortay.ui.components.HortayTopBar
-import dev.lyo.hortay.ui.components.HortayTopBarSize
-import dev.lyo.hortay.ui.icons.Symbol
-import dev.lyo.hortay.ui.main.BrandRow
 import dev.lyo.hortay.ui.media.LocalIsCenteredItem
 import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
 import dev.lyo.hortay.ui.text.LocalShowFullPost
@@ -134,59 +122,3 @@ internal fun TimelineFeedColumn(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun TimelineTopBar(
-    showOnlyBookmarked: Boolean,
-    onBrandTap: () -> Unit,
-    onGlobalSearchClick: (() -> Unit)?,
-    topBarBadge: (@Composable () -> Unit)?,
-    scrollBehavior: TopAppBarScrollBehavior,
-) {
-    // Status-bar insets are owned by the persistent zone-1 strip in the
-    // Scaffold's topBar slot — passing [WindowInsets] of 0 here prevents the
-    // bar from doubling up on top padding (and keeps its content from
-    // travelling into the system status-bar area when the layout shrinker
-    // pushes the bar upward on scroll).
-    val barInsets = WindowInsets(0)
-    // Pinned single-row (Compact) bar for both top-level destinations (Home / Bookmarks).
-    // Deliberately NOT a collapsing Medium/Large flexible bar: collapsing the feed header on
-    // scroll meant resizing the Scaffold's top slot every frame (and re-padding the heavy feed
-    // body), which read as the scroll "braking" / lagging, and it entangled with the
-    // OldestUnreadFirst boundary-landing geometry. A slim pinned row keeps the brand + folder
-    // tabs always reachable, costs little vertical space, and leaves the feed's scroll / anchor
-    // machinery untouched. Tool stages (search, channel filter) live in [ChannelScreen].
-    if (showOnlyBookmarked) {
-        HortayTopBar(
-            title = stringResource(R.string.timeline_saved_tab),
-            size = HortayTopBarSize.Compact,
-            scrollBehavior = scrollBehavior,
-            windowInsets = barInsets,
-        )
-    } else {
-        HortayTopBar(
-            title = {
-                Box(modifier = Modifier.clickable(role = Role.Button, onClick = onBrandTap)) {
-                    BrandRow()
-                }
-            },
-            size = HortayTopBarSize.Compact,
-            actions = {
-                onGlobalSearchClick?.let { handler ->
-                    IconButton(onClick = handler) {
-                        Symbol(
-                            name = "search",
-                            contentDescription = stringResource(R.string.web_search_action),
-                        )
-                    }
-                }
-                // Trailing slot for mode-specific chips (e.g. guest-mode
-                // badge). Rendered after the search action so it sits at the
-                // edge of the bar, where users expect status indicators.
-                topBarBadge?.invoke()
-            },
-            scrollBehavior = scrollBehavior,
-            windowInsets = barInsets,
-        )
-    }
-}
