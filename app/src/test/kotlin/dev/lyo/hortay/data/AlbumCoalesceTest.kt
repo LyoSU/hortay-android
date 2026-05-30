@@ -598,6 +598,81 @@ class AlbumCoalesceTest {
     }
 
     @Test
+    fun `requestAlbumRepair networks a degraded album and dedupes concurrent requests`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -7400L
+        val albumId = 888L
+        val stride = 1L shl 20
+        val anchorId = 70L * stride
+
+        // Seed a degraded 1-member album into the feed (cold-start local path, all 404).
+        harness.td.onAny("GetMessageLocally") { _ -> TdApi.Error(404, "not local") }
+        harness.td.emitUpdate(
+            TdApi.UpdateNewChat(
+                harness.fakeChannel(id = chatId, lastMessage = harness.fakeChannelMessage(chatId, anchorId, date = baseDate, mediaAlbumId = albumId)),
+            ),
+        )
+        harness.advanceUntilIdle()
+        assertTrue(harness.repo.posts.value.single().albumMessageIds.size <= 1, "pre-condition: degraded album")
+
+        // Networked repair: GetMessage returns the anchor, GetChatHistory returns the full album.
+        harness.td.onAny("GetMessage") { req ->
+            val q = req as TdApi.GetMessage
+            harness.fakeChannelMessage(q.chatId, q.messageId, date = baseDate, mediaAlbumId = albumId)
+        }
+        harness.td.onAny("GetChatHistory") { _ ->
+            val members = (0L..4L).map { harness.fakeChannelMessage(chatId, anchorId + it * stride, date = baseDate, mediaAlbumId = albumId) }
+            TdApi.Messages(members.size, members.toTypedArray())
+        }
+
+        // Two concurrent requests for the SAME album → one repair dispatch.
+        harness.repo.requestAlbumRepair(chatId, anchorId, albumId)
+        harness.repo.requestAlbumRepair(chatId, anchorId, albumId)
+        harness.advanceUntilIdle()
+
+        assertEquals(5, harness.repo.posts.value.single().albumMessageIds.size, "repaired to full album")
+        assertEquals(1, harness.td.rpcCount("GetChatHistory"), "duplicate request for same album deduped to one repair")
+    }
+
+    @Test
+    fun `requestAlbumRepair processes two distinct albums across the throttle window`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val stride = 1L shl 20
+        val chatA = -7450L
+        val chatB = -7460L
+        val albumA = 100L
+        val albumB = 200L
+        val anchorA = 40L * stride
+        val anchorB = 60L * stride
+
+        harness.td.onAny("GetMessageLocally") { _ -> TdApi.Error(404, "not local") }
+        harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(id = chatA, lastMessage = harness.fakeChannelMessage(chatA, anchorA, date = baseDate, mediaAlbumId = albumA))))
+        harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(id = chatB, lastMessage = harness.fakeChannelMessage(chatB, anchorB, date = baseDate, mediaAlbumId = albumB))))
+        harness.advanceUntilIdle()
+
+        harness.td.onAny("GetMessage") { req ->
+            val q = req as TdApi.GetMessage
+            harness.fakeChannelMessage(q.chatId, q.messageId, date = baseDate, mediaAlbumId = if (q.chatId == chatA) albumA else albumB)
+        }
+        harness.td.onAny("GetChatHistory") { req ->
+            val q = req as TdApi.GetChatHistory
+            val cid = q.chatId
+            val alb = if (cid == chatA) albumA else albumB
+            val anc = if (cid == chatA) anchorA else anchorB
+            val members = (0L..4L).map { harness.fakeChannelMessage(cid, anc + it * stride, date = baseDate, mediaAlbumId = alb) }
+            TdApi.Messages(members.size, members.toTypedArray())
+        }
+
+        harness.repo.requestAlbumRepair(chatA, anchorA, albumA)
+        harness.repo.requestAlbumRepair(chatB, anchorB, albumB)
+        harness.advanceUntilIdle()
+
+        assertEquals(5, harness.repo.posts.value.first { it.chatId == chatA }.albumMessageIds.size, "album A repaired")
+        assertEquals(5, harness.repo.posts.value.first { it.chatId == chatB }.albumMessageIds.size, "album B repaired")
+        assertEquals(2, harness.td.rpcCount("GetChatHistory"), "two distinct albums → two repairs across the throttle window")
+    }
+
+    @Test
     fun `cold-start album coalesce stays offline to respect the FLOOD_WAIT budget`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
         val chatId = -9200L

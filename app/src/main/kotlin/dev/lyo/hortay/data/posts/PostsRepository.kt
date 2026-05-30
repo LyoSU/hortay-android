@@ -41,6 +41,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.collections.immutable.ImmutableList
@@ -311,6 +312,14 @@ class PostsRepository(
     // (layer 3).
     private val albumBuffers = ConcurrentHashMap<Pair<Long, Long>, MutableList<TdApi.Message>>()
     private val albumDebounce = ConcurrentHashMap<Pair<Long, Long>, Job>()
+
+    // Layer-2 album repair queue. Single-consumer Channel reducer (same idiom as
+    // MediaCache.fileEvents): one repair dispatched per ALBUM_REPAIR_THROTTLE_MS, so a
+    // fast fling over many degraded cards can't storm GetChatHistory. The queued-set
+    // dedupes by (chatId, mediaAlbumId) so a card scrolling in/out/in enqueues once.
+    // [AlbumRepairRequest] lives at file scope (below the class) per convention.
+    private val albumRepairRequests = Channel<AlbumRepairRequest>(Channel.UNLIMITED)
+    private val albumRepairQueued = ConcurrentHashMap.newKeySet<Pair<Long, Long>>()
 
     // Single-flight + cooldown for deep channel-history loads. Re-entering the same
     // channel filter within DEEP_LOAD_COOLDOWN_MS reuses the previous load (no second
@@ -739,6 +748,20 @@ class PostsRepository(
                     runCatching { restoreFromSnapshotInternal() }
                         .warnUnlessCancelled(TAG, "postDrainAlbumUpgrade")
                 }
+        }
+
+        // Layer-2 album repair drain: single consumer, one dispatch per throttle window.
+        // The (chatId, mediaAlbumId) dedup key is held until AFTER the throttle delay so
+        // the dedup window IS the throttle window — a card re-focused within the window
+        // (or a second concurrent request for the same album) coalesces into the one
+        // in-flight repair instead of queuing a duplicate. A still-degraded album
+        // re-enqueues on the next focus once the key clears.
+        scope.launch {
+            for (req in albumRepairRequests) {
+                runCatching { performAlbumRepair(req) }.warnUnlessCancelled(TAG, "albumRepair")
+                delay(ALBUM_REPAIR_THROTTLE_MS)
+                albumRepairQueued.remove(req.chatId to req.mediaAlbumId)
+            }
         }
     }
 
@@ -1948,6 +1971,39 @@ class PostsRepository(
     }
 
     /**
+     * Layer-2 visibility repair: request a networked rebuild of a degraded album
+     * (one member, `mediaAlbumId != 0`) that just became focused. Deduped per
+     * (chatId, mediaAlbumId) and throttled by the single-consumer drain below; a
+     * no-op for non-albums. The dedup key is held for the whole throttle window
+     * (cleared after the post-dispatch delay), so concurrent requests and a card
+     * scrolling in/out/in within the window coalesce into one repair; a still-cold
+     * album re-enqueues on the next focus after the key clears.
+     */
+    fun requestAlbumRepair(chatId: Long, anchorId: Long, mediaAlbumId: Long) {
+        if (mediaAlbumId == 0L) return
+        if (albumRepairQueued.add(chatId to mediaAlbumId)) {
+            albumRepairRequests.trySend(AlbumRepairRequest(chatId, anchorId, mediaAlbumId))
+        }
+    }
+
+    private suspend fun performAlbumRepair(req: AlbumRepairRequest) {
+        val chat = chatCache[req.chatId] ?: return
+        if (!chat.isChannel()) return
+        val anchor = runCatching { td.send(TdApi.GetMessage(req.chatId, req.anchorId)) }
+            .warnUnlessCancelled(TAG, "albumRepairAnchor(${req.chatId},${req.anchorId})").getOrNull() ?: return
+        val coalesced = coalesceAlbumFragments(req.chatId, listOf(anchor), onlyLocal = false)
+        if (coalesced.size <= 1) return // still couldn't complete it; leave the degraded card
+        val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
+            .filter { it.content !is PostContent.Unsupported }
+        if (mapped.isEmpty()) return
+        // Logout may have wiped state during the networked coalesce/map suspension;
+        // chatCache is cleared by clear(), so a miss here means don't re-inject the
+        // previous account's posts into a freshly-cleared feed.
+        if (chatCache[req.chatId] == null) return
+        _posts.update { foldRawIntoCurrent(it, mapped) }
+    }
+
+    /**
      * Telegram albums (2–10 messages sharing one `mediaAlbumId`) have no completion
      * signal on the wire — TDLib maintainer levlam confirms in
      * [tdlib/td#1482](https://github.com/tdlib/td/issues/1482): *"There is no way
@@ -2690,6 +2746,9 @@ class PostsRepository(
             albumBuffers.clear()
             albumDebounce.values.forEach { it.cancel() }
             albumDebounce.clear()
+            albumRepairQueued.clear()
+            // Drain any queued repair requests so a logout→login doesn't replay account A's.
+            while (albumRepairRequests.tryReceive().isSuccess) { /* discard */ }
             deepLoadJobs.values.forEach { it.cancel() }
             deepLoadJobs.clear()
             deepLoadCooldownUntilMs.clear()
@@ -2797,6 +2856,11 @@ class PostsRepository(
         // GetMessage is local but still costs a JNI round-trip; cap parallelism so the
         // snapshot restore doesn't spike TDLib's worker thread on cold start.
         const val SNAPSHOT_RESTORE_CONCURRENCY = 8
+
+        // Min gap between Layer-2 networked album repairs. Sized like BACKFILL_THROTTLE_MS
+        // (1100 ms): the trigger is human scroll/dwell over the rare degraded card, so the
+        // natural rate is already far under 30 req/30 s — this is the fast-fling backstop.
+        const val ALBUM_REPAIR_THROTTLE_MS = 1_100L
     }
 }
 
@@ -2804,6 +2868,9 @@ internal fun TdApi.Chat.isChannel(): Boolean {
     val type = this.type
     return type is TdApi.ChatTypeSupergroup && type.isChannel
 }
+
+/** Layer-2 album repair queue item: the focused degraded album to network-rebuild. */
+private data class AlbumRepairRequest(val chatId: Long, val anchorId: Long, val mediaAlbumId: Long)
 
 /**
  * Hard cap on members per Telegram album, per the protocol. Drives
