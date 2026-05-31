@@ -88,7 +88,7 @@ internal fun UnreadBoundaryRow() {
 }
 
 @Composable
-internal fun EmptyState(kind: EmptyKind) {
+internal fun EmptyState(kind: EmptyKind, guestMode: Boolean = false) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -114,7 +114,15 @@ internal fun EmptyState(kind: EmptyKind) {
         val helperRes = when (kind) {
             EmptyKind.Saved -> R.string.timeline_empty_saved_helper
             EmptyKind.CaughtUp -> R.string.timeline_empty_caught_up_helper
-            EmptyKind.Default -> R.string.timeline_empty_default_helper
+            // Default helper points the user at where subscriptions come from.
+            // In guest mode that's a locally-added public channel (the "+" FAB /
+            // Channels tab) — NOT a Telegram account subscription, which never
+            // reaches the t.me/s/ guest feed — so swap in the web-mode copy.
+            EmptyKind.Default -> if (guestMode) {
+                R.string.web_empty_channels_body
+            } else {
+                R.string.timeline_empty_default_helper
+            }
         }
         Text(
             text = stringResource(titleRes),
@@ -134,7 +142,12 @@ internal fun EmptyState(kind: EmptyKind) {
         // explicit refresh needed. Saved + CaughtUp don't add a CTA: Saved
         // already explains the action ("tap the bookmark"), and CaughtUp is a
         // feel-good "all done" moment that a CTA would cheapen.
-        if (kind == EmptyKind.Default) {
+        //
+        // Guest mode suppresses this CTA entirely: opening Telegram to subscribe
+        // does nothing for the t.me/s/ guest feed (no account is read there), so
+        // the button was both redundant and false. Guest channels are added via
+        // the always-present "Add channel" FAB / Channels tab instead.
+        if (kind == EmptyKind.Default && !guestMode) {
             Spacer(Modifier.height(20.dp))
             val context = LocalContext.current
             Button(onClick = { openTelegramApp(context) }) {

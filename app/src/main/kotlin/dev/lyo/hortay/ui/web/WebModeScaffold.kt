@@ -502,6 +502,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                                         // Saved-tab call below leaves the default 0.dp
                                                         // because the FAB is hidden there.
                                                         unreadPillExtraBottomPadding = 72.dp,
+                                                        guestMode = true,
                                                     )
                                                 }
                                             }

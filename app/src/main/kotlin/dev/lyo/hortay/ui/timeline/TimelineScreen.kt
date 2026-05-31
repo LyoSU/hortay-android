@@ -244,6 +244,14 @@ fun TimelineScreen(
      * path; archived bytes are unreachable.
      */
     archiveMediaStore: dev.lyo.hortay.data.archive.ArchivedMediaStore? = null,
+    /**
+     * True when this feed is rendered inside guest (anonymous) mode. Only affects
+     * the no-subscriptions empty state: the "Open Telegram to subscribe" CTA is
+     * suppressed (a Telegram account subscription never reaches the t.me/s/ guest
+     * feed, so the button was false) and the helper copy points at adding a public
+     * channel instead. TDLib mode leaves the default and keeps the Telegram CTA.
+     */
+    guestMode: Boolean = false,
 ) {
     // Holders read by long-lived LaunchedEffects (home-tap, scope-switch) so
     // their captures stay live across recomposition without restarting the
@@ -1512,7 +1520,7 @@ fun TimelineScreen(
                                     filteredPosts.isNotEmpty() -> EmptyKind.CaughtUp
                                 else -> EmptyKind.Default
                             }
-                            EmptyState(emptyKind)
+                            EmptyState(emptyKind, guestMode = guestMode)
                         }
                         is TimelineUiState.Ready -> {
                         // Scroll gate: while the LazyColumn is mid-scroll (drag, fling,
