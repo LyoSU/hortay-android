@@ -743,4 +743,9 @@
     <string name="settings_archive_title">Archivio post</string>
     <string name="settings_logout_dialog_text_archive">Il tuo archivio locale dei post modificati ed eliminati verrà cancellato per sempre. Dovrai inserire di nuovo il numero e il codice di conferma</string>
     <string name="post_unread_state">Non letto</string>
+    <string name="discover_add_channel">Trova canali</string>
+    <string name="discover_search_hint">Cerca canali</string>
+    <string name="discover_no_results">Nessun canale trovato</string>
+    <string name="discover_subscribe">Iscriviti</string>
+    <string name="discover_subscribed">Iscritto</string>
 </resources>

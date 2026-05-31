@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cdn.jsdelivr.net/gh/LyoSU/hortay-android@main/suggestions.schema.json",
+  "title": "Hortay curated channel suggestions",
+  "description": "Curated public-channel suggestions shown in Hortay's 'Add channel' surfaces (both guest and authenticated modes). Fetched read-only from GitHub via jsDelivr; unknown fields are ignored by the client, so new optional fields are forward-compatible.",
+  "type": "object",
+  "required": ["version", "channels"],
+  "additionalProperties": true,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Schema version. Bump on breaking changes so older clients can refuse a payload they can't parse safely."
+    },
+    "updated": {
+      "type": "string",
+      "description": "ISO date of the last edit. Informational only."
+    },
+    "defaultLocale": {
+      "type": "string",
+      "default": "en",
+      "description": "Fallback language code used for locales that have no channels of their own (a German user with no 'de' channels sees the 'defaultLocale' set plus wildcards)."
+    },
+    "categories": {
+      "type": "array",
+      "description": "Section definitions. Sections render in 'order'; a section with no channels for the resolved locale is skipped.",
+      "items": {
+        "type": "object",
+        "required": ["id", "title"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string", "description": "Stable id referenced by channel.category." },
+          "order": { "type": "integer", "default": 0, "description": "Ascending section order." },
+          "title": {
+            "type": "object",
+            "description": "Localized section title, keyed by language code. Falls back to defaultLocale, then any value.",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    },
+    "channels": {
+      "type": "array",
+      "description": "Channel placements. The same username may appear more than once with different (category, locales) so it can sit in a different section per language.",
+      "items": {
+        "type": "object",
+        "required": ["username", "category"],
+        "additionalProperties": true,
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Public @handle without the leading @. Case-sensitive for display; matched case-insensitively against subscriptions.",
+            "pattern": "^[A-Za-z0-9_]{4,32}$"
+          },
+          "category": { "type": "string", "description": "Must match a categories[].id." },
+          "locales": {
+            "type": "array",
+            "description": "Language codes this placement targets. '*' = every locale. A placement shows when the resolved locale is in this list or the list contains '*'.",
+            "items": { "type": "string" },
+            "default": ["*"]
+          },
+          "order": { "type": "integer", "default": 0, "description": "Ascending order within the section." },
+          "title": {
+            "type": "object",
+            "description": "Optional display-name override, keyed by language. When absent the live channel title (from t.me/s or TDLib) is used.",
+            "additionalProperties": { "type": "string" }
+          },
+          "description": {
+            "type": "object",
+            "description": "Localized one-line blurb, keyed by language. Falls back to defaultLocale, then any value.",
+            "additionalProperties": { "type": "string" }
+          },
+          "minVersionCode": {
+            "type": "integer",
+            "default": 0,
+            "description": "Optional gate: clients with a smaller versionCode skip this placement. Lets future entries depend on app features not yet shipped."
+          }
+        }
+      }
+    }
+  }
+}

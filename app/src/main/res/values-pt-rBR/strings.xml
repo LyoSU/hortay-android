@@ -744,4 +744,9 @@
     <string name="settings_archive_title">Arquivo de publicações</string>
     <string name="settings_logout_dialog_text_archive">Seu arquivo local de posts editados e excluídos será apagado para sempre. Você precisará digitar seu número e o código de confirmação novamente</string>
     <string name="post_unread_state">Não lido</string>
+    <string name="discover_add_channel">Encontrar canais</string>
+    <string name="discover_search_hint">Pesquisar canais</string>
+    <string name="discover_no_results">Nenhum canal encontrado</string>
+    <string name="discover_subscribe">Inscrever-se</string>
+    <string name="discover_subscribed">Inscrito</string>
 </resources>

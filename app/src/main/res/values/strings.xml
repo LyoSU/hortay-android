@@ -756,4 +756,9 @@
     </plurals>
     <string name="settings_logout_dialog_text_archive">Your local archive of edited and deleted posts will be erased for good. You\'ll need to enter your number and confirmation code again</string>
     <string name="post_unread_state">Unread</string>
+    <string name="discover_add_channel">Find channels</string>
+    <string name="discover_search_hint">Search channels</string>
+    <string name="discover_no_results">No channels found</string>
+    <string name="discover_subscribe">Subscribe</string>
+    <string name="discover_subscribed">Subscribed</string>
 </resources>

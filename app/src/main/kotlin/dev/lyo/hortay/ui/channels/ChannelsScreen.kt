@@ -10,19 +10,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -31,6 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.ui.main.openTelegramApp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
@@ -38,7 +45,9 @@ import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
+import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
+import java.util.Locale
 
 /**
  * List of channels the user is subscribed to. Data is derived from the same feed as the
@@ -53,6 +62,7 @@ import dev.lyo.hortay.ui.media.TdAvatar
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ChannelsScreen(
+    graph: AppGraph,
     repo: PostsRepository,
     contentPadding: PaddingValues,
     onChannelClick: (chatId: Long) -> Unit,
@@ -61,6 +71,7 @@ fun ChannelsScreen(
     val channels = remember(posts) { aggregate(posts) }
     val listState = rememberLazyListState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    var addSheetOpen by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier
@@ -73,10 +84,23 @@ fun ChannelsScreen(
                 scrollBehavior = scrollBehavior,
             )
         },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { addSheetOpen = true },
+                // This inner Scaffold doesn't own the FloatingNavBar inset (the
+                // HomeKey scaffold draws it), so lift the FAB clear of it manually.
+                modifier = Modifier.padding(bottom = contentPadding.calculateBottomPadding()),
+                icon = { Symbol(name = "add", contentDescription = null, size = 20.dp) },
+                text = { Text(stringResource(R.string.discover_add_channel)) },
+            )
+        },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (channels.isEmpty()) {
-            EmptyChannels(modifier = Modifier.padding(padding))
+            EmptyChannels(
+                modifier = Modifier.padding(padding),
+                onFindChannels = { addSheetOpen = true },
+            )
         } else {
             LazyColumn(
                 state = listState,
@@ -99,6 +123,16 @@ fun ChannelsScreen(
                 }
             }
         }
+    }
+
+    if (addSheetOpen) {
+        AddChannelTdSheet(
+            suggestionsRepo = graph.channelSuggestions,
+            discovery = graph.channelDiscovery,
+            actions = graph.channelActions,
+            locale = Locale.getDefault().language.lowercase(),
+            onDismiss = { addSheetOpen = false },
+        )
     }
 }
 
@@ -193,7 +227,10 @@ private fun ChannelRow(
 }
 
 @Composable
-private fun EmptyChannels(modifier: Modifier = Modifier) {
+private fun EmptyChannels(
+    modifier: Modifier = Modifier,
+    onFindChannels: () -> Unit = {},
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -212,12 +249,20 @@ private fun EmptyChannels(modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(20.dp))
-        // Same CTA as the timeline default-empty state — subscriptions made in
-        // the official Telegram client propagate to Hortay via TDLib's
-        // UpdateNewChat stream, so the action is sufficient without an
-        // explicit refresh.
+        // Primary path: discover channels in-app (search + curated suggestions).
+        FilledTonalButton(
+            onClick = onFindChannels,
+            shapes = ButtonDefaults.shapes(),
+        ) {
+            Symbol(name = "add", contentDescription = null, size = 18.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.discover_add_channel))
+        }
+        Spacer(Modifier.height(8.dp))
+        // Secondary: subscriptions made in the official Telegram client propagate
+        // to Hortay via TDLib's UpdateNewChat stream, no explicit refresh needed.
         val context = LocalContext.current
-        Button(onClick = { openTelegramApp(context) }) {
+        TextButton(onClick = { openTelegramApp(context) }) {
             Text(stringResource(R.string.empty_action_open_telegram))
         }
     }

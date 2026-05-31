@@ -754,4 +754,9 @@
     <string name="settings_archive_title">Архив постов</string>
     <string name="settings_logout_dialog_text_archive">Локальный архив правок и удалений будет удалён навсегда. Потребуется снова ввести номер и код подтверждения</string>
     <string name="post_unread_state">Не прочитано</string>
+    <string name="discover_add_channel">Найти каналы</string>
+    <string name="discover_search_hint">Поиск каналов</string>
+    <string name="discover_no_results">Каналы не найдены</string>
+    <string name="discover_subscribe">Подписаться</string>
+    <string name="discover_subscribed">Вы подписаны</string>
 </resources>

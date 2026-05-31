@@ -15,6 +15,7 @@ In scope:
 
 - The app itself (`:app` and the `:libtdlib` integration).
 - The `t.me/s/` HTML parser in guest mode (untrusted input).
+- The remote suggested-channels JSON parser (`suggestions.json`, fetched read-only from GitHub).
 - Local data persistence (DataStore, the `web.db` SQLDelight database).
 
 Out of scope:

@@ -2,11 +2,11 @@
 
 Twitter-подібна читалка Telegram-каналів. Підписки відкриваються однією хронологічною стрічкою, а не списком чатів.
 
-Без Firebase, Crashlytics, аналітики, сторонніх push-сервісів. Дозвіл INTERNET використовується тільки для Telegram і — в гостьовому режимі — для анонімних `t.me/s/` прев'ю.
+Без Firebase, Crashlytics, аналітики, сторонніх push-сервісів. Дозвіл INTERNET використовується тільки для Telegram, анонімних `t.me/s/` прев'ю в гостьовому режимі та для read-only завантаження публічного [списку рекомендованих каналів](suggestions.json) із цього репозиторію (жодні дані користувача не залишають пристрій).
 
 <p align="center">
   <a href="https://play.google.com/store/apps/details?id=dev.lyo.hortay">
-    <img alt="Завантажити в Google Play" src="https://play.google.com/intl/uk_ua/badges/static/images/badges/uk_badge_web_generic.png" height="60">
+    <img alt="Завантажити в Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="60">
   </a>
 </p>
 

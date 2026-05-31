@@ -751,4 +751,9 @@
     <string name="settings_archive_title">Archiwum wpisów</string>
     <string name="settings_logout_dialog_text_archive">Lokalne archiwum edytowanych i usuniętych postów zostanie trwale skasowane. Trzeba będzie ponownie podać numer i kod weryfikacyjny</string>
     <string name="post_unread_state">Nieprzeczytane</string>
+    <string name="discover_add_channel">Znajdź kanały</string>
+    <string name="discover_search_hint">Szukaj kanałów</string>
+    <string name="discover_no_results">Nie znaleziono kanałów</string>
+    <string name="discover_subscribe">Subskrybuj</string>
+    <string name="discover_subscribed">Subskrybujesz</string>
 </resources>

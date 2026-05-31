@@ -12,6 +12,8 @@ import dev.lyo.hortay.data.report.ReportRepository
 import dev.lyo.hortay.data.toStringResolver
 import dev.lyo.hortay.ui.report.GuestReportDelegator
 import dev.lyo.hortay.data.ChannelActionsRepository
+import dev.lyo.hortay.data.discover.ChannelDiscoveryRepository
+import dev.lyo.hortay.data.discover.ChannelSuggestionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.CountryRepository
@@ -445,6 +447,30 @@ class AppGraph(context: Context) {
     val webCustomEmoji: WebCustomEmojiResolver = WebCustomEmojiResolver(webHttpClient)
 
     /**
+     * Curated channel-suggestions catalog (sections + handles + blurbs), fetched
+     * read-only from GitHub and cached on disk. Powers the "Add channel" surfaces in
+     * BOTH modes; the catalog source is shared, only avatar/subscriber hydration
+     * differs per mode (t.me/s vs [channelDiscovery]). Reuses [webHttpClient] — same
+     * connection pool / disk cache as the rest of the read-only HTTP pipeline.
+     */
+    val channelSuggestions: ChannelSuggestionsRepository = ChannelSuggestionsRepository(
+        http = webHttpClient,
+        cacheFile = File(context.cacheDir, "suggestions.json"),
+        appVersionCode = runCatching {
+            @Suppress("DEPRECATION") // longVersionCode is API 28+; minSdk is 26
+            context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+        }.getOrDefault(Int.MAX_VALUE),
+    )
+
+    /**
+     * TDLib-side channel discovery (resolve a curated handle to a live card, search
+     * public channels by name) for authenticated mode. Never touches t.me/s — auth
+     * mode talks to Telegram only. Resolve cache is session-scoped (`isMember`), so
+     * it is cleared in [runLogoutCleanup].
+     */
+    val channelDiscovery: ChannelDiscoveryRepository = ChannelDiscoveryRepository(tdClient)
+
+    /**
      * Persistent list of channel usernames the user has subscribed to in anonymous
      * mode. Survives across cold starts independently of TDLib's chat list. When a
      * user signs in, Phase 2's migration step uses this set to drive auto-subscribe
@@ -668,5 +694,8 @@ class AppGraph(context: Context) {
         // excluded-chat set, which is keyed on TDLib chatIds). The master
         // `enabled` toggle is a global user preference and survives logout.
         runCatching { archiveSettingsStore.resetForLogout() }
+        // Discovery resolve cache carries account-specific `isMember`; drop it so
+        // account B doesn't see account A's subscribe/open state on a suggestion.
+        runCatching { channelDiscovery.clear() }
     }
 }

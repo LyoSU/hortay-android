@@ -1,0 +1,71 @@
+{
+  "$schema": "https://cdn.jsdelivr.net/gh/LyoSU/hortay-android@main/suggestions.schema.json",
+  "version": 1,
+  "updated": "2026-05-31",
+  "defaultLocale": "en",
+  "categories": [
+    { "id": "featured", "order": 0, "title": { "en": "From the author", "uk": "Канали від автора" } },
+    { "id": "news",      "order": 1, "title": { "en": "News",            "uk": "Новини" } },
+    { "id": "frontline", "order": 2, "title": { "en": "Frontline & analysis", "uk": "Фронт і аналітика" } },
+    { "id": "tech",      "order": 3, "title": { "en": "Technology",      "uk": "Технології" } },
+    { "id": "science",   "order": 4, "title": { "en": "Science",         "uk": "Наука" } },
+    { "id": "culture",   "order": 5, "title": { "en": "Culture",         "uk": "Культура" } },
+    { "id": "humor",     "order": 6, "title": { "en": "Humor",           "uk": "Гумор" } },
+    { "id": "official",  "order": 7, "title": { "en": "Telegram",        "uk": "Telegram" } },
+    { "id": "world",     "order": 8, "title": { "en": "World",           "uk": "Світові" } }
+  ],
+  "channels": [
+    {
+      "username": "LyBlog",
+      "category": "featured",
+      "locales": ["*"],
+      "order": 0,
+      "title": { "en": "LyChat" },
+      "description": { "en": "AI, tech & personal notes", "uk": "AI, технології, особисте" }
+    },
+    {
+      "username": "UAliveNews",
+      "category": "featured",
+      "locales": ["uk"],
+      "order": 1,
+      "description": { "en": "AI-curated Ukrainian news", "uk": "AI-агрегатор новин українських ЗМІ" }
+    },
+
+    { "username": "suspilnenews",  "category": "news", "locales": ["uk"], "description": { "uk": "Громадський мовник, новини" } },
+    { "username": "ukrpravda_news","category": "news", "locales": ["uk"], "description": { "uk": "Провідне новинне видання" } },
+    { "username": "hromadske_ua",  "category": "news", "locales": ["uk"], "description": { "uk": "Незалежне медіа" } },
+    { "username": "babel",         "category": "news", "locales": ["uk"], "description": { "uk": "Новини без хайпу" } },
+    { "username": "bbcukrainian",  "category": "news", "locales": ["uk"], "description": { "uk": "BBC українською" } },
+    { "username": "ukrinform_news","category": "news", "locales": ["uk"], "description": { "uk": "Державний інформагент" } },
+
+    { "username": "DeepStateUA",   "category": "frontline", "locales": ["uk"], "description": { "uk": "Воєнна аналітика, мапа фронту" } },
+
+    { "username": "devukraine",    "category": "tech", "locales": ["uk"], "description": { "uk": "Новини українського IT" } },
+    { "username": "ITCUA",         "category": "tech", "locales": ["uk"], "description": { "uk": "Технології та гаджети" } },
+    { "username": "ain_ukraine",   "category": "tech", "locales": ["uk"], "description": { "uk": "Бізнес і стартапи" } },
+
+    { "username": "naukaua",       "category": "science", "locales": ["uk"], "description": { "uk": "Новини науки українською" } },
+
+    { "username": "suspilne_culture","category": "culture", "locales": ["uk"], "description": { "uk": "Кіно, література, мистецтво" } },
+    { "username": "chytomo",       "category": "culture", "locales": ["uk"], "description": { "uk": "Книжки та читання" } },
+    { "username": "liroom",        "category": "culture", "locales": ["uk"], "description": { "uk": "Музика, кіно, література" } },
+
+    { "username": "memargam",      "category": "humor", "locales": ["uk"], "description": { "uk": "Меми українською" } },
+    { "username": "gonimems",      "category": "humor", "locales": ["uk"], "description": { "uk": "Меми українською" } },
+
+    { "username": "telegram",      "category": "world", "locales": ["uk"], "description": { "uk": "Офіційні новини Telegram" } },
+    { "username": "science",       "category": "world", "locales": ["uk"], "description": { "uk": "Наука, космос, технології (англ.)" } },
+
+    { "username": "telegram",      "category": "official", "locales": ["en"], "description": { "en": "Official Telegram product news" } },
+    { "username": "durov",         "category": "official", "locales": ["en"], "description": { "en": "Telegram founder Pavel Durov" } },
+    { "username": "TelegramTips",  "category": "official", "locales": ["en"], "description": { "en": "Telegram tips & tricks" } },
+
+    { "username": "guardian",                  "category": "news", "locales": ["en"], "description": { "en": "Independent world news" } },
+    { "username": "kyivindependent_official",  "category": "news", "locales": ["en"], "description": { "en": "English-language news from Ukraine" } },
+    { "username": "Bloomberg",                 "category": "news", "locales": ["en"], "description": { "en": "Business & markets" } },
+
+    { "username": "science", "category": "science", "locales": ["en"], "description": { "en": "Science & tech breakthroughs" } },
+    { "username": "tech",    "category": "tech",    "locales": ["en"], "description": { "en": "Startups & tech news" } },
+    { "username": "books",   "category": "culture", "locales": ["en"], "description": { "en": "Curated reading recommendations" } }
+  ]
+}

@@ -4,7 +4,7 @@
 
 A Twitter-style reader for Telegram channels. Read your subscribed channels as one chronological feed instead of a chat list.
 
-No Firebase, no Crashlytics, no analytics, no third-party push. INTERNET permission is used only for Telegram itself and, in guest mode, anonymous `t.me/s/` previews.
+No Firebase, no Crashlytics, no analytics, no third-party push. INTERNET permission is used only for Telegram itself, anonymous `t.me/s/` previews in guest mode, and a read-only fetch of the public [suggested-channels list](suggestions.json) from this repo (no user data ever leaves the device).
 
 <p align="center">
   <a href="https://play.google.com/store/apps/details?id=dev.lyo.hortay">

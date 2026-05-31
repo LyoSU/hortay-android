@@ -514,10 +514,6 @@ fun WebModeScaffold(graph: AppGraph) {
                                                     pushWebChannel(username)
                                                 },
                                                 onAddChannel = { addSheetOpen = true },
-                                                onAddCurated = { username ->
-                                                    deepLinkPrefill = username
-                                                    addSheetOpen = true
-                                                },
                                             )
 
                                             NavTab.Saved -> TimelineScreen(
@@ -629,6 +625,7 @@ fun WebModeScaffold(graph: AppGraph) {
                 feedSource = graph.webFeedSource,
                 repository = graph.webRepository,
                 client = graph.webClient,
+                suggestionsRepo = graph.channelSuggestions,
                 locale = locale,
                 // One-shot: clear the prefill on dismiss so a manual reopen lands
                 // back on the clipboard auto-paste path instead of looping the user

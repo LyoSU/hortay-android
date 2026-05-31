@@ -9,8 +9,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.LoadingIndicator
@@ -25,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -40,69 +44,60 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.discover.ChannelCardData
+import dev.lyo.hortay.data.discover.ChannelSuggestionsRepository
+import dev.lyo.hortay.data.discover.SuggestedGroup
 import dev.lyo.hortay.data.web.LookupResult
 import dev.lyo.hortay.data.web.WebChannelInfo
 import dev.lyo.hortay.data.web.WebFeedSource
 import dev.lyo.hortay.data.web.WebRepository
 import dev.lyo.hortay.data.web.WebTelegramClient
 import dev.lyo.hortay.data.web.parseUsernameFromInput
+import dev.lyo.hortay.ui.discover.discoverSuggestions
+import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /**
- * Modal bottom sheet for subscribing to a new public channel. UX flow:
+ * Modal bottom sheet for subscribing to a new public channel in guest mode. UX:
  *
- *   1. User pastes a t.me link / username / @handle / tg://resolve URL.
- *   2. [parseUsernameFromInput] extracts the bare username (2-32 ASCII chars).
- *   3. We do a one-shot [WebTelegramClient.lookupChannel] to confirm the channel
- *      exists and pre-fill the visual confirmation card (title, avatar, description).
- *   4. User taps "Додати" → [WebFeedSource.subscribeAndRefresh] writes to
- *      DataStore and immediately fetches a first page so the feed updates without
- *      waiting for the next sweep.
+ *   1. User pastes a t.me link / username / @handle / tg://resolve URL, OR taps a
+ *      curated suggestion.
+ *   2. [parseUsernameFromInput] extracts the bare username; a one-shot
+ *      [WebTelegramClient.lookupChannel] confirms the channel and pre-fills the
+ *      preview card. Curated suggestions skip the preview — they're trusted, so a
+ *      tap subscribes directly.
  *
- * Validation rule of thumb: do *both* shape validation (regex) and content
- * validation (lookup). The regex catches obvious garbage instantly; the lookup
- * catches valid-shaped-but-deleted handles ("@deleteduser123") and private
- * channels that lack `/s/` previews. Surface both error categories distinctly so
- * the user can tell whether to fix their input or pick a different channel.
- *
- * Curated suggestions appear below the input as a quick-add list. They're
- * locale-aware via [curatedSuggestions] — the Ukrainian-default starter list
- * for `uk`, generic English-language for everything else. Tap a suggestion to
- * pre-fill the input + auto-validate, so the user never types in the empty case.
+ * Curated suggestions come from [ChannelSuggestionsRepository] (a remote, locale-
+ * aware catalog) and are hydrated live — each row's avatar, real title and
+ * subscriber count are fetched via the same `t.me/s` pipeline the rest of guest
+ * mode uses. Already-subscribed channels drop out of the list the moment the
+ * subscription lands. Authenticated mode shares the same catalog but hydrates via
+ * TDLib instead — see `ui/channels/AddChannelTdSheet.kt`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
-// LocalContextGetResourceValueCall: error strings are formatted inside an
-// async `scope.launch` block (the lookup result lands ~100-1000ms later),
-// not during composition itself. The lint check can't distinguish "read in
-// composition body" from "read in a coroutine spawned from composition" so
-// it flags both. Locale-change correctness is preserved because the sheet
-// re-composes on Configuration changes anyway — a lookup in flight when the
-// user switches language will format with the old locale, but that's a
-// 1-frame edge case worth less than the readability cost of capturing every
-// format-string template as a `stringResource()` val up top.
+// LocalContextGetResourceValueCall: error strings are formatted inside an async
+// `scope.launch` block (the lookup lands ~100-1000ms later), not during
+// composition. The lint check can't tell "read in composition body" from "read in
+// a coroutine spawned from composition" so it flags both.
 @SuppressLint("LocalContextGetResourceValueCall")
 @Composable
 fun AddChannelSheet(
     feedSource: WebFeedSource,
     repository: WebRepository,
     client: WebTelegramClient,
+    suggestionsRepo: ChannelSuggestionsRepository,
     locale: String,
     onDismiss: () -> Unit,
     /**
-     * Tapped when the user wants to escape guest mode — currently surfaced
-     * only on the "channel is private" error path, where the sign-in path is
-     * the only way to actually read the channel. Caller flips
-     * `graph.guestMode.setGuest(false)` to route MainActivity through to
-     * `AuthScreen`.
+     * Tapped when the user wants to escape guest mode — surfaced on the "channel is
+     * private" error path, where signing in is the only way to read the channel.
      */
     onSignIn: (() -> Unit)? = null,
-    // Optional caller-supplied username pre-fill. Used by deep-link arrivals in
-    // guest mode (`tg://resolve?domain=foo` shared from a browser) to land the
-    // user directly on the preview card without forcing them to re-paste. When
-    // null we fall back to the clipboard auto-paste path; specifying a value
-    // suppresses clipboard sniffing so a deep link never gets clobbered by a
-    // stale clipboard entry. Compose key on this value so re-opening the sheet
-    // with a different handle re-runs the lookup.
+    // Optional caller-supplied username pre-fill (deep-link arrivals). When null we
+    // fall back to clipboard auto-paste; a value suppresses clipboard sniffing.
     prefilledUsername: String? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -129,10 +124,6 @@ fun AddChannelSheet(
                 LookupResult.ParseFailure -> LookupState.Error(
                     ctx.getString(R.string.web_add_parse_failure),
                 )
-                // Ceiling division + min-1 guard: a sub-second retryAfterMs
-                // (e.g. 400ms) used to format as "0 s" via integer truncation,
-                // which read like "no wait at all" in the error and invited a
-                // rapid-fire retry.
                 is LookupResult.RateLimited -> LookupState.Error(
                     ctx.getString(
                         R.string.web_add_rate_limited,
@@ -167,12 +158,7 @@ fun AddChannelSheet(
         }
     }
 
-    // Deep-link pre-fill takes precedence over clipboard auto-paste. When the
-    // sheet was opened via a `tg://resolve?domain=foo` arrival, the caller
-    // supplies the resolved handle here; we fill the input + run lookup
-    // straight away. Clipboard sniffing is suppressed in this case so a stale
-    // clipboard entry can't clobber the deep-link target. Falling back to
-    // clipboard otherwise preserves the auto-paste UX from the manual flow.
+    // Deep-link pre-fill takes precedence over clipboard auto-paste.
     LaunchedEffect(prefilledUsername) {
         if (prefilledUsername != null) {
             if (input.isBlank()) {
@@ -181,15 +167,8 @@ fun AddChannelSheet(
             }
             return@LaunchedEffect
         }
-        // Auto-paste-and-validate from clipboard. If the user copied a Telegram
-        // link / @handle anywhere before tapping "Add channel", we eat the manual
-        // "paste" step entirely: fill the input and trigger lookup so they land
-        // straight on the preview card. Privacy-conscious: we only act when the
-        // clipboard text parses as a valid Telegram username via the existing
-        // [parseUsernameFromInput] regex — random clipboard contents (passwords,
-        // URLs to other sites) silently fall through to the empty default. We
-        // also gate on `input.isBlank()` so a stale clipboard never overwrites
-        // text the user is actively editing across recompositions.
+        // Auto-paste-and-validate from clipboard: only act when the text parses as a
+        // valid Telegram username, and only when the input is still blank.
         val pasted = runCatching {
             clipboard.getClipEntry()
                 ?.clipData?.getItemAt(0)?.text?.toString()
@@ -203,147 +182,170 @@ fun AddChannelSheet(
         }
     }
 
+    // Subscriptions, used to drop already-followed channels out of the suggestions.
+    val channels by feedSource.channels.collectAsStateWithLifecycle()
+    val subscribedSet by remember(channels) {
+        derivedStateOf {
+            channels.asSequence()
+                .filter { it.isSubscribed }
+                .map { it.info.username.lowercase() }
+                .toHashSet()
+        }
+    }
+
+    // Curated catalog for this locale, with subscribed channels filtered out.
+    val groups by produceState(initialValue = emptyList<SuggestedGroup>(), locale) {
+        value = suggestionsRepo.groups(locale)
+    }
+    val visibleGroups = remember(groups, subscribedSet) {
+        groups.mapNotNull { g ->
+            val remaining = g.channels.filter { it.username.lowercase() !in subscribedSet }
+            if (remaining.isEmpty()) null else g.copy(channels = remaining.toImmutableList())
+        }
+    }
+
+    // Live hydration: avatar / real title / subscriber count via t.me/s, eager but
+    // throttled to a handful of concurrent fetches. OkHttp's disk cache makes a
+    // re-open cheap. Keyed by lowercase username.
+    val hydrated = remember { mutableStateMapOf<String, ChannelCardData>() }
+    LaunchedEffect(visibleGroups) {
+        val names = visibleGroups.flatMap { it.channels }.map { it.username }.distinct()
+        val gate = Semaphore(4)
+        coroutineScope {
+            names.forEach { u ->
+                if (hydrated.containsKey(u.lowercase())) return@forEach
+                launch {
+                    gate.withPermit {
+                        val info = when (val r = client.lookupChannel(u)) {
+                            is LookupResult.Found -> r.channel
+                            is LookupResult.Empty -> r.channel
+                            else -> null
+                        }
+                        if (info != null) {
+                            hydrated[u.lowercase()] = ChannelCardData(
+                                title = info.title,
+                                subscribersText = info.subscribers,
+                                avatarUrl = info.avatarUrl,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // "Mentioned in your channels" — forwards / @mentions from existing subs.
+    val mentionedSuggestions by produceState(
+        initialValue = emptyList<MentionedChannel>(),
+        subscribedSet,
+    ) {
+        value = if (subscribedSet.isEmpty()) {
+            emptyList()
+        } else {
+            repository
+                .mentionedUsernamesFromSubscribed()
+                .asSequence()
+                .filter { (u, _) -> u !in subscribedSet }
+                .take(6)
+                .map { (u, count) -> MentionedChannel(u, count) }
+                .toList()
+        }
+    }
+
+    // Hoisted out of the LazyColumn body: stringResource() is @Composable and the
+    // LazyListScope content lambda is not, so it can't be read inside discoverSuggestions().
+    val addLabel = stringResource(R.string.web_add_confirm)
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
     ) {
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
+                // Bound the height so the LazyColumn never gets an infinite max
+                // constraint from the sheet's wrap-content Column (would crash).
+                .heightIn(max = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.82f)
+                .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = stringResource(R.string.web_add_channel),
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                text = stringResource(R.string.web_add_body),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            OutlinedTextField(
-                value = input,
-                onValueChange = {
-                    input = it
-                    if (lookupState is LookupState.Error || lookupState is LookupState.Found) {
-                        lookupState = LookupState.Idle
-                    }
-                },
-                singleLine = true,
-                label = { Text(stringResource(R.string.web_add_input_label)) },
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            when (val state = lookupState) {
-                LookupState.Idle -> Unit
-                LookupState.Loading -> Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    LoadingIndicator(modifier = Modifier.size(20.dp))
-                    Text(
-                        text = stringResource(R.string.web_add_validating),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                is LookupState.Found -> ChannelPreviewCard(
-                    channel = state.channel,
-                    onConfirm = { confirmSubscribe(state.channel) },
+            item(key = "title", contentType = "title") {
+                Text(
+                    text = stringResource(R.string.web_add_channel),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(top = 8.dp),
                 )
-                is LookupState.Error -> Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+            }
+            item(key = "lookup", contentType = "lookup") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        text = state.message,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = stringResource(R.string.web_add_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    // Private-channel-specific recovery affordance: only the
-                    // authenticated TDLib path can read private channels (we
-                    // need a session cookie to fetch the post stream — t.me/s/
-                    // returns a generic placeholder for non-public channels).
-                    // Surface "Sign in" as the obvious next step instead of
-                    // letting the user bounce back to fix an input that was
-                    // structurally fine.
-                    if (state.isPrivate && onSignIn != null) {
-                        TextButton(onClick = {
-                            scope.launch {
-                                sheetState.hide()
-                                onDismiss()
-                                onSignIn()
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = {
+                            input = it
+                            if (lookupState is LookupState.Error || lookupState is LookupState.Found) {
+                                lookupState = LookupState.Idle
                             }
-                        }) {
-                            Text(stringResource(R.string.web_add_signin_for_private))
+                        },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.web_add_input_label)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    when (val state = lookupState) {
+                        LookupState.Idle -> Unit
+                        LookupState.Loading -> Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            LoadingIndicator(modifier = Modifier.size(20.dp))
+                            Text(
+                                text = stringResource(R.string.web_add_validating),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        is LookupState.Found -> ChannelPreviewCard(
+                            channel = state.channel,
+                            onConfirm = { confirmSubscribe(state.channel) },
+                        )
+                        is LookupState.Error -> Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = state.message,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            if (state.isPrivate && onSignIn != null) {
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        sheetState.hide()
+                                        onDismiss()
+                                        onSignIn()
+                                    }
+                                }) {
+                                    Text(stringResource(R.string.web_add_signin_for_private))
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = ::trySubmit,
-                    enabled = input.isNotBlank() && lookupState !is LookupState.Loading,
-                ) {
-                    Text(stringResource(R.string.web_add_lookup))
-                }
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.web_cancel))
-                }
-            }
-
-            // Already-subscribed lowercase set — used to filter both the
-            // curated picks AND the "mentioned in your channels" suggestions.
-            // Reading via collectAsStateWithLifecycle so the list re-renders
-            // when the user subscribes from this very sheet (the row falls
-            // off "suggested" the moment the subscription lands).
-            val channels by feedSource.channels.collectAsStateWithLifecycle()
-            val subscribedSet by remember(channels) {
-                derivedStateOf {
-                    channels.asSequence()
-                        .filter { it.isSubscribed }
-                        .map { it.info.username.lowercase() }
-                        .toHashSet()
-                }
-            }
-
-            // One-shot scan of recent posts in subscribed channels for
-            // @mentions + forward sources. Re-runs only when [subscribedSet]
-            // changes — i.e. user subscribed/unsubscribed in another surface.
-            // Limited to the top 6 unmatched mentions so the picker doesn't
-            // bloat into a wall of suggestions.
-            val mentionedSuggestions by produceState(
-                initialValue = emptyList<MentionedChannel>(),
-                subscribedSet,
-            ) {
-                value = if (subscribedSet.isEmpty()) {
-                    emptyList()
-                } else {
-                    repository
-                        .mentionedUsernamesFromSubscribed()
-                        .asSequence()
-                        .filter { (u, _) -> u !in subscribedSet }
-                        .take(6)
-                        .map { (u, count) -> MentionedChannel(u, count) }
-                        .toList()
-                }
-            }
-
-            val curatedFiltered = remember(locale, subscribedSet) {
-                curatedSuggestions(locale)
-                    .filterNot { it.username.lowercase() in subscribedSet }
-            }
-
             if (mentionedSuggestions.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.web_add_mentioned_title),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                mentionedSuggestions.forEach { suggestion ->
+                item(key = "mentioned_header", contentType = "discover_header") {
+                    Text(
+                        text = stringResource(R.string.web_add_mentioned_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                    )
+                }
+                items(mentionedSuggestions, key = { "m_${it.username}" }) { suggestion ->
                     MentionedRow(
                         suggestion = suggestion,
                         onTap = {
@@ -354,23 +356,17 @@ fun AddChannelSheet(
                 }
             }
 
-            if (curatedFiltered.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.web_add_curated_title),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                curatedFiltered.forEach { suggestion ->
-                    CuratedRow(
-                        suggestion = suggestion,
-                        onTap = {
-                            input = suggestion.username
-                            lookup(suggestion.username)
-                        },
-                    )
-                }
-            }
+            discoverSuggestions(
+                groups = visibleGroups,
+                hydrated = hydrated,
+                addLabel = addLabel,
+                onAdd = { username ->
+                    scope.launch {
+                        val title = hydrated[username.lowercase()]?.title ?: username
+                        feedSource.subscribeAndRefresh(username, placeholderTitle = title)
+                    }
+                },
+            )
         }
     }
 }
@@ -413,11 +409,9 @@ private fun ChannelPreviewCard(channel: WebChannelInfo, onConfirm: () -> Unit) {
 }
 
 /**
- * Channel surfaced from the user's existing subscription content (forwards
- * and @mentions in posts they already follow). Distinct shape from
- * [CuratedChannel] because the row also shows the mention count, which is
- * the primary cue for "why is this suggested" — "згадується у 3 каналах"
- * carries social proof that a flat description can't.
+ * Channel surfaced from the user's existing subscription content (forwards and
+ * @mentions in posts they already follow). The row shows the mention count, which
+ * is the social-proof cue a flat description can't carry.
  */
 private data class MentionedChannel(
     val username: String,
@@ -447,71 +441,9 @@ private fun MentionedRow(suggestion: MentionedChannel, onTap: () -> Unit) {
     }
 }
 
-@Composable
-private fun CuratedRow(suggestion: CuratedChannel, onTap: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text("@${suggestion.username}", style = MaterialTheme.typography.bodyMedium)
-            Text(suggestion.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        TextButton(onClick = onTap) {
-            Text(stringResource(R.string.web_add_check))
-        }
-    }
-}
-
 private sealed interface LookupState {
     data object Idle : LookupState
     data object Loading : LookupState
     data class Found(val channel: WebChannelInfo) : LookupState
     data class Error(val message: String, val isPrivate: Boolean = false) : LookupState
-}
-
-/**
- * One curated channel suggestion. [description] is what we show in the picker —
- * a short Ukrainian/English blurb about why the channel is interesting. Avoid
- * politically polarising defaults to keep first-launch UX neutral.
- */
-data class CuratedChannel(
-    val username: String,
-    val description: String,
-)
-
-// Curated picks: each handle was verified live via
-// `curl https://t.me/s/<u>` AND its `class="counter_value">` was checked for
-// a meaningful subscriber count (≥5K) — most short / generic-sounding handles
-// turn out to be squatters with single-digit subs, not the brand they
-// resemble. We deliberately skip "Apple", "OpenAI", "Hacker News" and
-// similar Western brands that have no real Telegram presence to avoid
-// suggesting the user a 1-subscriber impostor channel.
-//
-// Mix favours culture / tech / science over hard news so first-launch
-// doesn't feel like a news firehose. No Russian-language channels.
-internal fun curatedSuggestions(locale: String): List<CuratedChannel> = when (locale) {
-    "uk" -> listOf(
-        CuratedChannel("durov", "Засновник Telegram"),
-        CuratedChannel("telegram", "Офіційні новини Telegram"),
-        CuratedChannel("liroom", "Лірум: культура, кіно, література"),
-        CuratedChannel("science", "Science: AI, космос, фізика (англ.)"),
-        CuratedChannel("hromadske_ua", "Громадське"),
-        CuratedChannel("ukrpravda_news", "Українська правда"),
-        CuratedChannel("suspilnenews", "Суспільне Новини"),
-        CuratedChannel("bbcukrainian", "BBC News Україна"),
-    )
-    else -> listOf(
-        CuratedChannel("durov", "Pavel Durov — Telegram founder"),
-        CuratedChannel("telegram", "Official Telegram product news"),
-        CuratedChannel("TelegramTips", "Telegram tips & tricks"),
-        CuratedChannel("science", "Science: AI, space, biotech, physics"),
-        CuratedChannel("deeplearning_ai", "AI & Deep Learning"),
-        CuratedChannel("guardian", "The Guardian"),
-        CuratedChannel("figma", "Figma design"),
-        CuratedChannel("kyivindependent_official", "The Kyiv Independent — Ukraine"),
-    )
 }
