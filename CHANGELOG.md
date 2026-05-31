@@ -7,6 +7,9 @@
 ### Changed
 - The home feed's top bar and bottom navigation now slide away as you scroll without dragging on the gesture — the feed follows your finger 1:1 instead of stalling while the bar collapses.
 
+### Fixed
+- On a fresh launch the feed's folder tabs no longer cover the top of the first post and the brand bar now collapses fully on scroll, even when your folders or archive finish loading a moment after the feed appears.
+
 ## [0.10.0] — 2026-05-30
 
 ### Added

@@ -1975,7 +1975,21 @@ fun TimelineScreen(
                         .clipToBounds()
                         .layout { measurable, constraints ->
                             val placeable = measurable.measure(constraints)
-                            if (headerFullHeightPx.floatValue == 0f && placeable.height > 0) {
+                            // Publish the FULL measured height on EVERY measure, not just the first.
+                            // `placeable.height` is always the natural uncollapsed height — the offset
+                            // below only shifts placement and the reported layout height, never the
+                            // measure — so it is the right value to publish at any time. Seeding it
+                            // once and freezing it stranded the collapse limit, the list's top
+                            // contentPadding, and the nav-bar fraction at the brand-row-only height
+                            // whenever the folder / archive tabs appeared AFTER the first frame: cold
+                            // start populates `headerTabs` / `archivedChatIds` late, so the tabs then
+                            // covered the top of the first post, the bar could only half-collapse, and
+                            // the nav-bar hid fully while the bar was still half-shown. The `!=` guard
+                            // keeps this from looping the recompose it triggers via the read in
+                            // [headerOverlayHeightDp].
+                            if (placeable.height > 0 &&
+                                headerFullHeightPx.floatValue != placeable.height.toFloat()
+                            ) {
                                 headerFullHeightPx.floatValue = placeable.height.toFloat()
                             }
                             val offset = headerOffsetPx.floatValue.roundToInt()
