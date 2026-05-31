@@ -4,14 +4,14 @@
 
 ## [Unreleased]
 
+## [0.10.3] — 2026-05-31
+
 ### Added
 - Find and add channels without leaving Hortay — search public channels by name when signed in, and pick from curated suggestions grouped by topic (news, technology, culture, science, humour…) in both signed-in and guest modes.
 - Channel suggestions now show each channel's avatar, real name and subscriber count, with the author's own channels highlighted at the top.
 
 ### Changed
 - The suggested channels are a refreshed, verified set loaded from an online list — Ukrainian channels first for Ukrainian readers, an international set otherwise — so it stays current without an app update.
-
-## [0.10.2] — 2026-05-31
 
 ### Fixed
 - Guest mode's empty feed no longer offers "Open Telegram to subscribe" — a Telegram account subscription never reaches the anonymous feed, so the empty state now points to adding a public channel with the + button.
