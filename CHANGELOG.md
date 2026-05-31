@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- A long feed post with a block quote no longer cuts a line of text in half where it collapses — the "Показати більше" trim now lands on a clean line boundary, including inside the quote.
+- Collapsible quotes now preview collapsed to a few lines in the feed too, instead of always showing in full, with a chevron marking there's more — tap the post to open it and expand them.
+
 ## [0.10.1] — 2026-05-31
 
 ### Changed

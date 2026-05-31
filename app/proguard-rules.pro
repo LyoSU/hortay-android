@@ -18,6 +18,15 @@
 # manually via retrace.
 -repackageclasses ''
 
+# libhortaywebm.so (minimal ffmpeg VP9+alpha decoder) reaches back into Kotlin via JNI:
+# nativeDecode() is resolved by symbol name (kept by the default native-methods rule), but it
+# instantiates WebmAlphaNative$Raw through FindClass("…/WebmAlphaNative$Raw") +
+# GetMethodID("<init>","([I[IIII)V"). R8 never sees that native instantiation, so without an
+# explicit keep it renames Raw (and may drop the @JvmField fields / the ctor's descriptor); the
+# JNI lookup then misses and the decoder fail-softs to null — every WebM video sticker & animated
+# custom emoji silently falls back to its STATIC thumb in minified builds only (debug looks fine).
+-keep class dev.lyo.hortay.webm.** { *; }
+
 # kotlinx.serialization annotation processing relies on companion-object accessors
 # and synthetic methods that R8 strips by default.
 -keepattributes *Annotation*, InnerClasses
