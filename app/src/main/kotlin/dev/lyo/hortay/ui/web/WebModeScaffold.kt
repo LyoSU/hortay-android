@@ -22,8 +22,10 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -31,6 +33,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
@@ -54,6 +57,7 @@ import dev.lyo.hortay.data.web.WebPostAdapter
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.FloatingNavBar
 import dev.lyo.hortay.ui.main.LinkAwareScaffold
+import dev.lyo.hortay.ui.main.LocalNavBarCollapse
 import dev.lyo.hortay.ui.main.NavTab
 import dev.lyo.hortay.ui.settings.SettingsScreen
 import dev.lyo.hortay.ui.report.GuestReportDelegator
@@ -349,6 +353,15 @@ fun WebModeScaffold(graph: AppGraph) {
                     },
                     entryProvider = entryProvider {
                         entry<HomeKey> {
+                            // Bottom nav-bar hides in sync with the feed's collapsing brand header,
+                            // mirroring the authenticated MainScaffold: the Feed/Saved TimelineScreen
+                            // writes the header collapse fraction (0 shown .. 1 hidden) into this state
+                            // via [LocalNavBarCollapse], and the FloatingNavBar slides off-screen by it.
+                            // Resets to 0 (shown) when the feed leaves composition (tab switch) via
+                            // TimelineScreen's own DisposableEffect. (The guest header is the brand row
+                            // only — no folder tabs — but it still collapses, so the signal is live.)
+                            val navBarCollapse = remember { mutableFloatStateOf(0f) }
+                            CompositionLocalProvider(LocalNavBarCollapse provides navBarCollapse) {
                             Scaffold(
                                 modifier = Modifier.fillMaxSize(),
                                 bottomBar = {
@@ -359,6 +372,10 @@ fun WebModeScaffold(graph: AppGraph) {
                                                 tab == NavTab.Feed && tab == selectedTab
                                             if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
                                             selectedTab = tab
+                                        },
+                                        modifier = Modifier.graphicsLayer {
+                                            translationY =
+                                                navBarCollapse.floatValue * (size.height + 24.dp.toPx())
                                         },
                                     )
                                 },
@@ -543,6 +560,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                         }
                                     }
                                 }
+                            }
                             }
                         }
 

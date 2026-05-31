@@ -810,8 +810,9 @@ fun TimelineScreen(
     val density = LocalDensity.current
 
     // Drive the bottom nav-bar's hide-on-scroll from the SAME header collapse signal, so the bar
-    // slides away in lockstep with the brand + folders. Auth feed only — [LocalNavBarCollapse] is
-    // null in guest mode / other hosts, where this is a no-op. Reset to 0 (shown) when the feed
+    // slides away in lockstep with the brand + folders. Provided by the tab scaffold of both hosts
+    // (auth MainScaffold and guest WebModeScaffold); [LocalNavBarCollapse] is null only for hosts
+    // that don't mount a hiding nav-bar, where this is a no-op. Reset to 0 (shown) when the feed
     // leaves composition (tab switch) so Channels / Profile never inherit a hidden bar.
     val navBarCollapse = dev.lyo.hortay.ui.main.LocalNavBarCollapse.current
     if (navBarCollapse != null) {
