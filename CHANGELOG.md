@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-05-31
+
 ### Fixed
 - Guest mode's empty feed no longer offers "Open Telegram to subscribe" — a Telegram account subscription never reaches the anonymous feed, so the empty state now points to adding a public channel with the + button.
 - A long feed post with a block quote no longer cuts a line of text in half where it collapses — the "Показати більше" trim now lands on a clean line boundary, including inside the quote.
