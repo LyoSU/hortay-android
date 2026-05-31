@@ -37,6 +37,8 @@
     { "username": "babel",         "category": "news", "locales": ["uk"], "description": { "uk": "Новини без хайпу" } },
     { "username": "bbcukrainian",  "category": "news", "locales": ["uk"], "description": { "uk": "BBC українською" } },
     { "username": "ukrinform_news","category": "news", "locales": ["uk"], "description": { "uk": "Державний інформагент" } },
+    { "username": "novinach",      "category": "news", "locales": ["uk"], "description": { "uk": "Оперативні новини" } },
+    { "username": "regionality",   "category": "news", "locales": ["uk"], "description": { "uk": "Драматичні новини з регіонів" } },
 
     { "username": "DeepStateUA",   "category": "frontline", "locales": ["uk"], "description": { "uk": "Воєнна аналітика, мапа фронту" } },
 
