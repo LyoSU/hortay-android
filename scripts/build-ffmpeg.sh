@@ -46,10 +46,20 @@ build_abi() {
   local VBLD="$WORK/vbld-$ABI"; rm -rf "$VBLD"; mkdir -p "$VBLD"; ( cd "$VBLD"
     CC="$CC" CXX="$TOOL/${TRIPLE}21-clang++" LD="$CC" AS="$CC" \
     AR="$TOOL/llvm-ar" NM="$TOOL/llvm-nm" RANLIB="$TOOL/llvm-ranlib" STRIP="$TOOL/llvm-strip" \
+    # --enable-runtime-cpu-detect is MANDATORY, not a perf knob. With RTCD *disabled*
+    # libvpx has no dispatch tables: each kernel is #define'd statically at compile time to
+    # the highest ISA extension the NDK clang could assemble. Modern clang assembles ARMv8.6
+    # i8mm, so vpx_convolve8 et al. bind to *_neon_i8mm unconditionally — and run with ZERO
+    # runtime CPU check. On any pre-ARMv8.6 arm64 device (e.g. Snapdragon 855 / Cortex-A76,
+    # ARMv8.2) that's an illegal opcode -> SIGILL crash inside vp9_decode_frame the moment a
+    # WebM(VP9+alpha) sticker/emoji decodes (issue #2). RTCD's aarch64 path reads
+    # getauxval(AT_HWCAP2)&I8MM and only takes the i8mm/dotprod/sve kernels when the CPU
+    # actually has them, so it both fixes the crash AND keeps the acceleration on capable chips.
+    # DO NOT switch back to --disable-runtime-cpu-detect.
     "$WORK/libvpx/configure" --target="$VPX_TARGET" \
       --disable-examples --disable-tools --disable-docs --disable-unit-tests \
       --enable-vp9-decoder --disable-vp9-encoder --disable-vp8 \
-      --enable-static --disable-shared --enable-pic --disable-runtime-cpu-detect \
+      --enable-static --disable-shared --enable-pic --enable-runtime-cpu-detect \
       --prefix="$OUT"
     make -j"$NPROC" && make install
   )
