@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- In guest mode's empty Channels screen the floating "Add channel" button no longer overlaps the "Popular channels" suggestions — the empty state now leaves room for it at the bottom.
+
 ## [0.10.2] — 2026-05-31
 
 ### Fixed

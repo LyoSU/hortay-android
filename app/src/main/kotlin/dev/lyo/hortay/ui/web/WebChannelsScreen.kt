@@ -128,7 +128,16 @@ fun WebChannelsScreen(
             EmptyChannelsState(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    // Reserve the bottom edge for the host scaffold's FloatingNavBar
+                    // (contentPadding) PLUS the "Add channel" FAB it parks at BottomEnd.
+                    // The FAB floats over content and is NOT in contentPadding, so the
+                    // vertically-centred empty state would otherwise let the curated
+                    // chips slide under it. 72.dp = ExtendedFAB ~56.dp + 16.dp gap, the
+                    // same clearance the Feed tab reserves via unreadPillExtraBottomPadding.
+                    .padding(
+                        top = padding.calculateTopPadding(),
+                        bottom = contentPadding.calculateBottomPadding() + 72.dp,
+                    ),
                 onAddChannel = onAddChannel,
                 curated = curated,
                 onPickCurated = onAddCurated,
