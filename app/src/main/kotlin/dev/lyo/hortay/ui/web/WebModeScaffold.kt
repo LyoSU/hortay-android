@@ -26,6 +26,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -35,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
@@ -361,6 +363,12 @@ fun WebModeScaffold(graph: AppGraph) {
                             // TimelineScreen's own DisposableEffect. (The guest header is the brand row
                             // only — no folder tabs — but it still collapses, so the signal is live.)
                             val navBarCollapse = remember { mutableFloatStateOf(0f) }
+                            // Measured nav-bar height, captured so the FAB can ride the same collapse
+                            // fraction. The FAB descends by exactly this height (NOT the nav-bar's full
+                            // `height + 24dp` hide distance) so it slides DOWN into the row the nav-bar
+                            // vacates and stays fully on-screen, instead of sliding off the bottom with
+                            // the bar.
+                            val navBarHeightPx = remember { mutableIntStateOf(0) }
                             CompositionLocalProvider(LocalNavBarCollapse provides navBarCollapse) {
                             Scaffold(
                                 modifier = Modifier.fillMaxSize(),
@@ -373,10 +381,12 @@ fun WebModeScaffold(graph: AppGraph) {
                                             if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
                                             selectedTab = tab
                                         },
-                                        modifier = Modifier.graphicsLayer {
-                                            translationY =
-                                                navBarCollapse.floatValue * (size.height + 24.dp.toPx())
-                                        },
+                                        modifier = Modifier
+                                            .onSizeChanged { navBarHeightPx.intValue = it.height }
+                                            .graphicsLayer {
+                                                translationY =
+                                                    navBarCollapse.floatValue * (size.height + 24.dp.toPx())
+                                            },
                                     )
                                 },
                                 floatingActionButton = {
@@ -402,6 +412,14 @@ fun WebModeScaffold(graph: AppGraph) {
                                                 // before the sheet opens.
                                                 haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                                                 addSheetOpen = true
+                                            },
+                                            // Ride the same nav-bar collapse fraction: descend by the
+                                            // nav-bar's height as it hides so the FAB drops into the
+                                            // vacated row. Capped at the bar height (not its full hide
+                                            // distance) so the FAB lowers but never slides off-screen.
+                                            modifier = Modifier.graphicsLayer {
+                                                translationY =
+                                                    navBarCollapse.floatValue * navBarHeightPx.intValue
                                             },
                                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,

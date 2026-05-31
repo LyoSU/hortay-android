@@ -9,7 +9,7 @@
 
 ### Fixed
 - On a fresh launch the feed's folder tabs no longer cover the top of the first post and the brand bar now collapses fully on scroll, even when your folders or archive finish loading a moment after the feed appears.
-- In guest mode the bottom navigation now slides away as you scroll the feed, matching the signed-in mode where it previously stayed fixed.
+- In guest mode the bottom navigation now slides away as you scroll the feed, and the add-channel button lowers to follow it instead of both staying fixed.
 
 ## [0.10.0] — 2026-05-30
 
