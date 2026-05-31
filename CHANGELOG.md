@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.10.4] — 2026-05-31
+
 ### Fixed
 - Fixed a crash when an animated WebM sticker or custom emoji (transparent, animated) appeared in the feed on many arm64 phones — the transparent-sticker decoder now picks code paths that match the device's processor instead of assuming the newest instruction set.
 
