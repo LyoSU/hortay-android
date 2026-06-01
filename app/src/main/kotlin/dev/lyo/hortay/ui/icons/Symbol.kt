@@ -96,6 +96,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "delete" -> R.drawable.sym_delete
         "delete_sweep" -> R.drawable.sym_delete_sweep
         "description" -> R.drawable.sym_description
+        "dns" -> R.drawable.sym_dns
         "download" -> R.drawable.sym_download
         "download_for_offline" -> R.drawable.sym_download_for_offline
         "dynamic_feed" -> R.drawable.sym_dynamic_feed
@@ -112,6 +113,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "image" -> R.drawable.sym_image
         "info" -> R.drawable.sym_info
         "ios_share" -> R.drawable.sym_ios_share
+        "lan" -> R.drawable.sym_lan
         "lightbulb" -> R.drawable.sym_lightbulb
         "location_on" -> R.drawable.sym_location_on
         "lock" -> R.drawable.sym_lock
@@ -119,6 +121,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "logout" -> R.drawable.sym_logout
         "mic" -> R.drawable.sym_mic
         "mic_off" -> R.drawable.sym_mic_off
+        "network_check" -> R.drawable.sym_network_check
         "notifications_active" -> R.drawable.sym_notifications_active
         "notifications_off" -> R.drawable.sym_notifications_off
         "open_in_new" -> R.drawable.sym_open_in_new
@@ -146,7 +149,9 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "signal_cellular_alt" -> R.drawable.sym_signal_cellular_alt
         "smart_display" -> R.drawable.sym_smart_display
         "smartphone" -> R.drawable.sym_smartphone
+        "speed" -> R.drawable.sym_speed
         "storage" -> R.drawable.sym_storage
+        "swap_horiz" -> R.drawable.sym_swap_horiz
         "sync" -> R.drawable.sym_sync
         "timer" -> R.drawable.sym_timer
         "translate" -> R.drawable.sym_translate
@@ -158,6 +163,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "visibility_off" -> R.drawable.sym_visibility_off
         "volume_off" -> R.drawable.sym_volume_off
         "volume_up" -> R.drawable.sym_volume_up
+        "vpn_key" -> R.drawable.sym_vpn_key
         "wifi" -> R.drawable.sym_wifi
         "wifi_off" -> R.drawable.sym_wifi_off
         else -> R.drawable.sym_help

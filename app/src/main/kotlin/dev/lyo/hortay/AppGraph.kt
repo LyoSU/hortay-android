@@ -309,6 +309,21 @@ class AppGraph(context: Context) {
     val channelActions: ChannelActionsRepository =
         ChannelActionsRepository(tdClient, userMessages, tdClient.connection, res)
 
+    /**
+     * Proxy support (SOCKS5 / HTTP / MTProto). A thin driver over TDLib's native proxy API plus
+     * a failover watchdog; see [dev.lyo.hortay.data.proxy.ProxyRepository] KDoc. The pool lives in
+     * TDLib's own database — NOT cleared on logout (you may need the proxy to reach the sign-in
+     * screen), so it is deliberately absent from [runLogoutCleanup].
+     */
+    val proxyRepository: dev.lyo.hortay.data.proxy.ProxyRepository =
+        dev.lyo.hortay.data.proxy.ProxyRepository(
+            sender = tdClient,
+            connection = tdClient.connection,
+            userMessages = userMessages,
+            scope = appScope,
+            res = res,
+        )
+
     val countries: CountryRepository = CountryRepository(tdClient, res, appScope)
 
     // Custom-emoji resolver for inline emojis in formatted text and for custom-emoji

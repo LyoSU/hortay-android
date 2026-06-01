@@ -731,4 +731,37 @@
     <string name="discover_no_results">Keine Kanäle gefunden</string>
     <string name="discover_subscribe">Abonnieren</string>
     <string name="discover_subscribed">Abonniert</string>
+    <!-- Proxy -->
+    <string name="proxy_title">Proxy</string>
+    <string name="proxy_section">Verbindung</string>
+    <string name="proxy_row_subtitle">Über SOCKS5, HTTP oder MTProto verbinden</string>
+    <string name="proxy_add">Proxy hinzufügen</string>
+    <string name="proxy_add_from_link">Aus Link hinzufügen</string>
+    <string name="proxy_link_label">Proxy-Link</string>
+    <string name="proxy_manual_label">Oder manuell eingeben</string>
+    <string name="proxy_field_server">Server</string>
+    <string name="proxy_field_port">Port</string>
+    <string name="proxy_field_secret">Secret</string>
+    <string name="proxy_field_username">Benutzername</string>
+    <string name="proxy_field_password">Passwort</string>
+    <string name="proxy_field_http_only">Nur-HTTP-Proxy (kein CONNECT)</string>
+    <string name="proxy_use_toggle">Proxy verwenden</string>
+    <string name="proxy_use_toggle_subtitle">Verbindung über den ausgewählten Proxy leiten</string>
+    <string name="proxy_empty">Noch keine Proxys. Füge einen hinzu, um deine Verbindung darüber zu leiten.</string>
+    <string name="proxy_test">Testen</string>
+    <string name="proxy_remove">Entfernen</string>
+    <string name="proxy_health_unknown">Nicht getestet</string>
+    <string name="proxy_health_checking">Wird geprüft…</string>
+    <string name="proxy_health_latency">%1$d ms</string>
+    <string name="proxy_health_unreachable">Nicht erreichbar</string>
+    <string name="proxy_error_generic">Proxy konnte nicht hinzugefügt werden</string>
+    <string name="proxy_error_not_link">Das ist kein gültiger Proxy-Link</string>
+    <string name="proxy_trouble">Verbindungsprobleme über den Proxy</string>
+    <string name="proxy_switching">Wechsle zu einem anderen Proxy…</string>
+    <string name="proxy_all_unreachable">Alle Proxys sind nicht erreichbar – erneuter Versuch</string>
+    <plurals name="proxy_count">
+        <item quantity="one">%d Proxy</item>
+        <item quantity="other">%d Proxys</item>
+    </plurals>
+    <string name="proxy_active_summary">Aktiv: %1$s</string>
 </resources>

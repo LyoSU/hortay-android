@@ -759,4 +759,39 @@
     <string name="discover_no_results">Каналы не найдены</string>
     <string name="discover_subscribe">Подписаться</string>
     <string name="discover_subscribed">Вы подписаны</string>
+    <!-- Proxy -->
+    <string name="proxy_title">Прокси</string>
+    <string name="proxy_section">Соединение</string>
+    <string name="proxy_row_subtitle">Соединение через SOCKS5, HTTP или MTProto</string>
+    <string name="proxy_add">Добавить прокси</string>
+    <string name="proxy_add_from_link">Добавить из ссылки</string>
+    <string name="proxy_link_label">Ссылка на прокси</string>
+    <string name="proxy_manual_label">Или введите вручную</string>
+    <string name="proxy_field_server">Сервер</string>
+    <string name="proxy_field_port">Порт</string>
+    <string name="proxy_field_secret">Секрет</string>
+    <string name="proxy_field_username">Имя пользователя</string>
+    <string name="proxy_field_password">Пароль</string>
+    <string name="proxy_field_http_only">Только HTTP (без CONNECT)</string>
+    <string name="proxy_use_toggle">Использовать прокси</string>
+    <string name="proxy_use_toggle_subtitle">Направить соединение через выбранный прокси</string>
+    <string name="proxy_empty">Прокси пока нет. Добавьте, чтобы направить соединение через него.</string>
+    <string name="proxy_test">Проверить</string>
+    <string name="proxy_remove">Удалить</string>
+    <string name="proxy_health_unknown">Не проверено</string>
+    <string name="proxy_health_checking">Проверка…</string>
+    <string name="proxy_health_latency">%1$d мс</string>
+    <string name="proxy_health_unreachable">Недоступен</string>
+    <string name="proxy_error_generic">Не удалось добавить прокси</string>
+    <string name="proxy_error_not_link">Это не действительная ссылка на прокси</string>
+    <string name="proxy_trouble">Проблема с соединением через прокси</string>
+    <string name="proxy_switching">Переключаюсь на другой прокси…</string>
+    <string name="proxy_all_unreachable">Все прокси недоступны — повторяю попытки</string>
+    <plurals name="proxy_count">
+        <item quantity="one">%d прокси</item>
+        <item quantity="few">%d прокси</item>
+        <item quantity="many">%d прокси</item>
+        <item quantity="other">%d прокси</item>
+    </plurals>
+    <string name="proxy_active_summary">Активен: %1$s</string>
 </resources>

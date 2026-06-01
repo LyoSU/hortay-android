@@ -192,6 +192,7 @@ internal fun TabContentSwitcher(
                             graph.backStack.add(dev.lyo.hortay.data.nav.ArchiveSettingsKey)
                         },
                         archiveLossOnLogout = archiveSettings.enabled,
+                        proxy = graph.proxyRepository,
                     )
                 }
             }

@@ -745,4 +745,38 @@
     <string name="discover_no_results">Aucune chaîne trouvée</string>
     <string name="discover_subscribe">S\'abonner</string>
     <string name="discover_subscribed">Abonné</string>
+    <!-- Proxy -->
+    <string name="proxy_title">Proxy</string>
+    <string name="proxy_section">Connexion</string>
+    <string name="proxy_row_subtitle">Se connecter via SOCKS5, HTTP ou MTProto</string>
+    <string name="proxy_add">Ajouter un proxy</string>
+    <string name="proxy_add_from_link">Ajouter depuis un lien</string>
+    <string name="proxy_link_label">Lien du proxy</string>
+    <string name="proxy_manual_label">Ou saisir manuellement</string>
+    <string name="proxy_field_server">Serveur</string>
+    <string name="proxy_field_port">Port</string>
+    <string name="proxy_field_secret">Secret</string>
+    <string name="proxy_field_username">Nom d\'utilisateur</string>
+    <string name="proxy_field_password">Mot de passe</string>
+    <string name="proxy_field_http_only">Proxy HTTP uniquement (sans CONNECT)</string>
+    <string name="proxy_use_toggle">Utiliser un proxy</string>
+    <string name="proxy_use_toggle_subtitle">Acheminer la connexion via le proxy sélectionné</string>
+    <string name="proxy_empty">Aucun proxy pour l\'instant. Ajoutez-en un pour y acheminer votre connexion.</string>
+    <string name="proxy_test">Tester</string>
+    <string name="proxy_remove">Supprimer</string>
+    <string name="proxy_health_unknown">Non testé</string>
+    <string name="proxy_health_checking">Vérification…</string>
+    <string name="proxy_health_latency">%1$d ms</string>
+    <string name="proxy_health_unreachable">Injoignable</string>
+    <string name="proxy_error_generic">Impossible d\'ajouter le proxy</string>
+    <string name="proxy_error_not_link">Ce n\'est pas un lien de proxy valide</string>
+    <string name="proxy_trouble">Problème de connexion via le proxy</string>
+    <string name="proxy_switching">Passage à un autre proxy…</string>
+    <string name="proxy_all_unreachable">Tous les proxys sont injoignables — nouvelle tentative</string>
+    <plurals name="proxy_count">
+        <item quantity="one">%d proxy</item>
+        <item quantity="many">%d proxys</item>
+        <item quantity="other">%d proxys</item>
+    </plurals>
+    <string name="proxy_active_summary">Actif : %1$s</string>
 </resources>

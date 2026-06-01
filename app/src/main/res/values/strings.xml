@@ -761,4 +761,37 @@
     <string name="discover_no_results">No channels found</string>
     <string name="discover_subscribe">Subscribe</string>
     <string name="discover_subscribed">Subscribed</string>
+    <!-- Proxy -->
+    <string name="proxy_title">Proxy</string>
+    <string name="proxy_section">Connection</string>
+    <string name="proxy_row_subtitle">Connect through SOCKS5, HTTP or MTProto</string>
+    <string name="proxy_add">Add proxy</string>
+    <string name="proxy_add_from_link">Add from link</string>
+    <string name="proxy_link_label">Proxy link</string>
+    <string name="proxy_manual_label">Or enter manually</string>
+    <string name="proxy_field_server">Server</string>
+    <string name="proxy_field_port">Port</string>
+    <string name="proxy_field_secret">Secret</string>
+    <string name="proxy_field_username">Username</string>
+    <string name="proxy_field_password">Password</string>
+    <string name="proxy_field_http_only">HTTP-only proxy (no CONNECT)</string>
+    <string name="proxy_use_toggle">Use proxy</string>
+    <string name="proxy_use_toggle_subtitle">Route the connection through the selected proxy</string>
+    <string name="proxy_empty">No proxies yet. Add one to route your connection through it.</string>
+    <string name="proxy_test">Test</string>
+    <string name="proxy_remove">Remove</string>
+    <string name="proxy_health_unknown">Not tested</string>
+    <string name="proxy_health_checking">Checking…</string>
+    <string name="proxy_health_latency">%1$d ms</string>
+    <string name="proxy_health_unreachable">Unreachable</string>
+    <string name="proxy_error_generic">Couldn\'t add the proxy</string>
+    <string name="proxy_error_not_link">That\'s not a valid proxy link</string>
+    <string name="proxy_trouble">Trouble connecting through the proxy</string>
+    <string name="proxy_switching">Switching to another proxy…</string>
+    <string name="proxy_all_unreachable">All proxies are unreachable — retrying</string>
+    <plurals name="proxy_count">
+        <item quantity="one">%d proxy</item>
+        <item quantity="other">%d proxies</item>
+    </plurals>
+    <string name="proxy_active_summary">Active: %1$s</string>
 </resources>

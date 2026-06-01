@@ -140,6 +140,12 @@ fun SettingsScreen(
      * actually opted into archiving, so the 99% with it off see the plain message.
      */
     archiveLossOnLogout: Boolean = false,
+    /**
+     * Proxy support. Non-null only in TDLib mode — proxy targets the MTProto transport, which
+     * guest mode (anonymous `t.me/s/`) doesn't use. When null the Privacy page hides its proxy
+     * row entirely.
+     */
+    proxy: dev.lyo.hortay.data.proxy.ProxyRepository? = null,
 ) {
     // Settings sub-screens run on a NESTED Navigation 3 NavDisplay over a LOCAL back stack (not
     // the app-wide [dev.lyo.hortay.AppGraph.backStack]): the Settings master/detail is
@@ -224,8 +230,14 @@ fun SettingsScreen(
                     settings = settings,
                     contentPadding = contentPadding,
                     privacyTogglesAvailable = stats != null,
+                    onOpenProxy = proxy?.let { { settingsBackStack.add(SettingsNavKey.Proxy) } },
                     onBack = pop,
                 )
+            }
+            entry<SettingsNavKey.Proxy> {
+                proxy?.let { repo ->
+                    ProxyScreen(repo = repo, contentPadding = contentPadding, onBack = pop)
+                }
             }
             entry<SettingsNavKey.About> {
                 AboutScreen(contentPadding = contentPadding, onBack = pop)
@@ -244,6 +256,7 @@ private sealed interface SettingsNavKey : NavKey {
     data object Main : SettingsNavKey
     data object DataStorage : SettingsNavKey
     data object Privacy : SettingsNavKey
+    data object Proxy : SettingsNavKey
     data object About : SettingsNavKey
     data object HiddenChannels : SettingsNavKey
     data object AutoDownload : SettingsNavKey

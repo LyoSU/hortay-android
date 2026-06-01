@@ -713,4 +713,36 @@
     <string name="discover_no_results">Tidak ada kanal ditemukan</string>
     <string name="discover_subscribe">Langganan</string>
     <string name="discover_subscribed">Berlangganan</string>
+    <!-- Proxy -->
+    <string name="proxy_title">Proxy</string>
+    <string name="proxy_section">Koneksi</string>
+    <string name="proxy_row_subtitle">Sambungkan melalui SOCKS5, HTTP, atau MTProto</string>
+    <string name="proxy_add">Tambah proxy</string>
+    <string name="proxy_add_from_link">Tambah dari tautan</string>
+    <string name="proxy_link_label">Tautan proxy</string>
+    <string name="proxy_manual_label">Atau masukkan manual</string>
+    <string name="proxy_field_server">Server</string>
+    <string name="proxy_field_port">Port</string>
+    <string name="proxy_field_secret">Secret</string>
+    <string name="proxy_field_username">Nama pengguna</string>
+    <string name="proxy_field_password">Kata sandi</string>
+    <string name="proxy_field_http_only">Proxy khusus HTTP (tanpa CONNECT)</string>
+    <string name="proxy_use_toggle">Gunakan proxy</string>
+    <string name="proxy_use_toggle_subtitle">Arahkan koneksi melalui proxy yang dipilih</string>
+    <string name="proxy_empty">Belum ada proxy. Tambahkan satu untuk mengarahkan koneksimu.</string>
+    <string name="proxy_test">Uji</string>
+    <string name="proxy_remove">Hapus</string>
+    <string name="proxy_health_unknown">Belum diuji</string>
+    <string name="proxy_health_checking">Memeriksa…</string>
+    <string name="proxy_health_latency">%1$d ms</string>
+    <string name="proxy_health_unreachable">Tidak dapat dijangkau</string>
+    <string name="proxy_error_generic">Tidak dapat menambahkan proxy</string>
+    <string name="proxy_error_not_link">Itu bukan tautan proxy yang valid</string>
+    <string name="proxy_trouble">Masalah menyambung melalui proxy</string>
+    <string name="proxy_switching">Beralih ke proxy lain…</string>
+    <string name="proxy_all_unreachable">Semua proxy tidak dapat dijangkau — mencoba lagi</string>
+    <plurals name="proxy_count">
+        <item quantity="other">%d proxy</item>
+    </plurals>
+    <string name="proxy_active_summary">Aktif: %1$s</string>
 </resources>

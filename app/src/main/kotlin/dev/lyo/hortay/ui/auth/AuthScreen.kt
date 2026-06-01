@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -72,6 +73,7 @@ import dev.lyo.hortay.data.AuthStage
 import dev.lyo.hortay.data.Country
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.settings.ProxyScreen
 import kotlinx.coroutines.launch
 
 /**
@@ -90,6 +92,9 @@ import kotlinx.coroutines.launch
 fun AuthScreen(graph: AppGraph, stage: AuthStage) {
     val client = graph.tdClient
     val authError by client.authError.collectAsStateWithLifecycle()
+    // Proxy can be configured before sign-in — addProxy works pre-authorization (tdlib/td#300),
+    // so a user in a blocked network can reach Telegram to authenticate at all.
+    var showProxy by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -153,7 +158,28 @@ fun AuthScreen(graph: AppGraph, stage: AuthStage) {
                 }
             }
 
-            Spacer(Modifier.height(40.dp))
+            Spacer(Modifier.height(24.dp))
+
+            TextButton(
+                onClick = { showProxy = true },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Symbol(name = "vpn_key", size = 18.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.proxy_title))
+            }
+
+            Spacer(Modifier.height(24.dp))
+        }
+
+        if (showProxy) {
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                ProxyScreen(
+                    repo = graph.proxyRepository,
+                    contentPadding = PaddingValues(),
+                    onBack = { showProxy = false },
+                )
+            }
         }
     }
 }

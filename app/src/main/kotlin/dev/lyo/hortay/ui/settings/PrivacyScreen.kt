@@ -46,6 +46,7 @@ internal fun PrivacyScreen(
     settings: SettingsStore,
     contentPadding: PaddingValues,
     privacyTogglesAvailable: Boolean,
+    onOpenProxy: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -92,6 +93,17 @@ internal fun PrivacyScreen(
                 HideOnlineStatusRow(
                     enabled = hideOnline,
                     onToggle = { next -> if (next != hideOnline) scope.launch { settings.setHideOnlineStatus(next) } },
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            onOpenProxy?.let { open ->
+                SectionLabel(stringResource(R.string.proxy_section))
+                SettingsRow(
+                    symbol = "vpn_key",
+                    title = stringResource(R.string.proxy_title),
+                    subtitle = stringResource(R.string.proxy_row_subtitle),
+                    chevron = true,
+                    onClick = open,
                 )
                 Spacer(Modifier.height(8.dp))
             }

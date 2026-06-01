@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### Added
+- Connect through a proxy — add SOCKS5, HTTP or MTProto servers by pasting a Telegram proxy link or entering the details by hand, pick the active one, and check each server's reachability and latency.
+- Proxy can be set up on the sign-in screen too, so you can get online to sign in from a network that blocks Telegram.
+- If the active proxy stops responding, the app automatically switches to the next working one in your list instead of getting stuck.
+
 ## [0.10.4] — 2026-05-31
 
 ### Fixed
