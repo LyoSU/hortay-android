@@ -47,7 +47,7 @@ import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
-import java.util.Locale
+import androidx.compose.ui.text.intl.Locale
 
 /**
  * List of channels the user is subscribed to. Data is derived from the same feed as the
@@ -130,7 +130,7 @@ fun ChannelsScreen(
             suggestionsRepo = graph.channelSuggestions,
             discovery = graph.channelDiscovery,
             actions = graph.channelActions,
-            locale = Locale.getDefault().language.lowercase(),
+            locale = Locale.current.language.lowercase(),
             onDismiss = { addSheetOpen = false },
         )
     }
