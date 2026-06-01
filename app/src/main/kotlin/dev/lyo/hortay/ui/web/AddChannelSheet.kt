@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -40,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -294,6 +297,19 @@ fun AddChannelSheet(
                         },
                         singleLine = true,
                         label = { Text(stringResource(R.string.web_add_input_label)) },
+                        // The submit affordance: the IME "search" key and an explicit
+                        // trailing button both fire the lookup, since the curated-
+                        // suggestions redesign dropped the standalone button row.
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { trySubmit() }),
+                        trailingIcon = {
+                            TextButton(
+                                onClick = ::trySubmit,
+                                enabled = input.isNotBlank() && lookupState !is LookupState.Loading,
+                            ) {
+                                Text(stringResource(R.string.web_add_lookup))
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     when (val state = lookupState) {
