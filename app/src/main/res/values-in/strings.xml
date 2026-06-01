@@ -93,6 +93,7 @@
     <string name="auth_title_wait_password">Kata sandi 2FA</string>
     <string name="auth_title_error">Tindakan diperlukan</string>
     <string name="auth_subtitle_wait_code">Kode terkirim. Periksa: %1$s</string>
+    <string name="auth_code_hint_telegram">Aplikasi pihak ketiga tidak menerima kode lewat SMS. Kode dikirim ke Telegram di perangkat lain tempat kamu sudah masuk.</string>
     <string name="auth_subtitle_password_no_hint">Akun dilindungi dengan autentikasi dua faktor</string>
     <string name="auth_subtitle_password_with_hint">Akun dilindungi dengan autentikasi dua faktor. Masukkan kata sandi 2FA-mu</string>
     <string name="auth_subtitle_default">Baca kanal Telegram sebagai feed — tanpa obrolan atau notifikasi</string>

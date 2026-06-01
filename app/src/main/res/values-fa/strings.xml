@@ -93,6 +93,7 @@
     <string name="auth_title_wait_password">رمز عبور ۲FA</string>
     <string name="auth_title_error">اقدام لازم است</string>
     <string name="auth_subtitle_wait_code">کد ارسال شد. بررسی کنید: %1$s</string>
+    <string name="auth_code_hint_telegram">برنامه‌های شخص ثالث کد را با پیامک دریافت نمی‌کنند. کد در تلگرام روی دستگاه دیگری که در آن وارد شده‌اید می‌آید.</string>
     <string name="auth_subtitle_password_no_hint">حساب با تأیید دو مرحله‌ای محافظت می‌شود</string>
     <string name="auth_subtitle_password_with_hint">حساب با تأیید دو مرحله‌ای محافظت می‌شود. رمز ۲FA را وارد کنید</string>
     <string name="auth_subtitle_default">کانال‌های Telegram را به‌صورت فید بخوانید — بدون چت و اعلان</string>

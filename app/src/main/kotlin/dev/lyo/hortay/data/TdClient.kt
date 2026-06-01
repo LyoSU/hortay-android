@@ -290,6 +290,7 @@ class TdClient private constructor(
                     nextChannelLabel = info.nextType?.toLabel(strings, phone),
                     resendAvailableInSec = info.timeout,
                     isNumeric = info.type.isNumeric(),
+                    deliveredInApp = info.type is TdApi.AuthenticationCodeTypeTelegramMessage,
                 )
             }
             is TdApi.AuthorizationStateWaitPassword -> _authStage.value =
@@ -790,10 +791,11 @@ class TdClient private constructor(
  * Digit count expected by [this] code channel, or null when the channel does not deliver
  * a numeric code (SmsWord, SmsPhrase, FlashCall — those expect a word/phrase or pattern).
  *
- * Why this matters: hardcoding `length = 5` in the OTP UI breaks for 6-digit Firebase /
- * Fragment / TelegramMessage codes — TDLib has been rolling those out steadily over the
- * past two years. Reading [length] from the actual [TdApi.AuthenticationCodeType] is the
- * only way to stay correct as Telegram changes channel lengths server-side.
+ * Why this matters: hardcoding `length = 5` in the OTP UI breaks for the 6-digit
+ * TelegramMessage / Fragment codes Telegram has rolled out — and those two are exactly the
+ * channels a third-party app actually receives (tdlib/td#2310). Reading [length] from the
+ * real [TdApi.AuthenticationCodeType] is the only way to stay correct as Telegram changes
+ * channel lengths server-side.
  */
 private fun TdApi.AuthenticationCodeType.numericLength(): Int? = when (this) {
     is TdApi.AuthenticationCodeTypeTelegramMessage -> length
@@ -813,11 +815,13 @@ private fun TdApi.AuthenticationCodeType.isNumeric(): Boolean = numericLength() 
  * to switch on TDLib's [TdApi.AuthenticationCodeType] sum type. [phone] is the active
  * phone number used to enrich SMS / missed-call labels with the destination number.
  *
- * Note on third-party limits: TDLib's docs state that [TdApi.AuthenticationCodeTypeSms],
- * [TdApi.AuthenticationCodeTypeSmsWord] and [TdApi.AuthenticationCodeTypeSmsPhrase] are
- * *not* sent to non-official applications. Hortay therefore mostly sees TelegramMessage,
- * Call, MissedCall, Fragment, FirebaseAndroid; the SMS branches are kept in the mapping
- * for completeness in case Telegram lifts the restriction.
+ * Note on third-party limits: per Aliaksei Levin (tdlib/td#2310) a third-party app's
+ * `authenticationCodeInfo.type`/`next_type` can be ONLY TelegramMessage, Fragment, or
+ * null — "Only official Telegram mobile apps can authorize using an SMS now." So in
+ * practice Hortay only ever sees TelegramMessage (and rarely Fragment for anonymous
+ * numbers). The SMS / Call / MissedCall / FlashCall / Firebase branches are dead for us
+ * today; they're kept as a defensive total mapping in case Telegram lifts the restriction,
+ * NOT because they fire — don't surface "we'll text you" copy on their basis.
  */
 private fun TdApi.AuthenticationCodeType.toLabel(res: StringResolver, phone: String): String = when (this) {
     is TdApi.AuthenticationCodeTypeTelegramMessage -> res.getString(R.string.auth_channel_telegram_message)

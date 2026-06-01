@@ -9,6 +9,9 @@
 - Proxy can be set up on the sign-in screen too, so you can get online to sign in from a network that blocks Telegram.
 - If the active proxy stops responding, the app automatically switches to the next working one in your list instead of getting stuck.
 
+### Changed
+- The login-code screen now tells you the code arrives in your Telegram on another signed-in device, not by SMS, so you're not left waiting for a text that never comes.
+
 ### Fixed
 - In guest mode, typing a channel name or link by hand into "Add channel" now starts the search — tap the keyboard's search key or the "Find" button — instead of only working when a link was auto-filled from the clipboard.
 

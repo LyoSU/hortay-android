@@ -23,6 +23,13 @@ sealed interface AuthStage {
      *     must type a word / phrase rather than digits. UI falls back to a plain text
      *     field in that case; common channels (Sms, TelegramMessage, Call, MissedCall,
      *     Fragment, Firebase*) all set this to true.
+     *   - [deliveredInApp] — true when the code lands inside Telegram itself
+     *     (AuthenticationCodeTypeTelegramMessage), which for third-party apps is the only
+     *     channel that ever fires besides Fragment (tdlib/td#2310: third-party `type`/
+     *     `next_type` can be ONLY TelegramMessage, Fragment, or null — SMS is reserved for
+     *     official mobile apps). Drives a helper line telling the user the code arrives in
+     *     Telegram on another signed-in device, NOT by SMS — the single biggest source of
+     *     "I never got an SMS, the app is broken" confusion for Telegram reader clients.
      */
     data class WaitCode(
         val phoneNumber: String,
@@ -31,6 +38,7 @@ sealed interface AuthStage {
         val nextChannelLabel: String?,
         val resendAvailableInSec: Int,
         val isNumeric: Boolean,
+        val deliveredInApp: Boolean,
     ) : AuthStage
 
     /**

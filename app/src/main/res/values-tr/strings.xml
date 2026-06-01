@@ -95,6 +95,7 @@
     <string name="auth_title_wait_password">2FA şifresi</string>
     <string name="auth_title_error">İşlem gerekiyor</string>
     <string name="auth_subtitle_wait_code">Kod gönderildi. Kontrol et: %1$s</string>
+    <string name="auth_code_hint_telegram">Üçüncü taraf uygulamalar kodu SMS ile alamaz. Kod, oturum açtığın başka bir cihazdaki Telegram\'a gelir.</string>
     <string name="auth_subtitle_password_no_hint">Hesap iki adımlı doğrulamayla korunuyor</string>
     <string name="auth_subtitle_password_with_hint">Hesap iki adımlı doğrulamayla korunuyor. 2FA şifreni gir</string>
     <string name="auth_subtitle_default">Telegram kanallarını akış olarak oku — sohbet ve bildirim olmadan</string>

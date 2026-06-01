@@ -93,6 +93,7 @@
     <string name="auth_title_wait_password">Hasło 2FA</string>
     <string name="auth_title_error">Wymagane działanie</string>
     <string name="auth_subtitle_wait_code">Kod wysłany. Sprawdź: %1$s</string>
+    <string name="auth_code_hint_telegram">Aplikacje innych firm nie otrzymują kodu przez SMS. Przychodzi on do Telegrama na innym urządzeniu, na którym masz już zalogowane konto.</string>
     <string name="auth_subtitle_password_no_hint">Konto jest chronione weryfikacją dwuetapową</string>
     <string name="auth_subtitle_password_with_hint">Konto jest chronione weryfikacją dwuetapową. Wpisz hasło 2FA</string>
     <string name="auth_subtitle_default">Czytaj kanały Telegrama jak feed — bez czatów i powiadomień</string>

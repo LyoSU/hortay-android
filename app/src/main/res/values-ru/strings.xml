@@ -95,6 +95,7 @@
     <string name="auth_title_wait_password">Пароль 2FA</string>
     <string name="auth_title_error">Требуется действие</string>
     <string name="auth_subtitle_wait_code">Код отправлен. Проверьте: %1$s</string>
+    <string name="auth_code_hint_telegram">Сторонние приложения не получают код по SMS. Он приходит в Telegram на другом устройстве, где вы уже вошли.</string>
     <string name="auth_subtitle_password_no_hint">Аккаунт защищён двухфакторной аутентификацией</string>
     <string name="auth_subtitle_password_with_hint">Аккаунт защищён двухфакторной аутентификацией. Введите пароль 2FA</string>
     <string name="auth_subtitle_default">Читайте Telegram-каналы как ленту — без чатов и уведомлений</string>

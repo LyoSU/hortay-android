@@ -485,11 +485,11 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
     val focusManager = LocalFocusManager.current
 
     // Reset the typed code whenever TDLib swaps the active code channel — resend can
-    // change codeLength (5-digit Telegram → 6-digit SMS, Fragment → Firebase…) and a
-    // submit with a stale longer/shorter value would 400 with PHONE_CODE_INVALID even
-    // if the user re-typed correctly afterwards. Keying on (codeLength, channelLabel)
-    // means the field clears on a real channel switch but stays put through harmless
-    // recompositions of the same WaitCode payload.
+    // change codeLength (e.g. a 5-digit TelegramMessage code falling back to a 6-digit
+    // Fragment one) and a submit with a stale longer/shorter value would 400 with
+    // PHONE_CODE_INVALID even if the user re-typed correctly afterwards. Keying on
+    // (codeLength, channelLabel) means the field clears on a real channel switch but stays
+    // put through harmless recompositions of the same WaitCode payload.
     var code by remember(stage.codeLength, stage.channelLabel) { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
     var resending by remember { mutableStateOf(false) }
@@ -523,10 +523,11 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // Numeric channels (TelegramMessage, Sms, Call, MissedCall, Fragment, Firebase)
-        // get the segmented OTP grid sized to TDLib's reported length. The exotic SmsWord
-        // / SmsPhrase channels need a free-form text field instead — those expect a word
-        // or phrase, not digits.
+        // Numeric channels get the segmented OTP grid sized to TDLib's reported length.
+        // For a third-party app that's TelegramMessage and (rarely) Fragment — the only
+        // types we ever receive (tdlib/td#2310). The exotic SmsWord / SmsPhrase channels
+        // would need a free-form text field instead, so the defensive `else` branch keeps
+        // one; in practice it doesn't fire for us.
         if (stage.isNumeric) {
             OtpInput(
                 value = code,
@@ -555,6 +556,18 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
             )
         }
         AnimatedFieldError(text = errorMessage)
+        // For third-party apps the code only ever arrives inside Telegram itself
+        // (tdlib/td#2310) — SMS is reserved for official mobile clients. Spell that out
+        // so a user without a second signed-in device doesn't sit waiting for an SMS that
+        // will never come and conclude the app is broken.
+        if (stage.deliveredInApp) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.auth_code_hint_telegram),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.height(20.dp))
         PrimaryActionButton(
             text = stringResource(R.string.auth_continue),
@@ -613,8 +626,11 @@ private fun minSubmitLength(stage: AuthStage.WaitCode): Int =
     if (stage.isNumeric) stage.codeLength else 1
 
 /**
- * "Надіслати ще раз" / "Надсилаємо…" / "0:42" / "Надіслати через SMS" depending on cool-
- * down state. Pulling this out keeps CodeForm's layout block readable.
+ * Resend button label by cooldown state: "Sending…" while in flight, a "0:42" countdown
+ * while the server cooldown is non-zero, then either "Send code again (<next channel>)"
+ * when TDLib advertises a next_type (for us only ever Fragment — tdlib/td#2310) or a plain
+ * "Resend" when there's none. We never name SMS here because a third-party app's next_type
+ * is never SMS. Pulling this out keeps CodeForm's layout block readable.
  */
 private fun resendLabel(
     res: android.content.res.Resources,

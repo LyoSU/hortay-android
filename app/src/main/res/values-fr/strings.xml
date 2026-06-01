@@ -95,6 +95,7 @@
     <string name="auth_title_wait_password">Mot de passe 2FA</string>
     <string name="auth_title_error">Action requise</string>
     <string name="auth_subtitle_wait_code">Code envoyé. Vérifie : %1$s</string>
+    <string name="auth_code_hint_telegram">Les applications tierces ne reçoivent pas le code par SMS. Il arrive dans Telegram sur un autre appareil où vous êtes connecté.</string>
     <string name="auth_subtitle_password_no_hint">Le compte est protégé par l\'authentification à deux facteurs</string>
     <string name="auth_subtitle_password_with_hint">Le compte est protégé par l\'authentification à deux facteurs. Entre ton mot de passe 2FA</string>
     <string name="auth_subtitle_default">Lis les chaînes Telegram comme un fil — sans chats ni notifications</string>

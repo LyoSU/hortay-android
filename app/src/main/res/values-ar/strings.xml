@@ -93,6 +93,7 @@
     <string name="auth_title_wait_password">كلمة مرور التحقق بخطوتين</string>
     <string name="auth_title_error">إجراء مطلوب</string>
     <string name="auth_subtitle_wait_code">أُرسل الرمز. تحقق من: %1$s</string>
+    <string name="auth_code_hint_telegram">لا تتلقى التطبيقات الخارجية الرمز عبر الرسائل القصيرة. يصل الرمز إلى Telegram على جهاز آخر سجّلت الدخول فيه.</string>
     <string name="auth_subtitle_password_no_hint">الحساب محمي بالتحقق بخطوتين</string>
     <string name="auth_subtitle_password_with_hint">الحساب محمي بالتحقق بخطوتين. أدخل كلمة مرور التحقق بخطوتين</string>
     <string name="auth_subtitle_default">اقرأ قنوات Telegram كخلاصة — بدون دردشات أو إشعارات</string>
