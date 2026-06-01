@@ -4,9 +4,6 @@
 
 ## [Unreleased]
 
-### Fixed
-- After restarting the app the feed again shows several recent posts per channel, instead of collapsing to just the single latest post from each channel.
-
 ## [0.10.5] — 2026-06-01
 
 ### Added
@@ -19,6 +16,7 @@
 
 ### Fixed
 - In guest mode, typing a channel name or link by hand into "Add channel" now starts the search — tap the keyboard's search key or the "Find" button — instead of only working when a link was auto-filled from the clipboard.
+- After restarting the app the feed again shows several recent posts per channel, instead of collapsing to just the single latest post from each channel.
 
 ## [0.10.4] — 2026-05-31
 
