@@ -745,4 +745,5 @@
         <item quantity="other">%d proxy</item>
     </plurals>
     <string name="proxy_active_summary">Aktif: %1$s</string>
+    <string name="proxy_test_reachable">Dapat dijangkau</string>
 </resources>

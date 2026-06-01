@@ -794,4 +794,5 @@
         <item quantity="other">%d прокси</item>
     </plurals>
     <string name="proxy_active_summary">Активен: %1$s</string>
+    <string name="proxy_test_reachable">Доступен</string>
 </resources>

@@ -2,6 +2,7 @@
 
 package dev.lyo.hortay.ui.auth
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -173,6 +174,10 @@ fun AuthScreen(graph: AppGraph, stage: AuthStage) {
         }
 
         if (showProxy) {
+            // AuthScreen is the root with no back stack, so the system back gesture would finish
+            // the Activity. This handler — composed only while the overlay is up — intercepts back
+            // to dismiss the proxy screen instead, and unregisters when it closes.
+            BackHandler { showProxy = false }
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                 ProxyScreen(
                     repo = graph.proxyRepository,

@@ -30,6 +30,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -67,6 +68,7 @@ import dev.lyo.hortay.data.proxy.ProxyHealth
 import dev.lyo.hortay.data.proxy.ProxyKind
 import dev.lyo.hortay.data.proxy.ProxyRepository
 import dev.lyo.hortay.data.proxy.ProxyUi
+import dev.lyo.hortay.data.proxy.TestResult
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
@@ -219,6 +221,7 @@ internal fun ProxyScreen(
             onDismiss = { showAdd = false },
             onAddLink = { link -> repo.addFromLink(link) },
             onAddManual = { draft, enable -> repo.addManual(draft, enable) },
+            onTest = { draft -> repo.test(draft) },
             poolEmpty = state.entries.isEmpty(),
         )
     }
@@ -337,6 +340,7 @@ private fun AddProxySheet(
     onDismiss: () -> Unit,
     onAddLink: suspend (String) -> AddResult,
     onAddManual: suspend (ProxyDraft, Boolean) -> AddResult,
+    onTest: suspend (ProxyDraft) -> TestResult,
     poolEmpty: Boolean,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -351,12 +355,19 @@ private fun AddProxySheet(
     var secret by remember { mutableStateOf("") }
     var httpOnly by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var testResult by remember { mutableStateOf<TestResult?>(null) }
     var busy by remember { mutableStateOf(false) }
 
     val notProxy = stringResource(R.string.proxy_error_not_link)
-    fun finishOrShow(result: AddResult) {
+    // Animated dismiss: slide the sheet out before removing it (framework only animates the
+    // swipe / scrim path itself — programmatic closes must hide() first).
+    suspend fun closeAnimated() {
+        sheetState.hide()
+        onDismiss()
+    }
+    fun showResult(result: AddResult) {
         when (result) {
-            AddResult.Success -> onDismiss()
+            AddResult.Success -> scope.launch { closeAnimated() }
             AddResult.NotAProxyLink -> error = notProxy
             is AddResult.Error -> error = result.message
         }
@@ -385,7 +396,7 @@ private fun AddProxySheet(
             // Paste a Telegram proxy link — parsed entirely by TDLib (getInternalLinkType).
             OutlinedTextField(
                 value = link,
-                onValueChange = { link = it; error = null },
+                onValueChange = { link = it; error = null; testResult = null },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.proxy_link_label)) },
                 placeholder = { Text("https://t.me/proxy?server=…") },
@@ -396,7 +407,7 @@ private fun AddProxySheet(
                 onClick = {
                     scope.launch {
                         busy = true
-                        finishOrShow(onAddLink(link.trim()))
+                        showResult(onAddLink(link.trim()))
                         busy = false
                     }
                 },
@@ -411,7 +422,7 @@ private fun AddProxySheet(
                 ProxyTypeOption.entries.forEachIndexed { i, option ->
                     SegmentedButton(
                         selected = type == option,
-                        onClick = { type = option; error = null },
+                        onClick = { type = option; error = null; testResult = null },
                         shape = SegmentedButtonDefaults.itemShape(i, ProxyTypeOption.entries.size),
                         label = { Text(option.label) },
                     )
@@ -419,14 +430,14 @@ private fun AddProxySheet(
             }
             OutlinedTextField(
                 value = server,
-                onValueChange = { server = it; error = null },
+                onValueChange = { server = it; error = null; testResult = null },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.proxy_field_server)) },
                 singleLine = true,
             )
             OutlinedTextField(
                 value = port,
-                onValueChange = { input -> port = input.filter { it.isDigit() }; error = null },
+                onValueChange = { input -> port = input.filter { it.isDigit() }; error = null; testResult = null },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.proxy_field_port)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -435,7 +446,7 @@ private fun AddProxySheet(
             when (type) {
                 ProxyTypeOption.Mtproto -> OutlinedTextField(
                     value = secret,
-                    onValueChange = { secret = it; error = null },
+                    onValueChange = { secret = it; error = null; testResult = null },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.proxy_field_secret)) },
                     singleLine = true,
@@ -443,14 +454,14 @@ private fun AddProxySheet(
                 else -> {
                     OutlinedTextField(
                         value = username,
-                        onValueChange = { username = it; error = null },
+                        onValueChange = { username = it; error = null; testResult = null },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text(stringResource(R.string.proxy_field_username)) },
                         singleLine = true,
                     )
                     OutlinedTextField(
                         value = password,
-                        onValueChange = { password = it; error = null },
+                        onValueChange = { password = it; error = null; testResult = null },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text(stringResource(R.string.proxy_field_password)) },
                         singleLine = true,
@@ -468,27 +479,59 @@ private fun AddProxySheet(
             val portValue = port.toIntOrNull()
             val manualValid = server.isNotBlank() && portValue != null && portValue in 1..65535 &&
                 (type != ProxyTypeOption.Mtproto || secret.isNotBlank())
-            Button(
-                onClick = {
-                    val kind = when (type) {
-                        ProxyTypeOption.Socks5 -> ProxyKind.Socks5(username.trim(), password)
-                        ProxyTypeOption.Http -> ProxyKind.Http(username.trim(), password, httpOnly)
-                        ProxyTypeOption.Mtproto -> ProxyKind.Mtproto(secret.trim())
-                    }
-                    val draft = ProxyDraft(server.trim(), portValue ?: 0, kind)
-                    scope.launch {
-                        busy = true
-                        finishOrShow(onAddManual(draft, poolEmpty))
-                        busy = false
-                    }
-                },
-                enabled = !busy && manualValid,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.proxy_add)) }
-
-            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.action_cancel))
+            fun draft(): ProxyDraft {
+                val kind = when (type) {
+                    ProxyTypeOption.Socks5 -> ProxyKind.Socks5(username.trim(), password)
+                    ProxyTypeOption.Http -> ProxyKind.Http(username.trim(), password, httpOnly)
+                    ProxyTypeOption.Mtproto -> ProxyKind.Mtproto(secret.trim())
+                }
+                return ProxyDraft(server.trim(), portValue ?: 0, kind)
             }
+
+            testResult?.let { r ->
+                when (r) {
+                    is TestResult.Ok -> Text(
+                        text = stringResource(R.string.proxy_test_reachable),
+                        color = Color(0xFF34A853),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    is TestResult.Error -> Text(
+                        text = r.message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            busy = true; testResult = null
+                            testResult = onTest(draft())
+                            busy = false
+                        }
+                    },
+                    enabled = !busy && manualValid,
+                    modifier = Modifier.weight(1f),
+                ) { Text(stringResource(R.string.proxy_test)) }
+                Button(
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            showResult(onAddManual(draft(), poolEmpty))
+                            busy = false
+                        }
+                    },
+                    enabled = !busy && manualValid,
+                    modifier = Modifier.weight(1f),
+                ) { Text(stringResource(R.string.proxy_add)) }
+            }
+
+            TextButton(
+                onClick = { scope.launch { closeAnimated() } },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(stringResource(R.string.action_cancel)) }
         }
     }
 }

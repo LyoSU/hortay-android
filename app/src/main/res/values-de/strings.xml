@@ -764,4 +764,5 @@
         <item quantity="other">%d Proxys</item>
     </plurals>
     <string name="proxy_active_summary">Aktiv: %1$s</string>
+    <string name="proxy_test_reachable">Erreichbar</string>
 </resources>

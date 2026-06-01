@@ -784,4 +784,5 @@
         <item quantity="other">%d proxies</item>
     </plurals>
     <string name="proxy_active_summary">Activo: %1$s</string>
+    <string name="proxy_test_reachable">Accesible</string>
 </resources>

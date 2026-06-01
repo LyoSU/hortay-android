@@ -759,4 +759,5 @@
         <item quantity="other">%d proxy</item>
     </plurals>
     <string name="proxy_active_summary">Etkin: %1$s</string>
+    <string name="proxy_test_reachable">Erişilebilir</string>
 </resources>
