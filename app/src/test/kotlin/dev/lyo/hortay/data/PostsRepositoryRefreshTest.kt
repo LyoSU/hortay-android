@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import dev.lyo.hortay.data.posts.TELEGRAM_MAX_ALBUM_SIZE
 import dev.lyo.hortay.testutil.PostsRepositoryTestHarness
 import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
@@ -315,33 +316,30 @@ class PostsRepositoryRefreshTest {
     }
 
     @Test
-    fun `refresh issues exactly one GetChatHistory per album lastMessage on warm cache`() = runTest {
-        // RPC budget contract on the happy warm-cache path: ONE coalesce
-        // surround fetch per album lastMessage, zero for solo posts. The
-        // cold-cache rescue pass (`COLD_START_ALBUM_RESCUE_DELAY_MS`) does
-        // not fire here because the warm-cache responder returns the full
-        // album on the first pass, so the resulting merged card carries
-        // `albumMessageIds.size = 3 > 1` and is skipped by the rescue
-        // filter.
+    fun `cold-start album ingest recovers siblings via the local index, never networked GetChatHistory`() = runTest {
+        // FLOOD_WAIT inviolant (ARCHITECTURE.md → "PostsRepository cold-start contract"
+        // + "Cold-start album rehydration"): during the cold-start drain, ingesting album
+        // lastMessages must NOT fan out networked GetChatHistory surround fetches — that's
+        // the per-channel GetChatHistory × N storm that earns an account-global FLOOD_WAIT.
+        // Sibling recovery instead addresses the id-stride candidates through the
+        // per-message local index (GetMessageLocally, the onlyLocal path). Exactly one
+        // stride window per album lastMessage; zero probes for solo posts.
         val harness = PostsRepositoryTestHarness(this)
-        // Register responders FIRST: under the event-driven design,
-        // ingest fires at UpdateNewChat time, not at refresh time, so
-        // mock setup must precede the update emission.
+        // Register responders FIRST: under the event-driven design, ingest fires at
+        // UpdateNewChat time, not at refresh time, so mock setup must precede emission.
+        // _initialSyncDone is still false at emit time → coalesce takes the onlyLocal path.
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
-        harness.td.onAny("GetChatHistory") {
-            TdApi.Messages(
-                /*totalCount*/ 3,
-                arrayOf(
-                    harness.fakeChannelMessage(-6000L, 600L, mediaAlbumId = 999L),
-                    harness.fakeChannelMessage(-6000L, 601L, mediaAlbumId = 999L),
-                    harness.fakeChannelMessage(-6000L, 602L, mediaAlbumId = 999L),
-                ),
-            )
-        }
+        // Siblings aren't in the local DB in this harness — 404 keeps the album degraded,
+        // which is fine: the test asserts the RPC budget, not the coalesced membership.
+        harness.td.onAny("GetMessageLocally") { TdApi.Error(404, "not found locally") }
 
+        // Realistic channel client-side id (serverId << 20) so the full ±(MAX-1) stride
+        // window is positive — a tiny anchor would clip every "below" candidate at the
+        // `id > 0` guard and under-count the probes.
+        val albumAnchorId = 600L shl 20
         val albumChat = harness.fakeChannel(
             id = -6000L,
-            lastMessage = harness.fakeChannelMessage(-6000L, 600L, mediaAlbumId = 999L),
+            lastMessage = harness.fakeChannelMessage(-6000L, albumAnchorId, mediaAlbumId = 999L),
         )
         val soloA = harness.fakeChannel(
             id = -6001L,
@@ -355,7 +353,9 @@ class PostsRepositoryRefreshTest {
         harness.repo.refresh()
         harness.advanceUntilIdle()
 
-        assertEquals(1, harness.td.rpcCount("GetChatHistory"),
-            "warm-cache path: one surround fetch for the one album lastMessage, no rescue pass")
+        assertEquals(0, harness.td.rpcCount("GetChatHistory"),
+            "cold-start album ingest must never issue a networked GetChatHistory (FLOOD_WAIT inviolant)")
+        assertEquals(2 * (TELEGRAM_MAX_ALBUM_SIZE - 1), harness.td.rpcCount("GetMessageLocally"),
+            "the one album lastMessage probes exactly one id-stride window locally; solo posts probe nothing")
     }
 }

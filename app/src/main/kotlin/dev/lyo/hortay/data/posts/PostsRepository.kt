@@ -303,7 +303,7 @@ class PostsRepository(
     //      network-backed re-fetch of the residual degraded album when its card
     //      becomes visible, for the rare case the local index in layer 2 still
     //      came up short. The persisted snapshot is NO LONGER a membership
-    //      source — it is a cold-paint fallback only ([fullRestore]);
+    //      source — it is a cold-paint fallback only ([mergeSnapshotIntoFeed]);
     //      [preserveDegradedAlbumSiblings] merely keeps a background save from
     //      shrinking that fallback below last-known-good.
     //
@@ -760,7 +760,7 @@ class PostsRepository(
         val current = subscribedPosts.value
         if (current.isEmpty()) return
         val newEntries = current.take(SNAPSHOT_SIZE).flatMap { post ->
-            // Persist every album member id, not just the anchor — fullRestore's
+            // Persist every album member id, not just the anchor — the snapshot restore's
             // GetMessage pass needs all ids to fetch every sibling, so that
             // coalesceAlbumFragments can reassemble the full album card on cold paint.
             val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
@@ -775,7 +775,7 @@ class PostsRepository(
      * degraded album (`mediaAlbumId != 0 && albumMessageIds.size <= 1`), the
      * natural save would shrink that album's member set on disk to a single id
      * — destroying the last-known-good membership the next cold start's
-     * [fullRestore] cold-paint fallback relies on.
+     * [mergeSnapshotIntoFeed] cold-paint fallback relies on.
      *
      * The save typically runs on a foreground→background transition. If the
      * in-memory feed was momentarily degraded at that moment (Layer-1 local
@@ -814,57 +814,62 @@ class PostsRepository(
      * GetMessage on a known id is served from TDLib's local DB synchronously — for a
      * 50-post snapshot the whole pass is typically < 100ms.
      *
-     * Idempotent + safe to overlap with [triggerInitialSync]: the live ingest
-     * stream uses the same `_posts.update` merge policy, so a snapshot row
-     * landing first is preserved when a fresher TDLib update lands on top via
-     * [foldRawIntoCurrent]; concurrent ingest of brand-new posts also survives.
-     *
-     * Bails when `_posts` is already non-empty so a pull-to-refresh that beat us to
-     * the punch wins — there's no point spending GetMessage round-trips to recreate
-     * the same data we already have, fresher.
+     * Idempotent + safe to overlap with [triggerInitialSync]: both the live ingest
+     * stream and this restore fold into `_posts` through [foldRawIntoCurrent], so the
+     * two are order-independent — whichever lands first, the result is the union with
+     * the fresher copy winning per-id. See [restoreFromSnapshotInternal].
      */
     override suspend fun restoreFromSnapshot() {
         restoreFromSnapshotInternal()
     }
 
     /**
-     * Returns the number of posts written — exposed for callers that care.
+     * Returns the number of NEW posts added to the feed — exposed for callers that care.
      *
-     * Cold-paint fallback ONLY: fill an empty feed fast from the previous
-     * session's persisted top-of-feed. Album completeness is no longer derived
-     * here — it is owned by the Layer-1 local rehydration in
-     * [coalesceAlbumFragments] (deterministic, from TDLib's per-message local
-     * index) plus the Layer-2 visibility repair ([requestAlbumRepair]). A
-     * non-empty feed is therefore a no-op.
+     * Cold-start history rehydration. The previous session's persisted top-of-feed is
+     * folded into `_posts` as the WEAKER side: the live cold-start ingest (one
+     * `chat.lastMessage` per channel) wins on every id it covers, and the snapshot only
+     * fills the deeper history those stubs lack. Routing through [foldRawIntoCurrent]
+     * makes the restore order-independent w.r.t. [triggerInitialSync] — whether the live
+     * stub or the snapshot lands first, the union is the same and the deep history
+     * survives.
+     *
+     * This previously bailed whenever `_posts` was already non-empty. The live cold-start
+     * ingest writes `_posts` on the first `UpdateNewChat` (immediate), while this restore
+     * has to await a `GetMessage` batch before its first write, so the stub almost always
+     * won that race — the bail then discarded the snapshot and the feed collapsed to one
+     * post per channel after every restart (tdlib/td#3019 keeps the cold-start stream at
+     * one post per channel by design; the snapshot is the only thing carrying deep history
+     * across warm restarts once the one-shot [runFirstSignInBackfill] is done).
+     *
+     * Album completeness is still owned by the Layer-1 local rehydration in
+     * [coalesceAlbumFragments] plus the Layer-2 visibility repair ([requestAlbumRepair]);
+     * the fold's partial-album guard only keeps it from regressing here.
      */
     suspend fun restoreFromSnapshotInternal(): Int {
         val snapshot = runCatching { snapshotStore.load() }
             .warnUnlessCancelled(TAG, "loadSnapshot")
             .getOrDefault(emptyList())
         if (snapshot.isEmpty()) return 0
-        // Snapshot is a COLD-PAINT fallback only: fill an empty feed fast. Album
-        // completeness is owned by the Layer-1 local rehydration in
-        // coalesceAlbumFragments + the Layer-2 visibility repair (requestAlbumRepair) —
-        // not by re-deriving membership from the previous session's snapshot. A
-        // non-empty feed is a no-op.
-        return if (_posts.value.isEmpty()) fullRestore(snapshot) else 0
+        return mergeSnapshotIntoFeed(snapshot)
     }
 
-    private suspend fun fullRestore(snapshot: List<Pair<Long, Long>>): Int {
+    private suspend fun mergeSnapshotIntoFeed(snapshot: List<Pair<Long, Long>>): Int {
         val messages = fetchSnapshotMessages(snapshot)
         if (messages.isEmpty()) return 0
         val mapped = mapSnapshotMessages(messages)
         if (mapped.isEmpty()) return 0
 
+        val mappedFeed = mapped.toPersistentList()
         var added = 0
         _posts.update { current ->
-            // Refresh may have raced ahead; if so, keep its result intact and
-            // abandon the full restore — fresh always wins for the cold paint.
-            if (current.isNotEmpty()) current
-            else {
-                added = mapped.size
-                PostFilterStrategy.apply(mapped).toPersistentList()
-            }
+            // Snapshot is the weaker side: the live feed (fresher) wins every id it
+            // already holds, the snapshot only contributes the history those cold-start
+            // stubs are missing. Pure function of `current` — safe in the StateFlow CAS
+            // loop (re-applied verbatim on contention).
+            val merged = foldRawIntoCurrent(current = mappedFeed, raw = current)
+            added = (merged.size - current.size).coerceAtLeast(0)
+            merged
         }
         return added
     }

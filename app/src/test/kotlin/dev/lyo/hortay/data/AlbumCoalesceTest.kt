@@ -314,7 +314,7 @@ class AlbumCoalesceTest {
         //      saveSnapshotNow runs on the foreground→background transition.
         //      Without the anti-poisoning guard it overwrites the on-disk
         //      snapshot with the degraded single id — losing the last-known-good
-        //      member set the cold-paint fullRestore fallback relies on.
+        //      member set the cold-paint snapshot-restore fallback relies on.
         //
         // The simplified guard ([preserveDegradedAlbumSiblings]) carries the
         // previous snapshot's entries for any chat that currently holds a
@@ -374,12 +374,13 @@ class AlbumCoalesceTest {
     }
 
     @Test
-    fun `restoreFromSnapshot leaves a healthy feed untouched`() = runTest {
-        // Cold-paint fallback is no-op on a non-empty feed: when [_posts] is
-        // already populated, restoreFromSnapshot must do nothing. The snapshot
-        // may carry stale top-of-feed entries from yesterday that no longer
-        // belong in the live feed; restore is *only* a last-known-good cold
-        // paint for an empty feed, never a re-injection over a live one.
+    fun `restoreFromSnapshot does not resurrect an unresolvable snapshot entry`() = runTest {
+        // restoreFromSnapshot now MERGES the previous session's deep history into the
+        // feed (positive case covered by PostsRepositorySnapshotRestoreTest) instead of
+        // bailing on a non-empty feed — that merge is what carries multi-post-per-channel
+        // history across warm restarts. The one thing it must NOT do is paint a phantom:
+        // a snapshot entry TDLib can no longer resolve (deleted / aged out → GetMessage
+        // error) is dropped, never re-injected as a ghost card.
         val harness = PostsRepositoryTestHarness(this)
         val chatId = -8200L
         val solo = harness.fakeChannelMessage(chatId, /* messageId */ 42L, date = baseDate)
@@ -390,14 +391,9 @@ class AlbumCoalesceTest {
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
         harness.td.onAny("GetChats") { TdApi.Chats(1, longArrayOf(chatId)) }
 
-        // Snapshot from a previous session carries an older solo post the
-        // user has scrolled past — restore must NOT re-add it.
-        val stale = harness.fakeChannelMessage(chatId, /* messageId */ 7L, date = baseDate - 100)
-        harness.snapshotStore.seed(listOf(chatId to stale.id))
-        harness.td.onAny("GetMessage") { req ->
-            val q = req as TdApi.GetMessage
-            if (q.messageId == stale.id) stale else TdApi.Error(404, "not found")
-        }
+        // Snapshot carries an entry the server has since deleted — GetMessage fails for it.
+        harness.snapshotStore.seed(listOf(chatId to 7L))
+        harness.td.onAny("GetMessage") { TdApi.Error(404, "not found") }
 
         harness.repo.refresh()
         harness.advanceUntilIdle()
@@ -406,11 +402,10 @@ class AlbumCoalesceTest {
 
         harness.repo.restoreFromSnapshot()
         harness.advanceUntilIdle()
-        val after = harness.repo.posts.value
         assertEquals(
             before,
-            after,
-            "snapshot upgrade must leave a healthy feed untouched — no stale re-injection",
+            harness.repo.posts.value,
+            "an unresolvable snapshot entry must not be injected as a phantom",
         )
     }
 

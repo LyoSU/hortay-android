@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- After restarting the app the feed again shows several recent posts per channel, instead of collapsing to just the single latest post from each channel.
+
 ## [0.10.5] — 2026-06-01
 
 ### Added

@@ -260,10 +260,11 @@ class TimelineViewModel(
         // gate around the first-paint window, delaying the snapshot
         // fallback for offline / RPC-error cases.
         //
-        // [restoreFromSnapshot] is idempotent against an ingest stream
-        // racing in (its `current.isNotEmpty()` early-return makes the live
-        // refresh result win the first paint). Offline path: snapshot
-        // replaces the empty feed within ~100 ms of construction.
+        // [restoreFromSnapshot] is order-independent against the ingest stream:
+        // it folds the persisted history into `_posts` via foldRawIntoCurrent,
+        // so the live cold-start stub (one post per channel) and the snapshot's
+        // deeper history both survive regardless of which lands first. Offline
+        // path: snapshot paints the empty feed within ~100 ms of construction.
         viewModelScope.launch { repo.restoreFromSnapshot() }
     }
 
