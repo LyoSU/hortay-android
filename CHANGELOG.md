@@ -9,6 +9,9 @@
 - Proxy can be set up on the sign-in screen too, so you can get online to sign in from a network that blocks Telegram.
 - If the active proxy stops responding, the app automatically switches to the next working one in your list instead of getting stuck.
 
+### Fixed
+- In guest mode, typing a channel name or link by hand into "Add channel" now starts the search — tap the keyboard's search key or the "Find" button — instead of only working when a link was auto-filled from the clipboard.
+
 ## [0.10.4] — 2026-05-31
 
 ### Fixed
