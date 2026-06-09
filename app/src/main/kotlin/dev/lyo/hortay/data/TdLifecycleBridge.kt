@@ -183,8 +183,8 @@ class TdLifecycleBridge(
 
     private fun currentNetworkType(): TdApi.NetworkType = when (classifyNetwork()) {
         HortayNetworkType.Wifi -> TdApi.NetworkTypeWiFi()
-        HortayNetworkType.Mobile,
-        HortayNetworkType.Roaming -> TdApi.NetworkTypeMobile()
+        HortayNetworkType.Mobile -> TdApi.NetworkTypeMobile()
+        HortayNetworkType.Roaming -> TdApi.NetworkTypeMobileRoaming()
         HortayNetworkType.None -> TdApi.NetworkTypeNone()
     }
 
@@ -233,11 +233,11 @@ class TdLifecycleBridge(
 }
 
 /**
- * Coarse classification of the device's currently active default network. Distinct
- * from [TdApi.NetworkType] because the daemon enum doesn't model roaming as a
- * separate state — Telegram-Android tracks roaming on the client side too and so
- * do we, since per-network auto-download policy needs to distinguish "home cellular"
- * from "roaming cellular".
+ * Coarse classification of the device's currently active default network. This
+ * client-side enum exists for the per-network auto-download policy (it needs to
+ * distinguish "home cellular" from "roaming cellular"), independently of the TDLib
+ * enum — which DOES model roaming separately as [TdApi.NetworkTypeMobileRoaming],
+ * to which [Roaming] maps in [TdLifecycleBridge.currentNetworkType].
  */
 enum class HortayNetworkType { Wifi, Mobile, Roaming, None }
 
