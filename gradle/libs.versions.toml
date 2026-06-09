@@ -25,11 +25,17 @@ navigation3 = "1.1.2"
 coreKtx = "1.16.0"
 appcompat = "1.7.0"
 activityCompose = "1.10.0"
+# androidx.browser — Custom Tabs for the Safety-section external links. 1.9+ raised
+# minSdk to 23 (we're 26) and added Auth Tab / ephemeral-tab APIs; the basic
+# CustomTabsIntent launchUrl path this app uses is unchanged from 1.8.
+browser = "1.10.0"
 # lifecycle 2.10.0 — aligned with lifecycle-viewmodel-navigation3 (entry-scoped
 # ViewModelStore for Nav3). All lifecycle-* artifacts share this version.
 lifecycle = "2.10.0"
 coroutines = "1.10.1"
 serialization = "1.7.3"
+# java-diff-utils — text-diff for the post-archive edit-history snapshots.
+diffUtils = "4.12"
 datastore = "1.2.0"
 coil = "3.3.0"
 splashscreen = "1.2.0"
@@ -84,6 +90,11 @@ androidx-lifecycle-viewmodel-navigation3 = { group = "androidx.lifecycle", name 
 
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+# protobuf format shares the serialization version — keep them locked to the same line.
+kotlinx-serialization-protobuf = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-protobuf", version.ref = "serialization" }
+
+androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
+java-diff-utils = { group = "io.github.java-diff-utils", name = "java-diff-utils", version.ref = "diffUtils" }
 
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
@@ -108,6 +119,9 @@ okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhtt
 # coroutines-extensions exposes asFlow()/mapToList() helpers for StateFlow plumbing.
 sqldelight-android-driver = { group = "app.cash.sqldelight", name = "android-driver", version.ref = "sqldelight" }
 sqldelight-coroutines-extensions = { group = "app.cash.sqldelight", name = "coroutines-extensions", version.ref = "sqldelight" }
+# JVM SQLite driver — unit tests only (archive DB schema + migration tests). Shares
+# the runtime SQLDelight version so test fidelity matches production migration semantics.
+sqldelight-sqlite-driver = { group = "app.cash.sqldelight", name = "sqlite-driver", version.ref = "sqldelight" }
 
 junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version.ref = "junit5" }
 junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher", version.ref = "junitPlatform" }

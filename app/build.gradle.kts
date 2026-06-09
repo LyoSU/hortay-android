@@ -299,7 +299,8 @@ sqldelight {
         // posts so users can review changes. Schema files live under
         // app/src/main/sqldelight/dev/lyo/hortay/data/archive/db/*.sq.
         // Kept separate from web.db — unrelated data model, different lifecycle
-        // (archive survives logout; web cache is cleared on demand).
+        // (archive is wiped on logout via AppGraph.runLogoutCleanup; web cache is
+        // cleared on demand).
         //
         create("ArchiveDatabase") {
             packageName.set("dev.lyo.hortay.data.archive.db")
@@ -407,12 +408,12 @@ dependencies {
     // Custom Tabs for external links in the Safety section (child safety + privacy
     // policy). Uses the system browser in a modal overlay, stays within the app
     // visually without forking into a separate WebView activity.
-    implementation("androidx.browser:browser:1.8.0")
+    implementation(libs.androidx.browser)
 
     // Post-archive feature: text-diff computation for edit-history snapshots, and
     // protobuf serialisation for compact on-disk post snapshots.
-    implementation("io.github.java-diff-utils:java-diff-utils:4.12")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.7.3")
+    implementation(libs.java.diff.utils)
+    implementation(libs.kotlinx.serialization.protobuf)
 
     // SQLDelight: typed DAO + Flow integration for the web.db database. Android
     // driver is the runtime; coroutines-extensions adds the asFlow() bridge so a
@@ -436,7 +437,7 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.kotlinx.coroutines.test)
     // SQLite driver for JVM unit tests (archive DB schema + migration tests — Task 8).
-    testImplementation("app.cash.sqldelight:sqlite-driver:2.0.2")
+    testImplementation(libs.sqldelight.sqlite.driver)
 
     // Compose-specific detekt rules (nlopez/compose-rules). Loaded into detekt's
     // own classpath only — never reaches the APK.
