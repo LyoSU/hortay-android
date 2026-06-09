@@ -63,3 +63,6 @@ reports/
 
 # Local planning artifacts (specs/plans) — never ship to prod
 docs/superpowers/
+
+# Superpowers brainstorm scratch (visual companion)
+.superpowers/
