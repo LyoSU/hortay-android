@@ -2,6 +2,7 @@ package dev.lyo.hortay
 
 import android.app.Application
 import android.content.Context
+import android.os.StrictMode
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -27,7 +28,32 @@ class HortayApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        if (BuildConfig.DEBUG) enableStrictMode()
         graph = AppGraph(this)
+    }
+
+    // Catch accidental main-thread disk/network I/O and leaked Closeables/registrations
+    // early, while the codebase is clean (no runBlocking; AppGraph init is async). DEBUG
+    // only. penaltyLog — NOT penaltyDeath: TDLib JNI and profileinstaller produce a few
+    // benign first-launch reads, and killing the process on those would be pure noise.
+    // If a specific known-benign violation starts spamming the log, wrap its call site in
+    // StrictMode.allowThreadDiskReads() rather than relaxing the policy globally.
+    private fun enableStrictMode() {
+        StrictMode.setThreadPolicy(
+            StrictMode.ThreadPolicy.Builder()
+                .detectDiskReads()
+                .detectDiskWrites()
+                .detectNetwork()
+                .penaltyLog()
+                .build(),
+        )
+        StrictMode.setVmPolicy(
+            StrictMode.VmPolicy.Builder()
+                .detectLeakedClosableObjects()
+                .detectLeakedRegistrationObjects()
+                .penaltyLog()
+                .build(),
+        )
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = ImageLoader.Builder(context)
