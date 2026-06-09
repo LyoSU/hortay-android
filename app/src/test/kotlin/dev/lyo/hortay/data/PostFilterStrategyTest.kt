@@ -95,6 +95,33 @@ class PostFilterStrategyTest {
     }
 
     @Test
+    fun `album of document members keeps the anchor content instead of an empty PhotoAlbum`() {
+        // Telegram supports media groups of documents (and audio). None of those
+        // map to an AlbumItem, so the naive merge produced PhotoAlbum(items = [])
+        // — a blank card. The merged card must keep the anchor's own renderable
+        // content while still carrying the full member-id list so read-ack,
+        // dedup and the degraded-album checks stay album-aware.
+        val albumId = 9L
+        fun doc(id: Long, name: String) = post(
+            id = id, mediaAlbumId = albumId, date = 100L,
+            content = PostContent.Document(
+                fileId = null, fileName = name, mimeType = "application/pdf",
+                sizeBytes = 1L, thumb = null, caption = FormattedText.Empty,
+            ),
+        )
+        val result = PostFilterStrategy.apply(listOf(doc(10L, "a.pdf"), doc(11L, "b.pdf")))
+
+        assertEquals(1, result.size, "document album still collapses into one card")
+        val merged = result.single()
+        assertEquals(10L, merged.id, "anchor stays the lowest-id member")
+        assertEquals(listOf(10L, 11L), merged.albumMessageIds)
+        assertTrue(
+            merged.content is PostContent.Document,
+            "card must keep the anchor's renderable content, got ${merged.content::class.simpleName}",
+        )
+    }
+
+    @Test
     fun `standalone posts (mediaAlbumId == 0) are never merged`() {
         val a = post(id = 1L, mediaAlbumId = 0L, content = PostContent.Text(FormattedText.plain("a")))
         val b = post(id = 2L, mediaAlbumId = 0L, content = PostContent.Text(FormattedText.plain("b")))

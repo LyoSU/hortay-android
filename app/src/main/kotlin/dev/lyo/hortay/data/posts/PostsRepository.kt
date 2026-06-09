@@ -691,7 +691,22 @@ class PostsRepository(
                     pendingLastMessages[update.chatId] = msg
                     return@onEach
                 }
-                ingest(update.chatId, listOf(msg))
+                // Live sessions route through [handleNewMessage] so an album member
+                // joins the same debounce buffer as its UpdateNewMessage siblings —
+                // TDLib echoes the newest member here for every album, and the
+                // previous direct ingest fired an immediate networked surround
+                // coalesce in parallel with the debounce flush: a duplicate
+                // GetChatHistory per album, plus a transient partial card whenever
+                // that coalesce was served from a not-yet-complete local history.
+                // One flush now handles all members (the buffer dedupes by id).
+                //
+                // During the cold-start drain keep the direct ingest: a debounced
+                // flush would land AFTER [_initialSyncDone] flips and take the
+                // NETWORKED coalesce path for every album lastMessage in the storm
+                // — the GetChatHistory × N fan-out the cold-start contract forbids.
+                // The direct call stays on the offline (onlyLocal) path instead.
+                if (_initialSyncDone.value) handleNewMessage(msg)
+                else ingest(update.chatId, listOf(msg))
             }
             .launchIn(scope)
 
@@ -1727,7 +1742,12 @@ class PostsRepository(
         // sees them as one group.
         val key = message.chatId to message.mediaAlbumId
         albumBuffers.compute(key) { _, existing ->
-            (existing ?: mutableListOf()).also { it += message }
+            (existing ?: mutableListOf()).also { buf ->
+                // Dedup by id: the same member can arrive via UpdateNewMessage AND
+                // the UpdateChatLastMessage echo; double-adding would duplicate the
+                // album item after the merge.
+                if (buf.none { it.id == message.id }) buf += message
+            }
         }
         albumDebounce[key]?.cancel()
         albumDebounce[key] = scope.launch {
@@ -1913,7 +1933,21 @@ class PostsRepository(
         // the server is the sibling window below (coalesceAlbumFragments onlyLocal=false).
         val anchor = runCatching { td.send(TdApi.GetMessage(req.chatId, req.anchorId)) }
             .warnUnlessCancelled(TAG, "albumRepairAnchor(${req.chatId},${req.anchorId})").getOrNull() ?: return
-        val coalesced = coalesceAlbumFragments(req.chatId, listOf(anchor), onlyLocal = false)
+        // The surround GetChatHistory may legitimately under-return: TDLib serves
+        // the locally-available slice — often exactly the anchor the GetMessage
+        // above just cached — without filling the whole window from the server in
+        // one pass ("the number of returned messages ... can be smaller than the
+        // specified limit"; the documented client pattern is to repeat the call).
+        // Retry a bounded number of times: the first call warms TDLib's history
+        // around the anchor, the retry reads the warmed cache. Without this, a
+        // single under-return left the degraded 1-photo card with no later rescue
+        // — re-enqueue only happens on a focus change back to this card.
+        var coalesced: List<TdApi.Message> = emptyList()
+        for (attempt in 1..ALBUM_REPAIR_FETCH_ATTEMPTS) {
+            coalesced = coalesceAlbumFragments(req.chatId, listOf(anchor), onlyLocal = false)
+            if (coalesced.size > 1) break
+            if (attempt < ALBUM_REPAIR_FETCH_ATTEMPTS) delay(ALBUM_REPAIR_RETRY_DELAY_MS)
+        }
         if (coalesced.size <= 1) return // still couldn't complete it; leave the degraded card
         val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
             .filter { it.content !is PostContent.Unsupported }
@@ -2783,6 +2817,14 @@ class PostsRepository(
         // (1100 ms): the trigger is human scroll/dwell over the rare degraded card, so the
         // natural rate is already far under 30 req/30 s — this is the fast-fling backstop.
         const val ALBUM_REPAIR_THROTTLE_MS = 1_100L
+
+        // Surround-window attempts per repair (see performAlbumRepair). 3 × the
+        // throttle-gated trigger keeps the worst case (3 GetChatHistory per
+        // degraded album, ≥ 1.1 s apart per album) far inside the 30 req / 30 s
+        // budget while covering TDLib's "local slice first, server on repeat"
+        // under-return.
+        const val ALBUM_REPAIR_FETCH_ATTEMPTS = 3
+        const val ALBUM_REPAIR_RETRY_DELAY_MS = 350L
     }
 }
 

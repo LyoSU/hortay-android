@@ -112,13 +112,21 @@ object PostFilterStrategy {
         // remount when interaction-info updates land). The discussion thread, however,
         // may live on any member — we pass all ids to CommentsRepository, which probes
         // GetMessageProperties to find the canonical carrier.
-        return anchor.copy(
-            content = PostContent.PhotoAlbum(items = items, caption = caption, captionAbove = captionAbove),
+        val merged = anchor.copy(
             views = members.maxOf { it.views },
             commentCount = members.mapNotNull { it.commentCount }.maxOrNull(),
             reactions = members.map { it.reactions }.maxByOrNull { it.totalCount } ?: Reactions(0, emptyList()),
             albumMessageIds = sorted.map { it.id },
             isPinned = members.any { it.isPinned },
+        )
+        // Document / audio media groups: none of their members map to an
+        // AlbumItem, so a PhotoAlbum card would render blank. Keep the anchor's
+        // own renderable content instead; albumMessageIds above still carries
+        // every member, so read-ack, fold dedup and the degraded-album checks
+        // stay album-aware.
+        if (items.isEmpty()) return merged
+        return merged.copy(
+            content = PostContent.PhotoAlbum(items = items, caption = caption, captionAbove = captionAbove),
         )
     }
 

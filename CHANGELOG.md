@@ -7,6 +7,12 @@
 ### Changed
 - Refreshed the app's icons to a softer, more modern rounded set throughout the interface.
 
+### Fixed
+- Photo albums that arrived while the app was closed now fill in all their photos when you scroll to them, instead of sometimes staying stuck on a single image.
+- A fresh album landing in the feed no longer briefly shows with only part of its photos while the rest arrive.
+- An album of documents or audio files no longer renders as a blank card.
+- Reactions and view counts on the post you're reading now keep updating live even when the previous post you read was from the same channel.
+
 ### Build
 - StrictMode (main-thread disk/network I/O and leaked-resource detection) in debug builds.
 - Automated dependency updates and vulnerability scanning via Dependabot and OSV-Scanner.

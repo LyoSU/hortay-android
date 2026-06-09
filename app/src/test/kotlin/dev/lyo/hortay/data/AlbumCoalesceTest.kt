@@ -543,6 +543,99 @@ class AlbumCoalesceTest {
     }
 
     @Test
+    fun `requestAlbumRepair retries when the surround window under-returns`() = runTest {
+        // TDLib's GetChatHistory may legitimately return fewer messages than the
+        // requested limit — including just the anchor itself when the anchor is
+        // already in the local DB (the preceding GetMessage in performAlbumRepair
+        // guarantees exactly that). The documented client pattern is to repeat
+        // the call: the first request triggers the server fetch that fills the
+        // local history around the anchor, the retry reads the warmed cache.
+        // A single-shot repair that gives up on `coalesced.size <= 1` leaves the
+        // degraded 1-photo card on screen with no later rescue.
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -7410L
+        val albumId = 889L
+        val stride = 1L shl 20
+        val anchorId = 70L * stride
+
+        // Seed a degraded 1-member album (cold-start local path, all 404).
+        harness.td.onAny("GetMessageLocally") { _ -> TdApi.Error(404, "not local") }
+        harness.td.emitUpdate(
+            TdApi.UpdateNewChat(
+                harness.fakeChannel(id = chatId, lastMessage = harness.fakePhotoAlbumMessage(chatId, anchorId, date = baseDate, mediaAlbumId = albumId)),
+            ),
+        )
+        harness.advanceUntilIdle()
+        assertTrue(harness.repo.posts.value.single().albumMessageIds.size <= 1, "pre-condition: degraded album")
+
+        harness.td.onAny("GetMessage") { req ->
+            val q = req as TdApi.GetMessage
+            harness.fakePhotoAlbumMessage(q.chatId, q.messageId, date = baseDate, mediaAlbumId = albumId)
+        }
+        var historyCalls = 0
+        harness.td.onAny("GetChatHistory") { _ ->
+            historyCalls++
+            if (historyCalls == 1) {
+                // Under-return: only the locally-cached anchor comes back.
+                TdApi.Messages(1, arrayOf(harness.fakePhotoAlbumMessage(chatId, anchorId, date = baseDate, mediaAlbumId = albumId)))
+            } else {
+                // The anchor is the lastMessage (highest id) — siblings sit below.
+                val members = (0L..4L).map {
+                    harness.fakePhotoAlbumMessage(chatId, anchorId - it * stride, date = baseDate, mediaAlbumId = albumId)
+                }
+                TdApi.Messages(members.size, members.toTypedArray())
+            }
+        }
+
+        harness.repo.requestAlbumRepair(chatId, anchorId, albumId)
+        harness.advanceUntilIdle()
+
+        assertEquals(
+            5,
+            harness.repo.posts.value.single().albumMessageIds.size,
+            "repair must retry an under-returning surround window instead of giving up",
+        )
+    }
+
+    @Test
+    fun `live UpdateChatLastMessage album echo joins the debounce instead of a second coalesce`() = runTest {
+        // During a live session TDLib emits both UpdateNewMessage per album member
+        // AND a trailing UpdateChatLastMessage echoing the newest member. Routing
+        // the echo straight into ingest fires an immediate networked surround
+        // coalesce in parallel with the debounce flush — a duplicate GetChatHistory
+        // per album and a transient partial card whenever the echo's coalesce is
+        // served from a not-yet-complete local history. The echo must join the
+        // same debounce buffer (deduped by message id) so one flush handles all.
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -7950L
+        val albumId = 891L
+        val stride = 1L shl 20
+        val members = (1L..5L).map {
+            harness.fakePhotoAlbumMessage(chatId, it * stride, date = baseDate, mediaAlbumId = albumId)
+        }
+
+        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
+        harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(id = chatId)))
+        harness.repo.refresh() // flips initialSyncDone → live (networked) mode
+        harness.advanceUntilIdle()
+
+        harness.td.onAny("GetChatHistory") { _ -> TdApi.Messages(members.size, members.toTypedArray()) }
+
+        for (m in members) harness.td.emitUpdate(TdApi.UpdateNewMessage(m))
+        harness.td.emitUpdate(TdApi.UpdateChatLastMessage(chatId, members.last(), emptyArray()))
+        harness.advanceUntilIdle()
+
+        val card = harness.repo.posts.value.single()
+        assertEquals(5, card.albumMessageIds.size, "the echoed lastMessage member must not double-count")
+        assertEquals(5, (card.content as PostContent.PhotoAlbum).items.size, "no duplicated album item from the echo")
+        assertEquals(
+            1,
+            harness.td.rpcCount("GetChatHistory"),
+            "one debounce flush → one surround coalesce; the lastMessage echo must not trigger its own",
+        )
+    }
+
+    @Test
     fun `cold-start album coalesce stays offline to respect the FLOOD_WAIT budget`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
         val chatId = -9200L

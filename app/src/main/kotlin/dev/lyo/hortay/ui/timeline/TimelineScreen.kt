@@ -1141,7 +1141,6 @@ fun TimelineScreen(
                         val focusedPost = items.getOrNull(focusIdx)?.posts()?.firstOrNull()
                             ?: return@collectLatest
                         val focusChat = focusedPost.chatId
-                        if (focusChat == opened) return@collectLatest
                         // Atomic close+open+re-ack via NonCancellable. Three reasons it
                         // has to be a single non-cancellable block:
                         //
@@ -1167,9 +1166,20 @@ fun TimelineScreen(
                         //     OpenChat/CloseChat are bounded RPCs and ChatPresence
                         //     wraps the send in runCatching anyway.
                         kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                            opened?.let { prev -> tdlibRepo.closeChat(prev) }
-                            tdlibRepo.openChat(focusChat)
-                            opened = focusChat
+                            // Only the open/close swap is gated on a chat *transition*;
+                            // the re-ack and the Layer-2 album repair below run for
+                            // EVERY focused post. The previous shape early-returned on
+                            // `focusChat == opened`, which silently skipped both for
+                            // every subsequent card of the already-opened chat — and a
+                            // run of consecutive cards from one channel is the norm in
+                            // OldestUnreadFirst, so a degraded album inside such a run
+                            // never got its repair requested and stayed a 1-photo card
+                            // for the whole session.
+                            if (focusChat != opened) {
+                                opened?.let { prev -> tdlibRepo.closeChat(prev) }
+                                tdlibRepo.openChat(focusChat)
+                                opened = focusChat
+                            }
                             val ids = focusedPost.albumMessageIds
                                 .ifEmpty { listOf(focusedPost.id) }
                             tdlibRepo.viewMessages(focusChat, ids)
