@@ -1,0 +1,33 @@
+# Dependency update automation. Privacy-as-feature app — keeping dependencies
+# current and getting CVE alerts is the supply-chain baseline. Weekly cadence to
+# avoid PR churn; related ecosystems grouped into single PRs.
+#
+# NOTE: the version catalog (gradle/libs.versions.toml) is the source of truth for
+# most versions; Dependabot's gradle ecosystem understands version catalogs and
+# opens PRs against it. A few entries are still declared inline in build.gradle.kts
+# under the Docker-built :libtdlib — those are not Dependabot-managed.
+version: 2
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      # AndroidX + Compose churn frequently (especially the material3 Expressive
+      # alpha line) — collapse them so a week's worth of bumps is one PR to review,
+      # not a dozen.
+      androidx:
+        patterns:
+          - "androidx.*"
+          - "com.android.*"
+      kotlin:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "org.jetbrains.kotlinx*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

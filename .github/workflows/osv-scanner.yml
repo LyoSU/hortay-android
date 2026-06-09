@@ -1,0 +1,27 @@
+# OSV-Scanner — vulnerability scanning against the OSV.dev database for the
+# resolved Gradle dependency graph. Runs on push/PR to main and on a weekly
+# schedule so newly-disclosed CVEs against already-pinned versions surface even
+# without a dependency change. Uses Google's official reusable workflow.
+name: OSV-Scanner
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays 06:00 UTC — same weekly rhythm as Dependabot.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  scan:
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8
+    with:
+      scan-args: |-
+        --recursive
+        ./
