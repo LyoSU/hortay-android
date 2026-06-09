@@ -7,6 +7,11 @@
 ### Changed
 - Refreshed the app's icons to a softer, more modern rounded set throughout the interface.
 
+### Build
+- StrictMode (main-thread disk/network I/O and leaked-resource detection) in debug builds.
+- Automated dependency updates and vulnerability scanning via Dependabot and OSV-Scanner.
+- Third-party dependencies consolidated into the Gradle version catalog; androidx.browser updated to 1.10.0.
+
 ## [0.10.5] — 2026-06-01
 
 ### Added
