@@ -37,7 +37,7 @@ serialization = "1.7.3"
 # java-diff-utils — text-diff for the post-archive edit-history snapshots.
 diffUtils = "4.12"
 datastore = "1.2.0"
-coil = "3.3.0"
+coil = "3.4.0"
 splashscreen = "1.2.0"
 media3 = "1.10.0"
 immutable = "0.4.0"
