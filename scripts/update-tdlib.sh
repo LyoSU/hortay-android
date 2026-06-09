@@ -11,7 +11,8 @@
 #
 # Env knobs:
 #   ANDROID_NDK_VERSION  — NDK to use inside the container (default: 23.2.8568313)
-#   OPENSSL_VERSION      — OpenSSL to embed (default: OpenSSL_1_1_1w)
+#   OPENSSL_VERSION      — OpenSSL to embed (default: openssl-3.5.7, the current
+#                          3.5 LTS line; 1.1.1w is EOL since Sep 2023)
 #   ABIS                 — space-separated ABI list (default: "arm64-v8a x86_64")
 #   KEEP_DEBUG           — set to 1 to also keep tdlib-debug.zip alongside the AAR
 #
@@ -33,7 +34,7 @@ VERSION_FILE="$REPO_ROOT/scripts/tdlib-version.txt"
 
 TDLIB_REF="${1:-}"
 ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION:-23.2.8568313}"
-OPENSSL_VERSION="${OPENSSL_VERSION:-OpenSSL_1_1_1w}"
+OPENSSL_VERSION="${OPENSSL_VERSION:-openssl-3.5.7}"
 ABIS="${ABIS:-arm64-v8a x86_64}"
 KEEP_DEBUG="${KEEP_DEBUG:-1}"
 

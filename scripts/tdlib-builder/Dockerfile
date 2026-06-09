@@ -36,7 +36,7 @@ RUN wget -q "https://raw.githubusercontent.com/tdlib/td/${UPSTREAM_SCRIPTS_COMMI
 FROM sdk AS openssl
 
 ARG ANDROID_NDK_VERSION=23.2.8568313
-ARG OPENSSL_VERSION=OpenSSL_1_1_1w
+ARG OPENSSL_VERSION=openssl-3.5.7
 ARG UPSTREAM_SCRIPTS_COMMIT=master
 
 RUN wget -q "https://raw.githubusercontent.com/tdlib/td/${UPSTREAM_SCRIPTS_COMMIT}/example/android/build-openssl.sh" \
