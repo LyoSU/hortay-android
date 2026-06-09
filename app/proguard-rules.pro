@@ -52,10 +52,13 @@
 -keepnames class kotlin.coroutines.Continuation
 
 # SQLDelight 2.x generates `<DatabaseName>.Schema` as a Companion-object Schema
-# accessor that the Android driver invokes via reflection at create-or-migrate
-# time. R8 doesn't see the call (it goes through the AndroidSqliteDriver factory)
-# and may strip the Schema field on release, crashing the very first SQLDelight
-# query with NoSuchFieldError. Keep all generated DB classes wholesale — the
-# package is small (one `WebDatabase` + its query interfaces).
+# accessor that the Android driver invokes at create-or-migrate time. Keep both
+# generated DB packages wholesale as a precaution — each is small (WebDatabase +
+# ArchiveDatabase, with their query interfaces) — so a release build can never
+# strip a Schema member R8 didn't see referenced through the AndroidSqliteDriver
+# factory and crash the first query with NoSuchFieldError/NoSuchMethodError. Both
+# databases get the symmetric rule; dropping either requires re-verifying the full
+# capture + read flow in a minified build.
 -keep class dev.lyo.hortay.data.web.db.** { *; }
+-keep class dev.lyo.hortay.data.archive.db.** { *; }
 -keep class app.cash.sqldelight.** { *; }
