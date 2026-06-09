@@ -313,7 +313,7 @@ fun FullScreenMediaViewer(
                                 .size(44.dp)
                                 .background(Color.Black.copy(alpha = 0.45f), chromeShape),
                         ) {
-                            Symbol(name = "ios_share", contentDescription = shareLabel, tint = Color.White)
+                            Symbol(name = "share", contentDescription = shareLabel, tint = Color.White)
                         }
                     }
                     if (persistableItem != null && readyPath != null && persistableItem is AlbumItem.Photo) {

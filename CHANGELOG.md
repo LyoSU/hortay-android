@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Refreshed the app's icons to a softer, more modern rounded set throughout the interface.
+
 ## [0.10.5] — 2026-06-01
 
 ### Added

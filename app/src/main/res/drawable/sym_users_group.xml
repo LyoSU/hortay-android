@@ -1,0 +1,38 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <path
+        android:fillColor="@android:color/white"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="0.6"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:fillType="evenOdd"
+        android:pathData="M9 1.25a4.75 4.75 0 1 0 0 9.5 4.75 4.75 0 0 0 0-9.5M5.75 6a3.25 3.25 0 1 1 6.5 0 3.25 3.25 0 0 1-6.5 0"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="0.6"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M15 2.25a0.75 0.75 0 0 0 0 1.5 2.25 2.25 0 0 1 0 4.5 0.75 0.75 0 0 0 0 1.5 3.75 3.75 0 1 0 0-7.5"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="0.6"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:fillType="evenOdd"
+        android:pathData="M3.68 13.52c1.4-0.8 3.28-1.27 5.32-1.27s3.92 0.47 5.32 1.27c1.38 0.79 2.43 1.99 2.43 3.48s-1.05 2.7-2.43 3.48c-1.4 0.8-3.28 1.27-5.32 1.27s-3.92-0.47-5.32-1.27C2.3 19.69 1.25 18.49 1.25 17s1.05-2.7 2.43-3.48m0.74 1.3C3.27 15.48 2.75 16.28 2.75 17s0.52 1.52 1.67 2.18c1.14 0.64 2.75 1.07 4.58 1.07s3.44-0.42 4.58-1.07c1.15-0.66 1.67-1.46 1.67-2.18s-0.52-1.52-1.67-2.18c-1.14-0.64-2.75-1.07-4.58-1.07s-3.44 0.42-4.58 1.07"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="0.6"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M18.16 13.27a0.75 0.75 0 0 0-0.32 1.46c0.8 0.18 1.43 0.47 1.84 0.82s0.57 0.67 0.57 0.95c0 0.25-0.12 0.55-0.45 0.85-0.34 0.31-0.85 0.6-1.52 0.8a0.75 0.75 0 1 0 0.44 1.44c0.82-0.25 1.55-0.63 2.1-1.14 0.54-0.5 0.93-1.17 0.93-1.95 0-0.86-0.47-1.59-1.12-2.11-0.64-0.53-1.5-0.91-2.47-1.12"/>
+</vector>
+

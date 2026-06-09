@@ -16,11 +16,14 @@ import dev.lyo.hortay.R
  * App-wide icon entry point.
  *
  * Resolves a Material Symbols snake_case name to a bundled `res/drawable/sym_*.xml`
- * vector drawable. Source axis pinned to **Rounded · weight 500 · grade 0 · 24 dp**
- * — Google's canonical pairing for M3 Expressive consumer apps with bold display
- * typography (Plus Jakarta Sans Bold here). Weight 400 reads thin against
- * `displaySmall` 32 sp ExtraBold; weight 500 balances visually without crossing
- * into "loud" weight 600+.
+ * vector drawable. Call sites still speak Material Symbols names (the de-facto
+ * vocabulary), but the **drawn glyphs are Solar** (https://solar-icons.com) — a
+ * rounded, warmer set that pairs better with M3 Expressive + Plus Jakarta Sans
+ * Bold than the geometric Material cut. Provenance is pinned per axis:
+ *   - outline state  → Solar **Outline** (`<base>-outline`, fill-based, `evenOdd`)
+ *   - `filled = true` → Solar **Bold**    (`<base>-bold`)
+ * Both styles are pure fill paths, so they convert cleanly to VectorDrawable and
+ * tint via `Icon`'s `ColorFilter` exactly like the old set.
  *
  * Some icons ship a `_filled` companion drawable (e.g. `sym_home_filled.xml`,
  * `sym_bookmark_filled.xml`) for the `filled = true` axis — used to express
@@ -28,11 +31,23 @@ import dev.lyo.hortay.R
  * When a drawable lacks a filled twin the parameter is silently a no-op so call
  * sites can pass `filled = isSelected` without branching.
  *
- * To add a new symbol:
- *   1. Visit https://fonts.google.com/icons, pick the icon, choose "Rounded".
- *   2. Set Weight=500, Optical size=24px, Fill=0, Grade=0.
- *   3. Click Android → save as `res/drawable/sym_<name>.xml`.
- *   4. Add a `"<name>" -> R.drawable.sym_<name>` line below.
+ * The bare primitives Solar lacks (`add`, `close`, `check_box_outline_blank`) are
+ * hand-drawn here as plain stroked vectors at Solar's visible line weight (~2.1u,
+ * round caps) so they blend with the set instead of reading as heavier Material
+ * leftovers. A few negative/badge states with no clean Solar match still ride
+ * Material Symbols (`wifi_off`/`videocam_off`/`search_off`/`gif_box`,
+ * `format_quote`/`child_care`/`how_to_vote`); they're style-neutral and rarely
+ * sit next to a Solar glyph, so the mix is invisible in practice.
+ *
+ * To add or re-skin a symbol (Solar source):
+ *   1. Find the icon name on https://solar-icons.com (or the Iconify `solar` set).
+ *   2. Fetch `https://api.iconify.design/solar/<name>-outline.svg` (and
+ *      `-bold` for a filled twin).
+ *   3. Convert SVG → VectorDrawable (e.g. `svg2vectordrawable`), then normalise to
+ *      the bundled convention: `24dp`, `android:fillColor="@android:color/white"`,
+ *      `android:tint="?attr/colorControlNormal"`.
+ *   4. Save as `res/drawable/sym_<name>.xml` and add a
+ *      `"<name>" -> R.drawable.sym_<name>` line below.
  */
 @Composable
 fun Symbol(
@@ -64,6 +79,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
             "push_pin" -> return R.drawable.sym_push_pin_filled
             "notifications_active" -> return R.drawable.sym_notifications_active_filled
             "star" -> return R.drawable.sym_star_filled
+            "users_group" -> return R.drawable.sym_users_group_filled
             // No filled variant bundled — fall through to the outline below.
         }
     }
@@ -86,6 +102,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "chat_bubble" -> R.drawable.sym_chat_bubble
         "check_box" -> R.drawable.sym_check_box
         "check_box_outline_blank" -> R.drawable.sym_check_box_outline_blank
+        "check_circle" -> R.drawable.sym_check_circle
         "chevron_right" -> R.drawable.sym_chevron_right
         "child_care" -> R.drawable.sym_child_care
         "close" -> R.drawable.sym_close
@@ -105,6 +122,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "flag" -> R.drawable.sym_flag
         "format_quote" -> R.drawable.sym_format_quote
         "forum" -> R.drawable.sym_forum
+        "forward" -> R.drawable.sym_forward
         "gif_box" -> R.drawable.sym_gif_box
         "hide_image" -> R.drawable.sym_hide_image
         "home" -> R.drawable.sym_home
@@ -155,6 +173,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "sync" -> R.drawable.sym_sync
         "timer" -> R.drawable.sym_timer
         "translate" -> R.drawable.sym_translate
+        "users_group" -> R.drawable.sym_users_group
         "verified" -> R.drawable.sym_verified
         "video_call" -> R.drawable.sym_video_call
         "video_camera_front" -> R.drawable.sym_video_camera_front

@@ -555,7 +555,7 @@ fun CommentsScreen(
                 is CommentsRepository.ThreadState.Ready -> if (s.rows.isEmpty()) {
                     item(key = "empty") {
                         CommentsEmptyState(
-                            symbol = "forum",
+                            symbol = "chat_bubble",
                             title = stringResource(R.string.comments_empty_title),
                             body = stringResource(R.string.comments_empty_body),
                         )

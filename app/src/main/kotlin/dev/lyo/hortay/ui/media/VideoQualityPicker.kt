@@ -146,7 +146,7 @@ private fun QualityRow(
     ) {
         if (selected) {
             Symbol(
-                name = "check_box",
+                name = "check_circle",
                 tint = MaterialTheme.colorScheme.primary,
                 size = 24.dp,
                 modifier = Modifier.size(24.dp),

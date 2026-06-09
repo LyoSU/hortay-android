@@ -321,9 +321,9 @@ private fun MessageAction(onMessage: (Context) -> Unit) {
             .padding(horizontal = 24.dp),
     ) {
         Symbol(
-            // No bundled `sym_send`; the `ios_share` glyph (arrow-out-of-box) carries
-            // the same "send / outbound" semantic visually and is already in the pack.
-            name = "ios_share",
+            // Android-convention share glyph (three connected nodes) for the
+            // outbound "share / open this user elsewhere" action.
+            name = "share",
             tint = MaterialTheme.colorScheme.onSecondaryContainer,
             size = 18.dp,
         )

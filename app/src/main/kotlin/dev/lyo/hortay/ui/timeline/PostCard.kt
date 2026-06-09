@@ -681,7 +681,7 @@ private fun ForwardChip(origin: ForwardOrigin, onClick: (() -> Unit)?) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Symbol(
-            name = "repeat",
+            name = "forward",
             tint = MaterialTheme.colorScheme.tertiary,
             size = 16.dp,
         )
@@ -891,13 +891,12 @@ private fun ActionRow(
                 onClick = onCommentsClick,
             )
         }
-        // Forward (share) count — read-only, mirrors the stat Telegram shows on a
-        // channel post. Uses the `share` glyph (distinct from the action sheet's
-        // `ios_share`) since a forward IS a share from the reader's point of view.
+        // Forward count — read-only, mirrors the stat Telegram shows on a channel
+        // post. Uses the `forward` arrow glyph, matching the "forwarded from" badge.
         val hasForwards = forwardCount > 0
         if (hasForwards) {
             if (views > 0 || hasComments) Spacer(Modifier.width(14.dp))
-            StatPill(symbol = "share", text = formatViews(forwardCount))
+            StatPill(symbol = "forward", text = formatViews(forwardCount))
         }
         if (reactions.items.isNotEmpty()) {
             if (views > 0 || hasComments || hasForwards) {
@@ -1331,7 +1330,7 @@ private fun PostQuickActions(
         clickableItem(
             onClick = onShare,
             label = shareLabel,
-            icon = { Symbol(name = "ios_share", size = 18.dp) },
+            icon = { Symbol(name = "share", size = 18.dp) },
         )
         clickableItem(
             onClick = onOpen,

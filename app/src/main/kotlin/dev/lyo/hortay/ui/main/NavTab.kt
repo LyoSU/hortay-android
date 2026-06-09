@@ -11,7 +11,7 @@ import dev.lyo.hortay.R
  */
 enum class NavTab(@StringRes val labelRes: Int, val symbol: String) {
     Feed(R.string.nav_feed, "home"),
-    Channels(R.string.nav_channels, "dynamic_feed"),
+    Channels(R.string.nav_channels, "users_group"),
     Saved(R.string.nav_saved, "bookmark"),
     Profile(R.string.nav_profile, "person"),
 }

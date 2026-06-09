@@ -195,7 +195,7 @@ fun ArchiveSettingsScreen(
                         count = 4,
                     )
                     SettingsRow(
-                        symbol = "ios_share",
+                        symbol = "share",
                         title = stringResource(R.string.archive_export_json),
                         chevron = true,
                         index = 2,
