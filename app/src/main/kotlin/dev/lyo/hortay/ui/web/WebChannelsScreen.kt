@@ -338,6 +338,20 @@ private fun ChannelRow(
                         size = 14.dp,
                     )
                 }
+                if (isHidden) {
+                    // Inline "hidden from feed" marker next to the title, matching the
+                    // authed channels list (WS-F2). The trailing eye-off toggle already
+                    // colours primary when hidden, but a list scanned top-to-bottom reads
+                    // the title row first — the marker there makes the state glanceable
+                    // without parsing the action column.
+                    Spacer(Modifier.width(6.dp))
+                    Symbol(
+                        name = "visibility_off",
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        size = 14.dp,
+                    )
+                }
             }
         },
     )

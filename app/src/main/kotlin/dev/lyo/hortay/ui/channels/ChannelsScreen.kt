@@ -1,21 +1,26 @@
 package dev.lyo.hortay.ui.channels
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Badge
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -28,15 +33,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.ui.main.openTelegramApp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,6 +56,11 @@ import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
+import dev.lyo.hortay.ui.theme.tabularFigures
+import dev.lyo.hortay.ui.timeline.LocalReadCursors
+import dev.lyo.hortay.ui.timeline.formatRelative
+import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.intl.Locale
 
 /**
@@ -58,6 +72,30 @@ import androidx.compose.ui.text.intl.Locale
  * (`ListItemDefaults.SegmentedGap`) is the spacing that the shape math expects. Mixing this
  * with custom `Arrangement.spacedBy(8.dp)` would visually drift away from the Material 3
  * Expressive segmented-list metric.
+ *
+ * Reading metadata (WS-F):
+ * - **Recency** — relative time of the newest post in [formatRelative], read straight off the
+ *   feed slice ([ChannelSummary.lastPostDate]). No extra query.
+ * - **Unread** — derived honestly from [LocalReadCursors]: a channel is unread when its newest
+ *   (album-aware) post id sits above the chat's read cursor — exactly the rule PostCard's unread
+ *   strip uses ([TimelinePost.isUnreadAt]). This yields an unread **dot**, not a count: the
+ *   cold-start slice carries ~1 post per channel, so a true "N unread" count would require a
+ *   data-layer field the UI does not have (see file-level note below).
+ * - **Hidden** — [AppGraph.ignoredChannels] is the live, reactive set of channels hidden from
+ *   the merged feed. This screen reads [PostsRepository.posts] (the RAW slice, not the
+ *   ignored-filtered [PostsRepository.subscribedPosts]), so hidden channels DO appear here and
+ *   would otherwise be indistinguishable; the trailing `visibility_off` toggle marks them and
+ *   flips the state optimistically (the DataStore-backed flow re-emits immediately).
+ *
+ * COORDINATOR NOTE — to light up the numeric unread **Badge** and the **muted** glyph this
+ * screen has the presentation ready for but cannot feed:
+ * - A per-channel unread COUNT (`Map<Long, Int>` or a field on a channel summary) sourced from
+ *   TDLib `Chat.unreadCount` in the repository layer. The UI has no count — only a per-post
+ *   `id > cursor` boolean over the loaded slice.
+ * - A reactive MUTED set/flag (`StateFlow<Set<Long>>` of muted chatIds) in the repository.
+ *   `ChannelActionsRepository.isMuted`/`setMuted` are imperative `GetChat` calls — calling them
+ *   per row from the UI would violate the no-TDLib-from-UI hard rule, so the muted glyph + 0.7
+ *   title alpha stay dark until that flag is exposed.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -69,6 +107,11 @@ fun ChannelsScreen(
 ) {
     val posts by repo.posts.collectAsStateWithLifecycle()
     val channels = remember(posts) { aggregate(posts) }
+    val hiddenChatIds by graph.ignoredChannels.ignored.collectAsStateWithLifecycle(
+        initialValue = persistentSetOf(),
+    )
+    val scope = rememberCoroutineScope()
+    val cursors = LocalReadCursors.current
     val listState = rememberLazyListState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var addSheetOpen by remember { mutableStateOf(false) }
@@ -114,11 +157,25 @@ fun ChannelsScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 itemsIndexed(items = channels, key = { _, it -> it.chatId }) { index, ch ->
+                    val isHidden = ch.chatId in hiddenChatIds
+                    // Honest per-post unread, identical rule to PostCard's strip:
+                    // newest (album-aware) id above the chat's read cursor.
+                    val isUnread = ch.lastPostId > 0L && ch.lastPostId.isUnreadAgainst(cursors[ch.chatId])
+                    val onClick = remember(ch.chatId) { { onChannelClick(ch.chatId) } }
+                    val onHideToggle = remember(ch.chatId) {
+                        { scope.launch { graph.ignoredChannels.toggle(ch.chatId) }; Unit }
+                    }
                     ChannelRow(
                         channel = ch,
                         index = index,
                         count = channels.size,
-                        onClick = { onChannelClick(ch.chatId) },
+                        isHidden = isHidden,
+                        isUnread = isUnread,
+                        // No per-channel unread count is available to the UI (see file note);
+                        // 0 falls back to the unread dot. Wire a count here when exposed.
+                        unreadCount = 0,
+                        onClick = onClick,
+                        onHideToggle = onHideToggle,
                     )
                 }
             }
@@ -136,6 +193,9 @@ fun ChannelsScreen(
     }
 }
 
+/** True when the newest post id sits above the chat's read cursor (null cursor → read). */
+private fun Long.isUnreadAgainst(cursor: Long?): Boolean = cursor != null && this > cursor
+
 // @Immutable required: the ByteArray field defeats Compose's automatic
 // stability inference (arrays are mutable references), so without the
 // annotation every ChannelRow in a 200-channel LazyColumn re-composes on any
@@ -151,6 +211,12 @@ private data class ChannelSummary(
     val avatarFileId: Int?,
     val lastPostExcerpt: String,
     val lastPostDate: Long,
+    /**
+     * Highest (album-aware) message id this channel contributed to the loaded slice.
+     * Compared against the read cursor to derive the unread dot — same album-aware rule
+     * as [TimelinePost.isUnreadAt] (an album stays unread until every member is acked).
+     */
+    val lastPostId: Long,
 )
 
 private fun aggregate(posts: List<TimelinePost>): List<ChannelSummary> = posts
@@ -168,6 +234,9 @@ private fun aggregate(posts: List<TimelinePost>): List<ChannelSummary> = posts
         val title = channelLike?.name ?: anchor.senderName
         val thumb = channelLike?.avatarThumb ?: anchor.avatarThumb
         val fileId = channelLike?.avatarFileId ?: anchor.avatarFileId
+        // Highest id across every post (and album member) this channel put in the slice.
+        // Album-aware so a partially-read album still reads as unread, mirroring isUnreadAt.
+        val highestId = list.maxOf { p -> p.albumMessageIds.maxOrNull() ?: p.id }
         ChannelSummary(
             chatId = chatId,
             title = title,
@@ -175,6 +244,7 @@ private fun aggregate(posts: List<TimelinePost>): List<ChannelSummary> = posts
             avatarFileId = fileId,
             lastPostExcerpt = anchor.content.captionPlain.take(120),
             lastPostDate = anchor.date,
+            lastPostId = highestId,
         )
     }
     .sortedByDescending { it.lastPostDate }
@@ -185,7 +255,11 @@ private fun ChannelRow(
     channel: ChannelSummary,
     index: Int,
     count: Int,
+    isHidden: Boolean,
+    isUnread: Boolean,
+    unreadCount: Int,
     onClick: () -> Unit,
+    onHideToggle: () -> Unit,
 ) {
     val shapes = ListItemDefaults.segmentedShapes(
         index = index,
@@ -214,16 +288,96 @@ private fun ChannelRow(
                 )
             }
         } else null,
+        trailingContent = {
+            // Trailing reading-metadata column: relative time on top (recedes in
+            // onSurfaceVariant), an unread dot beside the hide toggle below. The
+            // hide toggle is the same affordance the web channels list ships — tinted
+            // primary when this channel is hidden from the merged feed so a long list
+            // scans at a glance.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = formatRelative(channel.lastPostDate),
+                        style = MaterialTheme.typography.labelSmall.tabularFigures(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (isUnread) {
+                        Spacer(Modifier.height(4.dp))
+                        // Numeric Badge when a count exists, unread dot otherwise.
+                        UnreadSignal(count = unreadCount)
+                    }
+                }
+                IconButton(onClick = onHideToggle) {
+                    Symbol(
+                        name = if (isHidden) "visibility_off" else "visibility",
+                        contentDescription = stringResource(
+                            if (isHidden) R.string.channels_unhide_from_feed_for
+                            else R.string.channels_hide_from_feed_for,
+                            channel.title,
+                        ),
+                        tint = if (isHidden) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        size = 20.dp,
+                    )
+                }
+            }
+        },
         content = {
-            Text(
-                text = channel.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = channel.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (isHidden) {
+                    // Explicit "hidden from feed" marker so a channel that won't
+                    // appear in the merged timeline is distinguishable in the list.
+                    Spacer(Modifier.width(6.dp))
+                    Symbol(
+                        name = "visibility_off",
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        size = 14.dp,
+                    )
+                }
+            }
         },
     )
+}
+
+/**
+ * Unread signal in the trailing column.
+ *
+ * When [count] > 0 this renders the spec'd primary-container [Badge] with tabular figures
+ * (doctrine rule 3 — a "9 → 10" tick must not reflow the column). [count] is currently always
+ * `0`: the cold-start feed slice carries ~1 post per channel, so the UI can only prove a channel
+ * *has* unread (id > cursor), never how many. In that case it falls back to a small unread dot.
+ * Wiring a real count is a one-line change here once the repository exposes a per-channel
+ * unread count (see the COORDINATOR NOTE at the top of the file).
+ */
+@Composable
+private fun UnreadSignal(count: Int) {
+    if (count > 0) {
+        Badge(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ) {
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelSmall.tabularFigures(),
+            )
+        }
+    } else {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+        )
+    }
 }
 
 @Composable
