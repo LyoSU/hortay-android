@@ -8,14 +8,14 @@
 - Refreshed the app's icons to a softer, more modern rounded set throughout the interface.
 - The app now uses Hortay's own periwinkle colours by default — wallpaper-matched colours stay available in Appearance.
 - Cleaner reading canvas — post cards lighten, an unread post shows a single edge strip instead of a full-card tint, and reaction chips rest as outlined ghosts that fill with lavender when you pick one.
-- The "new posts" alert and the unread counter are now one floating control that morphs between "N new posts" and "↓ N", instead of two badges that could pile up in the corner.
-- The feed's wordmark and folder tabs now tint with a hairline edge as posts scroll under them, so the first post no longer collides with the tabs.
+- The "new posts" alert stays centred and the "↓ N" unread button keeps its corner, laid out so they can never overlap — instead of two badges colliding or one button changing meaning under your finger.
+- The feed's wordmark, folder tabs and the status bar above them now tint as one surface when posts scroll under them, so the first post no longer collides with the tabs; channel screens tint their header and status bar the same way.
 - Photos, videos and link previews carry a faint hairline frame so a light image no longer dissolves into the background.
-- Comment replies thread with a curved connector and smaller reply avatars, reading as a conversation instead of a staircase of indents.
+- Comment replies indent with smaller reply avatars and a capped depth, reading as a conversation instead of a staircase running off the screen edge.
 - Settings use one consistent icon style, section headers are quieter, and the profile header gradient is softened to harmonise with the app's palette.
 - Channel rows show when each channel last posted, mark unread channels, and flag channels you've hidden from the feed.
 - In Discover and Add channel, the Subscribe button keeps a fixed size and shows a spinner then a checkmark as it works, and the search box now reads as a rounded search bar instead of a form field.
-- Pull-to-refresh shows a custom morphing indicator with a haptic tick at the release threshold.
+- Pull-to-refresh shows a custom indicator with a haptic tick at the release threshold — a clean disc while you pull, the app's morphing loading shape while it refreshes.
 - The fullscreen media viewer rests its controls on a subtle gradient so they stay legible over any photo.
 
 ### Fixed
@@ -27,7 +27,7 @@
 - Videos in the fullscreen viewer no longer flash black before the first frame — the poster stays visible until the video is ready.
 
 ### Performance
-- Live counters (views, reactions, unread) keep a fixed width and roll their digits in place, so neighbouring elements don't shift when a number ticks.
+- Live counters (views, reactions, unread) keep a fixed width so neighbouring elements don't shift when a number ticks, and reaction counts roll their digits in place.
 - The feed gently staggers its cards into place on a cold start.
 
 ### Build
