@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
 
@@ -94,6 +95,7 @@ private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
     // ButtonGroup vocabulary. 16 dp rest → 8 dp pressed (squish) → 28 dp selected (pill).
     // ButtonGroupDefaults.PressedShape in the 1.5 source is exactly this 8 dp corner.
     val interactionSource = remember { MutableInteractionSource() }
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val cornerRadius by rememberPressedSelectedCornerRadius(
         interactionSource = interactionSource,
         selected = selected,
@@ -102,9 +104,15 @@ private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
         selectedRadius = 28.dp,
         label = "folder-corner",
     )
+    // Fill discipline: only the SELECTED chip carries a tonal fill. Resting chips
+    // are bare text — a `surfaceContainerLow` pill under every folder made the
+    // strip read as a row of buttons competing with the feed below, and on the
+    // lavender canvas the rest/selected values were nearly indistinguishable.
+    // Bare-at-rest / tonal-when-active matches the floating navbar's vocabulary,
+    // so the two chrome strips bracket the feed with one consistent rule.
     val container by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer
-        else MaterialTheme.colorScheme.surfaceContainerLow,
+        else androidx.compose.ui.graphics.Color.Transparent,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "folder-bg",
     )
@@ -122,15 +130,41 @@ private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
             .clickable(
                 interactionSource = interactionSource,
                 indication = androidx.compose.foundation.LocalIndication.current,
-                onClick = onClick,
+                onClick = {
+                    // J2: light selection tick when switching TO a different tab —
+                    // re-tapping the active chip stays silent (no scope change).
+                    if (!selected) {
+                        haptics.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick,
+                        )
+                    }
+                    onClick()
+                },
             )
-            .padding(horizontal = 18.dp, vertical = 12.dp),
+            // 14×9 keeps the chip at a compact ~36 dp visual height (the row's
+            // 8 dp vertical padding still lands the touch target near 48 dp) —
+            // the previous 18×12 read as full-size buttons rather than filters.
+            .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // B4: emoji-only folder labels (Telegram folders carry their own emoji in
+        // the name) otherwise render taller than text labels — the emoji glyph's
+        // intrinsic line-height exceeds the text cap-to-baseline box, so a 📢 chip
+        // sat noticeably taller than "Усі". Clamping to a FIXED lineHeight + trimmed
+        // line-height edges + no font padding pins every chip to the same content
+        // height regardless of whether the label is text, emoji, or a mix.
         Text(
             label,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.labelLarge.copy(
+                lineHeight = 20.sp,
+                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                    alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                    trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both,
+                ),
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+            ),
             color = content,
+            maxLines = 1,
         )
     }
 }

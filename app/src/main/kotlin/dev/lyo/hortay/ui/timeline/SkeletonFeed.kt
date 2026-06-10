@@ -56,6 +56,14 @@ internal fun SkeletonFeed(rowCount: Int = 6, modifier: Modifier = Modifier) {
 
 @Composable
 private fun SkeletonRow(color: Color) {
+    // Band metrics mirror the loaded PostCard after the WS-C type pass (doctrine
+    // rule 3 — a skeleton that doesn't match the swapped-in layout reads as a jump):
+    //   • avatar 40 dp circle (header row);
+    //   • header name band ≈ 15 sp → 15 dp tall;
+    //   • body bands ≈ 15 sp text on 22 sp line-height → 15 dp bands at ~22 dp pitch;
+    //   • media block = MaterialTheme.shapes.medium (18 dp) so the placeholder clips
+    //     to the same corner the real photo/video poster does.
+    val textBand = RoundedCornerShape(6.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -66,26 +74,36 @@ private fun SkeletonRow(color: Color) {
             Spacer(Modifier.size(12.dp))
             Box(
                 modifier = Modifier
-                    .height(14.dp)
+                    .height(15.dp)
                     .fillMaxWidth(0.5f)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(textBand)
                     .background(color),
             )
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         Box(
             modifier = Modifier
-                .height(14.dp)
+                .height(15.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(4.dp))
+                .clip(textBand)
                 .background(color),
         )
-        Spacer(Modifier.height(6.dp))
+        // ~22 dp line pitch (15 dp band + 7 dp gap) matches bodyLarge 15/22.
+        Spacer(Modifier.height(7.dp))
         Box(
             modifier = Modifier
-                .height(14.dp)
+                .height(15.dp)
                 .fillMaxWidth(0.85f)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(textBand)
+                .background(color),
+        )
+        Spacer(Modifier.height(12.dp))
+        // Media placeholder — same shapes.medium corner as the loaded poster.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .clip(MaterialTheme.shapes.medium)
                 .background(color),
         )
     }

@@ -10,8 +10,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
@@ -31,8 +33,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -325,6 +329,7 @@ fun TimelineScreen(
     // Without this guard the pill flashes a misleading huge count for ~1 frame.
 
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     // Revision sheet: set to the post whose EditedChip was tapped; null when closed.
     var revisionsForPost by remember { mutableStateOf<TimelinePost?>(null) }
     // Single scroll-position holder. Scroll state preservation is now parent-owned:
@@ -1486,18 +1491,20 @@ fun TimelineScreen(
                 state = pullState,
                 modifier = Modifier.fillMaxSize(),
                 indicator = {
-                    androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-                        .LoadingIndicator(
-                            state = pullState,
-                            isRefreshing = refreshing,
-                            // Sits below the collapsing header overlay (the body no longer pads
-                            // down by the header — only the status strip — so without this the
-                            // spinner would land behind the bar). PTR fires at the top, where the
-                            // bar is shown, so offsetting by its full height is correct.
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .padding(top = headerOverlayHeightDp),
-                        )
+                    // Custom expressive indicator (I1) — morphs through
+                    // [HortayExpressive.LoadingPolygons] with a threshold-crossed
+                    // haptic tick. Sits below the collapsing header overlay (the body
+                    // no longer pads down by the header — only the status strip — so
+                    // without this the indicator would land behind the bar). PTR fires
+                    // at the top where the bar is shown, so offsetting by its full
+                    // height is correct.
+                    FeedPullToRefreshIndicator(
+                        state = pullState,
+                        isRefreshing = refreshing,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = headerOverlayHeightDp),
+                    )
                 },
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -1723,56 +1730,166 @@ fun TimelineScreen(
                 }
             }
 
-            // Floating "X нових постів" pill — the single commit path for
-            // pendingNew arrivals (see ARCHITECTURE.md → Load-bearing).
+            // Single bottom-anchored floating feed control — [FeedFloatingControl]
+            // merges the former NewPostsPill (arrivals ALERT) and UnreadCounterPill
+            // (ambient "next unread" FAB) into one morphing surface so they can never
+            // collide near the navbar. Priority rule (owned here, applied by the
+            // control): pending arrivals > 0 → EXPANDED stadium; else live unread > 0
+            // → COLLAPSED "↓ N". Both former behaviours survive EXACTLY — only the
+            // chrome merged. See ARCHITECTURE.md → Load-bearing "Arrivals commit only
+            // via NewPostsPill": no edge-based auto-accept; the tap is the only commit
+            // path and [awaitItemsCommitted] (in [onArrivalsTap]) is the proven
+            // sequencer.
             //
-            // Visible whenever [scopedPendingNew] is non-empty, at EVERY
-            // scroll position. Hidden only in:
-            //   - Saved tab (no concept of "new" in bookmarks)
-            //   - Refresh in flight (PTR runs vm.acceptPending() itself; the
-            //     pill would race against it and double-commit).
-            //
-            // Why no edge-based auto-hide / auto-accept (two iterations
-            // tried and reverted):
-            //   1. Bare `if (atTop || atBottom) acceptIds()` at the freshness
-            //      edge: LazyColumn's keyed-scroll preservation pins the
-            //      user's anchor item to its current y-coord, so the
-            //      silently-accepted posts render OFF-screen (above the
-            //      viewport in Newest, below it in OldestUnreadFirst). The
-            //      user sees no visible change AND no pill — feels broken.
-            //   2. Follow-up `scrollToItem`-after-`acceptIds`: the latcher
-            //      in [rememberLatchedTimelineUiState] commits new items
-            //      via a `LaunchedEffect`, so `layoutInfo.totalItemsCount`
-            //      lags `feedItems` by a frame. Even with [awaitItemsCommitted]
-            //      as the wait helper, the LazyColumn's own overscroll
-            //      could still latch the user into the "stuck at the wall"
-            //      state before the follow-up scroll resolved. User report:
-            //      "scroll to bottom in reverse mode, pill disappears,
-            //      never see the new posts even with the auto-scroll".
-            //
-            // Always-visible pill collapses both: the pill IS the affordance,
-            // [awaitItemsCommitted] (which the onClick uses) is the proven
-            // sequencer — no edge detection, no race.
-            //
-            // Mode-dependent placement / direction (single pill, two anchors):
-            //   - Newest: TopCenter, ↑ glyph — fresh content lives above.
-            //   - OldestUnreadFirst: BottomCenter, ↓ glyph — fresh content
-            //     sits at the END of the unread queue (asc by date).
-            val pillVisible = !showOnlyBookmarked &&
-                !refreshing && scopedPendingChannels.isNotEmpty()
+            // Mode-dependent placement / direction:
+            //   - Newest: TopCenter, ↑ glyph — fresh content lives above; there is
+            //     no "unread queue" concept, so only the arrivals state is reachable.
+            //   - OldestUnreadFirst: BottomCenter, ↓ glyph — arrivals sit at the END
+            //     of the unread queue (asc by date), and the unread queue lives below
+            //     the boundary.
             val pillAtTop = feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst
-            // Newest-mode pill is top-anchored; the collapsing header is now an overlay drawn on
-            // top of this Box, so the pill lands just below the header's full height (instead of the
-            // old fixed 64dp that assumed the body was already padded down past the header).
             val pillTopPadding = headerOverlayHeightDp + 8.dp
             val pillBottomPadding = contentPadding.calculateBottomPadding() + 16.dp
             val pillSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<androidx.compose.ui.unit.IntOffset>()
             val pillEffects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+
+            // Live remaining-unread count (OldestUnreadFirst only) — drives the
+            // collapsed state. Same recency floor the jump target uses so the count
+            // reflects exactly what the collapsed tap will navigate to.
+            val unreadRemaining by remember(visiblePosts, feedOrder, recencyCutoffMs) {
+                derivedStateOf {
+                    if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) 0
+                    else visiblePosts.count {
+                        it.isUnreadAt(cursorHolder[it.chatId]) &&
+                            (recencyCutoffMs <= 0L || it.date >= recencyCutoffMs)
+                    }
+                }
+            }
+
+            val arrivalsActive = !showOnlyBookmarked &&
+                !refreshing && scopedPendingChannels.isNotEmpty()
+            // Collapsed unread only matters in OldestUnreadFirst (Newest has no queue).
+            val unreadActive = !pillAtTop && !showOnlyBookmarked && unreadRemaining > 0
+            val controlVisible = arrivalsActive || unreadActive
+            // Expanded count fed to the control: 0 suppresses the expanded state so
+            // the control falls through to collapsed unread. Hidden during refresh
+            // (PTR runs vm.acceptPending() itself and would double-commit).
+            val controlPendingCount = if (arrivalsActive) scopedPendingNew.size else 0
+
+            // Arrivals-commit body — VERBATIM from the former NewPostsPill onClick.
+            val onArrivalsTap: () -> Unit = onArrivalsTap@{
+                // Ack only scope-visible pending; archive / other-folder pending stays
+                // unread for those tabs. Scroll target lands the user at the OLDEST of
+                // the just-accepted posts so the new batch reads forward in time —
+                // canonical chat-app "New messages" jump. Data is descending
+                // (newest = index 0), so the oldest arrival is the HIGHEST-index acked
+                // row = indexOfLast. In Newest the home target IS index 0 = newest.
+                val ackedKeys = scopedPendingNew.map { it.chatId to it.id }
+                val preTotal = listState.layoutInfo.totalItemsCount
+                vm.acceptIds(ackedKeys)
+                scope.launch {
+                    listState.awaitItemsCommitted(preTotal)
+                    val target = when (feedOrder) {
+                        dev.lyo.hortay.data.FeedOrder.Newest -> homeScrollIndexState.intValue
+                        dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> {
+                            val ackedSet = ackedKeys.toHashSet()
+                            val items = feedItemsState.value
+                            val oldestNew = items.indexOfLast { fi ->
+                                fi.posts().any { (it.chatId to it.id) in ackedSet }
+                            }
+                            if (oldestNew >= 0) oldestNew
+                            // Fallback: arrivals cluster at index 0 (newest) under the
+                            // descending data model.
+                            else 0
+                        }
+                    }
+                    listState.smartScrollTo(target)
+                    // Pulse on the landing post — matches the divider-anchored jump path.
+                    val destinationPost = feedItemsForEffectsState.value
+                        .getOrNull(target)?.posts()?.firstOrNull()
+                    if (destinationPost != null) {
+                        highlightedPostKey = destinationPost.chatId to destinationPost.id
+                    }
+                }
+            }
+
+            // "Next unread" body — VERBATIM from the former UnreadCounterPill onClick.
+            val onUnreadTap: () -> Unit = onUnreadTap@{
+                // Jump to the LIVE oldest-unread post, top-aligned so reading starts
+                // at its top, with a brief highlight. The target is the live
+                // read→unread boundary (the divider's frozen anchor does NOT move as
+                // you read, so jumping to it lands you back on an already-read post).
+                // Read [feedItemsState] live so a refresh / arrival between composition
+                // and the click can't index a stale list.
+                //
+                // One tap = one step. When you're already parked on the oldest unread
+                // and tap again, that's a deliberate "I'm done, next": ack the post
+                // you're leaving and resolve the jump against the post-ack cursor, so
+                // the tap lands on the NEXT unread rather than re-landing on the row
+                // you're already on. When you're NOT parked on it (you scrolled away),
+                // the tap just navigates back to the oldest unread to continue reading.
+                //
+                // Why this is race-free: [PostsRepository.viewMessages] advances the
+                // local read cursor optimistically, so the ack moves the cursor on the
+                // same tap and the post-ack scan below sees the advance immediately.
+                val items = feedItemsState.value
+                val current = homeScrollIndexState.intValue
+                // "Parked on the target" = the boundary row is the post under the gaze
+                // (greatest visible area), the same dominant-visible rule the focus
+                // tracker uses. Direction-agnostic: in OldestUnreadFirst the feed is
+                // reverseLayout over descending data, so the boundary (high index =
+                // oldest unread) sits at the visual TOP and `firstVisibleItemIndex`
+                // (the visual BOTTOM in reverseLayout) would never match it.
+                val parkedOnTarget = listState.layoutInfo.let { layout ->
+                    layout.visibleItemsInfo.maxByOrNull { item ->
+                        val itemEnd = item.offset + item.size
+                        val cs = maxOf(item.offset, layout.viewportStartOffset)
+                        val ce = minOf(itemEnd, layout.viewportEndOffset)
+                        (ce - cs).coerceAtLeast(0)
+                    }?.index == current
+                }
+                val leaving = items.getOrNull(current)?.posts()?.firstOrNull()
+                    ?.takeIf { it.isUnreadAt(cursorHolder[it.chatId]) }
+                    ?.takeIf { parkedOnTarget }
+                // When skipping, ack the post we're leaving and remember the chat + id
+                // we advanced it to, so the scan below can simulate that advance
+                // locally — the optimistic cursor put reaches [cursorHolder] a frame
+                // later via the off-main diff, so reading it back synchronously here
+                // would still see the pre-ack value.
+                var ackedChat: Long? = null
+                var ackedTo = 0L
+                if (leaving != null) {
+                    markPostReadState.value(leaving)
+                    ackedChat = leaving.chatId
+                    ackedTo = leaving.albumMessageIds.maxOrNull() ?: leaving.id
+                }
+                // Same boundary scan as [homeScrollIndex]; with leaving == null (not
+                // parked, or already read) it resolves to `current` verbatim.
+                val target = items.indexOfLast { row ->
+                    val p = (row as? FeedItem.Post)?.post ?: return@indexOfLast false
+                    val cursor =
+                        if (p.chatId == ackedChat) maxOf(cursorHolder[p.chatId] ?: 0L, ackedTo)
+                        else cursorHolder[p.chatId]
+                    p.isUnreadAt(cursor) &&
+                        (recencyCutoffMs <= 0L || p.date >= recencyCutoffMs)
+                }.let { if (it >= 0) it else 0 }
+                val landed = items.getOrNull(target)?.posts()?.firstOrNull()
+                scope.launch {
+                    if (target > 0) {
+                        listState.scrollToBoundary(rowIndex = target, animated = true)
+                    } else {
+                        // Caught up (target == 0): land on newest by its natural
+                        // reverseLayout position, no top-align.
+                        listState.smartScrollTo(target)
+                    }
+                    landed?.let { highlightedPostKey = it.chatId to it.id }
+                }
+            }
+
             AnimatedVisibility(
-                visible = pillVisible,
-                // Slide from the same edge the pill is anchored to — top-pill
-                // slides DOWN from above (-it), bottom-pill slides UP from
-                // below (+it). Mirrors the M3 enter-from-anchor vocabulary.
+                visible = controlVisible,
+                // Slide from the same edge the control is anchored to — top slides
+                // DOWN from above (-it), bottom slides UP from below (+it).
                 enter = (if (pillAtTop) {
                     slideInVertically(pillSpatial) { -it }
                 } else {
@@ -1785,195 +1902,34 @@ fun TimelineScreen(
                 }) + fadeOut(pillEffects),
                 modifier = Modifier
                     .align(if (pillAtTop) Alignment.TopCenter else Alignment.BottomCenter)
-                    // Bottom-anchored pill (OldestUnreadFirst) rides the collapsing nav-bar:
-                    // it translates down by exactly the bottom inset the bar vacates, so when
-                    // the bar is fully hidden the pill rests 16.dp above the screen edge —
-                    // visible, never off-screen — and rises back in lockstep on scroll-up. The
-                    // top pill (Newest) stays put: there is no bottom bar beneath it to follow.
+                    // Bottom-anchored control (OldestUnreadFirst) rides the collapsing
+                    // nav-bar: it translates down by exactly the bottom inset the bar
+                    // vacates so it rests 16.dp above the screen edge when the bar is
+                    // hidden, and rises back in lockstep on scroll-up. The top control
+                    // (Newest) stays put: there is no bottom bar beneath it.
                     .graphicsLayer {
                         translationY = if (pillAtTop) 0f
                         else (navBarCollapse?.floatValue ?: 0f) * contentPadding.calculateBottomPadding().toPx()
                     }
                     .padding(
                         top = if (pillAtTop) pillTopPadding else 0.dp,
-                        bottom = if (pillAtTop) 0.dp else pillBottomPadding,
+                        bottom = if (pillAtTop) 0.dp else pillBottomPadding + unreadPillExtraBottomPadding,
                     ),
             ) {
-                NewPostsPill(
-                    channels = scopedPendingChannels,
-                    pendingCount = scopedPendingNew.size,
+                FeedFloatingControl(
+                    pendingCount = controlPendingCount,
+                    pendingChannels = scopedPendingChannels,
+                    unreadCount = unreadRemaining,
                     arrowGlyph = if (pillAtTop) "arrow_upward" else "arrow_downward",
-                    onClick = {
-                        // Ack only scope-visible pending; archive / other-folder
-                        // pending stays unread for those tabs. Scroll target lands
-                        // the user at the OLDEST of the just-accepted posts so the
-                        // new batch reads forward in time — canonical chat-app
-                        // "New messages" jump. Data is descending (newest = index 0),
-                        // so the oldest arrival is the HIGHEST-index acked row =
-                        // indexOfLast. In Newest the home target IS index 0 = newest.
-                        val ackedKeys = scopedPendingNew.map { it.chatId to it.id }
-                        val preTotal = listState.layoutInfo.totalItemsCount
-                        vm.acceptIds(ackedKeys)
-                        scope.launch {
-                            listState.awaitItemsCommitted(preTotal)
-                            val target = when (feedOrder) {
-                                dev.lyo.hortay.data.FeedOrder.Newest -> homeScrollIndexState.intValue
-                                dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> {
-                                    val ackedSet = ackedKeys.toHashSet()
-                                    val items = feedItemsState.value
-                                    val oldestNew = items.indexOfLast { fi ->
-                                        fi.posts().any { (it.chatId to it.id) in ackedSet }
-                                    }
-                                    if (oldestNew >= 0) oldestNew
-                                    // Fallback: arrivals cluster at index 0 (newest)
-                                    // under the descending data model.
-                                    else 0
-                                }
-                            }
-                            listState.smartScrollTo(target)
-                            // Pulse on the landing post — matches the divider-anchored jump path.
-                            val destinationPost = feedItemsForEffectsState.value
-                                .getOrNull(target)?.posts()?.firstOrNull()
-                            if (destinationPost != null) {
-                                highlightedPostKey = destinationPost.chatId to destinationPost.id
-                            }
-                        }
+                    onExpandedClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onArrivalsTap()
+                    },
+                    onCollapsedClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onUnreadTap()
                     },
                 )
-            }
-
-            // Ambient unread-remaining FAB, OldestUnreadFirst-only.
-            // Circle silhouette + BottomEnd anchor keep it Gestalt-disjoint
-            // from the centred stadium-shaped NewPostsPill, so when both
-            // fire at once they read as distinct affordances even though
-            // both carry an arrow_downward glyph. See UnreadCounterPill KDoc
-            // for the silhouette-based hierarchy rationale.
-            //
-            // Count uses LIVE readCursors (via `cursorsState`), not the
-            // frozen sort snapshot — so the number ticks down as
-            // viewport-dwell acks land, giving the user real-time
-            // "how much is left to read" feedback even while posts hold
-            // their position in the snapshot-sorted queue.
-            //
-            // Hidden in Saved tab (no unread concept on bookmarks) and
-            // when nothing is left to read.
-            if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst && !showOnlyBookmarked) {
-                val unreadRemaining by remember(visiblePosts, feedOrder, recencyCutoffMs) {
-                    derivedStateOf {
-                        // Apply the SAME recency floor the jump target ([homeScrollIndex])
-                        // uses, so the counter reflects exactly what the pill will navigate
-                        // to. A dormant unread older than [recencyCutoffMs] is not a landing
-                        // target (cold-start / home-tap / folder-switch all skip it), so it
-                        // must not be counted here either — otherwise the pill lights up but
-                        // the jump resolves to the newest, already-read post and acks nothing.
-                        // Per-post unread strips on those dormant posts still render via
-                        // PostCard; only the actionable "jump to next unread" counter is floored.
-                        visiblePosts.count {
-                            it.isUnreadAt(cursorHolder[it.chatId]) &&
-                                (recencyCutoffMs <= 0L || it.date >= recencyCutoffMs)
-                        }
-                    }
-                }
-                AnimatedVisibility(
-                    visible = unreadRemaining > 0,
-                    enter = slideInVertically(pillSpatial) { it } + fadeIn(pillEffects),
-                    exit = slideOutVertically(pillSpatial) { it } + fadeOut(pillEffects),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        // Rides the collapsing nav-bar in lockstep with the NewPostsPill above:
-                        // translate down by the inset the bar vacates so the "next unread" FAB
-                        // follows it to the screen edge instead of floating high once it hides.
-                        .graphicsLayer {
-                            translationY = (navBarCollapse?.floatValue ?: 0f) *
-                                contentPadding.calculateBottomPadding().toPx()
-                        }
-                        .padding(
-                            end = 16.dp,
-                            bottom = pillBottomPadding + unreadPillExtraBottomPadding,
-                        ),
-                ) {
-                    UnreadCounterPill(
-                        count = unreadRemaining,
-                        onClick = {
-                            // Jump to the LIVE oldest-unread post, top-aligned so reading
-                            // starts at its top, with a brief highlight. The target is the
-                            // live read→unread boundary (the divider's frozen anchor does
-                            // NOT move as you read, so jumping to it lands you back on an
-                            // already-read post). Read [feedItemsState] live so a refresh /
-                            // arrival between composition and the click can't index a stale
-                            // list.
-                            //
-                            // One tap = one step. When you're already parked on the oldest
-                            // unread and tap again, that's a deliberate "I'm done, next":
-                            // ack the post you're leaving and resolve the jump against the
-                            // post-ack cursor, so the tap lands on the NEXT unread rather
-                            // than re-landing on the row you're already on. When you're NOT
-                            // parked on it (you scrolled away), the tap just navigates back
-                            // to the oldest unread to continue reading — the viewport dwell
-                            // acks it once it settles.
-                            //
-                            // Why this is now race-free: [PostsRepository.viewMessages]
-                            // advances the local read cursor optimistically, so the ack
-                            // moves the cursor on the same tap and the post-ack scan below
-                            // sees the advance immediately (no waiting for TDLib's
-                            // UpdateChatReadInbox echo, which was the old "doesn't mark read
-                            // for a while / pill sticks on the same post" bug).
-                            val items = feedItemsState.value
-                            val current = homeScrollIndexState.intValue
-                            // "Parked on the target" = the boundary row is the post under
-                            // the gaze (greatest visible area), the same dominant-visible
-                            // rule the focus tracker uses. Direction-agnostic: in
-                            // OldestUnreadFirst the feed is reverseLayout over descending
-                            // data, so the boundary (high index = oldest unread) sits at the
-                            // visual TOP and `firstVisibleItemIndex` (the visual BOTTOM in
-                            // reverseLayout) would never match it.
-                            val parkedOnTarget = listState.layoutInfo.let { layout ->
-                                layout.visibleItemsInfo.maxByOrNull { item ->
-                                    val itemEnd = item.offset + item.size
-                                    val cs = maxOf(item.offset, layout.viewportStartOffset)
-                                    val ce = minOf(itemEnd, layout.viewportEndOffset)
-                                    (ce - cs).coerceAtLeast(0)
-                                }?.index == current
-                            }
-                            val leaving = items.getOrNull(current)?.posts()?.firstOrNull()
-                                ?.takeIf { it.isUnreadAt(cursorHolder[it.chatId]) }
-                                ?.takeIf { parkedOnTarget }
-                            // When skipping, ack the post we're leaving and remember the
-                            // chat + id we advanced it to, so the scan below can simulate
-                            // that advance locally — the optimistic cursor put reaches
-                            // [cursorHolder] a frame later via the off-main diff, so reading
-                            // it back synchronously here would still see the pre-ack value.
-                            var ackedChat: Long? = null
-                            var ackedTo = 0L
-                            if (leaving != null) {
-                                markPostReadState.value(leaving)
-                                ackedChat = leaving.chatId
-                                ackedTo = leaving.albumMessageIds.maxOrNull() ?: leaving.id
-                            }
-                            // Same boundary scan as [homeScrollIndex]; with leaving == null
-                            // (not parked, or already read) it resolves to `current` verbatim.
-                            val target = items.indexOfLast { row ->
-                                val p = (row as? FeedItem.Post)?.post ?: return@indexOfLast false
-                                val cursor =
-                                    if (p.chatId == ackedChat) maxOf(cursorHolder[p.chatId] ?: 0L, ackedTo)
-                                    else cursorHolder[p.chatId]
-                                p.isUnreadAt(cursor) &&
-                                    (recencyCutoffMs <= 0L || p.date >= recencyCutoffMs)
-                            }.let { if (it >= 0) it else 0 }
-                            val landed = items.getOrNull(target)?.posts()?.firstOrNull()
-                            scope.launch {
-                                if (target > 0) {
-                                    listState.scrollToBoundary(rowIndex = target, animated = true)
-                                } else {
-                                    // Caught up (target == 0): land on newest by its
-                                    // natural reverseLayout position, no top-align.
-                                    listState.smartScrollTo(target)
-                                }
-                                landed?.let { highlightedPostKey = it.chatId to it.id }
-                            }
-                        },
-                    )
-                }
             }
 
             // Collapsing zone-2 header overlay (brand row over folder tabs), rendered LAST so it
@@ -1983,11 +1939,47 @@ fun TimelineScreen(
             // Material's heightOffset. The list reserves this height as a constant top contentPadding
             // (which scrolls off), so shrinking the overlay reclaims no layout space — it only clips
             // the draw — and the header therefore costs the scroll nothing. See [headerBehavior].
+            //
+            // B3 chrome separation: while the feed is scrolled past its top, content passes UNDER
+            // the overlay, so the overlay tints to `surfaceContainer` and grows a hairline bottom
+            // border to peel itself off the canvas (the brand bar otherwise collided visually with
+            // the first post). Crossfades on `fastEffectsSpec`; transparent again at the top edge so
+            // the clean-canvas look is preserved when nothing scrolls under it. The slide-away
+            // collapse ([headerBehavior]) is untouched — this only changes the fill, not the layout.
+            val headerScrolled by remember(listState) {
+                derivedStateOf {
+                    listState.firstVisibleItemIndex > 0 ||
+                        listState.firstVisibleItemScrollOffset > 0
+                }
+            }
+            val headerBg by animateColorAsState(
+                targetValue = if (headerScrolled) MaterialTheme.colorScheme.surfaceContainer
+                else MaterialTheme.colorScheme.background,
+                animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                label = "header-scroll-tint",
+            )
+            val headerBorder by animateColorAsState(
+                targetValue = if (headerScrolled)
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                else androidx.compose.ui.graphics.Color.Transparent,
+                animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                label = "header-scroll-border",
+            )
             Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background),
+                    .background(headerBg)
+                    .drawBehind {
+                        if (headerBorder.alpha > 0f) {
+                            val h = 1.dp.toPx()
+                            drawRect(
+                                color = headerBorder,
+                                topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - h),
+                                size = androidx.compose.ui.geometry.Size(size.width, h),
+                            )
+                        }
+                    },
             ) {
                 Column(
                     modifier = Modifier

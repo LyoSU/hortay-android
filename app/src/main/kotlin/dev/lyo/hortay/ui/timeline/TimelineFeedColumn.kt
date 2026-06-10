@@ -5,18 +5,26 @@
 
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.Dp
@@ -24,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.ui.media.LocalIsCenteredItem
 import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
 import dev.lyo.hortay.ui.text.LocalShowFullPost
+import dev.lyo.hortay.ui.util.rememberReducedMotion
 
 /**
  * Mechanical extraction of the main feed LazyColumn from [TimelineScreen]. Behaviour
@@ -49,6 +58,21 @@ internal fun TimelineFeedColumn(
     onTapRevisions: (dev.lyo.hortay.data.TimelinePost) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    // J1 first-paint stagger: run ONCE per process, on the first cold feed mount —
+    // NOT on tab returns (returning must paint in place, per the 0.9.0 "no skeleton
+    // on tab return" contract) and NOT under reduced motion. We gate on a
+    // process-global latch ([hasStaggeredThisProcess]) so a Feed → Channels → Feed
+    // round-trip, which remounts this composable, does not replay the entrance.
+    val reduced = rememberReducedMotion()
+    val staggerEnabled = remember {
+        if (reduced || hasStaggeredThisProcess) {
+            false
+        } else {
+            hasStaggeredThisProcess = true
+            true
+        }
+    }
+
     LazyColumn(
         state = state,
         flingBehavior = flingBehavior,
@@ -59,18 +83,28 @@ internal fun TimelineFeedColumn(
         ),
         modifier = modifier,
     ) {
-        items(
+        itemsIndexed(
             items = feedItems,
-            key = { it.key },
-            contentType = { item ->
+            key = { _, it -> it.key },
+            contentType = { _, item ->
                 when (item) {
                     is FeedItem.Boundary -> "boundary"
                     is FeedItem.Post -> "post"
                 }
             },
-        ) { item ->
+        ) { index, item ->
+            // M4: accepted arrivals / folder switches / deletions reflow with a
+            // fade+slide instead of teleporting. Presentation only — animateItem
+            // animates placement of items LazyColumn already keyed, so it never
+            // touches the arrivals-commit contract or the scroll-anchor logic
+            // (keyed-scroll preservation still pins the user's anchor item).
+            val placementModifier = Modifier.animateItem(
+                fadeInSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+                placementSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                fadeOutSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+            )
             when (item) {
-                is FeedItem.Boundary -> UnreadBoundaryRow()
+                is FeedItem.Boundary -> Box(placementModifier) { UnreadBoundaryRow() }
                 is FeedItem.Post -> {
                     // Per-item [derivedStateOf] reads [centeredItemKeyState]
                     // INSIDE its lambda, not at the items() body level — so the
@@ -111,12 +145,27 @@ internal fun TimelineFeedColumn(
                             interactions
                         }
                     }
+                    // J1: first-paint stagger — the first STAGGER_COUNT cards fade in
+                    // and rise 12 dp, each delayed index × STAGGER_STEP_MS, ONCE per
+                    // process. `staggerThisItem` is computed once per item key, so a
+                    // recomposition (scroll, ingest) does not replay it; only the very
+                    // first cold mount triggers it.
+                    val staggerThisItem = staggerEnabled && index < STAGGER_COUNT
+                    val staggerModifier = if (staggerThisItem) {
+                        rememberStaggerEntrance(itemKey = item.key, index = index)
+                    } else {
+                        Modifier
+                    }
                     CompositionLocalProvider(
                         LocalIsCenteredItem provides isCenteredState,
                         LocalIsHighlightedItem provides highlighted,
                         LocalShowFullPost provides showFull,
                     ) {
-                        Box(modifier = Modifier.onGloballyPositioned { topY[0] = it.positionInWindow().y }) {
+                        Box(
+                            modifier = placementModifier
+                                .then(staggerModifier)
+                                .onGloballyPositioned { topY[0] = it.positionInWindow().y },
+                        ) {
                             PostCard(post = post, interactions = itemInteractions, onTapRevisions = onTapRevisions)
                         }
                     }
@@ -125,4 +174,40 @@ internal fun TimelineFeedColumn(
         }
     }
 }
+
+/**
+ * Per-item fade+rise entrance for the J1 first-paint stagger. Keyed on the item's
+ * stable key so the animation runs exactly once per row (a recomposition reuses the
+ * latched `appeared` state and the spring rests at its target). The reveal is delayed
+ * [index] × [STAGGER_STEP_MS] so the first cards cascade in.
+ */
+@Composable
+private fun LazyItemScope.rememberStaggerEntrance(itemKey: Any, index: Int): Modifier {
+    var appeared by remember(itemKey) { mutableStateOf(false) }
+    LaunchedEffect(itemKey) {
+        kotlinx.coroutines.delay(index * STAGGER_STEP_MS)
+        appeared = true
+    }
+    val progress by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+        label = "stagger-$index",
+    )
+    return Modifier.graphicsLayer {
+        alpha = progress
+        translationY = (1f - progress) * STAGGER_RISE_DP.toPx()
+    }
+}
+
+/** First-paint stagger: how many leading cards animate in. */
+private const val STAGGER_COUNT = 8
+
+/** Per-card stagger delay. */
+private const val STAGGER_STEP_MS = 25L
+
+/** Rise distance — cards lift 12 dp into place. */
+private val STAGGER_RISE_DP = 12.dp
+
+/** Process-global one-shot latch for the J1 first-paint stagger (see usage KDoc). */
+private var hasStaggeredThisProcess = false
 
