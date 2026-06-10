@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.pulltorefresh.PullToRefreshState
@@ -19,7 +20,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,14 +37,15 @@ import dev.lyo.hortay.ui.theme.MorphShape
 import dev.lyo.hortay.ui.util.rememberReducedMotion
 
 /**
- * Custom pull-to-refresh indicator (I1) — a single `primaryContainer` disc whose
- * shape morphs through [HortayExpressive.LoadingPolygons] (Circle → SoftBurst →
- * Cookie9 → Pill → Sunny), the same loading vocabulary the inline spinner and the
- * M3 expressive PTR default both ride.
+ * Custom pull-to-refresh indicator (I1) — a single `primaryContainer` disc. While
+ * REFRESHING its shape morphs through [HortayExpressive.LoadingPolygons]
+ * (Circle → SoftBurst → Cookie9 → Pill → Sunny), the same loading vocabulary the
+ * inline spinner and the M3 expressive PTR default both ride; while DRAGGING it
+ * stays a regular circle (see the shape-discipline note at the `shape` val).
  *
- *  - **Dragging:** the disc scales + fades in with [PullToRefreshState.distanceFraction]
- *    and rotates / morphs proportionally so the pull feels physically connected to
- *    the gesture. Crossing the threshold (`distanceFraction >= 1`) fires a
+ *  - **Dragging:** the disc scales, rotates and fades in with
+ *    [PullToRefreshState.distanceFraction] so the pull feels physically connected
+ *    to the gesture. Crossing the threshold (`distanceFraction >= 1`) fires a
  *    [HapticFeedbackType.GestureThresholdActivate] tick ONCE per crossing (J2).
  *  - **Refreshing:** an infinite transition spins the morph + rotation continuously.
  *    Infinite-loop decorations are intentionally NOT gated by reduced motion (they
@@ -62,14 +66,19 @@ fun FeedPullToRefreshIndicator(
 
     // Threshold-crossed haptic: fire when distanceFraction first reaches 1, re-arm
     // when the user relaxes back below it. Skipped while already refreshing.
+    // One long-lived coroutine observing via `snapshotFlow` — keying a
+    // LaunchedEffect on `distanceFraction` itself would relaunch the coroutine on
+    // every frame of the drag.
     var armed by remember { mutableStateOf(true) }
-    LaunchedEffect(state.distanceFraction, isRefreshing) {
-        val crossed = state.distanceFraction >= 1f
-        if (!isRefreshing && crossed && armed) {
-            haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-            armed = false
-        } else if (!crossed) {
-            armed = true
+    val refreshingNow by rememberUpdatedState(isRefreshing)
+    LaunchedEffect(state) {
+        snapshotFlow { state.distanceFraction >= 1f }.collect { crossed ->
+            if (crossed && armed && !refreshingNow) {
+                haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                armed = false
+            } else if (!crossed) {
+                armed = true
+            }
         }
     }
 
@@ -95,19 +104,19 @@ fun FeedPullToRefreshIndicator(
     )
 
     val fraction = state.distanceFraction.coerceIn(0f, 1.5f)
-    // While refreshing, drive shape from the looping cycle; while dragging, map the
-    // pull fraction onto the first morph leg (Circle → SoftBurst) so the disc visibly
-    // "wakes up" as the user pulls.
-    val morph: Morph = remember(isRefreshing, morphCycle, fraction) {
-        if (isRefreshing) {
-            val idx = (morphCycle.toInt()) % MORPH_STEPS
-            LOADING_MORPHS[idx]
-        } else {
-            LOADING_MORPHS[0]
-        }
+    // Shape discipline: while DRAGGING the disc stays a regular circle — scale,
+    // rotation and alpha carry the "physically connected to the pull" feedback. An
+    // earlier cut mapped the pull onto the first morph leg (Circle → SoftBurst),
+    // which deformed an interactive element mid-gesture and was read on device as a
+    // rendering defect. The polygon morph runs ONLY while refreshing, where it reads
+    // as the app's established loading vocabulary (the M3 LoadingIndicator idiom).
+    val shape = if (isRefreshing) {
+        val idx = (morphCycle.toInt()) % MORPH_STEPS
+        val progress = morphCycle % 1f
+        remember(idx, progress) { MorphShape(LOADING_MORPHS[idx], progress) }
+    } else {
+        CircleShape
     }
-    val progress = if (isRefreshing) (morphCycle % 1f) else fraction.coerceIn(0f, 1f)
-    val shape = remember(morph, progress) { MorphShape(morph, progress) }
 
     val visScale = if (isRefreshing) 1f else (0.4f + 0.6f * fraction).coerceIn(0f, 1f)
     val rotation = if (isRefreshing && !reduced) spin else fraction * 120f
@@ -138,7 +147,7 @@ fun FeedPullToRefreshIndicator(
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.onPrimaryContainer),
                 )
             }

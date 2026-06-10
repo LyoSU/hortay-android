@@ -2,6 +2,7 @@ package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -19,7 +20,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.lyo.hortay.R
@@ -95,7 +101,7 @@ private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
     // ButtonGroup vocabulary. 16 dp rest → 8 dp pressed (squish) → 28 dp selected (pill).
     // ButtonGroupDefaults.PressedShape in the 1.5 source is exactly this 8 dp corner.
     val interactionSource = remember { MutableInteractionSource() }
-    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val haptics = LocalHapticFeedback.current
     val cornerRadius by rememberPressedSelectedCornerRadius(
         interactionSource = interactionSource,
         selected = selected,
@@ -112,7 +118,7 @@ private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
     // so the two chrome strips bracket the feed with one consistent rule.
     val container by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer
-        else androidx.compose.ui.graphics.Color.Transparent,
+        else Color.Transparent,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "folder-bg",
     )
@@ -129,13 +135,13 @@ private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
             .background(container, shape)
             .clickable(
                 interactionSource = interactionSource,
-                indication = androidx.compose.foundation.LocalIndication.current,
+                indication = LocalIndication.current,
                 onClick = {
                     // J2: light selection tick when switching TO a different tab —
                     // re-tapping the active chip stays silent (no scope change).
                     if (!selected) {
                         haptics.performHapticFeedback(
-                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick,
+                            HapticFeedbackType.ContextClick,
                         )
                     }
                     onClick()
@@ -157,11 +163,11 @@ private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
             label,
             style = MaterialTheme.typography.labelLarge.copy(
                 lineHeight = 20.sp,
-                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
-                    alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
-                    trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both,
+                lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center,
+                    trim = LineHeightStyle.Trim.Both,
                 ),
-                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                platformStyle = PlatformTextStyle(includeFontPadding = false),
             ),
             color = content,
             maxLines = 1,

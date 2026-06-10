@@ -2,11 +2,13 @@
 
 package dev.lyo.hortay.ui.timeline
 
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,11 +26,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,38 +41,46 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.theme.HortayExpressive
-import dev.lyo.hortay.ui.theme.MorphShape
 import dev.lyo.hortay.ui.theme.asComposeShape
 import dev.lyo.hortay.ui.theme.tabularFigures
 
 /**
- * The single bottom-anchored floating feed control. Merges the former
- * `NewPostsPill` (arrivals ALERT) and `UnreadCounterPill` (ambient "next unread"
- * FAB) into one morphing surface so the two affordances can never visually
- * collide near the navbar (the audit found them stacked in one corner region).
+ * The floating feed cluster: the arrivals ALERT (former `NewPostsPill`) CENTRED,
+ * and the ambient "next unread" button (former `UnreadCounterPill`) in the
+ * trailing corner — one full-width container owning both anchors so the two can
+ * never collide (the audit found the old independent pills stacked in one
+ * corner region).
  *
- * Priority rule (driven entirely by the caller, who owns the contract state):
- *  - [pendingCount] > 0 → EXPANDED stadium: avatar stack + "N нових постів" +
- *    direction arrow. Tap = [onExpandedClick] (the proven arrivals-commit path:
+ * Layout contract (settled over several on-device iterations with the owner):
+ *  1. A single state-swapping control replaced the unread "↓ N" with the
+ *     arrivals stadium whenever new posts landed — the button the user is
+ *     actively tapping kept changing identity under the finger. Rejected.
+ *  2. A side-by-side row read fine but pulled the arrivals alert out of centre.
+ *  3. A constant one-row lift kept the pill overlap-free but left it hovering
+ *     too high when no unread button was on screen. Rejected.
+ *  4. Final: arrivals stay CENTRED (their pre-merge home, where an alert reads
+ *     as an alert) at the slot bottom; the unread button keeps the trailing
+ *     corner and never moves; and ONLY while the button is visible the pill
+ *     lifts one row above it (animated [UNREAD_ROW_CLEARANCE] spring) —
+ *     overlap-free at any screen width or label length, no measuring needed,
+ *     and flush with the navbar whenever the corner is empty.
+ *
+ *  - [pendingCount] > 0 → arrivals stadium: avatar stack + "N нових постів" +
+ *    direction arrow. Tap = [onArrivalsClick] (the proven arrivals-commit path:
  *    `acceptIds → awaitItemsCommitted → smartScrollTo`).
- *  - else if [unreadCount] > 0 → COLLAPSED circular "↓ N". Tap = [onCollapsedClick]
- *    (scroll to the live read→unread boundary).
+ *  - [unreadCount] > 0 → circular "↓ N". Tap = [onUnreadClick] (scroll to the
+ *    live read→unread boundary). A plain circle with a pressed-scale cue — the
+ *    earlier Circle→Burst press morph deformed the silhouette and the owner
+ *    read it as a defect, not expressiveness; interactive surfaces stay
+ *    regular shapes (circle/stadium), shape-morph stays loading-only.
  *
- * Both prior behaviours survive EXACTLY — only the chrome merges. The caller
- * still computes `scopedPendingNew` / `unreadRemaining` and supplies the two
- * onClick bodies verbatim; this composable only decides which silhouette is on
- * screen and hands the tap to the matching callback.
+ * Both prior behaviours survive EXACTLY — the caller still computes
+ * `scopedPendingNew` / `unreadRemaining` and supplies the two onClick bodies
+ * verbatim; this composable only lays the two affordances out.
  *
- * Morph: the container interpolates corner geometry between the two states. The
- * collapsed state additionally rides the [HortayExpressive.FabPressMorph]
- * Circle→Burst press cue (capped at [PRESS_MORPH_AMPLITUDE]) the old FAB used.
- * State swap goes through [AnimatedContent] (fade) so the avatar stack + label
- * don't pop. Entrance scale is keyed on "is anything showing at all", so the
- * control pops once on first appearance, not on every count tick.
- *
- * a11y: ONE merged `contentDescription` per state via `mergeDescendants`, reusing
- * [R.plurals.new_posts] for both (the user mental model — "things I haven't read"
- * — is the same; silhouette + arrow disambiguate visually).
+ * a11y: each element carries its own merged `contentDescription`
+ * (`mergeDescendants`), both phrased via [R.plurals.new_posts] — the shared
+ * "things I haven't read" vocabulary the two former pills already used.
  */
 @Composable
 fun FeedFloatingControl(
@@ -80,66 +88,62 @@ fun FeedFloatingControl(
     pendingChannels: List<ChannelBadge>,
     unreadCount: Int,
     arrowGlyph: String,
-    onExpandedClick: () -> Unit,
-    onCollapsedClick: () -> Unit,
+    onArrivalsClick: () -> Unit,
+    onUnreadClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val expanded = pendingCount > 0
-    val showing = expanded || unreadCount > 0
-
-    var hasAppeared by remember { mutableStateOf(false) }
-    LaunchedEffect(showing) {
-        if (showing) hasAppeared = true
-    }
-    val enterScale by animateFloatAsState(
-        targetValue = if (hasAppeared) 1f else 0.85f,
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    // Lift the centred pill above the unread button's row ONLY while the button
+    // is actually on screen; with the corner empty the pill rests flush at the
+    // slot bottom. Animated so a mid-session button toggle reads as the pill
+    // gliding out of the way, not teleporting. The spatial spring OVERSHOOTS by
+    // design — on the way back to 0 it briefly dips negative, and a negative
+    // padding is an IllegalArgumentException (caused a field crash), so the
+    // value is clamped at the consumer.
+    val pillLift by animateDpAsState(
+        targetValue = if (unreadCount > 0) UNREAD_ROW_CLEARANCE else 0.dp,
         animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-        label = "feed-control-enter",
+        label = "arrivals-lift",
     )
-
-    val ctx = LocalContext.current
-    // Both states announce via the same plurals vocabulary — expanded uses the
-    // pending arrivals count, collapsed uses the live unread-remaining count.
-    val label = if (expanded) newPostsLabel(ctx.resources, pendingCount)
-    else newPostsLabel(ctx.resources, unreadCount)
-
-    // Hoisted out of the transitionSpec lambda: that scope is NOT @Composable, so
-    // MaterialTheme.motionScheme can't be read inside it.
-    val fadeSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-
-    AnimatedContent(
-        targetState = expanded,
-        transitionSpec = {
-            fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec)
-        },
-        modifier = modifier
-            .scale(enterScale)
-            .semantics(mergeDescendants = true) { contentDescription = label },
-        label = "feed-control-morph",
-    ) { isExpanded ->
-        if (isExpanded) {
-            ExpandedArrivals(
+    Box(modifier = modifier.fillMaxWidth()) {
+        AnimatedVisibility(
+            visible = pendingCount > 0,
+            enter = scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
+            exit = scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = pillLift.coerceAtLeast(0.dp)),
+        ) {
+            ArrivalsPill(
                 channels = pendingChannels,
                 count = pendingCount,
                 arrowGlyph = arrowGlyph,
-                onClick = onExpandedClick,
+                onClick = onArrivalsClick,
             )
-        } else {
-            CollapsedUnread(
+        }
+        AnimatedVisibility(
+            visible = unreadCount > 0,
+            enter = scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
+            exit = scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
+            modifier = Modifier.align(Alignment.BottomEnd),
+        ) {
+            UnreadButton(
                 count = unreadCount,
-                onClick = onCollapsedClick,
+                onClick = onUnreadClick,
             )
         }
     }
 }
 
 @Composable
-private fun ExpandedArrivals(
+private fun ArrivalsPill(
     channels: List<ChannelBadge>,
     count: Int,
     arrowGlyph: String,
     onClick: () -> Unit,
 ) {
+    val label = newPostsLabel(LocalContext.current.resources, count)
     Surface(
         onClick = onClick,
         // CircleShape on a wide Row collapses to a true stadium bounded to the
@@ -149,6 +153,7 @@ private fun ExpandedArrivals(
         contentColor = MaterialTheme.colorScheme.onPrimary,
         tonalElevation = 4.dp,
         shadowElevation = 6.dp,
+        modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = label },
     ) {
         Row(
             modifier = Modifier.padding(start = 8.dp, end = 18.dp, top = 8.dp, bottom = 8.dp),
@@ -161,7 +166,7 @@ private fun ExpandedArrivals(
             Symbol(name = arrowGlyph, size = 18.dp)
             Spacer(Modifier.width(6.dp))
             Text(
-                text = newPostsLabel(LocalContext.current.resources, count),
+                text = label,
                 style = MaterialTheme.typography.labelLarge.tabularFigures(),
                 fontWeight = FontWeight.SemiBold,
             )
@@ -170,30 +175,32 @@ private fun ExpandedArrivals(
 }
 
 @Composable
-private fun CollapsedUnread(
+private fun UnreadButton(
     count: Int,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    // Circle→Burst press cue, capped so the count stays legibly centred — the
-    // exact behaviour the former UnreadCounterPill carried.
-    val pressProgress by animateFloatAsState(
-        targetValue = if (isPressed) PRESS_MORPH_AMPLITUDE else 0f,
+    // Clean pressed-scale cue on a regular circle. The former Circle→Burst shape
+    // morph (FabPressMorph) deformed the silhouette mid-press and was read as a
+    // rendering defect on device — interactive surfaces keep regular geometry.
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.92f else 1f,
         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-        label = "feed-control-press",
+        label = "feed-unread-press",
     )
-    val shape = remember(pressProgress) {
-        MorphShape(HortayExpressive.FabPressMorph, pressProgress)
-    }
+    val label = newPostsLabel(LocalContext.current.resources, count)
     Surface(
         onClick = onClick,
-        shape = shape,
+        shape = CircleShape,
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         tonalElevation = 4.dp,
         shadowElevation = 6.dp,
         interactionSource = interactionSource,
+        modifier = Modifier
+            .scale(pressScale)
+            .semantics(mergeDescendants = true) { contentDescription = label },
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -241,7 +248,7 @@ private fun AvatarStack(channels: List<ChannelBadge>) {
  * Plural form for "new post(s)" / unread count. Defers to Android's CLDR-driven
  * [android.content.res.Resources.getQuantityString]. Counts above 99 clamp to a
  * static overflow label so transient state flickers can't surface alarming numbers.
- * Shared by both control states (and the former two pills).
+ * Shared by both affordances (and the former two pills).
  */
 private fun newPostsLabel(res: android.content.res.Resources, n: Int): String {
     if (n > 99) return res.getString(R.string.new_posts_overflow)
@@ -250,12 +257,14 @@ private fun newPostsLabel(res: android.content.res.Resources, n: Int): String {
 
 private fun countText(n: Int): String = if (n > 99) "99+" else n.toString()
 
-/**
- * Cap on the Circle→Burst morph progress at press — the M3 Expressive reference
- * value. Going to 1.0 turns the resting circle into a full sunburst and the count
- * drifts off the visual centre.
- */
-private const val PRESS_MORPH_AMPLITUDE = 0.4f
-
 private val AVATAR_SIZE = 28.dp
 private val AVATAR_OFFSET = 18.dp
+
+/**
+ * Vertical clearance the centred arrivals pill keeps above the trailing "↓ N"
+ * button's row while that button is VISIBLE: the button is ~48 dp tall, plus a
+ * 10 dp visual gap. Animated in/out with the button's presence (see `pillLift`
+ * in [FeedFloatingControl]) so the pill rests flush at the slot bottom whenever
+ * the corner is empty — and the two can never overlap at any screen width.
+ */
+private val UNREAD_ROW_CLEARANCE = 58.dp

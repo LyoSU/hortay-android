@@ -9,6 +9,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,8 +36,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +53,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ChannelContext
@@ -119,7 +123,7 @@ fun PostCard(
     // tab-swap / button-press chains use, so the highlight pop reads as part of the
     // app's motion vocabulary rather than a one-off tween.
     val isHighlighted = dev.lyo.hortay.ui.media.LocalIsHighlightedItem.current
-    val highlightAlpha by androidx.compose.animation.core.animateFloatAsState(
+    val highlightAlpha by animateFloatAsState(
         targetValue = if (isHighlighted) 0.35f else 0f,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "post-highlight",
@@ -149,37 +153,22 @@ fun PostCard(
     // toward its vertical centre. Together they read as "the read marker just
     // collapsed and vanished" instead of a passive fade-out — informative
     // feedback for the dwell-ack the user might otherwise miss.
-    val unreadAlpha by androidx.compose.animation.core.animateFloatAsState(
+    val unreadAlpha by animateFloatAsState(
         targetValue = if (isUnread) 1f else 0f,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "post-unread-strip-alpha",
     )
-    val unreadShrink by androidx.compose.animation.core.animateFloatAsState(
+    val unreadShrink by animateFloatAsState(
         targetValue = if (isUnread) 1f else 0f,
         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "post-unread-strip-shrink",
     )
     val unreadStripColor = MaterialTheme.colorScheme.primary
-    // N6 — dwell-read afterglow. When the strip collapses (dwell-ack flips isUnread
-    // true → false) we kick a one-shot Animatable from 1 → 0 over ~200 ms and paint
-    // a soft horizontal glow bleeding off the left edge, layered on the SAME
-    // drawBehind that paints the strip. This makes "marked read" register as a
-    // discrete event rather than a passive fade, without leaving any persistent
-    // signal once the glow settles to 0. Skipped under reduced motion: motion-
-    // sensitive users get the instant strip collapse only. Built on the existing
-    // twin alpha/shrink springs — no new persistent state on the card.
-    val reducedMotion = rememberReducedMotion()
-    val afterglow = remember { androidx.compose.animation.core.Animatable(0f) }
-    val afterglowColor = MaterialTheme.colorScheme.primary
-    val afterglowSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    var wasUnread by remember { mutableStateOf(isUnread) }
-    LaunchedEffect(isUnread) {
-        if (wasUnread && !isUnread && !reducedMotion) {
-            afterglow.snapTo(1f)
-            afterglow.animateTo(0f, animationSpec = afterglowSpec)
-        }
-        wasUnread = isUnread
-    }
+    // No dwell-read afterglow: an N6 "marked read" glow on the left edge was tried
+    // here and removed — the "next unread" button marks posts read in quick
+    // succession, and on device the per-card glow read as the feed flickering at
+    // its left edge, not as feedback. The strip's own collapse (alpha + shrink
+    // springs above) is the read-ack signal; don't add transient flashes to it.
     // One unread signal only: the 3 dp edge strip. A full-card primary wash was tried
     // as a peripheral companion cue and removed in the visual-polish pass — with the
     // strip, the "Нові пости" divider, the arrivals pill and the unread FAB badge all
@@ -201,7 +190,7 @@ fun PostCard(
     // unstable scope.
     val cardInteractionSource = remember { MutableInteractionSource() }
     val isPressed by cardInteractionSource.collectIsPressedAsState()
-    val pressScale by androidx.compose.animation.core.animateFloatAsState(
+    val pressScale by animateFloatAsState(
         targetValue = if (isPressed && (clickable || actionsEnabled)) 0.985f else 1f,
         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "post-press-scale",
@@ -227,27 +216,6 @@ fun PostCard(
             )
             .background(highlightColor)
             .drawBehind {
-                // N6 afterglow first — a soft glow bleeding off the left edge while the
-                // strip collapses, layered UNDER the strip so the strip reads as its source.
-                if (afterglow.value > 0f) {
-                    val glowWidth = 16.dp.toPx()
-                    val verticalInset = 14.dp.toPx()
-                    val glowHeight = (size.height - verticalInset * 2f).coerceAtLeast(0f)
-                    if (glowHeight > 0f) {
-                        drawRect(
-                            brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                colors = listOf(
-                                    afterglowColor.copy(alpha = 0.5f * afterglow.value),
-                                    androidx.compose.ui.graphics.Color.Transparent,
-                                ),
-                                startX = 0f,
-                                endX = glowWidth,
-                            ),
-                            topLeft = Offset(0f, verticalInset),
-                            size = Size(glowWidth, glowHeight),
-                        )
-                    }
-                }
                 if (unreadAlpha <= 0f) return@drawBehind
                 val stripWidth = 3.dp.toPx()
                 val verticalInset = 14.dp.toPx()
@@ -270,7 +238,7 @@ fun PostCard(
                 .fillMaxWidth()
                 .combinedClickable(
                     interactionSource = cardInteractionSource,
-                    indication = androidx.compose.foundation.LocalIndication.current,
+                    indication = LocalIndication.current,
                     enabled = clickable || actionsEnabled,
                     onClick = { if (clickable) interactions.onPostClick(post) },
                     onLongClick = if (actionsEnabled) ({ sheetOpen = true }) else null,
@@ -507,7 +475,7 @@ private fun Avatar(
 }
 
 @Composable
-private fun avatarBg(name: String): androidx.compose.ui.graphics.Color {
+private fun avatarBg(name: String): Color {
     // Palette identity is stable across recompositions for a given theme —
     // remember on the three colour values so we don't allocate a fresh
     // 3-element list on every avatar render. The theme reads happen in
@@ -710,7 +678,7 @@ private fun VerificationBadge(verification: SenderVerification) {
 }
 
 @Composable
-private fun WarningPill(label: String, color: androidx.compose.ui.graphics.Color) {
+private fun WarningPill(label: String, color: Color) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
@@ -1002,7 +970,7 @@ private fun ActionRow(
             // alpha to read as informational rather than interactive (see
             // [ReactionChip.disabled]); the snackbar gate keeps a misclick from
             // bouncing the user out of Hortay before they can change their mind.
-            val res = androidx.compose.ui.platform.LocalContext.current.resources
+            val res = LocalContext.current.resources
             val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
             val openTelegramLabel = res.getString(R.string.action_open_telegram)
             val paidExplainer = res.getString(R.string.reactions_paid_explainer)
@@ -1088,7 +1056,7 @@ internal fun ReactionChip(
      */
     disabled: Boolean = false,
 ) {
-    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val interactionSource = remember { MutableInteractionSource() }
     val cornerRadius by rememberPressedSelectedCornerRadius(
         interactionSource = interactionSource,
         selected = item.isChosen,
@@ -1099,12 +1067,12 @@ internal fun ReactionChip(
     )
     val container by animateColorAsState(
         targetValue = if (item.isChosen) MaterialTheme.colorScheme.primaryContainer
-        else androidx.compose.ui.graphics.Color.Transparent,
+        else Color.Transparent,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "reaction-bg",
     )
     val borderColor by animateColorAsState(
-        targetValue = if (item.isChosen) androidx.compose.ui.graphics.Color.Transparent
+        targetValue = if (item.isChosen) Color.Transparent
         else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "reaction-border",
@@ -1122,25 +1090,10 @@ internal fun ReactionChip(
         label = "reaction-tint",
     )
     val shape = RoundedCornerShape(cornerRadius)
-    // N5 — reaction micro-burst. A one-shot 6-particle radial spray fired only when the
-    // chip transitions UNCHOSEN → CHOSEN (a fresh reaction), not on un-choosing. Driven
-    // by a single Animatable 0 → 1 over the effects spec; particles radiate from the
-    // chip centre, growing then fading. Self-contained (NOT the SpoilerField machinery,
-    // which is seed/size-bound to full media regions) — it draws via a transparent
-    // overlay Canvas so it never affects the chip's layout. Skipped under reduced motion.
-    val reducedMotionBurst = rememberReducedMotion()
-    val burst = remember { androidx.compose.animation.core.Animatable(0f) }
-    val burstSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-    val burstColor = MaterialTheme.colorScheme.primary
-    var wasChosen by remember { mutableStateOf(item.isChosen) }
-    LaunchedEffect(item.isChosen) {
-        if (item.isChosen && !wasChosen && !reducedMotionBurst) {
-            burst.snapTo(0f)
-            burst.animateTo(1f, animationSpec = burstSpec)
-        }
-        wasChosen = item.isChosen
-    }
-    Box {
+    // The N5 micro-burst (particle spray on choose) was tried here and removed: the
+    // particles flew outside the chip bounds by design and read as a rendering glitch
+    // ("a stray piece of the digit above the button"), not celebration. Choose
+    // feedback is the ghost→fill morph + haptic; don't reintroduce unclipped overlays.
     Row(
         modifier = Modifier
             .clip(shape)
@@ -1149,7 +1102,7 @@ internal fun ReactionChip(
             .let {
                 if (onClick != null) it.clickable(
                     interactionSource = interactionSource,
-                    indication = androidx.compose.foundation.LocalIndication.current,
+                    indication = LocalIndication.current,
                     onClick = onClick,
                 ) else it
             }
@@ -1181,16 +1134,19 @@ internal fun ReactionChip(
         // M3 — mini digit-roll on count changes: the new value slides in vertically
         // (up when the count grows, down when it shrinks) while the old slides out and
         // fades, Telegram's counter idiom. C2 tabular figures keep the width fixed so
-        // the roll never reflows neighbours. Under reduced motion AnimatedContent's
-        // transition collapses to an instant swap (its spec scale is 0).
+        // the roll never reflows neighbours. Under reduced motion the roll collapses
+        // to a plain crossfade. `clipToBounds` confines the sliding digits to the
+        // counter's own box — the spatial spring overshoots by design, and without
+        // the clip the outgoing digit peeked past the chip edge for a frame.
         // Specs are read in @Composable scope and captured by the transitionSpec
         // lambda (which is NOT composable, so it can't read MaterialTheme itself).
         val reducedMotion = rememberReducedMotion()
         val countStyle = MaterialTheme.typography.labelMedium.tabularFigures()
         val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-        val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+        val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>()
         AnimatedContent(
             targetState = item.count,
+            modifier = Modifier.clipToBounds(),
             transitionSpec = {
                 if (reducedMotion) {
                     fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec)
@@ -1211,45 +1167,13 @@ internal fun ReactionChip(
             )
         }
     }
-        // N5 burst overlay — matchParentSize so it covers the chip without participating
-        // in layout. Drawn only while the one-shot is live (burst.value in (0,1)).
-        if (burst.value > 0f && burst.value < 1f) {
-            androidx.compose.foundation.Canvas(
-                modifier = Modifier.matchParentSize(),
-            ) {
-                val progress = burst.value
-                val cx = size.width / 2f
-                val cy = size.height / 2f
-                // Travel scales off the chip's short side so the spray reads as
-                // "from this chip" at any chip width. ~10% of the spoiler travel.
-                val maxTravel = size.height * 0.9f
-                val particleCount = 6
-                val dotRadius = 2.2.dp.toPx() * (1f - progress * 0.5f)
-                val alpha = (1f - progress).coerceIn(0f, 1f)
-                for (p in 0 until particleCount) {
-                    val angle = (p.toFloat() / particleCount) * 2f *
-                        Math.PI.toFloat() - (Math.PI.toFloat() / 2f)
-                    val ease = 1f - (1f - progress) * (1f - progress)
-                    val dist = maxTravel * ease
-                    val x = cx + kotlin.math.cos(angle) * dist
-                    val y = cy + kotlin.math.sin(angle) * dist
-                    drawCircle(
-                        color = burstColor,
-                        radius = dotRadius,
-                        center = Offset(x, y),
-                        alpha = alpha,
-                    )
-                }
-            }
-        }
-    }
 }
 
 @Composable
 private fun StatPill(
     symbol: String,
     text: String,
-    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     onClick: (() -> Unit)? = null,
 ) {
     // StatPill follows the same Expressive vocabulary as the reaction chip — when

@@ -13,7 +13,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1442,6 +1441,27 @@ fun TimelineScreen(
         )
     }
 
+    // B3 chrome separation: while the feed is scrolled past its top, content passes
+    // UNDER the header chrome, so the chrome tints to `surfaceContainer` to peel
+    // itself off the canvas. Hoisted ABOVE the Scaffold because the tint must cover
+    // the WHOLE chrome column — the pinned status strip in the topBar slot AND the
+    // collapsing brand/folders overlay in the body. Tinting only the overlay left an
+    // untinted status-bar band above a tinted bar, which read as a seam (owner device
+    // report). Crossfades on `fastEffectsSpec`; back to `background` at the top edge
+    // so the clean-canvas look is preserved at rest.
+    val headerScrolled by remember(listState) {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 ||
+                listState.firstVisibleItemScrollOffset > 0
+        }
+    }
+    val headerBg by animateColorAsState(
+        targetValue = if (headerScrolled) MaterialTheme.colorScheme.surfaceContainer
+        else MaterialTheme.colorScheme.background,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "header-scroll-tint",
+    )
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -1453,10 +1473,12 @@ fun TimelineScreen(
             // of the body (see `CollapsingHeaderOverlay` below); reclaiming its space via the list's
             // constant top `contentPadding` instead of a shrinking Scaffold slot is what lets the
             // header NOT consume scroll (overlay model — see [headerBehavior] above).
+            // Painted with the same animated [headerBg] as the overlay below it, so the
+            // status-bar band and the brand bar tint as ONE surface on scroll.
             Spacer(modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsTopHeight(WindowInsets.statusBars)
-                .background(MaterialTheme.colorScheme.background)
+                .background(headerBg)
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -1730,16 +1752,16 @@ fun TimelineScreen(
                 }
             }
 
-            // Single bottom-anchored floating feed control — [FeedFloatingControl]
-            // merges the former NewPostsPill (arrivals ALERT) and UnreadCounterPill
-            // (ambient "next unread" FAB) into one morphing surface so they can never
-            // collide near the navbar. Priority rule (owned here, applied by the
-            // control): pending arrivals > 0 → EXPANDED stadium; else live unread > 0
-            // → COLLAPSED "↓ N". Both former behaviours survive EXACTLY — only the
-            // chrome merged. See ARCHITECTURE.md → Load-bearing "Arrivals commit only
-            // via NewPostsPill": no edge-based auto-accept; the tap is the only commit
-            // path and [awaitItemsCommitted] (in [onArrivalsTap]) is the proven
-            // sequencer.
+            // Floating feed cluster — [FeedFloatingControl] owns BOTH anchors in one
+            // full-width slot: the arrivals ALERT (former NewPostsPill) centred, the
+            // ambient "next unread" button (former UnreadCounterPill) in the trailing
+            // corner one row below it, so they can never collide near the navbar AND
+            // the unread button never changes identity or position under the finger
+            // (see the control's KDoc for the iteration history). Both former
+            // behaviours survive EXACTLY. See ARCHITECTURE.md → Load-bearing
+            // "Arrivals commit only via NewPostsPill": no edge-based auto-accept; the
+            // arrivals tap is the only commit path and [awaitItemsCommitted] (in
+            // [onArrivalsTap]) is the proven sequencer.
             //
             // Mode-dependent placement / direction:
             //   - Newest: TopCenter, ↑ glyph — fresh content lives above; there is
@@ -1771,9 +1793,9 @@ fun TimelineScreen(
             // Collapsed unread only matters in OldestUnreadFirst (Newest has no queue).
             val unreadActive = !pillAtTop && !showOnlyBookmarked && unreadRemaining > 0
             val controlVisible = arrivalsActive || unreadActive
-            // Expanded count fed to the control: 0 suppresses the expanded state so
-            // the control falls through to collapsed unread. Hidden during refresh
-            // (PTR runs vm.acceptPending() itself and would double-commit).
+            // Arrivals count fed to the control: 0 hides the arrivals pill. Hidden
+            // during refresh (PTR runs vm.acceptPending() itself and would
+            // double-commit).
             val controlPendingCount = if (arrivalsActive) scopedPendingNew.size else 0
 
             // Arrivals-commit body — VERBATIM from the former NewPostsPill onClick.
@@ -1901,8 +1923,12 @@ fun TimelineScreen(
                     slideOutVertically(pillSpatial) { it }
                 }) + fadeOut(pillEffects),
                 modifier = Modifier
+                    // Newest: arrivals-only, centred under the header (fresh content
+                    // lives above). OldestUnreadFirst: a full-width bottom slot — the
+                    // control centres the arrivals pill and pins the unread button to
+                    // the trailing corner, overlap-free (see FeedFloatingControl KDoc).
                     .align(if (pillAtTop) Alignment.TopCenter else Alignment.BottomCenter)
-                    // Bottom-anchored control (OldestUnreadFirst) rides the collapsing
+                    // Bottom-anchored cluster (OldestUnreadFirst) rides the collapsing
                     // nav-bar: it translates down by exactly the bottom inset the bar
                     // vacates so it rests 16.dp above the screen edge when the bar is
                     // hidden, and rises back in lockstep on scroll-up. The top control
@@ -1914,18 +1940,20 @@ fun TimelineScreen(
                     .padding(
                         top = if (pillAtTop) pillTopPadding else 0.dp,
                         bottom = if (pillAtTop) 0.dp else pillBottomPadding + unreadPillExtraBottomPadding,
+                        end = if (pillAtTop) 0.dp else 16.dp,
+                        start = if (pillAtTop) 0.dp else 16.dp,
                     ),
             ) {
                 FeedFloatingControl(
                     pendingCount = controlPendingCount,
                     pendingChannels = scopedPendingChannels,
-                    unreadCount = unreadRemaining,
+                    unreadCount = if (unreadActive) unreadRemaining else 0,
                     arrowGlyph = if (pillAtTop) "arrow_upward" else "arrow_downward",
-                    onExpandedClick = {
+                    onArrivalsClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                         onArrivalsTap()
                     },
-                    onCollapsedClick = {
+                    onUnreadClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                         onUnreadTap()
                     },
@@ -1940,46 +1968,17 @@ fun TimelineScreen(
             // (which scrolls off), so shrinking the overlay reclaims no layout space — it only clips
             // the draw — and the header therefore costs the scroll nothing. See [headerBehavior].
             //
-            // B3 chrome separation: while the feed is scrolled past its top, content passes UNDER
-            // the overlay, so the overlay tints to `surfaceContainer` and grows a hairline bottom
-            // border to peel itself off the canvas (the brand bar otherwise collided visually with
-            // the first post). Crossfades on `fastEffectsSpec`; transparent again at the top edge so
-            // the clean-canvas look is preserved when nothing scrolls under it. The slide-away
-            // collapse ([headerBehavior]) is untouched — this only changes the fill, not the layout.
-            val headerScrolled by remember(listState) {
-                derivedStateOf {
-                    listState.firstVisibleItemIndex > 0 ||
-                        listState.firstVisibleItemScrollOffset > 0
-                }
-            }
-            val headerBg by animateColorAsState(
-                targetValue = if (headerScrolled) MaterialTheme.colorScheme.surfaceContainer
-                else MaterialTheme.colorScheme.background,
-                animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
-                label = "header-scroll-tint",
-            )
-            val headerBorder by animateColorAsState(
-                targetValue = if (headerScrolled)
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                else androidx.compose.ui.graphics.Color.Transparent,
-                animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
-                label = "header-scroll-border",
-            )
+            // B3 chrome separation: rides the [headerBg] tint hoisted above the
+            // Scaffold (shared with the status strip in the topBar slot — see the KDoc
+            // there). Tint only — a hairline bottom border was tried alongside it and
+            // dropped: on device it read as a stray line, and the surfaceContainer
+            // step already separates the chrome. The slide-away collapse
+            // ([headerBehavior]) is untouched — the tint changes the fill, not layout.
             Column(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .background(headerBg)
-                    .drawBehind {
-                        if (headerBorder.alpha > 0f) {
-                            val h = 1.dp.toPx()
-                            drawRect(
-                                color = headerBorder,
-                                topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - h),
-                                size = androidx.compose.ui.geometry.Size(size.width, h),
-                            )
-                        }
-                    },
+                    .background(headerBg),
             ) {
                 Column(
                     modifier = Modifier

@@ -19,6 +19,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,6 +34,7 @@ import dev.lyo.hortay.ui.media.LocalIsCenteredItem
 import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
 import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.util.rememberReducedMotion
+import kotlinx.coroutines.delay
 
 /**
  * Mechanical extraction of the main feed LazyColumn from [TimelineScreen]. Behaviour
@@ -63,14 +65,13 @@ internal fun TimelineFeedColumn(
     // on tab return" contract) and NOT under reduced motion. We gate on a
     // process-global latch ([hasStaggeredThisProcess]) so a Feed → Channels → Feed
     // round-trip, which remounts this composable, does not replay the entrance.
+    // The decision is latched in `remember` (stable for this composition's lifetime);
+    // the global write happens in [SideEffect] — i.e. only after the composition is
+    // APPLIED — so a discarded/speculative composition can't burn the one-shot.
     val reduced = rememberReducedMotion()
-    val staggerEnabled = remember {
-        if (reduced || hasStaggeredThisProcess) {
-            false
-        } else {
-            hasStaggeredThisProcess = true
-            true
-        }
+    val staggerEnabled = remember { !reduced && !hasStaggeredThisProcess }
+    if (staggerEnabled) {
+        SideEffect { hasStaggeredThisProcess = true }
     }
 
     LazyColumn(
@@ -94,14 +95,18 @@ internal fun TimelineFeedColumn(
             },
         ) { index, item ->
             // M4: accepted arrivals / folder switches / deletions reflow with a
-            // fade+slide instead of teleporting. Presentation only — animateItem
-            // animates placement of items LazyColumn already keyed, so it never
-            // touches the arrivals-commit contract or the scroll-anchor logic
-            // (keyed-scroll preservation still pins the user's anchor item).
+            // slide instead of teleporting. Presentation only — animateItem animates
+            // placement of items LazyColumn already keyed, so it never touches the
+            // arrivals-commit contract or the scroll-anchor logic (keyed-scroll
+            // preservation still pins the user's anchor item). PLACEMENT ONLY: the
+            // fade-in/fade-out specs were tried and removed — a disappearing row
+            // fades out IN PLACE on top of the re-laid-out list, and on device the
+            // lingering half-transparent row (its avatar is the most distinctive
+            // part) read as "phantom channel avatars next to the wrong post".
             val placementModifier = Modifier.animateItem(
-                fadeInSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+                fadeInSpec = null,
                 placementSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                fadeOutSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+                fadeOutSpec = null,
             )
             when (item) {
                 is FeedItem.Boundary -> Box(placementModifier) { UnreadBoundaryRow() }
@@ -185,7 +190,7 @@ internal fun TimelineFeedColumn(
 private fun LazyItemScope.rememberStaggerEntrance(itemKey: Any, index: Int): Modifier {
     var appeared by remember(itemKey) { mutableStateOf(false) }
     LaunchedEffect(itemKey) {
-        kotlinx.coroutines.delay(index * STAGGER_STEP_MS)
+        delay(index * STAGGER_STEP_MS)
         appeared = true
     }
     val progress by animateFloatAsState(
