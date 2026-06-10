@@ -12,6 +12,7 @@
 - The feed's wordmark, folder tabs and the status bar above them now tint as one surface when posts scroll under them, so the first post no longer collides with the tabs; channel screens tint their header and status bar the same way.
 - Photos, videos and link previews carry a faint hairline frame so a light image no longer dissolves into the background.
 - Comment replies indent with smaller reply avatars and a capped depth, reading as a conversation instead of a staircase running off the screen edge.
+- Long-pressing a comment now highlights the whole row edge to edge, instead of a tight grey box pressed against the text.
 - Settings use one consistent icon style, section headers are quieter, and the profile header gradient is softened to harmonise with the app's palette.
 - Channel rows show when each channel last posted, mark unread channels, and flag channels you've hidden from the feed.
 - In Discover and Add channel, the Subscribe button keeps a fixed size and shows a spinner then a checkmark as it works, and the search box now reads as a rounded search bar instead of a form field.

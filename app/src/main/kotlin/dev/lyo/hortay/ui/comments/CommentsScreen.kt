@@ -750,6 +750,7 @@ private fun CommentsEmptyState(
  * relation; a real Threads-style rail needs parent-owns-children layout knowledge —
  * don't reintroduce the per-row approximation.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CommentNode(
     row: ThreadRow,
@@ -760,10 +761,23 @@ private fun CommentNode(
     val visualDepth = row.depth.coerceAtMost(MAX_VISUAL_DEPTH)
     val avatarSize = if (row.depth >= 1) REPLY_AVATAR_DP.dp else TOP_AVATAR_DP.dp
     val indent = (visualDepth * INDENT_STEP_DP).dp
+    val haptics = LocalHapticFeedback.current
 
+    // Long-press surface lives on the OUTER full-width row, BEFORE the horizontal
+    // padding — the press highlight paints edge-to-edge like a list item instead of
+    // a bare rectangle hugging the bubble's text. Inner tap targets (avatar, author
+    // name, reaction chips, media) still win over this surface.
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .combinedClickable(
+                // No tap action on a comment — long-press opens the reaction picker.
+                onClick = {},
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongPress()
+                },
+            )
             .padding(horizontal = ROW_HORIZONTAL_DP.dp),
     ) {
         if (indent > 0.dp) {
@@ -774,7 +788,6 @@ private fun CommentNode(
             avatarSize = avatarSize,
             onMediaClick = onMediaClick,
             onReactionTap = onReactionTap,
-            onLongPress = onLongPress,
             modifier = Modifier.weight(1f),
         )
     }
@@ -787,19 +800,16 @@ private fun CommentNode(
  * so any media type the timeline shows works here too — including new content types the
  * old comment renderer missed (animated emoji, checklists, expired-media placeholders).
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CommentBubble(
     row: ThreadRow,
     avatarSize: androidx.compose.ui.unit.Dp,
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
     onReactionTap: (ReactionItem) -> Unit,
-    onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val message = row.message
     val opener = dev.lyo.hortay.ui.users.LocalUserProfileOpener.current
-    val haptics = LocalHapticFeedback.current
     // Tap surface for the avatar + author name → user-profile sheet. Guarded by
     // senderUserId because comments authored by a chat (channel posting on behalf
     // of the discussion supergroup, rare anonymous-admin case) have no human
@@ -808,14 +818,6 @@ private fun CommentBubble(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .combinedClickable(
-                // No tap action on a comment — long-press opens the reaction picker.
-                onClick = {},
-                onLongClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
-                },
-            )
             .padding(vertical = BUBBLE_VERTICAL_DP.dp),
     ) {
         // E2 — avatar size is passed down from [CommentNode]: 36 dp for top-level
