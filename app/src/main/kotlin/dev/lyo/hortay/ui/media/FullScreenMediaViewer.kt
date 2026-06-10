@@ -173,20 +173,17 @@ fun FullScreenMediaViewer(
                 )
             }
 
-            // N3 — text scrims on imagery. Every control in this viewer paints white
-            // over the photo/video; a white subject (snow, paper, a blown-out sky)
-            // swallows white glyphs that rest directly on it. A vertical black gradient
-            // behind the top chrome band (close · counter · tools) and the bottom
-            // controls band guarantees legibility on any image without dimming the
-            // whole frame. The per-control polygon backdrops still carry the close /
-            // tool buttons; these scrims add the band-level wash the chrome sits in,
-            // matching the convention the video controls already established at the
-            // bottom (VideoPlayerControls).
+            // N3 — text scrim under the TOP chrome band (close · counter · tools): the
+            // controls paint white over the photo/video, and a white subject (snow,
+            // paper, a blown-out sky) swallows white glyphs that rest directly on it.
+            // TOP ONLY: photos have no bottom chrome, so a bottom band would dim the
+            // image for nothing, and video pages already get a deeper 0→55% scrim from
+            // VideoPlayerControls — doubling it there over-darkened the seek bar area.
             //
-            // WS-O dismiss fade: the scrims multiply their gradient by the same
+            // WS-O dismiss fade: the scrim multiplies its gradient by the same
             // [backgroundAlpha] that drives the page scrim, so as the user drags the
-            // photo away the bands fade out in lockstep with the canvas instead of
-            // staying glued to the top/bottom edges as a dark sheet riding the gesture.
+            // photo away the band fades out in lockstep with the canvas instead of
+            // staying glued to the top edge as a dark sheet riding the gesture.
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -196,18 +193,6 @@ fun FullScreenMediaViewer(
                         Brush.verticalGradient(
                             0f to Color.Black.copy(alpha = TOP_SCRIM_ALPHA * backgroundAlpha),
                             1f to Color.Transparent,
-                        ),
-                    ),
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(140.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = BOTTOM_SCRIM_ALPHA * backgroundAlpha),
                         ),
                     ),
             )
@@ -523,39 +508,45 @@ private fun MediaPage(
  * showing through during the prepare/decode window (the visible "flash" before the
  * first frame). Compositing the item's poster ([AlbumItem.media], the same down-sampled
  * first frame the inline feed paints — typically already Ready in [MediaCache]) under the
- * transparent surface means the page paints the poster on the very first frame and the
- * video draws opaquely over it once it decodes — no black/white seam.
+ * transparent surface means the page paints the poster on the very first frame.
  *
- * Ideally the poster would crossfade out the instant ExoPlayer reports its first decoded
- * frame ([Player.Listener.onRenderedFirstFrame]). [TdVideoPlayer] does not surface that
- * signal to its callers, and it is shared with the inline feed (out of scope to edit), so
- * the poster is held composited for the page's lifetime instead. The video texture paints
- * over it opaquely once decoded, so there is no double-image; the only cost is the poster
- * staying allocated behind an opaque video — negligible. Wiring the first-frame callback
- * through [TdVideoPlayer] (to enable the timed crossfade) is reported as a coordinator
- * change.
+ * Once ExoPlayer reports its first decoded frame (the [TdVideoPlayer.onFirstFrameRendered]
+ * hook, handed to [content] as a plain callback), the poster crossfades out on
+ * `fastEffectsSpec` and leaves the composition — the page doesn't pay full-screen poster
+ * overdraw for the rest of the playback. A quality switch re-fires the signal; by then
+ * the poster is long gone, which is the correct no-op.
  */
 @Composable
 private fun VideoSurfaceWithPoster(
     item: AlbumItem,
-    content: @Composable () -> Unit,
+    content: @Composable (onFirstFrame: () -> Unit) -> Unit,
 ) {
+    var firstFrameRendered by remember(item) { mutableStateOf(false) }
+    val posterAlpha by animateFloatAsState(
+        targetValue = if (firstFrameRendered) 0f else 1f,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "viewer-poster-fade",
+    )
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        TdMediaImage(
-            media = item.media,
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            // No progress chrome / placeholder fill: the video player owns the
-            // download + buffering affordances, and a grey letterbox fill here
-            // would ride the drag-dismiss translation as a "white sheet glued to
-            // the video" — the same artefact the photo path's null placeholder
-            // avoids.
-            showProgress = false,
-            placeholderColor = null,
-            priority = DownloadPriority.Foreground,
-            modifier = Modifier.fillMaxSize(),
-        )
-        content()
+        if (posterAlpha > 0f) {
+            TdMediaImage(
+                media = item.media,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                // No progress chrome / placeholder fill: the video player owns the
+                // download + buffering affordances, and a grey letterbox fill here
+                // would ride the drag-dismiss translation as a "white sheet glued to
+                // the video" — the same artefact the photo path's null placeholder
+                // avoids.
+                showProgress = false,
+                placeholderColor = null,
+                priority = DownloadPriority.Foreground,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = posterAlpha },
+            )
+        }
+        content { firstFrameRendered = true }
     }
 }
 
@@ -827,14 +818,11 @@ private fun AlbumItem.webShareFallbackUrl(): String? = when (this) {
     is AlbumItem.Animation -> remoteVideoUrl ?: media.remoteUrl
 }
 
-// N3 top/bottom scrim opacities. The brief specifies "Color.Black 0 → ~35%";
-// the top band carries the close/counter/tools chrome and runs to the spec's
-// 35 %, while the bottom band is mostly belt-and-braces (photos have no bottom
-// chrome; VideoPlayerControls paints its own deeper 0→55 % scrim for the seek
-// bar) so it stays lighter and never double-darkens a video page past the
-// controls' own gradient.
+// N3 top scrim opacity ("Color.Black 0 → ~35%") — the band that carries the
+// close/counter/tools chrome. There is deliberately NO viewer-level bottom band:
+// photos have no bottom chrome to protect, and VideoPlayerControls paints its own
+// deeper 0→55 % scrim for the seek bar.
 private const val TOP_SCRIM_ALPHA = 0.35f
-private const val BOTTOM_SCRIM_ALPHA = 0.25f
 
 private const val MIN_SCALE = 1f
 private const val MAX_SCALE = 5f

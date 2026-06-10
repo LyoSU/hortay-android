@@ -8,6 +8,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -86,6 +87,15 @@ fun TdVideoPlayer(
      * a mismatched seed only costs one re-layout, not a re-decode.
      */
     initialAspect: Float = 0f,
+    /**
+     * Fired once per decoded source when ExoPlayer renders its first frame to the
+     * texture ([Player.Listener.onRenderedFirstFrame]). The fullscreen viewer keeps
+     * the item's poster composited under the (transparent) TextureView and uses this
+     * signal to crossfade it out — without it the poster either flashed to black
+     * before decode or had to stay composited for the page's whole lifetime.
+     * Null = no observer, zero overhead.
+     */
+    onFirstFrameRendered: (() -> Unit)? = null,
 ) {
     val pool = LocalExoPlayerPool.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -188,6 +198,11 @@ fun TdVideoPlayer(
     // texture re-letterboxes; cheaper than the visible stretch.
     var videoAspect by remember(fileId, remoteUrl) { mutableStateOf(initialAspect) }
 
+    // Latest [onFirstFrameRendered] for the listener below — the DisposableEffect is
+    // keyed on [exoPlayer] only, so a recomposition with a new lambda must not leave
+    // the listener holding the stale one.
+    val firstFrameCallback = rememberUpdatedState(onFirstFrameRendered)
+
     DisposableEffect(exoPlayer) {
         val lifecycleObserver = LifecycleEventObserver { _, event ->
             when (event) {
@@ -217,6 +232,10 @@ fun TdVideoPlayer(
             // disk can refill it.
             override fun onPlaybackStateChanged(state: Int) {
                 isBuffering = state == Player.STATE_BUFFERING
+            }
+
+            override fun onRenderedFirstFrame() {
+                firstFrameCallback.value?.invoke()
             }
         }
         lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
