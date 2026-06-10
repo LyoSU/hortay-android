@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -22,7 +20,6 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -42,7 +39,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -56,6 +52,7 @@ import dev.lyo.hortay.data.web.WebFeedSource
 import dev.lyo.hortay.data.web.WebRepository
 import dev.lyo.hortay.data.web.WebTelegramClient
 import dev.lyo.hortay.data.web.parseUsernameFromInput
+import dev.lyo.hortay.ui.discover.DiscoverSearchField
 import dev.lyo.hortay.ui.discover.discoverSuggestions
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.coroutineScope
@@ -196,13 +193,22 @@ fun AddChannelSheet(
         }
     }
 
+    // Just-subscribed handles held visible for SUBSCRIBE_CONFIRM_HOLD_MS so the row's
+    // "Subscribed" check-circle confirmation reads before the row leaves the list
+    // (DESIGN_POLISH H1). Without this the live subscription flow drops the row the
+    // instant the subscribe lands and the confirmation never paints.
+    val holdVisible = remember { mutableStateMapOf<String, Unit>() }
+
     // Curated catalog for this locale, with subscribed channels filtered out.
     val groups by produceState(initialValue = emptyList<SuggestedGroup>(), locale) {
         value = suggestionsRepo.groups(locale)
     }
-    val visibleGroups = remember(groups, subscribedSet) {
+    val visibleGroups = remember(groups, subscribedSet, holdVisible.keys.toList()) {
         groups.mapNotNull { g ->
-            val remaining = g.channels.filter { it.username.lowercase() !in subscribedSet }
+            val remaining = g.channels.filter {
+                val key = it.username.lowercase()
+                key !in subscribedSet || key in holdVisible
+            }
             if (remaining.isEmpty()) null else g.copy(channels = remaining.toImmutableList())
         }
     }
@@ -258,6 +264,7 @@ fun AddChannelSheet(
     // Hoisted out of the LazyColumn body: stringResource() is @Composable and the
     // LazyListScope content lambda is not, so it can't be read inside discoverSuggestions().
     val addLabel = stringResource(R.string.web_add_confirm)
+    val subscribedLabel = stringResource(R.string.discover_subscribed)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -287,7 +294,11 @@ fun AddChannelSheet(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedTextField(
+                    // Stadium search-bar idiom (DESIGN_POLISH H2). The submit
+                    // affordance: the IME "search" key and the trailing button both
+                    // fire the lookup, since the curated-suggestions redesign dropped
+                    // the standalone button row.
+                    DiscoverSearchField(
                         value = input,
                         onValueChange = {
                             input = it
@@ -295,14 +306,9 @@ fun AddChannelSheet(
                                 lookupState = LookupState.Idle
                             }
                         },
-                        singleLine = true,
-                        label = { Text(stringResource(R.string.web_add_input_label)) },
-                        // The submit affordance: the IME "search" key and an explicit
-                        // trailing button both fire the lookup, since the curated-
-                        // suggestions redesign dropped the standalone button row.
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { trySubmit() }),
-                        trailingIcon = {
+                        hint = stringResource(R.string.web_add_input_label),
+                        onSearch = { trySubmit() },
+                        trailing = {
                             TextButton(
                                 onClick = ::trySubmit,
                                 enabled = input.isNotBlank() && lookupState !is LookupState.Loading,
@@ -310,7 +316,6 @@ fun AddChannelSheet(
                                 Text(stringResource(R.string.web_add_lookup))
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
                     )
                     when (val state = lookupState) {
                         LookupState.Idle -> Unit
@@ -376,11 +381,22 @@ fun AddChannelSheet(
                 groups = visibleGroups,
                 hydrated = hydrated,
                 addLabel = addLabel,
+                subscribedLabel = subscribedLabel,
+                // Optimistic subscribe (DESIGN_POLISH M2): the row owns its in-flight /
+                // "Subscribed" morph; here we run the subscribe, then keep the handle in
+                // `holdVisible` for SUBSCRIBE_CONFIRM_HOLD_MS so the confirmation reads
+                // before the live subscription flow drops the row. `subscribeAndRefresh`
+                // surfaces its own errors; returning true reflects the dispatch.
                 onAdd = { username ->
+                    val key = username.lowercase()
+                    holdVisible[key] = Unit
+                    val title = hydrated[key]?.title ?: username
+                    feedSource.subscribeAndRefresh(username, placeholderTitle = title)
                     scope.launch {
-                        val title = hydrated[username.lowercase()]?.title ?: username
-                        feedSource.subscribeAndRefresh(username, placeholderTitle = title)
+                        kotlinx.coroutines.delay(SUBSCRIBE_CONFIRM_HOLD_MS)
+                        holdVisible.remove(key)
                     }
+                    true
                 },
             )
         }
@@ -463,3 +479,7 @@ private sealed interface LookupState {
     data class Found(val channel: WebChannelInfo) : LookupState
     data class Error(val message: String, val isPrivate: Boolean = false) : LookupState
 }
+
+// How long a just-subscribed row stays visible showing its "Subscribed" check-circle
+// confirmation before the live subscription flow drops it (DESIGN_POLISH H1).
+private const val SUBSCRIBE_CONFIRM_HOLD_MS = 1500L

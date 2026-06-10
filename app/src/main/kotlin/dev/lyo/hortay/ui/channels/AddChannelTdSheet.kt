@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -33,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.ui.discover.DiscoverSearchField
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.discover.ChannelCardData
@@ -123,19 +123,31 @@ fun AddChannelTdSheet(
         searching = false
     }
 
-    fun subscribeByUsername(username: String) {
+    // Optimistic subscribe (DESIGN_POLISH M2): the row flips to its in-flight then
+    // "Subscribed" state the moment the tap lands; the row's own state machine owns
+    // that. We dispatch the join, hold the row mounted long enough for the check-circle
+    // morph to read (SUBSCRIBE_CONFIRM_HOLD_MS), then drop it from the list. Join RPC
+    // failures surface independently through UserMessageBus (ChannelActionsRepository),
+    // so the returned boolean only reports whether the channel could be resolved at all.
+    suspend fun subscribeByUsername(username: String): Boolean {
+        val card = discovery.resolve(username) ?: return false
+        actions.joinChat(card.chatId)
         scope.launch {
-            val card = discovery.resolve(username) ?: return@launch
-            actions.joinChat(card.chatId)
+            delay(SUBSCRIBE_CONFIRM_HOLD_MS)
             justSubscribed[username.lowercase()] = Unit
         }
+        return true
     }
 
-    fun subscribeResult(channel: DiscoverChannel) {
-        scope.launch {
-            actions.joinChat(channel.chatId)
-            channel.username?.let { justSubscribed[it.lowercase()] = Unit }
+    suspend fun subscribeResult(channel: DiscoverChannel): Boolean {
+        actions.joinChat(channel.chatId)
+        channel.username?.let { u ->
+            scope.launch {
+                delay(SUBSCRIBE_CONFIRM_HOLD_MS)
+                justSubscribed[u.lowercase()] = Unit
+            }
         }
+        return true
     }
 
     // Hoisted: stringResource() is @Composable but the LazyListScope content lambda
@@ -162,12 +174,10 @@ fun AddChannelTdSheet(
                 )
             }
             item(key = "search", contentType = "search") {
-                OutlinedTextField(
+                DiscoverSearchField(
                     value = query,
                     onValueChange = { query = it },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.discover_search_hint)) },
-                    modifier = Modifier.fillMaxWidth(),
+                    hint = stringResource(R.string.discover_search_hint),
                 )
             }
 
@@ -203,9 +213,10 @@ fun AddChannelTdSheet(
                         avatarThumb = channel.avatarThumb,
                         avatarFileId = channel.avatarFileId,
                         avatarUrl = null,
-                        actionLabel = if (subscribed) subscribedLabel else subscribeLabel,
+                        actionLabel = subscribeLabel,
+                        subscribedLabel = subscribedLabel,
                         actionEnabled = !subscribed,
-                        onAction = { subscribeResult(channel) },
+                        onAction = remember(channel) { { subscribeResult(channel) } },
                     )
                 }
             } else {
@@ -213,6 +224,7 @@ fun AddChannelTdSheet(
                     groups = visibleGroups,
                     hydrated = hydrated,
                     addLabel = subscribeLabel,
+                    subscribedLabel = subscribedLabel,
                     onAdd = { username -> subscribeByUsername(username) },
                 )
             }
@@ -253,3 +265,7 @@ private fun LaunchedHydration(
         }
     }
 }
+
+// How long the row's "Subscribed" check-circle confirmation stays on screen before
+// the row is dropped from the list (DESIGN_POLISH H1: "~1.5 s before the row leaves").
+private const val SUBSCRIBE_CONFIRM_HOLD_MS = 1500L
