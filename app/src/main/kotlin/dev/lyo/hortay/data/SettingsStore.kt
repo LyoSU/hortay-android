@@ -64,12 +64,14 @@ class SettingsStore(context: Context) {
      * periwinkle scheme regardless of this flag. The Settings row that drives it is
      * gated to S+ so the toggle never appears as a dead control.
      *
-     * Default `true` preserves the shipped behaviour: wallpaper colours on 12+. Users
-     * who prefer Hortay's fixed brand identity flip it off and pin the periwinkle scheme
-     * on every device.
+     * Default `false` — the brand periwinkle scheme ships as the out-of-the-box
+     * identity (Telegram / Threads never let the wallpaper repaint their brand, and
+     * wallpaper-derived Material You palettes are frequently desaturated and muddy).
+     * Users who prefer wallpaper-matched colours opt in via the Settings toggle;
+     * an explicit earlier choice persisted in DataStore is honoured either way.
      */
     val dynamicColor: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[KEY_DYNAMIC_COLOR] ?: true
+        prefs[KEY_DYNAMIC_COLOR] ?: false
     }
 
     suspend fun setDynamicColor(enabled: Boolean) {

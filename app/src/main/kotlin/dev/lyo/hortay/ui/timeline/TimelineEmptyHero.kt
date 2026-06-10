@@ -96,11 +96,14 @@ internal fun EmptyState(kind: EmptyKind, guestMode: Boolean = false) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Bookmark hero uses the Heart polygon (matches the bookmark-active morph token);
-        // empty-feed hero uses Flower for a friendly "nothing here yet, but pleasantly";
-        // caught-up hero reuses the Flower for a celebratory "all done, take a break".
+        // All heroes ride the Flower mask. The Saved hero previously used the Heart
+        // polygon (echoing the bookmark-active morph), but a heart-shaped blob with a
+        // bookmark glyph inside stacked two different "saved" metaphors into one image —
+        // it read as a mistake, not a motif. One mask + per-kind glyph keeps the
+        // empty-state family coherent; the Heart still lives where it's unambiguous,
+        // on the bookmark toggle morph itself.
         val (symbol, shape) = when (kind) {
-            EmptyKind.Saved -> "bookmark" to dev.lyo.hortay.ui.theme.HortayExpressive.BookmarkSelected
+            EmptyKind.Saved -> "bookmark" to dev.lyo.hortay.ui.theme.HortayExpressive.EmptyStateMask
             EmptyKind.CaughtUp -> "check_box" to dev.lyo.hortay.ui.theme.HortayExpressive.EmptyStateMask
             EmptyKind.Default -> "forum" to dev.lyo.hortay.ui.theme.HortayExpressive.EmptyStateMask
         }
