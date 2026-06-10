@@ -6,17 +6,35 @@
 
 ### Changed
 - Refreshed the app's icons to a softer, more modern rounded set throughout the interface.
+- The app now uses Hortay's own periwinkle colours by default — wallpaper-matched colours stay available in Appearance.
+- Cleaner reading canvas — post cards lighten, an unread post shows a single edge strip instead of a full-card tint, and reaction chips rest as outlined ghosts that fill with lavender when you pick one.
+- The "new posts" alert and the unread counter are now one floating control that morphs between "N new posts" and "↓ N", instead of two badges that could pile up in the corner.
+- The feed's wordmark and folder tabs now tint with a hairline edge as posts scroll under them, so the first post no longer collides with the tabs.
+- Photos, videos and link previews carry a faint hairline frame so a light image no longer dissolves into the background.
+- Comment replies thread with a curved connector and smaller reply avatars, reading as a conversation instead of a staircase of indents.
+- Settings use one consistent icon style, section headers are quieter, and the profile header gradient is softened to harmonise with the app's palette.
+- Channel rows show when each channel last posted, mark unread channels, and flag channels you've hidden from the feed.
+- In Discover and Add channel, the Subscribe button keeps a fixed size and shows a spinner then a checkmark as it works, and the search box now reads as a rounded search bar instead of a form field.
+- Pull-to-refresh shows a custom morphing indicator with a haptic tick at the release threshold.
+- The fullscreen media viewer rests its controls on a subtle gradient so they stay legible over any photo.
 
 ### Fixed
 - Photo albums that arrived while the app was closed now fill in all their photos when you scroll to them, instead of sometimes staying stuck on a single image.
 - A fresh album landing in the feed no longer briefly shows with only part of its photos while the rest arrive.
 - An album of documents or audio files no longer renders as a blank card.
 - Reactions and view counts on the post you're reading now keep updating live even when the previous post you read was from the same channel.
+- Brand typography now renders identically on every launch — including offline and on devices without Google Play Services — instead of briefly showing a fallback font and reflowing the whole screen.
+- Videos in the fullscreen viewer no longer flash black before the first frame — the poster stays visible until the video is ready.
+
+### Performance
+- Live counters (views, reactions, unread) keep a fixed width and roll their digits in place, so neighbouring elements don't shift when a number ticks.
+- The feed gently staggers its cards into place on a cold start.
 
 ### Build
 - StrictMode (main-thread disk/network I/O and leaked-resource detection) in debug builds.
 - Automated dependency updates and vulnerability scanning via Dependabot and OSV-Scanner.
 - Third-party dependencies consolidated into the Gradle version catalog; androidx.browser updated to 1.10.0.
+- Inter and Plus Jakarta Sans are now bundled with the app instead of fetched at runtime, dropping the Google Fonts / Play Services font dependency.
 
 ## [0.10.5] — 2026-06-01
 
