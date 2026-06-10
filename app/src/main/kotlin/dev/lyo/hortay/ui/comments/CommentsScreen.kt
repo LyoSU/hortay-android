@@ -304,13 +304,29 @@ fun CommentsScreen(
     // connection below. Mirrors the [TimelineScreen] pattern so both
     // destination-style bars feel identical to the user.
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
-    // Scroll state preservation is parent-owned: MainScaffold wraps each
-    // CommentsScreen mount in
-    //   commentsStateHolder.SaveableStateProvider(key = "post:<chatId>:<postId>")
-    // so reopening the same post restores the user's scroll position in the thread
-    // without any explicit keying here. The rememberLazyListState() participates in
-    // that scope automatically via Compose's standard Saver.
+    // Scroll state preservation is parent-owned: NavDisplay's
+    // rememberSaveableStateHolderNavEntryDecorator (see MainScaffold) gives each
+    // CommentsKey entry its own saveable-state scope, so re-entering this entry
+    // (a channel/profile pushed on top, then popped) restores the user's scroll
+    // position in the thread without any explicit keying here. The
+    // rememberLazyListState() participates in that scope automatically via
+    // Compose's standard Saver.
     val listState = rememberLazyListState()
+    // Restored-scroll guard for the re-entry × thread-reload race. The saver
+    // restores (index, offset) into [listState] at construction, but a LazyColumn
+    // measured BEFORE the thread is Ready has only the pinned post + chrome rows —
+    // the first layout pass clamps the restored index into that 1–2-item range and
+    // the position is gone for good, even though the thread then reloads the same
+    // rows. Within [CommentsRepository]'s 30 s WhileSubscribed linger the LRU
+    // replays Ready before the first measure and nothing clamps — which is why the
+    // loss looked intermittent: it hit exactly when the linger had expired and the
+    // thread had to re-bootstrap. The flag seeds ONCE from the just-constructed
+    // state (before any layout); the gate in the body holds the LazyColumn out of
+    // composition while it's set and the thread is still Loading, then clears
+    // one-shot so a later Loading re-emission can't yank the live list away.
+    var restoredScrollPending by remember(listState) {
+        mutableStateOf(listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0)
+    }
     val density = androidx.compose.ui.platform.LocalDensity.current
     // One-shot guard so the hero scroll runs only on the first open of this entry — not again
     // after the screen leaves & re-enters composition (e.g. a channel pushed on top then
@@ -516,6 +532,32 @@ fun CommentsScreen(
             animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
             label = "comments-top-fade",
         )
+        // Re-entry restore gate (see [restoredScrollPending] at the listState):
+        // while the thread is re-bootstrapping, composing the LazyColumn would
+        // clamp the restored scroll against the 1–2 chrome rows it has during
+        // Loading. Render the deferred loading indicator in a plain Box instead —
+        // no lazy measure, no clamp — and let the list mount in one piece when
+        // Ready lands, restored position intact. Fresh opens (hero / deep-link)
+        // never trip this: their listState constructs at 0/0.
+        if (restoredScrollPending && !threadDisabled && state is CommentsRepository.ThreadState.Loading) {
+            if (showLoadingOverlay) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = padding.calculateTopPadding()),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    LoadingIndicator()
+                }
+            }
+            return@Scaffold
+        }
+        // One-shot release: once the thread resolves (or was never live) and the
+        // list mounts with the restored position, the gate must stay open for the
+        // rest of this mount.
+        if (restoredScrollPending) {
+            SideEffect { restoredScrollPending = false }
+        }
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(

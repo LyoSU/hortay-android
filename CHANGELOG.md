@@ -21,6 +21,7 @@
 
 ### Fixed
 - Going back to the feed from a channel or comments now lands on the exact post you left, instead of a nearby spot when posts loaded in the background while you were away.
+- Returning to a comments thread no longer loses your reading position when the thread takes a moment to reload.
 - Photo albums that arrived while the app was closed now fill in all their photos when you scroll to them, instead of sometimes staying stuck on a single image.
 - A fresh album landing in the feed no longer briefly shows with only part of its photos while the rest arrive.
 - An album of documents or audio files no longer renders as a blank card.
