@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Badge
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -78,24 +77,16 @@ import androidx.compose.ui.text.intl.Locale
  *   feed slice ([ChannelSummary.lastPostDate]). No extra query.
  * - **Unread** — derived honestly from [LocalReadCursors]: a channel is unread when its newest
  *   (album-aware) post id sits above the chat's read cursor — exactly the rule PostCard's unread
- *   strip uses ([TimelinePost.isUnreadAt]). This yields an unread **dot**, not a count: the
- *   cold-start slice carries ~1 post per channel, so a true "N unread" count would require a
- *   data-layer field the UI does not have (see file-level note below).
+ *   strip uses ([TimelinePost.isUnreadAt]). This yields an unread **dot**, not a numeric badge:
+ *   the cold-start slice carries ~1 post per channel, so the UI can only prove a channel HAS
+ *   unread (`id > cursor`), never how many — a real count would need TDLib `Chat.unreadCount`
+ *   exposed through the repository layer (same constraint for a muted-state glyph: mute state
+ *   is only reachable via imperative `GetChat`, which the no-TDLib-from-UI rule forbids here).
  * - **Hidden** — [AppGraph.ignoredChannels] is the live, reactive set of channels hidden from
  *   the merged feed. This screen reads [PostsRepository.posts] (the RAW slice, not the
  *   ignored-filtered [PostsRepository.subscribedPosts]), so hidden channels DO appear here and
  *   would otherwise be indistinguishable; the trailing `visibility_off` toggle marks them and
  *   flips the state optimistically (the DataStore-backed flow re-emits immediately).
- *
- * COORDINATOR NOTE — to light up the numeric unread **Badge** and the **muted** glyph this
- * screen has the presentation ready for but cannot feed:
- * - A per-channel unread COUNT (`Map<Long, Int>` or a field on a channel summary) sourced from
- *   TDLib `Chat.unreadCount` in the repository layer. The UI has no count — only a per-post
- *   `id > cursor` boolean over the loaded slice.
- * - A reactive MUTED set/flag (`StateFlow<Set<Long>>` of muted chatIds) in the repository.
- *   `ChannelActionsRepository.isMuted`/`setMuted` are imperative `GetChat` calls — calling them
- *   per row from the UI would violate the no-TDLib-from-UI hard rule, so the muted glyph + 0.7
- *   title alpha stay dark until that flag is exposed.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -171,9 +162,6 @@ fun ChannelsScreen(
                         count = channels.size,
                         isHidden = isHidden,
                         isUnread = isUnread,
-                        // No per-channel unread count is available to the UI (see file note);
-                        // 0 falls back to the unread dot. Wire a count here when exposed.
-                        unreadCount = 0,
                         onClick = onClick,
                         onHideToggle = onHideToggle,
                     )
@@ -257,7 +245,6 @@ private fun ChannelRow(
     count: Int,
     isHidden: Boolean,
     isUnread: Boolean,
-    unreadCount: Int,
     onClick: () -> Unit,
     onHideToggle: () -> Unit,
 ) {
@@ -303,8 +290,7 @@ private fun ChannelRow(
                     )
                     if (isUnread) {
                         Spacer(Modifier.height(4.dp))
-                        // Numeric Badge when a count exists, unread dot otherwise.
-                        UnreadSignal(count = unreadCount)
+                        UnreadDot()
                     }
                 }
                 IconButton(onClick = onHideToggle) {
@@ -349,35 +335,17 @@ private fun ChannelRow(
 }
 
 /**
- * Unread signal in the trailing column.
- *
- * When [count] > 0 this renders the spec'd primary-container [Badge] with tabular figures
- * (doctrine rule 3 — a "9 → 10" tick must not reflow the column). [count] is currently always
- * `0`: the cold-start feed slice carries ~1 post per channel, so the UI can only prove a channel
- * *has* unread (id > cursor), never how many. In that case it falls back to a small unread dot.
- * Wiring a real count is a one-line change here once the repository exposes a per-channel
- * unread count (see the COORDINATOR NOTE at the top of the file).
+ * Unread dot in the trailing column — the honest signal for "this channel has unread"
+ * (the UI cannot know HOW MANY; see the file-level KDoc for the data constraint).
  */
 @Composable
-private fun UnreadSignal(count: Int) {
-    if (count > 0) {
-        Badge(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        ) {
-            Text(
-                text = count.toString(),
-                style = MaterialTheme.typography.labelSmall.tabularFigures(),
-            )
-        }
-    } else {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary),
-        )
-    }
+private fun UnreadDot() {
+    Box(
+        modifier = Modifier
+            .size(8.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary),
+    )
 }
 
 @Composable

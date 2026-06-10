@@ -2,15 +2,11 @@
 
 package dev.lyo.hortay.ui.web
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -45,6 +41,7 @@ import dev.lyo.hortay.data.web.WebPostAdapter
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.timeline.ChannelHeaderAvatar
 import dev.lyo.hortay.ui.timeline.ChannelHeaderBar
+import dev.lyo.hortay.ui.timeline.ChannelTopBarColumn
 import dev.lyo.hortay.ui.timeline.LocalReadCursors
 import dev.lyo.hortay.ui.timeline.PostCard
 import dev.lyo.hortay.ui.timeline.PostInteractions
@@ -212,18 +209,13 @@ fun WebChannelScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            // Wrap ChannelHeaderBar with a status-bar inset strip the same way
-            // TDLib-mode ChannelScreen does. ChannelHeaderBar itself passes
+            // Wrap ChannelHeaderBar in [ChannelTopBarColumn] the same way TDLib-mode
+            // ChannelScreen does. ChannelHeaderBar itself passes
             // windowInsets = WindowInsets(0,0,0,0) so it can be hosted inside
-            // surfaces that own the system-bar inset themselves. Without this
-            // wrap the title row overlaps the status-bar clock — the "header
-            // weirdness" symptom users see in guest mode.
-            Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
-                Spacer(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .windowInsetsTopHeight(WindowInsets.statusBars),
-                )
+            // surfaces that own the system-bar inset themselves; the wrapper owns
+            // the inset (without it the title row overlaps the status-bar clock)
+            // AND the scrolled tint across the status-bar band (guest parity).
+            ChannelTopBarColumn(scrollBehavior = scrollBehavior) {
                 ChannelHeaderBar(
                     titleText = title,
                     subtitleText = subtitle,

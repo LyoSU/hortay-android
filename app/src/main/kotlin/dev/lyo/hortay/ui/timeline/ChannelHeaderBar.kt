@@ -2,10 +2,12 @@
 
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,7 +16,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
@@ -22,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -204,3 +209,39 @@ private fun ChannelHeaderAvatarSlot(avatar: ChannelHeaderAvatar) {
     }
 }
 
+
+/**
+ * Status-bar-inclusive wrapper for a pinned chat-screen top bar. Hosts the
+ * status-bar inset strip and [content] (the bar itself) in ONE column whose
+ * background crossfades `background` → `surfaceContainer` on the same
+ * scrolled-under signal the M3 top bar uses ([TopAppBarState.overlappedFraction]).
+ *
+ * Why: the bar passes `windowInsets = WindowInsets(0)` and the wrapper owns the
+ * status-bar inset, so when only the bar tinted on scroll the status-bar band
+ * above it stayed canvas-coloured — an untinted strip over a tinted bar that
+ * read as a seam (owner device report). Tinting the wrapper paints the whole
+ * chrome block — status bar included — as one surface. Used by both TDLib-mode
+ * [ChannelScreen] and guest-mode `WebChannelScreen` (guest parity).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChannelTopBarColumn(
+    scrollBehavior: TopAppBarScrollBehavior,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val scrolled = scrollBehavior.state.overlappedFraction > 0.01f
+    val barBg by animateColorAsState(
+        targetValue = if (scrolled) MaterialTheme.colorScheme.surfaceContainer
+        else MaterialTheme.colorScheme.background,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "channel-bar-tint",
+    )
+    Column(modifier = Modifier.background(barBg)) {
+        Spacer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsTopHeight(WindowInsets.statusBars),
+        )
+        content()
+    }
+}

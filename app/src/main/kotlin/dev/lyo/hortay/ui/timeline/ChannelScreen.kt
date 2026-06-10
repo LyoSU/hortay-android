@@ -3,7 +3,6 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -647,16 +646,12 @@ fun ChannelScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            // Pinned: status-bar strip + ChannelTopBar in a Column. No layout
-            // shrinker, no nested-scroll offset — the bar stays fully visible
-            // throughout the user's scroll. The status-bar strip continues to
-            // own the system-bar inset so we never double-pad.
-            Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
-                Spacer(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .windowInsetsTopHeight(WindowInsets.statusBars),
-                )
+            // Pinned: status-bar strip + ChannelTopBar in [ChannelTopBarColumn]. No
+            // layout shrinker, no nested-scroll offset — the bar stays fully visible
+            // throughout the user's scroll. The wrapper owns the system-bar inset
+            // (never double-pad) AND the scrolled tint, so the status-bar band and
+            // the bar colour as one surface (see ChannelTopBarColumn KDoc).
+            ChannelTopBarColumn(scrollBehavior = scrollBehavior) {
                 ChannelTopBar(
                     channelTitle = channelTitle,
                     channelSubscribers = channelSubscribers,
