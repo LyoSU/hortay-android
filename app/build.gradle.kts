@@ -368,7 +368,6 @@ dependencies {
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.material3)
     implementation(libs.androidx.graphics.shapes)
-    implementation(libs.compose.ui.text.google.fonts)
 
     // androidx.navigation3 — back-stack-as-state navigation + NavDisplay. Shared-element /
     // container-transform comes from compose-animation (BOM-managed). lifecycle-viewmodel-navigation3

@@ -1,43 +1,64 @@
 package dev.lyo.hortay.ui.theme
 
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.googlefonts.Font
-import androidx.compose.ui.text.googlefonts.GoogleFont
 import dev.lyo.hortay.R
 
 /**
- * Two display + body families pulled at runtime from Google Fonts via Play Services.
+ * Two display + body families, BUNDLED as variable TTFs in `res/font/` — no runtime
+ * provider, no network, no Play Services dependency.
  *
  * Inter for body / labels — neutral, sturdy at small sizes, the pragmatic UI workhorse.
  * Plus Jakarta Sans for display / headlines — distinct geometric character so the brand
  * surfaces (top app bar, large titles) read differently from the dense reading content.
  *
- * Bundled fonts were tried (Roboto Flex variable) but rendered too light against the
- * periwinkle palette — the variable font's default weight axis sits below 400 visually,
- * which made body copy hard to scan. Reverted to these two well-tested static families.
+ * Why bundled, not the Google Fonts provider (the previous approach): the provider pulls
+ * the typefaces at runtime via Play Services. On cold/offline start — or any provider
+ * hiccup — the app painted system Roboto first, then reflowed the ENTIRE layout when the
+ * real fonts arrived (full-screen FOUT), and on Play-Services-less devices the brand type
+ * never loaded at all. Bundling makes first-frame rendering deterministic with zero reflow.
+ *
+ * Why variable fonts with PINNED weights (the old KDoc objected to bundled fonts): the
+ * earlier attempt used Roboto Flex *variable* and let its default weight axis ride, which
+ * sat visually below 400 and made body copy read light against the periwinkle palette.
+ * That objection no longer applies — each [Font] entry below pins its exact
+ * [FontVariation.weight], so the renderer instances the requested weight rather than the
+ * axis default. One variable file per family carries every weight Type.kt asks for
+ * (Inter Normal/Medium/SemiBold/Bold; Plus Jakarta Sans SemiBold/Bold/ExtraBold), keeping
+ * the APK cost to a single ~860 KB + ~170 KB pair instead of seven static cuts.
  */
-private val Provider = GoogleFont.Provider(
-    providerAuthority = "com.google.android.gms.fonts",
-    providerPackage = "com.google.android.gms",
-    certificates = R.array.com_google_android_gms_fonts_certs,
+
+@OptIn(ExperimentalTextApi::class)
+private fun interFont(weight: FontWeight) = Font(
+    R.font.inter_variable,
+    weight = weight,
+    style = FontStyle.Normal,
+    variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)),
 )
 
-private val Inter = GoogleFont("Inter")
-private val PlusJakartaSans = GoogleFont("Plus Jakarta Sans")
+@OptIn(ExperimentalTextApi::class)
+private fun plusJakartaSansFont(weight: FontWeight) = Font(
+    R.font.plus_jakarta_sans_variable,
+    weight = weight,
+    style = FontStyle.Normal,
+    variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)),
+)
 
 /** Brand display family — geometric, distinctive, used for app name and large headlines. */
 val DisplayFontFamily = FontFamily(
-    Font(googleFont = PlusJakartaSans, fontProvider = Provider, weight = FontWeight.SemiBold, style = FontStyle.Normal),
-    Font(googleFont = PlusJakartaSans, fontProvider = Provider, weight = FontWeight.Bold, style = FontStyle.Normal),
-    Font(googleFont = PlusJakartaSans, fontProvider = Provider, weight = FontWeight.ExtraBold, style = FontStyle.Normal),
+    plusJakartaSansFont(FontWeight.SemiBold),
+    plusJakartaSansFont(FontWeight.Bold),
+    plusJakartaSansFont(FontWeight.ExtraBold),
 )
 
 /** Body family — neutral, optimised for long-form reading. */
 val BodyFontFamily = FontFamily(
-    Font(googleFont = Inter, fontProvider = Provider, weight = FontWeight.Normal),
-    Font(googleFont = Inter, fontProvider = Provider, weight = FontWeight.Medium),
-    Font(googleFont = Inter, fontProvider = Provider, weight = FontWeight.SemiBold),
-    Font(googleFont = Inter, fontProvider = Provider, weight = FontWeight.Bold),
+    interFont(FontWeight.Normal),
+    interFont(FontWeight.Medium),
+    interFont(FontWeight.SemiBold),
+    interFont(FontWeight.Bold),
 )
