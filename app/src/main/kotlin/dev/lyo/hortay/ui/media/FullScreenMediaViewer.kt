@@ -7,6 +7,8 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -23,7 +25,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
@@ -52,6 +57,7 @@ import dev.lyo.hortay.data.VideoQuality
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
+import dev.lyo.hortay.ui.theme.tabularFigures
 import dev.lyo.hortay.ui.util.rememberReducedMotion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -167,6 +173,45 @@ fun FullScreenMediaViewer(
                 )
             }
 
+            // N3 — text scrims on imagery. Every control in this viewer paints white
+            // over the photo/video; a white subject (snow, paper, a blown-out sky)
+            // swallows white glyphs that rest directly on it. A vertical black gradient
+            // behind the top chrome band (close · counter · tools) and the bottom
+            // controls band guarantees legibility on any image without dimming the
+            // whole frame. The per-control polygon backdrops still carry the close /
+            // tool buttons; these scrims add the band-level wash the chrome sits in,
+            // matching the convention the video controls already established at the
+            // bottom (VideoPlayerControls).
+            //
+            // WS-O dismiss fade: the scrims multiply their gradient by the same
+            // [backgroundAlpha] that drives the page scrim, so as the user drags the
+            // photo away the bands fade out in lockstep with the canvas instead of
+            // staying glued to the top/bottom edges as a dark sheet riding the gesture.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = TOP_SCRIM_ALPHA * backgroundAlpha),
+                            1f to Color.Transparent,
+                        ),
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(140.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            1f to Color.Black.copy(alpha = BOTTOM_SCRIM_ALPHA * backgroundAlpha),
+                        ),
+                    ),
+            )
+
             // Expressive close affordance: Cookie9-shaped backdrop instead of a perfect
             // circle. Reads as "deliberate close" rather than a generic system 'X' —
             // signature shape vocabulary that ties the viewer chrome to the rest of the
@@ -176,16 +221,15 @@ fun FullScreenMediaViewer(
             // Polygon backdrop only — clipping the IconButton to a Cookie polygon
             // would cut the close glyph at the polygon ridges. The default circular
             // ripple stays clean inside the visible disc area.
-            IconButton(
+            ChromeActionButton(
                 onClick = onDismiss,
+                glyph = "close",
+                contentDescription = stringResource(R.string.action_close),
+                shape = closeShape,
                 modifier = Modifier
                     .statusBarsPadding()
-                    .padding(8.dp)
-                    .size(44.dp)
-                    .background(Color.Black.copy(alpha = 0.45f), closeShape),
-            ) {
-                Symbol(name = "close", contentDescription = stringResource(R.string.action_close), tint = Color.White)
-            }
+                    .padding(8.dp),
+            )
 
             // Top-right tool column for the active page: QualityChip (videos
             // with alternativeVideos) over Save / Copy buttons. One vertical
@@ -252,7 +296,7 @@ fun FullScreenMediaViewer(
                     if (persistableItem != null && readyPath != null) {
                         val activeItem = persistableItem // smart-cast bridge for lambdas
                         // Save → every Ready media kind. Toast on success / failure.
-                        IconButton(
+                        ChromeActionButton(
                             onClick = {
                                 scope.launch {
                                     val res = withContext(Dispatchers.IO) {
@@ -269,12 +313,10 @@ fun FullScreenMediaViewer(
                                     Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            modifier = Modifier
-                                .size(44.dp)
-                                .background(Color.Black.copy(alpha = 0.45f), chromeShape),
-                        ) {
-                            Symbol(name = "download", contentDescription = saveLabel, tint = Color.White)
-                        }
+                            glyph = "download",
+                            contentDescription = saveLabel,
+                            shape = chromeShape,
+                        )
                     }
                     if (shareCapable) {
                         // Share → fires ACTION_SEND through the system chooser
@@ -286,7 +328,7 @@ fun FullScreenMediaViewer(
                         // a CDN URL with no local copy) we fall back to sharing
                         // the URL as text/plain so the recipient still gets
                         // something meaningful.
-                        IconButton(
+                        ChromeActionButton(
                             onClick = {
                                 scope.launch {
                                     val res = withContext(Dispatchers.IO) {
@@ -298,6 +340,10 @@ fun FullScreenMediaViewer(
                                             MediaShareActions.Result.Failure(R.string.media_share_error_source_missing)
                                         }
                                     }
+                                    // Success surfaces as the system share chooser
+                                    // sheet appearing — its own visible confirmation,
+                                    // so only failures need a toast (a success toast
+                                    // would fight the chooser that just opened).
                                     if (res is MediaShareActions.Result.Failure) {
                                         Toast.makeText(
                                             actionContext,
@@ -309,12 +355,10 @@ fun FullScreenMediaViewer(
                                     }
                                 }
                             },
-                            modifier = Modifier
-                                .size(44.dp)
-                                .background(Color.Black.copy(alpha = 0.45f), chromeShape),
-                        ) {
-                            Symbol(name = "share", contentDescription = shareLabel, tint = Color.White)
-                        }
+                            glyph = "share",
+                            contentDescription = shareLabel,
+                            shape = chromeShape,
+                        )
                     }
                     if (persistableItem != null && readyPath != null && persistableItem is AlbumItem.Photo) {
                         val activeItem = persistableItem
@@ -322,7 +366,7 @@ fun FullScreenMediaViewer(
                         // accepts a video clipboard item, and a multi-MB MP4 URI
                         // on the clipboard is a UX trap (paste into WhatsApp =
                         // silent re-upload). Hidden for video / animation pages.
-                        IconButton(
+                        ChromeActionButton(
                             onClick = {
                                 scope.launch {
                                     val res = withContext(Dispatchers.IO) {
@@ -338,12 +382,10 @@ fun FullScreenMediaViewer(
                                     Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            modifier = Modifier
-                                .size(44.dp)
-                                .background(Color.Black.copy(alpha = 0.45f), chromeShape),
-                        ) {
-                            Symbol(name = "content_copy", contentDescription = copyLabel, tint = Color.White)
-                        }
+                            glyph = "content_copy",
+                            contentDescription = copyLabel,
+                            shape = chromeShape,
+                        )
                     }
                 }
             }
@@ -364,7 +406,10 @@ fun FullScreenMediaViewer(
                 Text(
                     text = "${pagerState.currentPage + 1} / ${items.size}",
                     color = Color.White,
-                    style = MaterialTheme.typography.labelLarge,
+                    // Tabular figures so the "3 / 5" counter keeps a fixed width as the
+                    // user swipes through a 10+ item album (1→10 wouldn't shift the
+                    // centred pill, but the digits stay optically aligned).
+                    style = MaterialTheme.typography.labelLarge.tabularFigures(),
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
@@ -374,6 +419,48 @@ fun FullScreenMediaViewer(
                 )
             }
         }
+    }
+}
+
+/**
+ * Chrome icon button for the viewer (close · save · share · copy). A 44 dp disc with a
+ * black-translucent polygon backdrop and a white glyph — the established viewer chrome
+ * vocabulary. Adds an instant pressed-scale acknowledgement on top of the default ripple
+ * (doctrine rule 1: every tap answers within ~100 ms) so a save/share that does its work
+ * off the main thread still feels responsive the moment the finger lands. The scale rides
+ * the same MotionScheme spatial spring as the rest of the app and collapses to an instant
+ * snap under "Remove animations".
+ */
+@Composable
+private fun ChromeActionButton(
+    onClick: () -> Unit,
+    glyph: String,
+    contentDescription: String,
+    shape: Shape,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val reducedMotion = rememberReducedMotion()
+    val pressSpec: AnimationSpec<Float> =
+        if (reducedMotion) snap() else MaterialTheme.motionScheme.fastSpatialSpec()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.88f else 1f,
+        animationSpec = pressSpec,
+        label = "chrome-press",
+    )
+    IconButton(
+        onClick = onClick,
+        interactionSource = interactionSource,
+        modifier = modifier
+            .size(44.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .background(Color.Black.copy(alpha = 0.45f), shape),
+    ) {
+        Symbol(name = glyph, contentDescription = contentDescription, tint = Color.White)
     }
 }
 
@@ -388,40 +475,87 @@ private fun MediaPage(
         is AlbumItem.Photo -> ZoomableImage(item)
         is AlbumItem.Video -> {
             val quality = pickedQuality ?: item.qualities.defaultPick
-            TdVideoPlayer(
-                fileId = quality.fileId,
-                remoteUrl = item.remoteVideoUrl,
-                autoPlay = isActive,
-                // Short clips (< 1 minute) loop in fullscreen too — same threshold
-                // as the inline-feed autoplay, so a clip that loops silently in
-                // the feed keeps looping (with sound) when escalated to fullscreen
-                // instead of stopping at the end and forcing a "tap play to
-                // replay" round-trip. Long videos keep finite playback so the
-                // scrubber lands at the end and the user can leave the viewer
-                // without the clip restarting in the background.
-                autoLoop = item.durationSec in 1..LOOP_FULLSCREEN_MAX_SEC,
-                showControls = true,
-                priority = DownloadPriority.Foreground,
-                initialAspect = item.posterAspect(),
-                modifier = Modifier.fillMaxSize(),
-            )
+            VideoSurfaceWithPoster(item) {
+                TdVideoPlayer(
+                    fileId = quality.fileId,
+                    remoteUrl = item.remoteVideoUrl,
+                    autoPlay = isActive,
+                    // Short clips (< 1 minute) loop in fullscreen too — same threshold
+                    // as the inline-feed autoplay, so a clip that loops silently in
+                    // the feed keeps looping (with sound) when escalated to fullscreen
+                    // instead of stopping at the end and forcing a "tap play to
+                    // replay" round-trip. Long videos keep finite playback so the
+                    // scrubber lands at the end and the user can leave the viewer
+                    // without the clip restarting in the background.
+                    autoLoop = item.durationSec in 1..LOOP_FULLSCREEN_MAX_SEC,
+                    showControls = true,
+                    priority = DownloadPriority.Foreground,
+                    initialAspect = item.posterAspect(),
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             // Touch the picker callback so an unpicked default still registers — keeps
             // the parent's qualityChoices map authoritative for "what's playing now".
             if (pickedQuality == null) {
                 LaunchedEffect(item.playbackFileId, item.qualities) { onQualityPick(quality) }
             }
         }
-        is AlbumItem.Animation -> TdVideoPlayer(
-            fileId = item.playbackFileId,
-            remoteUrl = item.remoteVideoUrl,
-            autoPlay = isActive,
-            autoLoop = true,
-            showControls = false,
-            muted = true,
+        is AlbumItem.Animation -> VideoSurfaceWithPoster(item) {
+            TdVideoPlayer(
+                fileId = item.playbackFileId,
+                remoteUrl = item.remoteVideoUrl,
+                autoPlay = isActive,
+                autoLoop = true,
+                showControls = false,
+                muted = true,
+                priority = DownloadPriority.Foreground,
+                initialAspect = item.posterAspect(),
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+/**
+ * L6 — video first-frame flash. [TdVideoPlayer] renders into a `TextureView` set
+ * `isOpaque = false`, so it blends transparently right up to the first decoded frame —
+ * but the fullscreen viewer composites nothing behind it, leaving the black scrim
+ * showing through during the prepare/decode window (the visible "flash" before the
+ * first frame). Compositing the item's poster ([AlbumItem.media], the same down-sampled
+ * first frame the inline feed paints — typically already Ready in [MediaCache]) under the
+ * transparent surface means the page paints the poster on the very first frame and the
+ * video draws opaquely over it once it decodes — no black/white seam.
+ *
+ * Ideally the poster would crossfade out the instant ExoPlayer reports its first decoded
+ * frame ([Player.Listener.onRenderedFirstFrame]). [TdVideoPlayer] does not surface that
+ * signal to its callers, and it is shared with the inline feed (out of scope to edit), so
+ * the poster is held composited for the page's lifetime instead. The video texture paints
+ * over it opaquely once decoded, so there is no double-image; the only cost is the poster
+ * staying allocated behind an opaque video — negligible. Wiring the first-frame callback
+ * through [TdVideoPlayer] (to enable the timed crossfade) is reported as a coordinator
+ * change.
+ */
+@Composable
+private fun VideoSurfaceWithPoster(
+    item: AlbumItem,
+    content: @Composable () -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        TdMediaImage(
+            media = item.media,
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            // No progress chrome / placeholder fill: the video player owns the
+            // download + buffering affordances, and a grey letterbox fill here
+            // would ride the drag-dismiss translation as a "white sheet glued to
+            // the video" — the same artefact the photo path's null placeholder
+            // avoids.
+            showProgress = false,
+            placeholderColor = null,
             priority = DownloadPriority.Foreground,
-            initialAspect = item.posterAspect(),
             modifier = Modifier.fillMaxSize(),
         )
+        content()
     }
 }
 
@@ -692,6 +826,15 @@ private fun AlbumItem.webShareFallbackUrl(): String? = when (this) {
     is AlbumItem.Video -> remoteVideoUrl ?: media.remoteUrl
     is AlbumItem.Animation -> remoteVideoUrl ?: media.remoteUrl
 }
+
+// N3 top/bottom scrim opacities. The brief specifies "Color.Black 0 → ~35%";
+// the top band carries the close/counter/tools chrome and runs to the spec's
+// 35 %, while the bottom band is mostly belt-and-braces (photos have no bottom
+// chrome; VideoPlayerControls paints its own deeper 0→55 % scrim for the seek
+// bar) so it stays lighter and never double-darkens a video page past the
+// controls' own gradient.
+private const val TOP_SCRIM_ALPHA = 0.35f
+private const val BOTTOM_SCRIM_ALPHA = 0.25f
 
 private const val MIN_SCALE = 1f
 private const val MAX_SCALE = 5f
