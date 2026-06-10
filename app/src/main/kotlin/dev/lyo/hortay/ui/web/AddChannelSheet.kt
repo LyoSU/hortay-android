@@ -56,6 +56,7 @@ import dev.lyo.hortay.ui.discover.DiscoverSearchField
 import dev.lyo.hortay.ui.discover.discoverSuggestions
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -393,7 +394,7 @@ fun AddChannelSheet(
                     val title = hydrated[key]?.title ?: username
                     feedSource.subscribeAndRefresh(username, placeholderTitle = title)
                     scope.launch {
-                        kotlinx.coroutines.delay(SUBSCRIBE_CONFIRM_HOLD_MS)
+                        delay(SUBSCRIBE_CONFIRM_HOLD_MS)
                         holdVisible.remove(key)
                     }
                     true

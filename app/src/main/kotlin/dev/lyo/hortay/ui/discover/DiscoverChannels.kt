@@ -3,10 +3,12 @@
 package dev.lyo.hortay.ui.discover
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +17,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -30,14 +34,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.data.animatorDurationScale
 import dev.lyo.hortay.data.discover.ChannelCardData
 import dev.lyo.hortay.data.discover.SuggestedGroup
 import dev.lyo.hortay.ui.icons.Symbol
@@ -136,10 +143,10 @@ fun DiscoverSearchField(
             Symbol(name = "search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         },
         trailingIcon = trailing,
-        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+        keyboardOptions = KeyboardOptions(
             imeAction = if (onSearch != null) ImeAction.Search else ImeAction.Done,
         ),
-        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+        keyboardActions = KeyboardActions(
             onSearch = { onSearch?.invoke() },
         ),
         colors = TextFieldDefaults.colors(
@@ -241,14 +248,17 @@ fun ChannelDiscoverRow(
 
 /**
  * Per-row subscribe button with a disciplined, layout-stable state machine
- * (DESIGN_POLISH H1 + M2). Fixed `widthIn(min = 96.dp)` × 36 dp height so the
- * right column never goes ragged. Three states, no width jump (the reserved
- * minimum holds across all of them):
+ * (DESIGN_POLISH H1 + M2). 36 dp compact height; the WIDTH is pinned by invisible
+ * sizing ghosts of the widest states (the idle label and the check+[subscribedLabel]
+ * row composed at alpha 0 under the live content), so the button cannot change size
+ * across Idle → InFlight → Subscribed in ANY locale — doctrine rule 3, "nothing jumps
+ * under the finger". (`widthIn(min)` alone was not enough: `AnimatedContent` resizes
+ * to its content, so a wide "Підписатися" visibly shrank to the spinner mid-flight.)
  *
  *  - **Idle** → tonal label.
  *  - **InFlight** → an inline spinner replaces the label the instant the row is
  *    tapped (optimistic: the press is acknowledged before the network answers).
- *  - **Subscribed** → on success the button morphs to a `check_circle` glyph +
+ *  - **Subscribed** → on success the button shows a `check_circle` glyph +
  *    [subscribedLabel] in a disabled state for ~1.5 s before the parent drops the
  *    row from the list. On failure it rolls straight back to Idle (the caller
  *    surfaces the error snackbar) — reversible, so no confirm.
@@ -264,9 +274,9 @@ private fun SubscribeButton(
     enabled: Boolean,
     onAction: suspend () -> Boolean,
 ) {
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf(SubscribeState.IDLE) }
-    val reducedMotion = dev.lyo.hortay.data.animatorDurationScale() == 0f
+    val reducedMotion = animatorDurationScale() == 0f
     val effectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
 
     // External "already subscribed" signal (e.g. membership re-resolve from the
@@ -290,49 +300,61 @@ private fun SubscribeButton(
         shapes = ButtonDefaults.shapes(),
         // Compact content padding so the 36 dp fixed height isn't over-constrained
         // (the default 24×8 dp leaves no room for the label at this height).
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
         modifier = Modifier
             .widthIn(min = 96.dp)
             .height(36.dp),
     ) {
-        AnimatedContent(
-            targetState = resolvedState,
-            transitionSpec = {
-                if (reducedMotion) {
-                    fadeIn(animationSpec = snapEffects) togetherWith
-                        fadeOut(animationSpec = snapEffects)
-                } else {
-                    fadeIn(animationSpec = effectsSpec) togetherWith
-                        fadeOut(animationSpec = effectsSpec)
-                }
-            },
-            label = "subscribe_state",
-        ) { s ->
-            when (s) {
-                SubscribeState.IDLE -> Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                SubscribeState.IN_FLIGHT -> Box(
-                    modifier = Modifier.height(20.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    LoadingIndicator(modifier = Modifier.size(16.dp))
-                }
-                SubscribeState.SUBSCRIBED -> Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Symbol(name = "check_circle", size = 16.dp)
-                    Text(subscribedLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Box(contentAlignment = Alignment.Center) {
+            // Invisible sizing ghosts: the two widest states reserve the button's
+            // final width so the AnimatedContent swap below can never resize it.
+            // Alpha 0 keeps them out of sight; the live content is the a11y node.
+            SubscribedContent(subscribedLabel, modifier = Modifier.alpha(0f))
+            Text(label, maxLines = 1, modifier = Modifier.alpha(0f))
+            AnimatedContent(
+                targetState = resolvedState,
+                transitionSpec = {
+                    if (reducedMotion) {
+                        fadeIn(animationSpec = snapEffects) togetherWith
+                            fadeOut(animationSpec = snapEffects)
+                    } else {
+                        fadeIn(animationSpec = effectsSpec) togetherWith
+                            fadeOut(animationSpec = effectsSpec)
+                    }
+                },
+                label = "subscribe_state",
+            ) { s ->
+                when (s) {
+                    SubscribeState.IDLE -> Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    SubscribeState.IN_FLIGHT -> Box(
+                        modifier = Modifier.height(20.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        LoadingIndicator(modifier = Modifier.size(16.dp))
+                    }
+                    SubscribeState.SUBSCRIBED -> SubscribedContent(subscribedLabel)
                 }
             }
         }
     }
 }
 
+/** The "✓ Subscribed" confirmation row — also composed invisibly as a sizing ghost. */
+@Composable
+private fun SubscribedContent(label: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Symbol(name = "check_circle", size = 16.dp)
+        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
 private enum class SubscribeState { IDLE, IN_FLIGHT, SUBSCRIBED }
 
-// A zero-duration tween stand-in for reduced motion. `AnimatedContent` needs a
+// A zero-duration spec stand-in for reduced motion. `AnimatedContent` needs a
 // FiniteAnimationSpec; a snap-equivalent fade is the documented reduced-motion
-// collapse used across the app (see effectiveSkeletonGrace). Literal tween is the
-// repo's forbidden token only for *visible* motion — this one is the explicit
-// "no motion" branch, mirroring the snapSpec pattern.
-private val snapEffects = androidx.compose.animation.core.snap<Float>()
+// collapse used across the app (see effectiveSkeletonGrace).
+private val snapEffects = snap<Float>()
