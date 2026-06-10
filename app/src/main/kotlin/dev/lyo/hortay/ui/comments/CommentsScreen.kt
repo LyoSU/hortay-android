@@ -2,6 +2,7 @@
 
 package dev.lyo.hortay.ui.comments
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -22,25 +23,19 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.ui.theme.mediaFrame
 import dev.lyo.hortay.ui.components.PremiumStatusBadge
@@ -497,15 +492,30 @@ fun CommentsScreen(
             }
         }
         // B3 (comments) — top fade-edge so the first comment / post header doesn't
-        // hard-clip against the opaque title bar as it scrolls under. A short vertical
-        // alpha gradient (opaque → transparent over [TOP_FADE_DP]) masks the content
-        // right below the bar via `DstIn`. The list draws into its own offscreen layer
-        // (`compositingStrategy = Offscreen`) so the mask blends against the list's own
-        // pixels, not the screen — content fades cleanly toward the bar's background
-        // rather than punching a hole through to whatever is behind the Scaffold. Static
-        // mask (not animated), so no motion guard is needed.
+        // hard-clip against the title bar as it scrolls under. Drawn as a cheap OVERLAY
+        // gradient of the bar's scrolled colour (`surfaceContainer` → transparent over
+        // [TOP_FADE_DP]) right below the bar — the bar is opaque, so painting its colour
+        // over the content top is visually identical to masking the content out, at none
+        // of the cost. (A first cut used a `DstIn` alpha mask, which forces
+        // `CompositingStrategy.Offscreen` on the WHOLE LazyColumn — a full-screen
+        // offscreen buffer on every scroll frame. Don't reintroduce it.) The overlay's
+        // alpha rides the same scrolled-state crossfade the bar itself uses, so at rest
+        // (bar = `background`, nothing under it) the fade is fully transparent.
         val topInsetPx = with(density) { padding.calculateTopPadding().toPx() }
         val fadePx = with(density) { TOP_FADE_DP.dp.toPx() }
+        val commentsScrolled by remember(listState) {
+            derivedStateOf {
+                listState.firstVisibleItemIndex > 0 ||
+                    listState.firstVisibleItemScrollOffset > 0
+            }
+        }
+        val topFadeColor by animateColorAsState(
+            targetValue = MaterialTheme.colorScheme.surfaceContainer.copy(
+                alpha = if (commentsScrolled) 1f else 0f,
+            ),
+            animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+            label = "comments-top-fade",
+        )
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(
@@ -514,22 +524,18 @@ fun CommentsScreen(
             ),
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer {
-                    alpha = if (heroPending) 0f else 1f
-                    compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
-                }
+                .graphicsLayer { alpha = if (heroPending) 0f else 1f }
                 .drawWithContent {
                     drawContent()
-                    if (fadePx > 0f && size.height > topInsetPx) {
+                    if (fadePx > 0f && topFadeColor.alpha > 0f && size.height > topInsetPx) {
                         drawRect(
                             brush = Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black),
+                                colors = listOf(topFadeColor, Color.Transparent),
                                 startY = topInsetPx,
                                 endY = topInsetPx + fadePx,
                             ),
                             topLeft = Offset(0f, topInsetPx),
                             size = Size(size.width, fadePx),
-                            blendMode = BlendMode.DstIn,
                         )
                     }
                 },
@@ -725,7 +731,7 @@ private fun CommentsEmptyState(
 }
 
 /**
- * E1/E2 — one comment row with a Threads-style thread connector.
+ * E1/E2 — one comment row.
  *
  * **Avatar stepping (E2):** top-level comments (depth 0) render a 36 dp avatar; every
  * reply (depth ≥ 1) renders 28 dp. The smaller reply avatar plus the indent gives instant
@@ -736,17 +742,13 @@ private fun CommentsEmptyState(
  * quote-card on the bubble still carries the precise relation), the layout just stops
  * staircasing off the right edge on a phone.
  *
- * **Connector (E1):** instead of a straight per-level gutter bar, each indented row draws
- * ONE connector line — a vertical segment running down the rail at the PARENT avatar's
- * horizontal centre, ending in an ~8 dp quarter-arc that curves into the child row at the
- * child avatar's vertical centre. Drawn with [Modifier.drawBehind] on the row, so it reads
- * the row's measured `size` at draw time — no extra layout pass, no measurement of the
- * subtree. The geometry is computed from the same indent / avatar constants the layout uses,
- * so the line lands exactly on the avatar centres.
- *
- * **RTL (E1):** the gutter, vertical line and arc are all mirrored by flipping the x axis
- * around the row width when [LayoutDirection.Rtl]; the padding modifiers below are already
- * direction-aware (`start`/`end`), so only the `drawBehind` math needs the explicit flip.
+ * **No connector lines.** A curved per-row connector ("parent avatar → child row") was
+ * tried and removed: a row only knows its own depth, so the line started at the CHILD
+ * row's top edge — visually disconnected from the parent's avatar (a gap the height of
+ * the parent's text), and broken between consecutive siblings. On device it read as
+ * stray marks, not threading. Indent + avatar stepping + the reply quote-card carry the
+ * relation; a real Threads-style rail needs parent-owns-children layout knowledge —
+ * don't reintroduce the per-row approximation.
  */
 @Composable
 private fun CommentNode(
@@ -759,75 +761,9 @@ private fun CommentNode(
     val avatarSize = if (row.depth >= 1) REPLY_AVATAR_DP.dp else TOP_AVATAR_DP.dp
     val indent = (visualDepth * INDENT_STEP_DP).dp
 
-    val connectorColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    // Pre-resolve px geometry outside the draw lambda so drawBehind only reads `size`.
-    val connector = remember(visualDepth, avatarSize, isRtl, density) {
-        with(density) {
-            if (visualDepth < 1) {
-                null
-            } else {
-                // x of the indent gutter's start (after the row's 16 dp lead padding).
-                val rowPad = ROW_HORIZONTAL_DP.dp.toPx()
-                // The parent column sits one indent step shallower than this child.
-                val parentIndent = (visualDepth - 1) * INDENT_STEP_DP.dp.toPx()
-                // Parent avatar size: 36 dp only when the parent is the top level.
-                val parentAvatar = if (visualDepth - 1 == 0) TOP_AVATAR_DP.dp.toPx() else REPLY_AVATAR_DP.dp.toPx()
-                // Vertical line runs at the parent avatar's horizontal centre.
-                val lineX = rowPad + parentIndent + parentAvatar / 2f
-                // The child avatar's vertical centre, measured from the row top
-                // (10 dp vertical padding on the bubble row + half the avatar).
-                val childCenterY = BUBBLE_VERTICAL_DP.dp.toPx() + avatarSize.toPx() / 2f
-                // Arc lands at the child avatar's left edge.
-                val childAvatarLeft = rowPad + visualDepth * INDENT_STEP_DP.dp.toPx()
-                ConnectorGeometry(
-                    lineX = lineX,
-                    childCenterY = childCenterY,
-                    arcEndX = childAvatarLeft,
-                    radiusPx = CONNECTOR_RADIUS_DP.dp.toPx(),
-                    strokePx = CONNECTOR_WIDTH_DP.dp.toPx(),
-                )
-            }
-        }
-    }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(
-                if (connector != null) {
-                    Modifier.drawBehind {
-                        val g = connector
-                        // Mirror the x axis for RTL around the row width.
-                        fun fx(x: Float) = if (isRtl) size.width - x else x
-                        val lineX = fx(g.lineX)
-                        val arcEndX = fx(g.arcEndX)
-                        val stroke = Stroke(width = g.strokePx)
-                        // Vertical segment from the row top down to where the arc begins
-                        // (radius above the child avatar centre).
-                        val arcTopY = (g.childCenterY - g.radiusPx).coerceAtLeast(0f)
-                        drawLine(
-                            color = connectorColor,
-                            start = Offset(lineX, 0f),
-                            end = Offset(lineX, arcTopY),
-                            strokeWidth = g.strokePx,
-                        )
-                        // Quarter-arc curving from the vertical line into the child row.
-                        // In LTR it sweeps down-and-right; mirrored for RTL.
-                        val path = Path().apply {
-                            moveTo(lineX, arcTopY)
-                            quadraticTo(
-                                lineX, g.childCenterY,
-                                arcEndX, g.childCenterY,
-                            )
-                        }
-                        drawPath(path = path, color = connectorColor, style = stroke)
-                    }
-                } else {
-                    Modifier
-                },
-            )
             .padding(horizontal = ROW_HORIZONTAL_DP.dp),
     ) {
         if (indent > 0.dp) {
@@ -843,16 +779,6 @@ private fun CommentNode(
         )
     }
 }
-
-/** Pre-resolved px geometry for one connector line — see [CommentNode]. */
-@androidx.compose.runtime.Immutable
-private data class ConnectorGeometry(
-    val lineX: Float,
-    val childCenterY: Float,
-    val arcEndX: Float,
-    val radiusPx: Float,
-    val strokePx: Float,
-)
 
 /**
  * Threads-style flat comment: avatar in left rail, header (name + time) and body in right
@@ -1195,10 +1121,8 @@ private fun ReplyBlock(reply: ReplyPreview) {
 // Label/symbol mapping + relative timestamps are shared with the feed via
 // dev.lyo.hortay.ui.timeline — see ReplyKindResources.kt and TimeFormat.kt.
 
-// E1/E2 thread-connector + avatar geometry. The connector math in [CommentNode] is
-// derived entirely from these, so the line always lands on the avatar centres no matter
-// how the indent or avatar sizes are retuned.
-/** Lead/trail padding of every comment row — also the origin for the connector x math. */
+// E1/E2 thread layout geometry — see [CommentNode] for why there is no connector line.
+/** Lead/trail padding of every comment row. */
 private const val ROW_HORIZONTAL_DP = 16
 /** Horizontal indent added per visual depth level (capped at [MAX_VISUAL_DEPTH]). */
 private const val INDENT_STEP_DP = 24
@@ -1208,12 +1132,8 @@ private const val MAX_VISUAL_DEPTH = 2
 private const val TOP_AVATAR_DP = 36
 /** Reply (depth ≥ 1) avatar diameter (E2). */
 private const val REPLY_AVATAR_DP = 28
-/** Vertical padding on the comment bubble row — half of it sets the avatar's centre Y. */
+/** Vertical padding on the comment bubble row. */
 private const val BUBBLE_VERTICAL_DP = 10
-/** Connector stroke weight (E1: 1.5–2 dp). */
-private const val CONNECTOR_WIDTH_DP = 1.75f
-/** Quarter-arc radius where the connector curves into the child row (E1: ~8 dp). */
-private const val CONNECTOR_RADIUS_DP = 8
 
 /** Height of the B3 top fade-edge mask under the comments header. */
 private const val TOP_FADE_DP = 20
