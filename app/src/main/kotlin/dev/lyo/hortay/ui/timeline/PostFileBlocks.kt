@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -158,6 +159,11 @@ private fun VideoNoteStaticBubble(
                 tint = Color.White,
                 size = if (hasPlayback) 32.dp else 26.dp,
                 filled = hasPlayback,
+                // N4 — a play triangle is visually heavier on its left edge, so
+                // mechanically centring it reads as sitting slightly left. Nudge the
+                // triangle ~1.5 dp right inside its disc for true optical centring.
+                // The camera glyph (no-playback fallback) is symmetric, so it stays put.
+                modifier = if (hasPlayback) Modifier.offset(x = 1.5.dp) else Modifier,
             )
         }
         if (content.durationSec > 0) {

@@ -1,12 +1,21 @@
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -28,6 +37,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -68,7 +78,10 @@ import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.InlineChipCorner
 import dev.lyo.hortay.ui.theme.MorphShape
 import dev.lyo.hortay.ui.theme.asComposeShape
+import dev.lyo.hortay.ui.theme.mediaFrame
 import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
+import dev.lyo.hortay.ui.theme.tabularFigures
+import dev.lyo.hortay.ui.util.rememberReducedMotion
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -147,20 +160,52 @@ fun PostCard(
         label = "post-unread-strip-shrink",
     )
     val unreadStripColor = MaterialTheme.colorScheme.primary
-    // Faint full-card wash on unread posts — a tonal companion to the 3 dp edge strip.
-    // The strip alone is a glance-level cue at the leading edge; the wash gives the
-    // read-history / unread-queue divide a second, peripheral signal that survives when
-    // the strip scrolls under a thumb or off the edge. Kept very low (primary @ 5%) so
-    // it reads as "slightly fresher paper", never as a selection highlight, and stays
-    // calm enough not to cost scan rhythm. Rides the same [unreadAlpha] spring as the
-    // strip, so dwell-ack fades the wash and collapses the strip together as one
-    // "marked read" gesture. Sits BENEATH the deep-link highlight so a quote-tap pop
-    // still reads clearly over an unread card.
-    val unreadWash = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f * unreadAlpha)
+    // N6 — dwell-read afterglow. When the strip collapses (dwell-ack flips isUnread
+    // true → false) we kick a one-shot Animatable from 1 → 0 over ~200 ms and paint
+    // a soft horizontal glow bleeding off the left edge, layered on the SAME
+    // drawBehind that paints the strip. This makes "marked read" register as a
+    // discrete event rather than a passive fade, without leaving any persistent
+    // signal once the glow settles to 0. Skipped under reduced motion: motion-
+    // sensitive users get the instant strip collapse only. Built on the existing
+    // twin alpha/shrink springs — no new persistent state on the card.
+    val reducedMotion = rememberReducedMotion()
+    val afterglow = remember { androidx.compose.animation.core.Animatable(0f) }
+    val afterglowColor = MaterialTheme.colorScheme.primary
+    val afterglowSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    var wasUnread by remember { mutableStateOf(isUnread) }
+    LaunchedEffect(isUnread) {
+        if (wasUnread && !isUnread && !reducedMotion) {
+            afterglow.snapTo(1f)
+            afterglow.animateTo(0f, animationSpec = afterglowSpec)
+        }
+        wasUnread = isUnread
+    }
+    // One unread signal only: the 3 dp edge strip. A full-card primary wash was tried
+    // as a peripheral companion cue and removed in the visual-polish pass — with the
+    // strip, the "Нові пости" divider, the arrivals pill and the unread FAB badge all
+    // live on the same screen, a fifth concurrent signal tipped the feed from
+    // "informative" into "noisy", and the tonal wash was the main reason interactive
+    // fills (chips, pills) stopped reading as interactive. Don't reintroduce without
+    // retiring another unread surface first.
     // The unread strip is a colour-only visual cue — invisible to TalkBack. Mirror
     // it into the accessibility tree as a state description so screen-reader users
     // get the same "this post is new" signal sighted users read from the strip.
     val unreadStateDescription = stringResource(R.string.post_unread_state)
+
+    // C3 — card press scale. Riding ONE shared interactionSource: the inner Row's
+    // combinedClickable feeds it, [collectIsPressedAsState] reads it, and the Column
+    // animates 1.0 → 0.985 on press via a spatial spring. The graphicsLayer is gated
+    // behind `pressScale != 1f` with the same `.then(if …)` idiom the deleted-dim uses
+    // — a resting card installs NO compositing layer, so the common feed case stays
+    // layer-free and skippable. The source is `remember`-stable so it captures no new
+    // unstable scope.
+    val cardInteractionSource = remember { MutableInteractionSource() }
+    val isPressed by cardInteractionSource.collectIsPressedAsState()
+    val pressScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed && (clickable || actionsEnabled)) 0.985f else 1f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "post-press-scale",
+    )
 
     Column(
         modifier = Modifier
@@ -170,9 +215,39 @@ fun PostCard(
             // post never installs an offscreen compositing layer it doesn't need — the
             // common case stays layer-free.
             .then(if (post.isDeleted) Modifier.alpha(0.55f) else Modifier)
-            .background(unreadWash)
+            // Press-scale layer is installed ONLY while pressed (pressScale < 1f); a
+            // resting card stays compositing-layer-free.
+            .then(
+                if (pressScale != 1f) {
+                    Modifier.graphicsLayer {
+                        scaleX = pressScale
+                        scaleY = pressScale
+                    }
+                } else Modifier,
+            )
             .background(highlightColor)
             .drawBehind {
+                // N6 afterglow first — a soft glow bleeding off the left edge while the
+                // strip collapses, layered UNDER the strip so the strip reads as its source.
+                if (afterglow.value > 0f) {
+                    val glowWidth = 16.dp.toPx()
+                    val verticalInset = 14.dp.toPx()
+                    val glowHeight = (size.height - verticalInset * 2f).coerceAtLeast(0f)
+                    if (glowHeight > 0f) {
+                        drawRect(
+                            brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                colors = listOf(
+                                    afterglowColor.copy(alpha = 0.5f * afterglow.value),
+                                    androidx.compose.ui.graphics.Color.Transparent,
+                                ),
+                                startX = 0f,
+                                endX = glowWidth,
+                            ),
+                            topLeft = Offset(0f, verticalInset),
+                            size = Size(glowWidth, glowHeight),
+                        )
+                    }
+                }
                 if (unreadAlpha <= 0f) return@drawBehind
                 val stripWidth = 3.dp.toPx()
                 val verticalInset = 14.dp.toPx()
@@ -194,6 +269,8 @@ fun PostCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
+                    interactionSource = cardInteractionSource,
+                    indication = androidx.compose.foundation.LocalIndication.current,
                     enabled = clickable || actionsEnabled,
                     onClick = { if (clickable) interactions.onPostClick(post) },
                     onLongClick = if (actionsEnabled) ({ sheetOpen = true }) else null,
@@ -353,8 +430,13 @@ fun PostCard(
             }
         }
 
+        // Inset divider — starts at the text column (16 dp card padding + 40 dp avatar
+        // + 12 dp gap), the idiom Telegram / iOS lists use to tie a row to its avatar
+        // while keeping the separation whisper-quiet. Full-bleed hairlines under every
+        // card read as a table grid; the inset reads as typography.
         HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+            modifier = Modifier.padding(start = 68.dp),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
         )
     }
 
@@ -537,21 +619,13 @@ private fun HeaderRow(
         // the original non-interactive pencil so the indicator never disappears for
         // existing users.
         if (isDeleted) {
-            Text(
-                text = formatRelative(date),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            TimestampText(date)
             Spacer(Modifier.width(4.dp))
             DeletedBadge()
         } else if (revisionCount > 0) {
             EditedChip(count = revisionCount, onClick = onTapRevisions)
             Spacer(Modifier.width(4.dp))
-            Text(
-                text = formatRelative(date),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            TimestampText(date)
         } else {
             if (editDate > 0L) {
                 Symbol(
@@ -562,13 +636,24 @@ private fun HeaderRow(
                 )
                 Spacer(Modifier.width(4.dp))
             }
-            Text(
-                text = formatRelative(date),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            TimestampText(date)
         }
     }
+}
+
+/**
+ * C4 — post-header timestamp. `labelSmall` in `onSurfaceVariant @ 0.8` so the relative
+ * time recedes below the author name and edit/pin marks, and tabular figures (C2) so a
+ * "5 хв" → "12 хв" tick never reflows the right-edge block. One composable shared by the
+ * deleted / edited / plain header branches keeps the three timestamps in lockstep.
+ */
+@Composable
+private fun TimestampText(date: Long) {
+    Text(
+        text = formatRelative(date),
+        style = MaterialTheme.typography.labelSmall.tabularFigures(),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+    )
 }
 
 /**
@@ -817,6 +902,10 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
                         .padding(end = 6.dp)
                         .size(44.dp)
                         .clip(MaterialTheme.shapes.small)
+                        // D1 — nested reply thumbnail is rectangular photographic content,
+                        // so it carries the hairline frame on the SAME shape it clips to;
+                        // shapes.small (12 dp) is the M3E nested-tile radius (D2).
+                        .mediaFrame(MaterialTheme.shapes.small)
                         .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                 ) {
                     TdMediaImage(
@@ -899,9 +988,10 @@ private fun ActionRow(
             StatPill(symbol = "forward", text = formatViews(forwardCount))
         }
         if (reactions.items.isNotEmpty()) {
+            // C1 — no VerticalSeparator before reactions. The hairline-outline reaction
+            // ghosts (Phase-1) read as their own cluster, so the divider was redundant
+            // chrome; a plain 14 dp gap separates the stats from the chips.
             if (views > 0 || hasComments || hasForwards) {
-                Spacer(Modifier.width(14.dp))
-                VerticalSeparator()
                 Spacer(Modifier.width(14.dp))
             }
             // Paid (⭐) reactions can't be cast from Hortay — sending one needs the
@@ -958,16 +1048,6 @@ private fun ActionRow(
     }
 }
 
-@Composable
-private fun VerticalSeparator() {
-    Box(
-        modifier = Modifier
-            .height(18.dp)
-            .width(1.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
-    )
-}
-
 /**
  * Reaction chip — industry-canonical "pill stadium with emoji + count" structure.
  * Telegram, Discord, Slack, Reddit, iMessage all use the same primitive: a single
@@ -981,7 +1061,14 @@ private fun VerticalSeparator() {
  *     interaction-states spec.
  *   - **Selected (own reaction)**: 24 dp corners — fully pill-rounded, the
  *     persistent "this one is yours" affordance. Container also crossfades to
- *     `tertiaryContainer` (primary reserved for CTAs).
+ *     `primaryContainer`.
+ *
+ * Fill discipline (visual-polish pass): the resting chip is a hairline-outlined
+ * ghost, NOT a `surfaceContainer` fill. A grey pill under every reaction of every
+ * post was the single largest contributor to the feed's "tonal soup" — with ~3
+ * chips per card nothing else could read as interactive. Outline at rest /
+ * tonal fill when chosen restores the figure-ground split: lavender fill now
+ * means exactly one thing in the feed — "yours".
  *
  * Cookie/Burst/Heart polygons were considered but Google's Expressive guidance
  * reserves them for 1:1 elements (FAB, IconButton, avatar, hero badge).
@@ -1011,28 +1098,54 @@ internal fun ReactionChip(
         label = "reaction-corner",
     )
     val container by animateColorAsState(
-        targetValue = if (item.isChosen) MaterialTheme.colorScheme.tertiaryContainer
-        else MaterialTheme.colorScheme.surfaceContainer,
+        targetValue = if (item.isChosen) MaterialTheme.colorScheme.primaryContainer
+        else androidx.compose.ui.graphics.Color.Transparent,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "reaction-bg",
     )
+    val borderColor by animateColorAsState(
+        targetValue = if (item.isChosen) androidx.compose.ui.graphics.Color.Transparent
+        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "reaction-border",
+    )
     val countColor by animateColorAsState(
-        targetValue = if (item.isChosen) MaterialTheme.colorScheme.onTertiaryContainer
+        targetValue = if (item.isChosen) MaterialTheme.colorScheme.onPrimaryContainer
         else MaterialTheme.colorScheme.onSurfaceVariant,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "reaction-fg",
     )
     val tintForCustom by animateColorAsState(
-        targetValue = if (item.isChosen) MaterialTheme.colorScheme.onTertiaryContainer
+        targetValue = if (item.isChosen) MaterialTheme.colorScheme.onPrimaryContainer
         else MaterialTheme.colorScheme.onSurface,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "reaction-tint",
     )
     val shape = RoundedCornerShape(cornerRadius)
+    // N5 — reaction micro-burst. A one-shot 6-particle radial spray fired only when the
+    // chip transitions UNCHOSEN → CHOSEN (a fresh reaction), not on un-choosing. Driven
+    // by a single Animatable 0 → 1 over the effects spec; particles radiate from the
+    // chip centre, growing then fading. Self-contained (NOT the SpoilerField machinery,
+    // which is seed/size-bound to full media regions) — it draws via a transparent
+    // overlay Canvas so it never affects the chip's layout. Skipped under reduced motion.
+    val reducedMotionBurst = rememberReducedMotion()
+    val burst = remember { androidx.compose.animation.core.Animatable(0f) }
+    val burstSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val burstColor = MaterialTheme.colorScheme.primary
+    var wasChosen by remember { mutableStateOf(item.isChosen) }
+    LaunchedEffect(item.isChosen) {
+        if (item.isChosen && !wasChosen && !reducedMotionBurst) {
+            burst.snapTo(0f)
+            burst.animateTo(1f, animationSpec = burstSpec)
+        }
+        wasChosen = item.isChosen
+    }
+    Box {
     Row(
         modifier = Modifier
             .clip(shape)
             .background(container, shape)
+            .border(1.dp, borderColor, shape)
             .let {
                 if (onClick != null) it.clickable(
                     interactionSource = interactionSource,
@@ -1065,11 +1178,70 @@ internal fun ReactionChip(
             )
         }
         Spacer(Modifier.width(6.dp))
-        Text(
-            text = formatViews(item.count),
-            style = MaterialTheme.typography.labelMedium,
-            color = countColor,
-        )
+        // M3 — mini digit-roll on count changes: the new value slides in vertically
+        // (up when the count grows, down when it shrinks) while the old slides out and
+        // fades, Telegram's counter idiom. C2 tabular figures keep the width fixed so
+        // the roll never reflows neighbours. Under reduced motion AnimatedContent's
+        // transition collapses to an instant swap (its spec scale is 0).
+        // Specs are read in @Composable scope and captured by the transitionSpec
+        // lambda (which is NOT composable, so it can't read MaterialTheme itself).
+        val reducedMotion = rememberReducedMotion()
+        val countStyle = MaterialTheme.typography.labelMedium.tabularFigures()
+        val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+        val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<androidx.compose.ui.unit.IntOffset>()
+        AnimatedContent(
+            targetState = item.count,
+            transitionSpec = {
+                if (reducedMotion) {
+                    fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec)
+                } else {
+                    val up = targetState > initialState
+                    (slideInVertically(spatialSpec) { h -> if (up) h else -h } + fadeIn(fadeSpec))
+                        .togetherWith(
+                            slideOutVertically(spatialSpec) { h -> if (up) -h else h } + fadeOut(fadeSpec),
+                        )
+                }
+            },
+            label = "reaction-count-roll",
+        ) { count ->
+            Text(
+                text = formatViews(count),
+                style = countStyle,
+                color = countColor,
+            )
+        }
+    }
+        // N5 burst overlay — matchParentSize so it covers the chip without participating
+        // in layout. Drawn only while the one-shot is live (burst.value in (0,1)).
+        if (burst.value > 0f && burst.value < 1f) {
+            androidx.compose.foundation.Canvas(
+                modifier = Modifier.matchParentSize(),
+            ) {
+                val progress = burst.value
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                // Travel scales off the chip's short side so the spray reads as
+                // "from this chip" at any chip width. ~10% of the spoiler travel.
+                val maxTravel = size.height * 0.9f
+                val particleCount = 6
+                val dotRadius = 2.2.dp.toPx() * (1f - progress * 0.5f)
+                val alpha = (1f - progress).coerceIn(0f, 1f)
+                for (p in 0 until particleCount) {
+                    val angle = (p.toFloat() / particleCount) * 2f *
+                        Math.PI.toFloat() - (Math.PI.toFloat() / 2f)
+                    val ease = 1f - (1f - progress) * (1f - progress)
+                    val dist = maxTravel * ease
+                    val x = cx + kotlin.math.cos(angle) * dist
+                    val y = cy + kotlin.math.sin(angle) * dist
+                    drawCircle(
+                        color = burstColor,
+                        radius = dotRadius,
+                        center = Offset(x, y),
+                        alpha = alpha,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1097,17 +1269,19 @@ private fun StatPill(
         Symbol(
             name = symbol,
             tint = tint,
-            // 18 dp keeps the stat glyph optically matched to its labelMedium-weight
-            // count text. The earlier 22 dp let views / comments / forward icons
-            // visually outweigh their numbers and made the action row read heavier
-            // than the post body above it — Telegram / Threads keep stat glyphs in
-            // the 16–18 dp band for the same reason.
-            size = 18.dp,
+            // C1 — 14 dp stat glyphs. The earlier 18/22 dp let views / comments /
+            // forward icons visually outweigh their labelMedium counts and made the
+            // action row read at the same level as the post body above it. Dropping
+            // to 14 dp + labelMedium counts seats the whole row a full visual level
+            // below the body — Threads / Telegram keep stat glyphs in this band.
+            size = 14.dp,
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
             text = text,
-            style = MaterialTheme.typography.bodyMedium,
+            // C2 — tabular figures so a view-count tick (views ↑) never reflows the
+            // pill width and shifts its neighbours.
+            style = MaterialTheme.typography.labelMedium.tabularFigures(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

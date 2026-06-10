@@ -33,6 +33,7 @@ import dev.lyo.hortay.data.WebPreview
 import dev.lyo.hortay.data.WebPreviewKind
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdMediaImage
+import dev.lyo.hortay.ui.theme.mediaFrame
 
 /**
  * Web link preview card — Twitter / Telegram-X style.
@@ -153,7 +154,11 @@ private fun LargeWebPreviewMedia(preview: WebPreview) {
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(ratio)
-            .clip(MaterialTheme.shapes.small),
+            .clip(MaterialTheme.shapes.small)
+            // D1 — large web-preview image is rectangular photographic content nested
+            // inside the quote-frame card, so it carries the hairline frame on its
+            // nested-tile shape (shapes.small).
+            .mediaFrame(MaterialTheme.shapes.small),
     ) {
         TdMediaImage(
             media = image,
@@ -173,7 +178,9 @@ private fun WebPreviewLeading(preview: WebPreview) {
         Box(
             modifier = Modifier
                 .size(72.dp)
-                .clip(MaterialTheme.shapes.small),
+                .clip(MaterialTheme.shapes.small)
+                // D1 — compact-preview leading thumbnail (rectangular photographic).
+                .mediaFrame(MaterialTheme.shapes.small),
         ) {
             TdMediaImage(
                 media = image,

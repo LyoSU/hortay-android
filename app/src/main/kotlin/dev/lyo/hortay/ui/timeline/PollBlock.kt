@@ -65,6 +65,7 @@ import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.text.rememberRenderableText
+import dev.lyo.hortay.ui.theme.mediaFrame
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
@@ -148,11 +149,15 @@ internal fun PollBlock(
 
 @Composable
 private fun PollHeaderMedia(thumb: TdMedia, onClick: () -> Unit) {
+    val bannerShape = RoundedCornerShape(14.dp)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(bannerShape)
+            // D1 — poll banner is rectangular photographic content nested in the poll
+            // card; hairline frame on the same shape it clips to.
+            .mediaFrame(bannerShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .clickable(onClick = onClick),
     ) {
@@ -375,17 +380,22 @@ private fun PollOptionRow(
     val cs = MaterialTheme.colorScheme
     val quiz = kind as? PollKind.Quiz
     val isCorrect = quiz != null && option.index in quiz.correctOptionIds
-    // Row outcome state for post-vote / quiz colouring:
-    //   - regular post-vote: chosen → primary, others → onSurfaceVariant
+    // Row outcome state for post-vote / quiz colouring. Fill discipline (WS-O): lavender
+    // (`primary`) is reserved for the user's OWN choice on a regular poll — it must never
+    // tint a result bar the user didn't pick. Non-chosen result bars use the neutral
+    // `secondary` so they read as "other results" rather than "your choice", and stay
+    // visible against the card (the previous `onSurfaceVariant` read as a near-invisible
+    // grey on the result bar).
+    //   - regular post-vote: chosen → primary (lavender, yours), others → secondary
     //   - quiz post-vote, user picked this: correct → tertiary (success), wrong → error
     //   - quiz post-vote, user did NOT pick this: correct → tertiary highlighted (always show
-    //     the right answer), others → onSurfaceVariant
+    //     the right answer), others → secondary
     val accent = when {
         quiz != null && showResults && option.isChosen && isCorrect -> cs.tertiary
         quiz != null && showResults && option.isChosen && !isCorrect -> cs.error
         quiz != null && showResults && isCorrect -> cs.tertiary
         option.isChosen && showResults -> cs.primary
-        else -> cs.onSurfaceVariant
+        else -> cs.secondary
     }
     val container by animateColorAsState(
         targetValue = when {
@@ -416,10 +426,15 @@ private fun PollOptionRow(
             )
             Spacer(Modifier.width(12.dp))
             option.thumb?.let { t ->
+                val thumbShape = RoundedCornerShape(8.dp)
                 Box(
                     modifier = Modifier
                         .size(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(thumbShape)
+                        // D1 — small option thumbnail (rectangular photographic). Kept at
+                        // 8 dp rather than shapes.small (12 dp): a 12 dp radius reads heavy
+                        // on a 36 dp tile this dense.
+                        .mediaFrame(thumbShape)
                         .background(cs.surfaceContainerHighest),
                 ) {
                     TdMediaImage(media = t, contentDescription = null)

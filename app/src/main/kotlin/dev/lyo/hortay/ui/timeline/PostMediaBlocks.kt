@@ -50,6 +50,7 @@ import dev.lyo.hortay.ui.media.SpoilerKind
 import dev.lyo.hortay.ui.media.SpoilerOverlay
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.TdVideoPlayer
+import dev.lyo.hortay.ui.theme.mediaFrame
 
 @Composable
 internal fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<AlbumItem>, Int) -> Unit, maxLines: Int, translation: FormattedText?) {
@@ -73,7 +74,12 @@ private fun SingleMedia(item: AlbumItem, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(ratio)
-            .clip(MaterialTheme.shapes.medium),
+            .clip(MaterialTheme.shapes.medium)
+            // D1 — feed photo / video-poster / animation thumbnail is rectangular
+            // photographic content (stickers route through StickerBlock, never here),
+            // so the hairline frame applies on the SAME shape it clips to. Keeps a
+            // pale screenshot / meme from dissolving into the near-white canvas.
+            .mediaFrame(MaterialTheme.shapes.medium),
     ) {
         MediaWithSpoiler(item = item, onClick = onClick)
     }
@@ -312,7 +318,12 @@ private fun AlbumRow(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
                     modifier = Modifier
                         .width(itemWidth)
                         .fillMaxHeight()
-                        .clip(MaterialTheme.shapes.medium),
+                        // D2 — album inner tiles are nested media, so they take the
+                        // tighter nested radius (shapes.small, 12 dp) rather than the
+                        // in-card shapes.medium used by the single-media block.
+                        .clip(MaterialTheme.shapes.small)
+                        // D1 — rectangular photographic content, frame on the same shape.
+                        .mediaFrame(MaterialTheme.shapes.small),
                 ) {
                     MediaWithSpoiler(
                         item = item,
@@ -370,6 +381,8 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
             .fillMaxWidth()
             .aspectRatio(ratio)
             .clip(MaterialTheme.shapes.medium)
+            // D1 — inline animation (silent MP4 GIF) is opaque rectangular video content.
+            .mediaFrame(MaterialTheme.shapes.medium)
             .clickable(enabled = revealed && !passive) { onMediaClick(items, 0) },
     ) {
         // Same suppression as MediaWithSpoiler: when the GIF autoplayer is mounted, its own
