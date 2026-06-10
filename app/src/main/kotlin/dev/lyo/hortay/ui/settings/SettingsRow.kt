@@ -82,18 +82,20 @@ internal fun SettingsRow(
 }
 
 /**
- * M3E grouped-list section header. titleSmall SemiBold reads as a list-section
- * delimiter rather than a chip-style label; the primary tint keeps the brand
- * accent the original design leaned on. Padding lifts the label off the row
- * below so each section reads as its own block.
+ * M3E grouped-list section header. `labelLarge` SemiBold in `onSurfaceVariant`
+ * reads as a quiet list-section delimiter on the clean canvas. Primary tint was
+ * dropped deliberately: on a near-white background a coloured header registers as
+ * a tappable link, and primary is reserved for interactive text (doctrine §5 —
+ * colour semantics). Padding lifts the label off the row below so each section
+ * reads as its own block.
  */
 @Composable
 internal fun SectionLabel(text: String) {
     Text(
         text = text,
-        style = MaterialTheme.typography.titleSmall,
+        style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
     )
 }

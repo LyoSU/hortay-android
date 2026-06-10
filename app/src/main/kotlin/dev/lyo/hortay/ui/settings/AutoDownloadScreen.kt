@@ -14,7 +14,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,7 +22,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -288,16 +286,9 @@ private fun CategoryRow(
     SegmentedListItem(
         onClick = onClick,
         shapes = shapes,
+        // Naked Solar icon, matching the unified settings icon language (G1 / doctrine §5).
         leadingContent = {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Symbol(name = symbol, tint = MaterialTheme.colorScheme.onPrimaryContainer, size = 22.dp)
-            }
+            Symbol(name = symbol, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 22.dp)
         },
         supportingContent = {
             Text(
@@ -477,16 +468,15 @@ private fun ToggleRow(
         // companion `Switch` is the visual cue but isn't the only hit target.
         onClick = { onCheckedChange(!checked) },
         shapes = shapes,
+        // Naked Solar icon (G1 / doctrine §5); tints `primary` when on so a glance reads the
+        // active state, matching the top-level feed toggles. The Switch remains the control.
         leadingContent = {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                contentAlignment = Alignment.Center,
-            ) {
-                Symbol(name = symbol, tint = MaterialTheme.colorScheme.onSurface, size = 22.dp)
-            }
+            Symbol(
+                name = symbol,
+                tint = if (checked) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 22.dp,
+            )
         },
         supportingContent = {
             Text(

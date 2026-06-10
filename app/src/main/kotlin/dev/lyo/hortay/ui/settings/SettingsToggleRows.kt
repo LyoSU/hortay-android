@@ -3,11 +3,8 @@
 package dev.lyo.hortay.ui.settings
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -16,9 +13,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -84,20 +79,9 @@ private fun FeedOrderRow(
     SegmentedListItem(
         onClick = onClick,
         shapes = shapes,
-        leadingContent = {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(
-                        if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Symbol(name = symbol, tint = leadingTint, size = 22.dp)
-            }
-        },
+        // Naked Solar icon — no tonal disc. Selection is carried by the icon tint
+        // (primary when active) per the unified settings icon language (doctrine §5).
+        leadingContent = { Symbol(name = symbol, tint = leadingTint, size = 22.dp) },
         supportingContent = {
             Text(
                 text = subtitle,
@@ -136,23 +120,12 @@ internal fun SnapScrollRow(
         onClick = { onToggle(!enabled) },
         shapes = shapes,
         leadingContent = {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(
-                        if (enabled) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Symbol(
-                    name = "play_circle",
-                    tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    size = 22.dp,
-                )
-            }
+            Symbol(
+                name = "play_circle",
+                tint = if (enabled) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 22.dp,
+            )
         },
         supportingContent = {
             Text(
@@ -200,23 +173,12 @@ internal fun InlineAutoplayRow(
         onClick = { onToggle(!enabled) },
         shapes = shapes,
         leadingContent = {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(
-                        if (enabled) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Symbol(
-                    name = "smart_display",
-                    tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    size = 22.dp,
-                )
-            }
+            Symbol(
+                name = "smart_display",
+                tint = if (enabled) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 22.dp,
+            )
         },
         supportingContent = {
             Text(
@@ -266,23 +228,12 @@ internal fun HideOnlineStatusRow(
         onClick = { onToggle(!enabled) },
         shapes = shapes,
         leadingContent = {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(
-                        if (enabled) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Symbol(
-                    name = if (enabled) "visibility_off" else "visibility",
-                    tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    size = 22.dp,
-                )
-            }
+            Symbol(
+                name = if (enabled) "visibility_off" else "visibility",
+                tint = if (enabled) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 22.dp,
+            )
         },
         supportingContent = {
             Text(
@@ -312,10 +263,9 @@ internal fun HideOnlineStatusRow(
  * platform has no dynamic-colour API and the brand scheme is the only option,
  * so a toggle would be a dead control.
  *
- * The `palette` glyph fills (onPrimaryContainer over primaryContainer) when ON
- * so a glance reads the active state, matching [SnapScrollRow] /
- * [InlineAutoplayRow]. Single-row segment (`segmentedShapes(0, 1)`) — it sits
- * alone in the Appearance section.
+ * The `palette` glyph tints `primary` when ON so a glance reads the active state,
+ * matching [SnapScrollRow] / [InlineAutoplayRow]. Single-row segment
+ * (`segmentedShapes(0, 1)`) — it sits alone in the Appearance section.
  */
 @Composable
 internal fun DynamicColorRow(
@@ -331,23 +281,12 @@ internal fun DynamicColorRow(
         onClick = { onToggle(!enabled) },
         shapes = shapes,
         leadingContent = {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(
-                        if (enabled) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Symbol(
-                    name = "palette",
-                    tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    size = 22.dp,
-                )
-            }
+            Symbol(
+                name = "palette",
+                tint = if (enabled) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 22.dp,
+            )
         },
         supportingContent = {
             Text(

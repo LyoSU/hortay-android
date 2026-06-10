@@ -4,6 +4,10 @@ package dev.lyo.hortay.ui.settings
 
 import android.app.Activity
 import android.os.Build
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -155,14 +161,26 @@ private fun LanguageDialog(
 
 @Composable
 private fun LanguageOption(label: String, selected: Boolean, onClick: () -> Unit) {
+    // Instant press ack (doctrine §1): a pressed `surfaceContainerHigh` tint paints within one
+    // frame, ahead of the ripple, so a tap reads immediately even on a slow dialog surface.
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val rowColor by animateColorAsState(
+        targetValue = if (pressed) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "language-option-press",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
+            .background(rowColor)
             .selectable(
                 selected = selected,
                 onClick = onClick,
                 role = Role.RadioButton,
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
             )
             .padding(vertical = 12.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

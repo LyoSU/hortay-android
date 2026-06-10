@@ -17,12 +17,15 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,6 +90,14 @@ fun HiddenChannelsScreen(
     val hidden by store.ignored.collectAsStateWithLifecycle(initialValue = persistentSetOf())
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    val snackbarHostState = remember { SnackbarHostState() }
+    // Optimistic unhide (doctrine §1 / WS-M2): the tapped row leaves the list in the same frame,
+    // before the DataStore write round-trips back through [store.ignored]. Ids stay in this set
+    // only between the tap and the flow catching up; on a write failure we drop the id from here
+    // (the row reappears) and surface a snackbar. No data-layer change — [store.remove] is the
+    // existing wiring.
+    val pendingUnhide = remember { mutableStateListOf<Long>() }
+    val unhideFailed = stringResource(R.string.error_generic)
 
     // Resolved display metadata, keyed by chatId. Resolution is async (TDLib
     // round-trip); the row renders a placeholder until the LaunchedEffect
@@ -96,8 +107,16 @@ fun HiddenChannelsScreen(
 
     // Materialise the hidden set into a stable ordered list so LazyColumn
     // keys are deterministic across re-emits. Sort by chatId so re-ordering
-    // doesn't shuffle on every keystroke-style toggle.
-    val hiddenList = remember(hidden) { hidden.sorted() }
+    // doesn't shuffle on every keystroke-style toggle. Optimistically-unhidden
+    // ids are subtracted so the row vanishes before the DataStore write lands.
+    val hiddenList = remember(hidden, pendingUnhide.toList()) {
+        hidden.filter { it !in pendingUnhide }.sorted()
+    }
+
+    // Once the store actually drops an id, clear it from the pending set so it can't leak.
+    LaunchedEffect(hidden) {
+        pendingUnhide.removeAll { it !in hidden }
+    }
 
     LaunchedEffect(hiddenList) {
         // Fetch missing metadata for any newly-hidden chatIds. Already-resolved
@@ -131,6 +150,7 @@ fun HiddenChannelsScreen(
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (hiddenList.isEmpty()) {
@@ -155,7 +175,17 @@ fun HiddenChannelsScreen(
                     display = display,
                     index = index,
                     count = hiddenList.size,
-                    onUnhide = { scope.launch { store.remove(chatId) } },
+                    onUnhide = {
+                        if (chatId in pendingUnhide) return@HiddenChannelRow
+                        pendingUnhide.add(chatId)
+                        scope.launch {
+                            val ok = runCatching { store.remove(chatId) }.isSuccess
+                            if (!ok) {
+                                pendingUnhide.remove(chatId)
+                                snackbarHostState.showSnackbar(unhideFailed)
+                            }
+                        }
+                    },
                 )
             }
         }

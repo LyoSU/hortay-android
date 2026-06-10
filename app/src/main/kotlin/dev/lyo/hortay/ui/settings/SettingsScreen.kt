@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -397,8 +398,11 @@ private fun SettingsMain(
                     onClick = onOpenDataStorage,
                 )
                 if (onNavigateToArchiveSettings != null) {
+                    // "history", not "delete_sweep": the archive row is about keeping
+                    // edit/delete history, and a trash glyph read as "wipe my data" —
+                    // the opposite of what the tap does.
                     SettingsRow(
-                        symbol = "delete_sweep",
+                        symbol = "history",
                         title = stringResource(R.string.settings_archive_title),
                         subtitle = stringResource(R.string.archive_master_subtitle),
                         chevron = true, index = i++, count = total,
@@ -509,24 +513,33 @@ private fun ProfileHero(me: TdApi.User) {
     }
     val coverBrush = profileCoverBrush(me.profileAccentColorId)
     val onCover = profileOnCoverColor(me.profileAccentColorId)
-    // The whole card is the accent colour (clean two-shade gradient, no muddy surface blend);
-    // the name + handle ride on top in an adaptive black/white colour for contrast — the way
-    // Telegram paints its profile header.
+    // The card is the peer accent, softened ~27% toward `surface` (see profileCoverBrush) so it
+    // harmonises with the clean canvas; the name + handle ride on top in an adaptive black/white
+    // colour for contrast. extraLarge corners read as a hero, not a list row.
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
+            .clip(MaterialTheme.shapes.extraLarge)
             .background(coverBrush)
             .padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        TdAvatar(
-            name = displayName,
-            thumb = me.profilePhoto?.minithumbnail?.data,
-            fileId = me.profilePhoto?.small?.id,
-            size = 80.dp,
-            textStyle = MaterialTheme.typography.headlineSmall,
-        )
+        // 3 dp `surface`-coloured ring separates any avatar colour from any cover colour, so a
+        // dark avatar on a dark-ish blended cover (or vice versa) never melts into it.
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(3.dp),
+        ) {
+            TdAvatar(
+                name = displayName,
+                thumb = me.profilePhoto?.minithumbnail?.data,
+                fileId = me.profilePhoto?.small?.id,
+                size = 80.dp,
+                textStyle = MaterialTheme.typography.headlineSmall,
+            )
+        }
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
