@@ -166,9 +166,9 @@ class TimelineViewModel(
     /**
      * Per-route cold-start scroll anchor for [TimelineScreen]'s LazyColumn.
      * Captured the first time the screen renders a [TimelineUiState.Ready] for
-     * the route, then held constant so re-mounts (deep nav, where
-     * [dev.lyo.hortay.ui.main.NavOverlayRenderer]'s `takeLast(2)` window
-     * evicts the feed) land the user back where they came from.
+     * the route, then held constant. Serves as the SEED fallback when a
+     * remount has no live [feedScrollAnchor] yet (first visit of a scope) or
+     * the anchored row vanished from the feed while the screen was away.
      *
      * Stored as a [dev.lyo.hortay.ui.timeline.FeedItem] key, NOT a row index.
      * Indices are positional and silently rot under any ingest: a channel
@@ -198,6 +198,37 @@ class TimelineViewModel(
     /** One-shot capture — subsequent boundary movements never override the anchor. */
     fun capturePinnedScrollSeedKey(routeKey: Any, key: String) {
         if (routeKey !in pinnedScrollSeedKeys) pinnedScrollSeedKeys[routeKey] = key
+    }
+
+    /**
+     * Live leave-position anchor for [TimelineScreen]'s LazyColumn, captured
+     * on every unmount (detail push, tab swap, scope swap) and resolved back
+     * to a row index by the next mount of the same route.
+     *
+     * Exists because `LazyListState.Saver` restores a raw `(index, offset)`
+     * pair, and row indices silently rot while the screen is unmounted (see
+     * the ingest examples on [pinnedScrollSeedKeys] — same failure mode).
+     * Restoring by [FeedItem.key] survives any background ingest; if the
+     * anchored row was deleted while the user was away, the screen falls
+     * back to its cold-start seed.
+     *
+     * Unlike [pinnedScrollSeedKeys] (one-shot, boundary-of-unread at first
+     * Ready), this anchor is last-write-wins: it tracks where the user
+     * ACTUALLY was, not where the session started. Same VM-residency
+     * rationale as above — survives tab swaps and detail round-trips, dies
+     * with the process so a cold launch lands at the top by design.
+     *
+     * Plain [HashMap], not `mutableStateMapOf`: reads happen only inside a
+     * `remember` init on a fresh mount, writes only in `onDispose` — there is
+     * never a composition subscribed to an entry when it changes.
+     */
+    private val feedScrollAnchors: MutableMap<Any, FeedScrollAnchor> = HashMap()
+
+    fun feedScrollAnchor(routeKey: Any): FeedScrollAnchor? = feedScrollAnchors[routeKey]
+
+    /** Last-write-wins — every unmount overwrites the route's anchor with the freshest position. */
+    fun captureFeedScrollAnchor(routeKey: Any, anchor: FeedScrollAnchor) {
+        feedScrollAnchors[routeKey] = anchor
     }
 
     init {
@@ -369,3 +400,14 @@ data class ChannelBadge(
     val avatarUrl: String? = null,
     val latestPostDate: Long,
 )
+
+/**
+ * Leave-position scroll anchor: the first visible [FeedItem.key] + its pixel
+ * scroll offset, captured when a posts list unmounts and resolved back to the
+ * item's CURRENT row index on the next mount. Shared by
+ * [TimelineViewModel.feedScrollAnchor] (home feed, per route) and
+ * [ChannelViewModel.leaveScrollAnchor] (channel drill, per entry) — both exist
+ * because `LazyListState.Saver`'s raw index silently rots while the screen is
+ * unmounted and background ingest shifts the rows.
+ */
+data class FeedScrollAnchor(val itemKey: String, val offsetPx: Int)

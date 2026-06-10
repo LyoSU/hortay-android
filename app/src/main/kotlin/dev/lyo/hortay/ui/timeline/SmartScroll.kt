@@ -325,9 +325,9 @@ private const val SCROLL_TOP_ALIGN_MEASURE_TIMEOUT_MS = 500L
  * corrected position paints.
  *
  * **Fires once per genuine cold entry.** The reveal flag is a [rememberSaveable]
- * keyed on [routeKey], so a drill-out/drill-in restore (where
- * `LazyListState.Saver` brings back the user's real scroll) sees it already
- * `true` and skips repositioning. When [enabled] is false or [boundaryIndex] is
+ * keyed on [routeKey], so a drill-out/drill-in restore (where the VM scroll
+ * anchor — `TimelineViewModel.feedScrollAnchor` — brings back the user's real
+ * scroll) sees it already `true` and skips repositioning. When [enabled] is false or [boundaryIndex] is
  * `<= 0` (Newest mode caught-up feeds, deep-link landings) it initialises
  * `true` immediately so those paths keep their untouched one-frame mount with
  * no skeleton beat.

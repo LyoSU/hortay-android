@@ -359,14 +359,22 @@ fun ChannelScreen(
 
     // Scroll state. First paint lands at the correct row in one frame
     // (cold-start landing) AND drill-out/drill-in preserves user scroll, even
-    // when boundary moved while the user was elsewhere. The trick: pin the
-    // seed at the FIRST Ready transition via [rememberSaveable], use it as
-    // both the [LazyListState] constructor arg and the [rememberSaveable] key
-    // — so subsequent boundary movements don't yank the saver bundle out from
-    // under the restoration path. The previous design keyed on the LIVE
-    // boundary, which lost scroll on drill-back if cursors had moved while
-    // the user was inside another channel. See the matching pattern in
-    // [TimelineScreen]'s home-feed listState — same problem, same shape.
+    // when the list mutated while the user was elsewhere. Two layers:
+    //   - Cold seed: pin it at the FIRST Ready transition via [rememberSaveable],
+    //     use it as both the [LazyListState] constructor arg and the [remember]
+    //     key — so subsequent boundary movements don't re-init the state under
+    //     the user. The previous design keyed on the LIVE boundary, which lost
+    //     scroll on drill-back if cursors had moved while the user was inside
+    //     another channel.
+    //   - Drill-out/drill-in restore: [ChannelViewModel.leaveScrollAnchor], a
+    //     KEY-based anchor captured in the [DisposableEffect] below. The former
+    //     `LazyListState.Saver` restore was a raw (index, offset) pair, and a
+    //     fresh post landing at the low-index end of the descending data while
+    //     a comments/profile push was up shifted every row — on pop the same
+    //     index named a different post. Resolving the anchored item key against
+    //     the CURRENT [displayedItems] is immune to that. See the matching
+    //     pattern in [TimelineScreen]'s home-feed listState — same problem,
+    //     same shape.
     val pinnedChannelSeed = rememberSaveable(chatId) {
         androidx.compose.runtime.mutableIntStateOf(-1)
     }
@@ -381,11 +389,29 @@ fun ChannelScreen(
         candidateInitialIndex != null -> candidateInitialIndex
         else -> 0
     }
-    val listState = rememberSaveable(
-        chatId, initialIndexSeed,
-        saver = androidx.compose.foundation.lazy.LazyListState.Saver,
-    ) {
-        androidx.compose.foundation.lazy.LazyListState(initialIndexSeed, 0)
+    val listState = remember(chatId, initialIndexSeed) {
+        val anchor = vm.leaveScrollAnchor
+        val anchorIndex = anchor?.let { a ->
+            displayedItems.indexOfFirst { it.key == a.itemKey }.takeIf { idx -> idx >= 0 }
+        }
+        if (anchorIndex != null) {
+            androidx.compose.foundation.lazy.LazyListState(anchorIndex, anchor.offsetPx.coerceAtLeast(0))
+        } else {
+            androidx.compose.foundation.lazy.LazyListState(initialIndexSeed, 0)
+        }
+    }
+    // Capture the leave position on every unmount. Reading layoutInfo in
+    // onDispose is safe (the state retains its last layout pass); a mount
+    // disposed before its first layout keeps the previous anchor, which is
+    // still the user's last real position.
+    DisposableEffect(chatId, listState) {
+        onDispose {
+            val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+                ?: return@onDispose
+            val itemKey = firstVisible.key as? String ?: return@onDispose
+            vm.leaveScrollAnchor =
+                FeedScrollAnchor(itemKey, listState.firstVisibleItemScrollOffset)
+        }
     }
 
     // Resolve in-channel quote-tap scroll-to-message once the target row appears.

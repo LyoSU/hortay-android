@@ -331,48 +331,36 @@ fun TimelineScreen(
     val haptics = LocalHapticFeedback.current
     // Revision sheet: set to the post whose EditedChip was tapped; null when closed.
     var revisionsForPost by remember { mutableStateOf<TimelinePost?>(null) }
-    // Single scroll-position holder. Scroll state preservation is now parent-owned:
-    // MainScaffold wraps each TimelineScreen mount in a
-    //   SaveableStateProvider(key = "feed-channel:<chatId>")   for per-channel views
-    //   SaveableStateProvider(key = "feed-channel:__all__")    for the all-feed view
-    // so this rememberLazyListState() automatically participates in the correct scope.
-    // Each channel (and the all-feed) therefore gets its own independent list state —
-    // the dual-state-with-key dance (globalListState / filterListState) is no longer
-    // needed and was incorrect (it tried to do at the screen level what must happen at
-    // the route level to be process-death-safe and tab-switch-safe).
-    //
-    // Guest / web mode mounts TimelineScreen without a per-channel provider but with a
-    // top-level tab provider from WebModeScaffold, which is equivalent: the all-feed
-    // state is preserved across tab switches.
+    // Single scroll-position holder. Scroll preservation across unmounts (detail
+    // push/pop, tab swap, scope revisit) is owned by the KEY-based
+    // [TimelineViewModel.feedScrollAnchor] — captured on dispose, resolved back to a
+    // row index at the next mount. See the KDoc on the [listState] block below for
+    // why this replaced the `rememberSaveable + LazyListState.Saver` design.
     //
     // Cold-start positioning is owned by the `LazyListState(initialIndex, 0)`
     // constructor arg: the seed is derived SYNCHRONOUSLY from [latchedUiState]
-    // at the [rememberSaveable] call site, so when the latcher flips to
+    // at the [remember] call site, so when the latcher flips to
     // [TimelineUiState.Ready(initialIndex = N)] the very next composition pass
-    // re-keys the saver bundle and instantiates a fresh [LazyListState] at
+    // re-keys the holder and instantiates a fresh [LazyListState] at
     // index N. No `LaunchedEffect → MutableIntState → re-key` chain → no
     // one-frame paint at index 0 before the seed updates. Mirrors the pattern
     // [ChannelScreen] uses (see ChannelScreen.kt around line 294).
     //
     // [feedOrder] is part of [routeKey] so flipping Newest ↔ OldestUnreadFirst
-    // invalidates the saver bundle directly: the latched [Ready.initialIndex]
+    // re-keys the holder directly: the latched [Ready.initialIndex]
     // would otherwise be preserved across the order flip (reducer's Ready→Ready
     // branch keeps the previous index), and a `LaunchedEffect(feedOrder)`
     // mutating a seed holder could no-op when old and new boundaries collide
     // (both `0`, for example), stranding the user on the old sort's anchor.
     //
-    // [LazyListState.Saver] still persists `firstVisibleItemIndex` across tab
-    // swaps within a process (the SaveableStateProvider in MainScaffold /
-    // WebModeScaffold scopes saved state per route), so drilling into a
-    // channel and popping back retains the user's scroll. Process death is
-    // handled implicitly: the seed re-evaluates from 0 on restore, then jumps
-    // to its real value on the next Ready transition, and the column mounts
-    // pre-positioned. We don't try to bridge scroll across process death —
-    // see the "Cold launch always lands on Home top-of-feed" guarantee.
+    // We don't try to bridge scroll across process death — the VM (and with it
+    // the anchor map) dies with the process, the seed re-evaluates from 0 and
+    // jumps to its real value on the next Ready transition. See the "Cold
+    // launch always lands on Home top-of-feed" guarantee.
     // ────────────────────────────────────────────────────────────────────────
     // Latcher chain — every input to [buildTimelineUiState] + [rememberLatchedTimelineUiState]
     // is computed here, BEFORE [listState], so the [readySeed] read into the
-    // [rememberSaveable] key is the LATCHED Ready.initialIndex (not a stale 0 seeded
+    // [remember] key is the LATCHED Ready.initialIndex (not a stale 0 seeded
     // by a LaunchedEffect that runs after composition). ChannelScreen uses the same
     // shape — see ChannelScreen.kt:294.
     //
@@ -733,9 +721,22 @@ fun TimelineScreen(
         routeKey = routeKey,
     )
 
-    // [rememberSaveable] key for the feed's [LazyListState] is keyed on the
-    // BOOLEAN "latched candidate has produced an initial index" — NOT on the
-    // index value itself.
+    // The feed's [LazyListState] is plain [remember] — NOT `rememberSaveable` +
+    // `LazyListState.Saver` (the original design). The saver restores a raw
+    // `(index, offset)` pair, and row indices silently rot while the screen is
+    // unmounted under a detail push: a channel drill calls
+    // [PostsRepository.loadChannelHistory], ~80 older posts of that channel
+    // merge into `_posts`, and in OldestUnreadFirst's asc-by-date sort they
+    // land ABOVE the saved row — on pop the restored index named a completely
+    // different post ("coming back from a channel loses my place"). Album
+    // repair and tombstone filtering mutate row counts the same way. Instead,
+    // [TimelineViewModel.feedScrollAnchor] captures the first visible
+    // [FeedItem.key] + pixel offset on dispose (see the [DisposableEffect]
+    // below) and the init lambda here resolves it back to the CURRENT index of
+    // that same item — immune to any background ingest.
+    //
+    // The remember key is the BOOLEAN "latched candidate has produced an
+    // initial index" — NOT the index value itself.
     //
     // Why the boolean:
     //   • Cold start: it flips `false→true` in lockstep with [latchedUiState]
@@ -749,26 +750,24 @@ fun TimelineScreen(
     //     [reduceTimelineUiState] preserves `initialIndex` across every
     //     Ready→Ready transition (one-shot latcher contract — see its
     //     KDoc), so the boolean stays `true` and the key stays stable. The
-    //     saver bundle is owned by the user's scroll; LazyColumn carries
+    //     live listState is owned by the user's scroll; LazyColumn carries
     //     the visual anchor through any feedItems mutation via
     //     keyed-scroll preservation on [FeedItem.key].
-    //   • Tab swap (TabContentSwitcher unmounts the inactive tab and the
-    //     parent SaveableStateProvider persists bundles per `tab.name`):
-    //     on remount the latcher cold-starts again (Loading → Ready), the
-    //     boolean transitions `false → true` once more, and on the `true`
-    //     frame the bundle saved before unmount is restored under the
-    //     same key — user's pre-unmount scroll position lands back where
-    //     it was.
+    //   • Remount (tab swap via TabContentSwitcher, detail pop remounting
+    //     HomeKey): the latcher cold-starts again (Loading → Ready), the
+    //     boolean transitions `false → true` once more, and the init on the
+    //     `true` frame resolves the VM anchor against the CURRENT feedItems
+    //     — the user lands on the exact item they left, not on whatever row
+    //     number it used to occupy. The anchor read is deliberately
+    //     non-consuming: the `false` frame may init against a not-yet-
+    //     hydrated feedItems (anchor unresolvable → seed fallback), and the
+    //     `true` frame must be able to re-read it.
     //
     // Why NOT key on the index value (the original design): every time the
-    // resolved row of the pinned anchor drifts (e.g. while the user is
-    // parked under a channel drill, [PostsRepository.loadChannelHistory]
-    // backfills ~80 older posts of an open subscribed channel into `_posts`,
-    // shifting the anchor from row ~5 to ~85 in OldestUnreadFirst's
-    // asc-by-date sort), the key changes, the saver bundle is invalidated,
-    // and the listState reinitialises at the new anchor row. On overlay pop
-    // the user lands at the unread boundary instead of where they were
-    // reading.
+    // resolved row of the pinned anchor drifts (the loadChannelHistory
+    // backfill above shifts it from row ~5 to ~85), the key changes and the
+    // listState reinitialises at the new anchor row. On overlay pop the user
+    // lands at the unread boundary instead of where they were reading.
     //
     // Why NOT key on `cursorsHaveLanded`: that flag flips `false→true` one
     // composition BEFORE [latchedUiState] becomes Ready (the latcher
@@ -778,8 +777,8 @@ fun TimelineScreen(
     // oldest post in OldestUnreadFirst's asc-by-date sort, which surfaces
     // as "cold start lands on 2017 posts".
     //
-    // The init lambda captures [readySeed] DIRECTLY (no
-    // [rememberUpdatedState] hop) because rememberSaveable invokes init
+    // The init lambda captures [readySeed] / [feedItems] DIRECTLY (no
+    // [rememberUpdatedState] hop) because remember invokes init
     // synchronously inside the same composition that recomputed
     // [readySeed]. rememberUpdatedState would defer the update to a
     // SideEffect that runs AFTER composition — reading its `.value` from
@@ -801,11 +800,34 @@ fun TimelineScreen(
         else feedItems.indexOfFirst { it.key == pinnedKey }.takeIf { it >= 0 }
     }
     val readySeed = pinnedIndex ?: candidateInitialIndex ?: 0
-    val listState = rememberSaveable(
-        routeKey, candidateInitialIndex != null,
-        saver = androidx.compose.foundation.lazy.LazyListState.Saver,
-    ) {
-        androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
+    val listState = remember(routeKey, candidateInitialIndex != null) {
+        val anchor = vm.feedScrollAnchor(routeKey)
+        val anchorIndex = anchor?.let { a ->
+            feedItems.indexOfFirst { it.key == a.itemKey }.takeIf { idx -> idx >= 0 }
+        }
+        if (anchorIndex != null) {
+            androidx.compose.foundation.lazy.LazyListState(anchorIndex, anchor.offsetPx.coerceAtLeast(0))
+        } else {
+            androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
+        }
+    }
+    // Capture the leave position on every unmount (detail push, tab swap) AND on a
+    // scope swap re-keying this effect mid-composition — onDispose closes over the
+    // OLD routeKey, so the position files under the scope the user is leaving.
+    // Reading layoutInfo in onDispose is safe: the state object retains its last
+    // layout pass. A mount disposed before its first layout has empty
+    // visibleItemsInfo and keeps the previous anchor — which is still the user's
+    // last real position.
+    DisposableEffect(routeKey, listState) {
+        onDispose {
+            val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+                ?: return@onDispose
+            val itemKey = firstVisible.key as? String ?: return@onDispose
+            vm.captureFeedScrollAnchor(
+                routeKey,
+                FeedScrollAnchor(itemKey, listState.firstVisibleItemScrollOffset),
+            )
+        }
     }
     // Twitter-style collapsing header in the NON-CONSUMING (overlay) variant — see
     // [rememberFloatingTopBarBehavior]'s `consumeScroll` KDoc. The feed's header is tall (brand row

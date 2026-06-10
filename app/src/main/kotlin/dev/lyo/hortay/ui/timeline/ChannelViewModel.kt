@@ -76,6 +76,19 @@ class ChannelViewModel(
     val scrollToMessageId: Long?,
 ) : ViewModel() {
 
+    /**
+     * Leave-position anchor for the channel's LazyColumn, captured when the
+     * screen unmounts (comments / profile pushed on top) and resolved back to
+     * the item's CURRENT row index on remount. Same failure mode and fix as
+     * [TimelineViewModel]'s `feedScrollAnchors`: `LazyListState.Saver`'s raw
+     * index rots when fresh posts land at the low-index end of the descending
+     * data while the screen is away. The entry-scoped VM lifetime is exactly
+     * the restore contract — survives pushes above this entry, cleared with
+     * the ViewModelStore when the channel itself is popped (a re-opened
+     * channel is a fresh cold landing by design).
+     */
+    var leaveScrollAnchor: FeedScrollAnchor? = null
+
     // Cold flow that filters the global posts stream down to this channel.
     // Used by every internal collector that needs the channel slice — the
     // live-ingest pump for [_data], the title/avatar resolver, etc. Cold

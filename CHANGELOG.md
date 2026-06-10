@@ -20,6 +20,7 @@
 - The fullscreen media viewer rests its controls on a subtle gradient so they stay legible over any photo.
 
 ### Fixed
+- Going back to the feed from a channel or comments now lands on the exact post you left, instead of a nearby spot when posts loaded in the background while you were away.
 - Photo albums that arrived while the app was closed now fill in all their photos when you scroll to them, instead of sometimes staying stuck on a single image.
 - A fresh album landing in the feed no longer briefly shows with only part of its photos while the rest arrive.
 - An album of documents or audio files no longer renders as a blank card.
