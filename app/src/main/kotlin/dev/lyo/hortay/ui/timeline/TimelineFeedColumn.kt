@@ -73,6 +73,15 @@ internal fun TimelineFeedColumn(
     if (staggerEnabled) {
         SideEffect { hasStaggeredThisProcess = true }
     }
+    // Stagger is scoped to the KEYS present at first mount, not to "whatever sits at
+    // index < STAGGER_COUNT". `staggerEnabled` stays true for this composition's whole
+    // lifetime, so an index-based gate replayed the entrance (alpha 0 + rise + delay)
+    // on every LATER arrival landing in the top rows — accepted "new posts" blinked in
+    // late and read as a glitch on the pill jump.
+    val staggerKeys = remember {
+        if (staggerEnabled) feedItems.take(STAGGER_COUNT).map { it.key }.toHashSet()
+        else emptySet()
+    }
 
     LazyColumn(
         state = state,
@@ -94,22 +103,18 @@ internal fun TimelineFeedColumn(
                 }
             },
         ) { index, item ->
-            // M4: accepted arrivals / folder switches / deletions reflow with a
-            // slide instead of teleporting. Presentation only — animateItem animates
-            // placement of items LazyColumn already keyed, so it never touches the
-            // arrivals-commit contract or the scroll-anchor logic (keyed-scroll
-            // preservation still pins the user's anchor item). PLACEMENT ONLY: the
-            // fade-in/fade-out specs were tried and removed — a disappearing row
-            // fades out IN PLACE on top of the re-laid-out list, and on device the
-            // lingering half-transparent row (its avatar is the most distinctive
-            // part) read as "phantom channel avatars next to the wrong post".
-            val placementModifier = Modifier.animateItem(
-                fadeInSpec = null,
-                placementSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                fadeOutSpec = null,
-            )
+            // M4 animateItem is fully RETIRED after two retreats — do not reintroduce.
+            // (1) fade specs: a disappearing row faded out IN PLACE over the re-laid-out
+            // list — "phantom channel avatars next to the wrong post". (2) placement
+            // spec: placement springs fire on ANY relayout (live ingest at index 0,
+            // reaction rows appearing, media height settling), and Compose keeps
+            // drawing a mid-animation row even outside the viewport — during a fast
+            // fling rows visibly lagged behind the scroll as phantom posts/avatars,
+            // and on arrivals-pill accept the springs fought smartScrollTo's viewport
+            // jump. Rows reflow instantly; keyed-scroll preservation still pins the
+            // user's anchor item.
             when (item) {
-                is FeedItem.Boundary -> Box(placementModifier) { UnreadBoundaryRow() }
+                is FeedItem.Boundary -> UnreadBoundaryRow()
                 is FeedItem.Post -> {
                     // Per-item [derivedStateOf] reads [centeredItemKeyState]
                     // INSIDE its lambda, not at the items() body level — so the
@@ -152,10 +157,9 @@ internal fun TimelineFeedColumn(
                     }
                     // J1: first-paint stagger — the first STAGGER_COUNT cards fade in
                     // and rise 12 dp, each delayed index × STAGGER_STEP_MS, ONCE per
-                    // process. `staggerThisItem` is computed once per item key, so a
-                    // recomposition (scroll, ingest) does not replay it; only the very
-                    // first cold mount triggers it.
-                    val staggerThisItem = staggerEnabled && index < STAGGER_COUNT
+                    // process. Membership is by first-mount KEY (see [staggerKeys]),
+                    // so later arrivals occupying the same top indices never replay it.
+                    val staggerThisItem = staggerEnabled && item.key in staggerKeys
                     val staggerModifier = if (staggerThisItem) {
                         rememberStaggerEntrance(itemKey = item.key, index = index)
                     } else {
@@ -167,8 +171,7 @@ internal fun TimelineFeedColumn(
                         LocalShowFullPost provides showFull,
                     ) {
                         Box(
-                            modifier = placementModifier
-                                .then(staggerModifier)
+                            modifier = staggerModifier
                                 .onGloballyPositioned { topY[0] = it.positionInWindow().y },
                         ) {
                             PostCard(post = post, interactions = itemInteractions, onTapRevisions = onTapRevisions)
