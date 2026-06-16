@@ -62,7 +62,7 @@ detekt = "1.23.7"
 # nlopez/compose-rules — community Compose-specific lint rules (Modifier ordering,
 # stable params, lambda parameter naming/position, content-emitter return values,
 # etc.). 0.4.22 is the latest 0.4.x release; tracks detekt 1.23.x.
-detektRulesCompose = "0.4.22"
+detektRulesCompose = "0.6.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
