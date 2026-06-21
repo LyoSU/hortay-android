@@ -43,9 +43,9 @@ class CommentsRepositoryTest {
         val rootId = 7L
 
         // Standalone post (single-id input) — ensureAnchor's B9 fast path skips
-        // GetMessageProperties and goes directly to GetMessageThread. The
-        // responder queue mirrors that order: GetMessageThread → OpenChat →
-        // history page → CloseChat.
+        // GetMessageProperties and goes directly to GetMessageThread. The responder
+        // queue mirrors that order: GetMessageThread → OpenChat ×2 (thread + host) →
+        // history pages → CloseChat ×2.
         val td = FakeTdSender().apply {
             // 1. resolve thread directly (no GetMessageProperties for standalone).
             onNext { _ ->
@@ -54,12 +54,13 @@ class CommentsRepositoryTest {
                     this.messageThreadId = rootId
                 }
             }
-            // 2. OpenChat — fired before any history fetch so TDLib prioritises this
-            // thread chat and starts streaming updates for it.
+            // 2-3. OpenChat ×2 — observeThread wraps its work in
+            // withOpenChats(threadChatId, chatId), keeping the host channel open so the
+            // anchor post's interaction info stays live, so two OpenChats fire before
+            // any history fetch.
             onNext { _ -> TdApi.Ok() }
-            // 3. history page (one comment + the root mirror, mirror should be filtered).
-            // Progressive emit: Ready surfaces right after this batch, so the test's
-            // first{} cancels the flow before any subsequent page is requested.
+            onNext { _ -> TdApi.Ok() }
+            // 4. first thread-history page (one comment + the root mirror, filtered).
             onNext { _ ->
                 TdApi.Messages().apply {
                     messages = arrayOf(
@@ -69,8 +70,12 @@ class CommentsRepositoryTest {
                     totalCount = 2
                 }
             }
-            // 4. CloseChat fires from the flow's finally block on cancellation.
-            onNext { _ -> TdApi.Ok() }
+            // Bootstrap collects ALL pages, emitting Ready once; an empty page ends the
+            // loop. Both CloseChats fire from the finally block (NonCancellable).
+            onAny("GetMessageThreadHistory") { _ ->
+                TdApi.Messages().apply { messages = emptyArray(); totalCount = 0 }
+            }
+            onAny("CloseChat") { _ -> TdApi.Ok() }
         }
         val repo = CommentsRepository(td, fakeMapper(td), TestScope(StandardTestDispatcher(testScheduler)), FakeStrings)
 
@@ -175,6 +180,9 @@ class CommentsRepositoryTest {
                     this.messageThreadId = rootId
                 }
             }
+            // OpenChat ×2 — observeThread keeps both the thread chat and the host
+            // channel open via withOpenChats, so two OpenChats fire here.
+            onNext { _ -> TdApi.Ok() }
             onNext { _ -> TdApi.Ok() }
             onNext { _ ->
                 TdApi.Messages().apply {
@@ -233,6 +241,9 @@ class CommentsRepositoryTest {
                     this.messageThreadId = rootId
                 }
             }
+            // OpenChat ×2 — observeThread keeps both the thread chat and the host
+            // channel open via withOpenChats, so two OpenChats fire here.
+            onNext { _ -> TdApi.Ok() }
             onNext { _ -> TdApi.Ok() }
             onNext { _ ->
                 TdApi.Messages().apply {
@@ -294,6 +305,9 @@ class CommentsRepositoryTest {
                     this.messageThreadId = rootId
                 }
             }
+            // OpenChat ×2 — observeThread keeps both the thread chat and the host
+            // channel open via withOpenChats, so two OpenChats fire here.
+            onNext { _ -> TdApi.Ok() }
             onNext { _ -> TdApi.Ok() }
             onNext { _ ->
                 TdApi.Messages().apply {
