@@ -1,0 +1,86 @@
+# CI — the pre-commit gate ARCHITECTURE.md describes (lintRelease for the
+# MissingTranslation parity check, detekt for Compose-stability + Kotlin smells,
+# JVM unit tests), enforced on every push/PR to main so nothing merges unchecked.
+#
+# The long pole is TDLib: `org.drinkless.tdlib.{TdApi,Client}.java` are gitignored
+# and produced by scripts/update-tdlib.sh (Docker, ~20-30 min). :app won't compile
+# without them, so the first run builds TDLib and every later run restores it from
+# cache keyed on scripts/tdlib-version.txt — the cache only misses on a TDLib bump,
+# which is already its own dedicated commit.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes an in-flight run — TDLib builds are
+# expensive, don't pay for stale ones.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Backstop against a runaway build (Docker TDLib) or a hung test — runTest's
+    # own 60 s timeout normally fires first, this just caps the worst case.
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Restore the Docker-built TDLib bindings + native libs. Keyed on the pinned
+      # version file, so a `chore(tdlib): bump` invalidates it and nothing else does.
+      - name: Cache TDLib artifacts
+        id: tdlib-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
+            libtdlib/src/main/java/org/drinkless/tdlib/Client.java
+            libtdlib/src/main/jniLibs
+          key: tdlib-${{ hashFiles('scripts/tdlib-version.txt') }}
+
+      # Only build TDLib on a cache miss. arm64-v8a alone (release ABI) + no debug
+      # zip — the gates here never need x86_64 or unstripped symbols.
+      - name: Build TDLib (cache miss only)
+        if: steps.tdlib-cache.outputs.cache-hit != 'true'
+        env:
+          ABIS: arm64-v8a
+          KEEP_DEBUG: "0"
+        run: |
+          sha=$(grep '^TDLIB_SHA=' scripts/tdlib-version.txt | cut -d= -f2)
+          echo "Building TDLib at pinned SHA $sha"
+          ./scripts/update-tdlib.sh "$sha"
+
+      # Static analysis and unit tests first (no native packaging, fast feedback),
+      # then the release-lint translation gate.
+      - name: detekt + unit tests + lintRelease
+        run: ./gradlew :app:detekt :app:testDebugUnitTest :app:lintRelease --no-daemon --stacktrace
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            app/build/reports/detekt/
+            app/build/reports/lint-results-release.*
+            app/build/reports/tests/
+          if-no-files-found: ignore
