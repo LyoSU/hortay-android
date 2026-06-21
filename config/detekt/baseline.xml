@@ -4,12 +4,13 @@
   <CurrentIssues>
     <ID>ComposableNaming:FeedScrollEffects.kt$rememberCommentsPrefetch</ID>
     <ID>ComposableNaming:FeedScrollEffects.kt$rememberPendingScrollToMessage</ID>
+    <ID>ComposableParamOrder:ChannelScreen.kt$ChannelScreen</ID>
+    <ID>ComposableParamOrder:CommentsScreen.kt$CommentsScreen</ID>
     <ID>ComposableParamOrder:ConnectionBanner.kt$ConnectionBanner</ID>
     <ID>ComposableParamOrder:OtpInput.kt$OtpInput</ID>
     <ID>ComposableParamOrder:SkeletonFeed.kt$SkeletonFeed</ID>
     <ID>ComposableParamOrder:TimelineFeedColumn.kt$TimelineFeedColumn</ID>
     <ID>ComposableParamOrder:UserProfileSheet.kt$UserProfileSheet</ID>
-    <ID>ComposableParamOrder:WebChannelsScreen.kt$EmptyChannelsState</ID>
     <ID>CompositionLocalAllowlist:LocalCenteredItem.kt$LocalIsCenteredItem</ID>
     <ID>CompositionLocalAllowlist:LocalCenteredItem.kt$LocalIsHighlightedItem</ID>
     <ID>CompositionLocalAllowlist:LocalCenteredItem.kt$LocalMediaPassive</ID>
@@ -20,13 +21,15 @@
     <ID>CompositionLocalAllowlist:LocalStickerOutline.kt$LocalStickerOutline</ID>
     <ID>CompositionLocalAllowlist:LocalWebHttpClient.kt$LocalWebHttpClient</ID>
     <ID>CompositionLocalAllowlist:LocalWebmFrameCache.kt$LocalWebmFrameCache</ID>
+    <ID>CompositionLocalAllowlist:MainScaffold.kt$LocalNavBarCollapse</ID>
     <ID>CompositionLocalAllowlist:MediaViewerHost.kt$LocalMediaViewer</ID>
+    <ID>CompositionLocalAllowlist:RichText.kt$LocalShowFullPost</ID>
     <ID>CompositionLocalAllowlist:UserMessageActionDispatcher.kt$LocalUserMessageBus</ID>
     <ID>CompositionLocalAllowlist:WebmAnimationClock.kt$LocalWebmClock</ID>
     <ID>ContentSlotReused:PostCard.kt$content</ID>
-    <ID>ContentSlotReused:RichText.kt$renderer</ID>
     <ID>DestructuringDeclarationWithTooManyEntries:ConnectionBanner.kt$val (symbol, label, container, content) = if (showFlood) { Quad( "pause", pluralStringResource( R.plurals.connection_flood_wait, floodSecondsRemaining.toInt(), floodSecondsRemaining.toInt(), ), MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer, ) } else when (status) { ConnectionStatus.WaitingForNetwork -&gt; Quad( "wifi_off", stringResource(R.string.connection_waiting), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer, ) ConnectionStatus.Connecting -&gt; Quad( "cloud_off", stringResource(R.string.connection_connecting), MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, ) ConnectionStatus.Updating -&gt; Quad( "sync", stringResource(R.string.connection_updating), MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, ) ConnectionStatus.Ready -&gt; return@AnimatedVisibility }</ID>
     <ID>ExplicitItLambdaParameter:ChannelsScreen.kt${ _, it -&gt; it.chatId }</ID>
+    <ID>ExplicitItLambdaParameter:TimelineFeedColumn.kt${ _, it -&gt; it.key }</ID>
     <ID>ExplicitItLambdaParameter:WebChannelsScreen.kt${ _, it -&gt; it.info.username }</ID>
     <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_fetched_at_ms: Long</ID>
     <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_id: String</ID>
@@ -57,10 +60,12 @@
     <ID>InstanceOfCheckForException:LottieCompositionStore.kt$LottieCompositionStore$t is kotlin.coroutines.cancellation.CancellationException</ID>
     <ID>InstanceOfCheckForException:LottieUrlStore.kt$LottieUrlStore$t is kotlin.coroutines.cancellation.CancellationException</ID>
     <ID>InstanceOfCheckForException:MediaCache.kt$MediaCache$t is kotlinx.coroutines.CancellationException</ID>
+    <ID>InstanceOfCheckForException:ProxyRepository.kt$ProxyRepository$e !is TdClient.TdException</ID>
     <ID>InstanceOfCheckForException:StickerOutlineStore.kt$StickerOutlineStore$t is kotlin.coroutines.cancellation.CancellationException</ID>
     <ID>InstanceOfCheckForException:WebFeedSource.kt$WebFeedSource$t is kotlinx.coroutines.CancellationException</ID>
     <ID>InstanceOfCheckForException:WebModeScaffold.kt$t is kotlin.coroutines.cancellation.CancellationException</ID>
     <ID>LambdaParameterEventTrailing:SpoilerOverlay.kt$onReveal</ID>
+    <ID>LambdaParameterEventTrailing:WebChannelsScreen.kt$onAddChannel</ID>
     <ID>LambdaParameterInRestartableEffect:ChannelScreen.kt$onScrollHandled</ID>
     <ID>LambdaParameterInRestartableEffect:ChannelScreen.kt$onScrollMissed</ID>
     <ID>LambdaParameterInRestartableEffect:CommentsScreen.kt$fetchAvailableReactions</ID>
@@ -88,11 +93,13 @@
     <ID>LoopWithTooManyJumpStatements:MediaCache.kt$MediaCache$for</ID>
     <ID>LoopWithTooManyJumpStatements:MediaCache.kt$MediaCache$while</ID>
     <ID>LoopWithTooManyJumpStatements:PostsRepository.kt$PostsRepository$for</ID>
+    <ID>LoopWithTooManyJumpStatements:RichText.kt$for</ID>
     <ID>MatchingDeclarationName:ChannelHeaderBar.kt$ChannelHeaderAvatar</ID>
     <ID>MatchingDeclarationName:CommentsScreen.kt$CommentsDisabledOverride</ID>
     <ID>MatchingDeclarationName:FloatingTopBar.kt$FloatingTopBarBehavior</ID>
     <ID>MatchingDeclarationName:HortayTopBar.kt$HortayTopBarSize</ID>
     <ID>MatchingDeclarationName:PollBlock.kt$PollVoting</ID>
+    <ID>MatchingDeclarationName:ProxyFailover.kt$FailoverAction</ID>
     <ID>MatchingDeclarationName:SmartScroll.kt$ScrollKind</ID>
     <ID>MatchingDeclarationName:SpoilerOverlay.kt$SpoilerKind</ID>
     <ID>MatchingDeclarationName:TdErrorMapping.kt$TdErrorKind</ID>
@@ -102,14 +109,17 @@
     <ID>ModifierMissing:ArchiveSettingsScreen.kt$ArchiveSettingsScreen</ID>
     <ID>ModifierMissing:AuthScreen.kt$AuthScreen</ID>
     <ID>ModifierMissing:AutoDownloadScreen.kt$AutoDownloadHost</ID>
+    <ID>ModifierMissing:ChannelHeaderBar.kt$ChannelTopBarColumn</ID>
     <ID>ModifierMissing:ChannelScreen.kt$ChannelScreen</ID>
     <ID>ModifierMissing:ChannelsScreen.kt$ChannelsScreen</ID>
     <ID>ModifierMissing:CommentsScreen.kt$CommentsScreen</ID>
-    <ID>ModifierMissing:FoldersBar.kt$FoldersBar</ID>
+    <ID>ModifierMissing:DiscoverChannels.kt$ChannelDiscoverRow</ID>
+    <ID>ModifierMissing:DiscoverChannels.kt$SectionHeader</ID>
     <ID>ModifierMissing:HiddenChannelsScreen.kt$HiddenChannelsScreen</ID>
     <ID>ModifierMissing:MainScaffold.kt$MainScaffold</ID>
     <ID>ModifierMissing:PostCard.kt$PostCard</ID>
     <ID>ModifierMissing:RichText.kt$RichText</ID>
+    <ID>ModifierMissing:SettingsScreen.kt$SettingsScreen</ID>
     <ID>ModifierMissing:TimelineScreen.kt$TimelineScreen</ID>
     <ID>ModifierMissing:WebChannelScreen.kt$WebChannelScreen</ID>
     <ID>ModifierMissing:WebChannelsScreen.kt$WebChannelsScreen</ID>
@@ -126,12 +136,11 @@
     <ID>ParameterNaming:FeedScrollEffects.kt$onLanded</ID>
     <ID>ParameterNaming:FeedScrollEffects.kt$onMissed</ID>
     <ID>ParameterNaming:FoldersBar.kt$onSelected</ID>
-    <ID>ParameterNaming:NavOverlayRenderer.kt$onLinkNotFound</ID>
+    <ID>ParameterNaming:RenderNavKey.kt$onLinkNotFound</ID>
+    <ID>ParameterNaming:TdVideoPlayer.kt$onFirstFrameRendered</ID>
     <ID>ParameterNaming:TimelineScreen.kt$onScrollHandled</ID>
     <ID>ParameterNaming:TimelineScreen.kt$onScrollMissed</ID>
     <ID>ParameterNaming:VideoPlayerControls.kt$onSliderChangeFinished</ID>
-    <ID>ParameterNaming:WebChannelsScreen.kt$onAddCurated</ID>
-    <ID>ParameterNaming:WebChannelsScreen.kt$onPickCurated</ID>
     <ID>RethrowCaughtException:TdErrorMapping.kt$throw e</ID>
     <ID>TooGenericExceptionCaught:CommentsRepository.kt$CommentsRepository$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:CustomEmojiAnimator.kt$CustomEmojiAnimator$t: Throwable</ID>
@@ -141,26 +150,28 @@
     <ID>TooGenericExceptionCaught:MediaCache.kt$MediaCache$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:MediaShareActions.kt$MediaShareActions$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:MigrationCoordinator.kt$MigrationCoordinator$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ProxyRepository.kt$ProxyRepository$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:StickerOutlineStore.kt$StickerOutlineStore$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:WebFeedScheduler.kt$WebFeedScheduler$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:WebFeedSource.kt$WebFeedSource$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:WebModeScaffold.kt$t: Throwable</ID>
+    <ID>UnstableCollections:AddChannelTdSheet.kt$List&lt;SuggestedGroup&gt;</ID>
     <ID>UnstableCollections:CountryPickerSheet.kt$List&lt;Country&gt;</ID>
+    <ID>UnstableCollections:FeedFloatingControl.kt$List&lt;ChannelBadge&gt;</ID>
     <ID>UnstableCollections:FeedScrollEffects.kt$List&lt;FeedItem&gt;</ID>
     <ID>UnstableCollections:FoldersBar.kt$List&lt;FolderTab&gt;</ID>
     <ID>UnstableCollections:FullScreenMediaViewer.kt$List&lt;AlbumItem&gt;</ID>
+    <ID>UnstableCollections:LinkLongPress.kt$List&lt;IntRange&gt;</ID>
     <ID>UnstableCollections:LinkLongPress.kt$List&lt;LinkRange&gt;</ID>
     <ID>UnstableCollections:MigrationProposalSheet.kt$List&lt;String&gt;</ID>
-    <ID>UnstableCollections:NavOverlayRenderer.kt$List&lt;NavEntry&gt;</ID>
-    <ID>UnstableCollections:NewPostsPill.kt$List&lt;ChannelBadge&gt;</ID>
     <ID>UnstableCollections:PostCard.kt$List&lt;ReactionKind&gt;</ID>
     <ID>UnstableCollections:PostCard.kt$Set&lt;String&gt;</ID>
     <ID>UnstableCollections:PostMediaBlocks.kt$List&lt;AlbumItem&gt;</ID>
     <ID>UnstableCollections:ReportFlowSheet.kt$List&lt;org.drinkless.tdlib.TdApi.ReportOption&gt;</ID>
-    <ID>UnstableCollections:RichText.kt$Map&lt;String, InlineTextContent&gt;</ID>
+    <ID>UnstableCollections:RichText.kt$List&lt;Segment&gt;</ID>
     <ID>UnstableCollections:TimelineFeedColumn.kt$List&lt;FeedItem&gt;</ID>
-    <ID>UnstableCollections:WebChannelsScreen.kt$List&lt;CuratedChannel&gt;</ID>
-    <ID>UnusedParameter:NavOverlayRenderer.kt$onPushChannel: (chatId: Long, scrollTo: Long?) -&gt; Unit</ID>
+    <ID>UnusedParameter:FormattedTextRenderer.kt$mute: Color</ID>
+    <ID>UnusedParameter:RenderNavKey.kt$onPushChannel: (chatId: Long, scrollTo: Long?) -&gt; Unit</ID>
     <ID>UnusedParameter:ReverseFeedLayout.kt$firstVisible: Int</ID>
     <ID>UnusedParameter:WebRepository.kt$WebRepository$_fetched_at_ms: Long</ID>
     <ID>UnusedParameter:WebRepository.kt$WebRepository$_id: String</ID>
