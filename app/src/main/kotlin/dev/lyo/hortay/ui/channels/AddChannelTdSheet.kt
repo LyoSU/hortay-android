@@ -43,6 +43,8 @@ import dev.lyo.hortay.data.discover.SuggestedGroup
 import dev.lyo.hortay.ui.discover.ChannelDiscoverRow
 import dev.lyo.hortay.ui.discover.discoverSuggestions
 import dev.lyo.hortay.ui.timeline.formatSubscribers
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -79,7 +81,7 @@ fun AddChannelTdSheet(
     var query by remember { mutableStateOf("") }
 
     // Curated catalog for this locale.
-    val groups by produceState(initialValue = emptyList<SuggestedGroup>(), locale) {
+    val groups by produceState<ImmutableList<SuggestedGroup>>(persistentListOf(), locale) {
         value = suggestionsRepo.groups(locale)
     }
 
@@ -239,7 +241,7 @@ fun AddChannelTdSheet(
  */
 @Composable
 private fun LaunchedHydration(
-    groups: List<SuggestedGroup>,
+    groups: ImmutableList<SuggestedGroup>,
     hydrated: androidx.compose.runtime.snapshots.SnapshotStateMap<String, ChannelCardData>,
     discovery: ChannelDiscoveryRepository,
 ) {

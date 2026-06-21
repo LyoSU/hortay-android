@@ -1,6 +1,8 @@
 package dev.lyo.hortay.data.discover
 
 import dev.lyo.hortay.data.warnUnlessCancelled
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -45,8 +47,8 @@ class ChannelSuggestionsRepository(
     private var memory: SuggestionCatalog? = null
 
     /** Resolved, ordered, localized sections for [localeLang] (a language code). */
-    suspend fun groups(localeLang: String): List<SuggestedGroup> =
-        catalog().resolve(localeLang, appVersionCode)
+    suspend fun groups(localeLang: String): ImmutableList<SuggestedGroup> =
+        catalog().resolve(localeLang, appVersionCode).toImmutableList()
 
     private suspend fun catalog(): SuggestionCatalog {
         memory?.let { return it }

@@ -1061,6 +1061,7 @@ fun TimelineScreen(
             }
             .sortedByDescending { it.latestPostDate }
             .take(MAX_PILL_BADGES)
+            .toPersistentList()
     }
 
     // Warm the discussion-thread cache for posts that linger in the viewport.

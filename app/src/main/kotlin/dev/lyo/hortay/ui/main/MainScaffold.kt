@@ -506,28 +506,28 @@ fun MainScaffold(graph: AppGraph) {
                             entry<ChannelKey> { key ->
                                 RenderNavKey(
                                     key, graph, detailContentPadding, feedOrder, scope, popNav,
-                                    pushChannel, pushComments, pushCommentsHero, safelyOpenChannel,
+                                    pushComments, pushCommentsHero, safelyOpenChannel,
                                     openReport, onPostReportClick, canReportPost, onLinkNotFound,
                                 )
                             }
                             entry<CommentsKey> { key ->
                                 RenderNavKey(
                                     key, graph, detailContentPadding, feedOrder, scope, popNav,
-                                    pushChannel, pushComments, pushCommentsHero, safelyOpenChannel,
+                                    pushComments, pushCommentsHero, safelyOpenChannel,
                                     openReport, onPostReportClick, canReportPost, onLinkNotFound,
                                 )
                             }
                             entry<ArchiveKey> { key ->
                                 RenderNavKey(
                                     key, graph, detailContentPadding, feedOrder, scope, popNav,
-                                    pushChannel, pushComments, pushCommentsHero, safelyOpenChannel,
+                                    pushComments, pushCommentsHero, safelyOpenChannel,
                                     openReport, onPostReportClick, canReportPost, onLinkNotFound,
                                 )
                             }
                             entry<ArchiveSettingsKey> { key ->
                                 RenderNavKey(
                                     key, graph, detailContentPadding, feedOrder, scope, popNav,
-                                    pushChannel, pushComments, pushCommentsHero, safelyOpenChannel,
+                                    pushComments, pushCommentsHero, safelyOpenChannel,
                                     openReport, onPostReportClick, canReportPost, onLinkNotFound,
                                 )
                             }

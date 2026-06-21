@@ -43,6 +43,7 @@ import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
 import dev.lyo.hortay.ui.theme.tabularFigures
+import kotlinx.collections.immutable.ImmutableList
 
 /**
  * The floating feed cluster: the arrivals ALERT (former `NewPostsPill`) CENTRED,
@@ -85,7 +86,7 @@ import dev.lyo.hortay.ui.theme.tabularFigures
 @Composable
 fun FeedFloatingControl(
     pendingCount: Int,
-    pendingChannels: List<ChannelBadge>,
+    pendingChannels: ImmutableList<ChannelBadge>,
     unreadCount: Int,
     arrowGlyph: String,
     onArrivalsClick: () -> Unit,
@@ -138,7 +139,7 @@ fun FeedFloatingControl(
 
 @Composable
 private fun ArrivalsPill(
-    channels: List<ChannelBadge>,
+    channels: ImmutableList<ChannelBadge>,
     count: Int,
     arrowGlyph: String,
     onClick: () -> Unit,
@@ -219,7 +220,7 @@ private fun UnreadButton(
 }
 
 @Composable
-private fun AvatarStack(channels: List<ChannelBadge>) {
+private fun AvatarStack(channels: ImmutableList<ChannelBadge>) {
     val borderColor = MaterialTheme.colorScheme.primary
     val avatarShape = HortayExpressive.Avatar.asComposeShape()
     Box(modifier = Modifier.height(AVATAR_SIZE)) {

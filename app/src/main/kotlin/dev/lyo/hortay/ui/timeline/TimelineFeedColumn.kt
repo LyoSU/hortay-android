@@ -95,7 +95,7 @@ internal fun TimelineFeedColumn(
     ) {
         itemsIndexed(
             items = feedItems,
-            key = { _, it -> it.key },
+            key = { _, item -> item.key },
             contentType = { _, item ->
                 when (item) {
                     is FeedItem.Boundary -> "boundary"

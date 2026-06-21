@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.sp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.icons.Symbol
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.toImmutableList
 import kotlin.math.floor
 
 /**
@@ -98,7 +100,7 @@ fun RichText(
         return
     }
 
-    val segments = remember(src, blocks) { buildSegments(src, blocks) }
+    val segments = remember(src, blocks) { buildSegments(src, blocks).toImmutableList() }
 
     if (maxLines == Int.MAX_VALUE) {
         // Full-reading surface (open post / comments): no outer clamp, blocks interactive.
@@ -169,7 +171,7 @@ private fun ClampedPost(
     key: Any,
     maxLines: Int,
     style: TextStyle,
-    segments: List<Segment>,
+    segments: ImmutableList<Segment>,
     renderer: @Composable (RenderableText, TextStyle, Int) -> Unit,
 ) {
     var expanded by remember(key) { mutableStateOf(false) }

@@ -46,7 +46,6 @@ internal fun RenderNavKey(
     feedOrder: FeedOrder,
     scope: CoroutineScope,
     onPopNav: () -> Unit,
-    onPushChannel: (chatId: Long, scrollTo: Long?) -> Unit,
     onPushComments: (TimelinePost) -> Unit,
     onShowFullPost: (TimelinePost, Int) -> Unit,
     onSafelyOpenChannel: (chatId: Long, scrollTo: Long?) -> Unit,

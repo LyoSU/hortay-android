@@ -8,6 +8,7 @@ import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.TextLayoutResult
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -63,7 +64,7 @@ fun Modifier.linkLongPress(
  */
 @Composable
 fun Modifier.linkPressHighlight(
-    ranges: List<IntRange>,
+    ranges: ImmutableList<IntRange>,
     layoutResult: TextLayoutResult?,
     onPressedRangeChange: (IntRange?) -> Unit,
 ): Modifier {

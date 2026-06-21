@@ -42,6 +42,9 @@ import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.LocalCustomEmoji
 import dev.lyo.hortay.ui.util.rememberReducedMotion
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.launch
 
 /**
@@ -82,7 +85,7 @@ data class RenderableText(
      * [LinkAwareText] paints a padded rounded highlight behind whichever one is currently
      * pressed, so tapping any link kind gives the same Telegram-style press feedback.
      */
-    val pressableRanges: List<IntRange> = emptyList(),
+    val pressableRanges: ImmutableList<IntRange> = persistentListOf(),
     /**
      * Identity that downstream composables should pass to `remember(...)` instead of
      * the full [RenderableText] or [text]. Stable across:
@@ -412,7 +415,7 @@ private data class BuiltAnnotated(
     val spoilerGroups: List<SpoilerGroupInfo>,
     val emojiCoverSrcPositions: Set<Int>,
     val blockDecorations: List<BlockDecoration>,
-    val pressableRanges: List<IntRange>,
+    val pressableRanges: ImmutableList<IntRange>,
 )
 
 // Left text indent (in sp so it tracks font scale) reserving room for the quote bar /
@@ -657,7 +660,7 @@ private fun buildFromFormatted(
                 // + per-glyph background, no second box, no ParagraphStyle.
                 addStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBg), start, end)
             }
-            else -> span.style.toSpanStyle(accent, codeBg, mute)
+            else -> span.style.toSpanStyle(accent, codeBg)
                 ?.let { style -> addStyle(style, start, end) }
         }
     }
@@ -677,14 +680,13 @@ private fun buildFromFormatted(
         spoilerGroups = spoilerGroups,
         emojiCoverSrcPositions = emojiCoverSrcPositions.toSet(),
         blockDecorations = blockDecorations.toList(),
-        pressableRanges = pressableRanges.toList(),
+        pressableRanges = pressableRanges.toImmutableList(),
     )
 }
 
 private fun FormattedText.Style.toSpanStyle(
     accent: Color,
     codeBg: Color,
-    mute: Color,
 ): SpanStyle? = when (this) {
     FormattedText.Style.Bold -> SpanStyle(fontWeight = FontWeight.Bold)
     FormattedText.Style.Italic -> SpanStyle(fontStyle = FontStyle.Italic)
