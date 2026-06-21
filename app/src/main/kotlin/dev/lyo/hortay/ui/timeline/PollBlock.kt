@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -412,7 +413,7 @@ private fun PollOptionRow(
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(container)
-            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
+            .then(if (onTap != null) Modifier.clickable(role = Role.Button, onClick = onTap) else Modifier)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
