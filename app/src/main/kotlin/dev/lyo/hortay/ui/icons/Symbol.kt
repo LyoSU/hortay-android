@@ -16,14 +16,11 @@ import dev.lyo.hortay.R
  * App-wide icon entry point.
  *
  * Resolves a Material Symbols snake_case name to a bundled `res/drawable/sym_*.xml`
- * vector drawable. Call sites still speak Material Symbols names (the de-facto
- * vocabulary), but the **drawn glyphs are Solar** (https://solar-icons.com) — a
- * rounded, warmer set that pairs better with M3 Expressive + Plus Jakarta Sans
- * Bold than the geometric Material cut. Provenance is pinned per axis:
- *   - outline state  → Solar **Outline** (`<base>-outline`, fill-based, `evenOdd`)
- *   - `filled = true` → Solar **Bold**    (`<base>-bold`)
- * Both styles are pure fill paths, so they convert cleanly to VectorDrawable and
- * tint via `Icon`'s `ColorFilter` exactly like the old set.
+ * vector drawable. Source axis pinned to **Rounded · weight 500 · grade 0 · 24 dp**
+ * — Google's canonical pairing for M3 Expressive consumer apps with bold display
+ * typography (Plus Jakarta Sans Bold here). Weight 400 reads thin against
+ * `displaySmall` 32 sp ExtraBold; weight 500 balances visually without crossing
+ * into "loud" weight 600+.
  *
  * Some icons ship a `_filled` companion drawable (e.g. `sym_home_filled.xml`,
  * `sym_bookmark_filled.xml`) for the `filled = true` axis — used to express
@@ -31,23 +28,11 @@ import dev.lyo.hortay.R
  * When a drawable lacks a filled twin the parameter is silently a no-op so call
  * sites can pass `filled = isSelected` without branching.
  *
- * The bare primitives Solar lacks (`add`, `close`, `check_box_outline_blank`) are
- * hand-drawn here as plain stroked vectors at Solar's visible line weight (~2.1u,
- * round caps) so they blend with the set instead of reading as heavier Material
- * leftovers. A few negative/badge states with no clean Solar match still ride
- * Material Symbols (`wifi_off`/`videocam_off`/`search_off`/`gif_box`,
- * `format_quote`/`child_care`/`how_to_vote`); they're style-neutral and rarely
- * sit next to a Solar glyph, so the mix is invisible in practice.
- *
- * To add or re-skin a symbol (Solar source):
- *   1. Find the icon name on https://solar-icons.com (or the Iconify `solar` set).
- *   2. Fetch `https://api.iconify.design/solar/<name>-outline.svg` (and
- *      `-bold` for a filled twin).
- *   3. Convert SVG → VectorDrawable (e.g. `svg2vectordrawable`), then normalise to
- *      the bundled convention: `24dp`, `android:fillColor="@android:color/white"`,
- *      `android:tint="?attr/colorControlNormal"`.
- *   4. Save as `res/drawable/sym_<name>.xml` and add a
- *      `"<name>" -> R.drawable.sym_<name>` line below.
+ * To add a new symbol:
+ *   1. Visit https://fonts.google.com/icons, pick the icon, choose "Rounded".
+ *   2. Set Weight=500, Optical size=24px, Fill=0, Grade=0.
+ *   3. Click Android → save as `res/drawable/sym_<name>.xml`.
+ *   4. Add a `"<name>" -> R.drawable.sym_<name>` line below.
  */
 @Composable
 fun Symbol(

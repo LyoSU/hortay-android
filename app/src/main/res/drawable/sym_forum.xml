@@ -1,23 +1,10 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24"
+    android:viewportWidth="960"
+    android:viewportHeight="960"
     android:tint="?attr/colorControlNormal">
-    <path
-        android:fillColor="@android:color/white"
-        android:strokeColor="@android:color/white"
-        android:strokeWidth="0.6"
-        android:strokeLineJoin="round"
-        android:strokeLineCap="round"
-        android:pathData="M9 12a1 1 0 1 1-2 0 1 1 0 0 1 2 0m4 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0m4 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
-    <path
-        android:fillColor="@android:color/white"
-        android:strokeColor="@android:color/white"
-        android:strokeWidth="0.6"
-        android:strokeLineJoin="round"
-        android:strokeLineCap="round"
-        android:fillType="evenOdd"
-        android:pathData="M22.75 12c0-5.94-4.81-10.75-10.75-10.75S1.25 6.06 1.25 12c0 1.72 0.4 3.35 1.12 4.79 0.1 0.21 0.13 0.43 0.08 0.62l-0.6 2.22c-0.4 1.53 1 2.92 2.52 2.51l2.22-0.6a0.9 0.9 0 0 1 0.62 0.09A10.7 10.7 0 0 0 12 22.75c5.94 0 10.75-4.81 10.75-10.75M12 2.75a9.25 9.25 0 0 1 0 18.5 9.2 9.2 0 0 1-4.12-0.96 2.38 2.38 0 0 0-1.67-0.2l-2.23 0.6a0.55 0.55 0 0 1-0.67-0.67l0.6-2.23a2.38 2.38 0 0 0-0.2-1.67A9.2 9.2 0 0 1 2.75 12 9.25 9.25 0 0 1 12 2.75"/>
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M281.2,732.44Q261.57,732.44 248.63,719.35Q235.7,706.27 235.7,686.93L235.7,601.43L762.63,601.43L762.63,601.43L762.63,234.98L848.13,234.98Q867.47,234.98 880.55,248.06Q893.63,261.14 893.63,280.48L893.63,784.43Q893.63,814.93 865.66,826.79Q837.7,838.65 816.07,817.02L731.48,732.44L281.2,732.44ZM230.2,521.43L143.7,607.7Q122.07,629.33 94.22,617.47Q66.37,605.61 66.37,575.11L66.37,110.91Q66.37,91.58 79.45,78.49Q92.53,65.41 111.87,65.41L637.13,65.41Q656.47,65.41 669.55,78.49Q682.63,91.58 682.63,110.91L682.63,475.93Q682.63,495.27 669.55,508.35Q656.47,521.43 637.13,521.43L230.2,521.43ZM591.63,430.43L591.63,156.41L157.37,156.41L157.37,430.43L157.37,430.43L591.63,430.43ZM157.37,430.43L157.37,430.43L157.37,430.43L157.37,156.41L157.37,156.41L157.37,430.43Z"/>
 </vector>
-

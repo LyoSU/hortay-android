@@ -5,7 +5,6 @@
 ## [Unreleased]
 
 ### Changed
-- Refreshed the app's icons to a softer, more modern rounded set throughout the interface.
 - The app now uses Hortay's own periwinkle colours by default — wallpaper-matched colours stay available in Appearance.
 - Cleaner reading canvas — post cards lighten, an unread post shows a single edge strip instead of a full-card tint, and reaction chips rest as outlined ghosts that fill with lavender when you pick one.
 - The "new posts" alert stays centred and the "↓ N" unread button keeps its corner, laid out so they can never overlap — instead of two badges colliding or one button changing meaning under your finger.
