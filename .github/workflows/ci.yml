@@ -69,6 +69,23 @@ jobs:
           echo "Building TDLib at pinned SHA $sha"
           ./scripts/update-tdlib.sh "$sha"
 
+      # lintRelease schedules packageReleaseResources, which trips the build's
+      # fail-fast guard against release packaging without signing config. A
+      # throwaway keystore (never the real signing identity) mirrors the local
+      # dev setup so the documented lintRelease gate can run. keystore.properties
+      # is gitignored; this one is scoped to the runner and discarded with it.
+      - name: Generate throwaway release keystore
+        run: |
+          keytool -genkeypair -alias ci -keyalg RSA -keysize 2048 -validity 36500 \
+            -dname "CN=CI,OU=CI,O=CI,L=CI,ST=CI,C=US" \
+            -keystore "$RUNNER_TEMP/ci.jks" -storepass cipassword -keypass cipassword
+          {
+            echo "storeFile=$RUNNER_TEMP/ci.jks"
+            echo "storePassword=cipassword"
+            echo "keyAlias=ci"
+            echo "keyPassword=cipassword"
+          } > keystore.properties
+
       # Static analysis and unit tests first (no native packaging, fast feedback),
       # then the release-lint translation gate.
       - name: detekt + unit tests + lintRelease
