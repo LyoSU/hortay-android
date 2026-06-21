@@ -74,6 +74,9 @@ jobs:
 
       # Persist the freshly-built artifacts immediately (foreground), so the next
       # run on the same TDLib pin restores in seconds instead of rebuilding.
+      # Key off the RESTORE step's primary key, NOT a fresh hashFiles(): the build
+      # rewrites scripts/tdlib-version.txt (new UPDATED_AT timestamp), so recomputing
+      # the hash here would save under a key the next run's restore never looks up.
       - name: Save TDLib artifacts
         if: steps.tdlib-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -82,7 +85,7 @@ jobs:
             libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
             libtdlib/src/main/java/org/drinkless/tdlib/Client.java
             libtdlib/src/main/jniLibs
-          key: tdlib-${{ hashFiles('scripts/tdlib-version.txt') }}
+          key: ${{ steps.tdlib-cache.outputs.cache-primary-key }}
 
       # lintRelease schedules packageReleaseResources, which trips the build's
       # fail-fast guard against release packaging without signing config. A
