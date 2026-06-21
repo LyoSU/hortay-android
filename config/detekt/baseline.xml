@@ -21,15 +21,12 @@
     <ID>CompositionLocalAllowlist:LocalStickerOutline.kt$LocalStickerOutline</ID>
     <ID>CompositionLocalAllowlist:LocalWebHttpClient.kt$LocalWebHttpClient</ID>
     <ID>CompositionLocalAllowlist:LocalWebmFrameCache.kt$LocalWebmFrameCache</ID>
-    <ID>CompositionLocalAllowlist:MainScaffold.kt$LocalNavBarCollapse</ID>
     <ID>CompositionLocalAllowlist:MediaViewerHost.kt$LocalMediaViewer</ID>
-    <ID>CompositionLocalAllowlist:RichText.kt$LocalShowFullPost</ID>
     <ID>CompositionLocalAllowlist:UserMessageActionDispatcher.kt$LocalUserMessageBus</ID>
     <ID>CompositionLocalAllowlist:WebmAnimationClock.kt$LocalWebmClock</ID>
     <ID>ContentSlotReused:PostCard.kt$content</ID>
     <ID>DestructuringDeclarationWithTooManyEntries:ConnectionBanner.kt$val (symbol, label, container, content) = if (showFlood) { Quad( "pause", pluralStringResource( R.plurals.connection_flood_wait, floodSecondsRemaining.toInt(), floodSecondsRemaining.toInt(), ), MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer, ) } else when (status) { ConnectionStatus.WaitingForNetwork -&gt; Quad( "wifi_off", stringResource(R.string.connection_waiting), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer, ) ConnectionStatus.Connecting -&gt; Quad( "cloud_off", stringResource(R.string.connection_connecting), MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, ) ConnectionStatus.Updating -&gt; Quad( "sync", stringResource(R.string.connection_updating), MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, ) ConnectionStatus.Ready -&gt; return@AnimatedVisibility }</ID>
     <ID>ExplicitItLambdaParameter:ChannelsScreen.kt${ _, it -&gt; it.chatId }</ID>
-    <ID>ExplicitItLambdaParameter:TimelineFeedColumn.kt${ _, it -&gt; it.key }</ID>
     <ID>ExplicitItLambdaParameter:WebChannelsScreen.kt${ _, it -&gt; it.info.username }</ID>
     <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_fetched_at_ms: Long</ID>
     <ID>FunctionParameterNaming:WebRepository.kt$WebRepository$_id: String</ID>
@@ -155,23 +152,17 @@
     <ID>TooGenericExceptionCaught:WebFeedScheduler.kt$WebFeedScheduler$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:WebFeedSource.kt$WebFeedSource$t: Throwable</ID>
     <ID>TooGenericExceptionCaught:WebModeScaffold.kt$t: Throwable</ID>
-    <ID>UnstableCollections:AddChannelTdSheet.kt$List&lt;SuggestedGroup&gt;</ID>
     <ID>UnstableCollections:CountryPickerSheet.kt$List&lt;Country&gt;</ID>
-    <ID>UnstableCollections:FeedFloatingControl.kt$List&lt;ChannelBadge&gt;</ID>
     <ID>UnstableCollections:FeedScrollEffects.kt$List&lt;FeedItem&gt;</ID>
     <ID>UnstableCollections:FoldersBar.kt$List&lt;FolderTab&gt;</ID>
     <ID>UnstableCollections:FullScreenMediaViewer.kt$List&lt;AlbumItem&gt;</ID>
-    <ID>UnstableCollections:LinkLongPress.kt$List&lt;IntRange&gt;</ID>
     <ID>UnstableCollections:LinkLongPress.kt$List&lt;LinkRange&gt;</ID>
     <ID>UnstableCollections:MigrationProposalSheet.kt$List&lt;String&gt;</ID>
     <ID>UnstableCollections:PostCard.kt$List&lt;ReactionKind&gt;</ID>
     <ID>UnstableCollections:PostCard.kt$Set&lt;String&gt;</ID>
     <ID>UnstableCollections:PostMediaBlocks.kt$List&lt;AlbumItem&gt;</ID>
     <ID>UnstableCollections:ReportFlowSheet.kt$List&lt;org.drinkless.tdlib.TdApi.ReportOption&gt;</ID>
-    <ID>UnstableCollections:RichText.kt$List&lt;Segment&gt;</ID>
     <ID>UnstableCollections:TimelineFeedColumn.kt$List&lt;FeedItem&gt;</ID>
-    <ID>UnusedParameter:FormattedTextRenderer.kt$mute: Color</ID>
-    <ID>UnusedParameter:RenderNavKey.kt$onPushChannel: (chatId: Long, scrollTo: Long?) -&gt; Unit</ID>
     <ID>UnusedParameter:ReverseFeedLayout.kt$firstVisible: Int</ID>
     <ID>UnusedParameter:WebRepository.kt$WebRepository$_fetched_at_ms: Long</ID>
     <ID>UnusedParameter:WebRepository.kt$WebRepository$_id: String</ID>

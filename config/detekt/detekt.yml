@@ -103,10 +103,10 @@ Compose:
   ComposableParamOrder:
     active: true
   CompositionLocalAllowlist:
-    # The project ships a small set of hand-rolled CompositionLocals
-    # (LocalMediaCache, LocalCustomEmoji, LocalExoPlayerPool, LocalReadCursors,
-    # LocalUserProfileOpener, LocalScrollGate, LocalProfileAccent). Enforce the
+    # The project ships a small set of hand-rolled CompositionLocals. Enforce the
     # allowlist so a new one requires deliberate update to this file + ARCHITECTURE.md.
+    # LocalNavBarCollapse: zero-alloc collapse-fraction hand-off feed -> nav bar.
+    # LocalShowFullPost: lets ui.text reach the open-post action without ui.timeline dep.
     active: true
     allowedCompositionLocals:
       - LocalMediaCache
@@ -116,6 +116,8 @@ Compose:
       - LocalUserProfileOpener
       - LocalScrollGate
       - LocalProfileAccent
+      - LocalNavBarCollapse
+      - LocalShowFullPost
   CompositionLocalNaming:
     active: true
   ContentEmitterReturningValues:
