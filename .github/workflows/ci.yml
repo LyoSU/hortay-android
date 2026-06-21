@@ -102,9 +102,16 @@ jobs:
           } > keystore.properties
 
       # Static analysis and unit tests first (no native packaging, fast feedback),
-      # then the release-lint translation gate.
+      # then the release-lint translation gate. lintRelease pulls :libwebm's
+      # RelWithDebInfo CMake build, which needs the gitignored ffmpeg static libs
+      # (built by scripts/build-ffmpeg.sh, not in CI). lint analyses code/resources,
+      # not the .so, so we exclude that native task — it has no bearing on the
+      # MissingTranslation/lint-vital findings this gate exists to enforce.
       - name: detekt + unit tests + lintRelease
-        run: ./gradlew :app:detekt :app:testDebugUnitTest :app:lintRelease --no-daemon --stacktrace
+        run: >
+          ./gradlew :app:detekt :app:testDebugUnitTest :app:lintRelease
+          -x ':libwebm:buildCMakeRelWithDebInfo[arm64-v8a]'
+          --no-daemon --stacktrace
 
       - name: Upload reports
         if: always()
