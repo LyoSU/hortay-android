@@ -294,6 +294,7 @@ class WebFeedSource(
                 lastSuccessfulRefreshAtMs = System.currentTimeMillis()
                 _refreshState.value = RefreshState.Idle
             } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
                 Log.w(TAG, "refresh failed: ${t.message}")
                 _refreshState.value = RefreshState.Error(t.message ?: "refresh failed")
             }
