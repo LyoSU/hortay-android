@@ -43,7 +43,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # Restore the Docker-built TDLib bindings + native libs. Keyed on the pinned
       # version file, so a `chore(tdlib): bump` invalidates it and nothing else does.
