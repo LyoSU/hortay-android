@@ -31,7 +31,7 @@ jobs:
     # own 60 s timeout normally fires first, this just caps the worst case.
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
