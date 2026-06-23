@@ -52,7 +52,7 @@ jobs:
       # foreground step right after the build, so it can't be skipped.
       - name: Restore TDLib artifacts
         id: tdlib-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
@@ -79,7 +79,7 @@ jobs:
       # the hash here would save under a key the next run's restore never looks up.
       - name: Save TDLib artifacts
         if: steps.tdlib-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
