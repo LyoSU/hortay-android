@@ -3,6 +3,7 @@ package dev.lyo.hortay.ui.settings
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -365,18 +366,24 @@ private fun AutoDownloadCategoryScreen(
                     text = stringResource(R.string.autodownload_data_saver_note),
                     onClick = {
                         // Surface the OS toggle directly so the user can flip it without
-                        // hunting through Android Settings. ACTION_DATA_USAGE_SETTINGS
-                        // is the documented entry point — works back to API 26
-                        // (matches our minSdk). Wrapped in runCatching because some
-                        // Samsung One UI builds have been reported to throw
-                        // ActivityNotFoundException on this exact intent on locked-down
-                        // enterprise devices; falling through silently is correct
-                        // (the banner stays visible, the user can still toggle in
-                        // Settings → Connections → Data Usage manually).
+                        // hunting through Android Settings. ACTION_DATA_USAGE_SETTINGS is
+                        // the Data-Usage screen (where Data Saver lives) but was only
+                        // added in API 28 — below that the constant resolves to no
+                        // matching activity, so on API 26-27 we fall back to the general
+                        // wireless/network settings surface (present since API 1). Both
+                        // are wrapped in runCatching because some Samsung One UI builds
+                        // have been reported to throw ActivityNotFoundException on this
+                        // exact intent on locked-down enterprise devices; falling through
+                        // silently is correct (the banner stays visible, the user can
+                        // still toggle in Settings → Connections → Data Usage manually).
+                        val action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            Settings.ACTION_DATA_USAGE_SETTINGS
+                        } else {
+                            Settings.ACTION_WIRELESS_SETTINGS
+                        }
                         runCatching {
                             context.startActivity(
-                                Intent(Settings.ACTION_DATA_USAGE_SETTINGS)
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                             )
                         }
                     },

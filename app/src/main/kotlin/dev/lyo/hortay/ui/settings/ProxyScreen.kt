@@ -399,7 +399,7 @@ private fun AddProxySheet(
                 onValueChange = { link = it; error = null; testResult = null },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.proxy_link_label)) },
-                placeholder = { Text("https://t.me/proxy?server=…") },
+                placeholder = { Text(stringResource(R.string.proxy_link_placeholder)) },
                 leadingIcon = { Symbol(name = "vpn_key", size = 20.dp) },
                 singleLine = true,
             )

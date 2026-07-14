@@ -769,6 +769,7 @@
     <string name="proxy_add">Add proxy</string>
     <string name="proxy_add_from_link">Add from link</string>
     <string name="proxy_link_label">Proxy link</string>
+    <string name="proxy_link_placeholder" translatable="false">https://t.me/proxy?server=…</string>
     <string name="proxy_manual_label">Or enter manually</string>
     <string name="proxy_field_server">Server</string>
     <string name="proxy_field_port">Port</string>
