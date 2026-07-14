@@ -158,7 +158,16 @@ fun TdVideoPlayer(
     // wakelock for non-muted players); a precomposed neighbour acquired with autoPlay=
     // false stays paused when it becomes the active page. Passing it through a
     // LaunchedEffect keyed on `autoPlay` flips playWhenReady on each transition.
+    //
+    // The lifecycle observer's ON_RESUME branch below must read the SAME live value.
+    // Its DisposableEffect is keyed on [exoPlayer] only, so a bare `autoPlay` capture
+    // there would freeze at the value from the composition that first attached the
+    // observer — a precomposed neighbour that attached with autoPlay=false and only
+    // later became the active page would never resume after a background→foreground
+    // cycle. [currentAutoPlay] (via [rememberUpdatedState], same idiom as
+    // [firstFrameCallback]) keeps the observer reading the current value.
     LaunchedEffect(autoPlay) { exoPlayer.playWhenReady = autoPlay }
+    val currentAutoPlay by rememberUpdatedState(autoPlay)
 
     // Swap the source when the file becomes Ready, or when the caller picks a
     // different quality (different fileId → new readyPath). We preserve playback position
@@ -207,7 +216,7 @@ fun TdVideoPlayer(
         val lifecycleObserver = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> exoPlayer.pause()
-                Lifecycle.Event.ON_RESUME -> if (autoPlay) exoPlayer.play()
+                Lifecycle.Event.ON_RESUME -> if (currentAutoPlay) exoPlayer.play()
                 else -> Unit
             }
         }

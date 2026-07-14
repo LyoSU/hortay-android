@@ -100,8 +100,12 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun WebModeScaffold(graph: AppGraph) {
-    var selectedTab by rememberSaveable { mutableStateOf(NavTab.Feed) }
-    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    // Plain `remember`, NOT `rememberSaveable` — top-level navigation state must reset on
+    // process death so a cold launch always lands on Home top-of-feed (hard rule; MainScaffold
+    // does the same). [addSheetOpen]/[deepLinkPrefill] below stay saveable: they are transient
+    // input state (see their KDoc), not navigation.
+    var selectedTab by remember { mutableStateOf(NavTab.Feed) }
+    var searchOpen by remember { mutableStateOf(false) }
     // [addSheetOpen] + [deepLinkPrefill] are `rememberSaveable` so a user
     // mid-input in [AddChannelSheet] (typing a handle, reviewing a pasted URL)
     // doesn't lose the sheet and their typed text on rotation — the sheet's
@@ -307,6 +311,12 @@ fun WebModeScaffold(graph: AppGraph) {
             else systemUriHandler.openUri("https://t.me/")
         }
     }
+    // Reported by [TdMediaImage] when a guest-mode image fails with an expired-CDN-URL
+    // code (401/403/410); routes to the channel re-fetch. Stable lambda over the
+    // process-singleton feed source so [LocalWebStaleMedia] readers never invalidate.
+    val staleMediaReporter: (String) -> Unit = remember(graph) {
+        { url -> graph.webFeedSource.refetchForStaleMediaUrl(url) }
+    }
 
     // Bottom inset handed to the WebChannelScreen drill (not a self-contained Scaffold for the
     // bottom edge). The tab scaffold under HomeKey owns the FloatingNavBar/FAB insets itself;
@@ -319,6 +329,7 @@ fun WebModeScaffold(graph: AppGraph) {
         LocalReadCursors provides cursorHolder,
         dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,
         dev.lyo.hortay.ui.main.LocalUserMessageBus provides graph.userMessages,
+        dev.lyo.hortay.ui.media.LocalWebStaleMedia provides staleMediaReporter,
     ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -547,8 +558,15 @@ fun WebModeScaffold(graph: AppGraph) {
                                                 onSignIn = { scope.launch { graph.guestMode.setGuest(false) } },
                                                 // Combined wipe-and-refetch so the user sees fresh
                                                 // content immediately, not an empty feed waiting for
-                                                // the next tier-2 sweep. Subscriptions survive.
-                                                onClearWebCache = { graph.webFeedSource.clearCacheAndRefresh() },
+                                                // the next tier-2 sweep. Subscriptions survive. The
+                                                // emoji bridge is reset FIRST so the refetch below
+                                                // re-resolves custom emoji from scratch — clearing
+                                                // only the DB/LRU would leave the bridge's dedup set
+                                                // blocking re-resolution (stale emoji until restart).
+                                                onClearWebCache = {
+                                                    graph.webCustomEmojiBridge.reset()
+                                                    graph.webFeedSource.clearCacheAndRefresh()
+                                                },
                                                 ignoredChannels = graph.ignoredChannels,
                                                 // Guest-mode resolver: walk the in-memory channels
                                                 // list for a row whose username hashes to the given

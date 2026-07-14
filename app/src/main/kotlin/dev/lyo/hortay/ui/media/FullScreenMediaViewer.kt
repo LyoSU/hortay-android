@@ -59,6 +59,7 @@ import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
 import dev.lyo.hortay.ui.theme.tabularFigures
 import dev.lyo.hortay.ui.util.rememberReducedMotion
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,7 +74,7 @@ import kotlin.math.abs
  */
 @Composable
 fun FullScreenMediaViewer(
-    items: List<AlbumItem>,
+    items: ImmutableList<AlbumItem>,
     initialIndex: Int,
     onDismiss: () -> Unit,
 ) {

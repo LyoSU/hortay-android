@@ -34,6 +34,7 @@ import dev.lyo.hortay.ui.media.LocalIsCenteredItem
 import dev.lyo.hortay.ui.media.LocalIsHighlightedItem
 import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.util.rememberReducedMotion
+import kotlinx.collections.immutable.PersistentList
 import kotlinx.coroutines.delay
 
 /**
@@ -53,7 +54,7 @@ internal fun TimelineFeedColumn(
     // 8dp for any caller that mounts the column without a floating header.
     topPadding: Dp = 8.dp,
     bottomPadding: Dp,
-    feedItems: List<FeedItem>,
+    feedItems: PersistentList<FeedItem>,
     centeredItemKeyState: State<Any?>,
     highlightedPostKey: Pair<Long, Long>?,
     interactions: PostInteractions,

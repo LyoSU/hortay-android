@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.PostContent
+import kotlinx.collections.immutable.toImmutableList
 
 /**
  * Single full-screen media viewer for the whole app. Mounted once at the top of the UI tree
@@ -46,7 +47,10 @@ fun MediaViewerHost(content: @Composable () -> Unit) {
     }
     state?.let { vs ->
         FullScreenMediaViewer(
-            items = vs.items,
+            // ViewerState carries a plain List (the controller's open() API stays List-typed
+            // for its many callers); convert once per viewer open so the composable takes a
+            // Compose-stable ImmutableList param.
+            items = vs.items.toImmutableList(),
             initialIndex = vs.index,
             onDismiss = { state = null },
         )

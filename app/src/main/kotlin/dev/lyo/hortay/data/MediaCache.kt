@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -138,16 +137,23 @@ class MediaCache(
     // route it through the reducer.
     private val postCompletionResync = ConcurrentHashMap<Int, Job>()
 
-    // Single-coroutine reducer for all File-state mutations. Three producers feed it
+    // Single-coroutine reducer for all File-state mutations. Every producer feeds it
     // through this channel, in strict single-writer discipline — any other write to
-    // `states[id].value` / `tracks[id]` / `activePriority[id]` is a documented bug and
-    // races the reducer's own writes on Dispatchers.IO's worker pool:
+    // `states[id].value` is a documented bug and races the reducer's own writes on
+    // Dispatchers.IO's worker pool:
     //   1. Inbound TDLib UpdateFile events (the live stream).
     //   2. ensureSlow's GetFile response when seeding a fresh slot.
     //   3. User-initiated [cancelExplicit] / [retry] / [invalidate] resets, modelled as
     //      a synthetic [FileEvent.Reset] — these used to write `states[id].value =
     //      MediaState.Idle` directly, which raced with concurrent UpdateFile drains
     //      (reducer flips slot back to Downloading mid-cancel → user sees a flicker).
+    //   4. The stall watchdog's give-up transition ([FileEvent.ResetIfDownloading]) and
+    //      ensureSlow's download-failure catch ([FileEvent.ResetUnlessReady]) — both used
+    //      to write `slot.value` directly from their own coroutines. Between the read that
+    //      justified the write and the write itself, the reducer could have landed the
+    //      slot on Ready (the file finished, or eviction-then-redownload completed), and
+    //      the direct write would clobber that ready file with Failed. Routing them as
+    //      conditional events makes the guard-check + flip one atomic step in the reducer.
     // Capacity is unlimited — we'd rather pay a bit of memory than risk dropping a
     // terminal event under burst pressure.
     private sealed interface FileEvent {
@@ -169,6 +175,25 @@ class MediaCache(
          * be silently clobbered.
          */
         data class ResetIfReady(val fileId: Int, val to: MediaState) : FileEvent
+        /**
+         * Conditional Reset: only flip the slot to [to] if it is currently in
+         * [MediaState.Downloading]. The stall watchdog's give-up transition uses
+         * this — between [checkStalled] deciding a download is dead and the flip to
+         * Failed, the reducer may have landed the slot on Ready (the transfer actually
+         * finished). Guarding on Downloading inside the reducer keeps the check and the
+         * flip atomic against the inbound UpdateFile stream, so a just-completed file is
+         * never clobbered with Failed.
+         */
+        data class ResetIfDownloading(val fileId: Int, val to: MediaState) : FileEvent
+        /**
+         * Conditional Reset: flip the slot to [to] UNLESS it is currently in
+         * [MediaState.Ready]. ensureSlow's download-failure catch uses this — the
+         * download RPC threw, so we want Failed, but a concurrent UpdateFile may have
+         * finalised the slot to Ready in the meantime (TDLib already had the file), and
+         * that ready file must win. Mirrors the old `update { if Ready keep else Failed }`
+         * CAS, but serialised through the reducer instead of a direct slot write.
+         */
+        data class ResetUnlessReady(val fileId: Int, val to: MediaState) : FileEvent
     }
     private val fileEvents = Channel<FileEvent>(capacity = Channel.UNLIMITED)
 
@@ -182,6 +207,18 @@ class MediaCache(
                 is FileEvent.ResetIfReady -> {
                     val slot = states[event.fileId]
                     if (slot != null && slot.value is MediaState.Ready) {
+                        reduceReset(event.fileId, event.to)
+                    }
+                }
+                is FileEvent.ResetIfDownloading -> {
+                    val slot = states[event.fileId]
+                    if (slot != null && slot.value is MediaState.Downloading) {
+                        reduceReset(event.fileId, event.to)
+                    }
+                }
+                is FileEvent.ResetUnlessReady -> {
+                    val slot = states[event.fileId]
+                    if (slot != null && slot.value !is MediaState.Ready) {
                         reduceReset(event.fileId, event.to)
                     }
                 }
@@ -447,7 +484,11 @@ class MediaCache(
      * heavy scroll before this filter was added.
      *
      * After [MAX_STALL_RETRIES] failed reissues we surface Failed so the UI can render
-     * a tap-to-retry affordance instead of a perpetual spinner.
+     * a tap-to-retry affordance instead of a perpetual spinner. That give-up transition
+     * is dispatched as a [FileEvent.ResetIfDownloading] rather than written to `slot.value`
+     * here: this coroutine's Downloading check and the Failed flip must be atomic against
+     * the reducer's inbound UpdateFile stream, or a transfer that completes in the gap
+     * gets its Ready state clobbered with Failed.
      */
     private suspend fun checkStalled() {
         val now = System.currentTimeMillis()
@@ -499,9 +540,18 @@ class MediaCache(
             if (live.bytes != track.bytes || live.changedAt != track.changedAt) continue
             if (track.retries >= MAX_STALL_RETRIES) {
                 Log.w(TAG, "stall watchdog: giving up on $fileId after ${track.retries} retries (priority=$priority, bytes=${track.bytes}, age=${ageMs}ms)")
-                slot.value = MediaState.Failed(res.getString(dev.lyo.hortay.R.string.media_load_stalled))
-                tracks.remove(fileId)
-                activePriority.remove(fileId)
+                // Route the give-up through the reducer instead of writing `slot.value`
+                // here: this coroutine's `is Downloading` peek (line above) and a direct
+                // Failed write are not atomic against the inbound UpdateFile stream — the
+                // reducer could land Ready in the gap and we'd clobber a finished file
+                // with Failed. [FileEvent.ResetIfDownloading] re-checks Downloading inside
+                // the reducer loop and no-ops if the transfer completed. reduceReset does
+                // the matching tracks/activePriority cleanup for the Failed (non-Downloading)
+                // target; if the slot already went Ready, [reduce] cleaned those on that
+                // transition, so nothing to do here beyond moving on.
+                fileEvents.send(
+                    FileEvent.ResetIfDownloading(fileId, MediaState.Failed(res.getString(dev.lyo.hortay.R.string.media_load_stalled))),
+                )
                 continue
             }
             try {
@@ -596,14 +646,17 @@ class MediaCache(
             // log it as a failure or mark the slot Failed; the user just scrolled past.
             if (t is kotlinx.coroutines.CancellationException) throw t
             Log.w(TAG, "ensure($fileId, ${priority.name}) failed", t)
-            // `update {}` is an atomic CAS-loop — a concurrent UpdateFile that just
-            // finalised the slot to Ready won't be clobbered by our Failed write.
-            slot(fileId).update { previous ->
-                if (previous is MediaState.Ready) previous
-                else MediaState.Failed(t.message ?: "download failed")
-            }
-            activePriority.remove(fileId)
-            tracks.remove(fileId)
+            // Route the Failed transition through the reducer, not a direct slot write.
+            // A concurrent UpdateFile that just finalised the slot to Ready (TDLib already
+            // had the file) must win over our Failed. [FileEvent.ResetUnlessReady] performs
+            // that "keep Ready, else Failed" check inside the single-writer loop — the
+            // serialised equivalent of the old CAS `update {}`, but ordered against every
+            // other slot mutation. reduceReset clears tracks/activePriority for the Failed
+            // (non-Downloading) target; when the slot is already Ready, [reduce] cleared
+            // them on that transition.
+            fileEvents.send(
+                FileEvent.ResetUnlessReady(fileId, MediaState.Failed(t.message ?: "download failed")),
+            )
         }
     }
 
