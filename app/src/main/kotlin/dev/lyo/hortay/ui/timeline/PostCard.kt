@@ -1413,6 +1413,16 @@ private fun PostQuickActions(
     val shareLabel = stringResource(R.string.post_share)
     val openLabel = stringResource(R.string.post_open_telegram)
     ButtonGroup(
+        // Mandatory since material3 1.5.0-alpha23. With two-three fixed items the
+        // group never overflows on a phone-width card, but the API needs a menu
+        // affordance for the degenerate case (split-screen + max font scale).
+        overflowIndicator = { menuState ->
+            IconButton(
+                onClick = { if (menuState.isShowing) menuState.dismiss() else menuState.show() },
+            ) {
+                Symbol(name = "more_horiz", size = 18.dp)
+            }
+        },
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),

@@ -51,6 +51,17 @@ android {
             )
         }
     }
+
+    lint {
+        // AGP 9.3's BidirectionalTextDetector crashes with a NoSuchMethodError
+        // inside its JavaDoc parser while walking the huge vendored TDLib
+        // bindings (Client.java / TdApi.java) — an upstream lint bug, and the
+        // failure message itself suggests disabling the check. BidiSpoofing
+        // hunts RTL-override characters smuggled into source text; the vendored
+        // machine-generated upstream bindings are not hand-reviewed code where
+        // that attack applies. Scoped to this module only — :app keeps the check.
+        disable += "BidiSpoofing"
+    }
 }
 
 dependencies {

@@ -13,7 +13,7 @@ config:
   # Allow keys from third-party rule sets (nlopez/compose-rules ships under
   # `Compose:`) without detekt complaining about unknown properties.
   checkExhaustiveness: false
-  excludes: ''
+  excludes: 'Compose>CompositionLocalAllowlist>allowedCompositionLocals'
 
 # ------------------------------------------------------------------------------
 # Default ruleset deltas
@@ -147,8 +147,6 @@ Compose:
   Material2:
     active: true
   ModifierClickableOrder:
-    active: true
-  ModifierComposable:
     active: true
   ModifierComposed:
     active: true
