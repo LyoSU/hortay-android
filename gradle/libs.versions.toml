@@ -57,7 +57,7 @@ androidxTestExt = "1.3.0"
 # still parses Kotlin 2.x sources via the bundled K1 frontend with a small number
 # of known false-negatives on context receivers / multidollar strings — acceptable
 # trade-off until 2.0.0-alpha lands. Re-evaluate when detekt 2.x ships.
-detekt = "1.23.7"
+detekt = "1.23.8"
 # nlopez/compose-rules — community Compose-specific lint rules (Modifier ordering,
 # stable params, lambda parameter naming/position, content-emitter return values,
 # etc.). 0.4.22 is the latest 0.4.x release; tracks detekt 1.23.x.
