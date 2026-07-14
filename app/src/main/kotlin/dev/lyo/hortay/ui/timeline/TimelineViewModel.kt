@@ -304,9 +304,16 @@ class TimelineViewModel(
         if (_refreshing.value) return
         viewModelScope.launch {
             _refreshing.value = true
-            repo.refresh()
-            acceptPending()
-            _refreshing.value = false
+            try {
+                repo.refresh()
+                acceptPending()
+            } finally {
+                // Always clear the spinner — a cancelled scope (VM cleared mid-PTR)
+                // or a throwing repo.refresh() must not strand `refreshing=true`,
+                // which would wedge the pull-to-refresh indicator and block the
+                // bootstrap gate (see [seenHighWater] init).
+                _refreshing.value = false
+            }
         }
     }
 

@@ -70,6 +70,7 @@ import kotlinx.coroutines.sync.withLock
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Twitter-style chronological feed merged from every channel chat the user follows.
@@ -381,6 +382,17 @@ class PostsRepository(
      * [PendingEditBuffer] for the full rationale (and tdlib TL schema:9844).
      */
     private val pendingArchiveEdits = PendingEditBuffer()
+
+    /**
+     * Monotonic session counter, bumped inside [clear] (logout). Suspend-then-write
+     * ingest paths capture it on entry and re-check before touching [_posts]: a
+     * [logOut]→[clear] can land while an [ingest] is parked on its networked
+     * `GetChat` / album coalesce, and without this guard the resumed write would
+     * re-inject the previous account's posts into the freshly-wiped feed. Mirrors
+     * the `chatCache[...] == null` guard [performAlbumRepair] already uses, but
+     * generalised so it survives even if `chatCache` gets re-seeded in between.
+     */
+    private val sessionEpoch = AtomicLong(0L)
 
     private val _posts = MutableStateFlow<PersistentList<TimelinePost>>(persistentListOf())
     override val posts: StateFlow<PersistentList<TimelinePost>> = _posts.asStateFlow()
@@ -1160,9 +1172,16 @@ class PostsRepository(
         }
         val deferred = deepLoadJobs.computeIfAbsent(chatId) {
             scope.async { runCatching { loadChannelHistoryLocked(chatId, limit) } }
+                // Compare-remove on completion, not after await(): if every awaiter
+                // is cancelled the `deepLoadJobs.remove` below never runs, leaving the
+                // finished Deferred cached — the next caller would await() a completed
+                // result once (stale). invokeOnCompletion fires regardless of who is
+                // (or isn't) still awaiting; the 2-arg remove only drops the entry if
+                // it's still this exact Deferred (a fresh computeIfAbsent may already
+                // have replaced it).
+                .also { d -> d.invokeOnCompletion { deepLoadJobs.remove(chatId, d) } }
         }
         val result = deferred.await()
-        deepLoadJobs.remove(chatId, deferred)
         // Mark cooldown only if we actually loaded posts. A "successful empty
         // batch" result (chat became inaccessible mid-load, transient TDLib
         // reject swallowed by getOrNull, GetChatHistory returned empty list)
@@ -1180,6 +1199,7 @@ class PostsRepository(
     }
 
     private suspend fun loadChannelHistoryLocked(chatId: Long, limit: Int): Boolean {
+        val epoch = sessionEpoch.get()
         val chat = chatCache[chatId] ?: td.send(TdApi.GetChat(chatId)).also { chatCache[chatId] = it }
         if (!chat.isChannel()) return false
 
@@ -1190,6 +1210,9 @@ class PostsRepository(
         val mapped = raw.map { mapper.toChannelPost(it, chat) }
         if (mapped.isEmpty()) return false
 
+        // Session-epoch guard (see [ingest]): a logout that wiped the feed while the
+        // networked fetch above was in flight must not re-inject account A's history.
+        if (sessionEpoch.get() != epoch) return false
         _posts.update { current -> foldRawIntoCurrent(current, mapped) }
         return true
     }
@@ -1212,6 +1235,7 @@ class PostsRepository(
      * permission revoked, etc.).
      */
     suspend fun loadHistoryAround(chatId: Long, anchorMessageId: Long, limit: Int = 80): Boolean {
+        val epoch = sessionEpoch.get()
         val chat = chatCache[chatId]
             ?: runCatching { td.send(TdApi.GetChat(chatId)) }
                 .warnUnlessCancelled(TAG, "loadHistoryAround/getChat")
@@ -1245,6 +1269,9 @@ class PostsRepository(
         val mapped = raw.map { mapper.toChannelPost(it, chat) }
         if (mapped.isEmpty()) return false
 
+        // Session-epoch guard (see [ingest]): don't re-inject a logged-out account's
+        // history if a logout landed during the networked fetch above.
+        if (sessionEpoch.get() != epoch) return false
         _posts.update { current -> foldRawIntoCurrent(current, mapped) }
         return true
     }
@@ -1270,9 +1297,12 @@ class PostsRepository(
             scope.async {
                 runCatching { loadOlderLocked(chatId, limit) }
             }
+                // Compare-remove on completion (see [loadChannelHistory]): all-awaiters-
+                // cancelled would otherwise strand the finished Deferred in the map and
+                // hand the next caller a stale completed result.
+                .also { d -> d.invokeOnCompletion { pageJobs.remove(chatId, d) } }
         }
         val result = deferred.await()
-        pageJobs.remove(chatId, deferred)
         return result
             .warnUnlessCancelled(TAG, "loadOlder($chatId)")
             .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_load_older, connection.value) }
@@ -1280,6 +1310,7 @@ class PostsRepository(
     }
 
     private suspend fun loadOlderLocked(chatId: Long, limit: Int): Int {
+        val epoch = sessionEpoch.get()
         val oldestId = _posts.value
             .filter { it.chatId == chatId }
             .minOfOrNull { it.id }
@@ -1307,6 +1338,9 @@ class PostsRepository(
         val coalesced = coalesceAlbumFragments(chatId, raw, onlyLocal = false)
         val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
 
+        // Session-epoch guard (see [ingest]): a logout during the fetch above must not
+        // re-inject the previous account's older posts into the wiped feed.
+        if (sessionEpoch.get() != epoch) return 0
         var prevChannelSize = 0
         var nextChannelSize = 0
         _posts.update { current ->
@@ -1750,15 +1784,28 @@ class PostsRepository(
             }
         }
         albumDebounce[key]?.cancel()
-        albumDebounce[key] = scope.launch {
+        // Compare-remove idiom (see MediaCache.schedulePostCompletionResync): a stale
+        // job that survived cancellation must not `remove(key)` the NEW timer's entry.
+        // If it did, a third sibling arriving next would find no timer to cancel and
+        // arm a second job → two jobs race to flush the same album, one against a
+        // half-drained buffer. The 2-arg remove only clears the entry if it's still
+        // this exact job.
+        lateinit var jobRef: Job
+        jobRef = scope.launch {
             delay(ALBUM_DEBOUNCE_MS)
-            albumDebounce.remove(key)
+            albumDebounce.remove(key, jobRef)
             val batch = albumBuffers.remove(key) ?: return@launch
             ingest(key.first, batch)
         }
+        albumDebounce[key] = jobRef
     }
 
     private suspend fun ingest(chatId: Long, messages: List<TdApi.Message>) {
+        // Capture the session epoch before any suspend point. A logout→clear() that
+        // lands while we're parked on the GetChat fallback / networked album coalesce
+        // below bumps this; we re-check before writing so a resumed ingest can't
+        // re-populate the wiped feed with the previous account's data.
+        val epoch = sessionEpoch.get()
         val chat = chatCache[chatId] ?: runCatching { td.send(TdApi.GetChat(chatId)) }
             .getOrNull()
             ?.also { chatCache[it.id] = it }
@@ -1797,6 +1844,11 @@ class PostsRepository(
             .map { mapper.toChannelPost(it, chat) }
             .filter { it.content !is PostContent.Unsupported }
         if (newPosts.isEmpty()) return
+
+        // A logout wiped the feed while we were suspended above (GetChat /
+        // coalesceAlbumFragments). Bail before writing so account A's posts don't
+        // land in account B's (or the empty AuthScreen's) freshly-cleared feed.
+        if (sessionEpoch.get() != epoch) return
 
         // Route the live ingest through the same album-aware merge helper as the
         // on-demand paths (loadChannelHistory / loadOlder / loadHistoryAround /
@@ -1850,7 +1902,10 @@ class PostsRepository(
         // feed. selectTombstonesJoined is now INNER JOIN so any remaining
         // orphans are hidden, and this branch prevents new orphans by
         // capturing the pre-edited state instead of dropping it.
-        if (archiveRepository?.isEnabled() == true && addedForEmit.isNotEmpty()) {
+        // Same epoch guard before the archive baseline fan-out — a logout landing
+        // between the _posts write above and here must not spawn baseline captures
+        // for account A into the archive account B is about to reuse.
+        if (archiveRepository?.isEnabled() == true && addedForEmit.isNotEmpty() && sessionEpoch.get() == epoch) {
             val addedIds = addedForEmit.mapTo(HashSet()) { it.chatId to it.id }
             for (raw in full) {
                 if ((raw.chatId to raw.id) !in addedIds) continue
@@ -2305,9 +2360,13 @@ class PostsRepository(
                 (prev ?: mutableListOf()).also { buf -> buf.addAll(msgIds) }
             }
             chatDeletionTimers[update.chatId]?.cancel()
-            chatDeletionTimers[update.chatId] = scope.launch {
+            // Compare-remove (see handleNewMessage): a stale surviving job must not
+            // clear the fresh timer's entry, or a later delete batch would find no
+            // timer to cancel and race a second flush against a half-drained buffer.
+            lateinit var deletionJobRef: Job
+            deletionJobRef = scope.launch {
                 delay(ALBUM_DELETE_DEBOUNCE_MS)
-                chatDeletionTimers.remove(update.chatId)
+                chatDeletionTimers.remove(update.chatId, deletionJobRef)
                 val drained = pendingChatDeletions.remove(update.chatId) ?: return@launch
                 archiveRepository.captureTdlibDeleteSmart(
                     chat = ChatRef.tdlib(update.chatId),
@@ -2327,6 +2386,7 @@ class PostsRepository(
                     )
                 }
             }
+            chatDeletionTimers[update.chatId] = deletionJobRef
         }
 
         val ids = update.messageIds.toHashSet()
@@ -2720,6 +2780,9 @@ class PostsRepository(
             chatDeletionTimers.values.forEach { it.cancel() }
             chatDeletionTimers.clear()
             _initialSyncDone.value = false
+            // Bump last, inside the mutex: any ingest that captured the old epoch and
+            // is parked on a suspend point will see the change and bail before writing.
+            sessionEpoch.incrementAndGet()
         }
         runCatching { snapshotStore.clear() }
             .warnUnlessCancelled(TAG, "snapshotStore.clear")
@@ -2727,30 +2790,57 @@ class PostsRepository(
 
     /**
      * Repeatedly call [TdApi.LoadChats] until TDLib runs out of pages for [list]. TDLib
-     * signals "no more chats to load" with a `404 Not Found` error specifically — any
-     * other error (network blip, auth race) is transient and would historically have
-     * caused an early exit and a partially-populated chat list on cold start. Distinguish
-     * the two: 404 → terminate (we're done). Other errors → swallow this iteration and
-     * try the next; a transient blip should not strand the user with half a feed.
+     * signals "no more chats to load" with a `404 Not Found` error specifically. Outcomes:
+     *   - **404** → the list is fully drained; return normally (success).
+     *   - **success** → a page loaded, more may remain; clear the error latch and loop.
+     *   - **[CancellationException]** → rethrow immediately. Swallowing it (the old
+     *     shape did) detached a cancelled PTR from its parent and let the caller stamp
+     *     `lastRefreshAtMs` / flip `_initialSyncDone` as if the drain had succeeded.
+     *   - **other error** (network down, auth race) → latch it, pause
+     *     [DRAIN_RETRY_DELAY_MS] so an unhealthy TDLib isn't hammered back-to-back, and
+     *     retry on the next iteration.
+     *
+     * If the bounded loop exits WITHOUT ever seeing a 404 AND the last attempt errored,
+     * the latched error is rethrown. This is the load-bearing fix for offline
+     * pull-to-refresh: previously every iteration's failure was swallowed and the method
+     * returned normally, so [runTriggerInitialSync] stamped success — the `.onFailure`
+     * surface was dead code, and `refreshIfStale` then skipped retries for 60 s. Throwing
+     * here surfaces the error to the user AND leaves `lastRefreshAtMs` / `_initialSyncDone`
+     * unstamped (ingest stays on the offline `onlyLocal` album-coalesce path — the safe
+     * default).
      *
      * Bounded by [MAX_LOAD_CHATS_PAGES] — 10 pages × 200 hint = up to 2000 chats per list,
      * which is well past the realistic ceiling and protects against a TDLib bug ever
-     * returning success indefinitely.
+     * returning success indefinitely (that case exits normally: latch is null after the
+     * trailing success).
      */
     private suspend fun drainChatList(list: TdApi.ChatList) {
-        repeat(MAX_LOAD_CHATS_PAGES) {
-            val res = runCatching { td.send(TdApi.LoadChats(list, CHAT_LIST_HINT)) }
-            val err = res.exceptionOrNull()
-            if (err is TdClient.TdException && err.code == 404) return
-            // Any other failure: retry on the next iteration; the bounded loop guards
-            // against an infinite retry storm if TDLib stays unhealthy.
+        var lastError: Throwable? = null
+        repeat(MAX_LOAD_CHATS_PAGES) { attempt ->
+            val err = runCatching { td.send(TdApi.LoadChats(list, CHAT_LIST_HINT)) }.exceptionOrNull()
+            when {
+                err == null -> lastError = null // a page loaded — progress; keep draining
+                err is CancellationException -> throw err
+                err is TdClient.TdException && err.code == 404 -> return // fully drained
+                else -> {
+                    lastError = err
+                    if (attempt < MAX_LOAD_CHATS_PAGES - 1) delay(DRAIN_RETRY_DELAY_MS)
+                }
+            }
         }
+        // Never reached 404 and the tail errored: persistent failure — surface it so the
+        // caller doesn't record a false success.
+        lastError?.let { throw it }
     }
 
     private companion object {
         const val TAG = "PostsRepository"
         const val CHAT_LIST_HINT = 200
         const val MAX_LOAD_CHATS_PAGES = 10
+        // Pause between failed LoadChats retries in [drainChatList]. Short enough that
+        // an online-blip recovers within the bounded loop, long enough that an offline
+        // drain doesn't spin all 10 iterations back-to-back before surfacing the error.
+        const val DRAIN_RETRY_DELAY_MS = 300L
         // Mirrors the FeedSource.refreshIfStale window: skip the round-trip
         // when last successful refresh was within the last minute. 60s tracks
         // the WebFeedSource staleness gate so both modes feel equally responsive

@@ -5,6 +5,7 @@ import dev.lyo.hortay.testutil.PostsRepositoryTestHarness
 import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -53,6 +54,42 @@ class PostsRepositoryRefreshTest {
 
         assertEquals(0, harness.td.rpcCount("GetChatHistory"),
             "no album lastMessages → no album coalesce → zero GetChatHistory calls")
+    }
+
+    @Test
+    fun `refresh on persistent LoadChats error does not mark initial sync done`() = runTest {
+        // Offline pull-to-refresh: every LoadChats fails with a non-404 error.
+        // drainChatList must exhaust its bounded retries and rethrow the last
+        // error, so runTriggerInitialSync neither flips _initialSyncDone nor
+        // stamps lastRefreshAtMs. The prior shape swallowed each failure and
+        // returned normally, so success was recorded — the `.onFailure` surface
+        // was dead code and refreshIfStale then skipped retries for 60 s.
+        val harness = PostsRepositoryTestHarness(this)
+        harness.td.onAny("LoadChats") { TdApi.Error(500, "network down") }
+
+        harness.repo.refresh()
+        harness.advanceUntilIdle()
+
+        assertFalse(harness.repo.initialSyncDone.value,
+            "a persistent LoadChats failure must NOT mark initial sync done")
+    }
+
+    @Test
+    fun `refresh retries a transient LoadChats error then completes on 404`() = runTest {
+        // A transient blip on the first LoadChats must not abort the drain: the
+        // bounded loop pauses [DRAIN_RETRY_DELAY_MS] and retries, and a
+        // subsequent 404 completes the drain normally (initial sync marked done).
+        val harness = PostsRepositoryTestHarness(this)
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        harness.td.onAny("LoadChats") {
+            if (calls.getAndIncrement() == 0) TdApi.Error(500, "blip") else TdApi.Error(404, "no more")
+        }
+
+        harness.repo.refresh()
+        harness.advanceUntilIdle()
+
+        assertTrue(harness.repo.initialSyncDone.value,
+            "a transient error followed by 404 must still complete the drain")
     }
 
     @Test

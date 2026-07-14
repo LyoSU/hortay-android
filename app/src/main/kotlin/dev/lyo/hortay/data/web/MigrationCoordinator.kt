@@ -97,7 +97,16 @@ class MigrationCoordinator(
         // would never surface the proposal. The DataStore lookup is cheap, so
         // re-evaluating on each Ready transition while the set is still empty
         // is the safer default.
-        if (candidates.isEmpty()) return
+        //
+        // Clear any stale proposal BEFORE the empty-candidates return: a logout →
+        // sign-in-to-a-different-account sequence re-runs evaluate() against the
+        // new account's (empty) candidate set, and without this reset the sheet
+        // would keep showing account A's handles. See [clearProposal] for the
+        // logout hook that also covers the "never signed back in" case.
+        if (candidates.isEmpty()) {
+            _pendingProposal.value = null
+            return
+        }
         _pendingProposal.value = candidates
     }
 
@@ -236,6 +245,23 @@ class MigrationCoordinator(
      */
     suspend fun dismiss(): Unit = mutex.withLock {
         migrationStore.markProposalShown()
+        _pendingProposal.value = null
+        _progress.value = null
+    }
+
+    /**
+     * Logout hook: drop any account-scoped proposal / progress so the migration
+     * sheet can't render account A's guest-mode handles after a sign-out (or on a
+     * sign-in to a different account). The persisted proposal-shown flag is reset
+     * separately via [MigrationStore.reset] in [dev.lyo.hortay.AppGraph]'s logout
+     * fan-out; this only touches the in-memory surfaces MainActivity observes.
+     *
+     * Non-suspending and lock-free: it races against an in-flight [confirm], but
+     * both just write [MutableStateFlow]s — the confirm-run is separately cancelled
+     * by the parent-scope teardown on logout, and a stale null here is corrected on
+     * the next auth.Ready [evaluate].
+     */
+    fun clearProposal() {
         _pendingProposal.value = null
         _progress.value = null
     }

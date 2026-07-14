@@ -1,5 +1,7 @@
 package dev.lyo.hortay.data
 
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -77,8 +79,32 @@ internal object ChatPresence {
             next == 1
         }
         if (!shouldSend) return
-        runCatching { td.send(TdApi.OpenChat(chatId)) }
-            .warnUnlessCancelled(TAG, "openChat($chatId)")
+        val err = runCatching { td.send(TdApi.OpenChat(chatId)) }.exceptionOrNull() ?: return
+        // Send failed: the refcount we bumped above claims the chat is open, but
+        // TDLib never opened it. Left as-is, subsequent [openChat] calls short-
+        // circuit (next != 1 → no RPC), [isOpen] returns true so [viewMessages]
+        // picks `force_read=false` against a chat TDLib considers closed (read
+        // state silently stops advancing), and the eventual [closeChat] sends a
+        // stray CloseChat for a chat that was never opened. Roll the refcount back
+        // so local state matches TDLib.
+        //
+        // NonCancellable is load-bearing: the failure may itself be a
+        // CancellationException (the send was cancelled mid-flight), and a bare
+        // `refMutex.withLock` in an already-cancelled coroutine would immediately
+        // re-throw before unwinding the count. On cancellation TDLib's actual
+        // open-state is unknown, but the local count MUST unwind either way — a
+        // leaked +1 poisons every later open/close pair on this id.
+        withContext(NonCancellable) {
+            refMutex.withLock {
+                val current = refCounts[chatId] ?: 0
+                when {
+                    current <= 1 -> refCounts.remove(chatId)
+                    else -> refCounts[chatId] = current - 1
+                }
+            }
+        }
+        if (err is CancellationException) throw err
+        Log.w(TAG, "openChat($chatId) failed", err)
     }
 
     /**

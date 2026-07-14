@@ -128,10 +128,30 @@ class TdClient private constructor(
     private val _updates = MutableSharedFlow<TdApi.Update>(extraBufferCapacity = 64)
     override val updates: SharedFlow<TdApi.Update> = _updates.asSharedFlow()
 
+    // Auth-state serialisation. [handleUpdate] runs on the TDLib JNI worker
+    // thread. Dispatching each [TdApi.UpdateAuthorizationState] via its own
+    // `scope.launch { onAuthState(...) }` put every auth transition on the
+    // multi-threaded Default dispatcher with NO ordering guarantee — a
+    // LoggingOut could execute before the Ready it superseded, or WaitCode
+    // before WaitPhone, leaving [_authStage] on the wrong screen. Route them
+    // through an UNLIMITED Channel drained by a single consumer coroutine
+    // (same idiom as [incoming] above): the non-suspending trySend on the JNI
+    // thread preserves arrival order, and the lone consumer processes each
+    // state to completion — [onAuthState]'s suspend `send`s included — before
+    // taking the next. The auth update still ALSO flows through [incoming] to
+    // the [updates] SharedFlow for external subscribers; this channel only
+    // serialises TdClient's own internal handling.
+    private val authStates = Channel<TdApi.AuthorizationState>(Channel.UNLIMITED)
+
     init {
         scope.launch {
             for (update in incoming) {
                 _updates.emit(update)
+            }
+        }
+        scope.launch {
+            for (state in authStates) {
+                onAuthState(state)
             }
         }
     }
@@ -213,7 +233,10 @@ class TdClient private constructor(
 
     private fun handleUpdate(update: TdApi.Update) {
         when (update) {
-            is TdApi.UpdateAuthorizationState -> scope.launch { onAuthState(update.authorizationState) }
+            // trySend on the UNLIMITED [authStates] channel never fails and never
+            // suspends — safe on the JNI thread. The single consumer coroutine
+            // drains it in FIFO order so auth transitions can't reorder.
+            is TdApi.UpdateAuthorizationState -> authStates.trySend(update.authorizationState)
             is TdApi.UpdateConnectionState -> _connection.value = update.state.toStatus()
             is TdApi.UpdateUser -> {
                 // Keep [me] live when the official client edits the self user
@@ -555,9 +578,17 @@ class TdClient private constructor(
     }
 
     private suspend fun awaitFloodGate() {
-        val until = _floodWaitUntilMs.value
-        val now = System.currentTimeMillis()
-        if (until > now) {
+        // Loop, not single-shot: a concurrent 420/429 landing DURING our delay
+        // pushes [_floodWaitUntilMs] further out (via `update { max(...) }` in
+        // [registerFloodWait]). Reading the deadline only once would let this send
+        // fire the instant the original sleep elapses — straight into the extended
+        // flood window, earning another sanction. Re-read after each delay and keep
+        // sleeping until the deadline is truly in the past. Same rationale as
+        // [WebTelegramClient.awaitGate].
+        while (true) {
+            val until = _floodWaitUntilMs.value
+            val now = System.currentTimeMillis()
+            if (until <= now) return
             Log.w(TAG, "FLOOD_WAIT throttle: sleeping ${(until - now) / 1000}s before next send")
             delay(until - now)
         }
