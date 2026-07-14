@@ -1172,15 +1172,19 @@ class PostsRepository(
         }
         val deferred = deepLoadJobs.computeIfAbsent(chatId) {
             scope.async { runCatching { loadChannelHistoryLocked(chatId, limit) } }
-                // Compare-remove on completion, not after await(): if every awaiter
-                // is cancelled the `deepLoadJobs.remove` below never runs, leaving the
-                // finished Deferred cached — the next caller would await() a completed
-                // result once (stale). invokeOnCompletion fires regardless of who is
-                // (or isn't) still awaiting; the 2-arg remove only drops the entry if
-                // it's still this exact Deferred (a fresh computeIfAbsent may already
-                // have replaced it).
-                .also { d -> d.invokeOnCompletion { deepLoadJobs.remove(chatId, d) } }
         }
+        // Compare-remove on completion, not after await(): if every awaiter is
+        // cancelled the old post-await `deepLoadJobs.remove` never ran, leaving the
+        // finished Deferred cached — the next caller would await() a completed
+        // result once (stale). invokeOnCompletion fires regardless of who is (or
+        // isn't) still awaiting; the 2-arg remove only drops the entry if it's
+        // still this exact Deferred (a fresh computeIfAbsent may already have
+        // replaced it). Registered OUTSIDE computeIfAbsent's mapping function: an
+        // already-completed Deferred runs the handler synchronously, and doing that
+        // inside the mapping function re-enters the same ConcurrentHashMap bin —
+        // "Recursive update" IllegalStateException. Duplicate registrations from
+        // concurrent awaiters are harmless (compare-remove is idempotent).
+        deferred.invokeOnCompletion { deepLoadJobs.remove(chatId, deferred) }
         val result = deferred.await()
         // Mark cooldown only if we actually loaded posts. A "successful empty
         // batch" result (chat became inaccessible mid-load, transient TDLib
@@ -1297,11 +1301,12 @@ class PostsRepository(
             scope.async {
                 runCatching { loadOlderLocked(chatId, limit) }
             }
-                // Compare-remove on completion (see [loadChannelHistory]): all-awaiters-
-                // cancelled would otherwise strand the finished Deferred in the map and
-                // hand the next caller a stale completed result.
-                .also { d -> d.invokeOnCompletion { pageJobs.remove(chatId, d) } }
         }
+        // Compare-remove on completion, registered OUTSIDE the mapping function —
+        // see [loadChannelHistory] for both halves of the rationale (stale completed
+        // Deferred on all-awaiters-cancelled; "Recursive update" ISE if the handler
+        // fires synchronously inside computeIfAbsent).
+        deferred.invokeOnCompletion { pageJobs.remove(chatId, deferred) }
         val result = deferred.await()
         return result
             .warnUnlessCancelled(TAG, "loadOlder($chatId)")
