@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "org.drinkless.tdlib"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 26

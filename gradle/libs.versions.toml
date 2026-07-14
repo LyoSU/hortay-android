@@ -1,7 +1,6 @@
 [versions]
 agp = "9.2.0"
 kotlin = "2.3.10"
-ksp = "2.3.10-2.0.0"
 composeBom = "2026.04.01"
 # material3 explicitly pinned to the Expressive alpha (released 2026-05-06).
 # The April BOM ships material3 1.4.0 stable, which lacks MaterialShapes,

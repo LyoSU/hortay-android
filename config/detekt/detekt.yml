@@ -118,6 +118,20 @@ Compose:
       - LocalProfileAccent
       - LocalNavBarCollapse
       - LocalShowFullPost
+      - LocalIsCenteredItem
+      - LocalIsHighlightedItem
+      - LocalMediaPassive
+      - LocalCustomEmojiAnimator
+      - LocalHashtagTap
+      - LocalInlineVideoAutoplay
+      - LocalLinkConfirm
+      - LocalStickerOutline
+      - LocalWebHttpClient
+      - LocalWebmFrameCache
+      - LocalMediaViewer
+      - LocalUserMessageBus
+      - LocalWebmClock
+      - LocalWebStaleMedia
   CompositionLocalNaming:
     active: true
   ContentEmitterReturningValues:

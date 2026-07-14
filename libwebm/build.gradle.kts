@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "dev.lyo.hortay.webm"
-    compileSdk = 36
+    compileSdk = 37
     ndkVersion = "27.2.12479018"
 
     defaultConfig {

@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "dev.lyo.hortay.baselineprofile"
-    compileSdk = 36
+    compileSdk = 37
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

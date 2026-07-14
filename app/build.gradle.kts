@@ -215,6 +215,17 @@ android {
             "/META-INF/DEPENDENCIES",
         )
     }
+
+    bundle {
+        language {
+            // In-app language picker (LocaleStore) must be able to switch to ANY
+            // shipped locale on API 26-32, where the platform per-app locale
+            // mechanism (which would trigger Play on-demand language delivery)
+            // is not in play. Disabling the language split ships all 13 locales
+            // in the base APK — string resources only, ~tens of KB per locale.
+            enableSplit = false
+        }
+    }
 }
 
 // Compose Compiler reports + stability config. Reports land under
