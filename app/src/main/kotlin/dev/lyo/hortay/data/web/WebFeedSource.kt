@@ -98,6 +98,14 @@ class WebFeedSource(
     // gains per-username concurrency it should register its jobs here too.
     private val inFlightRetries = ConcurrentHashMap<String, Job>()
 
+    // Cooldowns for the stale-media re-fetch path (see [refetchForStalePost] /
+    // [refetchForStaleMediaUrl]). Keyed by channel username and by URL respectively
+    // so a screen of expired images doesn't storm t.me. Entries are tiny and only
+    // added on the rare event of an actual image-load failure, so unbounded growth
+    // over a session is a non-issue in practice.
+    private val staleRefetchCooldown = ConcurrentHashMap<String, Long>()
+    private val staleUrlCooldown = ConcurrentHashMap<String, Long>()
+
     // Last-known DataStore subscription set, used for delta computation in
     // [handleSubscriptionsChanged]. We deliberately diff against THIS rather
     // than against `repository.subscribedUsernames()` because direct-write paths
@@ -282,10 +290,18 @@ class WebFeedSource(
                 val outcomes = coroutineScope {
                     targets.map { username ->
                         async {
+                            val mediaStale = username in staleMediaSet
                             fetchOne(
                                 username = username,
-                                forceNetwork = force || username in staleMediaSet,
+                                forceNetwork = force || mediaStale,
                                 fetchedAtMs = System.currentTimeMillis(),
+                                // Only bypass the ingest fingerprint guard for channels
+                                // whose media aged past the TTL — NOT for a blanket
+                                // pull-to-refresh (force), which would erode the guard's
+                                // ~80% skip rate across every post. A plateaued post whose
+                                // media rotated between plain refreshes still self-heals
+                                // reactively via [refetchForStalePost].
+                                forceMediaRefresh = mediaStale,
                             )
                         }
                     }.awaitAll()
@@ -320,12 +336,55 @@ class WebFeedSource(
         return job
     }
 
-    /** Re-fetch the channel a post belongs to after Coil reports a stale media URL. */
-    fun refetchForStalePost(postId: String): Job = scope.launch {
-        repository.markMediaStale(postId)
+    /**
+     * Re-fetch the channel a post belongs to after Coil reports an expired media
+     * URL (HTTP 401/403/410). Marks the specific post's media stale (zeroes its
+     * `fetched_at_ms`) and forces a fresh channel fetch that re-ingests rotated CDN
+     * URLs. Coalesced per channel via [staleRefetchCooldown]: a viewport full of one
+     * channel's expired images fires ONE re-fetch, not one per card — the channel's
+     * post tokens rotate together, so the channel is the right dedup key. Returns
+     * null (no work) when the cooldown is still active.
+     */
+    fun refetchForStalePost(postId: String): Job? {
         val username = postId.substringBefore('/')
-        if (username.isNotBlank()) {
-            fetchOne(username, forceNetwork = true, fetchedAtMs = System.currentTimeMillis())
+        if (username.isBlank()) return null
+        val now = System.currentTimeMillis()
+        val previous = staleRefetchCooldown[username]
+        if (previous != null && now - previous < STALE_REFETCH_COOLDOWN_MS) return null
+        staleRefetchCooldown[username] = now
+        return scope.launch {
+            repository.markMediaStale(postId)
+            // forceMediaRefresh so the WHOLE channel's rotated URLs are re-ingested,
+            // not just the one post markMediaStale flagged — its siblings' images are
+            // expiring in lockstep and the per-channel cooldown blocks a second pass.
+            fetchOne(
+                username = username,
+                forceNetwork = true,
+                fetchedAtMs = System.currentTimeMillis(),
+                forceMediaRefresh = true,
+            )
+        }
+    }
+
+    /**
+     * Entry point for the UI image-error path: [dev.lyo.hortay.ui.media.TdMediaImage]
+     * only knows the failed remote URL, not the post id, so we resolve the URL back
+     * to its post ([WebRepository.postIdForMediaUrl]) before delegating to
+     * [refetchForStalePost]. Deduped per URL so the same broken image re-mounting /
+     * retrying doesn't launch repeat DB lookups; the channel-level cooldown in
+     * [refetchForStalePost] then bounds the actual network re-fetches. Returns null
+     * when the URL was reported again within the cooldown; otherwise the lookup job
+     * (which itself may resolve to no work if the URL matches no stored post).
+     */
+    fun refetchForStaleMediaUrl(remoteUrl: String): Job? {
+        if (remoteUrl.isBlank()) return null
+        val now = System.currentTimeMillis()
+        val previous = staleUrlCooldown[remoteUrl]
+        if (previous != null && now - previous < STALE_REFETCH_COOLDOWN_MS) return null
+        staleUrlCooldown[remoteUrl] = now
+        return scope.launch {
+            val postId = repository.postIdForMediaUrl(remoteUrl) ?: return@launch
+            refetchForStalePost(postId)
         }
     }
 
@@ -343,6 +402,7 @@ class WebFeedSource(
         username: String,
         forceNetwork: Boolean,
         fetchedAtMs: Long,
+        forceMediaRefresh: Boolean = false,
     ): FetchOutcome {
         repository.markFetchStatus(username, ChannelFetchStatus.Loading)
         try {
@@ -357,6 +417,12 @@ class WebFeedSource(
                         etag = result.etag,
                         lastModified = result.lastModified,
                         fetchedAtMs = fetchedAtMs,
+                        // Bypass the ingest fingerprint guard only when this fetch was
+                        // triggered specifically to refresh media (TTL sweep or reactive
+                        // stale-URL re-fetch), so a plateaued post whose CDN URL rotated
+                        // still persists the fresh URL. A plain pull-to-refresh keeps the
+                        // guard — see the callers in doRefresh / refetchForStalePost.
+                        forceMediaRefresh = forceMediaRefresh,
                     )
                     return FetchOutcome.Fresh
                 }
@@ -587,6 +653,15 @@ class WebFeedSource(
          * inside the OkHttp Cache validity window.
          */
         const val DEFAULT_MEDIA_TTL_MS = 4 * 60 * 60 * 1000L // 4 hours
+
+        /**
+         * Coalescing window for the reactive stale-media re-fetch. A channel whose
+         * CDN tokens just expired will surface many near-simultaneous Coil errors
+         * (every visible card of that channel); one re-fetch inside this window is
+         * enough to refresh them all, so repeat reports are dropped. A few minutes
+         * balances "recover promptly" against "don't re-fetch on every scroll".
+         */
+        const val STALE_REFETCH_COOLDOWN_MS = 3 * 60 * 1000L // 3 minutes
 
     }
 }

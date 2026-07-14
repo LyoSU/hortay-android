@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -18,6 +19,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.network.HttpException
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -78,16 +80,32 @@ fun TdMediaImage(
     // existing PostCard/PostBody render web posts through one code path.
     if (fileId == null && remoteUrl != null) {
         val baseModifier = if (placeholderColor != null) modifier.background(placeholderColor) else modifier
+        // Guest-mode stale-media handler (null in TDLib mode). On an expired-CDN-URL
+        // error we report the URL so WebFeedSource can re-fetch the owning channel —
+        // t.me/s/ CDN tokens live only 1–4 h (see ARCHITECTURE "Web-mode media TTL").
+        val onStaleMedia = LocalWebStaleMedia.current
         // Memoise the ImageRequest. Without `remember`, every recomposition
         // (parent emit, sibling state change, scroll-driven layout pass) builds
         // a fresh ImageRequest reference. Coil de-dupes by URL internally but
         // each new instance still goes through its dispatcher checks; on a
         // 30-card viewport that's the difference between idle and ~1 ms of
         // request churn per frame.
-        val request = remember(remoteUrl, context) {
+        val request = remember(remoteUrl, context, onStaleMedia) {
             ImageRequest.Builder(context)
                 .data(remoteUrl)
                 .crossfade(CROSSFADE_MS)
+                .apply {
+                    if (onStaleMedia != null) {
+                        listener(
+                            onError = { _, result ->
+                                val code = (result.throwable as? HttpException)?.response?.code
+                                if (code == 401 || code == 403 || code == 410) {
+                                    onStaleMedia(remoteUrl)
+                                }
+                            },
+                        )
+                    }
+                }
                 .build()
         }
         AsyncImage(
@@ -229,6 +247,17 @@ fun TdMediaImage(
         }
     }
 }
+
+/**
+ * Guest-mode-only hook: reports a remote media URL that failed to load with an
+ * auth/expiry HTTP code (401/403/410) so [dev.lyo.hortay.data.web.WebFeedSource]
+ * can re-fetch the owning channel and pick up fresh CDN tokens. Null in TDLib
+ * mode (fileId-backed media never hits this path); provided by
+ * [dev.lyo.hortay.ui.web.WebModeScaffold] in guest mode. Static because the value
+ * (a stable lambda over the process-singleton feed source) never changes for the
+ * lifetime of a guest session — no need to invalidate readers on a new provider.
+ */
+val LocalWebStaleMedia = staticCompositionLocalOf<((String) -> Unit)?> { null }
 
 private val MINITHUMB_BLUR_RADIUS = 20.dp
 

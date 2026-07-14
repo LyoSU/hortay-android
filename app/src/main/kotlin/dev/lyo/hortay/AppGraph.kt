@@ -27,8 +27,10 @@ import dev.lyo.hortay.data.MediaCache
 import dev.lyo.hortay.data.ProfileAccentRegistry
 import dev.lyo.hortay.data.MessageMapper
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import dev.lyo.hortay.data.nav.AppNavKey
+import dev.lyo.hortay.data.warnUnlessCancelled
 import dev.lyo.hortay.data.nav.HomeKey
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.SettingsStore
@@ -459,7 +461,8 @@ class AppGraph(context: Context) {
      * web mode would be limited to neutral chips for any emoji-id that has no
      * unicode fallback baked into the static HTML.
      */
-    val webCustomEmoji: WebCustomEmojiResolver = WebCustomEmojiResolver(webHttpClient)
+    val webCustomEmoji: WebCustomEmojiResolver =
+        WebCustomEmojiResolver(webHttpClient, emojiCache = webRepository)
 
     /**
      * Curated channel-suggestions catalog (sections + handles + blurbs), fetched
@@ -665,9 +668,13 @@ class AppGraph(context: Context) {
     /**
      * Drop every piece of per-account state held by the graph. Each repo
      * is responsible for its own cleanup; this method is just the
-     * orchestrator. Errors from individual clears are logged but never
-     * propagated — a partial wipe is still better than aborting the
-     * cleanup midway and leaving half the caches stale.
+     * orchestrator. Real errors from individual clears are logged (via
+     * [warnUnlessCancelled]) but never propagated — a partial wipe is still
+     * better than aborting the cleanup midway and leaving half the caches
+     * stale. A [kotlinx.coroutines.CancellationException], by contrast, IS
+     * propagated (the collecting scope is going away — honour the coroutine
+     * contract rather than pinning ourselves alive to finish clears nobody
+     * will observe).
      */
     private suspend fun runLogoutCleanup() {
         // PostsRepository.clear() already wipes the on-disk snapshot
@@ -676,41 +683,54 @@ class AppGraph(context: Context) {
         // ChatPresence is a process-singleton object — wipe its
         // refcount map so account A's leftover OpenChat counts can't
         // poison account B's open/close arithmetic.
-        runCatching { postsRepository.clear() }
-        runCatching { dev.lyo.hortay.data.ChatPresence.clear() }
-        runCatching { messageMapper.clear() }
-        runCatching { commentsRepository.clear() }
-        runCatching { mediaCache.clear() }
-        runCatching { customEmoji.clear() }
-        runCatching { customEmojiAnimator.clear() }
-        runCatching { stickerOutline.clear() }
-        runCatching { chatFoldersRepository.clear() }
-        runCatching { translations.clear() }
-        runCatching { migrationStore.reset() }
+        runCatching { postsRepository.clear() }.warnUnlessCancelled(TAG, "logout cleanup: postsRepository")
+        runCatching { dev.lyo.hortay.data.ChatPresence.clear() }.warnUnlessCancelled(TAG, "logout cleanup: chatPresence")
+        runCatching { messageMapper.clear() }.warnUnlessCancelled(TAG, "logout cleanup: messageMapper")
+        runCatching { commentsRepository.clear() }.warnUnlessCancelled(TAG, "logout cleanup: commentsRepository")
+        runCatching { mediaCache.clear() }.warnUnlessCancelled(TAG, "logout cleanup: mediaCache")
+        runCatching { customEmoji.clear() }.warnUnlessCancelled(TAG, "logout cleanup: customEmoji")
+        runCatching { customEmojiAnimator.clear() }.warnUnlessCancelled(TAG, "logout cleanup: customEmojiAnimator")
+        runCatching { stickerOutline.clear() }.warnUnlessCancelled(TAG, "logout cleanup: stickerOutline")
+        runCatching { chatFoldersRepository.clear() }.warnUnlessCancelled(TAG, "logout cleanup: chatFoldersRepository")
+        runCatching { translations.clear() }.warnUnlessCancelled(TAG, "logout cleanup: translations")
+        runCatching { migrationStore.reset() }.warnUnlessCancelled(TAG, "logout cleanup: migrationStore")
+        // Drop the in-memory migration proposal / progress too — reset() only
+        // clears the persisted proposal-shown flag; the coordinator's StateFlows
+        // still hold account A's guest-mode handles until cleared here.
+        runCatching { migrationCoordinator.clearProposal() }.warnUnlessCancelled(TAG, "logout cleanup: migrationCoordinator")
         // Cold-start backfill flag is per-auth-session. Resetting on logout
         // ensures the next sign-in (different Telegram account, or same
         // account after explicit sign-out) re-runs the backfill — the
         // cold-start UX it protects only ever bites without a warm TDLib
         // message DB.
-        runCatching { coldStartBackfillStore.reset() }
+        runCatching { coldStartBackfillStore.reset() }.warnUnlessCancelled(TAG, "logout cleanup: coldStartBackfillStore")
         // Drop any in-flight report sheet — its target's chatId/messageId
         // belongs to account A's TDLib database and will be invalid the moment
         // the new client spawns.
-        runCatching { reportDialogs.close() }
+        runCatching { reportDialogs.close() }.warnUnlessCancelled(TAG, "logout cleanup: reportDialogs")
         // Drop any in-flight drill stack — chatId / messageIds belong to
         // account A's TDLib database and will be invalid the moment the new
-        // client spawns.
-        runCatching { backStack.apply { clear(); add(HomeKey) } }
+        // client spawns. Both writes must land inside ONE snapshot: clear()
+        // then add() are two separate snapshot mutations, and between them the
+        // back stack is momentarily empty — NavDisplay requires a non-empty
+        // stack and can crash if it recomposes against the empty frame.
+        runCatching {
+            Snapshot.withMutableSnapshot { backStack.apply { clear(); add(HomeKey) } }
+        }.warnUnlessCancelled(TAG, "logout cleanup: backStack")
         // Archive snapshots belong to the previous account's message ids and
         // chat ids. Wipe on logout so account B doesn't see account A's history
         // in the archive screen.
-        runCatching { archiveRepository.clear() }
+        runCatching { archiveRepository.clear() }.warnUnlessCancelled(TAG, "logout cleanup: archiveRepository")
         // Per-account preferences in ArchiveSettingsStore (currently: the
         // excluded-chat set, which is keyed on TDLib chatIds). The master
         // `enabled` toggle is a global user preference and survives logout.
-        runCatching { archiveSettingsStore.resetForLogout() }
+        runCatching { archiveSettingsStore.resetForLogout() }.warnUnlessCancelled(TAG, "logout cleanup: archiveSettingsStore")
         // Discovery resolve cache carries account-specific `isMember`; drop it so
         // account B doesn't see account A's subscribe/open state on a suggestion.
-        runCatching { channelDiscovery.clear() }
+        runCatching { channelDiscovery.clear() }.warnUnlessCancelled(TAG, "logout cleanup: channelDiscovery")
+    }
+
+    private companion object {
+        const val TAG = "AppGraph"
     }
 }

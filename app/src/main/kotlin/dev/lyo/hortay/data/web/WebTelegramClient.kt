@@ -223,13 +223,8 @@ class WebTelegramClient(
             //     and the user saw "network error, retry" instead of the correct
             //     "private channel" CTA.
             403 -> return FetchResult.PrivateChannel
-            301, 302, 307, 308 -> {
-                val location = response.header("Location").orEmpty()
-                val redirectsToBareTme = location.contains("t.me/") &&
-                    !location.contains("t.me/s/")
-                return if (redirectsToBareTme) FetchResult.PrivateChannel
-                else FetchResult.NetworkError(IOException("HTTP ${response.code} → $location"))
-            }
+            301, 302, 307, 308 ->
+                return classifyRedirect(response.code, response.header("Location").orEmpty())
             429 -> {
                 val retrySec = response.header("Retry-After")?.toLongOrNull() ?: DEFAULT_BACKOFF_SEC
                 val capped = retrySec.coerceAtMost(MAX_BACKOFF_SEC)
@@ -283,8 +278,10 @@ class WebTelegramClient(
                 }
 
                 override fun onResponse(call: Call, response: Response) {
-                    if (cont.isActive) cont.resume(response)
-                    else response.close()
+                    // Resume with the response, but if the continuation is cancelled
+                    // between delivery and the coroutine consuming it, close the body
+                    // so the OkHttp connection isn't leaked.
+                    cont.resume(response) { _, res, _ -> res.close() }
                 }
             })
         }
@@ -379,6 +376,30 @@ class WebTelegramClient(
         private const val HTTP_CACHE_SIZE_BYTES = 10L * 1024 * 1024
     }
 }
+
+/**
+ * Classify a 30x redirect target from a `t.me/s/<u>` probe. Telegram redirects a
+ * private channel (or a handle that resolves to a user / bot) to its bare root
+ * `t.me/<username>` with no message path — that's the [FetchResult.PrivateChannel]
+ * signal. A redirect carrying a `/<seq>` post permalink is a PUBLIC post link, and
+ * any other target is an unexpected edge change; both map to [FetchResult.NetworkError]
+ * so we don't silently absorb a breaking change (or a public post) as "private".
+ *
+ * Top-level + internal so the classification is unit-testable without spinning up
+ * an OkHttp stack.
+ */
+internal fun classifyRedirect(code: Int, location: String): FetchResult =
+    if (BARE_TME_ROOT_REGEX.matches(location.trim())) {
+        FetchResult.PrivateChannel
+    } else {
+        FetchResult.NetworkError(IOException("HTTP $code → $location"))
+    }
+
+// Bare channel root: `t.me/<username>` with an optional trailing slash and no
+// further path. Excludes post permalinks (`t.me/<u>/<seq>`) and the `/s/` preview
+// path (`t.me/s/<u>` carries an extra segment, so the anchored match rejects it).
+private val BARE_TME_ROOT_REGEX =
+    Regex("""^https?://t\.me/[A-Za-z][A-Za-z0-9_]{1,31}/?$""")
 
 /** Result of a single fetch. Covers every branch the scheduler needs to handle. */
 sealed interface FetchResult {

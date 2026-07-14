@@ -49,7 +49,7 @@ class WebRepository(
     private val db: WebDatabase,
     private val strings: StringResolver,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) {
+) : WebEmojiCache {
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -142,9 +142,7 @@ class WebRepository(
      * scan, just one with case-folding now.
      */
     fun search(query: String, limit: Long = DEFAULT_SEARCH_LIMIT): Flow<PersistentList<TimelinePost>> {
-        val lowered = query.lowercase()
-        val escaped = lowered.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        val pattern = "%${escaped}%"
+        val pattern = "%${escapeLike(query.lowercase())}%"
         return postQueries
             .searchPlain(pattern, limit, mapper = ::rowToTimelinePost)
             .asFlow()
@@ -192,6 +190,19 @@ class WebRepository(
 
     suspend fun channelsWithStaleMedia(olderThanMs: Long): List<String> = withContext(ioDispatcher) {
         postQueries.selectChannelsWithStaleMedia(olderThanMs).executeAsList()
+    }
+
+    /**
+     * Map an expired media / preview CDN URL back to the id of the post that owns
+     * it. Called from the Coil image-error path via [WebFeedSource.refetchForStaleMediaUrl]
+     * to identify which channel needs a re-fetch. Matches the URL as a LIKE
+     * substring of the stored JSON blobs (see [PostQueries.selectIdByMediaUrl]).
+     * Returns null when no post carries the URL — e.g. a custom-emoji or already-
+     * evicted URL — in which case the caller does nothing.
+     */
+    suspend fun postIdForMediaUrl(url: String): String? = withContext(ioDispatcher) {
+        if (url.isBlank()) return@withContext null
+        postQueries.selectIdByMediaUrl("%${escapeLike(url)}%").executeAsOneOrNull()
     }
 
     /**
@@ -280,6 +291,7 @@ class WebRepository(
         etag: String?,
         lastModified: String?,
         fetchedAtMs: Long,
+        forceMediaRefresh: Boolean = false,
     ) = withContext(ioDispatcher) {
         db.transaction {
             val ch = page.channel
@@ -308,12 +320,12 @@ class WebRepository(
                 olderCursor = page.olderCursor,
             )
             for (post in page.posts) {
-                ingestPost(post, fetchedAtMs)
+                ingestPost(post, fetchedAtMs, forceMediaRefresh)
             }
         }
     }
 
-    private fun ingestPost(post: WebPost, fetchedAtMs: Long) {
+    private fun ingestPost(post: WebPost, fetchedAtMs: Long, forceMediaRefresh: Boolean) {
         val channelUsername = post.id.substringBefore('/')
         // Fingerprint guard: most posts are unchanged between sweeps. Skip the
         // four JSON serialises + UPDATE when text_html + views match the
@@ -324,19 +336,20 @@ class WebRepository(
         // change in lockstep with text_html in practice — a post whose text
         // didn't change rarely has new media, and reaction-count drift is
         // surfaced via the views/reactions tail of the same UPDATE we're
-        // skipping anyway. media_url-rotation (the 4 h CDN TTL refresh) goes
-        // through markMediaStale → fetched_at_ms = 0 → next sweep forces a
-        // full re-ingest with forceNetwork=true, bypassing this guard via the
-        // Page outcome path.
+        // skipping anyway. media_url-rotation (the 1–4 h CDN TTL refresh) has two
+        // escape hatches from this guard: a forced fetch ([forceMediaRefresh] —
+        // pull-to-refresh or a media-TTL sweep that re-fetched specifically to pick
+        // up rotated URLs) bypasses it unconditionally, and markMediaStale →
+        // fetched_at_ms = 0 forces the upsert on the next sweep.
         val existing = postQueries.selectFingerprint(channelUsername, post.seq).executeAsOneOrNull()
-        // markMediaStale sets fetched_at_ms = 0 to force a re-ingest of media URLs (CDN
-        // tokens rotate every 1–4 h). The naive fingerprint guard (text + views match)
-        // would skip the upsert in that case and the stale media JSON + fetched_at_ms=0
-        // would persist forever, so the next Coil load would 401/403 again and re-trigger
-        // markMediaStale — a tight infinite loop with no visible recovery. Treating
-        // `fetched_at_ms == 0` as "media re-ingest pending" forces the upsert through
-        // even when text/views are unchanged.
-        if (existing != null &&
+        // Fingerprint escape hatches. Without them a plateaued post (text + views
+        // unchanged between sweeps) would keep its stale media JSON forever, so the
+        // next Coil load would 401/403 again and re-trigger markMediaStale — a tight
+        // loop with no visible recovery.
+        //   • forceMediaRefresh: the fetch was forced precisely to refresh media URLs.
+        //   • fetched_at_ms == 0: markMediaStale flagged this post's media as expired.
+        if (!forceMediaRefresh &&
+            existing != null &&
             existing.text_html == post.textHtml &&
             existing.views == post.views &&
             existing.fetched_at_ms != 0L
@@ -482,8 +495,13 @@ class WebRepository(
             .flowOn(ioDispatcher)
 
     /**
-     * Called by Coil's image-loader error path when a CDN URL returns 401/403/410 —
-     * the post's signed media URLs have expired and the channel needs a re-fetch.
+     * Zero a post's `fetched_at_ms` to flag its media URLs as expired. Reached from
+     * the Coil image-error path: [dev.lyo.hortay.ui.media.TdMediaImage] reports the
+     * failed URL through [dev.lyo.hortay.ui.media.LocalWebStaleMedia], which
+     * [WebFeedSource.refetchForStaleMediaUrl] maps back to this post id via
+     * [postIdForMediaUrl] before re-fetching the channel. Zeroing guarantees the
+     * `selectChannelsWithStaleMedia` sweep picks the channel up and the fingerprint
+     * guard in [ingestPost] lets the fresh URLs through.
      */
     suspend fun markMediaStale(postId: String) = withContext(ioDispatcher) {
         postQueries.markMediaStale(postId)
@@ -526,14 +544,14 @@ class WebRepository(
 
     // ---- Custom emoji cache --------------------------------------------------
 
-    suspend fun cachedEmoji(emojiId: String, freshAfterMs: Long): CachedEmoji? =
+    override suspend fun cachedEmoji(emojiId: String, freshAfterMs: Long): CachedEmoji? =
         withContext(ioDispatcher) {
             customEmojiQueries.selectOne(emojiId, freshAfterMs).executeAsOneOrNull()?.let {
                 CachedEmoji(it.emoji_id, it.type, it.url, it.thumb_url, it.size_px?.toInt())
             }
         }
 
-    suspend fun cacheEmoji(
+    override suspend fun cacheEmoji(
         emojiId: String,
         type: String,
         url: String,
@@ -652,6 +670,13 @@ class WebRepository(
     private fun decodeForward(jsonStr: String): WebForwardSource? = runCatching {
         json.decodeFromString(WebForwardSource.serializer(), jsonStr)
     }.getOrNull()
+
+    // Escape the three SQL LIKE metacharacters so a user query / URL matches
+    // literally. Paired with `ESCAPE '\'` on every LIKE that consumes the result
+    // (searchPlain, selectIdByMediaUrl). Order matters: escape the escape char
+    // first so we don't double-escape the backslashes we just introduced.
+    private fun escapeLike(s: String): String =
+        s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     private fun parseIsoToMillis(iso: String): Long? = runCatching {
         // ISO-8601 with offset, e.g. "2026-04-12T18:43:00+00:00". java.time can do

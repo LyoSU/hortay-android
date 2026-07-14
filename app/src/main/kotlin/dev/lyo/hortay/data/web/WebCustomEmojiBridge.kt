@@ -67,7 +67,13 @@ class WebCustomEmojiBridge(
     private val scope: CoroutineScope,
 ) {
 
+    // Ids currently in-flight or already resolved this session — skip re-resolving.
     private val requested = HashSet<Long>()
+    // Ids whose last resolve failed, with the failure timestamp. A failed id is
+    // removed from [requested] so a later feed emission can retry it, but not before
+    // [RETRY_BACKOFF_MS] elapses — otherwise a transient t.me 429 burst would have
+    // every subsequent feed re-emit hammer the same dead ids in a tight loop.
+    private val failedAtMs = HashMap<Long, Long>()
     private val mutex = Mutex()
     private var bound = false
 
@@ -100,22 +106,64 @@ class WebCustomEmojiBridge(
         if (ids.isEmpty()) return
 
         val toResolve: List<Long> = mutex.withLock {
-            ids.filter { requested.add(it) }
+            val now = System.currentTimeMillis()
+            ids.filter { id ->
+                if (id in requested) return@filter false
+                val failedAt = failedAtMs[id]
+                if (failedAt != null && now - failedAt < RETRY_BACKOFF_MS) return@filter false
+                requested.add(id)
+                true
+            }
         }
         if (toResolve.isEmpty()) return
 
         scope.launch {
             val resolved = HashMap<Long, CustomEmojiSticker>(toResolve.size)
+            val failed = ArrayList<Long>()
             for (id in toResolve) {
-                val asset = runCatching { resolver.resolve(id.toString()) }
-                    .getOrNull() ?: continue
+                val asset = runCatching { resolver.resolve(id.toString()) }.getOrNull()
+                if (asset == null) {
+                    failed += id
+                    continue
+                }
                 resolved[id] = asset.toCustomEmojiSticker(id)
+            }
+            if (resolved.isNotEmpty() || failed.isNotEmpty()) {
+                val now = System.currentTimeMillis()
+                mutex.withLock {
+                    // Release failed ids for a backoff-gated retry on a later emission.
+                    for (id in failed) {
+                        requested.remove(id)
+                        failedAtMs[id] = now
+                    }
+                    // Clear any stale failure memo for ids that resolved this pass.
+                    for (id in resolved.keys) failedAtMs.remove(id)
+                }
             }
             if (resolved.isNotEmpty()) {
                 customEmojiRepo.populate(resolved)
                 Log.i(TAG, "populated ${resolved.size} custom emoji stickers from web resolver")
             }
         }
+    }
+
+    /**
+     * Drop every cached / requested / failed emoji so the next feed emission
+     * re-resolves from scratch. Called from the guest-mode "Clear cache" path
+     * ([dev.lyo.hortay.ui.web.WebModeScaffold]) — clearing the DB and the resolver
+     * LRU alone would leave [requested] blocking re-resolution (so posts would keep
+     * their now-evicted, possibly-expired emoji URLs until process restart). Wipes
+     * all three caches this bridge fans into: the resolver's in-memory LRU, the
+     * shared [CustomEmojiRepository] stickers, and this bridge's dedup state.
+     */
+    suspend fun reset() {
+        mutex.withLock {
+            requested.clear()
+            failedAtMs.clear()
+        }
+        lastPostsRef = null
+        resolver.clearCache()
+        customEmojiRepo.clear()
     }
 
     private fun collectIds(posts: List<TimelinePost>): Set<Long> {
@@ -194,5 +242,10 @@ class WebCustomEmojiBridge(
 
     private companion object {
         const val TAG = "WebCustomEmojiBridge"
+
+        // Minimum gap before a failed emoji id is retried. Long enough that a t.me
+        // 429 burst on /i/emoji doesn't turn every feed re-emit into a re-hammer,
+        // short enough that a genuinely transient failure heals within a session.
+        const val RETRY_BACKOFF_MS = 2 * 60 * 1000L
     }
 }

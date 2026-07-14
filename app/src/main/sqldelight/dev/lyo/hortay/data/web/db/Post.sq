@@ -141,7 +141,7 @@ searchPlain:
 SELECT post.*, channel.title AS channel_title, channel.avatar_url AS channel_avatar
 FROM post
 JOIN channel ON channel.username = post.channel_username
-WHERE LOWER(post.text_plain) LIKE :pattern
+WHERE LOWER(post.text_plain) LIKE :pattern ESCAPE '\'
   AND channel.is_subscribed = 1
 ORDER BY post.published_at_ms DESC, post.seq DESC
 LIMIT :limit;
@@ -184,7 +184,11 @@ WHERE channel_username = :channelUsername AND seq = :seq;
 -- compares text_html + views (the two fields that almost always change first
 -- when a post is edited or reacted to) under the same composite key the
 -- upsert uses; on a match we skip the four JSON serialises and the UPDATE.
--- Returns a single row when the post exists, empty otherwise.
+-- Returns a single row when the post exists, empty otherwise. The guard is
+-- bypassed on a media-refresh fetch (forceMediaRefresh — the media-TTL sweep and
+-- the reactive stale-URL refetch, deliberately NOT a blanket pull-to-refresh) so a
+-- plateaued post whose text/views are unchanged still picks up rotated CDN media
+-- URLs, and on fetched_at_ms == 0 (markMediaStale escape hatch).
 selectFingerprint:
 SELECT text_html, views, fetched_at_ms FROM post
 WHERE channel_username = :channelUsername AND seq = :seq;
@@ -201,6 +205,19 @@ UPDATE post SET is_bookmarked = :bookmarked WHERE id = :id;
 -- sweep regardless of the configured MEDIA_TTL_MS.
 markMediaStale:
 UPDATE post SET fetched_at_ms = 0 WHERE id = :id;
+
+-- Reverse lookup: the post id owning a given media / preview CDN URL. Used by the
+-- Coil error path (WebFeedSource.refetchForStaleMediaUrl) to map an expired image
+-- URL back to its post so the channel can be re-fetched. The URL is matched as a
+-- LIKE substring of the JSON blobs (media_json holds photo/video/poster URLs;
+-- web_preview_json holds link-preview image URLs). Caller escapes % / _ / \ in the
+-- URL and wraps it in %…%; ESCAPE '\' so those escapes match literally. No index —
+-- a full scan over the ≤1000-row feed table, only hit on a rare stale-URL error.
+selectIdByMediaUrl:
+SELECT id FROM post
+WHERE media_json LIKE :pattern ESCAPE '\'
+   OR (web_preview_json IS NOT NULL AND web_preview_json LIKE :pattern ESCAPE '\')
+LIMIT 1;
 
 -- Distinct channel usernames whose latest post is older than the media TTL. Used
 -- by WebFeedSource to drive proactive re-fetch when the user starts scrolling a

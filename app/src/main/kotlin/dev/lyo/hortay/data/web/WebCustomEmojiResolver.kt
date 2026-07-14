@@ -45,12 +45,12 @@ import kotlin.coroutines.resumeWithException
  * requests for the same id; only the signed `?token=` in the returned CDN URL
  * eventually expires).
  *
- * Caching: the resolver keeps an in-memory `Map<String, ResolvedEmoji>`. Persistence
- * is intentionally NOT implemented in this primitive — the emoji-id → asset-type
- * mapping is immutable, but the embedded `?token=` query param on the CDN URL has a
- * TTL we don't know (probably 24h based on Telegram CDN convention). Persisting
- * therefore needs a TTL strategy; that lives in the Phase 2 step layer that wires
- * this resolver into a DataStore-backed cache.
+ * Caching: two tiers. An in-memory `Map<String, ResolvedEmoji>` (LRU) is the hot
+ * path; behind it, [emojiCache] persists resolutions to SQLite so a cold start
+ * doesn't re-resolve every visible emoji over the network (see CustomEmoji.sq).
+ * The TTL ([EMOJI_CACHE_TTL_MS]) is bounded by the signed `?token=` on the CDN URL,
+ * not by the (immutable) emoji asset — a persisted resolution older than the TTL is
+ * ignored and re-resolved so we never serve an expired URL from the DB.
  */
 class WebCustomEmojiResolver(
     // No default value: instantiating with `WebTelegramClient.defaultHttpClient()`
@@ -60,6 +60,11 @@ class WebCustomEmojiResolver(
     // this signature change makes the wiring explicit so future call sites can't
     // silently re-acquire a cache-less twin.
     private val httpClient: OkHttpClient,
+    // Persistent tier (SQLite via WebRepository). Nullable so tests can construct a
+    // network-only resolver; production always passes it. Reads are TTL-guarded and
+    // failures are swallowed — the network path is the source of truth, the DB only
+    // saves a round-trip.
+    private val emojiCache: WebEmojiCache? = null,
 ) {
 
     // LinkedHashMap with access-order so we drop least-recently-resolved
@@ -87,6 +92,26 @@ class WebCustomEmojiResolver(
     suspend fun resolve(emojiId: String): ResolvedEmoji? {
         cacheMutex.withLock { cache[emojiId] }?.let { return it }
 
+        // Persistent tier: a resolution cached to SQLite in a prior session/cold
+        // start, still inside the CDN-token TTL. Skips the network round-trip.
+        emojiCache?.let { store ->
+            val freshAfterMs = System.currentTimeMillis() - EMOJI_CACHE_TTL_MS
+            val persisted = runCatching { store.cachedEmoji(emojiId, freshAfterMs) }.getOrNull()
+            if (persisted != null) {
+                typeFromDbValue(persisted.type)?.let { type ->
+                    val resolved = ResolvedEmoji(
+                        emojiId = emojiId,
+                        type = type,
+                        url = persisted.url,
+                        thumbUrl = persisted.thumbUrl,
+                        sizePx = persisted.sizePx ?: defaultSizeFor(type),
+                    )
+                    cacheMutex.withLock { cache[emojiId] = resolved }
+                    return resolved
+                }
+            }
+        }
+
         awaitGate()
         val request = Request.Builder()
             .url("https://t.me/i/emoji/$emojiId.json")
@@ -107,6 +132,18 @@ class WebCustomEmojiResolver(
 
         if (resolved != null) {
             cacheMutex.withLock { cache[emojiId] = resolved }
+            emojiCache?.let { store ->
+                runCatching {
+                    store.cacheEmoji(
+                        emojiId = emojiId,
+                        type = resolved.type.dbValue,
+                        url = resolved.url,
+                        thumbUrl = resolved.thumbUrl,
+                        sizePx = resolved.sizePx,
+                        resolvedAtMs = System.currentTimeMillis(),
+                    )
+                }
+            }
         }
         return resolved
     }
@@ -143,14 +180,9 @@ class WebCustomEmojiResolver(
             Log.w(TAG, "resolve($emojiId) endpoint error: ${json.error}")
             return null
         }
-        val type = when (json.type) {
-            "tgs" -> ResolvedEmoji.Type.Tgs
-            "webm" -> ResolvedEmoji.Type.Webm
-            "webp" -> ResolvedEmoji.Type.Webp
-            else -> {
-                Log.w(TAG, "resolve($emojiId) unknown type ${json.type}")
-                return null
-            }
+        val type = typeFromDbValue(json.type.orEmpty()) ?: run {
+            Log.w(TAG, "resolve($emojiId) unknown type ${json.type}")
+            return null
         }
         val url = json.emoji ?: run {
             Log.w(TAG, "resolve($emojiId) no emoji url field")
@@ -161,10 +193,7 @@ class WebCustomEmojiResolver(
             type = type,
             url = url,
             thumbUrl = json.thumb,
-            sizePx = json.size ?: when (type) {
-                ResolvedEmoji.Type.Tgs -> 512
-                else -> 100
-            },
+            sizePx = json.size ?: defaultSizeFor(type),
         )
     }
 
@@ -189,11 +218,23 @@ class WebCustomEmojiResolver(
                 }
 
                 override fun onResponse(call: Call, response: Response) {
-                    if (cont.isActive) cont.resume(response)
-                    else response.close()
+                    // Resume with the response, but if the continuation is cancelled
+                    // between delivery and the coroutine consuming it, close the body
+                    // so the OkHttp connection isn't leaked.
+                    cont.resume(response) { _, res, _ -> res.close() }
                 }
             })
         }
+    }
+
+    private fun defaultSizeFor(type: ResolvedEmoji.Type): Int =
+        if (type == ResolvedEmoji.Type.Tgs) 512 else 100
+
+    private fun typeFromDbValue(value: String): ResolvedEmoji.Type? = when (value) {
+        "tgs" -> ResolvedEmoji.Type.Tgs
+        "webm" -> ResolvedEmoji.Type.Webm
+        "webp" -> ResolvedEmoji.Type.Webp
+        else -> null
     }
 
     /**
@@ -225,6 +266,14 @@ class WebCustomEmojiResolver(
         // forever". 100 ms cuts that in half without tripping rate limits in
         // practice (verified against bursts of 60+ resolutions).
         private const val REQUEST_SPACING_MS = 100L
+
+        // Persistent-tier freshness window. Bounded by the signed `?token=` on the
+        // resolved CDN URL — a cached resolution older than this may point at an
+        // expired URL, and custom emoji have no reactive self-heal (they don't flow
+        // through TdMediaImage's stale-URL error path), so we err on the side of the
+        // documented ~24h Telegram CDN token lifetime rather than the emoji asset's
+        // effective immutability. See CustomEmoji.sq.
+        private const val EMOJI_CACHE_TTL_MS = 24 * 60 * 60 * 1000L
 
         // 1024 distinct emoji ids ≈ 100 KB of cached strings. Sized for "scroll
         // a few years of feed across 200 channels"; eviction kicks in well
@@ -269,4 +318,30 @@ data class ResolvedEmoji(
         /** Static WEBP image. Renders via Coil. */
         Webp,
     }
+}
+
+/** DB / JSON `type` token for a resolved emoji — the inverse of the parser's mapping. */
+private val ResolvedEmoji.Type.dbValue: String
+    get() = when (this) {
+        ResolvedEmoji.Type.Tgs -> "tgs"
+        ResolvedEmoji.Type.Webm -> "webm"
+        ResolvedEmoji.Type.Webp -> "webp"
+    }
+
+/**
+ * Narrow persistence surface for [WebCustomEmojiResolver] — the two custom-emoji
+ * cache operations it needs, no more. [WebRepository] implements it. Keeping the
+ * resolver coupled to this interface rather than the full repository keeps its
+ * dependencies honest and lets tests supply a trivial in-memory fake.
+ */
+interface WebEmojiCache {
+    suspend fun cachedEmoji(emojiId: String, freshAfterMs: Long): CachedEmoji?
+    suspend fun cacheEmoji(
+        emojiId: String,
+        type: String,
+        url: String,
+        thumbUrl: String?,
+        sizePx: Int?,
+        resolvedAtMs: Long,
+    )
 }
