@@ -19,6 +19,15 @@
 - The fullscreen media viewer rests its controls on a subtle gradient so they stay legible over any photo.
 
 ### Fixed
+- Pull-to-refresh while offline now reports the failure instead of silently pretending the feed refreshed.
+- Signing out now fully clears the previous account's session — a slow background fetch can no longer re-insert its posts, and the guest-migration prompt no longer offers the previous account's channels.
+- In guest mode, images whose temporary links expired now reload automatically when they fail to display, instead of staying broken until the next background sweep.
+- Guest-mode custom emoji now survive an app restart without re-downloading, and a temporary network failure no longer leaves them blank for the whole session.
+- "Clear cache" in guest mode now also resets custom-emoji images instead of leaving broken ones until restart.
+- Guest-mode search now finds text containing %, _ or \ characters.
+- A video you swipe to in the fullscreen viewer now resumes correctly after leaving and returning to the app.
+- Switching the app language now works on every Play Store install, including languages not present in the device's system settings.
+- Guest mode now always opens on the Feed tab after a fresh launch, matching signed-in behaviour.
 - Going back to the feed from a channel or comments now lands on the exact post you left, instead of a nearby spot when posts loaded in the background while you were away.
 - Returning to a comments thread no longer loses your reading position when the thread takes a moment to reload.
 - Photo albums that arrived while the app was closed now fill in all their photos when you scroll to them, instead of sometimes staying stuck on a single image.
