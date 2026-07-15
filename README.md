@@ -51,7 +51,7 @@ The Gradle wrapper is checked in — no separate `gradle wrapper` step
 Shipping artifacts are built and published by GitHub Actions — you never build a release locally.
 
 - **Cut a release** — push a `vX.Y.Z` tag (or run the **Release** workflow manually with a version). CI builds a signed AAB + universal APK and publishes a GitHub Release, using the matching `CHANGELOG.md` section as notes. The tag drives `versionName`; `versionCode` stays the `git rev-list --count` auto-derivation.
-- **Beta channel** — every push to `main` builds a signed `dev.lyo.hortay.beta` APK and updates a single rolling **`beta`** pre-release, so testers get in-place updates (installs alongside the Play build).
+- **Beta channel** — after CI passes on `main`, a signed `dev.lyo.hortay.beta` APK is built and the single rolling **`beta`** pre-release is updated, so testers get in-place updates (installs alongside the Play build).
 - **Bump TDLib** — run the **TDLib bump** workflow. It builds TDLib on a native x86_64 runner (~30 min, no Rosetta), smoke-compiles `:app`, warms the CI cache, and opens a PR changing only `scripts/tdlib-version.txt` (the native libs are gitignored and rebuilt from the pin).
 - **Gate** — `CI` runs detekt + unit tests + `lintRelease` (the translation-parity check) on every push/PR.
 
