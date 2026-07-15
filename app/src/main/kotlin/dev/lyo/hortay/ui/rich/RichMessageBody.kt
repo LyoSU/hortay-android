@@ -3,6 +3,7 @@ package dev.lyo.hortay.ui.rich
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
@@ -69,8 +70,11 @@ fun RichMessageBody(
         }
     }
 
-    CompositionLocalProvider(LocalRichAnchorTap provides anchorTap) {
-        val body: @Composable () -> Unit = { RichBlocks(blocks, path = "b", modifier = modifier) }
+    val reading = mode == RichMessageMode.Reading
+    CompositionLocalProvider(LocalRichAnchorTap provides anchorTap, LocalRichReading provides reading) {
+        val body: @Composable () -> Unit = {
+            RichBlocks(blocks, path = "b", modifier = modifier, readingColumn = reading)
+        }
         if (document.isRtl) {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { body() }
         } else {
@@ -78,6 +82,13 @@ fun RichMessageBody(
         }
     }
 }
+
+/**
+ * True while composing a [RichMessageMode.Reading] document — the editorial reading surface
+ * (post-detail / comments anchor). Media captions read this to drop their feed-preview line clamp
+ * and render in full; the default `false` keeps the feed-preview clamp everywhere else.
+ */
+internal val LocalRichReading = staticCompositionLocalOf { false }
 
 /**
  * Pure decision for an [RichInline.AnchorLink] / [RichInline.ReferenceLink] tap, factored out of

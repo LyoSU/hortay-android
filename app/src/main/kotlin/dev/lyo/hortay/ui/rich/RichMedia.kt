@@ -231,13 +231,16 @@ private fun RichCaptionText(caption: RichCaption?) {
     val text = caption?.text
     val credit = caption?.credit
     if (text == null && credit == null) return
+    // Full captions on the reading surface (post-detail / comments anchor); the feed preview keeps
+    // the short clamp so a long caption can't blow up a feed card.
+    val captionMaxLines = if (LocalRichReading.current) Int.MAX_VALUE else 6
     Spacer(Modifier.height(6.dp))
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (text != null) {
             RichInlineText(
                 inline = text,
                 style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                maxLines = 6,
+                maxLines = captionMaxLines,
                 overflow = TextOverflow.Ellipsis,
             )
         }

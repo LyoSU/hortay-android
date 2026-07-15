@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -34,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -62,19 +64,80 @@ import dev.lyo.hortay.ui.icons.Symbol
  * heading binds tightly to the block it introduces and opens with air above — the editorial
  * rhythm that makes the document read as one article. The gap is inserted only BETWEEN blocks,
  * so the first / last block carries no outer padding.
+ *
+ * [readingColumn] applies the editorial reading layout at the TOP level of the document only
+ * (nested recursion — list items, quote / details bodies — always passes `false`, so the policy
+ * is one concept applied once): text-ish blocks are held to a [READING_MAX_WIDTH] measure
+ * centred in the column, while media and tables break out edge-to-edge ([readingBleed]) past the
+ * host card's horizontal inset. In the feed preview it stays `false` — that layout is unchanged.
  */
 @Composable
 internal fun RichBlocks(
     blocks: List<RichBlock>,
     path: String,
     modifier: Modifier = Modifier,
+    readingColumn: Boolean = false,
 ) {
-    Column(modifier = modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = if (readingColumn) Alignment.CenterHorizontally else Alignment.Start,
+    ) {
         blocks.forEachIndexed { index, block ->
             if (index > 0) Spacer(Modifier.height(blockSpacingBetween(blocks[index - 1], block)))
-            RichBlockContent(block, path = "$path.$index")
+            if (readingColumn) {
+                val blockModifier = if (block.isEdgeToEdge()) {
+                    Modifier.readingBleed()
+                } else {
+                    Modifier.widthIn(max = READING_MAX_WIDTH).fillMaxWidth()
+                }
+                Box(blockModifier) { RichBlockContent(block, path = "$path.$index") }
+            } else {
+                RichBlockContent(block, path = "$path.$index")
+            }
         }
     }
+}
+
+/** Max text-column measure on wide layouts (tablet / foldable / landscape); on phones the column
+ *  is narrower than this so it just fills the width. */
+private val READING_MAX_WIDTH = 700.dp
+
+/** Horizontal inset the host post card applies to the rich body; media / tables in reading mode
+ *  cancel it via [readingBleed] to reach the card edge. Keep in sync with PostCard's content
+ *  padding. */
+private val READING_EDGE_BLEED = 16.dp
+
+/** Media / table blocks read as full-bleed figures in the reading surface. Quotes and details
+ *  stay inside the text column. */
+private fun RichBlock.isEdgeToEdge(): Boolean = when (this) {
+    is RichBlock.Photo,
+    is RichBlock.Video,
+    is RichBlock.Animation,
+    is RichBlock.Collage,
+    is RichBlock.Slideshow,
+    is RichBlock.MapPreview,
+    is RichBlock.Table,
+    -> true
+    else -> false
+}
+
+/**
+ * Expands a block by [READING_EDGE_BLEED] on each horizontal side and shifts it left by the same,
+ * so it bleeds past the host card's content inset to the card edge while still REPORTING the
+ * un-expanded width to its parent [Column] (the centred column layout is undisturbed). A no-op
+ * when the incoming width is unbounded (nothing to bleed into).
+ */
+private fun Modifier.readingBleed(): Modifier = layout { measurable, constraints ->
+    if (!constraints.hasBoundedWidth) {
+        val placeable = measurable.measure(constraints)
+        return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }
+    val insetPx = READING_EDGE_BLEED.roundToPx()
+    val expanded = constraints.maxWidth + insetPx * 2
+    val placeable = measurable.measure(
+        constraints.copy(minWidth = 0, maxWidth = expanded),
+    )
+    layout(constraints.maxWidth, placeable.height) { placeable.place(-insetPx, 0) }
 }
 
 @Composable
