@@ -2,6 +2,8 @@ package dev.lyo.hortay.data
 
 import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.testutil.PostsRepositoryTestHarness
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -115,6 +117,47 @@ class PostsRepositoryRichMessageTest {
         harness.repo.ensureFullRichMessage(chatId, messageId)
         harness.advanceUntilIdle()
         assertEquals(1, harness.td.rpcCount("GetFullRichMessage"), "already-full post must not re-fetch")
+    }
+
+    @Test
+    fun `a mid-flight edit wins over a slower full-document fetch`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -100L
+        val messageId = 7L
+        harness.seedPartialRichPost(chatId, messageId)
+
+        // The GetFullRichMessage RPC parks on this gate so we can land a fresh edit while the
+        // fetch is in flight — the exact race the reference-equality guard protects against.
+        val rpcGate = CompletableDeferred<Unit>()
+        harness.td.onAnySuspending("GetFullRichMessage") {
+            rpcGate.await()
+            // Stale full body — reflects the partial's revision, NOT the mid-flight edit.
+            TdApi.RichMessage(
+                arrayOf(TdApi.PageBlockParagraph(TdApi.RichTextPlain("stale full body"))),
+                false,
+                true,
+            )
+        }
+
+        val fetch = launch { harness.repo.ensureFullRichMessage(chatId, messageId) }
+        harness.advanceUntilIdle() // ensureFullRichMessage captures the partial, then parks on the RPC gate
+
+        // A newer rich revision lands while the fetch is parked.
+        harness.td.emitUpdate(
+            TdApi.UpdateMessageContent(chatId, messageId, richMessageContent(isFull = true, "fresh edit")),
+        )
+        harness.advanceUntilIdle()
+        assertTrue(harness.richContentOf(chatId, messageId).plainText.contains("fresh edit"), "edit applied mid-flight")
+
+        // Release the stale RPC — its result must be discarded, not clobber the edit.
+        rpcGate.complete(Unit)
+        harness.advanceUntilIdle()
+        fetch.join()
+
+        val after = harness.richContentOf(chatId, messageId)
+        assertTrue(after.plainText.contains("fresh edit"), "the mid-flight edit wins")
+        assertFalse(after.plainText.contains("stale"), "the stale full body is discarded")
+        assertEquals(1, harness.td.rpcCount("GetFullRichMessage"))
     }
 
     @Test

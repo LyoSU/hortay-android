@@ -39,6 +39,18 @@ class FakeTdSender : TdSender {
         defaults[name] = handle
     }
 
+    /**
+     * Register a SUSPENDING default responder for a request type. The handler runs inside
+     * `send`, so a test can park it (e.g. on a [kotlinx.coroutines.CompletableDeferred]) to
+     * open a genuine mid-flight window — the only way to reproduce a "slow RPC races a
+     * concurrent update" scenario with an otherwise-synchronous fake. Consulted after the FIFO
+     * queue but before the non-suspending [onAny] defaults.
+     */
+    private val suspendingDefaults = ConcurrentHashMap<String, suspend (TdApi.Function<*>) -> TdApi.Object>()
+    fun onAnySuspending(name: String, handle: suspend (TdApi.Function<*>) -> TdApi.Object) {
+        suspendingDefaults[name] = handle
+    }
+
     suspend fun emitUpdate(update: TdApi.Update) {
         _updates.emit(update)
     }
@@ -47,10 +59,13 @@ class FakeTdSender : TdSender {
     override suspend fun <T : TdApi.Object> send(query: TdApi.Function<T>): T {
         val name = query::class.simpleName ?: "Unknown"
         _rpcCounts.merge(name, 1) { a, b -> a + b }
-        val responder = responders.pollFirst()
-            ?: defaults[name]
-            ?: error("Unexpected TdSender.send: $name — register a responder via onNext() or onAny()")
-        val result = responder(query)
+        val fifo = responders.pollFirst()
+        val result = when {
+            fifo != null -> fifo(query)
+            suspendingDefaults.containsKey(name) -> suspendingDefaults.getValue(name)(query)
+            defaults.containsKey(name) -> defaults.getValue(name)(query)
+            else -> error("Unexpected TdSender.send: $name — register a responder via onNext(), onAny() or onAnySuspending()")
+        }
         // Mirror real [TdClient.send] behaviour: a [TdApi.Error] response is
         // surfaced as a [TdClient.TdException], not returned as a value.
         // Without this, a responder that returns `TdApi.Error(420, ...)` would

@@ -2726,9 +2726,10 @@ class PostsRepository(
      *  - **Single-flight per message.** [richFullFetchInFlight] collapses concurrent callers to
      *    one RPC; an already-full or absent post short-circuits before touching the network.
      *  - **Pure snapshot update.** On success the post is swapped inside [updateOnePost] as a
-     *    pure function of the snapshot (find by id, swap content iff still a RichMessage), so it
-     *    is safe in the [MutableStateFlow.update] CAS loop. A live `updateMessageContent` edit
-     *    that lands first wins — the guard leaves a non-RichMessage untouched.
+     *    pure function of the snapshot (find by id, swap content iff it is still the exact
+     *    partial captured before the RPC — reference equality), so it is safe in the
+     *    [MutableStateFlow.update] CAS loop. A live `updateMessageContent` edit that lands
+     *    during the RPC wins — the guard leaves the newer (or non-RichMessage) content untouched.
      */
     suspend fun ensureFullRichMessage(chatId: Long, messageId: Long) {
         val existing = _posts.value
@@ -2750,7 +2751,17 @@ class PostsRepository(
             val document = full.toRichDocument()
             val plain = RichPlainText.of(document)
             updateOnePost(chatId, messageId) { post ->
-                if (post.content is PostContent.RichMessage) {
+                // Only upgrade if the post still carries the EXACT partial we based this fetch
+                // on. A mid-flight `updateMessageContent` edit replaces `content` with a fresh
+                // RichMessage instance (handleContentChanged → `copy`), so `post.content` is a
+                // DIFFERENT object even though it's still a RichMessage — the earlier `is
+                // RichMessage` check passed it through and the stale full body clobbered the
+                // newer revision. Reference (not structural) equality is intentional: it is the
+                // cheapest possible check and captures exactly "same object I read at capture
+                // time", which is the precise race signal. A re-ingest that rebuilds an
+                // equal-but-new partial correctly fails this test; the in-flight key is cleared
+                // in `finally`, so the next detail mount retries.
+                if (post.content === existing) {
                     post.copy(content = PostContent.RichMessage(document, plain))
                 } else {
                     post
