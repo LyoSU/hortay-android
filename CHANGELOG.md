@@ -42,6 +42,7 @@
 - The feed gently staggers its cards into place on a cold start.
 
 ### Build
+- Releases are now built, signed, and published by CI on a version tag, with an automated beta channel for testers on every push to main — no release is built on a developer machine.
 - Toolchain and dependencies updated across the stack: Kotlin 2.4, AGP 9.3 (Gradle 9.5), Compose BOM 2026.06 with Material 3 1.5.0-alpha23, OkHttp 5, JUnit 6, and the rest of the Dependabot backlog.
 - StrictMode (main-thread disk/network I/O and leaked-resource detection) in debug builds.
 - Automated dependency updates and vulnerability scanning via Dependabot and OSV-Scanner.

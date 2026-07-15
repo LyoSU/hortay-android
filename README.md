@@ -46,9 +46,20 @@ Requirements: JDK 17, Docker (for the TDLib build), Android SDK
 
 The Gradle wrapper is checked in — no separate `gradle wrapper` step
 
+## Releases & CI
+
+Shipping artifacts are built and published by GitHub Actions — you never build a release locally.
+
+- **Cut a release** — push a `vX.Y.Z` tag (or run the **Release** workflow manually with a version). CI builds a signed AAB + universal APK and publishes a GitHub Release, using the matching `CHANGELOG.md` section as notes. The tag drives `versionName`; `versionCode` stays the `git rev-list --count` auto-derivation.
+- **Beta channel** — every push to `main` builds a signed `dev.lyo.hortay.beta` APK and updates a single rolling **`beta`** pre-release, so testers get in-place updates (installs alongside the Play build).
+- **Bump TDLib** — run the **TDLib bump** workflow. It builds TDLib on a native x86_64 runner (~30 min, no Rosetta), smoke-compiles `:app`, warms the CI cache, and opens a PR changing only `scripts/tdlib-version.txt` (the native libs are gitignored and rebuilt from the pin).
+- **Gate** — `CI` runs detekt + unit tests + `lintRelease` (the translation-parity check) on every push/PR.
+
+Signing + credentials live in repo secrets (`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`). To enable **Google Play** auto-publish (internal track), create a Play Console service account (Play Console → Setup → API access), grant it release permissions, and add its JSON as the `PLAY_SERVICE_ACCOUNT_JSON` secret — the release workflow picks it up automatically; without it, releases go to GitHub only.
+
 ## Stack
 
-AGP 9.2.0 · Gradle 9.4.1 · Kotlin 2.3.10 (K2) · Compose BOM 2026.04.01 · Material 3 1.5.0-alpha19 · minSdk 26 / targetSdk 36 · TDLib pinned in `scripts/tdlib-version.txt` · Coroutines 1.10.1 · Coil 3.3.0 · Navigation 3 1.1.2 · SQLDelight 2.3 (guest mode only) · DataStore 1.2.0
+AGP 9.3.0 · Gradle 9.5.0 · Kotlin 2.4.0 (K2) · Compose BOM 2026.06.01 · Material 3 1.5.0-alpha23 · minSdk 26 / targetSdk 36 · TDLib pinned in `scripts/tdlib-version.txt` · Coroutines 1.11.0 · Coil 3.4.0 · Navigation 3 1.1.4 · SQLDelight 2.3.2 (guest mode only) · DataStore 1.2.1
 
 ## Architecture
 
