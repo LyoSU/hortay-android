@@ -10,6 +10,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichDocument
 import dev.lyo.hortay.data.rich.RichInline
+import dev.lyo.hortay.ui.text.LocalLinkConfirm
+import dev.lyo.hortay.ui.text.Unhandled
 
 /**
  * Entry point for rendering a [RichDocument] — the inline-text tree, text blocks, and the
@@ -29,7 +31,9 @@ import dev.lyo.hortay.data.rich.RichInline
  *
  * [onScrollToBlock], when supplied, is invoked with the top-level block index an in-document
  * anchor / reference link targets; without it (or when the target isn't in the rendered blocks)
- * the link falls back to opening its external URL.
+ * the link falls back to opening its external URL — routed through [LocalLinkConfirm] exactly
+ * like a masked [RichInline.Url], so an internal-looking footnote can't silently open an
+ * external phishing URL.
  */
 @Composable
 fun RichMessageBody(
@@ -39,6 +43,7 @@ fun RichMessageBody(
     onScrollToBlock: ((blockIndex: Int) -> Unit)? = null,
 ) {
     val uriHandler = LocalUriHandler.current
+    val confirmMaskedLink = LocalLinkConfirm.current
     // Preview projects to a bounded prefix before composition; Full renders every block.
     val blocks = remember(document, mode) {
         when (mode) {
@@ -49,14 +54,18 @@ fun RichMessageBody(
     // name → top-level block index, so an AnchorLink / ReferenceLink can resolve in-document.
     // Built from the RENDERED blocks so a preview never scrolls to a projected-away target.
     val registry = remember(blocks) { buildAnchorRegistry(blocks) }
-    val anchorTap = remember(registry, onScrollToBlock, uriHandler) {
+    val anchorTap = remember(registry, onScrollToBlock, uriHandler, confirmMaskedLink) {
         { name: String, url: String ->
-            val index = registry[normalizeAnchor(name)]
-            if (index != null && onScrollToBlock != null) {
-                onScrollToBlock(index)
-            } else if (url.isNotBlank()) {
-                runCatching { uriHandler.openUri(url) }
+            when (val action = resolveAnchorTap(name, url, registry, canScroll = onScrollToBlock != null)) {
+                is AnchorTapAction.Scroll -> onScrollToBlock?.invoke(action.blockIndex)
+                // Same anti-phishing path as a masked RichInline.Url: the confirm hook resolves
+                // the destination and surfaces the sheet only for genuinely external targets;
+                // the sentinel default (standalone previews / tests) opens directly.
+                is AnchorTapAction.OpenUrl ->
+                    if (confirmMaskedLink === Unhandled) runCatching { uriHandler.openUri(action.url) } else confirmMaskedLink(action.url)
+                AnchorTapAction.None -> Unit
             }
+            Unit
         }
     }
 
@@ -67,6 +76,34 @@ fun RichMessageBody(
         } else {
             body()
         }
+    }
+}
+
+/**
+ * Pure decision for an [RichInline.AnchorLink] / [RichInline.ReferenceLink] tap, factored out of
+ * [RichMessageBody] so the "internal anchor vs external fallback" branch is unit-testable:
+ *  - the name resolves in [registry] AND scrolling is available → [AnchorTapAction.Scroll];
+ *  - otherwise a non-blank [url] → [AnchorTapAction.OpenUrl] (the caller routes it through the
+ *    masked-link confirmation, never a direct open);
+ *  - neither → [AnchorTapAction.None].
+ */
+internal sealed interface AnchorTapAction {
+    data class Scroll(val blockIndex: Int) : AnchorTapAction
+    data class OpenUrl(val url: String) : AnchorTapAction
+    data object None : AnchorTapAction
+}
+
+internal fun resolveAnchorTap(
+    name: String,
+    url: String,
+    registry: Map<String, Int>,
+    canScroll: Boolean,
+): AnchorTapAction {
+    val index = registry[normalizeAnchor(name)]
+    return when {
+        index != null && canScroll -> AnchorTapAction.Scroll(index)
+        url.isNotBlank() -> AnchorTapAction.OpenUrl(url)
+        else -> AnchorTapAction.None
     }
 }
 
