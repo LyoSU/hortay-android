@@ -1,7 +1,10 @@
 package dev.lyo.hortay.ui.rich
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -26,10 +30,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +64,7 @@ import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichInline
 import dev.lyo.hortay.data.rich.RichListItem
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.util.rememberReducedMotion
 
 /**
  * Renders a list of [RichBlock]s stacked in a plain [Column] — NEVER a nested LazyColumn,
@@ -419,29 +428,73 @@ private fun roman(value: Int): String {
 
 // ---- Details (collapsible) ----
 
+/**
+ * External control seam for [RichBlock.Details] expansion. Every rendered [RichDetails] observes
+ * this holder (keyed by the block's document [path]) and forces itself open when its path is
+ * requested. It is the hook a later batch uses to auto-open a COLLAPSED details section that an
+ * in-document anchor tap lands inside — the anchor logic lives elsewhere; this only exposes the
+ * "request expand" verb. The [LocalRichDetailsExpansion] default is `null`, so a document with no
+ * controller keeps the plain cold-launch behaviour (open follows the model's `isOpen`).
+ */
+@Stable
+internal class RichDetailsExpansion {
+    private val requested = mutableStateSetOf<String>()
+
+    /** Request that the details block at [path] be expanded — idempotent and sticky across
+     *  recomposition. */
+    fun requestExpand(path: String) {
+        requested.add(path)
+    }
+
+    /** True once [requestExpand] was called for [path]. Read from composition so the matching
+     *  [RichDetails] recomposes into the open state when its path becomes requested. */
+    fun isExpandRequested(path: String): Boolean = path in requested
+}
+
+internal val LocalRichDetailsExpansion = staticCompositionLocalOf<RichDetailsExpansion?> { null }
+
+private val DETAILS_CONTAINER_SHAPE = RoundedCornerShape(12.dp)
+private val DETAILS_NESTING_LINE = 1.5.dp
+
 @Composable
 private fun RichDetails(block: RichBlock.Details, path: String, quoteDepth: Int = 0) {
     // Position-keyed (NOT rememberSaveable): cold launch collapses to the model's isOpen.
     var open by remember(path) { mutableStateOf(block.isOpen) }
+    // External auto-open seam: when the controller marks this path requested, force it open (the
+    // user can still collapse it afterwards — the effect only re-fires if the request flips).
+    val requestedOpen = LocalRichDetailsExpansion.current?.isExpandRequested(path) == true
+    LaunchedEffect(requestedOpen) { if (requestedOpen) open = true }
+
+    val reduced = rememberReducedMotion()
     val chevron by animateFloatAsState(
         targetValue = if (open) 90f else 0f,
-        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+        animationSpec = if (reduced) snap() else MaterialTheme.motionScheme.defaultSpatialSpec(),
         label = "rich-details-chevron",
     )
     val toggleLabel = stringResource(if (open) R.string.rich_details_collapse else R.string.rich_details_expand)
     val toggle = { open = !open }
+    val lineColor = MaterialTheme.colorScheme.outlineVariant
 
-    Column {
+    // Neutral container surfaces ONLY while expanded; a collapsed details is a plain row.
+    Column(
+        modifier = if (open) {
+            Modifier.clip(DETAILS_CONTAINER_SHAPE).background(MaterialTheme.colorScheme.surfaceContainerLow)
+        } else {
+            Modifier
+        },
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(DETAILS_CONTAINER_SHAPE)
                 .clickable(role = Role.Button, onClickLabel = toggleLabel, onClick = toggle)
                 // Expand / collapse action carries the open state to TalkBack (announced with
                 // its own localized "expanded" / "collapsed"), which a bare clickable can't.
                 .semantics {
                     if (open) collapse { toggle(); true } else expand { toggle(); true }
                 }
-                .padding(vertical = 4.dp),
+                .heightIn(min = 48.dp)
+                .padding(horizontal = if (open) 12.dp else 0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(modifier = Modifier.weight(1f)) {
@@ -455,18 +508,28 @@ private fun RichDetails(block: RichBlock.Details, path: String, quoteDepth: Int 
             )
         }
         val sizeSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntSize>()
+        // Content fades on the (shorter) effects spec while the height opens on the spatial spec,
+        // so text resolves a touch ahead of the section unfolding; reduced motion swaps instantly.
         val fadeSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
         AnimatedVisibility(
             visible = open,
-            enter = expandVertically(sizeSpec) + fadeIn(fadeSpec),
-            exit = shrinkVertically(sizeSpec) + fadeOut(fadeSpec),
+            enter = if (reduced) EnterTransition.None else expandVertically(sizeSpec) + fadeIn(fadeSpec),
+            exit = if (reduced) ExitTransition.None else shrinkVertically(sizeSpec) + fadeOut(fadeSpec),
         ) {
-            RichBlocks(
-                block.blocks,
-                path = "$path.d",
-                modifier = Modifier.padding(top = RICH_BLOCK_GAP),
-                quoteDepth = quoteDepth,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 12.dp),
+            ) {
+                Box(
+                    // Thin nesting line down the content's start edge, content inset past it.
+                    modifier = Modifier
+                        .drawBehind { drawRect(color = lineColor, size = Size(DETAILS_NESTING_LINE.toPx(), size.height)) }
+                        .padding(start = 16.dp),
+                ) {
+                    RichBlocks(block.blocks, path = "$path.d", quoteDepth = quoteDepth)
+                }
+            }
         }
     }
 }

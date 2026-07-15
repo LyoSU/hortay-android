@@ -71,7 +71,15 @@ fun RichMessageBody(
     }
 
     val reading = mode == RichMessageMode.Reading
-    CompositionLocalProvider(LocalRichAnchorTap provides anchorTap, LocalRichReading provides reading) {
+    // Live expansion controller for the whole document — the seam a later batch drives from the
+    // anchor tap above so a reference into a COLLAPSED details section auto-opens it. Dormant
+    // until something calls requestExpand, so it changes nothing today.
+    val detailsExpansion = remember { RichDetailsExpansion() }
+    CompositionLocalProvider(
+        LocalRichAnchorTap provides anchorTap,
+        LocalRichReading provides reading,
+        LocalRichDetailsExpansion provides detailsExpansion,
+    ) {
         val body: @Composable () -> Unit = {
             RichBlocks(blocks, path = "b", modifier = modifier, readingColumn = reading)
         }
