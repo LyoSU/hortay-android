@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.HorizontalDivider
@@ -41,8 +42,6 @@ import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -53,14 +52,16 @@ import dev.lyo.hortay.data.rich.RichInline
 import dev.lyo.hortay.data.rich.RichListItem
 import dev.lyo.hortay.ui.icons.Symbol
 
-/** Vertical gap between sibling blocks. */
-private val BLOCK_GAP = 10.dp
-
 /**
  * Renders a list of [RichBlock]s stacked in a plain [Column] — NEVER a nested LazyColumn,
  * so the whole rich body stays one item of the outer feed list. [path] is the block's
  * position path within the document (e.g. `"0.2"`), used only as a stable `remember` key
  * for collapsible [RichBlock.Details] state (position indices, not content).
+ *
+ * Sibling gaps are asymmetric ([blockSpacingBetween]) rather than a uniform arrangement, so a
+ * heading binds tightly to the block it introduces and opens with air above — the editorial
+ * rhythm that makes the document read as one article. The gap is inserted only BETWEEN blocks,
+ * so the first / last block carries no outer padding.
  */
 @Composable
 internal fun RichBlocks(
@@ -68,8 +69,9 @@ internal fun RichBlocks(
     path: String,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(BLOCK_GAP)) {
+    Column(modifier = modifier) {
         blocks.forEachIndexed { index, block ->
+            if (index > 0) Spacer(Modifier.height(blockSpacingBetween(blocks[index - 1], block)))
             RichBlockContent(block, path = "$path.$index")
         }
     }
@@ -80,14 +82,14 @@ private fun RichBlockContent(block: RichBlock, path: String) {
     when (block) {
         is RichBlock.SectionHeading -> RichInlineText(
             inline = block.text,
-            style = headingStyle(block.size),
+            style = richHeadingStyle(block.size),
         )
-        is RichBlock.Paragraph -> RichInlineText(block.text, MaterialTheme.typography.bodyLarge)
+        is RichBlock.Paragraph -> RichInlineText(block.text, RichType.paragraph)
         is RichBlock.Footer -> RichInlineText(
             block.text,
-            MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+            RichType.footer.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
         )
-        is RichBlock.Unknown -> RichInlineText(RichInline.Plain(block.plainText), MaterialTheme.typography.bodyLarge)
+        is RichBlock.Unknown -> RichInlineText(RichInline.Plain(block.plainText), RichType.paragraph)
 
         is RichBlock.Preformatted -> RichCodeBox(block.text, block.language)
         is RichBlock.Math -> RichCodeBox(RichInline.Plain(block.expression), language = "")
@@ -103,7 +105,7 @@ private fun RichBlockContent(block: RichBlock, path: String) {
         is RichBlock.PullQuote -> RichQuoteBox(credit = block.credit, pull = true) {
             RichInlineText(
                 block.text,
-                MaterialTheme.typography.bodyLarge.copy(textAlign = TextAlign.Center),
+                RichType.paragraph.copy(textAlign = TextAlign.Center),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -120,15 +122,6 @@ private fun RichBlockContent(block: RichBlock, path: String) {
         is RichBlock.MapPreview -> RichMapPreview(block)
         is RichBlock.Table -> RichTable(block)
     }
-}
-
-@Composable
-private fun headingStyle(size: Int): TextStyle = when (size.coerceIn(1, 6)) {
-    1 -> MaterialTheme.typography.headlineMedium
-    2 -> MaterialTheme.typography.headlineSmall
-    3 -> MaterialTheme.typography.titleLarge
-    4 -> MaterialTheme.typography.titleMedium
-    else -> MaterialTheme.typography.titleSmall
 }
 
 // ---- Code / math box ----
@@ -159,7 +152,7 @@ private fun RichCodeBox(text: RichInline, language: String?) {
                 }
                 RichInlineText(
                     inline = text,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                    style = RichType.code,
                 )
             }
         }
@@ -343,7 +336,7 @@ private fun RichDetails(block: RichBlock.Details, path: String) {
             enter = expandVertically(sizeSpec) + fadeIn(fadeSpec),
             exit = shrinkVertically(sizeSpec) + fadeOut(fadeSpec),
         ) {
-            RichBlocks(block.blocks, path = "$path.d", modifier = Modifier.padding(top = BLOCK_GAP))
+            RichBlocks(block.blocks, path = "$path.d", modifier = Modifier.padding(top = RICH_BLOCK_GAP))
         }
     }
 }
