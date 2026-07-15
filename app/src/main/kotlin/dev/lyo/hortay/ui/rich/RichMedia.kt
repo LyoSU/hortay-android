@@ -1,8 +1,14 @@
 package dev.lyo.hortay.ui.rich
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -47,6 +54,7 @@ import dev.lyo.hortay.data.rich.RichCaption
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.theme.mediaFrame
 import dev.lyo.hortay.ui.timeline.MediaWithSpoiler
+import dev.lyo.hortay.ui.util.rememberReducedMotion
 import dev.lyo.hortay.ui.timeline.NonPlayableFileRow
 import dev.lyo.hortay.ui.timeline.SingleMedia
 import dev.lyo.hortay.ui.timeline.formatDuration
@@ -247,52 +255,86 @@ private fun MosaicTile(cell: RichMosaicCell, items: List<AlbumItem>, onItemClick
     }
 }
 
+/** Beyond this page count the dot row is replaced by a compact "n / total" counter. */
+private const val SLIDESHOW_DOT_LIMIT = 6
+private val SLIDESHOW_PEEK = 22.dp
+private val SLIDESHOW_PAGE_SPACING = 6.dp
+
+/** One slideshow page: its media plus the per-item caption the AST carries (often null). */
+@Immutable
+private data class RichSlide(val item: AlbumItem, val caption: RichCaption?)
+
 @Composable
 internal fun RichSlideshow(block: RichBlock.Slideshow) {
-    val items = remember(block) { block.items.toAlbumItems() }
-    if (items.isEmpty()) {
+    val pages = remember(block) {
+        block.items.mapNotNull { child -> richBlockToAlbumItem(child)?.let { RichSlide(it, child.slideshowCaption()) } }
+    }
+    if (pages.isEmpty()) {
         RichMediaPlaceholder("image", block.caption)
         return
     }
+    val viewer = LocalMediaViewer.current
+    val items = remember(pages) { pages.map { it.item } }
     if (items.size == 1) {
         RichMediaColumn(block.caption) {
-            val viewer = LocalMediaViewer.current
             SingleMedia(items.first(), onClick = { viewer.open(items, 0) })
         }
         return
     }
-    RichMediaColumn(block.caption) {
-        val viewer = LocalMediaViewer.current
-        val pagerState = rememberPagerState(pageCount = { items.size })
-        // Tallest item drives the shared pager height (smallest w/h ratio), so no page is
-        // cropped; wider pages letterbox inside the fixed frame.
-        val ratio = remember(items) {
-            items.minOf { mediaAspectRatio(it.media.width, it.media.height) }
-        }
+    val pagerState = rememberPagerState(pageCount = { items.size })
+    // One stable frame for every page: the tallest item (smallest w/h ratio) fixes the height so
+    // swiping between a portrait and a landscape page never resizes the frame; wider pages crop.
+    val ratio = remember(items) { items.minOf { mediaAspectRatio(it.media.width, it.media.height) } }
+    val hasPerPageCaptions = remember(pages) { pages.any { it.caption.hasContent() } }
+    val reducedMotion = rememberReducedMotion()
+    val captionSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    Column {
         val pageLabel = stringResource(R.string.rich_slideshow_page, pagerState.currentPage + 1, items.size)
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(ratio)
-                .semantics { contentDescription = pageLabel },
-        ) { page ->
-            val item = items[page]
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(MaterialTheme.shapes.medium)
-                    .mediaFrame(MaterialTheme.shapes.medium),
-            ) {
-                MediaWithSpoiler(
-                    item = item,
-                    onClick = { viewer.open(items, page) },
-                    isActive = page == pagerState.currentPage,
-                )
+        Box(modifier = Modifier.fillMaxWidth().semantics { contentDescription = pageLabel }) {
+            HorizontalPager(
+                state = pagerState,
+                // A sliver of the neighbouring pages peeks past each edge — a stateless swipe
+                // affordance (no one-time hint animation to persist).
+                contentPadding = PaddingValues(horizontal = SLIDESHOW_PEEK),
+                pageSpacing = SLIDESHOW_PAGE_SPACING,
+                modifier = Modifier.fillMaxWidth().aspectRatio(ratio),
+            ) { page ->
+                val item = items[page]
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(MaterialTheme.shapes.medium)
+                        .mediaFrame(MaterialTheme.shapes.medium),
+                ) {
+                    MediaWithSpoiler(
+                        item = item,
+                        onClick = { viewer.open(items, page) },
+                        isActive = page == pagerState.currentPage,
+                    )
+                }
+            }
+            SlideshowIndicator(
+                current = pagerState.currentPage,
+                count = items.size,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+            )
+        }
+        if (hasPerPageCaptions) {
+            AnimatedContent(
+                targetState = pagerState.currentPage,
+                transitionSpec = {
+                    if (reducedMotion) {
+                        fadeIn(snap()) togetherWith fadeOut(snap())
+                    } else {
+                        fadeIn(captionSpec) togetherWith fadeOut(captionSpec)
+                    }
+                },
+                label = "rich-slideshow-caption",
+            ) { page ->
+                RichCaptionText(pages[page].caption)
             }
         }
-        Spacer(Modifier.height(8.dp))
-        PagerDots(count = items.size, selected = pagerState.currentPage)
+        RichCaptionText(block.caption)
     }
 }
 
@@ -354,12 +396,35 @@ private fun RichCaptionText(caption: RichCaption?) {
 private val DOT_SIZE = 6.dp
 private val DOT_SELECTED_WIDTH = 16.dp
 
+/**
+ * Page position rendered OVER the media, inside a translucent scrim pill so it stays legible on
+ * any photo. Up to [SLIDESHOW_DOT_LIMIT] pages show a dot row; past that a compact "n / total"
+ * counter takes over so a long slideshow doesn't grow an unreadable stripe of dots.
+ */
+@Composable
+private fun SlideshowIndicator(current: Int, count: Int, modifier: Modifier) {
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.45f))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (count > SLIDESHOW_DOT_LIMIT) {
+            Text(
+                text = stringResource(R.string.rich_slideshow_counter, current + 1, count),
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White,
+            )
+        } else {
+            PagerDots(count = count, selected = current)
+        }
+    }
+}
+
 @Composable
 private fun PagerDots(count: Int, selected: Int) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
-    ) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         repeat(count) { index ->
             val active = index == selected
             val width by animateDpAsState(
@@ -367,16 +432,14 @@ private fun PagerDots(count: Int, selected: Int) {
                 animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
                 label = "rich-slideshow-dot",
             )
+            // On-scrim palette: accent for the selected page, dimmed white for the rest — the
+            // pill's dark scrim guarantees contrast over any underlying photo.
             Box(
                 modifier = Modifier
                     .size(width = width, height = DOT_SIZE)
                     .clip(CircleShape)
                     .background(
-                        if (active) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                        },
+                        if (active) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.55f),
                     ),
             )
         }
@@ -413,6 +476,16 @@ private fun richBlockToAlbumItem(block: RichBlock): AlbumItem? = when (block) {
 }
 
 private fun List<RichBlock>.toAlbumItems(): List<AlbumItem> = mapNotNull(::richBlockToAlbumItem)
+
+/** The per-item caption a slideshow child carries, if it's a media block. */
+private fun RichBlock.slideshowCaption(): RichCaption? = when (this) {
+    is RichBlock.Photo -> caption
+    is RichBlock.Video -> caption
+    is RichBlock.Animation -> caption
+    else -> null
+}
+
+private fun RichCaption?.hasContent(): Boolean = this != null && (text != null || credit != null)
 
 private fun singleQuality(playbackFileId: Int, media: TdMedia): VideoQualities =
     VideoQualities(

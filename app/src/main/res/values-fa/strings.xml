@@ -766,6 +766,7 @@
     <string name="rich_media_content_description">رسانه</string>
     <string name="rich_slideshow_page">صفحه %1$d از %2$d</string>
     <string name="rich_collage_more">+%d</string>
+    <string name="rich_slideshow_counter">%1$d / %2$d</string>
     <string name="rich_read_full_post">خواندن کامل پست</string>
     <string name="rich_full_post_error">بارگیری کامل پست ممکن نشد</string>
     <string name="rich_full_post_retry">تلاش دوباره</string>

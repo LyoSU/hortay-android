@@ -791,6 +791,7 @@
     <string name="rich_media_content_description">Mídia</string>
     <string name="rich_slideshow_page">Página %1$d de %2$d</string>
     <string name="rich_collage_more">+%d</string>
+    <string name="rich_slideshow_counter">%1$d / %2$d</string>
     <string name="rich_read_full_post">Ler post completo</string>
     <string name="rich_full_post_error">Não foi possível carregar o post completo</string>
     <string name="rich_full_post_retry">Tentar novamente</string>
