@@ -85,13 +85,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      # keep-debug: 1 so the AAB bundles FULL native debug symbols for libtdjni.so
-      # (Play Console native crash symbolication once Play publishing is on).
       - name: Set up TDLib
         uses: ./.github/actions/setup-tdlib
         with:
           abis: arm64-v8a
-          keep-debug: "1"
 
       # Required — :libwebm links these into libhortaywebm.so (WebM sticker decoder).
       # Skipping it ships a release that crashes on any WebM sticker.

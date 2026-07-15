@@ -3,22 +3,16 @@ description: >
   Restore the Docker-built TDLib bindings + native libs from cache, or build them
   on a miss. The bindings (org.drinkless.tdlib.{TdApi,Client}.java) are gitignored
   and :app cannot compile without them, so every job that touches :app needs this.
-  Cache misses only on a TDLib bump (scripts/tdlib-version.txt changes), which is
-  its own dedicated commit.
+  A single cache serves the whole pipeline: it is built with KEEP_DEBUG=1 so the
+  unstripped overlay (FULL native symbols for a release AAB) is always present, and
+  the TDLib-bump workflow warms it once — after that ci/release/beta all hit it.
+  Cache misses only on a TDLib bump or a build-recipe change.
 
 inputs:
   abis:
     description: Space-separated ABI list to unpack (arm64-v8a is the release ABI).
     required: false
     default: arm64-v8a
-  keep-debug:
-    description: >
-      "1" also stages unstripped libs into libtdlib/build/tdlib-unstripped so a
-      release AAB can bundle FULL native debug symbols. "0" (default) is the fast
-      path for the test/lint gate. The cache key includes this so a stripped build
-      and a symbol-carrying build never clobber each other.
-    required: false
-    default: "0"
 
 runs:
   using: composite
@@ -33,19 +27,19 @@ runs:
           libtdlib/src/main/jniLibs
           libtdlib/build/tdlib-unstripped
         # Keyed on the pin AND the build recipe — a Dockerfile / script change that
-        # alters the output (compiler flags, ABI logic) must invalidate the cache, not
-        # just a version bump.
-        key: tdlib-v1-kd${{ inputs.keep-debug }}-${{ hashFiles('scripts/tdlib-version.txt', 'scripts/update-tdlib.sh', 'scripts/tdlib-builder/**') }}
+        # alters the output (compiler flags, ABI logic) must invalidate the cache,
+        # not just a version bump.
+        key: tdlib-v2-${{ hashFiles('scripts/tdlib-version.txt', 'scripts/update-tdlib.sh', 'scripts/tdlib-builder/**') }}
 
     - name: Build TDLib (cache miss only)
       if: steps.restore.outputs.cache-hit != 'true'
       shell: bash
       env:
         ABIS: ${{ inputs.abis }}
-        KEEP_DEBUG: ${{ inputs.keep-debug }}
+        KEEP_DEBUG: "1"
       run: |
         sha=$(grep '^TDLIB_SHA=' scripts/tdlib-version.txt | cut -d= -f2)
-        echo "::group::Building TDLib at pinned SHA $sha (ABIS=$ABIS, KEEP_DEBUG=$KEEP_DEBUG)"
+        echo "::group::Building TDLib at pinned SHA $sha (ABIS=$ABIS)"
         ./scripts/update-tdlib.sh "$sha"
         echo "::endgroup::"
 

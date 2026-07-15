@@ -48,7 +48,6 @@ jobs:
         uses: ./.github/actions/setup-tdlib
         with:
           abis: arm64-v8a
-          keep-debug: "0"
 
       # lintRelease schedules packageReleaseResources, which trips the build's
       # fail-fast guard against release packaging without signing config. A
