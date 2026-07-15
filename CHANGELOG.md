@@ -10,6 +10,11 @@
 
 ### Fixed
 - Long-pressing a post no longer crashes the app when the quick-action labels don't fit the row — the extra actions tuck into a "…" menu instead.
+- Tapping a footnote or reference link in a richly formatted post that leads outside Telegram now asks for confirmation first, like every other external link.
+- A richly formatted post edited while you're opening it now keeps the newer version, instead of being replaced by the older copy it was still loading.
+
+### Performance
+- Long richly formatted posts are lighter to scroll past in the feed — a card now builds only the preview it shows, not the whole document with its tables, collapsible sections and media.
 
 ## [0.11.0] — 2026-07-15
 
