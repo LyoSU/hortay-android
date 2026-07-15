@@ -11,6 +11,8 @@ import dev.lyo.hortay.data.MessageMapper
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.PostFilterStrategy
+import dev.lyo.hortay.data.rich.RichPlainText
+import dev.lyo.hortay.data.rich.toRichDocument
 import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.ReactionTogglePolicy
 import dev.lyo.hortay.data.Reactions
@@ -393,6 +395,16 @@ class PostsRepository(
      * generalised so it survives even if `chatCache` gets re-seeded in between.
      */
     private val sessionEpoch = AtomicLong(0L)
+
+    /**
+     * Per-message single-flight guard for [ensureFullRichMessage]. A partial
+     * [PostContent.RichMessage] (`document.isFull == false`) carries only a truncated block
+     * prefix; the full document is fetched lazily via [TdApi.GetFullRichMessage] on explicit
+     * reader intent (post-detail / comments-anchor mount). Keyed `chatId to messageId`; a
+     * concurrent second request for the same message returns without issuing a duplicate RPC.
+     * Cleared on [clear] (logout) so account A's in-flight keys can't suppress account B's fetch.
+     */
+    private val richFullFetchInFlight = ConcurrentHashMap.newKeySet<Pair<Long, Long>>()
 
     private val _posts = MutableStateFlow<PersistentList<TimelinePost>>(persistentListOf())
     override val posts: StateFlow<PersistentList<TimelinePost>> = _posts.asStateFlow()
@@ -2697,6 +2709,58 @@ class PostsRepository(
         return hit
     }
 
+    /**
+     * Fetch the full body of a partial rich message and swap it into the feed. TDLib caps the
+     * inline `messageRichMessage` at a truncated block prefix (`RichMessage.isFull == false`,
+     * tdlib/td 1.8.66); the rest is delivered only on demand via [TdApi.GetFullRichMessage].
+     *
+     * Contract:
+     *  - **Explicit reader intent only.** Called when the post-detail / comments-anchor surface
+     *    mounts a partial rich post — NOT during feed scrolling. Prefetching full documents for
+     *    the feed would spend the shared cold-start `GetChatHistory`/RPC budget (FLOOD_WAIT
+     *    class, see ARCHITECTURE.md "Cold-start contract") on content the clamped card never
+     *    shows; the clamped prefix renders fine on its own.
+     *  - **Single send path.** Routes through [td.send] like every other RPC, so the central
+     *    FLOOD_WAIT gate (420/429) and error routing in [TdClient] apply. No internal retry —
+     *    a failure clears the in-flight key so a later mount re-attempts.
+     *  - **Single-flight per message.** [richFullFetchInFlight] collapses concurrent callers to
+     *    one RPC; an already-full or absent post short-circuits before touching the network.
+     *  - **Pure snapshot update.** On success the post is swapped inside [updateOnePost] as a
+     *    pure function of the snapshot (find by id, swap content iff still a RichMessage), so it
+     *    is safe in the [MutableStateFlow.update] CAS loop. A live `updateMessageContent` edit
+     *    that lands first wins — the guard leaves a non-RichMessage untouched.
+     */
+    suspend fun ensureFullRichMessage(chatId: Long, messageId: Long) {
+        val existing = _posts.value
+            .firstOrNull { it.chatId == chatId && it.id == messageId }
+            ?.content as? PostContent.RichMessage
+            ?: return
+        if (existing.document.isFull) return
+
+        val key = chatId to messageId
+        if (!richFullFetchInFlight.add(key)) return
+        val epoch = sessionEpoch.get()
+        try {
+            val full = runCatching { td.send(TdApi.GetFullRichMessage(chatId, messageId)) }
+                .warnUnlessCancelled(TAG, "getFullRichMessage($chatId,$messageId)")
+                .getOrNull() ?: return
+            // A logout may have landed while we were parked on the send — don't re-inject
+            // account A's content into the freshly-wiped feed (mirrors the ingest epoch guard).
+            if (sessionEpoch.get() != epoch) return
+            val document = full.toRichDocument()
+            val plain = RichPlainText.of(document)
+            updateOnePost(chatId, messageId) { post ->
+                if (post.content is PostContent.RichMessage) {
+                    post.copy(content = PostContent.RichMessage(document, plain))
+                } else {
+                    post
+                }
+            }
+        } finally {
+            richFullFetchInFlight.remove(key)
+        }
+    }
+
     private fun handleChatTitle(update: TdApi.UpdateChatTitle) {
         // Drop the cached TdApi.Chat instead of mutating its `title` in place.
         // Multiple workers read chatCache[chatId] concurrently (handleNewChat,
@@ -2780,6 +2844,7 @@ class PostsRepository(
             _archivedChatIds.value = emptySet()
             _mainChatIds.value = emptySet()
             pendingLastMessages.clear()
+            richFullFetchInFlight.clear()
             pendingArchiveEdits.clear()
             pendingChatDeletions.clear()
             chatDeletionTimers.values.forEach { it.cancel() }

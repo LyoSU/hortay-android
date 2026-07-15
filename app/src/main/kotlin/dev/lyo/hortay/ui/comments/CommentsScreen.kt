@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.CommentsRepository
+import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.ReactionKind
@@ -232,6 +233,19 @@ fun CommentsScreen(
         null
     }
     val anchor = liveAnchor ?: post
+
+    // Partial rich message: this detail / comments-anchor surface is the explicit reader-intent
+    // moment the deferred body fetch is gated on (see PostsRepository.ensureFullRichMessage —
+    // feed scrolling deliberately never triggers it). Re-keys on `isFull` so once the full
+    // document lands the effect re-runs and no-ops; the repository swaps the content into the
+    // live feed, which flows back here through `liveAnchor`. Guest mode (feedRepo == null) has
+    // no TDLib session to fetch from, so the clamped prefix is all there is.
+    val richContent = anchor.content as? PostContent.RichMessage
+    LaunchedEffect(feedRepo, anchor.chatId, anchor.id, richContent?.document?.isFull) {
+        if (feedRepo != null && richContent != null && !richContent.document.isFull) {
+            feedRepo.ensureFullRichMessage(anchor.chatId, anchor.id)
+        }
+    }
 
     // For an album, all sibling ids are candidates — the thread carrier may be any of
     // them. For a standalone post the only candidate is post.id.
