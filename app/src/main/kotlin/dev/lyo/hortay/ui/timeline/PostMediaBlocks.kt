@@ -68,7 +68,7 @@ internal fun AlbumBlock(content: PostContent.PhotoAlbum, onMediaClick: (List<Alb
 }
 
 @Composable
-private fun SingleMedia(item: AlbumItem, onClick: () -> Unit) {
+internal fun SingleMedia(item: AlbumItem, onClick: () -> Unit, isActive: Boolean = true) {
     val ratio = mediaAspectRatio(item.media.width, item.media.height)
     Box(
         modifier = Modifier
@@ -81,7 +81,7 @@ private fun SingleMedia(item: AlbumItem, onClick: () -> Unit) {
             // pale screenshot / meme from dissolving into the near-white canvas.
             .mediaFrame(MaterialTheme.shapes.medium),
     ) {
-        MediaWithSpoiler(item = item, onClick = onClick)
+        MediaWithSpoiler(item = item, onClick = onClick, isActive = isActive)
     }
 }
 
@@ -99,7 +99,7 @@ private fun SingleMedia(item: AlbumItem, onClick: () -> Unit) {
  * (so an album of 5 clips doesn't spawn five ExoPlayers).
  */
 @Composable
-private fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boolean = true) {
+internal fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boolean = true) {
     var revealed by remember(item.media.fileId) {
         mutableStateOf(!item.hasSpoiler && !item.isSecret)
     }
@@ -284,7 +284,7 @@ private fun OpenInTelegramHint(modifier: Modifier = Modifier) {
  * state.currentPage.
  */
 @Composable
-private fun AlbumRow(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
+internal fun AlbumRow(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
     val state = rememberLazyListState()
     val flingBehavior = rememberSnapFlingBehavior(state)
     val activeIndex by remember(state) {

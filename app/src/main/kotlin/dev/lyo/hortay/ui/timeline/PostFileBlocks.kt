@@ -186,13 +186,17 @@ private fun VideoNoteStaticBubble(
  * the tap to [PostInteractions.onOpenClick], which deep-links into the official
  * Telegram client. The visual is identical to what was there before; only the
  * action wiring is new.
+ *
+ * [onClick] is nullable: `null` renders a purely informational card with no
+ * ripple and no "open in Telegram" chevron — used by the rich-message audio /
+ * voice-note blocks, which have no per-block source-post link to route a tap to.
  */
 @Composable
 internal fun NonPlayableFileRow(
     symbol: String,
     primary: String,
     secondary: String,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
     shape: Shape = MaterialTheme.shapes.medium,
 ) {
     Row(
@@ -200,7 +204,7 @@ internal fun NonPlayableFileRow(
             .fillMaxWidth()
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(onClick = onClick)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -222,12 +226,14 @@ internal fun NonPlayableFileRow(
                 )
             }
         }
-        Spacer(Modifier.width(8.dp))
-        Symbol(
-            name = "open_in_new",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            size = 18.dp,
-        )
+        if (onClick != null) {
+            Spacer(Modifier.width(8.dp))
+            Symbol(
+                name = "open_in_new",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 18.dp,
+            )
+        }
     }
 }
 
