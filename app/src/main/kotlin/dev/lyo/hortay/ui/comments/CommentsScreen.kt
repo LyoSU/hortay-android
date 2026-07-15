@@ -50,6 +50,8 @@ import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.posts.PostsRepository
+import dev.lyo.hortay.data.posts.RichFullFetchStatus
+import dev.lyo.hortay.ui.rich.RichPartialFooter
 import dev.lyo.hortay.data.ReactionItem
 import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.Reactions
@@ -245,6 +247,16 @@ fun CommentsScreen(
         if (feedRepo != null && richContent != null && !richContent.document.isFull) {
             feedRepo.ensureFullRichMessage(anchor.chatId, anchor.id)
         }
+    }
+    // Drive the inline loading / retry affordance at the truncation point (rendered as a footer
+    // item below the partial post). Only meaningful while the anchor is a partial rich message and
+    // a TDLib session exists to fetch from.
+    val richPartialActive = richContent != null && !richContent.document.isFull
+    val richFullStatus: RichFullFetchStatus? = if (feedRepo != null && richPartialActive) {
+        val map by feedRepo.richFullFetch.collectAsStateWithLifecycle()
+        map[anchor.chatId to anchor.id]
+    } else {
+        null
     }
 
     // For an album, all sibling ids are candidates — the thread carrier may be any of
@@ -612,6 +624,20 @@ fun CommentsScreen(
                     actionsEnabled = true,
                     expanded = true,
                 )
+            }
+
+            // Partial rich message: inline loading skeleton / retry directly under the post. The
+            // rich body is a single LazyColumn item, so the fetched remainder appends below and the
+            // already-read upper part keeps its position; on success the post is no longer partial
+            // and this footer drops out.
+            if (feedRepo != null && richPartialActive) {
+                item(key = "rich-full-load") {
+                    RichPartialFooter(
+                        status = richFullStatus,
+                        onRetry = { scope.launch { feedRepo.ensureFullRichMessage(anchor.chatId, anchor.id) } },
+                        key = anchor.id,
+                    )
+                }
             }
 
             // The previous inline "X replies" / "no comments yet" label has been

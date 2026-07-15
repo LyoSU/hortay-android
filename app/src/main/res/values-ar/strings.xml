@@ -832,4 +832,6 @@
     <string name="rich_media_content_description">وسائط</string>
     <string name="rich_slideshow_page">الصفحة %1$d من %2$d</string>
     <string name="rich_read_full_post">قراءة المنشور كاملاً</string>
+    <string name="rich_full_post_error">تعذّر تحميل المنشور كاملاً</string>
+    <string name="rich_full_post_retry">إعادة المحاولة</string>
 </resources>

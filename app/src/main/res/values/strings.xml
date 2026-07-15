@@ -803,4 +803,6 @@
     <string name="rich_media_content_description">Media</string>
     <string name="rich_slideshow_page">Page %1$d of %2$d</string>
     <string name="rich_read_full_post">Read full post</string>
+    <string name="rich_full_post_error">Couldn\'t load the full post</string>
+    <string name="rich_full_post_retry">Retry</string>
 </resources>

@@ -799,4 +799,6 @@
     <string name="rich_media_content_description">Multimedia</string>
     <string name="rich_slideshow_page">Strona %1$d z %2$d</string>
     <string name="rich_read_full_post">Przeczytaj cały post</string>
+    <string name="rich_full_post_error">Nie udało się załadować całego posta</string>
+    <string name="rich_full_post_retry">Spróbuj ponownie</string>
 </resources>

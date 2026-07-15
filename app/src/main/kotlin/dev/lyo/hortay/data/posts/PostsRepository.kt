@@ -406,6 +406,18 @@ class PostsRepository(
      */
     private val richFullFetchInFlight = ConcurrentHashMap.newKeySet<Pair<Long, Long>>()
 
+    /**
+     * Observable status of the on-demand full-rich-message fetch, keyed `chatId to messageId`.
+     * An entry is present only while a fetch is in flight ([RichFullFetchStatus.Fetching]) or after
+     * it failed ([RichFullFetchStatus.Failed]); success removes the entry (the upgraded content
+     * flows to the UI through [posts]). Drives the post-detail inline skeleton / retry affordance.
+     * Cleared on [clear] (logout).
+     */
+    private val _richFullFetch =
+        MutableStateFlow<PersistentMap<Pair<Long, Long>, RichFullFetchStatus>>(persistentMapOf())
+    val richFullFetch: StateFlow<PersistentMap<Pair<Long, Long>, RichFullFetchStatus>> =
+        _richFullFetch.asStateFlow()
+
     private val _posts = MutableStateFlow<PersistentList<TimelinePost>>(persistentListOf())
     override val posts: StateFlow<PersistentList<TimelinePost>> = _posts.asStateFlow()
 
@@ -2742,12 +2754,23 @@ class PostsRepository(
         if (!richFullFetchInFlight.add(key)) return
         val epoch = sessionEpoch.get()
         try {
+            // Fetching (overwrites any prior Failed so a retry clears the error affordance).
+            _richFullFetch.update { it.put(key, RichFullFetchStatus.Fetching) }
             val full = runCatching { td.send(TdApi.GetFullRichMessage(chatId, messageId)) }
                 .warnUnlessCancelled(TAG, "getFullRichMessage($chatId,$messageId)")
-                .getOrNull() ?: return
+                .getOrNull()
+            if (full == null) {
+                // Surface the failure so the detail surface can offer a retry; the in-flight key
+                // clears in `finally`, so the retry re-attempts.
+                _richFullFetch.update { it.put(key, RichFullFetchStatus.Failed) }
+                return
+            }
             // A logout may have landed while we were parked on the send — don't re-inject
             // account A's content into the freshly-wiped feed (mirrors the ingest epoch guard).
-            if (sessionEpoch.get() != epoch) return
+            if (sessionEpoch.get() != epoch) {
+                _richFullFetch.update { it.remove(key) }
+                return
+            }
             val document = full.toRichDocument()
             val plain = RichPlainText.of(document)
             updateOnePost(chatId, messageId) { post ->
@@ -2767,6 +2790,8 @@ class PostsRepository(
                     post
                 }
             }
+            // Success: drop the status entry — the upgraded content reaches the UI via `posts`.
+            _richFullFetch.update { it.remove(key) }
         } finally {
             richFullFetchInFlight.remove(key)
         }
@@ -2856,6 +2881,7 @@ class PostsRepository(
             _mainChatIds.value = emptySet()
             pendingLastMessages.clear()
             richFullFetchInFlight.clear()
+            _richFullFetch.value = persistentMapOf()
             pendingArchiveEdits.clear()
             pendingChatDeletions.clear()
             chatDeletionTimers.values.forEach { it.cancel() }
@@ -3075,6 +3101,12 @@ internal fun albumCandidateIds(anchorId: Long): List<Long> {
 const val BACKFILL_TOP_K = 20
 const val BACKFILL_POSTS_PER_CHAT = 10
 const val BACKFILL_THROTTLE_MS = 1100L
+
+/**
+ * Status of an on-demand full-rich-message fetch ([PostsRepository.ensureFullRichMessage]),
+ * observed via [PostsRepository.richFullFetch]. Absence of an entry means idle / done.
+ */
+enum class RichFullFetchStatus { Fetching, Failed }
 
 /** Result of [PostsRepository.resolvePublicHandle]. See its KDoc for semantics. */
 sealed interface PublicHandleResult {
