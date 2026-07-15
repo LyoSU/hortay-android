@@ -1,0 +1,97 @@
+# Beta — every push to main produces a signed dev.lyo.hortay.beta APK and
+# publishes it as a single rolling "beta" pre-release, so testers always fetch the
+# latest and get in-place updates (versionCode is the monotonic git commit count).
+#
+# Uses the real signing secrets, so it must stay on push-to-main (never fork PRs,
+# which cannot access secrets). Doc-only pushes are skipped.
+name: Beta
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "playstore/**"
+
+concurrency:
+  group: beta-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # manage the rolling "beta" pre-release
+
+jobs:
+  beta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # versionCode = git rev-list --count HEAD
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Set up TDLib
+        uses: ./.github/actions/setup-tdlib
+        with:
+          abis: arm64-v8a
+          keep-debug: "0"
+
+      - name: Set up release signing
+        uses: ./.github/actions/setup-signing
+        with:
+          keystore-base64: ${{ secrets.KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.KEY_ALIAS }}
+          key-password: ${{ secrets.KEY_PASSWORD }}
+          telegram-api-id: ${{ secrets.TELEGRAM_API_ID }}
+          telegram-api-hash: ${{ secrets.TELEGRAM_API_HASH }}
+
+      - name: Build signed beta APK
+        run: >
+          ./gradlew :app:assembleBeta
+          -x ':libwebm:buildCMakeRelWithDebInfo[arm64-v8a]'
+          --no-daemon --stacktrace
+
+      - name: Collect APK
+        id: apk
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/beta"
+          mkdir -p "$out"
+          apk=$(find app/build/outputs/apk/beta -name '*.apk' | head -n1)
+          [ -n "$apk" ] || { echo "::error::no beta APK produced"; exit 1; }
+          code=$(git rev-list --count HEAD)
+          cp "$apk" "$out/hortay-beta-$code.apk"
+          echo "dir=$out" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          ls -la "$out"
+
+      - name: Publish rolling beta pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_DIR: ${{ steps.apk.outputs.dir }}
+          CODE: ${{ steps.apk.outputs.code }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Rolling "beta" release: drop the previous one (and its tag) so a single
+          # pre-release always points at the newest main commit.
+          gh release delete beta --yes --cleanup-tag 2>/dev/null || true
+          short="${SHA:0:7}"
+          gh release create beta \
+            --prerelease \
+            --target "$SHA" \
+            --title "Hortay beta (build $CODE · $short)" \
+            --notes "Automated beta from main @ \`$short\` (versionCode $CODE). Install alongside the Play build — package \`dev.lyo.hortay.beta\`." \
+            "$ARTIFACT_DIR"/*

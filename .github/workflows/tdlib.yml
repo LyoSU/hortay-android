@@ -1,0 +1,125 @@
+# TDLib bump — build TDLib on a native x86_64 runner (no Rosetta → ~30 min, vs
+# hours emulated on Apple Silicon) and open a PR with the regenerated pin. This is
+# how TDLib / OpenSSL / NDK are refreshed without a local build.
+#
+# The native libs + bindings are gitignored (see libtdlib/.gitignore) — the only
+# tracked artifact is scripts/tdlib-version.txt. So the PR commits just that file;
+# every CI/release/beta run then rebuilds the libs from the pin on a cache miss.
+# This job also warms that cache (arm64-v8a, stripped) so the follow-up runs are
+# instant, and smoke-compiles :app so the PR is pre-validated.
+name: TDLib bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      tdlib_ref:
+        description: "TDLib git ref (SHA/branch/tag). Blank = keep the current pin."
+        required: false
+        default: ""
+      openssl_version:
+        description: "OpenSSL version to embed."
+        required: false
+        default: "openssl-3.5.7"
+      ndk_version:
+        description: "Android NDK version."
+        required: false
+        default: "27.2.12479018"
+
+concurrency:
+  group: tdlib-bump
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve + validate inputs
+        id: in
+        env:
+          IN_REF: ${{ github.event.inputs.tdlib_ref }}
+          IN_OPENSSL: ${{ github.event.inputs.openssl_version }}
+          IN_NDK: ${{ github.event.inputs.ndk_version }}
+        run: |
+          set -euo pipefail
+          ref="$IN_REF"
+          [ -n "$ref" ] || ref=$(grep '^TDLIB_SHA=' scripts/tdlib-version.txt | cut -d= -f2)
+          # Strict allowlists — these feed a shell script + docker build-args.
+          printf '%s' "$ref"        | grep -Eq '^[A-Za-z0-9._/-]+$'   || { echo "::error::bad tdlib_ref"; exit 1; }
+          printf '%s' "$IN_OPENSSL" | grep -Eq '^openssl-[0-9a-z.]+$' || { echo "::error::bad openssl_version"; exit 1; }
+          printf '%s' "$IN_NDK"     | grep -Eq '^[0-9.]+$'            || { echo "::error::bad ndk_version"; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "openssl=$IN_OPENSSL" >> "$GITHUB_OUTPUT"
+          echo "ndk=$IN_NDK" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build TDLib (native, arm64-v8a)
+        env:
+          ABIS: arm64-v8a
+          KEEP_DEBUG: "0"
+          OPENSSL_VERSION: ${{ steps.in.outputs.openssl }}
+          ANDROID_NDK_VERSION: ${{ steps.in.outputs.ndk }}
+          TDLIB_REF: ${{ steps.in.outputs.ref }}
+        run: |
+          set -euo pipefail
+          echo "::group::TDLib build ($TDLIB_REF, $OPENSSL_VERSION, NDK $ANDROID_NDK_VERSION)"
+          ./scripts/update-tdlib.sh "$TDLIB_REF"
+          echo "::endgroup::"
+          echo "--- regenerated scripts/tdlib-version.txt ---"
+          cat scripts/tdlib-version.txt
+
+      - name: Warm the CI cache (arm64-v8a, stripped)
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
+            libtdlib/src/main/java/org/drinkless/tdlib/Client.java
+            libtdlib/src/main/jniLibs
+            libtdlib/build/tdlib-unstripped
+          key: tdlib-v1-kd0-${{ hashFiles('scripts/tdlib-version.txt') }}
+
+      - name: Smoke-compile :app against the new libs
+        run: ./gradlew :app:assembleDebug -x ':libwebm:buildCMakeRelWithDebInfo[arm64-v8a]' --no-daemon --stacktrace
+
+      - name: Open bump PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ steps.in.outputs.ref }}
+          OPENSSL: ${{ steps.in.outputs.openssl }}
+          NDK: ${{ steps.in.outputs.ndk }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- scripts/tdlib-version.txt; then
+            echo "No change to scripts/tdlib-version.txt — nothing to bump."
+            exit 0
+          fi
+          short="${REF:0:10}"
+          branch="tdlib-bump/${short}-${OPENSSL}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add scripts/tdlib-version.txt
+          git commit -m "chore(tdlib): bump to ${short} (${OPENSSL}, NDK ${NDK})"
+          git push -u origin "$branch" --force-with-lease
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "chore(tdlib): bump to ${short} (${OPENSSL}, NDK ${NDK})" \
+            --body "Automated by the \`TDLib bump\` workflow. Built natively on an x86_64 runner and smoke-compiled against \`:app\`. Only \`scripts/tdlib-version.txt\` changes — the native libs are gitignored and rebuilt from this pin on the first CI run (cache already warmed by this job)."

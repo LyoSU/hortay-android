@@ -2,11 +2,10 @@
 # MissingTranslation parity check, detekt for Compose-stability + Kotlin smells,
 # JVM unit tests), enforced on every push/PR to main so nothing merges unchecked.
 #
-# The long pole is TDLib: `org.drinkless.tdlib.{TdApi,Client}.java` are gitignored
-# and produced by scripts/update-tdlib.sh (Docker, ~20-30 min). :app won't compile
-# without them, so the first run builds TDLib and every later run restores it from
-# cache keyed on scripts/tdlib-version.txt — the cache only misses on a TDLib bump,
-# which is already its own dedicated commit.
+# TDLib (org.drinkless.tdlib.{TdApi,Client}.java + native libs) is gitignored and
+# produced by scripts/update-tdlib.sh; the setup-tdlib composite restores it from
+# cache or builds it on a miss (only on a TDLib bump). Runs with no real secrets so
+# it is safe on fork PRs — release signing lives in release.yml / beta.yml.
 name: CI
 
 on:
@@ -45,47 +44,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      # Restore the Docker-built TDLib bindings + native libs. Keyed on the pinned
-      # version file, so a `chore(tdlib): bump` invalidates it and nothing else does.
-      # Split restore/save (not the all-in-one cache action) because its implicit
-      # post-step save proved unreliable here — the explicit save below runs as a
-      # foreground step right after the build, so it can't be skipped.
-      - name: Restore TDLib artifacts
-        id: tdlib-cache
-        uses: actions/cache/restore@v5
+      - name: Set up TDLib
+        uses: ./.github/actions/setup-tdlib
         with:
-          path: |
-            libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
-            libtdlib/src/main/java/org/drinkless/tdlib/Client.java
-            libtdlib/src/main/jniLibs
-          key: tdlib-${{ hashFiles('scripts/tdlib-version.txt') }}
-
-      # Only build TDLib on a cache miss. arm64-v8a alone (release ABI) + no debug
-      # zip — the gates here never need x86_64 or unstripped symbols.
-      - name: Build TDLib (cache miss only)
-        if: steps.tdlib-cache.outputs.cache-hit != 'true'
-        env:
-          ABIS: arm64-v8a
-          KEEP_DEBUG: "0"
-        run: |
-          sha=$(grep '^TDLIB_SHA=' scripts/tdlib-version.txt | cut -d= -f2)
-          echo "Building TDLib at pinned SHA $sha"
-          ./scripts/update-tdlib.sh "$sha"
-
-      # Persist the freshly-built artifacts immediately (foreground), so the next
-      # run on the same TDLib pin restores in seconds instead of rebuilding.
-      # Key off the RESTORE step's primary key, NOT a fresh hashFiles(): the build
-      # rewrites scripts/tdlib-version.txt (new UPDATED_AT timestamp), so recomputing
-      # the hash here would save under a key the next run's restore never looks up.
-      - name: Save TDLib artifacts
-        if: steps.tdlib-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
-            libtdlib/src/main/java/org/drinkless/tdlib/Client.java
-            libtdlib/src/main/jniLibs
-          key: ${{ steps.tdlib-cache.outputs.cache-primary-key }}
+          abis: arm64-v8a
+          keep-debug: "0"
 
       # lintRelease schedules packageReleaseResources, which trips the build's
       # fail-fast guard against release packaging without signing config. A

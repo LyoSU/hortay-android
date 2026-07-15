@@ -96,7 +96,12 @@ android {
         // error from a forgotten manual bump. Debug installs keep this 1 — they
         // never go through Play.
         versionCode = 1
-        versionName = "0.10.5"
+        // Manual by default (bump on a semver-worthy release). CI's release.yml
+        // overrides it from the git tag via -PhortayVersionName=X.Y.Z so the tag is
+        // the single source of truth for a published version; local builds keep the
+        // literal below.
+        versionName = (project.findProperty("hortayVersionName") as? String)
+            ?.takeIf { it.isNotBlank() } ?: "0.10.5"
 
         buildConfigField("int", "TELEGRAM_API_ID", telegramApiId)
         buildConfigField("String", "TELEGRAM_API_HASH", "\"$telegramApiHash\"")

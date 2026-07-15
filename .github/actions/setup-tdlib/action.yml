@@ -1,0 +1,58 @@
+name: Set up TDLib
+description: >
+  Restore the Docker-built TDLib bindings + native libs from cache, or build them
+  on a miss. The bindings (org.drinkless.tdlib.{TdApi,Client}.java) are gitignored
+  and :app cannot compile without them, so every job that touches :app needs this.
+  Cache misses only on a TDLib bump (scripts/tdlib-version.txt changes), which is
+  its own dedicated commit.
+
+inputs:
+  abis:
+    description: Space-separated ABI list to unpack (arm64-v8a is the release ABI).
+    required: false
+    default: arm64-v8a
+  keep-debug:
+    description: >
+      "1" also stages unstripped libs into libtdlib/build/tdlib-unstripped so a
+      release AAB can bundle FULL native debug symbols. "0" (default) is the fast
+      path for the test/lint gate. The cache key includes this so a stripped build
+      and a symbol-carrying build never clobber each other.
+    required: false
+    default: "0"
+
+runs:
+  using: composite
+  steps:
+    - name: Restore TDLib artifacts
+      id: restore
+      uses: actions/cache/restore@v5
+      with:
+        path: |
+          libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
+          libtdlib/src/main/java/org/drinkless/tdlib/Client.java
+          libtdlib/src/main/jniLibs
+          libtdlib/build/tdlib-unstripped
+        key: tdlib-v1-kd${{ inputs.keep-debug }}-${{ hashFiles('scripts/tdlib-version.txt') }}
+
+    - name: Build TDLib (cache miss only)
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ABIS: ${{ inputs.abis }}
+        KEEP_DEBUG: ${{ inputs.keep-debug }}
+      run: |
+        sha=$(grep '^TDLIB_SHA=' scripts/tdlib-version.txt | cut -d= -f2)
+        echo "::group::Building TDLib at pinned SHA $sha (ABIS=$ABIS, KEEP_DEBUG=$KEEP_DEBUG)"
+        ./scripts/update-tdlib.sh "$sha"
+        echo "::endgroup::"
+
+    - name: Save TDLib artifacts
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
+          libtdlib/src/main/java/org/drinkless/tdlib/Client.java
+          libtdlib/src/main/jniLibs
+          libtdlib/build/tdlib-unstripped
+        key: ${{ steps.restore.outputs.cache-primary-key }}
