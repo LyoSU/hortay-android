@@ -1,0 +1,57 @@
+name: Set up ffmpeg for :libwebm
+description: >
+  Provide the NDK + the vendored libvpx/ffmpeg static libs that :libwebm links into
+  libhortaywebm.so (the WebM VP9+alpha sticker/emoji decoder). Those .a files and
+  headers are gitignored (built by scripts/build-ffmpeg.sh), so a release/beta build
+  that skips this ships WITHOUT the decoder and crashes on any WebM sticker. Both the
+  NDK and the ffmpeg output are cached — the ffmpeg build (~10-15 min) reruns only
+  when scripts/build-ffmpeg.sh changes.
+
+inputs:
+  ndk-version:
+    description: NDK version build-ffmpeg.sh and :libwebm compile against.
+    required: false
+    default: "27.2.12479018"
+
+runs:
+  using: composite
+  steps:
+    - name: Cache NDK
+      id: ndk-cache
+      uses: actions/cache@v5
+      with:
+        path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ inputs.ndk-version }}
+        key: ndk-${{ inputs.ndk-version }}
+
+    - name: Install NDK
+      if: steps.ndk-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: yes | sdkmanager --install "ndk;${{ inputs.ndk-version }}" >/dev/null
+
+    - name: Restore ffmpeg static libs
+      id: ffmpeg-cache
+      uses: actions/cache/restore@v5
+      with:
+        path: |
+          libwebm/src/main/jniLibs
+          libwebm/src/main/cpp/include-arm64-v8a
+        key: ffmpeg-v1-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+
+    - name: Build ffmpeg + libvpx (cache miss only)
+      if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ inputs.ndk-version }}
+      run: |
+        echo "::group::build-ffmpeg.sh (native host cross-compile → arm64-v8a)"
+        ./scripts/build-ffmpeg.sh
+        echo "::endgroup::"
+
+    - name: Save ffmpeg static libs
+      if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          libwebm/src/main/jniLibs
+          libwebm/src/main/cpp/include-arm64-v8a
+        key: ${{ steps.ffmpeg-cache.outputs.cache-primary-key }}

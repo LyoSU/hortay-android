@@ -47,6 +47,10 @@ jobs:
           abis: arm64-v8a
           keep-debug: "0"
 
+      # Required — without libhortaywebm.so the beta crashes on any WebM sticker.
+      - name: Set up ffmpeg (:libwebm)
+        uses: ./.github/actions/setup-ffmpeg
+
       - name: Set up release signing
         uses: ./.github/actions/setup-signing
         with:
@@ -60,7 +64,6 @@ jobs:
       - name: Build signed beta APK
         run: >
           ./gradlew :app:assembleBeta
-          -x ':libwebm:buildCMakeRelWithDebInfo[arm64-v8a]'
           --no-daemon --stacktrace
 
       - name: Collect APK

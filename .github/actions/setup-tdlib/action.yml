@@ -32,7 +32,10 @@ runs:
           libtdlib/src/main/java/org/drinkless/tdlib/Client.java
           libtdlib/src/main/jniLibs
           libtdlib/build/tdlib-unstripped
-        key: tdlib-v1-kd${{ inputs.keep-debug }}-${{ hashFiles('scripts/tdlib-version.txt') }}
+        # Keyed on the pin AND the build recipe — a Dockerfile / script change that
+        # alters the output (compiler flags, ABI logic) must invalidate the cache, not
+        # just a version bump.
+        key: tdlib-v1-kd${{ inputs.keep-debug }}-${{ hashFiles('scripts/tdlib-version.txt', 'scripts/update-tdlib.sh', 'scripts/tdlib-builder/**') }}
 
     - name: Build TDLib (cache miss only)
       if: steps.restore.outputs.cache-hit != 'true'
