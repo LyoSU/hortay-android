@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+- Richly formatted posts now render natively — headings, ordered and checklist lists, tables, collapsible sections, quotes, code blocks, photo collages and swipeable slideshows.
+- Opening a long richly formatted post now loads its full content instead of the feed preview.
+
 ## [0.11.0] — 2026-07-15
 
 ### Changed
