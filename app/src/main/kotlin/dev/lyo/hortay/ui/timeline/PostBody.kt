@@ -128,14 +128,14 @@ fun PostBody(
                 // PostsRepository.ensureFullRichMessage).
                 is PostContent.RichMessage ->
                     if (expanded) {
-                        RichMessageBody(content.document, mode = RichMessageMode.Full)
+                        RichMessageBody(content.document, mode = RichMessageMode.Reading)
                     } else {
                         ClampedContent(
                             key = content.document,
                             maxLines = textLimit,
                             style = MaterialTheme.typography.bodyLarge,
                         ) {
-                            RichMessageBody(content.document, mode = RichMessageMode.Preview)
+                            RichMessageBody(content.document, mode = RichMessageMode.FeedPreview)
                         }
                     }
                 is PostContent.Unsupported -> UnsupportedBlock(content)

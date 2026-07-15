@@ -6,29 +6,34 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 
 /**
- * Whether [RichMessageBody] renders the whole document or a bounded feed preview.
+ * Whether [RichMessageBody] renders a bounded feed excerpt or the full reading surface.
  *
- * `Preview` projects the block list to a short prefix ([RichDocument.previewProjection]) BEFORE
- * composition, so a feed card never mounts the tables, collapsible details, slideshows or media
- * composables (state collectors, downloads) that sit far below the clamped fold. A pixel clamp
- * ([dev.lyo.hortay.ui.text.ClampedContent]) still trims the projected prefix; the projection
- * bounds the *work*, the clamp bounds the *height*.
+ * `FeedPreview` projects the block list to a short prefix ([RichDocument.previewProjection])
+ * BEFORE composition, so a feed card never mounts the tables, collapsible details, slideshows
+ * or media composables (state collectors, downloads) that sit far below the clamped fold. A
+ * pixel clamp ([dev.lyo.hortay.ui.text.ClampedContent]) still trims the projected prefix; the
+ * projection bounds the *work*, the clamp bounds the *height*.
+ *
+ * `Reading` renders the whole document — the detail / comments-anchor surface, and the basis
+ * for the Instant-View-style reading mode being designed on top of this plumbing.
  */
-enum class RichMessageMode { Preview, Full }
+enum class RichMessageMode { FeedPreview, Reading }
 
 /**
- * Top-level text-ish blocks a [RichMessageMode.Preview] keeps. With the feed body clamped to
- * ~18 lines this comfortably overfills the visible height while capping composition cost; the
- * pixel clamp discards whatever the projected prefix still overflows.
+ * Top-level content blocks a [RichMessageMode.FeedPreview] keeps (everything that isn't media,
+ * incl. a table or collapsible section — each counts as ONE content block, which is also the
+ * seam the later compact-table feed preview hangs off). With the feed body clamped to ~18 lines
+ * this overfills the visible height while capping composition cost; the pixel clamp discards
+ * whatever the projected prefix still overflows.
  */
-internal const val PREVIEW_MAX_TEXT_BLOCKS = 6
+internal const val FEED_PREVIEW_MAX_CONTENT_BLOCKS = 4
 
-/** Top-level media blocks a [RichMessageMode.Preview] keeps — one lead image is the feed idiom. */
-internal const val PREVIEW_MAX_MEDIA_BLOCKS = 1
+/** Top-level media blocks a [RichMessageMode.FeedPreview] keeps — one lead image is the feed idiom. */
+internal const val FEED_PREVIEW_MAX_MEDIA_BLOCKS = 1
 
 /**
  * Media-bearing top-level blocks: each mounts a media composable (MediaCache observe + download
- * enqueue) so they count against the media budget, not the text one.
+ * enqueue) so they count against the media budget, not the content one.
  */
 private fun RichBlock.isMedia(): Boolean = when (this) {
     is RichBlock.Photo,
@@ -46,28 +51,29 @@ private fun RichBlock.isMedia(): Boolean = when (this) {
 /**
  * Bounded prefix of [RichDocument.blocks] for a feed preview — a pure function over the block
  * list. Walks blocks in document order, admitting each until its category budget
- * ([maxTextBlocks] for everything text-ish incl. tables/details, [maxMediaBlocks] for media) is
- * spent; blocks past a full budget are dropped, and the walk stops once both budgets are full.
- * Order is preserved. When nothing is dropped the original [RichDocument.blocks] instance is
- * returned unchanged (stable identity for `remember` keys downstream).
+ * ([maxContentBlocks] for everything text-ish incl. a table / collapsible section counted as one
+ * block, [maxMediaBlocks] for media) is spent; blocks past a full budget are dropped, and the
+ * walk stops once both budgets are full. Order is preserved. When nothing is dropped the
+ * original [RichDocument.blocks] instance is returned unchanged (stable identity for `remember`
+ * keys downstream).
  */
 fun RichDocument.previewProjection(
-    maxTextBlocks: Int = PREVIEW_MAX_TEXT_BLOCKS,
-    maxMediaBlocks: Int = PREVIEW_MAX_MEDIA_BLOCKS,
+    maxContentBlocks: Int = FEED_PREVIEW_MAX_CONTENT_BLOCKS,
+    maxMediaBlocks: Int = FEED_PREVIEW_MAX_MEDIA_BLOCKS,
 ): ImmutableList<RichBlock> {
-    var textCount = 0
+    var contentCount = 0
     var mediaCount = 0
-    val kept = ArrayList<RichBlock>(minOf(blocks.size, maxTextBlocks + maxMediaBlocks))
+    val kept = ArrayList<RichBlock>(minOf(blocks.size, maxContentBlocks + maxMediaBlocks))
     for (block in blocks) {
-        if (textCount >= maxTextBlocks && mediaCount >= maxMediaBlocks) break
+        if (contentCount >= maxContentBlocks && mediaCount >= maxMediaBlocks) break
         if (block.isMedia()) {
             if (mediaCount < maxMediaBlocks) {
                 kept += block
                 mediaCount++
             }
-        } else if (textCount < maxTextBlocks) {
+        } else if (contentCount < maxContentBlocks) {
             kept += block
-            textCount++
+            contentCount++
         }
     }
     return if (kept.size == blocks.size) blocks else kept.toImmutableList()

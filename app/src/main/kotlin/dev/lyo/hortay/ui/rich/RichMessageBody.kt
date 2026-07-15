@@ -24,8 +24,8 @@ import dev.lyo.hortay.ui.text.Unhandled
  * [LocalLayoutDirection] for the whole body; code and math content stays LTR internally
  * (handled inside the block composables).
  *
- * [mode] selects the whole document ([RichMessageMode.Full] — detail / comments-anchor
- * surfaces) or a bounded feed preview ([RichMessageMode.Preview] — see
+ * [mode] selects the whole document ([RichMessageMode.Reading] — detail / comments-anchor
+ * surfaces) or a bounded feed excerpt ([RichMessageMode.FeedPreview] — see
  * [RichDocument.previewProjection]); a preview projects the block list to a short prefix BEFORE
  * composition so tables / details / slideshows / media past the fold never enter composition.
  *
@@ -39,16 +39,16 @@ import dev.lyo.hortay.ui.text.Unhandled
 fun RichMessageBody(
     document: RichDocument,
     modifier: Modifier = Modifier,
-    mode: RichMessageMode = RichMessageMode.Full,
+    mode: RichMessageMode = RichMessageMode.Reading,
     onScrollToBlock: ((blockIndex: Int) -> Unit)? = null,
 ) {
     val uriHandler = LocalUriHandler.current
     val confirmMaskedLink = LocalLinkConfirm.current
-    // Preview projects to a bounded prefix before composition; Full renders every block.
+    // FeedPreview projects to a bounded prefix before composition; Reading renders every block.
     val blocks = remember(document, mode) {
         when (mode) {
-            RichMessageMode.Full -> document.blocks
-            RichMessageMode.Preview -> document.previewProjection()
+            RichMessageMode.Reading -> document.blocks
+            RichMessageMode.FeedPreview -> document.previewProjection()
         }
     }
     // name → top-level block index, so an AnchorLink / ReferenceLink can resolve in-document.
