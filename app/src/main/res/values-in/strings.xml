@@ -751,4 +751,5 @@
     <string name="rich_details_expand">Luaskan</string>
     <string name="rich_details_collapse">Ciutkan</string>
     <string name="rich_media_content_description">Media</string>
+    <string name="rich_slideshow_page">Halaman %1$d dari %2$d</string>
 </resources>

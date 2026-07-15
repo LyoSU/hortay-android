@@ -789,4 +789,5 @@
     <string name="rich_details_expand">Expandir</string>
     <string name="rich_details_collapse">Recolher</string>
     <string name="rich_media_content_description">Mídia</string>
+    <string name="rich_slideshow_page">Página %1$d de %2$d</string>
 </resources>

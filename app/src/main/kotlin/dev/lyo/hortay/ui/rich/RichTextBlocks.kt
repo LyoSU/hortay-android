@@ -36,6 +36,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.expand
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -228,7 +233,11 @@ private fun RichList(items: List<RichListItem>, path: String) {
                         name = if (item.isChecked) "check_box" else "check_box_outline_blank",
                         size = 20.dp,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(end = 6.dp),
+                        // Read-only checked state for screen readers (the checklist mirrors the
+                        // source post; Hortay never toggles it), so no onClick / toggleable action.
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .semantics { toggleableState = ToggleableState(item.isChecked) },
                     )
                 } else {
                     Text(
@@ -302,12 +311,18 @@ private fun RichDetails(block: RichBlock.Details, path: String) {
         label = "rich-details-chevron",
     )
     val toggleLabel = stringResource(if (open) R.string.rich_details_collapse else R.string.rich_details_expand)
+    val toggle = { open = !open }
 
     Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(role = Role.Button, onClickLabel = toggleLabel) { open = !open }
+                .clickable(role = Role.Button, onClickLabel = toggleLabel, onClick = toggle)
+                // Expand / collapse action carries the open state to TalkBack (announced with
+                // its own localized "expanded" / "collapsed"), which a bare clickable can't.
+                .semantics {
+                    if (open) collapse { toggle(); true } else expand { toggle(); true }
+                }
                 .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

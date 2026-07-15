@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichHorizontalAlignment
@@ -169,10 +170,13 @@ private fun verticalAlignmentOf(valign: RichVerticalAlignment): Alignment = when
     RichVerticalAlignment.Bottom -> Alignment.BottomStart
 }
 
+/** TDLib cell alignment is VISUAL, not logical: `Left` stays left-of-cell even in an RTL
+ *  document. Absolute [TextAlign.Left] / [TextAlign.Right] (not Start / End, which flip with
+ *  the ambient direction) keep that promise. */
 private fun textAlignOf(align: RichHorizontalAlignment): TextAlign = when (align) {
-    RichHorizontalAlignment.Left -> TextAlign.Start
+    RichHorizontalAlignment.Left -> TextAlign.Left
     RichHorizontalAlignment.Center -> TextAlign.Center
-    RichHorizontalAlignment.Right -> TextAlign.End
+    RichHorizontalAlignment.Right -> TextAlign.Right
 }
 
 /** Fraction of the viewport a single column may occupy before its text starts wrapping. */
@@ -221,6 +225,9 @@ private fun tableMeasurePolicy(
     val columns = placements.columns
     val rows = placements.rows
     val spans = placements.cells
+    // In an RTL document (RichMessageBody flipped LocalLayoutDirection) the first logical
+    // column must sit rightmost; Placeable.place is absolute, so mirror x manually.
+    val isRtl = layoutDirection == LayoutDirection.Rtl
     val maxColPx = maxColumnWidth.roundToPx()
     val minColPx = MIN_COLUMN_WIDTH.roundToPx()
     val minRowPx = MIN_ROW_HEIGHT.roundToPx()
@@ -297,7 +304,8 @@ private fun tableMeasurePolicy(
     layout(totalWidth, totalHeight) {
         placeables.forEachIndexed { i, placeable ->
             val span = spans[i]
-            placeable.place(colX[span.col], rowY[span.row])
+            val x = if (isRtl) totalWidth - colX[span.col] - placeable.width else colX[span.col]
+            placeable.place(x, rowY[span.row])
         }
     }
 }

@@ -764,4 +764,5 @@
     <string name="rich_details_expand">گسترش</string>
     <string name="rich_details_collapse">بستن</string>
     <string name="rich_media_content_description">رسانه</string>
+    <string name="rich_slideshow_page">صفحه %1$d از %2$d</string>
 </resources>

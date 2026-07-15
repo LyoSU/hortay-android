@@ -785,4 +785,5 @@
     <string name="rich_details_expand">Développer</string>
     <string name="rich_details_collapse">Réduire</string>
     <string name="rich_media_content_description">Média</string>
+    <string name="rich_slideshow_page">Page %1$d sur %2$d</string>
 </resources>

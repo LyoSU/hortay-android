@@ -24,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
@@ -169,11 +171,13 @@ internal fun RichSlideshow(block: RichBlock.Slideshow) {
         val ratio = remember(items) {
             items.minOf { mediaAspectRatio(it.media.width, it.media.height) }
         }
+        val pageLabel = stringResource(R.string.rich_slideshow_page, pagerState.currentPage + 1, items.size)
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(ratio),
+                .aspectRatio(ratio)
+                .semantics { contentDescription = pageLabel },
         ) { page ->
             val item = items[page]
             Box(

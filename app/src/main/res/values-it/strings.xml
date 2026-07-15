@@ -787,4 +787,5 @@
     <string name="rich_details_expand">Espandi</string>
     <string name="rich_details_collapse">Comprimi</string>
     <string name="rich_media_content_description">Media</string>
+    <string name="rich_slideshow_page">Pagina %1$d di %2$d</string>
 </resources>
