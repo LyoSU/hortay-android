@@ -20,8 +20,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -292,12 +296,24 @@ private fun ClampedPost(
  *
  * Tapping the toggle opens the full post via [LocalShowFullPost] when present (feed / channel),
  * else expands in place (guest mode / captions) — identical to [ClampedPost].
+ *
+ * [fadeColor], when set, paints a soft bottom scrim (blending to that colour — pass the host
+ * card's container colour, NOT white) over the last ~2 lines of the clipped content whenever it
+ * actually overflows, so a rich feed preview dissolves into its "read full post" affordance
+ * instead of hard-cutting. [affordance], when set, REPLACES the default "Показати більше" text
+ * with a caller-supplied composable (e.g. the rich "Read full post" button); it receives the
+ * same expand action the default toggle uses. [forceAffordance] shows that affordance even when
+ * the content fits the pixel budget — used when the document was projected or is partial, so
+ * there is more to read past the fold than the clamp alone can detect.
  */
 @Composable
 internal fun ClampedContent(
     key: Any,
     maxLines: Int,
     style: TextStyle,
+    fadeColor: Color? = null,
+    forceAffordance: Boolean = false,
+    affordance: (@Composable (onExpand: () -> Unit) -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     var expanded by remember(key) { mutableStateOf(false) }
@@ -311,10 +327,31 @@ internal fun ClampedContent(
         else -> 20.sp
     }
     val maxHeightPx = with(density) { (bodyLine.toPx() * maxLines).toInt() }
+    val fadeHeightPx = with(density) { bodyLine.toPx() * 2f }
 
     Column {
+        // Fade only when the content is genuinely clipped (over && !expanded) — a projected /
+        // partial document that fits the budget shows the affordance but no scrim over real text.
+        val fade = fadeColor
+        val fadeModifier = if (fade != null && overflow && !expanded) {
+            Modifier.drawWithContent {
+                drawContent()
+                val fh = fadeHeightPx.coerceAtMost(size.height)
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, fade),
+                        startY = size.height - fh,
+                        endY = size.height,
+                    ),
+                    topLeft = Offset(0f, size.height - fh),
+                    size = Size(size.width, fh),
+                )
+            }
+        } else {
+            Modifier
+        }
         Layout(
-            modifier = Modifier.clipToBounds(),
+            modifier = Modifier.clipToBounds().then(fadeModifier),
             content = content,
         ) { measurables, constraints ->
             val placeables = measurables.map {
@@ -332,17 +369,20 @@ internal fun ClampedContent(
                 placeables.forEach { p -> p.place(0, y); y += p.height }
             }
         }
-        if (!expanded && overflow) {
-            Text(
-                text = stringResource(R.string.post_show_more),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .padding(top = 4.dp)
-                    .clickable {
-                        if (showFullPost != null) showFullPost() else expanded = true
-                    },
-            )
+        if (!expanded && (overflow || forceAffordance)) {
+            val onExpand = { if (showFullPost != null) showFullPost() else expanded = true }
+            if (affordance != null) {
+                affordance(onExpand)
+            } else {
+                Text(
+                    text = stringResource(R.string.post_show_more),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .clickable(onClick = onExpand),
+                )
+            }
         }
     }
 }

@@ -30,9 +30,9 @@ import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.ui.media.LocalMediaCache
+import dev.lyo.hortay.ui.rich.RichFeedPreview
 import dev.lyo.hortay.ui.rich.RichMessageBody
 import dev.lyo.hortay.ui.rich.RichMessageMode
-import dev.lyo.hortay.ui.text.ClampedContent
 import dev.lyo.hortay.ui.text.LinkAwareText
 import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.text.RenderableText
@@ -130,13 +130,14 @@ fun PostBody(
                     if (expanded) {
                         RichMessageBody(content.document, mode = RichMessageMode.Reading)
                     } else {
-                        ClampedContent(
-                            key = content.document,
+                        // Clamp budget stays the feed body style so a rich post collapses to the
+                        // same height as a text post; the fade + single "Read full post" affordance
+                        // live in RichFeedPreview.
+                        RichFeedPreview(
+                            document = content.document,
                             maxLines = textLimit,
-                            style = MaterialTheme.typography.bodyLarge,
-                        ) {
-                            RichMessageBody(content.document, mode = RichMessageMode.FeedPreview)
-                        }
+                            clampStyle = MaterialTheme.typography.bodyLarge,
+                        )
                     }
                 is PostContent.Unsupported -> UnsupportedBlock(content)
             }

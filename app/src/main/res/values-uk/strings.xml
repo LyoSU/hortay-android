@@ -805,4 +805,5 @@
     <string name="rich_details_collapse">Згорнути</string>
     <string name="rich_media_content_description">Медіа</string>
     <string name="rich_slideshow_page">Сторінка %1$d з %2$d</string>
+    <string name="rich_read_full_post">Читати пост повністю</string>
 </resources>
