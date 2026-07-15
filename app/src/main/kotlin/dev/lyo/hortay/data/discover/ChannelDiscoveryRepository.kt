@@ -49,7 +49,9 @@ class ChannelDiscoveryRepository(
     suspend fun search(query: String): List<DiscoverChannel> {
         val cleaned = query.trim()
         if (cleaned.isBlank()) return emptyList()
-        val chats = runCatching { td.send(TdApi.SearchPublicChats(cleaned)) }
+        // TDLib 1.8.66 added a typeFilter arg to SearchPublicChats; null keeps the prior
+        // behaviour (search every chat type, then narrow to channels in toCard).
+        val chats = runCatching { td.send(TdApi.SearchPublicChats(cleaned, null)) }
             .warnUnlessCancelled(TAG, "search($cleaned)")
             .getOrNull() ?: return emptyList()
         // GetChat is local after SearchPublicChats populated TDLib's cache, so this

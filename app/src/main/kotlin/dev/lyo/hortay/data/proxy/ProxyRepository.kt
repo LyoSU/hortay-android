@@ -104,7 +104,9 @@ class ProxyRepository(
 
     private suspend fun addProxy(proxy: TdApi.Proxy, enable: Boolean): AddResult =
         try {
-            sender.send(TdApi.AddProxy(proxy, enable))
+            // TDLib 1.8.66 added a `comment` arg to AddProxy (and returns AddedProxy now,
+            // which we discard); null comment preserves the prior behaviour.
+            sender.send(TdApi.AddProxy(proxy, enable, null))
             if (enable) failedThisCycle.clear()
             refresh()
             AddResult.Success

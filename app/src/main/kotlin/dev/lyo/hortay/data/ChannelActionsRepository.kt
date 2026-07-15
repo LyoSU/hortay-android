@@ -363,13 +363,16 @@ class ChannelActionsRepository(
      * callers don't need to surface anything beyond the success-side navigation.
      */
     suspend fun joinByInvite(inviteLink: String): Long? {
-        val chat: TdApi.Chat = runCatching {
+        // TDLib 1.8.66 returns a ChatJoinResult union instead of the joined Chat: only the
+        // Success variant carries a usable chatId. RequestSent / GuardBotApprovalRequired /
+        // Declined are not a completed join, so — as before — we return null (no navigation).
+        val result: TdApi.ChatJoinResult = runCatching {
             td.send(TdApi.JoinChatByInviteLink(inviteLink))
         }
             .warnUnlessCancelled(TAG, "joinByInvite")
             .onFailure { it.surfaceTo(userMessages, res, R.string.op_join_channel, connection.value) }
             .getOrNull() ?: return null
-        return chat.id
+        return (result as? TdApi.ChatJoinResultSuccess)?.chatId
     }
 
     private companion object {

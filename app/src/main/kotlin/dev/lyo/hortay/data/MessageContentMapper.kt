@@ -588,11 +588,14 @@ internal object MessageContentMapper {
      * for null input or unsupported variants — caller treats null as "no inline preview, fall
      * back to plain layout".
      */
-    private fun pollMediaThumb(media: TdApi.MessageContent?): TdMedia? = when (media) {
-        is TdApi.MessagePhoto -> media.photo.toMedia(PHOTO_TARGET_INLINE_PX)
-        is TdApi.MessageVideo -> media.video.toThumbMedia()
-        is TdApi.MessageAnimation -> media.animation.toThumbMedia()
-        is TdApi.MessageSticker -> media.sticker.thumbnail?.toMedia()
+    private fun pollMediaThumb(media: TdApi.PollMedia?): TdMedia? = when (media) {
+        // TDLib 1.8.66 replaced the poll-media `MessageContent` payload with a dedicated
+        // `PollMedia` union. Only variants carrying a still thumbnail are surfaced; link /
+        // location / venue / audio / document have no inline preview (null → plain layout).
+        is TdApi.PollMediaPhoto -> media.photo?.toMedia(PHOTO_TARGET_INLINE_PX)
+        is TdApi.PollMediaVideo -> media.video?.toThumbMedia()
+        is TdApi.PollMediaAnimation -> media.animation?.toThumbMedia()
+        is TdApi.PollMediaSticker -> media.sticker?.thumbnail?.toMedia()
         else -> null
     }
 }
