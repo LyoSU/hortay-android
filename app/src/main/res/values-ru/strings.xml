@@ -801,6 +801,7 @@
     <string name="rich_details_collapse">Свернуть</string>
     <string name="rich_media_content_description">Медиа</string>
     <string name="rich_slideshow_page">Страница %1$d из %2$d</string>
+    <string name="rich_collage_more">+%d</string>
     <string name="rich_read_full_post">Читать пост полностью</string>
     <string name="rich_full_post_error">Не удалось загрузить пост полностью</string>
     <string name="rich_full_post_retry">Повторить</string>

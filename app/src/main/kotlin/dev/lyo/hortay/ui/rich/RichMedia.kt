@@ -15,18 +15,27 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.AbsoluteRoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
@@ -37,12 +46,12 @@ import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichCaption
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.theme.mediaFrame
-import dev.lyo.hortay.ui.timeline.AlbumRow
 import dev.lyo.hortay.ui.timeline.MediaWithSpoiler
 import dev.lyo.hortay.ui.timeline.NonPlayableFileRow
 import dev.lyo.hortay.ui.timeline.SingleMedia
 import dev.lyo.hortay.ui.timeline.formatDuration
 import dev.lyo.hortay.ui.timeline.mediaAspectRatio
+import kotlin.math.roundToInt
 
 /**
  * Real renderings for the media-bearing rich blocks. Every one reuses the feed's media
@@ -51,7 +60,8 @@ import dev.lyo.hortay.ui.timeline.mediaAspectRatio
  *  - Photo / Video / Animation → [SingleMedia] (aspect-ratio box + hairline frame + spoiler
  *    cover + minithumb→full crossfade; short videos silent-autoplay through the feed's
  *    cache-ready + [dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay] probe).
- *  - Collage → [AlbumRow] (the app's album row, all items in one snap-scrolling strip).
+ *  - Collage → a mosaic grid ([RichCollageMosaic], geometry from [mosaicLayout]) with a
+ *    "+N" overflow tile past four members.
  *  - Slideshow → a [HorizontalPager], one item per page, with dot indicators.
  *  - Audio / VoiceNote → [NonPlayableFileRow] (informational, no source-post tap yet).
  *
@@ -142,9 +152,97 @@ internal fun RichCollage(block: RichBlock.Collage) {
     RichMediaColumn(block.caption) {
         val viewer = LocalMediaViewer.current
         if (items.size == 1) {
+            // A one-member collage isn't really a collage; render it as a plain photo rather
+            // than a degenerate single-tile mosaic.
             SingleMedia(items.first(), onClick = { viewer.open(items, 0) })
         } else {
-            AlbumRow(items, onItemClick = { idx -> viewer.open(items, idx) })
+            RichCollageMosaic(items, onItemClick = { idx -> viewer.open(items, idx) })
+        }
+    }
+}
+
+private val MOSAIC_RADIUS = 12.dp
+private val MOSAIC_GAP = 2.dp
+
+/**
+ * Telegram-style collage grid: tiles laid out by the pure [mosaicLayout] geometry (2-up,
+ * 3-up, 2×2, or 2×2 with a "+N" overflow tile). Only the mosaic's four outer corners round
+ * to [MOSAIC_RADIUS]; inner seams stay square and are separated by a [MOSAIC_GAP] gutter.
+ * A single [dev.lyo.hortay.ui.theme.mediaFrame] hairline traces the whole mosaic so a pale
+ * collage doesn't dissolve into the canvas — no per-tile frames (the gutters read as the
+ * only inner separation, matching Telegram's IV collage).
+ */
+@Composable
+private fun RichCollageMosaic(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
+    val density = LocalDensity.current
+    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val gapPx = with(density) { MOSAIC_GAP.toPx() }
+    val count = items.size
+    // Corner flags / source indices are width-independent; resolve them once so each tile's
+    // clip shape and content are stable across measures. Positions are recomputed at measure
+    // from the real width.
+    val tiles = remember(count, isRtl) { mosaicLayout(count, width = 1f, gap = 0f, isRtl = isRtl).cells }
+    val outerShape = remember { RoundedCornerShape(MOSAIC_RADIUS) }
+    Layout(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(outerShape)
+            .mediaFrame(outerShape),
+        content = {
+            tiles.forEach { cell -> MosaicTile(cell = cell, items = items, onItemClick = onItemClick) }
+        },
+    ) { measurables, constraints ->
+        val widthPx = constraints.maxWidth
+        val geometry = mosaicLayout(count, widthPx.toFloat(), gapPx, isRtl)
+        val placeables = measurables.mapIndexed { index, measurable ->
+            val cell = geometry.cells[index]
+            measurable.measure(
+                Constraints.fixed(
+                    width = cell.widthPx.roundToInt().coerceAtLeast(0),
+                    height = cell.heightPx.roundToInt().coerceAtLeast(0),
+                ),
+            )
+        }
+        layout(widthPx, geometry.height.roundToInt()) {
+            placeables.forEachIndexed { index, placeable ->
+                val cell = geometry.cells[index]
+                placeable.place(cell.left.roundToInt(), cell.top.roundToInt())
+            }
+        }
+    }
+}
+
+@Composable
+private fun MosaicTile(cell: RichMosaicCell, items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
+    val shape = remember(cell) {
+        AbsoluteRoundedCornerShape(
+            topLeft = if (cell.roundTopLeft) MOSAIC_RADIUS else 0.dp,
+            topRight = if (cell.roundTopRight) MOSAIC_RADIUS else 0.dp,
+            bottomRight = if (cell.roundBottomRight) MOSAIC_RADIUS else 0.dp,
+            bottomLeft = if (cell.roundBottomLeft) MOSAIC_RADIUS else 0.dp,
+        )
+    }
+    val item = items[cell.sourceIndex]
+    val openIndex = cell.viewerIndex()
+    val onClick = remember(openIndex, onItemClick) { { onItemClick(openIndex) } }
+    Box(modifier = Modifier.clip(shape)) {
+        // A static grid has no "most-centered" tile to gate autoplay on (unlike the scrolling
+        // AlbumRow), so only the first tile is eligible — keeps the one-player invariant on the
+        // rare collage that mixes in short videos; photo tiles ignore isActive.
+        MediaWithSpoiler(item = item, onClick = onClick, isActive = cell.sourceIndex == 0)
+        if (cell.overflow > 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.rich_collage_more, cell.overflow),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color.White,
+                )
+            }
         }
     }
 }
