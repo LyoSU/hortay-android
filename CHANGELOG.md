@@ -8,6 +8,9 @@
 - Richly formatted posts now render natively — headings, ordered and checklist lists, tables, collapsible sections, quotes, code blocks, photo collages and swipeable slideshows.
 - Opening a long richly formatted post now loads its full content instead of the feed preview.
 
+### Fixed
+- Long-pressing a post no longer crashes the app when the quick-action labels don't fit the row — the extra actions tuck into a "…" menu instead.
+
 ## [0.11.0] — 2026-07-15
 
 ### Changed

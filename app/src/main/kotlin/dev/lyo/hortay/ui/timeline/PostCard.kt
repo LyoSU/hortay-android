@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
@@ -1425,7 +1426,19 @@ private fun PostQuickActions(
         },
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            // material3 1.5.0-alpha23 ButtonGroupMeasurePolicy shrinks maxWidth for the
+            // overflow indicator without clamping it against minWidth, so under the tight
+            // constraints fillMaxWidth produces (min == max) any label overflow — long
+            // uk/ru labels on a three-button row — crashes measure with "maxWidth must
+            // be >= than minWidth". Loosening minWidth lets the group take its designed
+            // overflow path (trailing "…" menu) instead.
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints.copy(minWidth = 0))
+                layout(constraints.maxWidth, placeable.height) {
+                    placeable.placeRelative(0, 0)
+                }
+            },
     ) {
         // clickableItem renders [label] as the button text; [icon] is the leading glyph.
         if (showComments) {
