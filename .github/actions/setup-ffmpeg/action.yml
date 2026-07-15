@@ -26,7 +26,10 @@ runs:
     - name: Install NDK
       if: steps.ndk-cache.outputs.cache-hit != 'true'
       shell: bash
-      run: yes | sdkmanager --install "ndk;${{ inputs.ndk-version }}" >/dev/null
+      # `{ yes || :; }` so yes's EPIPE (when sdkmanager closes stdin) doesn't trip
+      # pipefail; the pipeline status is then sdkmanager's alone. Licenses are already
+      # accepted by setup-android, so this just auto-confirms if anything prompts.
+      run: '{ yes || :; } | sdkmanager --install "ndk;${{ inputs.ndk-version }}" >/dev/null'
 
     - name: Restore ffmpeg static libs
       id: ffmpeg-cache

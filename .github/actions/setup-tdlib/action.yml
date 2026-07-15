@@ -3,10 +3,14 @@ description: >
   Restore the Docker-built TDLib bindings + native libs from cache, or build them
   on a miss. The bindings (org.drinkless.tdlib.{TdApi,Client}.java) are gitignored
   and :app cannot compile without them, so every job that touches :app needs this.
-  A single cache serves the whole pipeline: it is built with KEEP_DEBUG=1 so the
-  unstripped overlay (FULL native symbols for a release AAB) is always present, and
-  the TDLib-bump workflow warms it once — after that ci/release/beta all hit it.
   Cache misses only on a TDLib bump or a build-recipe change.
+
+  Built stripped (KEEP_DEBUG=0): the unstripped overlay is deliberately NOT staged.
+  Under AGP 9.3 the two jniLibs srcDirs (:libtdlib src/main/jniLibs +
+  build/tdlib-unstripped) with the same libtdjni.so trip MergeSourceSetFolders
+  "Duplicate resources" instead of the old last-srcDir-wins override. Packaging FULL
+  native symbols into the release AAB needs that overlay reworked to a single srcDir
+  first; until then releases ship without rich libtdjni.so symbolication.
 
 inputs:
   abis:
@@ -25,18 +29,17 @@ runs:
           libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
           libtdlib/src/main/java/org/drinkless/tdlib/Client.java
           libtdlib/src/main/jniLibs
-          libtdlib/build/tdlib-unstripped
         # Keyed on the pin AND the build recipe — a Dockerfile / script change that
         # alters the output (compiler flags, ABI logic) must invalidate the cache,
-        # not just a version bump.
-        key: tdlib-v2-${{ hashFiles('scripts/tdlib-version.txt', 'scripts/update-tdlib.sh', 'scripts/tdlib-builder/**') }}
+        # not just a version bump. (v3: stripped-only, no unstripped overlay.)
+        key: tdlib-v3-${{ hashFiles('scripts/tdlib-version.txt', 'scripts/update-tdlib.sh', 'scripts/tdlib-builder/**') }}
 
     - name: Build TDLib (cache miss only)
       if: steps.restore.outputs.cache-hit != 'true'
       shell: bash
       env:
         ABIS: ${{ inputs.abis }}
-        KEEP_DEBUG: "1"
+        KEEP_DEBUG: "0"
       run: |
         sha=$(grep '^TDLIB_SHA=' scripts/tdlib-version.txt | cut -d= -f2)
         echo "::group::Building TDLib at pinned SHA $sha (ABIS=$ABIS)"
@@ -51,5 +54,4 @@ runs:
           libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
           libtdlib/src/main/java/org/drinkless/tdlib/Client.java
           libtdlib/src/main/jniLibs
-          libtdlib/build/tdlib-unstripped
         key: ${{ steps.restore.outputs.cache-primary-key }}
