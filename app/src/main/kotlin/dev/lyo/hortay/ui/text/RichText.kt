@@ -280,6 +280,73 @@ private fun ClampedPost(
     }
 }
 
+/**
+ * Post-wide height clamp for an arbitrary body [content], the generic sibling of [ClampedPost].
+ * [ClampedPost] can only lay out a [FormattedText]'s segments; a rich message
+ * ([dev.lyo.hortay.data.PostContent.RichMessage]) is a heterogeneous block tree (headings,
+ * media, tables) with no single text grid, so it can't ride that path. This shares the same
+ * shell — cap to roughly [maxLines] × the [style] line height, reveal whole with a single
+ * "Показати більше" — minus the line-boundary snapping (there is no glyph row to snap onto in a
+ * table or a photo; a plain height clip is the honest cut). The clamp budget is computed from
+ * the same `maxLines` a text post uses, so a rich post collapses to the same feed height.
+ *
+ * Tapping the toggle opens the full post via [LocalShowFullPost] when present (feed / channel),
+ * else expands in place (guest mode / captions) — identical to [ClampedPost].
+ */
+@Composable
+internal fun ClampedContent(
+    key: Any,
+    maxLines: Int,
+    style: TextStyle,
+    content: @Composable () -> Unit,
+) {
+    var expanded by remember(key) { mutableStateOf(false) }
+    var overflow by remember(key) { mutableStateOf(false) }
+    val showFullPost = LocalShowFullPost.current
+    val density = LocalDensity.current
+
+    val bodyLine = when {
+        style.lineHeight.isSp -> style.lineHeight
+        style.fontSize.isSp -> style.fontSize * 1.4f
+        else -> 20.sp
+    }
+    val maxHeightPx = with(density) { (bodyLine.toPx() * maxLines).toInt() }
+
+    Column {
+        Layout(
+            modifier = Modifier.clipToBounds(),
+            content = content,
+        ) { measurables, constraints ->
+            val placeables = measurables.map {
+                it.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+            }
+            val width = placeables.maxOfOrNull { it.width } ?: 0
+            val full = placeables.sumOf { it.height }
+            val over = full > maxHeightPx
+            // The toggle sits OUTSIDE this Layout (in the enclosing Column), so flipping
+            // `overflow` never changes what this Layout measures — it converges in one pass.
+            if (overflow != over) overflow = over
+            val clipH = if (expanded || !over) full else maxHeightPx
+            layout(width, clipH) {
+                var y = 0
+                placeables.forEach { p -> p.place(0, y); y += p.height }
+            }
+        }
+        if (!expanded && overflow) {
+            Text(
+                text = stringResource(R.string.post_show_more),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .clickable {
+                        if (showFullPost != null) showFullPost() else expanded = true
+                    },
+            )
+        }
+    }
+}
+
 /** Lines an explicitly-collapsible quote previews at on an interactive surface (full post /
  *  comments, or a post expanded inline) before its chevron reveals the rest, so a long
  *  collapsible quote teases compactly instead of as a tall wall. Frozen previews inside a

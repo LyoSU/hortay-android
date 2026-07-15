@@ -30,6 +30,8 @@ import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.ui.media.LocalMediaCache
+import dev.lyo.hortay.ui.rich.RichMessageBody
+import dev.lyo.hortay.ui.text.ClampedContent
 import dev.lyo.hortay.ui.text.LinkAwareText
 import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.text.RenderableText
@@ -115,14 +117,26 @@ fun PostBody(
                 is PostContent.Service -> ServiceBlock(content)
                 is PostContent.PaidMedia -> PaidMediaBlock(content, onMediaClick, captionLimit, translation, onOpenInSource)
                 is PostContent.OpenInSource -> OpenInSourceBlock(content, onOpenInSource)
-                // Placeholder until the rich-message renderer lands with the feed integration:
-                // show the projector's plain-text so the post isn't blank. Full block/inline
-                // rendering (headings, tables, media) is a later task.
-                is PostContent.RichMessage -> TextBlock(
-                    PostContent.Text(FormattedText(content.plainText, emptyList())),
-                    textLimit,
-                    translation,
-                )
+                // Rich (instant-view-style) message: headings, lists, tables, media blocks.
+                // Detail surfaces render the whole document; feed / channel clamp it to the
+                // same post-wide height a Text post uses ([ClampedContent] with the same
+                // `textLimit`), so a rich post reads as one unit with exactly one
+                // "Показати більше". A partial document (isFull == false) renders its
+                // truncated prefix here; the detail-mount trigger fetches the rest and the
+                // repository swaps in the full content reactively (see
+                // PostsRepository.ensureFullRichMessage).
+                is PostContent.RichMessage ->
+                    if (expanded) {
+                        RichMessageBody(content.document)
+                    } else {
+                        ClampedContent(
+                            key = content.document,
+                            maxLines = textLimit,
+                            style = MaterialTheme.typography.bodyLarge,
+                        ) {
+                            RichMessageBody(content.document)
+                        }
+                    }
                 is PostContent.Unsupported -> UnsupportedBlock(content)
             }
         }
