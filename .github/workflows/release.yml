@@ -93,6 +93,11 @@ jobs:
           abis: arm64-v8a
           keep-debug: "1"
 
+      # Required — :libwebm links these into libhortaywebm.so (WebM sticker decoder).
+      # Skipping it ships a release that crashes on any WebM sticker.
+      - name: Set up ffmpeg (:libwebm)
+        uses: ./.github/actions/setup-ffmpeg
+
       - name: Set up release signing
         uses: ./.github/actions/setup-signing
         with:
@@ -107,7 +112,6 @@ jobs:
         run: >
           ./gradlew :app:bundleRelease :app:assembleRelease
           -PhortayVersionName=${{ steps.ver.outputs.version }}
-          -x ':libwebm:buildCMakeRelWithDebInfo[arm64-v8a]'
           --no-daemon --stacktrace
 
       - name: Collect artifacts
