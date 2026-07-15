@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-07-15
+
 ### Changed
 - The app now uses Hortay's own periwinkle colours by default — wallpaper-matched colours stay available in Appearance.
 - Cleaner reading canvas — post cards lighten, an unread post shows a single edge strip instead of a full-card tint, and reaction chips rest as outlined ghosts that fill with lavender when you pick one.
