@@ -113,16 +113,21 @@ jobs:
 
       - name: Collect artifacts
         id: artifacts
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/release-artifacts"
           mkdir -p "$out"
-          v="${{ steps.ver.outputs.version }}"
-          cp app/build/outputs/bundle/release/app-release.aab "$out/hortay-$v.aab"
-          cp app/build/outputs/apk/release/app-release.apk    "$out/hortay-$v.apk"
-          if [ -f app/build/outputs/mapping/release/mapping.txt ]; then
-            cp app/build/outputs/mapping/release/mapping.txt "$out/mapping-$v.txt"
-          fi
+          # Locate by glob — AGP output filenames vary by version/ABI config.
+          aab=$(find app/build/outputs/bundle/release -name '*.aab' | head -1)
+          apk=$(find app/build/outputs/apk/release -name '*.apk' ! -name '*unsigned*' | head -1)
+          [ -n "$aab" ] || { echo "::error::no release AAB found"; find app/build/outputs -name '*.aab'; exit 1; }
+          [ -n "$apk" ] || { echo "::error::no release APK found"; find app/build/outputs -name '*.apk'; exit 1; }
+          cp "$aab" "$out/hortay-$VERSION.aab"
+          cp "$apk" "$out/hortay-$VERSION.apk"
+          mapping=$(find app/build/outputs/mapping/release -name 'mapping.txt' 2>/dev/null | head -1 || true)
+          [ -n "$mapping" ] && cp "$mapping" "$out/mapping-$VERSION.txt" || true
           echo "dir=$out" >> "$GITHUB_OUTPUT"
           ls -la "$out"
 
