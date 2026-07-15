@@ -1,9 +1,5 @@
 package dev.lyo.hortay.ui.text
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.AnimationVector1D
-import androidx.compose.animation.core.Easing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -14,10 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
@@ -41,11 +34,9 @@ import androidx.compose.ui.unit.sp
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.LocalCustomEmoji
-import dev.lyo.hortay.ui.util.rememberReducedMotion
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
-import kotlinx.coroutines.launch
 
 /**
  * Renderable view of a [FormattedText]: the [AnnotatedString] to hand to a `Text` plus
@@ -173,42 +164,14 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
     // same hidden phrase.
     val spoilerStateKey = remember(formatted) { spoilerContentKey(formatted) }
 
-    val revealedGroups = remember(spoilerStateKey) { mutableStateOf(emptySet<Int>()) }
-    val dispersing = remember(spoilerStateKey) {
-        mutableStateMapOf<Int, Animatable<Float, AnimationVector1D>>()
-    }
-    val scope = rememberCoroutineScope()
-    // Reduced motion (system "Remove animations"): snap the cover straight to the
-    // revealed state with no dispersal sweep instead of the multi-hundred-ms reveal.
-    val reducedMotion = rememberReducedMotion()
-
-    val revealGroup: (Int) -> Unit = remember(spoilerStateKey, reducedMotion) {
-        { groupId ->
-            if (groupId !in revealedGroups.value) {
-                revealedGroups.value = revealedGroups.value + groupId
-                val anim = Animatable(0f)
-                dispersing[groupId] = anim
-                scope.launch {
-                    if (reducedMotion) {
-                        anim.snapTo(1f)
-                    } else {
-                        anim.animateTo(
-                            targetValue = 1f,
-                            animationSpec = tween(
-                                durationMillis = SPOILER_REVEAL_MS,
-                                easing = SpoilerEaseInQuad,
-                            ),
-                        )
-                    }
-                    dispersing.remove(groupId)
-                }
-            }
-        }
-    }
+    // Reveal state (revealed set + dispersion animations) is shared with the rich-message
+    // renderer in `ui.rich` via [rememberSpoilerReveal]; this path adds only the source-
+    // position → group hit-test on top.
+    val spoiler = rememberSpoilerReveal(spoilerStateKey)
 
     val revealAtSrcPos: (Int) -> Unit = remember(spoilerStateKey, spoilerSrc) {
         { srcPos ->
-            spoilerSrc.groupAtSrcPos(srcPos)?.let { revealGroup(it) }
+            spoilerSrc.groupAtSrcPos(srcPos)?.let { spoiler.reveal(it) }
         }
     }
 
@@ -227,7 +190,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
     val userMentionTap = remember(userOpener) { { uid: Long -> userOpener.open(uid) } }
     val built = remember(
         formatted, spoilerSrc, accent, codeBg, mute, onSurface,
-        revealedGroups.value, confirmMaskedLink, hashtagTap, userMentionTap,
+        spoiler.revealedGroups, confirmMaskedLink, hashtagTap, userMentionTap,
     ) {
         buildFromFormatted(
             formatted = formatted,
@@ -240,20 +203,9 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
             confirmMaskedLink = confirmMaskedLink,
             hashtagTap = hashtagTap,
             userMentionTap = userMentionTap,
-            revealedGroups = revealedGroups.value,
+            revealedGroups = spoiler.revealedGroups,
             revealAtSrcPos = revealAtSrcPos,
         )
-    }
-
-    val spoilerDispersion: (Int) -> Float? = remember(spoilerStateKey) {
-        { groupId ->
-            val anim = dispersing[groupId]
-            when {
-                anim != null -> anim.value           // scattering
-                groupId in revealedGroups.value -> null   // fully revealed
-                else -> 0f                           // covered, idle shimmer
-            }
-        }
     }
 
     val inlineContent = remember(customEmojiIds, onSurface, built.emojiCoverSrcPositions, revealAtSrcPos) {
@@ -312,15 +264,13 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
         inlineContent = inlineContent,
         linkRanges = built.linkRanges,
         spoilerGroups = built.spoilerGroups,
-        spoilerDispersion = spoilerDispersion,
+        spoilerDispersion = spoiler.dispersion,
         blockDecorations = built.blockDecorations,
         pressableRanges = built.pressableRanges,
         contentKey = formatted.text,
     )
 }
 
-private const val SPOILER_REVEAL_MS = 1100
-private val SpoilerEaseInQuad: Easing = Easing { t -> t * t }
 private const val SPOILER_ADJACENCY_GAP = 1
 
 /**
