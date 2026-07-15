@@ -5,6 +5,8 @@ import dev.lyo.hortay.testutil.PostsRepositoryTestHarness
 import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -61,6 +63,47 @@ class PostsRepositorySnapshotRestoreTest {
             ids.containsAll(setOf(1L, 2L, 3L, 4L, 5L)),
             "snapshot's deep history must survive the live stub having won the race; got $ids",
         )
+    }
+
+    /**
+     * The snapshot store persists only `(chatId, messageId)` pairs and rebuilds every post by
+     * re-mapping TDLib's locally-cached message on restore (see [TimelineSnapshotStore] KDoc) —
+     * so [PostContent.RichMessage] rides the existing mechanism with no bespoke serialization.
+     * A partial rich post round-trips as its honest truncated prefix (`isFull == false`); the
+     * detail-mount [dev.lyo.hortay.data.posts.PostsRepository.ensureFullRichMessage] fetch
+     * restores the full body on demand, and the live stream overwrites the snapshot per the
+     * cold-start-snapshot contract.
+     */
+    @Test
+    fun `restore rebuilds a partial rich message post from its id`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -300L
+        val messageId = 9L
+        harness.snapshotStore.seed(listOf(chatId to messageId))
+        harness.td.onAny("GetMessage") { req ->
+            val q = req as TdApi.GetMessage
+            TdApi.Message().apply {
+                id = q.messageId
+                this.chatId = q.chatId
+                date = 1_700_000_000 + q.messageId.toInt()
+                senderId = TdApi.MessageSenderChat(q.chatId)
+                content = TdApi.MessageRichMessage(
+                    TdApi.RichMessage(
+                        arrayOf(TdApi.PageBlockParagraph(TdApi.RichTextPlain("instant-view prefix"))),
+                        false,
+                        false,
+                    ),
+                )
+            }
+        }
+
+        harness.repo.restoreFromSnapshot()
+        harness.advanceUntilIdle()
+
+        val post = harness.repo.posts.value.single { it.chatId == chatId && it.id == messageId }
+        val rich = assertInstanceOf(PostContent.RichMessage::class.java, post.content)
+        assertFalse(rich.document.isFull, "partial rich content round-trips honestly")
+        assertEquals("instant-view prefix", rich.plainText)
     }
 
     @Test
