@@ -12,9 +12,10 @@ import dev.lyo.hortay.data.rich.RichDocument
 import dev.lyo.hortay.data.rich.RichInline
 
 /**
- * Entry point for rendering a [RichDocument] — the inline-text tree and text-only blocks
- * of a Telegram rich message. Media, collage/slideshow, table and map blocks currently
- * render through [RichMediaPlaceholder]; dedicated components replace them in a later task.
+ * Entry point for rendering a [RichDocument] — the inline-text tree, text blocks, and the
+ * media-bearing blocks (photo / video / animation / audio / voice / collage / slideshow /
+ * table / map) of a Telegram rich message. A media block with an unresolvable file falls
+ * back to [RichMediaPlaceholder].
  *
  * Blocks stack in a plain [androidx.compose.foundation.layout.Column] (NEVER a nested
  * LazyColumn — the post card is one item of the outer feed list). An RTL document flips

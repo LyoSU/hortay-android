@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.rich.RichBlock
-import dev.lyo.hortay.data.rich.RichCaption
 import dev.lyo.hortay.data.rich.RichInline
 import dev.lyo.hortay.data.rich.RichListItem
 import dev.lyo.hortay.ui.icons.Symbol
@@ -106,20 +105,17 @@ private fun RichBlockContent(block: RichBlock, path: String) {
 
         is RichBlock.Details -> RichDetails(block, path)
 
-        is RichBlock.Photo -> RichMediaPlaceholder("image", block.caption)
-        is RichBlock.Video -> RichMediaPlaceholder("play_circle", block.caption)
-        is RichBlock.Animation -> RichMediaPlaceholder("gif_box", block.caption)
-        is RichBlock.Audio -> RichMediaPlaceholder("audio_file", block.caption)
-        is RichBlock.VoiceNote -> RichMediaPlaceholder("mic", block.caption)
-        is RichBlock.Collage -> RichMediaPlaceholder("image", block.caption)
-        is RichBlock.Slideshow -> RichMediaPlaceholder("image", block.caption)
-        is RichBlock.MapPreview -> RichMediaPlaceholder("place", block.caption)
-        is RichBlock.Table -> RichMediaPlaceholder("dns", captionOf(block.caption))
+        is RichBlock.Photo -> RichPhoto(block)
+        is RichBlock.Video -> RichVideo(block)
+        is RichBlock.Animation -> RichAnimation(block)
+        is RichBlock.Audio -> RichAudio(block)
+        is RichBlock.VoiceNote -> RichVoiceNote(block)
+        is RichBlock.Collage -> RichCollage(block)
+        is RichBlock.Slideshow -> RichSlideshow(block)
+        is RichBlock.MapPreview -> RichMapPreview(block)
+        is RichBlock.Table -> RichTable(block)
     }
 }
-
-private fun captionOf(caption: RichInline?): RichCaption? =
-    caption?.let { RichCaption(text = it, credit = null) }
 
 @Composable
 private fun headingStyle(size: Int): TextStyle = when (size.coerceIn(1, 6)) {
@@ -131,8 +127,6 @@ private fun headingStyle(size: Int): TextStyle = when (size.coerceIn(1, 6)) {
 }
 
 // ---- Code / math box ----
-
-private val CODE_CORNER = 8.dp
 
 /**
  * `surfaceContainerHigh` box with monospace body and an optional language label — the same

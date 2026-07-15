@@ -15,8 +15,12 @@ import dev.lyo.hortay.data.TdSender
 import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichCaption
 import dev.lyo.hortay.data.rich.RichDocument
+import dev.lyo.hortay.data.rich.RichHorizontalAlignment
 import dev.lyo.hortay.data.rich.RichInline
 import dev.lyo.hortay.data.rich.RichListItem
+import dev.lyo.hortay.data.rich.RichTableCell
+import dev.lyo.hortay.data.rich.RichTableRow
+import dev.lyo.hortay.data.rich.RichVerticalAlignment
 import dev.lyo.hortay.ui.media.LocalCustomEmoji
 import dev.lyo.hortay.ui.theme.HortayTheme
 import kotlinx.collections.immutable.persistentListOf
@@ -26,6 +30,31 @@ import org.drinkless.tdlib.TdApi
 
 private fun seq(vararg parts: RichInline): RichInline = RichInline.Sequence(persistentListOf(*parts))
 private fun plain(text: String): RichInline = RichInline.Plain(text)
+
+private fun cell(
+    text: String,
+    colspan: Int = 1,
+    rowspan: Int = 1,
+    header: Boolean = false,
+    align: RichHorizontalAlignment = RichHorizontalAlignment.Left,
+): RichTableCell = RichTableCell(
+    text = plain(text),
+    isHeader = header,
+    colspan = colspan,
+    rowspan = rowspan,
+    align = align,
+    valign = RichVerticalAlignment.Top,
+)
+
+/** Invisible continuation slot covered by a spanning neighbour. */
+private fun coveredCell(): RichTableCell = RichTableCell(
+    text = null,
+    isHeader = false,
+    colspan = 1,
+    rowspan = 1,
+    align = RichHorizontalAlignment.Left,
+    valign = RichVerticalAlignment.Top,
+)
 
 private val sampleDocument = RichDocument(
     isRtl = false,
@@ -101,6 +130,50 @@ private val sampleDocument = RichDocument(
             media = null,
             caption = RichCaption(text = plain("A photo caption"), credit = null),
             hasSpoiler = false,
+        ),
+        RichBlock.Table(
+            caption = plain("Quarterly results — colspan, rowspan and striping"),
+            isBordered = true,
+            isStriped = true,
+            rows = persistentListOf(
+                RichTableRow(
+                    persistentListOf(
+                        cell("Team", header = true),
+                        cell("Q1", header = true, align = RichHorizontalAlignment.Right),
+                        cell("Q2", header = true, align = RichHorizontalAlignment.Right),
+                    ),
+                ),
+                // col 0 spans rows 1–2 (rowspan); Q1/Q2 are right-aligned numbers.
+                RichTableRow(
+                    persistentListOf(
+                        cell("Alpha", rowspan = 2),
+                        cell("10", align = RichHorizontalAlignment.Right),
+                        cell("20", align = RichHorizontalAlignment.Right),
+                    ),
+                ),
+                RichTableRow(
+                    persistentListOf(
+                        coveredCell(),
+                        cell("15", align = RichHorizontalAlignment.Right),
+                        cell("25", align = RichHorizontalAlignment.Right),
+                    ),
+                ),
+                // "Total" spans cols 0–1 (colspan); the second slot is a covered cell.
+                RichTableRow(
+                    persistentListOf(
+                        cell("Total", colspan = 2),
+                        coveredCell(),
+                        cell("70", align = RichHorizontalAlignment.Right),
+                    ),
+                ),
+            ),
+        ),
+        RichBlock.Collage(
+            items = persistentListOf(
+                RichBlock.Photo(media = null, caption = null, hasSpoiler = false),
+                RichBlock.Photo(media = null, caption = null, hasSpoiler = false),
+            ),
+            caption = RichCaption(text = plain("A collage that fell back to the unavailable-media placeholder"), credit = null),
         ),
     ),
 )

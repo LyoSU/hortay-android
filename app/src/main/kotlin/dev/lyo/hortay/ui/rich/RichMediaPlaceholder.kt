@@ -19,10 +19,11 @@ import dev.lyo.hortay.data.rich.RichCaption
 import dev.lyo.hortay.ui.icons.Symbol
 
 /**
- * Minimal stand-in for media-bearing blocks (Photo / Video / Animation / Audio / VoiceNote /
- * Collage / Slideshow / Table / MapPreview). Dedicated components replace these call sites
- * separately. Renders a subtle rounded box with a kind-appropriate icon and the block's
- * caption text if present.
+ * "Media unavailable" fallback for a media-bearing block whose file handle is `null` (TDLib
+ * delivered the block without a resolvable file). The real renderings live in
+ * [dev.lyo.hortay.ui.rich.RichPhoto] / [RichVideo] / [RichCollage] / … which fall back here
+ * when their projected [AlbumItem] list is empty. Renders a subtle rounded box with a
+ * kind-appropriate icon and the block's caption text if present.
  */
 @Composable
 internal fun RichMediaPlaceholder(
