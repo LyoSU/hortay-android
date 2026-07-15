@@ -97,8 +97,11 @@ jobs:
             libtdlib/src/main/jniLibs
           key: tdlib-v3-${{ hashFiles('scripts/tdlib-version.txt', 'scripts/update-tdlib.sh', 'scripts/tdlib-builder/**') }}
 
+      # Compile-only: catches TdApi binding incompatibilities the bump might introduce
+      # without triggering :libwebm's native CMake (which needs ffmpeg static libs not
+      # built here) or native packaging. That's the real risk surface of a TDLib bump.
       - name: Smoke-compile :app against the new libs
-        run: ./gradlew :app:assembleDebug -x ':libwebm:buildCMakeRelWithDebInfo[arm64-v8a]' --no-daemon --stacktrace
+        run: ./gradlew :app:compileDebugKotlin --no-daemon --stacktrace
 
       - name: Open bump PR
         env:
