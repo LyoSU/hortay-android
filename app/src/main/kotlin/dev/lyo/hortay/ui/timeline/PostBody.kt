@@ -115,6 +115,14 @@ fun PostBody(
                 is PostContent.Service -> ServiceBlock(content)
                 is PostContent.PaidMedia -> PaidMediaBlock(content, onMediaClick, captionLimit, translation, onOpenInSource)
                 is PostContent.OpenInSource -> OpenInSourceBlock(content, onOpenInSource)
+                // Placeholder until the rich-message renderer lands with the feed integration:
+                // show the projector's plain-text so the post isn't blank. Full block/inline
+                // rendering (headings, tables, media) is a later task.
+                is PostContent.RichMessage -> TextBlock(
+                    PostContent.Text(FormattedText(content.plainText, emptyList())),
+                    textLimit,
+                    translation,
+                )
                 is PostContent.Unsupported -> UnsupportedBlock(content)
             }
         }

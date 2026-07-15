@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data
 
 import androidx.compose.runtime.Immutable
+import dev.lyo.hortay.data.rich.RichDocument
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 
@@ -328,6 +329,20 @@ sealed interface PostContent {
      */
     @Immutable
     data class Service(val event: ServiceEvent) : PostContent
+
+    /**
+     * TDLib `messageRichMessage` — an instant-view-style rich document (headings, lists,
+     * tables, media blocks, nested inline styling). Mapped to the TDLib-independent
+     * [RichDocument] AST by `RichMessageMapper`. [plainText] is the projector output cached
+     * at map time so search / copy / preview surfaces don't re-walk the tree.
+     */
+    @Immutable
+    data class RichMessage(
+        val document: RichDocument,
+        val plainText: String,
+    ) : PostContent {
+        override val captionPlain: String get() = plainText
+    }
 
     /** Anything we deliberately don't render (sponsored, restricted, payment receipts). */
     @Immutable

@@ -158,11 +158,9 @@ sealed interface RichInline {
 }
 
 /**
- * Display formatting for [RichInline.DateTime], mirroring `DateTimeFormattingType`.
- *
- * The precision fields are intentionally coarse ([RichDateTimePrecision]) — a later
- * TdApi-mapping task refines them against the real upstream enum. This model only needs
- * the load-bearing semantics: relative vs absolute, and whether the day-of-week is shown.
+ * Display formatting for [RichInline.DateTime], mirroring TDLib 1.8.66's
+ * `DateTimeFormattingType`. Load-bearing semantics: relative vs absolute, the part
+ * precisions, and whether the day-of-week is shown.
  */
 @Immutable
 sealed interface RichDateTimeFormat {
@@ -180,5 +178,8 @@ sealed interface RichDateTimeFormat {
     ) : RichDateTimeFormat
 }
 
-/** Coarse timestamp precision unit for [RichDateTimeFormat.Absolute]. */
-enum class RichDateTimePrecision { Seconds, Minutes, Hours, Day, Month, Year }
+/**
+ * Part precision for [RichDateTimeFormat.Absolute], mirroring TDLib's `DateTimePartPrecision`:
+ * [None] (part omitted), [Short] (compact rendering), [Long] (full rendering).
+ */
+enum class RichDateTimePrecision { None, Short, Long }

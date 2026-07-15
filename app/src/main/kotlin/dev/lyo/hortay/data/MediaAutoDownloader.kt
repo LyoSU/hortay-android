@@ -228,6 +228,8 @@ class MediaAutoDownloader(
             is PostContent.ExpiredMedia,
             is PostContent.Service,
             is PostContent.OpenInSource,
+            // Rich-message media prefetch lands with the feed integration task; no-op for now.
+            is PostContent.RichMessage,
             is PostContent.Unsupported -> Unit
         }
     }

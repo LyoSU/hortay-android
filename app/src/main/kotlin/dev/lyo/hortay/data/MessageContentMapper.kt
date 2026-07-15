@@ -1,6 +1,8 @@
 package dev.lyo.hortay.data
 
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.rich.RichPlainText
+import dev.lyo.hortay.data.rich.toRichDocument
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toPersistentList
 import org.drinkless.tdlib.TdApi
@@ -242,6 +244,10 @@ internal object MessageContentMapper {
             title = res.getString(R.string.content_gift),
         )
         is TdApi.MessagePaidMedia -> mapPaidMedia(content, res)
+        is TdApi.MessageRichMessage -> {
+            val document = content.message.toRichDocument()
+            PostContent.RichMessage(document, RichPlainText.of(document))
+        }
         else -> PostContent.Unsupported(content::class.java.simpleName)
     }
 
