@@ -1,0 +1,177 @@
+# Release — build a signed AAB + APK and publish them, so a release never has to
+# be built on a developer machine. Fires on a version tag (vX.Y.Z) or manually.
+#
+# versionCode is auto-derived from `git rev-list --count HEAD` in build.gradle.kts,
+# so a full-history checkout (fetch-depth: 0) is mandatory. versionName comes from
+# the tag via -PhortayVersionName (falls back to the build.gradle.kts default).
+#
+# Play publishing is wired but dormant: the upload step runs only once the
+# PLAY_SERVICE_ACCOUNT_JSON secret exists (see the README release section). Until
+# then this ships to GitHub Releases only.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version name, e.g. 0.11.0 (a v-prefixed tag is created)."
+        required: true
+
+# Never build two releases for the same ref at once.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create the GitHub Release + tag
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # versionCode = git rev-list --count HEAD
+
+      - name: Resolve version + tag
+        id: ver
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            raw="$INPUT_VERSION"
+          else
+            raw="$REF_NAME"
+          fi
+          version="${raw#v}"
+          # Strict allowlist — blocks shell/awk injection from the tag or dispatch input.
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::Invalid version '$version' (expected X.Y.Z, optional -suffix)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Building release $version (tag v$version)"
+
+      - name: Create tag (manual dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.ver.outputs.tag }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists — reusing."
+          else
+            git tag "$tag"
+            git push origin "$tag"
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # keep-debug: 1 so the AAB bundles FULL native debug symbols for libtdjni.so
+      # (Play Console native crash symbolication once Play publishing is on).
+      - name: Set up TDLib
+        uses: ./.github/actions/setup-tdlib
+        with:
+          abis: arm64-v8a
+          keep-debug: "1"
+
+      - name: Set up release signing
+        uses: ./.github/actions/setup-signing
+        with:
+          keystore-base64: ${{ secrets.KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.KEY_ALIAS }}
+          key-password: ${{ secrets.KEY_PASSWORD }}
+          telegram-api-id: ${{ secrets.TELEGRAM_API_ID }}
+          telegram-api-hash: ${{ secrets.TELEGRAM_API_HASH }}
+
+      - name: Build signed AAB + APK
+        run: >
+          ./gradlew :app:bundleRelease :app:assembleRelease
+          -PhortayVersionName=${{ steps.ver.outputs.version }}
+          -x ':libwebm:buildCMakeRelWithDebInfo[arm64-v8a]'
+          --no-daemon --stacktrace
+
+      - name: Collect artifacts
+        id: artifacts
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/release-artifacts"
+          mkdir -p "$out"
+          v="${{ steps.ver.outputs.version }}"
+          cp app/build/outputs/bundle/release/app-release.aab "$out/hortay-$v.aab"
+          cp app/build/outputs/apk/release/app-release.apk    "$out/hortay-$v.apk"
+          if [ -f app/build/outputs/mapping/release/mapping.txt ]; then
+            cp app/build/outputs/mapping/release/mapping.txt "$out/mapping-$v.txt"
+          fi
+          echo "dir=$out" >> "$GITHUB_OUTPUT"
+          ls -la "$out"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          ARTIFACT_DIR: ${{ steps.artifacts.outputs.dir }}
+        run: |
+          set -euo pipefail
+          # Prefer the matching CHANGELOG section as release notes; fall back to autogen.
+          notes_args=(--generate-notes)
+          if awk -v ver="$VERSION" '$0 ~ ("^## \\[" ver "\\]"){f=1;next} /^## \[/{f=0} f' CHANGELOG.md > "$RUNNER_TEMP/notes.md" && [ -s "$RUNNER_TEMP/notes.md" ]; then
+            notes_args=(--notes-file "$RUNNER_TEMP/notes.md")
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ARTIFACT_DIR"/* --clobber
+          else
+            gh release create "$TAG" \
+              --title "Hortay $VERSION" \
+              "${notes_args[@]}" \
+              "$ARTIFACT_DIR"/*
+          fi
+
+      # --- Google Play (dormant until PLAY_SERVICE_ACCOUNT_JSON is added) ---
+      - name: Detect Play credentials
+        id: play
+        env:
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -n "$PLAY_JSON" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "PLAY_SERVICE_ACCOUNT_JSON not set — skipping Play upload (GitHub Release only)."
+          fi
+
+      - name: Write Play service account
+        if: steps.play.outputs.enabled == 'true'
+        env:
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: printf '%s' "$PLAY_JSON" > "$RUNNER_TEMP/play-account.json"
+
+      - name: Upload AAB to Google Play (internal track)
+        if: steps.play.outputs.enabled == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJson: ${{ runner.temp }}/play-account.json
+          packageName: dev.lyo.hortay
+          releaseFiles: ${{ steps.artifacts.outputs.dir }}/hortay-${{ steps.ver.outputs.version }}.aab
+          track: internal
+          status: completed

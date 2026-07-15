@@ -1,0 +1,59 @@
+name: Set up release signing
+description: >
+  Materialise the release signing config and Telegram API credentials from repo
+  secrets into the gitignored files the Gradle build expects (keystore.properties
+  + local.properties). Composite actions cannot read secrets directly, so every
+  value is passed in as an input by the calling workflow.
+
+  SECURITY: only ever call this from workflows that CANNOT be triggered by a
+  fork PR (tag push, push to main, workflow_dispatch). GitHub never exposes
+  secrets to fork PRs, so a fork can never reach this action with real values.
+
+inputs:
+  keystore-base64:
+    description: base64-encoded release keystore (.jks).
+    required: true
+  keystore-password:
+    required: true
+  key-alias:
+    required: true
+  key-password:
+    required: true
+  telegram-api-id:
+    required: true
+  telegram-api-hash:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Write signing + credential files
+      shell: bash
+      env:
+        KEYSTORE_BASE64: ${{ inputs.keystore-base64 }}
+        KEYSTORE_PASSWORD: ${{ inputs.keystore-password }}
+        KEY_ALIAS: ${{ inputs.key-alias }}
+        KEY_PASSWORD: ${{ inputs.key-password }}
+        TELEGRAM_API_ID: ${{ inputs.telegram-api-id }}
+        TELEGRAM_API_HASH: ${{ inputs.telegram-api-hash }}
+      run: |
+        set -euo pipefail
+        keystore_path="$RUNNER_TEMP/release.jks"
+        printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+
+        # keystore.properties — consumed by app/build.gradle.kts signingConfigs.
+        {
+          echo "storeFile=$keystore_path"
+          echo "storePassword=$KEYSTORE_PASSWORD"
+          echo "keyAlias=$KEY_ALIAS"
+          echo "keyPassword=$KEY_PASSWORD"
+        } > keystore.properties
+
+        # local.properties — Telegram API creds baked into the release BuildConfig.
+        # (The Android SDK path comes from ANDROID_HOME on the runner, not here.)
+        {
+          echo "telegram.apiId=$TELEGRAM_API_ID"
+          echo "telegram.apiHash=$TELEGRAM_API_HASH"
+        } > local.properties
+
+        echo "Wrote keystore.properties + local.properties (values redacted)."
