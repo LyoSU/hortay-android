@@ -182,6 +182,22 @@ Toolchain: JDK 17, Gradle 9.4.1, AGP 9.2.0, Kotlin 2.3.10 (K2). Compose Compiler
 
 - `versionCode` for release and beta is auto-derived from `git rev-list --count HEAD` (`app/build.gradle.kts:158-185`).
 - `versionCode = 1` in `defaultConfig` is a sentinel for debug builds.
-- `versionName` is manual. Bump on semver-worthy releases. Beta auto-appends `-beta-<sha>`.
+- `versionName` is manual for local builds; CI overrides it from the release tag via `-PhortayVersionName=X.Y.Z` (`app/build.gradle.kts` defaultConfig). Beta auto-appends `-beta-<sha>`.
 - TDLib pin: `scripts/tdlib-version.txt` (auto-generated). Dedicated commit `chore(tdlib): bump to <sha>` per bump.
 - Native debug symbols: `scripts/update-tdlib.sh` (default `KEEP_DEBUG=1`) extracts unstripped libs into `libtdlib/build/tdlib-unstripped/<abi>/libtdjni.so`. AGP `debugSymbolLevel = "FULL"` packages them into the AAB.
+
+## CI/CD
+
+GitHub Actions owns the build/publish lifecycle — release artifacts are never built on a developer machine. Workflows in `.github/workflows/`:
+
+- **`ci.yml`** — push/PR gate: detekt + unit tests + `lintRelease`. No real secrets → safe on fork PRs.
+- **`release.yml`** — tag `v*` (or manual dispatch) → signed AAB + universal APK → GitHub Release (CHANGELOG section as notes). TDLib built with `KEEP_DEBUG=1` so the AAB carries FULL native symbols. Google Play upload is present but gated on the `PLAY_SERVICE_ACCOUNT_JSON` secret (dormant until added).
+- **`beta.yml`** — push to `main` → signed `dev.lyo.hortay.beta` APK → single rolling `beta` pre-release.
+- **`tdlib.yml`** — manual TDLib bump on a **native x86_64 runner** (no Rosetta; hours → ~30 min). Runs `update-tdlib.sh`, smoke-compiles `:app`, warms the CI cache, and opens a PR with only `scripts/tdlib-version.txt`. The native libs / bindings are gitignored — CI rebuilds them from the pin on a cache miss.
+
+Load-bearing:
+
+- **TDLib artifacts are gitignored** (`libtdlib/.gitignore`: `*.so`, `TdApi.java`, `Client.java`). The only tracked TDLib state is `scripts/tdlib-version.txt`. Every CI job restores the libs from an `actions/cache` keyed on that file's hash, or builds them on a miss (composite action `.github/actions/setup-tdlib`, keyed additionally on `keep-debug` so a stripped gate build and a symbol-carrying release build don't clobber each other).
+- **Signing/creds in secrets** — `KEYSTORE_BASE64` (+ `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`) and `TELEGRAM_API_ID`/`TELEGRAM_API_HASH`, materialised into gitignored `keystore.properties` + `local.properties` by `.github/actions/setup-signing`. **Only** tag / push-to-main / dispatch workflows consume them — GitHub never exposes secrets to fork PRs.
+- **Injection hardening** — every `workflow_dispatch` input is routed through `env:` and validated against a strict allowlist before touching a shell/awk command.
+- **`gh` for releases** — GitHub Releases are cut with the built-in `gh` CLI + `GITHUB_TOKEN`, not a third-party action (smaller supply-chain surface).
