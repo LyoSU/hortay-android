@@ -10,7 +10,9 @@
 #                                          #       upstream ships off master)
 #
 # Env knobs:
-#   ANDROID_NDK_VERSION  — NDK to use inside the container (default: 23.2.8568313)
+#   ANDROID_NDK_VERSION  — NDK to use inside the container (default: 27.2.12479018,
+#                          r27 — matches :libwebm's ndkVersion so both native
+#                          builds share one toolchain)
 #   OPENSSL_VERSION      — OpenSSL to embed (default: openssl-3.5.7, the current
 #                          3.5 LTS line; 1.1.1w is EOL since Sep 2023)
 #   ABIS                 — space-separated ABI list (default: "arm64-v8a x86_64")
@@ -33,7 +35,7 @@ LIBTDLIB_DIR="$REPO_ROOT/libtdlib"
 VERSION_FILE="$REPO_ROOT/scripts/tdlib-version.txt"
 
 TDLIB_REF="${1:-}"
-ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION:-23.2.8568313}"
+ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION:-27.2.12479018}"
 OPENSSL_VERSION="${OPENSSL_VERSION:-openssl-3.5.7}"
 ABIS="${ABIS:-arm64-v8a x86_64}"
 KEEP_DEBUG="${KEEP_DEBUG:-1}"

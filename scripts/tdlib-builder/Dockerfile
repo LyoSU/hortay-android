@@ -6,9 +6,14 @@
 #   3. openssl    — OpenSSL prebuilt (changes when OPENSSL_VERSION bumps)
 #   4. tdlib      — TDLib source + build (changes per TDLIB_REF — the hot path)
 #
-# Default platform is linux/amd64 because the pinned NDK (23.2) has no linux-aarch64
-# host toolchain. Override with --build-arg BUILD_PLATFORM=... if you bump the NDK
-# to a release that ships an aarch64 host (r25+).
+# Build platform is linux/amd64 and must stay that way. The Android NDK ships a
+# host toolchain only for linux-x86_64 — there is NO linux-aarch64 prebuilt clang
+# in ANY NDK release (checked through r27). fetch-sdk / build-openssl run that
+# x86_64 clang directly, so an arm64 build host cannot execute it ("failed to run
+# clang from Android NDK ... linked against glibc"). Do NOT override BUILD_PLATFORM
+# to linux/arm64. On Apple Silicon this means the whole build runs x86_64 under
+# Rosetta/QEMU emulation, which is correct but SLOW — budget hours, not the
+# ~10-30 min a native x86_64 host takes (see scripts/update-tdlib.sh header).
 
 # -----------------------------------------------------------------------------
 ARG BUILD_PLATFORM=linux/amd64
