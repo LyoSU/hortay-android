@@ -6,10 +6,14 @@
 
 ### Added
 - Richly formatted posts now render natively — headings, ordered and checklist lists, tables, collapsible sections, quotes, code blocks, photo collages and swipeable slideshows.
-- Opening a long richly formatted post now loads its full content instead of the feed preview.
+- A long richly formatted post in the feed now fades into a "Read full post" button that opens the whole document.
+
+### Changed
+- Opening a richly formatted post now reads as an article — tuned heading and paragraph spacing, a comfortable text column on wide screens, edge-to-edge images and tables, and full-length media captions.
 
 ### Fixed
 - Long-pressing a post no longer crashes the app when the quick-action labels don't fit the row — the extra actions tuck into a "…" menu instead.
+- The rest of a truncated richly formatted post now loads in place with a brief placeholder and a Retry option if it can't be fetched, instead of appearing with no sign there was more.
 - Tapping a footnote or reference link in a richly formatted post that leads outside Telegram now asks for confirmation first, like every other external link.
 - A richly formatted post edited while you're opening it now keeps the newer version, instead of being replaced by the older copy it was still loading.
 
