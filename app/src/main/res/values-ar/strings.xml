@@ -826,4 +826,8 @@
     </plurals>
     <string name="proxy_active_summary">نشط: %1$s</string>
     <string name="proxy_test_reachable">قابل للوصول</string>
+    <!-- Rich message renderer -->
+    <string name="rich_details_expand">توسيع</string>
+    <string name="rich_details_collapse">طيّ</string>
+    <string name="rich_media_content_description">وسائط</string>
 </resources>

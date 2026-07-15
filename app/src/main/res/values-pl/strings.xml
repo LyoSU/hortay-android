@@ -793,4 +793,8 @@
     </plurals>
     <string name="proxy_active_summary">Aktywne: %1$s</string>
     <string name="proxy_test_reachable">Dostępny</string>
+    <!-- Rich message renderer -->
+    <string name="rich_details_expand">Rozwiń</string>
+    <string name="rich_details_collapse">Zwiń</string>
+    <string name="rich_media_content_description">Multimedia</string>
 </resources>

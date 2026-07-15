@@ -796,4 +796,8 @@
     </plurals>
     <string name="proxy_active_summary">Активен: %1$s</string>
     <string name="proxy_test_reachable">Доступен</string>
+    <!-- Rich message renderer -->
+    <string name="rich_details_expand">Развернуть</string>
+    <string name="rich_details_collapse">Свернуть</string>
+    <string name="rich_media_content_description">Медиа</string>
 </resources>

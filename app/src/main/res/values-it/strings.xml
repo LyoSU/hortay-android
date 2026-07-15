@@ -783,4 +783,8 @@
     </plurals>
     <string name="proxy_active_summary">Attivo: %1$s</string>
     <string name="proxy_test_reachable">Raggiungibile</string>
+    <!-- Rich message renderer -->
+    <string name="rich_details_expand">Espandi</string>
+    <string name="rich_details_collapse">Comprimi</string>
+    <string name="rich_media_content_description">Media</string>
 </resources>
