@@ -22,19 +22,33 @@ import dev.lyo.hortay.data.rich.RichInline
  * [LocalLayoutDirection] for the whole body; code and math content stays LTR internally
  * (handled inside the block composables).
  *
+ * [mode] selects the whole document ([RichMessageMode.Full] — detail / comments-anchor
+ * surfaces) or a bounded feed preview ([RichMessageMode.Preview] — see
+ * [RichDocument.previewProjection]); a preview projects the block list to a short prefix BEFORE
+ * composition so tables / details / slideshows / media past the fold never enter composition.
+ *
  * [onScrollToBlock], when supplied, is invoked with the top-level block index an in-document
- * anchor / reference link targets; without it (or when the target isn't in this document)
+ * anchor / reference link targets; without it (or when the target isn't in the rendered blocks)
  * the link falls back to opening its external URL.
  */
 @Composable
 fun RichMessageBody(
     document: RichDocument,
     modifier: Modifier = Modifier,
+    mode: RichMessageMode = RichMessageMode.Full,
     onScrollToBlock: ((blockIndex: Int) -> Unit)? = null,
 ) {
     val uriHandler = LocalUriHandler.current
+    // Preview projects to a bounded prefix before composition; Full renders every block.
+    val blocks = remember(document, mode) {
+        when (mode) {
+            RichMessageMode.Full -> document.blocks
+            RichMessageMode.Preview -> document.previewProjection()
+        }
+    }
     // name → top-level block index, so an AnchorLink / ReferenceLink can resolve in-document.
-    val registry = remember(document) { buildAnchorRegistry(document) }
+    // Built from the RENDERED blocks so a preview never scrolls to a projected-away target.
+    val registry = remember(blocks) { buildAnchorRegistry(blocks) }
     val anchorTap = remember(registry, onScrollToBlock, uriHandler) {
         { name: String, url: String ->
             val index = registry[normalizeAnchor(name)]
@@ -47,7 +61,7 @@ fun RichMessageBody(
     }
 
     CompositionLocalProvider(LocalRichAnchorTap provides anchorTap) {
-        val body: @Composable () -> Unit = { RichBlocks(document.blocks, path = "b", modifier = modifier) }
+        val body: @Composable () -> Unit = { RichBlocks(blocks, path = "b", modifier = modifier) }
         if (document.isRtl) {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { body() }
         } else {
@@ -59,8 +73,8 @@ fun RichMessageBody(
 private fun normalizeAnchor(name: String): String = name.trim().lowercase()
 
 /** Maps every anchor / reference name reachable inside a top-level block to that block's index. */
-private fun buildAnchorRegistry(document: RichDocument): Map<String, Int> = buildMap {
-    document.blocks.forEachIndexed { index, block ->
+private fun buildAnchorRegistry(blocks: List<RichBlock>): Map<String, Int> = buildMap {
+    blocks.forEachIndexed { index, block ->
         collectAnchorNames(block).forEach { name ->
             val key = normalizeAnchor(name)
             if (key.isNotEmpty()) putIfAbsent(key, index)

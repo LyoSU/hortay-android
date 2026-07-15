@@ -31,6 +31,7 @@ import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.rich.RichMessageBody
+import dev.lyo.hortay.ui.rich.RichMessageMode
 import dev.lyo.hortay.ui.text.ClampedContent
 import dev.lyo.hortay.ui.text.LinkAwareText
 import dev.lyo.hortay.ui.text.LocalShowFullPost
@@ -127,14 +128,14 @@ fun PostBody(
                 // PostsRepository.ensureFullRichMessage).
                 is PostContent.RichMessage ->
                     if (expanded) {
-                        RichMessageBody(content.document)
+                        RichMessageBody(content.document, mode = RichMessageMode.Full)
                     } else {
                         ClampedContent(
                             key = content.document,
                             maxLines = textLimit,
                             style = MaterialTheme.typography.bodyLarge,
                         ) {
-                            RichMessageBody(content.document)
+                            RichMessageBody(content.document, mode = RichMessageMode.Preview)
                         }
                     }
                 is PostContent.Unsupported -> UnsupportedBlock(content)
