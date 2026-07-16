@@ -1,4 +1,4 @@
-package dev.lyo.hortay.ui.rich
+package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,7 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -31,82 +30,53 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
-import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.ui.icons.Symbol
-import dev.lyo.hortay.ui.media.LocalRichAudioController
-import dev.lyo.hortay.ui.media.RichAudioController
-import dev.lyo.hortay.ui.timeline.NonPlayableFileRow
-import dev.lyo.hortay.ui.timeline.formatDuration
+import dev.lyo.hortay.ui.media.AudioPlaybackSession
+import dev.lyo.hortay.ui.media.LocalAudioPlaybackSession
 
 /**
- * Inline audio player row for a rich `pageBlockAudio`. Round play/pause button (download →
- * play folded into the button), title/performer, a linear progress bar and an elapsed / total
- * time readout. Playback is owned by the single-active-source [RichAudioController], so it
- * survives scrolling and starting this track stops any other.
+ * App-wide inline audio / voice-note player row, shared by the regular feed's `AudioBlock` /
+ * `VoiceNoteBlock` and the rich-message audio / voice blocks. A round play/pause button folds
+ * in the download state (idle → download-then-play, in-flight → progress ring, ready →
+ * play/pause); audio shows title + performer with a linear progress bar, a voice note shows a
+ * waveform decoded from TDLib's packed samples. Both show an elapsed / total readout.
  *
- * A block with no resolvable file id falls back to the informational [NonPlayableFileRow]
- * (nothing to download or play).
+ * Playback is owned by the single-active-source [AudioPlaybackSession] (via
+ * [LocalAudioPlaybackSession]), so it survives scrolling the row off-screen and starting this
+ * track stops whatever else was playing — the same session across regular and rich surfaces.
+ *
+ * [onOpenInSource], when non-null, adds a trailing "open in Telegram" affordance (the regular
+ * feed keeps its escape hatch; rich blocks pass null). A [fileId] of null — a rare hydration
+ * path with no resolvable file — degrades to the informational [NonPlayableFileRow].
+ *
+ * @param isVoice selects the voice-note presentation (waveform track, no title line, larger
+ *  container shape) vs the audio presentation (title + performer, linear bar).
  */
 @Composable
-internal fun RichAudioRow(block: RichBlock.Audio) {
-    val fileId = block.fileId
-    if (fileId == null) {
-        NonPlayableFileRow(
-            symbol = "audio_file",
-            primary = block.title.ifBlank { stringResource(R.string.content_audio_fallback) },
-            secondary = block.performer.takeUnless { it.isBlank() }.orEmpty(),
-            onClick = null,
-        )
-        return
-    }
-    RichAudioPlayerRow(
-        fileId = fileId,
-        durationSec = block.durationSec,
-        symbol = "audio_file",
-        title = block.title.ifBlank { stringResource(R.string.content_audio_fallback) },
-        performer = block.performer.takeUnless { it.isBlank() },
-        waveform = null,
-        shape = MaterialTheme.shapes.medium,
-    )
-}
-
-/** Inline voice-note player row — like [RichAudioRow] but with a waveform progress track. */
-@Composable
-internal fun RichVoiceNoteRow(block: RichBlock.VoiceNote) {
-    val fileId = block.fileId
-    if (fileId == null) {
-        NonPlayableFileRow(
-            symbol = "mic",
-            primary = stringResource(R.string.voice_message),
-            secondary = formatDuration(block.durationSec),
-            onClick = null,
-            shape = MaterialTheme.shapes.large,
-        )
-        return
-    }
-    RichAudioPlayerRow(
-        fileId = fileId,
-        durationSec = block.durationSec,
-        symbol = "mic",
-        title = stringResource(R.string.voice_message),
-        performer = null,
-        waveform = block.waveform,
-        shape = MaterialTheme.shapes.large,
-    )
-}
-
-@Composable
-private fun RichAudioPlayerRow(
-    fileId: Int,
+internal fun InlineAudioPlayerRow(
+    fileId: Int?,
     durationSec: Int,
-    symbol: String,
     title: String,
     performer: String?,
     waveform: ByteArray?,
-    shape: Shape,
+    isVoice: Boolean,
+    onOpenInSource: (() -> Unit)?,
 ) {
-    val controller = LocalRichAudioController.current
-    val playback by controller.state.collectAsStateWithLifecycle()
+    val symbol = if (isVoice) "mic" else "audio_file"
+    val shape = if (isVoice) MaterialTheme.shapes.large else MaterialTheme.shapes.medium
+    if (fileId == null) {
+        NonPlayableFileRow(
+            symbol = symbol,
+            primary = title,
+            secondary = if (isVoice) formatDuration(durationSec) else performer.orEmpty(),
+            onClick = onOpenInSource,
+            shape = shape,
+        )
+        return
+    }
+
+    val session = LocalAudioPlaybackSession.current
+    val playback by session.state.collectAsStateWithLifecycle()
     val active = playback?.key == fileId
     val phase = if (active) playback?.phase else null
     val totalMs = durationSec.coerceAtLeast(0) * 1000L
@@ -117,8 +87,8 @@ private fun RichAudioPlayerRow(
     val pauseCd = stringResource(R.string.rich_audio_pause)
     val loadingCd = stringResource(R.string.rich_audio_loading)
     val buttonCd = when (phase) {
-        RichAudioController.Phase.Playing -> pauseCd
-        RichAudioController.Phase.Loading -> loadingCd
+        AudioPlaybackSession.Phase.Playing -> pauseCd
+        AudioPlaybackSession.Phase.Loading -> loadingCd
         else -> playCd
     }
 
@@ -138,17 +108,17 @@ private fun RichAudioPlayerRow(
                 .clickable(
                     onClickLabel = buttonCd,
                     role = Role.Button,
-                    onClick = { controller.toggle(fileId, durationSec) },
+                    onClick = { session.toggle(fileId, durationSec) },
                 ),
             contentAlignment = Alignment.Center,
         ) {
             when (phase) {
-                RichAudioController.Phase.Loading -> CircularProgressIndicator(
+                AudioPlaybackSession.Phase.Loading -> CircularProgressIndicator(
                     modifier = Modifier.size(22.dp),
                     strokeWidth = 2.dp,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
-                RichAudioController.Phase.Playing -> Symbol(
+                AudioPlaybackSession.Phase.Playing -> Symbol(
                     name = "pause",
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     size = 24.dp,
@@ -167,7 +137,7 @@ private fun RichAudioPlayerRow(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (symbol == "audio_file") {
+            if (!isVoice) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
@@ -176,9 +146,9 @@ private fun RichAudioPlayerRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (waveform != null) {
-                val bars = remember(waveform) { decodeWaveform(waveform) }
-                RichWaveform(
+            if (isVoice) {
+                val bars = remember(waveform) { waveform?.let(::decodeWaveform) ?: IntArray(0) }
+                AudioWaveform(
                     bars = bars,
                     fraction = fraction,
                     modifier = Modifier.fillMaxWidth().height(24.dp),
@@ -209,6 +179,23 @@ private fun RichAudioPlayerRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
+        }
+        if (onOpenInSource != null) {
+            val openCd = stringResource(R.string.content_open_in_telegram)
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable(onClickLabel = openCd, role = Role.Button, onClick = onOpenInSource),
+                contentAlignment = Alignment.Center,
+            ) {
+                Symbol(
+                    name = "open_in_new",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 18.dp,
+                )
             }
         }
     }

@@ -362,11 +362,12 @@ class AppGraph(context: Context) {
     // scroll past video cards essentially free at the player layer.
     val exoPlayerPool: ExoPlayerPool = ExoPlayerPool(context)
 
-    // Single-active-source controller for inline rich-message audio / voice-note playback.
-    // Owns one pooled audio ExoPlayer that outlives the player rows, so playback survives
-    // scrolling; cleared on logout (session-scoped state hard rule).
-    val richAudioController: dev.lyo.hortay.ui.media.RichAudioController =
-        dev.lyo.hortay.ui.media.RichAudioController(exoPlayerPool, mediaCache)
+    // App-wide single-active-source session for inline audio / voice-note playback, shared
+    // by the regular feed's Audio/VoiceNote posts and the rich audio/voice blocks. Owns one
+    // pooled audio ExoPlayer that outlives the player rows, so playback survives scrolling;
+    // cleared on logout (session-scoped state hard rule).
+    val audioPlaybackSession: dev.lyo.hortay.ui.media.AudioPlaybackSession =
+        dev.lyo.hortay.ui.media.AudioPlaybackSession(exoPlayerPool, mediaCache)
             .also { it.bindLogoutClear(tdClient.loggedOut, appScope) }
 
     // Decoded-frame LRU cache for VP9+alpha WebM animations (stickers, custom emoji).

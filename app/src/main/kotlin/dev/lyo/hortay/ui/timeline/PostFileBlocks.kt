@@ -55,25 +55,27 @@ internal fun DocumentBlock(
 
 @Composable
 internal fun AudioBlock(content: PostContent.Audio, onOpenInSource: () -> Unit) {
-    NonPlayableFileRow(
-        symbol = "audio_file",
-        primary = content.title.ifBlank { stringResource(R.string.content_audio_fallback) },
-        secondary = listOfNotNull(
-            content.performer.takeUnless { it.isBlank() },
-            formatDuration(content.durationSec),
-        ).joinToString(" · "),
-        onClick = onOpenInSource,
+    InlineAudioPlayerRow(
+        fileId = content.fileId,
+        durationSec = content.durationSec,
+        title = content.title.ifBlank { stringResource(R.string.content_audio_fallback) },
+        performer = content.performer.takeUnless { it.isBlank() },
+        waveform = null,
+        isVoice = false,
+        onOpenInSource = onOpenInSource,
     )
 }
 
 @Composable
 internal fun VoiceNoteBlock(content: PostContent.VoiceNote, onOpenInSource: () -> Unit) {
-    NonPlayableFileRow(
-        symbol = "mic",
-        primary = stringResource(R.string.voice_message),
-        secondary = formatDuration(content.durationSec),
-        onClick = onOpenInSource,
-        shape = MaterialTheme.shapes.large,
+    InlineAudioPlayerRow(
+        fileId = content.fileId,
+        durationSec = content.durationSec,
+        title = stringResource(R.string.voice_message),
+        performer = null,
+        waveform = content.waveform,
+        isVoice = true,
+        onOpenInSource = onOpenInSource,
     )
 }
 

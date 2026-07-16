@@ -1,4 +1,4 @@
-package dev.lyo.hortay.ui.rich
+package dev.lyo.hortay.ui.timeline
 
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test
  * Coverage for [decodeWaveform] — Telegram's 5-bit LSB-first `voiceNote.waveform` packing.
  * Values are hand-computed against the upstream reference unpacking loop.
  */
-class RichWaveformTest {
+class AudioWaveformTest {
 
     @Test
     fun `empty input yields empty output`() {

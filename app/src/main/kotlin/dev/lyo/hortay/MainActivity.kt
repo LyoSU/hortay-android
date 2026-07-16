@@ -23,7 +23,7 @@ import dev.lyo.hortay.ui.media.LocalCustomEmoji
 import dev.lyo.hortay.ui.media.LocalCustomEmojiAnimator
 import dev.lyo.hortay.ui.media.LocalExoPlayerPool
 import dev.lyo.hortay.ui.media.LocalMediaCache
-import dev.lyo.hortay.ui.media.LocalRichAudioController
+import dev.lyo.hortay.ui.media.LocalAudioPlaybackSession
 import dev.lyo.hortay.ui.media.LocalStickerOutline
 import dev.lyo.hortay.ui.media.LocalWebHttpClient
 import dev.lyo.hortay.ui.media.LocalWebmClock
@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
                     LocalCustomEmojiAnimator provides graph.customEmojiAnimator,
                     LocalStickerOutline provides graph.stickerOutline,
                     LocalExoPlayerPool provides graph.exoPlayerPool,
-                    LocalRichAudioController provides graph.richAudioController,
+                    LocalAudioPlaybackSession provides graph.audioPlaybackSession,
                     LocalWebHttpClient provides graph.webHttpClient,
                     LocalWebmFrameCache provides graph.webmFrameCache,
                     LocalWebmClock provides webmClock,

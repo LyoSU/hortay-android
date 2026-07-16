@@ -8,7 +8,7 @@
 - Richly formatted posts now render natively — headings, ordered and checklist lists, tables, collapsible sections, quotes, code blocks, photo collages and swipeable slideshows.
 - A long richly formatted post in the feed now fades into a "Read full post" button that opens the whole document.
 - A wide table in the feed now shows a compact preview with a "View full table" button that opens it fullscreen to pan, pinch-zoom, and copy as tab-separated text.
-- Audio and voice messages inside richly formatted posts now play inline, with a progress bar and a waveform for voice.
+- Audio tracks and voice messages now play inline in the feed — a play button, a progress bar, and a waveform for voice — instead of only opening in Telegram.
 - A map location inside a richly formatted post now opens in your maps app when tapped.
 
 ### Changed

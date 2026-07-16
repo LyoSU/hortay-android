@@ -24,10 +24,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Process-singleton controller for inline rich-message audio / voice-note playback.
+ * Process-singleton session holder for inline audio / voice-note playback, shared by
+ * BOTH consumers app-wide: the regular feed's Audio / VoiceNote posts
+ * ([dev.lyo.hortay.ui.timeline.InlineAudioPlayerRow] via `AudioBlock` / `VoiceNoteBlock`)
+ * and the rich-message audio / voice blocks. There is one player and one session, so the
+ * two surfaces can never talk over each other.
  *
  * Exactly ONE audio source plays at a time across the whole app: starting a new track
- * stops the previous one. That invariant is structural, not policed — the controller
+ * stops the previous one. That invariant is structural, not policed — the session
  * owns a single [ExoPlayer] (audio-capable, acquired from the shared [ExoPlayerPool])
  * and swaps its media item per track. The player OUTLIVES the row composables that drive
  * it, so playback survives scrolling the source row off-screen; a row re-attaches to the
@@ -41,7 +45,7 @@ import kotlinx.coroutines.launch
  * a fresh sign-in never inherits the previous account's playing track or its player.
  */
 @Stable
-class RichAudioController(
+class AudioPlaybackSession(
     private val pool: ExoPlayerPool,
     private val cache: MediaCache,
 ) {

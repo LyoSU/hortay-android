@@ -1,4 +1,4 @@
-package dev.lyo.hortay.ui.rich
+package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.material3.MaterialTheme
@@ -45,7 +45,7 @@ internal fun decodeWaveform(bytes: ByteArray): IntArray {
  * flat centred baseline when [bars] is empty (TDLib shipped no waveform).
  */
 @Composable
-internal fun RichWaveform(
+internal fun AudioWaveform(
     bars: IntArray,
     fraction: Float,
     modifier: Modifier = Modifier,
