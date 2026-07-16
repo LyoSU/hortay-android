@@ -23,6 +23,7 @@ import dev.lyo.hortay.data.rich.RichInline
 import dev.lyo.hortay.data.rich.RichPlainText
 import dev.lyo.hortay.ui.text.LocalLinkConfirm
 import dev.lyo.hortay.ui.text.Unhandled
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -58,42 +59,60 @@ fun RichMessageBody(
     document: RichDocument,
     modifier: Modifier = Modifier,
     mode: RichMessageMode = RichMessageMode.Reading,
+    // FeedPreview only: the pre-computed bounded prefix. [RichFeedPreview] already projects the
+    // document to decide its "read full" affordance, so it threads the result in here and the body
+    // never projects a second time. Null (a standalone FeedPreview / test) projects here; ignored
+    // in Reading, which always renders every block.
+    projectedBlocks: ImmutableList<RichBlock>? = null,
 ) {
+    val blocks = remember(document, mode, projectedBlocks) {
+        when (mode) {
+            RichMessageMode.Reading -> document.blocks
+            RichMessageMode.FeedPreview -> projectedBlocks ?: document.previewProjection()
+        }
+    }
+    // The two modes diverge on machinery, not just layout: Reading builds in-document navigation
+    // (registry / requesters / controller / details-expansion / footnote sheet); FeedPreview builds
+    // none of it. Split into two composables — not a conditional `remember` in one — so the
+    // always-mounted feed never allocates the Reading state (finding: FeedPreview was paying for a
+    // controller + scope it can't use), and so a hypothetical mode flip cleanly rebuilds.
+    when (mode) {
+        RichMessageMode.Reading -> ReadingRichBody(document, blocks, modifier)
+        RichMessageMode.FeedPreview -> PreviewRichBody(document, blocks, modifier)
+    }
+}
+
+/**
+ * Reading-surface body: builds the in-document navigation machinery — the anchor registry, one
+ * [BringIntoViewRequester] per target block, the [RichAnchorController], the shared
+ * [RichDetailsExpansion], and the footnote sheet — and renders the FULL document. All of it is
+ * allocated ONLY here; a [PreviewRichBody] on the always-mounted feed carries none of it.
+ */
+@Composable
+private fun ReadingRichBody(document: RichDocument, blocks: List<RichBlock>, modifier: Modifier) {
     val uriHandler = LocalUriHandler.current
     val confirmMaskedLink = LocalLinkConfirm.current
     val haptics = LocalHapticFeedback.current
-    // FeedPreview projects to a bounded prefix before composition; Reading renders every block.
-    val blocks = remember(document, mode) {
-        when (mode) {
-            RichMessageMode.Reading -> document.blocks
-            RichMessageMode.FeedPreview -> document.previewProjection()
-        }
-    }
-    val reading = mode == RichMessageMode.Reading
 
     // name → top-level block target, so an AnchorLink / ReferenceLink can resolve in-document.
-    // Built from the RENDERED blocks so a preview never scrolls to a projected-away target.
     val registry = remember(blocks) { buildAnchorRegistry(blocks) }
 
     // Live expansion controller for the whole document — auto-opens a COLLAPSED details section an
-    // in-document anchor lands inside. Dormant (opens nothing) until [RichAnchorController.navigate]
-    // requests a path.
+    // in-document anchor lands inside. Dormant until [RichAnchorController.navigate] requests a path.
     val detailsExpansion = remember { RichDetailsExpansion() }
 
-    // One requester per top-level block that is an anchor target. Created for every mode (cheap),
-    // but only wired into the tree + tap dispatch in Reading — a FeedPreview has no scroll parent.
+    // One requester per top-level block that is an anchor target.
     val targetIndices = remember(registry) { registry.values.map { it.blockIndex }.toSet() }
     val requesters = remember(targetIndices) { targetIndices.associateWith { BringIntoViewRequester() } }
     val scope = rememberCoroutineScope()
     val controller = remember(requesters, detailsExpansion, scope) {
         RichAnchorController(requesters, detailsExpansion, scope)
     }
-    val activeController = if (reading) controller else null
 
     // A footnote / reference marker whose text is resolvable in-document opens this sheet; an
     // anchor marker scrolls; an external-only marker falls back to the masked-link confirmation.
     val referenceSheet = remember { mutableStateOf<RichReferenceSheetData?>(null) }
-    val anchorTap = remember(blocks, registry, controller, reading, uriHandler, confirmMaskedLink, haptics) {
+    val anchorTap = remember(blocks, registry, controller, uriHandler, confirmMaskedLink, haptics) {
         { kind: RichLinkKind, name: String, url: String ->
             // Same anti-phishing path as a masked RichInline.Url: the confirm hook resolves the
             // destination and surfaces the sheet only for genuinely external targets; the sentinel
@@ -103,7 +122,7 @@ fun RichMessageBody(
             }
             when (kind) {
                 RichLinkKind.Reference -> {
-                    val excerpt = if (reading) findReferenceExcerpt(blocks, name) else null
+                    val excerpt = findReferenceExcerpt(blocks, name)
                     val target = registry[normalizeAnchor(name)]
                     when {
                         excerpt != null && target != null -> {
@@ -115,7 +134,7 @@ fun RichMessageBody(
                         else -> Unit
                     }
                 }
-                RichLinkKind.Anchor -> when (val action = resolveAnchorTap(name, url, registry, canScroll = reading)) {
+                RichLinkKind.Anchor -> when (val action = resolveAnchorTap(name, url, registry, canScroll = true)) {
                     is AnchorTapAction.Scroll -> {
                         haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                         controller.navigate(action.target)
@@ -128,15 +147,76 @@ fun RichMessageBody(
         }
     }
 
+    RichBodyScaffold(
+        document = document,
+        blocks = blocks,
+        modifier = modifier,
+        reading = true,
+        anchorTap = anchorTap,
+        detailsExpansion = detailsExpansion,
+        controller = controller,
+    )
+
+    referenceSheet.value?.let { data ->
+        RichReferenceSheet(
+            data = data,
+            onGoToReference = { controller.navigate(it) },
+            onDismiss = { referenceSheet.value = null },
+        )
+    }
+}
+
+/**
+ * Feed-preview body: a bounded prefix with NO scroll parent, so an [RichInline.AnchorLink] /
+ * [RichInline.ReferenceLink] tap can only fall back to opening its external URL — routed through
+ * [LocalLinkConfirm] exactly like a masked [RichInline.Url], so an internal-looking footnote can't
+ * silently open an external phishing URL. Builds none of the Reading navigation machinery.
+ */
+@Composable
+private fun PreviewRichBody(document: RichDocument, blocks: List<RichBlock>, modifier: Modifier) {
+    val uriHandler = LocalUriHandler.current
+    val confirmMaskedLink = LocalLinkConfirm.current
+    val anchorTap = remember(uriHandler, confirmMaskedLink) {
+        { _: RichLinkKind, _: String, url: String ->
+            if (url.isNotBlank()) {
+                if (confirmMaskedLink === Unhandled) runCatching { uriHandler.openUri(url) } else confirmMaskedLink(url)
+            }
+            Unit
+        }
+    }
+    RichBodyScaffold(
+        document = document,
+        blocks = blocks,
+        modifier = modifier,
+        reading = false,
+        anchorTap = anchorTap,
+        detailsExpansion = null,
+        controller = null,
+    )
+}
+
+/**
+ * Shared body for both modes: provides the rich CompositionLocals, hosts the fullscreen table
+ * viewer a compact feed-preview table escalates to (a Dialog, so one host per message escapes to
+ * the window regardless of feed position), applies the RTL direction flip for an RTL document, and
+ * stacks the blocks. [detailsExpansion] / [controller] are null off the reading surface.
+ */
+@Composable
+private fun RichBodyScaffold(
+    document: RichDocument,
+    blocks: List<RichBlock>,
+    modifier: Modifier,
+    reading: Boolean,
+    anchorTap: (RichLinkKind, String, String) -> Unit,
+    detailsExpansion: RichDetailsExpansion?,
+    controller: RichAnchorController?,
+) {
     CompositionLocalProvider(
         LocalRichAnchorTap provides anchorTap,
         LocalRichReading provides reading,
         LocalRichDetailsExpansion provides detailsExpansion,
-        LocalRichAnchorController provides activeController,
+        LocalRichAnchorController provides controller,
     ) {
-        // Hosts the fullscreen table viewer a compact feed-preview table escalates to, and
-        // provides LocalTableViewer to the body below. The overlay is a Dialog, so a single host
-        // per rich message is enough — it escapes to the window regardless of feed position.
         RichTableViewerHost(
             layoutDirection = if (document.isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
         ) {
@@ -149,14 +229,6 @@ fun RichMessageBody(
                 body()
             }
         }
-    }
-
-    referenceSheet.value?.let { data ->
-        RichReferenceSheet(
-            data = data,
-            onGoToReference = { controller.navigate(it) },
-            onDismiss = { referenceSheet.value = null },
-        )
     }
 }
 

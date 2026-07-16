@@ -39,10 +39,12 @@ internal fun RichFeedPreview(
     clampStyle: TextStyle,
     modifier: Modifier = Modifier,
 ) {
-    // Reference inequality: previewProjection returns the SAME list instance when nothing is
-    // dropped, so `!==` is a cheap, allocation-free "blocks were trimmed" test.
-    val projectedOrPartial = remember(document) {
-        !document.isFull || document.previewProjection() !== document.blocks
+    // Project once here and thread it into the body, so the document isn't walked twice per card
+    // (the body would otherwise re-project). Reference inequality: previewProjection returns the
+    // SAME list instance when nothing is dropped, so `!==` is a cheap "blocks were trimmed" test.
+    val projected = remember(document) { document.previewProjection() }
+    val projectedOrPartial = remember(document, projected) {
+        !document.isFull || projected !== document.blocks
     }
     val fadeColor = MaterialTheme.colorScheme.background
     ClampedContent(
@@ -52,7 +54,14 @@ internal fun RichFeedPreview(
         fadeColor = fadeColor,
         forceAffordance = projectedOrPartial,
         affordance = { onExpand -> RichReadFullButton(onClick = onExpand) },
-        content = { RichMessageBody(document, modifier = modifier, mode = RichMessageMode.FeedPreview) },
+        content = {
+            RichMessageBody(
+                document,
+                modifier = modifier,
+                mode = RichMessageMode.FeedPreview,
+                projectedBlocks = projected,
+            )
+        },
     )
 }
 
