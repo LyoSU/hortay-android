@@ -776,4 +776,17 @@
     <string name="rich_audio_pause">توقف</string>
     <string name="rich_audio_loading">در حال بارگذاری</string>
     <string name="rich_map_open">باز کردن در نقشه</string>
+    <string name="video_control_play">پخش</string>
+    <string name="video_control_pause">توقف</string>
+    <string name="video_control_mute">بی‌صدا کردن</string>
+    <string name="video_control_unmute">باصدا کردن</string>
+    <string name="media_cancel_download">لغو بارگیری</string>
+    <string name="post_badge_scam">کلاهبرداری</string>
+    <string name="post_badge_fake">جعلی</string>
+    <string name="user_profile_copy_handle">کپی نام کاربری</string>
+    <string name="feed_refresh_action">به‌روزرسانی فید</string>
+    <string name="media_desc_photo">عکس</string>
+    <string name="media_desc_video">ویدیو</string>
+    <string name="media_desc_gif">GIF</string>
+    <string name="media_desc_video_note">پیام ویدیویی</string>
 </resources>

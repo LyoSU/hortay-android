@@ -782,4 +782,17 @@
     <string name="rich_audio_pause">Pause</string>
     <string name="rich_audio_loading">Wird geladen</string>
     <string name="rich_map_open">In Karten öffnen</string>
+    <string name="video_control_play">Wiedergeben</string>
+    <string name="video_control_pause">Pause</string>
+    <string name="video_control_mute">Stummschalten</string>
+    <string name="video_control_unmute">Ton einschalten</string>
+    <string name="media_cancel_download">Download abbrechen</string>
+    <string name="post_badge_scam">BETRUG</string>
+    <string name="post_badge_fake">FAKE</string>
+    <string name="user_profile_copy_handle">Benutzernamen kopieren</string>
+    <string name="feed_refresh_action">Feed aktualisieren</string>
+    <string name="media_desc_photo">Foto</string>
+    <string name="media_desc_video">Video</string>
+    <string name="media_desc_gif">GIF</string>
+    <string name="media_desc_video_note">Videonachricht</string>
 </resources>

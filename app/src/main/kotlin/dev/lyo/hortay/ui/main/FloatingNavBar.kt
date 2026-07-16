@@ -4,9 +4,10 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalFloatingToolbar
@@ -19,6 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
@@ -63,13 +67,20 @@ fun FloatingNavBar(
         // bar. Horizontal 8 dp matches the previous custom Surface inset.
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
         content = {
-            NavTab.entries.forEach { tab ->
-                NavTabButton(
-                    tab = tab,
-                    selected = tab == selected,
-                    onClick = { onSelect(tab) },
-                    modifier = Modifier.weight(1f),
-                )
+            // `HorizontalFloatingToolbar`'s content Row is framework-owned — we can't
+            // reach it to attach `selectableGroup()`, so the tabs get their own nested
+            // Row carrying that semantics grouping (TalkBack announces "N of M" within
+            // a selectable group). `fillMaxWidth()` on the sole child reproduces the
+            // even weighted split the toolbar's own Row gave each tab directly.
+            Row(modifier = Modifier.fillMaxWidth().selectableGroup()) {
+                NavTab.entries.forEach { tab ->
+                    NavTabButton(
+                        tab = tab,
+                        selected = tab == selected,
+                        onClick = { onSelect(tab) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         },
     )
@@ -110,15 +121,22 @@ private fun NavTabButton(
         label = "nav-fg",
     )
     val shape = RoundedCornerShape(cornerRadius)
+    // Accessible name lives on the container (not the inner Symbol) so TalkBack
+    // reads it together with the `selectable` role/state announced below —
+    // "<label>, tab, selected" in one merged node instead of an unnamed tab
+    // plus a separately-announced icon.
+    val label = stringResource(tab.labelRes)
     Box(
         modifier = modifier
             .padding(horizontal = 4.dp)
             .heightIn(min = 48.dp)
             .clip(shape)
             .background(container, shape)
-            .clickable(
+            .selectable(
+                selected = selected,
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
+                role = Role.Tab,
                 onClick = {
                     // Discrete destination switch (or home re-tap → scroll-to-top) —
                     // one ContextClick per deliberate tab press. Fires before the
@@ -127,6 +145,7 @@ private fun NavTabButton(
                     onClick()
                 },
             )
+            .semantics { contentDescription = label }
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -150,7 +169,7 @@ private fun NavTabButton(
         ) { isFilled ->
             Symbol(
                 name = tab.symbol,
-                contentDescription = stringResource(tab.labelRes),
+                contentDescription = null,
                 tint = content,
                 size = 24.dp,
                 filled = isFilled,

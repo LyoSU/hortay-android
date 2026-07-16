@@ -797,4 +797,17 @@
     <string name="rich_audio_pause">Pause</string>
     <string name="rich_audio_loading">Chargement</string>
     <string name="rich_map_open">Ouvrir dans Plans</string>
+    <string name="video_control_play">Lecture</string>
+    <string name="video_control_pause">Pause</string>
+    <string name="video_control_mute">Couper le son</string>
+    <string name="video_control_unmute">Réactiver le son</string>
+    <string name="media_cancel_download">Annuler le téléchargement</string>
+    <string name="post_badge_scam">ARNAQUE</string>
+    <string name="post_badge_fake">FAUX</string>
+    <string name="user_profile_copy_handle">Copier le nom d\'utilisateur</string>
+    <string name="feed_refresh_action">Actualiser le fil</string>
+    <string name="media_desc_photo">Photo</string>
+    <string name="media_desc_video">Vidéo</string>
+    <string name="media_desc_gif">GIF</string>
+    <string name="media_desc_video_note">Message vidéo</string>
 </resources>

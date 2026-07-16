@@ -33,7 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -154,7 +156,14 @@ private fun ArrivalsPill(
         contentColor = MaterialTheme.colorScheme.onPrimary,
         tonalElevation = 4.dp,
         shadowElevation = 6.dp,
-        modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = label },
+        // Polite live region: this pill only exists while `pendingCount > 0` (see
+        // `FeedFloatingControl`'s `AnimatedVisibility`), so its very appearance IS
+        // the "new posts arrived" announcement — TalkBack users get the same signal
+        // sighted users get from the pill sliding into view.
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            contentDescription = label
+            liveRegion = LiveRegionMode.Polite
+        },
     ) {
         Row(
             modifier = Modifier.padding(start = 8.dp, end = 18.dp, top = 8.dp, bottom = 8.dp),

@@ -842,4 +842,17 @@
     <string name="rich_audio_pause">إيقاف مؤقت</string>
     <string name="rich_audio_loading">جارٍ التحميل</string>
     <string name="rich_map_open">فتح في الخرائط</string>
+    <string name="video_control_play">تشغيل</string>
+    <string name="video_control_pause">إيقاف مؤقت</string>
+    <string name="video_control_mute">كتم الصوت</string>
+    <string name="video_control_unmute">إلغاء كتم الصوت</string>
+    <string name="media_cancel_download">إلغاء التنزيل</string>
+    <string name="post_badge_scam">احتيال</string>
+    <string name="post_badge_fake">مزيف</string>
+    <string name="user_profile_copy_handle">نسخ اسم المستخدم</string>
+    <string name="feed_refresh_action">تحديث الموجز</string>
+    <string name="media_desc_photo">صورة</string>
+    <string name="media_desc_video">فيديو</string>
+    <string name="media_desc_gif">GIF</string>
+    <string name="media_desc_video_note">رسالة فيديو</string>
 </resources>

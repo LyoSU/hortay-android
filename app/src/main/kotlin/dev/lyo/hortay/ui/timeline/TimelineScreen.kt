@@ -18,7 +18,10 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.main.BrandRow
@@ -1530,11 +1533,24 @@ fun TimelineScreen(
             // across pull-to-refresh, auth submit, comments thread load, and
             // settings clear-cache.
             val pullState = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
+            // The pull gesture itself is invisible to accessibility services — TalkBack
+            // users have no way to trigger a drag. Exposing the same `onRefresh` body as
+            // a custom action surfaces "Refresh feed" in the TalkBack action menu.
+            val refreshActionLabel = stringResource(R.string.feed_refresh_action)
             PullToRefreshBox(
                 isRefreshing = refreshing,
                 onRefresh = vm::refresh,
                 state = pullState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .semantics {
+                        customActions = listOf(
+                            CustomAccessibilityAction(label = refreshActionLabel) {
+                                vm.refresh()
+                                true
+                            },
+                        )
+                    },
                 indicator = {
                     // Custom expressive indicator (I1) — morphs through
                     // [HortayExpressive.LoadingPolygons] with a threshold-crossed

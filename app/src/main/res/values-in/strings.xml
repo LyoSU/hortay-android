@@ -763,4 +763,17 @@
     <string name="rich_audio_pause">Jeda</string>
     <string name="rich_audio_loading">Memuat</string>
     <string name="rich_map_open">Buka di peta</string>
+    <string name="video_control_play">Putar</string>
+    <string name="video_control_pause">Jeda</string>
+    <string name="video_control_mute">Bisukan</string>
+    <string name="video_control_unmute">Bunyikan</string>
+    <string name="media_cancel_download">Batalkan unduhan</string>
+    <string name="post_badge_scam">PENIPUAN</string>
+    <string name="post_badge_fake">PALSU</string>
+    <string name="user_profile_copy_handle">Salin nama pengguna</string>
+    <string name="feed_refresh_action">Segarkan feed</string>
+    <string name="media_desc_photo">Foto</string>
+    <string name="media_desc_video">Video</string>
+    <string name="media_desc_gif">GIF</string>
+    <string name="media_desc_video_note">Pesan video</string>
 </resources>

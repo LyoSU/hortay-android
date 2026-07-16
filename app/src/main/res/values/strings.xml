@@ -813,4 +813,19 @@
     <string name="rich_audio_pause">Pause</string>
     <string name="rich_audio_loading">Loading</string>
     <string name="rich_map_open">Open in maps</string>
+    <!-- Accessibility names for custom media controls, localized status badges,
+         feed refresh accessibility action and generic media descriptions. -->
+    <string name="video_control_play">Play</string>
+    <string name="video_control_pause">Pause</string>
+    <string name="video_control_mute">Mute</string>
+    <string name="video_control_unmute">Unmute</string>
+    <string name="media_cancel_download">Cancel download</string>
+    <string name="post_badge_scam">SCAM</string>
+    <string name="post_badge_fake">FAKE</string>
+    <string name="user_profile_copy_handle">Copy username</string>
+    <string name="feed_refresh_action">Refresh feed</string>
+    <string name="media_desc_photo">Photo</string>
+    <string name="media_desc_video">Video</string>
+    <string name="media_desc_gif">GIF</string>
+    <string name="media_desc_video_note">Video message</string>
 </resources>

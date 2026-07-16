@@ -193,6 +193,13 @@ internal fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Bo
         unplayable -> UNPLAYABLE_VIDEO_BLUR_RADIUS
         else -> 0.dp
     }
+    // Media-kind description for the primary post image — resolved once here
+    // rather than per-call since it only depends on the sealed [AlbumItem] type.
+    val mediaDescription = when (item) {
+        is AlbumItem.Photo -> stringResource(R.string.media_desc_photo)
+        is AlbumItem.Video -> stringResource(R.string.media_desc_video)
+        is AlbumItem.Animation -> stringResource(R.string.media_desc_gif)
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -205,7 +212,7 @@ internal fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Bo
         // RenderEffect (no-op on pre-S, where the shimmer dim alone obscures the image).
         TdMediaImage(
             media = item.media,
-            contentDescription = null,
+            contentDescription = mediaDescription,
             showProgress = !(autoplayVideo || autoplayAnimation),
             modifier = Modifier
                 .fillMaxSize()
@@ -446,7 +453,7 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
         // stack on top. When the spoiler is up, blur the still poster too.
         TdMediaImage(
             media = content.media,
-            contentDescription = null,
+            contentDescription = stringResource(R.string.media_desc_gif),
             showProgress = !revealed,
             modifier = Modifier
                 .fillMaxSize()

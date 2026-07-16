@@ -124,7 +124,7 @@ internal fun VideoNotePlayerBubble(
         content.thumb?.let {
             TdMediaImage(
                 media = it,
-                contentDescription = null,
+                contentDescription = stringResource(R.string.media_desc_video_note),
                 showProgress = false,
                 modifier = Modifier.fillMaxSize(),
             )

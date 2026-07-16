@@ -777,4 +777,17 @@
     <string name="rich_audio_pause">Duraklat</string>
     <string name="rich_audio_loading">Yükleniyor</string>
     <string name="rich_map_open">Haritalarda aç</string>
+    <string name="video_control_play">Oynat</string>
+    <string name="video_control_pause">Duraklat</string>
+    <string name="video_control_mute">Sesi kapat</string>
+    <string name="video_control_unmute">Sesi aç</string>
+    <string name="media_cancel_download">İndirmeyi iptal et</string>
+    <string name="post_badge_scam">DOLANDIRICILIK</string>
+    <string name="post_badge_fake">SAHTE</string>
+    <string name="user_profile_copy_handle">Kullanıcı adını kopyala</string>
+    <string name="feed_refresh_action">Akışı yenile</string>
+    <string name="media_desc_photo">Fotoğraf</string>
+    <string name="media_desc_video">Video</string>
+    <string name="media_desc_gif">GIF</string>
+    <string name="media_desc_video_note">Görüntülü mesaj</string>
 </resources>

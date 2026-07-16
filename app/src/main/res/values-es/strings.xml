@@ -802,4 +802,17 @@
     <string name="rich_audio_pause">Pausar</string>
     <string name="rich_audio_loading">Cargando</string>
     <string name="rich_map_open">Abrir en mapas</string>
+    <string name="video_control_play">Reproducir</string>
+    <string name="video_control_pause">Pausa</string>
+    <string name="video_control_mute">Silenciar</string>
+    <string name="video_control_unmute">Activar sonido</string>
+    <string name="media_cancel_download">Cancelar descarga</string>
+    <string name="post_badge_scam">ESTAFA</string>
+    <string name="post_badge_fake">FALSO</string>
+    <string name="user_profile_copy_handle">Copiar nombre de usuario</string>
+    <string name="feed_refresh_action">Actualizar el feed</string>
+    <string name="media_desc_photo">Foto</string>
+    <string name="media_desc_video">Vídeo</string>
+    <string name="media_desc_gif">GIF</string>
+    <string name="media_desc_video_note">Videomensaje</string>
 </resources>

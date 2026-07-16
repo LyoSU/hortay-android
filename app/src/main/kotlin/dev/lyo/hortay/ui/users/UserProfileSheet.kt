@@ -27,6 +27,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +43,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -273,8 +275,12 @@ private fun ProfileHero(
                 style = MaterialTheme.typography.labelLarge,
                 color = onCover.copy(alpha = 0.85f),
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable { copyHandle(context, handle) }
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = stringResource(R.string.user_profile_copy_handle),
+                    ) { copyHandle(context, handle) }
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
         }
@@ -465,12 +471,12 @@ private fun VerificationGlyph(v: SenderVerification, tint: Color = MaterialTheme
             size = 18.dp,
         )
         SenderVerification.Scam -> Chip(
-            label = "SCAM",
+            label = stringResource(R.string.post_badge_scam),
             tint = MaterialTheme.colorScheme.errorContainer,
             textColor = MaterialTheme.colorScheme.onErrorContainer,
         )
         SenderVerification.Fake -> Chip(
-            label = "FAKE",
+            label = stringResource(R.string.post_badge_fake),
             tint = MaterialTheme.colorScheme.tertiaryContainer,
             textColor = MaterialTheme.colorScheme.onTertiaryContainer,
         )

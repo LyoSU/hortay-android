@@ -668,11 +668,11 @@ private fun VerificationBadge(verification: SenderVerification) {
             size = 16.dp,
         )
         SenderVerification.Scam -> WarningPill(
-            label = "SCAM",
+            label = stringResource(R.string.post_badge_scam),
             color = MaterialTheme.colorScheme.error,
         )
         SenderVerification.Fake -> WarningPill(
-            label = "FAKE",
+            label = stringResource(R.string.post_badge_fake),
             color = MaterialTheme.colorScheme.tertiary,
         )
     }

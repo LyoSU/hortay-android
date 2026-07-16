@@ -43,9 +43,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.MorphShape
@@ -324,7 +327,7 @@ private fun CenterPlayPauseButton(
             .size(72.dp)
             .clip(liveShape)
             .background(Color.Black.copy(alpha = 0.55f))
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         // Crossfade the glyph so play_arrow ↔ pause swap reads as a smooth
@@ -337,7 +340,11 @@ private fun CenterPlayPauseButton(
         ) { playing ->
             Symbol(
                 name = if (playing) "pause" else "play_arrow",
-                contentDescription = if (playing) "pause" else "play",
+                contentDescription = if (playing) {
+                    stringResource(R.string.video_control_pause)
+                } else {
+                    stringResource(R.string.video_control_play)
+                },
                 tint = Color.White,
                 size = 36.dp,
             )
@@ -427,7 +434,11 @@ private fun BottomBar(
                 ) { isMuted ->
                     Symbol(
                         name = if (isMuted) "volume_off" else "volume_up",
-                        contentDescription = if (isMuted) "unmute" else "mute",
+                        contentDescription = if (isMuted) {
+                            stringResource(R.string.video_control_unmute)
+                        } else {
+                            stringResource(R.string.video_control_mute)
+                        },
                         tint = Color.White,
                         size = 20.dp,
                     )

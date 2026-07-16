@@ -816,4 +816,17 @@
     <string name="rich_audio_pause">Пауза</string>
     <string name="rich_audio_loading">Завантаження</string>
     <string name="rich_map_open">Відкрити в картах</string>
+    <string name="video_control_play">Відтворити</string>
+    <string name="video_control_pause">Пауза</string>
+    <string name="video_control_mute">Вимкнути звук</string>
+    <string name="video_control_unmute">Увімкнути звук</string>
+    <string name="media_cancel_download">Скасувати завантаження</string>
+    <string name="post_badge_scam">ШАХРАЙ</string>
+    <string name="post_badge_fake">ФЕЙК</string>
+    <string name="user_profile_copy_handle">Скопіювати ім\'я користувача</string>
+    <string name="feed_refresh_action">Оновити стрічку</string>
+    <string name="media_desc_photo">Фото</string>
+    <string name="media_desc_video">Відео</string>
+    <string name="media_desc_gif">GIF</string>
+    <string name="media_desc_video_note">Відеоповідомлення</string>
 </resources>

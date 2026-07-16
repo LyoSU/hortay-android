@@ -799,4 +799,17 @@
     <string name="rich_audio_pause">Pausa</string>
     <string name="rich_audio_loading">Caricamento</string>
     <string name="rich_map_open">Apri in Mappe</string>
+    <string name="video_control_play">Riproduci</string>
+    <string name="video_control_pause">Pausa</string>
+    <string name="video_control_mute">Disattiva audio</string>
+    <string name="video_control_unmute">Riattiva audio</string>
+    <string name="media_cancel_download">Annulla download</string>
+    <string name="post_badge_scam">TRUFFA</string>
+    <string name="post_badge_fake">FALSO</string>
+    <string name="user_profile_copy_handle">Copia nome utente</string>
+    <string name="feed_refresh_action">Aggiorna il feed</string>
+    <string name="media_desc_photo">Foto</string>
+    <string name="media_desc_video">Video</string>
+    <string name="media_desc_gif">GIF</string>
+    <string name="media_desc_video_note">Videomessaggio</string>
 </resources>
