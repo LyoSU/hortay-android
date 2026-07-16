@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-07-16
+
 ### Added
 - Richly formatted posts now render natively — headings, ordered and checklist lists, tables, collapsible sections, quotes, code blocks, photo collages and swipeable slideshows.
 - Mathematical formulas in richly formatted posts now render as proper equations — tap a formula to enlarge it, long-press to copy its source.
