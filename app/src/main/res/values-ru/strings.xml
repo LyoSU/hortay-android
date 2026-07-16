@@ -806,6 +806,7 @@
     <string name="rich_read_full_post">Читать пост полностью</string>
     <string name="rich_table_view_full">Показать всю таблицу</string>
     <string name="rich_table_copy">Копировать таблицу</string>
+    <string name="rich_code_copy">Копировать код</string>
     <string name="rich_full_post_error">Не удалось загрузить пост полностью</string>
     <string name="rich_full_post_retry">Повторить</string>
     <string name="rich_audio_play">Воспроизвести</string>

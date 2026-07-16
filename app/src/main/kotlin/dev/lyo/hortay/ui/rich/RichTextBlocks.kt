@@ -26,10 +26,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -45,7 +43,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.collapse
@@ -56,13 +53,15 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichInline
 import dev.lyo.hortay.data.rich.RichListItem
+import dev.lyo.hortay.data.rich.RichPlainText
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.text.CODE_COLLAPSED_LINES
+import dev.lyo.hortay.ui.text.CodeBlock
 import dev.lyo.hortay.ui.text.EditorialQuoteFrame
 import dev.lyo.hortay.ui.util.rememberReducedMotion
 
@@ -197,35 +196,21 @@ private fun RichBlockContent(block: RichBlock, path: String, quoteDepth: Int = 0
 // ---- Code / math box ----
 
 /**
- * `surfaceContainerHigh` box with monospace body and an optional language label — the same
- * visual idiom as the [dev.lyo.hortay.ui.text] code block. Content is pinned LTR even inside
- * an RTL document (source lines read left-to-right).
+ * Renders through the app-wide [CodeBlock] (shared with regular posts), which owns the neutral
+ * container, language pill, copy button, horizontal scroll and long-block cap. The code text is
+ * drawn here at [RichType.code] (tighter line spacing than body); [CodeBlock] pins it LTR and
+ * scrolls long lines. The internal cap engages only on the reading surface — a feed preview is
+ * clamped post-wide by `ClampedContent`.
  */
 @Composable
 private fun RichCodeBox(text: RichInline, language: String?) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraSmall,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    CodeBlock(
+        rawText = RichPlainText.of(text),
+        language = language,
+        codeStyle = RichType.code,
+        collapsedLines = if (LocalRichReading.current) CODE_COLLAPSED_LINES else null,
     ) {
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                if (!language.isNullOrBlank()) {
-                    Text(
-                        text = language,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                RichInlineText(
-                    inline = text,
-                    style = RichType.code,
-                )
-            }
-        }
+        RichInlineText(inline = text, style = RichType.code, softWrap = false)
     }
 }
 

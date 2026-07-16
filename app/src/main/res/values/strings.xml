@@ -807,6 +807,7 @@
     <string name="rich_read_full_post">Read full post</string>
     <string name="rich_table_view_full">View full table</string>
     <string name="rich_table_copy">Copy table</string>
+    <string name="rich_code_copy">Copy code</string>
     <string name="rich_full_post_error">Couldn\'t load the full post</string>
     <string name="rich_full_post_retry">Retry</string>
     <string name="rich_audio_play">Play</string>

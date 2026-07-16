@@ -771,6 +771,7 @@
     <string name="rich_read_full_post">Gönderinin tamamını oku</string>
     <string name="rich_table_view_full">Tüm tabloyu gör</string>
     <string name="rich_table_copy">Tabloyu kopyala</string>
+    <string name="rich_code_copy">Kodu kopyala</string>
     <string name="rich_full_post_error">Gönderinin tamamı yüklenemedi</string>
     <string name="rich_full_post_retry">Yeniden dene</string>
     <string name="rich_audio_play">Oynat</string>

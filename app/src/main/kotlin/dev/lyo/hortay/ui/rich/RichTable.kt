@@ -48,6 +48,7 @@ import dev.lyo.hortay.data.rich.RichHorizontalAlignment
 import dev.lyo.hortay.data.rich.RichTableCell
 import dev.lyo.hortay.data.rich.RichVerticalAlignment
 import dev.lyo.hortay.ui.text.LocalShowFullPost
+import dev.lyo.hortay.ui.text.TonalActionRow
 
 /**
  * Renders a [RichBlock.Table] as a custom-measured grid.
@@ -444,7 +445,7 @@ private fun RichTableCompactPreview(block: RichBlock.Table, placements: TablePla
             }
         }
         if (hasMore) {
-            RichTonalAction(text = stringResource(R.string.rich_table_view_full), onClick = openFull)
+            TonalActionRow(text = stringResource(R.string.rich_table_view_full), onClick = openFull)
         }
         block.caption?.let {
             Spacer(Modifier.height(8.dp))

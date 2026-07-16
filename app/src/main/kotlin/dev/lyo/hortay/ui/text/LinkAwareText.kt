@@ -74,6 +74,7 @@ fun LinkAwareText(
     modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
+    softWrap: Boolean = true,
     onTextLayout: (TextLayoutResult) -> Unit = {},
 ) {
     // Key on [renderable.contentKey] (source text identity) rather than `renderable`
@@ -321,6 +322,7 @@ fun LinkAwareText(
         style = style,
         maxLines = maxLines,
         overflow = overflow,
+        softWrap = softWrap,
         onTextLayout = { layout ->
             layoutResult = layout
             onTextLayout(layout)

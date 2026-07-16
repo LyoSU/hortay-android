@@ -810,6 +810,7 @@
     <string name="rich_read_full_post">Читати пост повністю</string>
     <string name="rich_table_view_full">Переглянути всю таблицю</string>
     <string name="rich_table_copy">Копіювати таблицю</string>
+    <string name="rich_code_copy">Копіювати код</string>
     <string name="rich_full_post_error">Не вдалося завантажити пост повністю</string>
     <string name="rich_full_post_retry">Повторити</string>
     <string name="rich_audio_play">Відтворити</string>

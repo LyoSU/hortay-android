@@ -793,6 +793,7 @@
     <string name="rich_read_full_post">Leggi il post completo</string>
     <string name="rich_table_view_full">Vedi tabella completa</string>
     <string name="rich_table_copy">Copia tabella</string>
+    <string name="rich_code_copy">Copia codice</string>
     <string name="rich_full_post_error">Impossibile caricare il post completo</string>
     <string name="rich_full_post_retry">Riprova</string>
     <string name="rich_audio_play">Riproduci</string>

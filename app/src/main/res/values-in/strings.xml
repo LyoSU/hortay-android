@@ -757,6 +757,7 @@
     <string name="rich_read_full_post">Baca pos selengkapnya</string>
     <string name="rich_table_view_full">Lihat tabel lengkap</string>
     <string name="rich_table_copy">Salin tabel</string>
+    <string name="rich_code_copy">Salin kode</string>
     <string name="rich_full_post_error">Tidak dapat memuat pos selengkapnya</string>
     <string name="rich_full_post_retry">Coba lagi</string>
     <string name="rich_audio_play">Putar</string>

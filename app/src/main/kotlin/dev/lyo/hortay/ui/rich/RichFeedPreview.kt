@@ -1,26 +1,15 @@
 package dev.lyo.hortay.ui.rich
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.rich.RichDocument
-import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.text.ClampedContent
+import dev.lyo.hortay.ui.text.TonalActionRow
 
 /**
  * Feed-card rendering of a rich message: the projected [RichMessageMode.FeedPreview] body under
@@ -70,44 +59,5 @@ internal fun RichFeedPreview(
 /** Low-profile tonal "Read full post ›" button. */
 @Composable
 private fun RichReadFullButton(onClick: () -> Unit) {
-    RichTonalAction(text = stringResource(R.string.rich_read_full_post), onClick = onClick)
-}
-
-/**
- * The shared low-profile tonal affordance the rich renderer uses to invite a deeper surface —
- * "Read full post ›" under a clamped feed body, "View full table ›" under a compact table
- * preview. A full-width `surfaceContainerHigh` row with a primary label and a trailing chevron
- * glyph (the chevron lives in the Compose row, never in the translated string).
- */
-@Composable
-internal fun RichTonalAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = 10.dp),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    ) {
-        Row(
-            modifier = Modifier
-                .height(40.dp)
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.width(4.dp))
-            Symbol(
-                name = "chevron_right",
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                size = 18.dp,
-            )
-        }
-    }
+    TonalActionRow(text = stringResource(R.string.rich_read_full_post), onClick = onClick)
 }

@@ -1,8 +1,6 @@
 package dev.lyo.hortay.ui.text
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,7 +17,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
@@ -30,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -189,33 +185,29 @@ private fun ClampedPost(
         style.fontSize.isSp -> style.fontSize * 1.4f
         else -> 20.sp
     }
-    val codeHeader = MaterialTheme.typography.labelSmall
-    val codeHeaderLine = when {
-        codeHeader.lineHeight.isSp -> codeHeader.lineHeight
-        codeHeader.fontSize.isSp -> codeHeader.fontSize * 1.4f
-        else -> 16.sp
-    }
     val lineHeightPx = with(density) { bodyLine.toPx() }
     val maxHeightPx = (lineHeightPx * maxLines).toInt()
     val gapPx = with(density) { SEGMENT_GAP.toPx() }.toInt()
-    val blockPadPx = with(density) { BLOCK_VPAD.toPx() }
-    // Quote boxes render through the shared editorial frame, whose inset differs from a code box's;
-    // the snap math has to use each box's REAL top padding or the line cut drifts.
+    // Quote and code boxes render through the shared editorial / code containers, each with its own
+    // inset; the snap math has to use each box's REAL top padding or the line cut drifts. The code
+    // box always carries its header strip (language pill + copy button), so its top inset is the
+    // fixed header height regardless of whether a language label is present.
     val quotePadPx = with(density) { EDITORIAL_QUOTE_PADDING.toPx() }
-    val codeHeaderPx = with(density) { (codeHeaderLine.toPx() + CODE_HEADER_GAP.toPx()) }
+    val codeHeaderPx = with(density) { CODE_HEADER_INSET.toPx() }
+    val codeBottomPx = with(density) { CODE_BOTTOM_INSET.toPx() }
     // Distance from each segment's TOP edge to its first text line (0 for plain text, the box's
-    // top padding for a quote, plus the language-header strip for a code block) and from its
-    // BOTTOM text line to its bottom edge. Used to snap the clip onto a line boundary.
+    // top padding for a quote, the header strip for a code block) and from its BOTTOM text line to
+    // its bottom edge. Used to snap the clip onto a line boundary.
     val topInsets = segments.map { seg ->
-        when (val b = seg.block) {
-            is FormattedText.Style.Pre -> blockPadPx + (if (!b.language.isNullOrBlank()) codeHeaderPx else 0f)
+        when (seg.block) {
+            is FormattedText.Style.Pre -> codeHeaderPx
             is FormattedText.Style.BlockQuote -> quotePadPx
             else -> 0f
         }
     }
     val bottomInsets = segments.map { seg ->
         when (seg.block) {
-            is FormattedText.Style.Pre -> blockPadPx
+            is FormattedText.Style.Pre -> codeBottomPx
             is FormattedText.Style.BlockQuote -> quotePadPx
             else -> 0f
         }
@@ -403,13 +395,6 @@ internal fun ClampedContent(
  *  collapsed [ClampedPost] ignore this — they render full and the post-level clip cuts. */
 private const val COLLAPSED_QUOTE_LINES = 3
 
-/** Top + bottom padding inside a [BlockBox]. Shared with [ClampedPost]'s inset math so the cut
- *  snaps onto the box's real text-line grid; changing it here keeps the snap correct. */
-private val BLOCK_VPAD = 8.dp
-
-/** Gap between a code block's language header and its body. Part of a code segment's top inset. */
-private val CODE_HEADER_GAP = 4.dp
-
 /**
  * A padded block quote or code block. Renders identically on every surface (feed, channel,
  * comments, full post).
@@ -493,54 +478,35 @@ private fun BlockBox(
         )
     }
 
-    // Chevron shared by both block kinds: down ("›" rotated 90°) when collapsed = "expand", up
-    // (270°) when expanded = "collapse". In a clamped feed preview it stays the collapsed (down)
-    // form as a passive "there's more" cue — the card tap, not this glyph, opens the post.
-    val chevron: @Composable BoxScope.() -> Unit = {
-        Symbol(
-            name = "chevron_right",
-            tint = (if (isCode) MaterialTheme.colorScheme.onSurfaceVariant else accent).copy(alpha = 0.7f),
-            size = 16.dp,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(bottom = 6.dp, end = 8.dp)
-                .rotate(if (expanded) 270f else 90f),
-        )
-    }
-
     if (isCode) {
-        // Right gutter reserves the chevron strip on the bottom-right when it's present.
-        val endPad = if (showChevron) 26.dp else 12.dp
-        Box(
-            modifier = Modifier
-                .clip(MaterialTheme.shapes.extraSmall)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .then(
-                    if (showChevron && chevronToggles) {
-                        Modifier.clickable(role = Role.Button, onClickLabel = expandLabel) { expanded = !expanded }
-                    } else {
-                        Modifier
-                    },
-                ),
+        // Code → the app-wide code container (shared with rich messages): neutral box, language
+        // pill, copy button, horizontal scroll for long lines. Its own line cap + expand engages
+        // only on a fully-shown surface; in a clamped feed preview the post-wide clip does the
+        // cutting, so no per-block toggle competes with it.
+        CodeBlock(
+            rawText = text.text,
+            language = language,
+            codeStyle = contentStyle,
+            collapsedLines = if (interactive) CODE_COLLAPSED_LINES else null,
         ) {
-            Column(
-                modifier = Modifier.padding(start = 12.dp, end = endPad, top = BLOCK_VPAD, bottom = BLOCK_VPAD),
-            ) {
-                if (!language.isNullOrBlank()) {
-                    Text(
-                        text = language,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(CODE_HEADER_GAP))
-                }
-                body()
-            }
-            if (showChevron) chevron()
+            LinkAwareText(renderable = rt, style = contentStyle, softWrap = false)
         }
     } else {
-        // Quote → the app-wide editorial frame (shared with rich messages). The end gutter reserves
-        // the chevron's bottom-right strip so a preview line never runs under it.
+        // Quote → the app-wide editorial frame (shared with rich messages). The collapse chevron
+        // rides the bottom-right corner (down = expand, up = collapse); in a clamped feed preview it
+        // is a passive "there's more" cue — the card tap, not the glyph, opens the post. The end
+        // gutter reserves its strip so a preview line never runs under it.
+        val chevron: @Composable BoxScope.() -> Unit = {
+            Symbol(
+                name = "chevron_right",
+                tint = accent.copy(alpha = 0.7f),
+                size = 16.dp,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 6.dp, end = 8.dp)
+                    .rotate(if (expanded) 270f else 90f),
+            )
+        }
         EditorialQuoteFrame(
             contentPadding = PaddingValues(
                 start = EDITORIAL_QUOTE_PADDING,

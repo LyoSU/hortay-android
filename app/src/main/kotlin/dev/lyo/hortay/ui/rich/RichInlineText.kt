@@ -76,6 +76,7 @@ internal fun RichInlineText(
     modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
+    softWrap: Boolean = true,
 ) {
     LinkAwareText(
         renderable = rememberRichInline(inline),
@@ -83,6 +84,7 @@ internal fun RichInlineText(
         modifier = modifier,
         maxLines = maxLines,
         overflow = overflow,
+        softWrap = softWrap,
     )
 }
 

@@ -791,6 +791,7 @@
     <string name="rich_read_full_post">Lire le post en entier</string>
     <string name="rich_table_view_full">Voir le tableau complet</string>
     <string name="rich_table_copy">Copier le tableau</string>
+    <string name="rich_code_copy">Copier le code</string>
     <string name="rich_full_post_error">Impossible de charger le post en entier</string>
     <string name="rich_full_post_retry">Réessayer</string>
     <string name="rich_audio_play">Lire</string>
