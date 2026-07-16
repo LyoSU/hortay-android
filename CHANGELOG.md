@@ -10,6 +10,7 @@
 - A wide table in the feed now shows a compact preview with a "View full table" button that opens it fullscreen to pan, pinch-zoom, and copy as tab-separated text.
 - Audio tracks and voice messages now play inline in the feed — a play button, a progress bar, and a waveform for voice — instead of only opening in Telegram.
 - A map location inside a richly formatted post now opens in your maps app when tapped.
+- Footnotes and cross-references inside an opened article are now tappable — a cross-reference jumps to its spot, opening any collapsed section on the way, and a footnote opens a short preview with a jump to its source.
 - The feed can now be refreshed through a screen-reader accessibility action.
 - Screen readers announce the "new posts" alert as it appears.
 - Password managers can now fill the phone number, login code and 2FA password on sign-in.
