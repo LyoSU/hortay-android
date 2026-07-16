@@ -809,4 +809,7 @@
     <string name="rich_table_copy">Copy table</string>
     <string name="rich_full_post_error">Couldn\'t load the full post</string>
     <string name="rich_full_post_retry">Retry</string>
+    <string name="rich_audio_play">Play</string>
+    <string name="rich_audio_pause">Pause</string>
+    <string name="rich_audio_loading">Loading</string>
 </resources>

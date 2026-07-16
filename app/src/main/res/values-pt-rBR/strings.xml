@@ -797,4 +797,7 @@
     <string name="rich_table_copy">Copiar tabela</string>
     <string name="rich_full_post_error">Não foi possível carregar o post completo</string>
     <string name="rich_full_post_retry">Tentar novamente</string>
+    <string name="rich_audio_play">Reproduzir</string>
+    <string name="rich_audio_pause">Pausar</string>
+    <string name="rich_audio_loading">Carregando</string>
 </resources>

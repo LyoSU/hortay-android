@@ -838,4 +838,7 @@
     <string name="rich_table_copy">نسخ الجدول</string>
     <string name="rich_full_post_error">تعذّر تحميل المنشور كاملاً</string>
     <string name="rich_full_post_retry">إعادة المحاولة</string>
+    <string name="rich_audio_play">تشغيل</string>
+    <string name="rich_audio_pause">إيقاف مؤقت</string>
+    <string name="rich_audio_loading">جارٍ التحميل</string>
 </resources>

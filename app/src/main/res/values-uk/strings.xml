@@ -812,4 +812,7 @@
     <string name="rich_table_copy">Копіювати таблицю</string>
     <string name="rich_full_post_error">Не вдалося завантажити пост повністю</string>
     <string name="rich_full_post_retry">Повторити</string>
+    <string name="rich_audio_play">Відтворити</string>
+    <string name="rich_audio_pause">Пауза</string>
+    <string name="rich_audio_loading">Завантаження</string>
 </resources>

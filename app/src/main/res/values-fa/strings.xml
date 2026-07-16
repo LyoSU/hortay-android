@@ -772,4 +772,7 @@
     <string name="rich_table_copy">کپی جدول</string>
     <string name="rich_full_post_error">بارگیری کامل پست ممکن نشد</string>
     <string name="rich_full_post_retry">تلاش دوباره</string>
+    <string name="rich_audio_play">پخش</string>
+    <string name="rich_audio_pause">توقف</string>
+    <string name="rich_audio_loading">در حال بارگذاری</string>
 </resources>

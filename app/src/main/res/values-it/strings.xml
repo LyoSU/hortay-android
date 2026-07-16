@@ -795,4 +795,7 @@
     <string name="rich_table_copy">Copia tabella</string>
     <string name="rich_full_post_error">Impossibile caricare il post completo</string>
     <string name="rich_full_post_retry">Riprova</string>
+    <string name="rich_audio_play">Riproduci</string>
+    <string name="rich_audio_pause">Pausa</string>
+    <string name="rich_audio_loading">Caricamento</string>
 </resources>

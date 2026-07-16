@@ -805,4 +805,7 @@
     <string name="rich_table_copy">Kopiuj tabelę</string>
     <string name="rich_full_post_error">Nie udało się załadować całego posta</string>
     <string name="rich_full_post_retry">Spróbuj ponownie</string>
+    <string name="rich_audio_play">Odtwórz</string>
+    <string name="rich_audio_pause">Pauza</string>
+    <string name="rich_audio_loading">Ładowanie</string>
 </resources>

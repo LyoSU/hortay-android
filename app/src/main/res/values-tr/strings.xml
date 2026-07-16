@@ -773,4 +773,7 @@
     <string name="rich_table_copy">Tabloyu kopyala</string>
     <string name="rich_full_post_error">Gönderinin tamamı yüklenemedi</string>
     <string name="rich_full_post_retry">Yeniden dene</string>
+    <string name="rich_audio_play">Oynat</string>
+    <string name="rich_audio_pause">Duraklat</string>
+    <string name="rich_audio_loading">Yükleniyor</string>
 </resources>

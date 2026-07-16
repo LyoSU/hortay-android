@@ -759,4 +759,7 @@
     <string name="rich_table_copy">Salin tabel</string>
     <string name="rich_full_post_error">Tidak dapat memuat pos selengkapnya</string>
     <string name="rich_full_post_retry">Coba lagi</string>
+    <string name="rich_audio_play">Putar</string>
+    <string name="rich_audio_pause">Jeda</string>
+    <string name="rich_audio_loading">Memuat</string>
 </resources>

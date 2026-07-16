@@ -58,7 +58,6 @@ import dev.lyo.hortay.ui.timeline.MediaWithSpoiler
 import dev.lyo.hortay.ui.util.rememberReducedMotion
 import dev.lyo.hortay.ui.timeline.NonPlayableFileRow
 import dev.lyo.hortay.ui.timeline.SingleMedia
-import dev.lyo.hortay.ui.timeline.formatDuration
 import dev.lyo.hortay.ui.timeline.mediaAspectRatio
 import kotlin.math.roundToInt
 
@@ -72,7 +71,9 @@ import kotlin.math.roundToInt
  *  - Collage → a mosaic grid ([RichCollageMosaic], geometry from [mosaicLayout]) with a
  *    "+N" overflow tile past four members.
  *  - Slideshow → a [HorizontalPager], one item per page, with dot indicators.
- *  - Audio / VoiceNote → [NonPlayableFileRow] (informational, no source-post tap yet).
+ *  - Audio / VoiceNote → an inline player row ([RichAudioRow] / [RichVoiceNoteRow]) driven by
+ *    the single-active-source [dev.lyo.hortay.ui.media.RichAudioController]; a block with no
+ *    resolvable file id degrades to an informational [NonPlayableFileRow].
  *
  * Tap on a photo / video / animation / collage / slideshow item opens the shared
  * [dev.lyo.hortay.ui.media.FullScreenMediaViewer] via [LocalMediaViewer] — that controller
@@ -126,28 +127,14 @@ internal fun RichAnimation(block: RichBlock.Animation) {
 @Composable
 internal fun RichAudio(block: RichBlock.Audio) {
     RichMediaColumn(block.caption) {
-        NonPlayableFileRow(
-            symbol = "audio_file",
-            primary = block.title.ifBlank { stringResource(R.string.content_audio_fallback) },
-            secondary = listOfNotNull(
-                block.performer.takeUnless { it.isBlank() },
-                formatDuration(block.durationSec),
-            ).joinToString(" · "),
-            onClick = null,
-        )
+        RichAudioRow(block)
     }
 }
 
 @Composable
 internal fun RichVoiceNote(block: RichBlock.VoiceNote) {
     RichMediaColumn(block.caption) {
-        NonPlayableFileRow(
-            symbol = "mic",
-            primary = stringResource(R.string.voice_message),
-            secondary = formatDuration(block.durationSec),
-            onClick = null,
-            shape = MaterialTheme.shapes.large,
-        )
+        RichVoiceNoteRow(block)
     }
 }
 
