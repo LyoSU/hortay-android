@@ -6,6 +6,7 @@
 
 ### Added
 - Richly formatted posts now render natively — headings, ordered and checklist lists, tables, collapsible sections, quotes, code blocks, photo collages and swipeable slideshows.
+- Mathematical formulas in richly formatted posts now render as proper equations — tap a formula to enlarge it, long-press to copy its source.
 - A long richly formatted post in the feed now fades into a "Read full post" button that opens the whole document.
 - A wide table in the feed now shows a compact preview with a "View full table" button that opens it fullscreen to pan, pinch-zoom, and copy as tab-separated text.
 - Audio tracks and voice messages now play inline in the feed — a play button, a progress bar, and a waveform for voice — instead of only opening in Telegram.
