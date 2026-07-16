@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -90,6 +92,10 @@ internal fun RichBlocks(
     readingColumn: Boolean = false,
     quoteDepth: Int = 0,
 ) {
+    // In-document anchor navigation (Reading only): the controller carries a per-target-block
+    // BringIntoViewRequester and the transient "which block is flashing" state. Nested (non-reading)
+    // RichBlocks ignore it — targets are always top-level, so only the top-level column attaches.
+    val anchorController = if (readingColumn) LocalRichAnchorController.current else null
     Column(
         modifier = modifier,
         horizontalAlignment = if (readingColumn) Alignment.CenterHorizontally else Alignment.Start,
@@ -97,17 +103,51 @@ internal fun RichBlocks(
         blocks.forEachIndexed { index, block ->
             if (index > 0) Spacer(Modifier.height(blockSpacingBetween(blocks[index - 1], block)))
             if (readingColumn) {
-                val blockModifier = if (block.isEdgeToEdge()) {
+                val bleed = if (block.isEdgeToEdge()) {
                     Modifier.readingBleed()
                 } else {
                     Modifier.widthIn(max = READING_MAX_WIDTH).fillMaxWidth()
                 }
-                Box(blockModifier) { RichBlockContent(block, path = "$path.$index", quoteDepth = quoteDepth) }
+                val requester = anchorController?.requesterFor(index)
+                val blockModifier = if (requester != null) bleed.bringIntoViewRequester(requester) else bleed
+                Box(blockModifier) {
+                    RichBlockContent(block, path = "$path.$index", quoteDepth = quoteDepth)
+                    if (anchorController != null) {
+                        RichAnchorHighlight(active = anchorController.highlightedIndex == index)
+                    }
+                }
             } else {
                 RichBlockContent(block, path = "$path.$index", quoteDepth = quoteDepth)
             }
         }
     }
+}
+
+/** Corner radius on the anchor-landing highlight wash. */
+private val ANCHOR_HIGHLIGHT_SHAPE = RoundedCornerShape(10.dp)
+
+/**
+ * Soft accent wash over a top-level block an in-document anchor jump just landed on. Fades in and
+ * out on the (short) effects spec so the flash reads as a gentle pulse; under reduced motion it
+ * snaps in and out (still a clear "you are here" acknowledgement, but with no animated cross-fade —
+ * the accessible choice, since the highlight is feedback, not decoration, and must not be dropped).
+ */
+@Composable
+private fun BoxScope.RichAnchorHighlight(active: Boolean) {
+    val reduced = rememberReducedMotion()
+    val alpha by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = if (reduced) snap() else MaterialTheme.motionScheme.defaultEffectsSpec(),
+        label = "rich-anchor-highlight",
+    )
+    if (alpha <= 0f) return
+    val color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f * alpha)
+    Box(
+        modifier = Modifier
+            .matchParentSize()
+            .clip(ANCHOR_HIGHLIGHT_SHAPE)
+            .background(color),
+    )
 }
 
 /** Max text-column measure on wide layouts (tablet / foldable / landscape); on phones the column

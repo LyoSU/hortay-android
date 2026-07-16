@@ -12,18 +12,20 @@ import org.junit.jupiter.api.Test
  */
 class RichAnchorTapTest {
 
-    private val registry = mapOf("intro" to 0, "footnote-1" to 3)
+    private val intro = AnchorTarget(blockIndex = 0, ancestorDetailPaths = emptyList())
+    private val footnote = AnchorTarget(blockIndex = 3, ancestorDetailPaths = listOf("b.3"))
+    private val registry = mapOf("intro" to intro, "footnote-1" to footnote)
 
     @Test
     fun `resolved name with scrolling available scrolls in-document`() {
         val action = resolveAnchorTap("intro", "https://evil.example", registry, canScroll = true)
-        assertEquals(AnchorTapAction.Scroll(0), action)
+        assertEquals(AnchorTapAction.Scroll(intro), action)
     }
 
     @Test
-    fun `resolved name normalizes case and whitespace`() {
+    fun `resolved name normalizes case and whitespace and carries the target`() {
         val action = resolveAnchorTap("  Footnote-1 ", url = "", registry, canScroll = true)
-        assertEquals(AnchorTapAction.Scroll(3), action)
+        assertEquals(AnchorTapAction.Scroll(footnote), action)
     }
 
     @Test
@@ -34,8 +36,8 @@ class RichAnchorTapTest {
 
     @Test
     fun `resolved name but no scroll target opens the url (feed preview)`() {
-        // Feed cards pass no onScrollToBlock — even a resolvable anchor falls back to the URL,
-        // which must go through the confirmation, not straight to the browser.
+        // Feed cards can't scroll — even a resolvable anchor falls back to the URL, which must go
+        // through the confirmation, not straight to the browser.
         val action = resolveAnchorTap("intro", "https://evil.example", registry, canScroll = false)
         assertEquals(AnchorTapAction.OpenUrl("https://evil.example"), action)
     }
