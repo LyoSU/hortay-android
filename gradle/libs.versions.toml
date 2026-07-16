@@ -42,6 +42,15 @@ media3 = "1.10.1"
 immutable = "0.5.0"
 leakcanary = "2.14"
 lottie = "6.7.1"
+# jlatexmath-android — pure-Java port of jLaTeXMath rendering LaTeX to android.graphics.Canvas
+# (no WebView, no JS, fully offline) for the rich-message math renderer. Licensed GPL-2.0-or-later
+# + Classpath Exception (inherited from scilab-forge jLaTeXMath) → compatible with this app's
+# GPL-3.0-or-later. 0.2.0 (Apr-2020) is the last release; the upstream repo is archived but the
+# artifact is self-contained pure-Canvas code with no transitive deps to rot. On Maven Central
+# (ru.noties). Base artifact bundles the math fonts (~2 MB); the greek-letter font is a separate
+# ~150 KB artifact we add for \alpha..\omega coverage. ~2.1 MB total APK cost, accepted for full
+# LaTeX layout on the rare LaTeX Instant-View post (owner-flagged; one revert-shaped commit to drop).
+jlatexmath = "0.2.0"
 jsoup = "1.22.2"
 okhttp = "5.4.0"
 sqldelight = "2.3.2"
@@ -108,6 +117,11 @@ kotlinx-collections-immutable = { group = "org.jetbrains.kotlinx", name = "kotli
 leakcanary-android = { group = "com.squareup.leakcanary", name = "leakcanary-android", version.ref = "leakcanary" }
 
 lottie-compose = { group = "com.airbnb.android", name = "lottie-compose", version.ref = "lottie" }
+
+# LaTeX math rendering for rich messages (see the `jlatexmath` version comment). The base
+# artifact carries the core math fonts; `-font-greek` adds the greek alphabet glyphs.
+jlatexmath = { group = "ru.noties", name = "jlatexmath-android", version.ref = "jlatexmath" }
+jlatexmath-font-greek = { group = "ru.noties", name = "jlatexmath-android-font-greek", version.ref = "jlatexmath" }
 
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }

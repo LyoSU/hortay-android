@@ -412,6 +412,14 @@ dependencies {
 
     implementation(libs.lottie.compose)
 
+    // LaTeX math renderer for rich-message inline / block math (RichInline.Math /
+    // RichBlock.Math). Pure-Java jLaTeXMath port drawing to android.graphics.Canvas —
+    // no WebView / JS, fully offline. See the version-catalog comment for the license
+    // (GPL-2.0-or-later + Classpath Exception → GPL-3.0-compatible) and the ~2.1 MB
+    // size trade-off. The greek font artifact adds \alpha..\omega glyph coverage.
+    implementation(libs.jlatexmath)
+    implementation(libs.jlatexmath.font.greek)
+
     // Anonymous web-mode pipeline: HTTP fetch + HTML parse for t.me/s/<channel>.
     // OkHttp is already pulled transitively by coil-network-okhttp, but we declare
     // it explicitly so the web client doesn't depend on Coil's internal version

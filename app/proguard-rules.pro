@@ -27,6 +27,17 @@
 # custom emoji silently falls back to its STATIC thumb in minified builds only (debug looks fine).
 -keep class dev.lyo.hortay.webm.** { *; }
 
+# jLaTeXMath (ru.noties:jlatexmath-android) — the rich-message math renderer. The engine loads
+# its TeX macro handlers, symbol tables and font descriptors REFLECTIVELY from XML resources
+# bundled in the AAR assets (TeXFormulaSettings.xml, GlueSettings.xml, DefaultTeXFont maps →
+# handler class + method names resolved at runtime, never referenced from bytecode). R8 can't
+# see those call sites, so a minified build strips the handler classes / methods and the app
+# crashes (ParseException / NoSuchMethodError) the first time it renders a formula using a
+# stripped macro — release-only, invisible in debug. The AAR ships NO consumer-proguard rules,
+# so keep the whole engine wholesale. Cost is a fraction of the ~2.1 MB the fonts already add.
+-keep class org.scilab.forge.jlatexmath.** { *; }
+-keep class ru.noties.jlatexmath.** { *; }
+
 # kotlinx.serialization annotation processing relies on companion-object accessors
 # and synthetic methods that R8 strips by default.
 -keepattributes *Annotation*, InnerClasses
