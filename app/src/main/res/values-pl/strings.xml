@@ -802,6 +802,7 @@
     <string name="rich_slideshow_counter">%1$d / %2$d</string>
     <string name="rich_read_full_post">Przeczytaj cały post</string>
     <string name="rich_table_view_full">Zobacz całą tabelę</string>
+    <string name="rich_table_copy">Kopiuj tabelę</string>
     <string name="rich_full_post_error">Nie udało się załadować całego posta</string>
     <string name="rich_full_post_retry">Spróbuj ponownie</string>
 </resources>

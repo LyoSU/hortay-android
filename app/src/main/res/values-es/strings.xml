@@ -795,6 +795,7 @@
     <string name="rich_slideshow_counter">%1$d / %2$d</string>
     <string name="rich_read_full_post">Leer la publicación completa</string>
     <string name="rich_table_view_full">Ver tabla completa</string>
+    <string name="rich_table_copy">Copiar tabla</string>
     <string name="rich_full_post_error">No se pudo cargar la publicación completa</string>
     <string name="rich_full_post_retry">Reintentar</string>
 </resources>

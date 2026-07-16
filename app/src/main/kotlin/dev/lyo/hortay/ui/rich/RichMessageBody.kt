@@ -80,13 +80,18 @@ fun RichMessageBody(
         LocalRichReading provides reading,
         LocalRichDetailsExpansion provides detailsExpansion,
     ) {
-        val body: @Composable () -> Unit = {
-            RichBlocks(blocks, path = "b", modifier = modifier, readingColumn = reading)
-        }
-        if (document.isRtl) {
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { body() }
-        } else {
-            body()
+        // Hosts the fullscreen table viewer a compact feed-preview table escalates to, and
+        // provides LocalTableViewer to the body below. The overlay is a Dialog, so a single host
+        // per rich message is enough — it escapes to the window regardless of feed position.
+        RichTableViewerHost {
+            val body: @Composable () -> Unit = {
+                RichBlocks(blocks, path = "b", modifier = modifier, readingColumn = reading)
+            }
+            if (document.isRtl) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) { body() }
+            } else {
+                body()
+            }
         }
     }
 }

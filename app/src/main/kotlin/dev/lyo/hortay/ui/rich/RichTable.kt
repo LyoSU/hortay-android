@@ -94,10 +94,7 @@ internal fun RichTable(block: RichBlock.Table) {
 
 @Composable
 private fun RichTableFull(block: RichBlock.Table, placements: TablePlacements) {
-    val separatorColor = MaterialTheme.colorScheme.outlineVariant
-    val headerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-    val stripeColor = MaterialTheme.colorScheme.onSurface.copy(alpha = STRIPE_ALPHA)
 
     Column {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -140,23 +137,12 @@ private fun RichTableFull(block: RichBlock.Table, placements: TablePlacements) {
                         )
                     },
             ) {
-                Box(modifier = Modifier.horizontalScroll(scrollState)) {
-                    Layout(
-                        content = {
-                            placements.cells.forEach { span ->
-                                RichTableCellContent(
-                                    span = span,
-                                    rows = placements.rows,
-                                    isStriped = block.isStriped,
-                                    separatorColor = separatorColor,
-                                    headerColor = headerColor,
-                                    stripeColor = stripeColor,
-                                )
-                            }
-                        },
-                        measurePolicy = tableMeasurePolicy(placements, maxColumnWidth),
-                    )
-                }
+                RichTableGridLayout(
+                    placements = placements,
+                    isStriped = block.isStriped,
+                    maxColumnWidth = maxColumnWidth,
+                    modifier = Modifier.horizontalScroll(scrollState),
+                )
             }
         }
         block.caption?.let {
@@ -167,6 +153,43 @@ private fun RichTableFull(block: RichBlock.Table, placements: TablePlacements) {
             )
         }
     }
+}
+
+/**
+ * The raw measured cell grid, without any container / scroll / fade chrome — the shared body of
+ * both the inline [RichTableFull] and the fullscreen `RichTableViewer`. [maxColumnWidth] caps each
+ * column (the inline table passes a viewport fraction; the viewer passes an effectively unbounded
+ * width so columns show their natural size and the user pans). [onHeaderHeight] reports the summed
+ * pixel height of the leading header rows so the viewer can pin a sticky header band.
+ */
+@Composable
+internal fun RichTableGridLayout(
+    placements: TablePlacements,
+    isStriped: Boolean,
+    maxColumnWidth: Dp,
+    modifier: Modifier = Modifier,
+    onHeaderHeight: ((Int) -> Unit)? = null,
+) {
+    val separatorColor = MaterialTheme.colorScheme.outlineVariant
+    val headerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val stripeColor = MaterialTheme.colorScheme.onSurface.copy(alpha = STRIPE_ALPHA)
+    val headerRows = remember(placements) { leadingHeaderRowCount(placements) }
+    Layout(
+        modifier = modifier,
+        content = {
+            placements.cells.forEach { span ->
+                RichTableCellContent(
+                    span = span,
+                    rows = placements.rows,
+                    isStriped = isStriped,
+                    separatorColor = separatorColor,
+                    headerColor = headerColor,
+                    stripeColor = stripeColor,
+                )
+            }
+        },
+        measurePolicy = tableMeasurePolicy(placements, maxColumnWidth, headerRows, onHeaderHeight),
+    )
 }
 
 @Composable
@@ -462,6 +485,8 @@ private fun RowScope.CompactCell(slot: CompactSlot.Anchor) {
 private fun tableMeasurePolicy(
     placements: TablePlacements,
     maxColumnWidth: Dp,
+    headerRowCount: Int = 0,
+    onHeaderHeight: ((Int) -> Unit)? = null,
 ) = MeasurePolicy { measurables, _ ->
     val columns = placements.columns
     val rows = placements.rows
@@ -533,6 +558,10 @@ private fun tableMeasurePolicy(
     val rowY = IntArray(rows)
     for (r in 1 until rows) rowY[r] = rowY[r - 1] + rowHeight[r - 1]
     val totalHeight = if (rows == 0) 0 else rowY[rows - 1] + rowHeight[rows - 1]
+
+    // Summed height of the leading header rows — the sticky-header band the viewer pins pans
+    // the body under. Reported every pass; the caller latches it and ignores unchanged values.
+    onHeaderHeight?.invoke((0 until headerRowCount.coerceAtMost(rows)).sumOf { rowHeight[it] })
 
     // 5. Final measure at the exact cell rect (fixed w + h) so vertical alignment can resolve.
     val placeables = measurables.mapIndexed { i, m ->
