@@ -1,7 +1,6 @@
 package dev.lyo.hortay.ui.rich
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -23,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.AbsoluteRoundedCornerShape
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -59,6 +57,7 @@ import dev.lyo.hortay.data.rich.RichCaption
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.theme.mediaFrame
+import dev.lyo.hortay.ui.timeline.MediaPositionPill
 import dev.lyo.hortay.ui.timeline.MediaWithSpoiler
 import dev.lyo.hortay.ui.util.rememberReducedMotion
 import dev.lyo.hortay.ui.timeline.IconBadge
@@ -268,8 +267,6 @@ private fun MosaicTile(cell: RichMosaicCell, items: List<AlbumItem>, onItemClick
     }
 }
 
-/** Beyond this page count the dot row is replaced by a compact "n / total" counter. */
-private const val SLIDESHOW_DOT_LIMIT = 6
 private val SLIDESHOW_PEEK = 22.dp
 private val SLIDESHOW_PAGE_SPACING = 6.dp
 
@@ -326,7 +323,7 @@ internal fun RichSlideshow(block: RichBlock.Slideshow) {
                     )
                 }
             }
-            SlideshowIndicator(
+            MediaPositionPill(
                 current = pagerState.currentPage,
                 count = items.size,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
@@ -441,59 +438,6 @@ private fun RichCaptionText(caption: RichCaption?) {
             RichInlineText(
                 inline = credit,
                 style = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-            )
-        }
-    }
-}
-
-private val DOT_SIZE = 6.dp
-private val DOT_SELECTED_WIDTH = 16.dp
-
-/**
- * Page position rendered OVER the media, inside a translucent scrim pill so it stays legible on
- * any photo. Up to [SLIDESHOW_DOT_LIMIT] pages show a dot row; past that a compact "n / total"
- * counter takes over so a long slideshow doesn't grow an unreadable stripe of dots.
- */
-@Composable
-private fun SlideshowIndicator(current: Int, count: Int, modifier: Modifier) {
-    Box(
-        modifier = modifier
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.45f))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (count > SLIDESHOW_DOT_LIMIT) {
-            Text(
-                text = stringResource(R.string.rich_slideshow_counter, current + 1, count),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White,
-            )
-        } else {
-            PagerDots(count = count, selected = current)
-        }
-    }
-}
-
-@Composable
-private fun PagerDots(count: Int, selected: Int) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        repeat(count) { index ->
-            val active = index == selected
-            val width by animateDpAsState(
-                targetValue = if (active) DOT_SELECTED_WIDTH else DOT_SIZE,
-                animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-                label = "rich-slideshow-dot",
-            )
-            // On-scrim palette: accent for the selected page, dimmed white for the rest — the
-            // pill's dark scrim guarantees contrast over any underlying photo.
-            Box(
-                modifier = Modifier
-                    .size(width = width, height = DOT_SIZE)
-                    .clip(CircleShape)
-                    .background(
-                        if (active) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.55f),
-                    ),
             )
         }
     }
