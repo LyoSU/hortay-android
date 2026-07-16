@@ -18,6 +18,9 @@
 - Opening a richly formatted post now reads as an article — tuned heading and paragraph spacing, a comfortable text column on wide screens, edge-to-edge images and tables, and full-length media captions.
 - On tablets and in desktop windows, the feed, channels and the sign-in form keep a comfortable reading width instead of stretching edge to edge.
 - Tapping the @username in a profile now has a comfortable touch target and tells screen readers it copies the username.
+- Block quotes now share one cleaner style everywhere — a rounded, softly tinted panel with an accent bar, in regular and richly formatted posts alike.
+- Code blocks now carry a copy button and a language label, scroll long lines sideways instead of wrapping them, and tuck a very long block behind a "Show more".
+- Photo and video albums in the feed now show a position indicator as you swipe, so you can tell how many items are left.
 
 ### Fixed
 - Video player controls now announce play, pause and mute to screen readers in your interface language instead of English.
