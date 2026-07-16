@@ -450,7 +450,12 @@ private fun PagerDots(count: Int, selected: Int) {
 // ---- Domain → AlbumItem projection -------------------------------------------
 
 private fun RichBlock.Photo.toAlbumItem(): AlbumItem.Photo? =
-    media?.let { AlbumItem.Photo(media = it, hasSpoiler = hasSpoiler) }
+    media?.let {
+        // The inline tier renders in place; the fullscreen viewer stacks the largest tier
+        // over it (progressive enhancement), so pinch-zoom decodes real pixels. Falls back to
+        // the inline tier when TDLib shipped only one size (matches AlbumItem.Photo's default).
+        AlbumItem.Photo(media = it, hasSpoiler = hasSpoiler, fullscreen = fullscreen ?: it)
+    }
 
 private fun RichBlock.Video.toAlbumItem(): AlbumItem.Video? =
     media?.let {

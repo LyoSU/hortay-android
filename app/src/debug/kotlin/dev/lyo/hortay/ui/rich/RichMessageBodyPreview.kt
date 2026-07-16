@@ -128,6 +128,7 @@ private val sampleDocument = RichDocument(
         RichBlock.Math(expression = "E = mc^2"),
         RichBlock.Photo(
             media = null,
+            fullscreen = null,
             caption = RichCaption(text = plain("A photo caption"), credit = null),
             hasSpoiler = false,
         ),
@@ -170,8 +171,8 @@ private val sampleDocument = RichDocument(
         ),
         RichBlock.Collage(
             items = persistentListOf(
-                RichBlock.Photo(media = null, caption = null, hasSpoiler = false),
-                RichBlock.Photo(media = null, caption = null, hasSpoiler = false),
+                RichBlock.Photo(media = null, fullscreen = null, caption = null, hasSpoiler = false),
+                RichBlock.Photo(media = null, fullscreen = null, caption = null, hasSpoiler = false),
             ),
             caption = RichCaption(text = plain("A collage that fell back to the unavailable-media placeholder"), credit = null),
         ),

@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
 class RichPreviewProjectionTest {
 
     private fun paragraph(i: Int): RichBlock = RichBlock.Paragraph(RichInline.Plain("p$i"))
-    private fun photo(): RichBlock = RichBlock.Photo(media = null, caption = null, hasSpoiler = false)
+    private fun photo(): RichBlock = RichBlock.Photo(media = null, fullscreen = null, caption = null, hasSpoiler = false)
 
     private fun doc(blocks: List<RichBlock>): RichDocument =
         RichDocument(blocks = blocks.toImmutableList(), isRtl = false, isFull = true)

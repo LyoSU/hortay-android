@@ -61,10 +61,19 @@ sealed interface RichBlock {
     @Immutable
     data class PullQuote(val text: RichInline, val credit: RichInline?) : RichBlock
 
-    /** `pageBlockPhoto` (instant-view-only `url` dropped). */
+    /**
+     * `pageBlockPhoto` (instant-view-only `url` dropped).
+     *
+     * [media] is the inline tier (~1280 px) the reader/feed renders; [fullscreen] is the
+     * largest tier in TDLib's size pyramid, handed to the [dev.lyo.hortay.ui.media.FullScreenMediaViewer]
+     * so pinch-zoom decodes real pixels instead of upscaling the 1280 px inline variant.
+     * Mirrors the feed's photo mapping ([dev.lyo.hortay.data.AlbumItem.Photo.fullscreen]).
+     * Both are null when TDLib delivered no resolvable file.
+     */
     @Immutable
     data class Photo(
         val media: TdMedia?,
+        val fullscreen: TdMedia?,
         val caption: RichCaption?,
         val hasSpoiler: Boolean,
     ) : RichBlock

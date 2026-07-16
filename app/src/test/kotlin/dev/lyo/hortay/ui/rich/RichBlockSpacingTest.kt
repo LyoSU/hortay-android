@@ -16,7 +16,7 @@ class RichBlockSpacingTest {
 
     private fun paragraph(i: Int = 0): RichBlock = RichBlock.Paragraph(RichInline.Plain("p$i"))
     private fun heading(size: Int = 1): RichBlock = RichBlock.SectionHeading(RichInline.Plain("h"), size)
-    private fun photo(): RichBlock = RichBlock.Photo(media = null, caption = null, hasSpoiler = false)
+    private fun photo(): RichBlock = RichBlock.Photo(media = null, fullscreen = null, caption = null, hasSpoiler = false)
     private fun table(): RichBlock = RichBlock.Table(caption = null, rows = persistentListOf(), isBordered = false, isStriped = false)
     private fun details(): RichBlock = RichBlock.Details(RichInline.Plain("d"), persistentListOf(paragraph()), isOpen = false)
     private fun quote(): RichBlock = RichBlock.BlockQuote(persistentListOf(paragraph()), credit = null)

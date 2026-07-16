@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data.rich
 
+import dev.lyo.hortay.data.PHOTO_TARGET_FULLSCREEN_PX
 import dev.lyo.hortay.data.PHOTO_TARGET_INLINE_PX
 import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.data.VideoQualities
@@ -61,6 +62,9 @@ private fun mapBlock(block: TdApi.PageBlock, depth: Int): RichBlock {
         )
         is TdApi.PageBlockPhoto -> RichBlock.Photo(
             media = block.photo?.toMedia(PHOTO_TARGET_INLINE_PX),
+            // Keep the largest tier for the fullscreen viewer, exactly like the feed's
+            // photo mapping (MessageContentMapper) — inline stays ~1280 px, zoom gets `w`.
+            fullscreen = block.photo?.toMedia(PHOTO_TARGET_FULLSCREEN_PX),
             caption = mapCaption(block.caption, next),
             hasSpoiler = block.hasSpoiler,
         )

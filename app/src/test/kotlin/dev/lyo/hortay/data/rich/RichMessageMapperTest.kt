@@ -155,6 +155,25 @@ class RichMessageMapperTest {
     }
 
     @Test
+    fun `maps photo keeping an inline tier and the largest tier for fullscreen`() {
+        // A three-tier pyramid: inline picks the smallest ≥ 1280, fullscreen picks the largest.
+        val photo = TdApi.Photo().apply {
+            sizes = arrayOf(
+                photoSize(side = 320, fileId = 1),
+                photoSize(side = 1280, fileId = 2),
+                photoSize(side = 2560, fileId = 3),
+            )
+        }
+        val block = TdApi.PageBlockPhoto(photo, null, "", false)
+        val mapped = assertInstanceOf(
+            RichBlock.Photo::class.java,
+            richMessage(block).toRichDocument().blocks.single(),
+        )
+        assertEquals(2, mapped.media?.fileId, "inline tier is the ~1280 px variant")
+        assertEquals(3, mapped.fullscreen?.fileId, "fullscreen tier is the largest variant")
+    }
+
+    @Test
     fun `folds instant-view-only blocks to Unknown with best-effort text`() {
         val document = richMessage(
             TdApi.PageBlockTitle(TdApi.RichTextPlain("Doc Title")),
@@ -231,6 +250,13 @@ class RichMessageMapperTest {
     )
 
     private fun makeFile(fileId: Int) = TdApi.File().apply { id = fileId }
+
+    private fun photoSize(side: Int, fileId: Int) = TdApi.PhotoSize().apply {
+        type = "x"
+        width = side
+        height = side
+        photo = makeFile(fileId)
+    }
 
     private fun makeThumbnail(fileId: Int) = TdApi.Thumbnail().apply {
         width = 320
