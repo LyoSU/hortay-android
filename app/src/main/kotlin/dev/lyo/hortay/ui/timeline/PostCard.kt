@@ -73,7 +73,11 @@ import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.LocalMediaPassive
 import dev.lyo.hortay.ui.media.TdAvatar
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import dev.lyo.hortay.ui.media.TdMediaImage
+import dev.lyo.hortay.ui.rich.LocalRichBleedInset
+import dev.lyo.hortay.ui.rich.RichBleedInset
 import dev.lyo.hortay.ui.text.LocalHashtagTap
 import dev.lyo.hortay.ui.text.parseHashtagWithScope
 import androidx.compose.runtime.CompositionLocalProvider
@@ -88,6 +92,13 @@ import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
 import dev.lyo.hortay.ui.theme.tabularFigures
 import dev.lyo.hortay.ui.util.rememberReducedMotion
 import kotlinx.coroutines.launch
+
+// Card body chrome — the header Row's horizontal padding, the avatar diameter, and the gap between
+// avatar and the body column. Named so the reading-mode bleed inset (declared at the PostBody call)
+// derives from the SAME values the header lays out with, instead of a copy that silently drifts.
+private val CARD_H_PADDING = 16.dp
+private val AVATAR_SIZE = 40.dp
+private val AVATAR_GAP = 12.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -244,7 +255,7 @@ fun PostCard(
                     onClick = { if (clickable) interactions.onPostClick(post) },
                     onLongClick = if (actionsEnabled) ({ sheetOpen = true }) else null,
                 )
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = CARD_H_PADDING, vertical = 14.dp),
         ) {
             // Header tap routing — three branches, in priority order:
             //   1. [senderUserId] (personal-author mode, admin posting under their own
@@ -277,7 +288,7 @@ fun PostCard(
                 avatarUrl = post.avatarUrl,
                 onClick = onSenderClick,
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(AVATAR_GAP))
             // Scope inline `#tag` taps to the post's channel when this is a channel
             // post with a known handle (matches Telegram-Android: tap `#foo` inside
             // channel X → "search #foo in X"). The `#tag@channel` text-entity form
@@ -367,14 +378,34 @@ fun PostCard(
                 // [dev.lyo.hortay.ui.media.LocalMediaPassive]. Scoped to the body only; the
                 // channel avatar above stays on the normal (shared, cached) download path.
                 CompositionLocalProvider(LocalMediaPassive provides post.isDeleted) {
-                    PostBody(
-                        content = post.content,
-                        onMediaClick = { _, idx -> interactions.onMediaClick(post, idx) },
-                        expanded = expanded,
-                        translation = translation,
-                        onOpenInSource = { interactions.onOpenClick(post) },
-                        pollVoting = pollVoting,
-                    )
+                    val body: @Composable () -> Unit = {
+                        PostBody(
+                            content = post.content,
+                            onMediaClick = { _, idx -> interactions.onMediaClick(post, idx) },
+                            expanded = expanded,
+                            translation = translation,
+                            onOpenInSource = { interactions.onOpenClick(post) },
+                            pollVoting = pollVoting,
+                        )
+                    }
+                    if (expanded) {
+                        // Reading mode bleeds rich media / tables to the card edge (= the window
+                        // edge on a phone). This card insets its body by its header chrome — Row
+                        // padding + avatar + gap on the avatar (leading) side, Row padding on the
+                        // trailing side — so it DECLARES exactly that distance and the rich layer
+                        // keeps no PostCard constant. Resolved to PHYSICAL left/right against THIS
+                        // card's direction (the rich body may force RTL internally, but the avatar
+                        // column follows the device). Feed cards render collapsed and never read it.
+                        val leadingInset = CARD_H_PADDING + AVATAR_SIZE + AVATAR_GAP
+                        val bleedInset = if (LocalLayoutDirection.current == LayoutDirection.Ltr) {
+                            RichBleedInset(left = leadingInset, right = CARD_H_PADDING)
+                        } else {
+                            RichBleedInset(left = CARD_H_PADDING, right = leadingInset)
+                        }
+                        CompositionLocalProvider(LocalRichBleedInset provides bleedInset) { body() }
+                    } else {
+                        body()
+                    }
                 }
 
                 if (!post.isDeleted && (post.views > 0 || post.forwardCount > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty())) {
@@ -468,7 +499,7 @@ private fun Avatar(
             name = name,
             thumb = thumb,
             fileId = fileId,
-            size = 40.dp,
+            size = AVATAR_SIZE,
             background = avatarBg(name),
             remoteUrl = avatarUrl,
         )

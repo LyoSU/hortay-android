@@ -33,6 +33,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -64,6 +65,7 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
@@ -107,6 +109,7 @@ internal fun RichBlocks(
     // BringIntoViewRequester and the transient "which block is flashing" state. Nested (non-reading)
     // RichBlocks ignore it — targets are always top-level, so only the top-level column attaches.
     val anchorController = if (readingColumn) LocalRichAnchorController.current else null
+    val bleedInset = if (readingColumn) LocalRichBleedInset.current else RichBleedInset(0.dp, 0.dp)
     Column(
         modifier = modifier,
         horizontalAlignment = if (readingColumn) Alignment.CenterHorizontally else Alignment.Start,
@@ -115,7 +118,7 @@ internal fun RichBlocks(
             if (index > 0) Spacer(Modifier.height(blockSpacingBetween(blocks[index - 1], block)))
             if (readingColumn) {
                 val bleed = if (block.isEdgeToEdge()) {
-                    Modifier.readingBleed()
+                    Modifier.readingBleed(bleedInset.left, bleedInset.right)
                 } else {
                     Modifier.widthIn(max = READING_MAX_WIDTH).fillMaxWidth()
                 }
@@ -165,10 +168,30 @@ private fun BoxScope.RichAnchorHighlight(active: Boolean) {
  *  is narrower than this so it just fills the width. */
 private val READING_MAX_WIDTH = 700.dp
 
-/** Horizontal inset the host post card applies to the rich body; media / tables in reading mode
- *  cancel it via [readingBleed] to reach the card edge. Keep in sync with PostCard's content
- *  padding. */
+/** Fallback bleed when no host declares [LocalRichBleedInset] — the pre-batch-7 behaviour (cancel
+ *  only the card's own content padding). Real reading hosts override it with their true distance
+ *  to the window edge. */
 private val READING_EDGE_BLEED = 16.dp
+
+/**
+ * The distance from the rich body's own edge to the surface edge it should bleed to (the host
+ * card's edge, which on a phone IS the window edge). Media and tables in reading mode cancel it via
+ * [readingBleed] to run truly edge-to-edge instead of stopping at the text column.
+ *
+ * [left] / [right] are PHYSICAL (not start/end) on purpose: the bleed runs inside an RTL document's
+ * forced [LayoutDirection.Rtl], but the host card's avatar column follows the DEVICE direction, so
+ * the two directions can disagree. The host resolves its avatar-side vs trailing insets against its
+ * OWN layout direction and hands over physical values, and [readingBleed] applies them verbatim.
+ *
+ * The HOST declares it (see PostCard, expanded/reading mode) so the rich layer carries no
+ * per-screen constant — a host with different chrome (a future capped reading column, a comment
+ * bubble) provides its own numbers and the bleed follows, with no change here. The default is the
+ * legacy symmetric [READING_EDGE_BLEED] so an undeclared host keeps its old inset.
+ */
+@Immutable
+internal data class RichBleedInset(val left: Dp, val right: Dp)
+
+internal val LocalRichBleedInset = staticCompositionLocalOf { RichBleedInset(READING_EDGE_BLEED, READING_EDGE_BLEED) }
 
 /** Media / table blocks read as full-bleed figures in the reading surface. Quotes and details
  *  stay inside the text column. */
@@ -185,22 +208,26 @@ private fun RichBlock.isEdgeToEdge(): Boolean = when (this) {
 }
 
 /**
- * Expands a block by [READING_EDGE_BLEED] on each horizontal side and shifts it left by the same,
- * so it bleeds past the host card's content inset to the card edge while still REPORTING the
- * un-expanded width to its parent [Column] (the centred column layout is undisturbed). A no-op
+ * Expands a block by [left] on its physical left and [right] on its physical right, and shifts it
+ * so it bleeds past the host's content inset to the surface edge (the card edge = the window edge on
+ * a phone) while still REPORTING the un-expanded width to its parent [Column] (the centred column
+ * layout is undisturbed, and the parent's measured width doesn't change so there is no feedback
+ * loop). Physical (not start/end) because the host resolves its avatar-side inset against the DEVICE
+ * direction while this runs under the document's forced direction — see [RichBleedInset]. A no-op
  * when the incoming width is unbounded (nothing to bleed into).
  */
-private fun Modifier.readingBleed(): Modifier = layout { measurable, constraints ->
+private fun Modifier.readingBleed(left: Dp, right: Dp): Modifier = layout { measurable, constraints ->
     if (!constraints.hasBoundedWidth) {
         val placeable = measurable.measure(constraints)
         return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
     }
-    val insetPx = READING_EDGE_BLEED.roundToPx()
-    val expanded = constraints.maxWidth + insetPx * 2
+    val leftPx = left.roundToPx()
+    val rightPx = right.roundToPx()
+    val expanded = constraints.maxWidth + leftPx + rightPx
     val placeable = measurable.measure(
         constraints.copy(minWidth = 0, maxWidth = expanded),
     )
-    layout(constraints.maxWidth, placeable.height) { placeable.place(-insetPx, 0) }
+    layout(constraints.maxWidth, placeable.height) { placeable.place(-leftPx, 0) }
 }
 
 @Composable
