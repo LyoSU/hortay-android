@@ -34,6 +34,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CollectionInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -41,6 +42,7 @@ import androidx.compose.ui.semantics.collectionInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -69,14 +71,17 @@ internal val LocalTableViewer = staticCompositionLocalOf<RichTableViewer?> { nul
  * viewer is ever composed at a time.
  */
 @Composable
-internal fun RichTableViewerHost(content: @Composable () -> Unit) {
+internal fun RichTableViewerHost(
+    layoutDirection: LayoutDirection = LayoutDirection.Ltr,
+    content: @Composable () -> Unit,
+) {
     var open by remember { mutableStateOf<RichBlock.Table?>(null) }
     val controller = remember { RichTableViewer { open = it } }
     CompositionLocalProvider(LocalTableViewer provides controller) {
         content()
     }
     open?.let { table ->
-        RichTableViewerDialog(table = table, onDismiss = { open = null })
+        RichTableViewerDialog(table = table, layoutDirection = layoutDirection, onDismiss = { open = null })
     }
 }
 
@@ -99,11 +104,19 @@ private val VIEWER_MAX_COLUMN_WIDTH = 4000.dp
  * wins. The top bar copies the whole table as TSV to the clipboard.
  */
 @Composable
-private fun RichTableViewerDialog(table: RichBlock.Table, onDismiss: () -> Unit) {
+private fun RichTableViewerDialog(
+    table: RichBlock.Table,
+    layoutDirection: LayoutDirection,
+    onDismiss: () -> Unit,
+) {
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
+      // A Dialog opens its own composition/window and does NOT inherit the rich body's forced
+      // LocalLayoutDirection, so an RTL document's table would otherwise render LTR (un-mirrored
+      // column order) in the viewer. Re-provide the document's direction here.
+      CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
         val placements = remember(table) { buildPlacements(table) }
         val density = LocalDensity.current
 
@@ -184,6 +197,7 @@ private fun RichTableViewerDialog(table: RichBlock.Table, onDismiss: () -> Unit)
                 }
             }
         }
+      }
     }
 }
 
