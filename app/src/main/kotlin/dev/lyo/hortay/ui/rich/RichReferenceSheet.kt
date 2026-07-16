@@ -15,6 +15,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,6 +45,7 @@ internal fun RichReferenceSheet(
 ) {
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
             Text(
@@ -59,6 +62,7 @@ internal fun RichReferenceSheet(
                 TonalActionRow(
                     text = stringResource(R.string.rich_go_to_reference),
                     onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                         onGoToReference(data.target)
                         scope.launch {
                             runCatching { sheetState.hide() }

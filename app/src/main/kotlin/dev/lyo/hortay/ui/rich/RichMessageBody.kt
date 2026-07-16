@@ -12,6 +12,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.LayoutDirection
@@ -59,6 +61,7 @@ fun RichMessageBody(
 ) {
     val uriHandler = LocalUriHandler.current
     val confirmMaskedLink = LocalLinkConfirm.current
+    val haptics = LocalHapticFeedback.current
     // FeedPreview projects to a bounded prefix before composition; Reading renders every block.
     val blocks = remember(document, mode) {
         when (mode) {
@@ -90,7 +93,7 @@ fun RichMessageBody(
     // A footnote / reference marker whose text is resolvable in-document opens this sheet; an
     // anchor marker scrolls; an external-only marker falls back to the masked-link confirmation.
     val referenceSheet = remember { mutableStateOf<RichReferenceSheetData?>(null) }
-    val anchorTap = remember(blocks, registry, controller, reading, uriHandler, confirmMaskedLink) {
+    val anchorTap = remember(blocks, registry, controller, reading, uriHandler, confirmMaskedLink, haptics) {
         { kind: RichLinkKind, name: String, url: String ->
             // Same anti-phishing path as a masked RichInline.Url: the confirm hook resolves the
             // destination and surfaces the sheet only for genuinely external targets; the sentinel
@@ -103,13 +106,20 @@ fun RichMessageBody(
                     val excerpt = if (reading) findReferenceExcerpt(blocks, name) else null
                     val target = registry[normalizeAnchor(name)]
                     when {
-                        excerpt != null && target != null -> referenceSheet.value = RichReferenceSheetData(excerpt, target)
+                        excerpt != null && target != null -> {
+                            // Subtle tick as the footnote sheet rises — same idiom as poll votes.
+                            haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                            referenceSheet.value = RichReferenceSheetData(excerpt, target)
+                        }
                         url.isNotBlank() -> open(url)
                         else -> Unit
                     }
                 }
                 RichLinkKind.Anchor -> when (val action = resolveAnchorTap(name, url, registry, canScroll = reading)) {
-                    is AnchorTapAction.Scroll -> controller.navigate(action.target)
+                    is AnchorTapAction.Scroll -> {
+                        haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                        controller.navigate(action.target)
+                    }
                     is AnchorTapAction.OpenUrl -> open(action.url)
                     AnchorTapAction.None -> Unit
                 }
