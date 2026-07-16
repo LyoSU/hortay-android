@@ -206,7 +206,6 @@ private fun RichBlock.isEdgeToEdge(): Boolean = when (this) {
     is RichBlock.Animation,
     is RichBlock.Collage,
     is RichBlock.Slideshow,
-    is RichBlock.MapPreview,
     is RichBlock.Table,
     -> true
     else -> false
