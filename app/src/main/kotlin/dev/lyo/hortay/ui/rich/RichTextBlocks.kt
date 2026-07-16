@@ -9,7 +9,9 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -40,11 +43,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.collapse
@@ -53,6 +62,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -91,6 +101,7 @@ internal fun RichBlocks(
     modifier: Modifier = Modifier,
     readingColumn: Boolean = false,
     quoteDepth: Int = 0,
+    listDepth: Int = 0,
 ) {
     // In-document anchor navigation (Reading only): the controller carries a per-target-block
     // BringIntoViewRequester and the transient "which block is flashing" state. Nested (non-reading)
@@ -111,13 +122,13 @@ internal fun RichBlocks(
                 val requester = anchorController?.requesterFor(index)
                 val blockModifier = if (requester != null) bleed.bringIntoViewRequester(requester) else bleed
                 Box(blockModifier) {
-                    RichBlockContent(block, path = "$path.$index", quoteDepth = quoteDepth)
+                    RichBlockContent(block, path = "$path.$index", quoteDepth = quoteDepth, listDepth = listDepth)
                     if (anchorController != null) {
                         RichAnchorHighlight(active = anchorController.highlightedIndex == index)
                     }
                 }
             } else {
-                RichBlockContent(block, path = "$path.$index", quoteDepth = quoteDepth)
+                RichBlockContent(block, path = "$path.$index", quoteDepth = quoteDepth, listDepth = listDepth)
             }
         }
     }
@@ -193,7 +204,7 @@ private fun Modifier.readingBleed(): Modifier = layout { measurable, constraints
 }
 
 @Composable
-private fun RichBlockContent(block: RichBlock, path: String, quoteDepth: Int = 0) {
+private fun RichBlockContent(block: RichBlock, path: String, quoteDepth: Int = 0, listDepth: Int = 0) {
     when (block) {
         is RichBlock.SectionHeading -> RichInlineText(
             inline = block.text,
@@ -212,14 +223,14 @@ private fun RichBlockContent(block: RichBlock, path: String, quoteDepth: Int = 0
         RichBlock.Divider -> HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         is RichBlock.Anchor -> Unit // invisible scroll target — renders nothing
 
-        is RichBlock.ListBlock -> RichList(block.items, path, quoteDepth)
+        is RichBlock.ListBlock -> RichList(block.items, path, quoteDepth, listDepth)
 
         is RichBlock.BlockQuote -> RichBlockQuote(credit = block.credit, depth = quoteDepth) {
-            RichBlocks(block.blocks, path = "$path.q", quoteDepth = quoteDepth + 1)
+            RichBlocks(block.blocks, path = "$path.q", quoteDepth = quoteDepth + 1, listDepth = listDepth)
         }
         is RichBlock.PullQuote -> RichPullQuote(text = block.text, credit = block.credit)
 
-        is RichBlock.Details -> RichDetails(block, path, quoteDepth)
+        is RichBlock.Details -> RichDetails(block, path, quoteDepth, listDepth)
 
         is RichBlock.Photo -> RichPhoto(block)
         is RichBlock.Video -> RichVideo(block)
@@ -325,38 +336,107 @@ private fun RichQuoteCredit(credit: RichInline?) {
 
 // ---- Lists ----
 
-private val LIST_MARKER_WIDTH = 28.dp
+/** Per-level indent for a nested list, capped at [LIST_MAX_INSET_LEVELS] so a runaway nest can't
+ *  march its content off the right edge. */
+private val LIST_NEST_INSET = 16.dp
+private const val LIST_MAX_INSET_LEVELS = 4
+
+/** Gap between the (right-aligned) ordinal marker and the item body. */
+private val LIST_MARKER_GAP = 8.dp
+
+/** Checked-item body dim — a soft "done" cue without a strikethrough (unless the source text
+ *  itself carries one). */
+private const val CHECKED_ITEM_ALPHA = 0.8f
 
 @Composable
-private fun RichList(items: List<RichListItem>, path: String, quoteDepth: Int = 0) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun RichList(items: List<RichListItem>, path: String, quoteDepth: Int = 0, listDepth: Int = 0) {
+    val markerStyle = MaterialTheme.typography.bodyLarge
+    val measurer = rememberTextMeasurer()
+    // Ordinal markers only (a checklist item has a glyph box, not text). Measuring the WIDEST marker
+    // sizes the column dynamically, so "viii." / "MMM." never clip a 28 dp slot and every item body
+    // shares one left edge regardless of ordinal width.
+    val markers = remember(items) { items.map { if (it.hasCheckbox) null else listMarker(it) } }
+    val markerWidthPx = remember(markers, markerStyle) {
+        markers.filterNotNull().maxOfOrNull { measurer.measure(it, markerStyle).size.width } ?: 0
+    }
+    val markerWidth = with(LocalDensity.current) { markerWidthPx.toDp() }
+    val inset = LIST_NEST_INSET * minOf(listDepth, LIST_MAX_INSET_LEVELS)
+
+    Column(
+        modifier = if (inset > 0.dp) Modifier.padding(start = inset) else Modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         items.forEachIndexed { index, item ->
             Row(verticalAlignment = Alignment.Top) {
                 if (item.hasCheckbox) {
-                    Symbol(
-                        name = if (item.isChecked) "check_box" else "check_box_outline_blank",
-                        size = 20.dp,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    RichChecklistBox(
+                        checked = item.isChecked,
                         // Read-only checked state for screen readers (the checklist mirrors the
                         // source post; Hortay never toggles it), so no onClick / toggleable action.
                         modifier = Modifier
-                            .padding(end = 6.dp)
+                            .padding(top = 1.dp, end = 8.dp)
                             .semantics { toggleableState = ToggleableState(item.isChecked) },
                     )
                 } else {
+                    // Right-aligned in its measured column + baseline-aligned to the body's first
+                    // line, so ordinals line up on their trailing dot and sit on the text baseline.
                     Text(
-                        text = listMarker(item),
-                        style = MaterialTheme.typography.bodyLarge,
+                        text = markers[index].orEmpty(),
+                        style = markerStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(LIST_MARKER_WIDTH),
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.width(markerWidth).alignByBaseline(),
                     )
+                    Spacer(Modifier.width(LIST_MARKER_GAP))
                 }
+                val bodyDim = item.hasCheckbox && item.isChecked
                 RichBlocks(
                     item.blocks,
                     path = "$path.$index",
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(if (item.hasCheckbox) Modifier else Modifier.alignByBaseline())
+                        .then(if (bodyDim) Modifier.alpha(CHECKED_ITEM_ALPHA) else Modifier),
                     quoteDepth = quoteDepth,
+                    listDepth = listDepth + 1,
                 )
+            }
+        }
+    }
+}
+
+private val CHECKBOX_SIZE = 18.dp
+private val CHECKBOX_SHAPE = RoundedCornerShape(5.dp)
+
+/**
+ * Read-only Telegram-style checklist glyph — a small rounded square that fills with the accent and
+ * shows a hand-drawn check when done, an outlined box when not. Deliberately NOT a Material
+ * `Checkbox` (that reads as an interactive form control with its own ripple / min-touch size); the
+ * source post's checklist is display-only here.
+ */
+@Composable
+private fun RichChecklistBox(checked: Boolean, modifier: Modifier = Modifier) {
+    val accent = MaterialTheme.colorScheme.primary
+    val onAccent = MaterialTheme.colorScheme.onPrimary
+    val outline = MaterialTheme.colorScheme.outline
+    Box(
+        modifier = modifier
+            .size(CHECKBOX_SIZE)
+            .clip(CHECKBOX_SHAPE)
+            .then(if (checked) Modifier.background(accent) else Modifier.border(1.5.dp, outline, CHECKBOX_SHAPE)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (checked) {
+            Canvas(modifier = Modifier.size(CHECKBOX_SIZE * 0.62f)) {
+                val w = size.width
+                val h = size.height
+                val stroke = Stroke(width = size.minDimension * 0.18f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                val path = Path().apply {
+                    moveTo(0.14f * w, 0.55f * h)
+                    lineTo(0.42f * w, 0.82f * h)
+                    lineTo(0.86f * w, 0.22f * h)
+                }
+                drawPath(path, color = onAccent, style = stroke)
             }
         }
     }
@@ -439,7 +519,7 @@ private val DETAILS_CONTAINER_SHAPE = RoundedCornerShape(12.dp)
 private val DETAILS_NESTING_LINE = 1.5.dp
 
 @Composable
-private fun RichDetails(block: RichBlock.Details, path: String, quoteDepth: Int = 0) {
+private fun RichDetails(block: RichBlock.Details, path: String, quoteDepth: Int = 0, listDepth: Int = 0) {
     // Position-keyed (NOT rememberSaveable): cold launch collapses to the model's isOpen.
     var open by remember(path) { mutableStateOf(block.isOpen) }
     // External auto-open seam: when the controller marks this path requested, force it open (the
@@ -509,7 +589,7 @@ private fun RichDetails(block: RichBlock.Details, path: String, quoteDepth: Int 
                         .drawBehind { drawRect(color = lineColor, size = Size(DETAILS_NESTING_LINE.toPx(), size.height)) }
                         .padding(start = 16.dp),
                 ) {
-                    RichBlocks(block.blocks, path = "$path.d", quoteDepth = quoteDepth)
+                    RichBlocks(block.blocks, path = "$path.d", quoteDepth = quoteDepth, listDepth = listDepth)
                 }
             }
         }
