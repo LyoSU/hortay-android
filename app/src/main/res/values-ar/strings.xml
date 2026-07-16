@@ -843,6 +843,7 @@
     <string name="rich_audio_pause">إيقاف مؤقت</string>
     <string name="rich_audio_loading">جارٍ التحميل</string>
     <string name="rich_map_open">فتح في الخرائط</string>
+    <string name="rich_go_to_reference">الانتقال إلى المرجع</string>
     <string name="video_control_play">تشغيل</string>
     <string name="video_control_pause">إيقاف مؤقت</string>
     <string name="video_control_mute">كتم الصوت</string>

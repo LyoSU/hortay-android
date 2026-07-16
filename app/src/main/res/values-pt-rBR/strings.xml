@@ -802,6 +802,7 @@
     <string name="rich_audio_pause">Pausar</string>
     <string name="rich_audio_loading">Carregando</string>
     <string name="rich_map_open">Abrir no mapa</string>
+    <string name="rich_go_to_reference">Ir para a referência</string>
     <string name="video_control_play">Reproduzir</string>
     <string name="video_control_pause">Pausar</string>
     <string name="video_control_mute">Silenciar</string>

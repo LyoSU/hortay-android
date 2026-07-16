@@ -47,16 +47,22 @@ import dev.lyo.hortay.ui.text.rememberSpoilerReveal
 import dev.lyo.hortay.ui.users.LocalUserProfileOpener
 import kotlinx.collections.immutable.toImmutableList
 
+/** Which in-document link kind a tap came from — an [RichInline.AnchorLink] (scroll to an
+ *  invisible anchor) or a [RichInline.ReferenceLink] (open the footnote sheet). [RichMessageBody]
+ *  routes the two differently; the AST node type is lost by the time the tap fires, so it's
+ *  carried here. */
+internal enum class RichLinkKind { Anchor, Reference }
+
 /**
  * In-app dispatch for a rich-message anchor / reference tap
- * ([RichInline.AnchorLink] / [RichInline.ReferenceLink]). The first argument is the
- * normalized target name; the second is the external fallback URL. [RichMessageBody]
- * installs an implementation that scrolls to the target block when the name resolves in
- * the current document and otherwise opens the URL. The default is a no-op so standalone
- * previews / tests don't crash on tap.
+ * ([RichInline.AnchorLink] / [RichInline.ReferenceLink]). Arguments: the link [RichLinkKind],
+ * the normalized target name, and the external fallback URL. [RichMessageBody] installs an
+ * implementation that scrolls an anchor to the target block (or opens a reference's footnote
+ * sheet) when the name resolves in the current document, and otherwise opens the URL. The
+ * default is a no-op so standalone previews / tests don't crash on tap.
  */
-internal val LocalRichAnchorTap = staticCompositionLocalOf<(name: String, url: String) -> Unit> {
-    { _, _ -> }
+internal val LocalRichAnchorTap = staticCompositionLocalOf<(kind: RichLinkKind, name: String, url: String) -> Unit> {
+    { _, _, _ -> }
 }
 
 /**
@@ -220,7 +226,7 @@ private class RichBuildContext(
     val maskedOpen: LinkInteractionListener,
     val hashtagTap: (String) -> Unit,
     val userMentionTap: (Long) -> Unit,
-    val anchorTap: (String, String) -> Unit,
+    val anchorTap: (RichLinkKind, String, String) -> Unit,
     val revealedGroups: Set<Int>,
     val reveal: (Int) -> Unit,
     val linkRanges: MutableList<LinkRange> = mutableListOf(),
@@ -239,7 +245,7 @@ private fun buildRichAnnotated(
     confirmMaskedLink: (String) -> Unit,
     hashtagTap: (String) -> Unit,
     userMentionTap: (Long) -> Unit,
-    anchorTap: (String, String) -> Unit,
+    anchorTap: (RichLinkKind, String, String) -> Unit,
     revealedGroups: Set<Int>,
     reveal: (Int) -> Unit,
 ): BuiltRich {
@@ -319,8 +325,16 @@ private fun AnnotatedString.Builder.walkRich(node: RichInline, ctx: RichBuildCon
 
         is RichInline.MentionName -> richClickable(ctx, canLink, "rich-mention-${node.userId}", palette.accent, { ctx.userMentionTap(node.userId) }) { walkRich(node.child, ctx, covering, canLink = false) }
         is RichInline.Hashtag -> richClickable(ctx, canLink, "rich-hashtag-${node.hashtag}", palette.accent, { ctx.hashtagTap(node.hashtag) }) { walkRich(node.child, ctx, covering, canLink = false) }
-        is RichInline.ReferenceLink -> richClickable(ctx, canLink, "rich-ref-${node.referenceName}", palette.accent, { ctx.anchorTap(node.referenceName, node.url) }) { walkRich(node.child, ctx, covering, canLink = false) }
-        is RichInline.AnchorLink -> richClickable(ctx, canLink, "rich-anchor-${node.anchorName}", palette.accent, { ctx.anchorTap(node.anchorName, node.url) }) { walkRich(node.child, ctx, covering, canLink = false) }
+        is RichInline.ReferenceLink -> richClickable(
+            ctx, canLink, "rich-ref-${node.referenceName}", palette.accent,
+            { ctx.anchorTap(RichLinkKind.Reference, node.referenceName, node.url) },
+            markerStyle = footnoteMarkerStyle(node.child),
+        ) { walkRich(node.child, ctx, covering, canLink = false) }
+        is RichInline.AnchorLink -> richClickable(
+            ctx, canLink, "rich-anchor-${node.anchorName}", palette.accent,
+            { ctx.anchorTap(RichLinkKind.Anchor, node.anchorName, node.url) },
+            markerStyle = footnoteMarkerStyle(node.child),
+        ) { walkRich(node.child, ctx, covering, canLink = false) }
 
         // Bot commands are accent-coloured but not tappable (no in-app command dispatch),
         // matching the FormattedText renderer.
@@ -389,25 +403,49 @@ private fun AnnotatedString.Builder.richLink(
     }
 }
 
-/** Adds a Clickable-backed tappable entity (or accent text when covered / nested). */
+/**
+ * Adds a Clickable-backed tappable entity (or accent text when covered / nested). [markerStyle],
+ * when non-null, wraps the body in an extra span — used to raise a short footnote marker
+ * (`[1]` / `¹`) as a superscript accent chip (see [footnoteMarkerStyle]).
+ */
 private fun AnnotatedString.Builder.richClickable(
     ctx: RichBuildContext,
     canLink: Boolean,
     tag: String,
     color: Color,
     onTap: () -> Unit,
+    markerStyle: SpanStyle? = null,
     body: AnnotatedString.Builder.() -> Unit,
 ) {
+    val wrapped: AnnotatedString.Builder.() -> Unit =
+        if (markerStyle != null) ({ withStyle(markerStyle) { body() } }) else body
     if (!canLink) {
-        withStyle(SpanStyle(color = color)) { body() }
+        withStyle(SpanStyle(color = color)) { wrapped() }
         return
     }
     val start = length
     pushLink(LinkAnnotation.Clickable(tag, TextLinkStyles(SpanStyle(color = color)), LinkInteractionListener { onTap() }))
-    body()
+    wrapped()
     pop()
     val end = length
     if (end > start) ctx.pressableRanges += start until end
+}
+
+/** Longest link text still treated as a raised footnote marker (`[1]`, `¹`, `†`). */
+private const val FOOTNOTE_MARKER_MAX_CHARS = 4
+
+/**
+ * Superscript styling for a short footnote / reference marker, or `null` for longer link text
+ * (which keeps normal inline-link styling). Only the baseline shift + scale are applied here; the
+ * accent colour comes from the link's own [TextLinkStyles]. A boxed "chip" background is
+ * deliberately NOT used — an [SpanStyle] background paints a square, unpadded rectangle that reads
+ * worse than a clean raised accent glyph at this size (inline AnnotatedString spans can't carry a
+ * rounded, padded background).
+ */
+private fun footnoteMarkerStyle(child: RichInline): SpanStyle? {
+    val label = RichPlainText.of(child).trim()
+    if (label.isEmpty() || label.length > FOOTNOTE_MARKER_MAX_CHARS) return null
+    return SpanStyle(baselineShift = BaselineShift.Superscript, fontSize = SCRIPT_SCALE)
 }
 
 /** Subscript / superscript glyph scale, relative to the surrounding run. */

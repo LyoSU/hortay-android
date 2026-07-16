@@ -817,6 +817,7 @@
     <string name="rich_audio_pause">Пауза</string>
     <string name="rich_audio_loading">Завантаження</string>
     <string name="rich_map_open">Відкрити в картах</string>
+    <string name="rich_go_to_reference">Перейти до джерела</string>
     <string name="video_control_play">Відтворити</string>
     <string name="video_control_pause">Пауза</string>
     <string name="video_control_mute">Вимкнути звук</string>

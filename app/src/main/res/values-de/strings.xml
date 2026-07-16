@@ -783,6 +783,7 @@
     <string name="rich_audio_pause">Pause</string>
     <string name="rich_audio_loading">Wird geladen</string>
     <string name="rich_map_open">In Karten öffnen</string>
+    <string name="rich_go_to_reference">Zur Referenz</string>
     <string name="video_control_play">Wiedergeben</string>
     <string name="video_control_pause">Pause</string>
     <string name="video_control_mute">Stummschalten</string>

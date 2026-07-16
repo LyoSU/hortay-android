@@ -800,6 +800,7 @@
     <string name="rich_audio_pause">Pausa</string>
     <string name="rich_audio_loading">Caricamento</string>
     <string name="rich_map_open">Apri in Mappe</string>
+    <string name="rich_go_to_reference">Vai al riferimento</string>
     <string name="video_control_play">Riproduci</string>
     <string name="video_control_pause">Pausa</string>
     <string name="video_control_mute">Disattiva audio</string>

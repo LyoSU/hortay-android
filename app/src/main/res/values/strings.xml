@@ -814,6 +814,7 @@
     <string name="rich_audio_pause">Pause</string>
     <string name="rich_audio_loading">Loading</string>
     <string name="rich_map_open">Open in maps</string>
+    <string name="rich_go_to_reference">Go to reference</string>
     <!-- Accessibility names for custom media controls, localized status badges,
          feed refresh accessibility action and generic media descriptions. -->
     <string name="video_control_play">Play</string>

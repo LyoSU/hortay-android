@@ -764,6 +764,7 @@
     <string name="rich_audio_pause">Jeda</string>
     <string name="rich_audio_loading">Memuat</string>
     <string name="rich_map_open">Buka di peta</string>
+    <string name="rich_go_to_reference">Buka referensi</string>
     <string name="video_control_play">Putar</string>
     <string name="video_control_pause">Jeda</string>
     <string name="video_control_mute">Bisukan</string>

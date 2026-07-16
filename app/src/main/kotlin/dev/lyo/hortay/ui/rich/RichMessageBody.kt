@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichDocument
 import dev.lyo.hortay.data.rich.RichInline
+import dev.lyo.hortay.data.rich.RichPlainText
 import dev.lyo.hortay.ui.text.LocalLinkConfirm
 import dev.lyo.hortay.ui.text.Unhandled
 import kotlinx.coroutines.Job
@@ -86,16 +87,32 @@ fun RichMessageBody(
     }
     val activeController = if (reading) controller else null
 
-    val anchorTap = remember(registry, controller, reading, uriHandler, confirmMaskedLink) {
-        { name: String, url: String ->
-            when (val action = resolveAnchorTap(name, url, registry, canScroll = reading)) {
-                is AnchorTapAction.Scroll -> controller.navigate(action.target)
-                // Same anti-phishing path as a masked RichInline.Url: the confirm hook resolves
-                // the destination and surfaces the sheet only for genuinely external targets;
-                // the sentinel default (standalone previews / tests) opens directly.
-                is AnchorTapAction.OpenUrl ->
-                    if (confirmMaskedLink === Unhandled) runCatching { uriHandler.openUri(action.url) } else confirmMaskedLink(action.url)
-                AnchorTapAction.None -> Unit
+    // A footnote / reference marker whose text is resolvable in-document opens this sheet; an
+    // anchor marker scrolls; an external-only marker falls back to the masked-link confirmation.
+    val referenceSheet = remember { mutableStateOf<RichReferenceSheetData?>(null) }
+    val anchorTap = remember(blocks, registry, controller, reading, uriHandler, confirmMaskedLink) {
+        { kind: RichLinkKind, name: String, url: String ->
+            // Same anti-phishing path as a masked RichInline.Url: the confirm hook resolves the
+            // destination and surfaces the sheet only for genuinely external targets; the sentinel
+            // default (standalone previews / tests) opens directly.
+            fun open(target: String) {
+                if (confirmMaskedLink === Unhandled) runCatching { uriHandler.openUri(target) } else confirmMaskedLink(target)
+            }
+            when (kind) {
+                RichLinkKind.Reference -> {
+                    val excerpt = if (reading) findReferenceExcerpt(blocks, name) else null
+                    val target = registry[normalizeAnchor(name)]
+                    when {
+                        excerpt != null && target != null -> referenceSheet.value = RichReferenceSheetData(excerpt, target)
+                        url.isNotBlank() -> open(url)
+                        else -> Unit
+                    }
+                }
+                RichLinkKind.Anchor -> when (val action = resolveAnchorTap(name, url, registry, canScroll = reading)) {
+                    is AnchorTapAction.Scroll -> controller.navigate(action.target)
+                    is AnchorTapAction.OpenUrl -> open(action.url)
+                    AnchorTapAction.None -> Unit
+                }
             }
             Unit
         }
@@ -120,6 +137,14 @@ fun RichMessageBody(
                 body()
             }
         }
+    }
+
+    referenceSheet.value?.let { data ->
+        RichReferenceSheet(
+            data = data,
+            onGoToReference = { controller.navigate(it) },
+            onDismiss = { referenceSheet.value = null },
+        )
     }
 }
 
@@ -308,5 +333,70 @@ internal fun collectAnchorNames(inline: RichInline): List<String> = buildList {
         is RichInline.ReferenceLink -> addAll(collectAnchorNames(inline.child))
         is RichInline.AnchorLink -> addAll(collectAnchorNames(inline.child))
         is RichInline.Plain, is RichInline.CustomEmoji, is RichInline.Math, is RichInline.Unknown -> Unit
+    }
+}
+
+/**
+ * Plain-text excerpt of the in-document [RichInline.Reference] named [referenceName], or `null`
+ * when no such target exists (an external-only reference — the caller keeps the confirm-and-open
+ * fallback). This is what makes a footnote marker resolvable "in-document": TDLib carries the
+ * footnote body as the `child` of a `richTextReference` node, so we find the first matching
+ * Reference and project its child through [RichPlainText]. Text blocks, quotes, lists and details
+ * bodies are searched; media captions and table cells (where references effectively never appear)
+ * are not.
+ */
+internal fun findReferenceExcerpt(blocks: List<RichBlock>, referenceName: String): String? {
+    val key = normalizeAnchor(referenceName)
+    if (key.isEmpty()) return null
+    return blocks.firstNotNullOfOrNull { findReferenceInBlock(it, key) }
+}
+
+private fun findReferenceInBlock(block: RichBlock, key: String): String? = when (block) {
+    is RichBlock.SectionHeading -> findReferenceInInline(block.text, key)
+    is RichBlock.Paragraph -> findReferenceInInline(block.text, key)
+    is RichBlock.Footer -> findReferenceInInline(block.text, key)
+    is RichBlock.Preformatted -> findReferenceInInline(block.text, key)
+    is RichBlock.PullQuote ->
+        findReferenceInInline(block.text, key) ?: block.credit?.let { findReferenceInInline(it, key) }
+    is RichBlock.BlockQuote ->
+        block.blocks.firstNotNullOfOrNull { findReferenceInBlock(it, key) }
+            ?: block.credit?.let { findReferenceInInline(it, key) }
+    is RichBlock.ListBlock ->
+        block.items.firstNotNullOfOrNull { item -> item.blocks.firstNotNullOfOrNull { findReferenceInBlock(it, key) } }
+    is RichBlock.Details ->
+        findReferenceInInline(block.header, key) ?: block.blocks.firstNotNullOfOrNull { findReferenceInBlock(it, key) }
+    else -> null
+}
+
+private fun findReferenceInInline(inline: RichInline, key: String): String? {
+    if (inline is RichInline.Reference && normalizeAnchor(inline.name) == key) {
+        return RichPlainText.of(inline.child).trim().ifEmpty { null }
+    }
+    return when (inline) {
+        is RichInline.Sequence -> inline.parts.firstNotNullOfOrNull { findReferenceInInline(it, key) }
+        is RichInline.Reference -> findReferenceInInline(inline.child, key)
+        is RichInline.Bold -> findReferenceInInline(inline.child, key)
+        is RichInline.Italic -> findReferenceInInline(inline.child, key)
+        is RichInline.Underline -> findReferenceInInline(inline.child, key)
+        is RichInline.Strikethrough -> findReferenceInInline(inline.child, key)
+        is RichInline.Spoiler -> findReferenceInInline(inline.child, key)
+        is RichInline.Subscript -> findReferenceInInline(inline.child, key)
+        is RichInline.Superscript -> findReferenceInInline(inline.child, key)
+        is RichInline.Marked -> findReferenceInInline(inline.child, key)
+        is RichInline.Fixed -> findReferenceInInline(inline.child, key)
+        is RichInline.DateTime -> findReferenceInInline(inline.child, key)
+        is RichInline.Mention -> findReferenceInInline(inline.child, key)
+        is RichInline.MentionName -> findReferenceInInline(inline.child, key)
+        is RichInline.Hashtag -> findReferenceInInline(inline.child, key)
+        is RichInline.Cashtag -> findReferenceInInline(inline.child, key)
+        is RichInline.BotCommand -> findReferenceInInline(inline.child, key)
+        is RichInline.Url -> findReferenceInInline(inline.child, key)
+        is RichInline.EmailAddress -> findReferenceInInline(inline.child, key)
+        is RichInline.PhoneNumber -> findReferenceInInline(inline.child, key)
+        is RichInline.BankCardNumber -> findReferenceInInline(inline.child, key)
+        is RichInline.ReferenceLink -> findReferenceInInline(inline.child, key)
+        is RichInline.AnchorLink -> findReferenceInInline(inline.child, key)
+        is RichInline.Plain, is RichInline.CustomEmoji, is RichInline.Math,
+        is RichInline.Anchor, is RichInline.Unknown -> null
     }
 }

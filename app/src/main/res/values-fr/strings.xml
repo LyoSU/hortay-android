@@ -798,6 +798,7 @@
     <string name="rich_audio_pause">Pause</string>
     <string name="rich_audio_loading">Chargement</string>
     <string name="rich_map_open">Ouvrir dans Plans</string>
+    <string name="rich_go_to_reference">Aller à la référence</string>
     <string name="video_control_play">Lecture</string>
     <string name="video_control_pause">Pause</string>
     <string name="video_control_mute">Couper le son</string>
