@@ -193,8 +193,13 @@ internal data class RichBleedInset(val left: Dp, val right: Dp)
 
 internal val LocalRichBleedInset = staticCompositionLocalOf { RichBleedInset(READING_EDGE_BLEED, READING_EDGE_BLEED) }
 
-/** Media / table blocks read as full-bleed figures in the reading surface. Quotes and details
- *  stay inside the text column. */
+/**
+ * Visual-figure blocks that read as full-bleed in the reading surface. Quotes, details, and the
+ * inline Audio / VoiceNote player rows deliberately stay in the text column — a player row is a
+ * text-column citizen (controls + waveform sized to the reading measure), not a figure, so bleeding
+ * it would just stretch a control strip across the screen. (A Table is "edge-to-edge" only in that
+ * its scroll viewport spans the width; its content is re-inset at rest — see RichTableFull.)
+ */
 private fun RichBlock.isEdgeToEdge(): Boolean = when (this) {
     is RichBlock.Photo,
     is RichBlock.Video,

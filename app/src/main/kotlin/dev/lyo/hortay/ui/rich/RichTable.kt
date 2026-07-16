@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -96,23 +97,31 @@ internal fun RichTable(block: RichBlock.Table) {
 @Composable
 private fun RichTableFull(block: RichBlock.Table, placements: TablePlacements) {
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    // Inset-at-rest, bleed-on-scroll (Telegram / iOS idiom). The scroll viewport spans the full
+    // bled width (the block is edge-to-edge — see RichTextBlocks.isEdgeToEdge), but the content is
+    // padded back to the text-column inset so at rest the table's leading edge lines up with the
+    // article text; swiping pulls columns under the physical screen edges. Physical left/right (the
+    // host resolved direction — see [RichBleedInset]); an inset of 0 (no host / feed) collapses to
+    // a plain full-width table.
+    val bleed = LocalRichBleedInset.current
 
     Column {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val maxColumnWidth = maxWidth * COLUMN_WIDTH_FRACTION
+            // Cap a single column against the readable TEXT column (viewport minus the resting
+            // insets), not the full bled viewport, so one column can't balloon to 60% of the screen.
+            val maxColumnWidth = (maxWidth - bleed.left - bleed.right) * COLUMN_WIDTH_FRACTION
             val scrollState = rememberScrollState()
             Box(
                 modifier = Modifier
-                    .clip(TABLE_CONTAINER_SHAPE)
-                    .background(containerColor)
-                    // Trailing (and, once scrolled, leading) edge fade drawn OVER the scrolled
-                    // content: the content dissolves into the container colour at whichever side
-                    // still has clipped columns, so the fade reads as a live "more this way"
-                    // swipe hint derived purely from the scroll position.
+                    .fillMaxWidth()
+                    // Edge fade drawn OVER the viewport at the PHYSICAL screen edges, and only where
+                    // a column is actually clipped there: the left edge clips once the content has
+                    // scrolled past its leading inset, the right edge until the last column + its
+                    // trailing inset reach the edge. The fade doubles as a live "more this way" hint.
                     .drawWithContent {
                         drawContent()
                         val fadeW = EDGE_FADE_WIDTH.toPx()
-                        if (scrollState.value > 0) {
+                        if (scrollState.value > bleed.left.toPx()) {
                             drawRect(
                                 brush = Brush.horizontalGradient(
                                     colors = listOf(containerColor, Color.Transparent),
@@ -121,7 +130,7 @@ private fun RichTableFull(block: RichBlock.Table, placements: TablePlacements) {
                                 ),
                             )
                         }
-                        if (scrollState.value < scrollState.maxValue) {
+                        if (scrollState.value < scrollState.maxValue - bleed.right.toPx()) {
                             drawRect(
                                 brush = Brush.horizontalGradient(
                                     colors = listOf(Color.Transparent, containerColor),
@@ -138,12 +147,26 @@ private fun RichTableFull(block: RichBlock.Table, placements: TablePlacements) {
                         )
                     },
             ) {
-                RichTableGridLayout(
-                    placements = placements,
-                    isStriped = block.isStriped,
-                    maxColumnWidth = maxColumnWidth,
-                    modifier = Modifier.horizontalScroll(scrollState),
-                )
+                Box(
+                    modifier = Modifier
+                        .horizontalScroll(scrollState)
+                        .absolutePadding(left = bleed.left, right = bleed.right),
+                ) {
+                    // The rounded container + header/stripe shading hug the GRID (measured to its
+                    // natural width), NOT the viewport — a narrow table sits at its own width at the
+                    // text inset instead of painting a full-bled empty band.
+                    Box(
+                        modifier = Modifier
+                            .clip(TABLE_CONTAINER_SHAPE)
+                            .background(containerColor),
+                    ) {
+                        RichTableGridLayout(
+                            placements = placements,
+                            isStriped = block.isStriped,
+                            maxColumnWidth = maxColumnWidth,
+                        )
+                    }
+                }
             }
         }
         block.caption?.let {

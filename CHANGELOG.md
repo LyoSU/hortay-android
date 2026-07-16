@@ -17,7 +17,7 @@
 - Password managers can now fill the phone number, login code and 2FA password on sign-in.
 
 ### Changed
-- Opening a richly formatted post now reads as an article — tuned heading and paragraph spacing, a comfortable text column on wide screens, edge-to-edge images and tables, and full-length media captions.
+- Opening a richly formatted post now reads as an article — tuned heading and paragraph spacing, a comfortable text column on wide screens, edge-to-edge images, wide tables that scroll under the screen edges, and full-length media captions.
 - On tablets and in desktop windows, the feed, channels and the sign-in form keep a comfortable reading width instead of stretching edge to edge.
 - Tapping the @username in a profile now has a comfortable touch target and tells screen readers it copies the username.
 - Block quotes now share one cleaner style everywhere — a rounded, softly tinted panel with an accent bar, in regular and richly formatted posts alike.
