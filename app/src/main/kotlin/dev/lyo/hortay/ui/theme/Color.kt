@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.theme
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -100,3 +101,35 @@ val DarkInversePrimary = Color(0xFF5A5BA8)
  * `R.color.premium_gradient1/2` (#FBD55E → #E3A33F).
  */
 val PremiumGold = Color(0xFFE9B33B)
+
+/**
+ * Traffic-light "status" tones (reachable / mid-latency / high-latency), used by proxy-health
+ * signalling (see [dev.lyo.hortay.ui.settings.ProxyScreen]). These read the same regardless of
+ * which M3 dynamic palette is active — a green dot must mean "reachable" whether the seed is
+ * Hortay's periwinkle or a wallpaper-derived hue — so they're a small satellite set rather than
+ * mapped onto [androidx.compose.material3.ColorScheme] roles, following the M3 "extended colors"
+ * pattern for signal meanings the base scheme has no room for.
+ *
+ * Light instance sits at roughly M3 tone-40 (dark enough that [LightStatusColors.success] reaches
+ * ≥4.5:1 contrast against [LightSurface], required because it's also used as body text, not just
+ * a dot). Dark instance sits at roughly tone-80 (light enough to read on the near-black dark
+ * surface without going neon).
+ */
+@Immutable
+data class HortayStatusColors(
+    val success: Color,
+    val caution: Color,
+    val degraded: Color,
+)
+
+val LightStatusColors = HortayStatusColors(
+    success = Color(0xFF2E7D32),
+    caution = Color(0xFF8F6C00),
+    degraded = Color(0xFF9C4400),
+)
+
+val DarkStatusColors = HortayStatusColors(
+    success = Color(0xFF6DD58C),
+    caution = Color(0xFFFFCB66),
+    degraded = Color(0xFFFFB68C),
+)

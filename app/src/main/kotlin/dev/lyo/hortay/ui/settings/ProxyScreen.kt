@@ -72,6 +72,7 @@ import dev.lyo.hortay.data.proxy.TestResult
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.theme.LocalHortayStatusColors
 import kotlinx.coroutines.launch
 
 /**
@@ -492,7 +493,7 @@ private fun AddProxySheet(
                 when (r) {
                     is TestResult.Ok -> Text(
                         text = stringResource(R.string.proxy_test_reachable),
-                        color = Color(0xFF34A853),
+                        color = LocalHortayStatusColors.current.success,
                         style = MaterialTheme.typography.bodySmall,
                     )
                     is TestResult.Error -> Text(
@@ -563,16 +564,21 @@ private fun healthLabel(health: ProxyHealth): String = when (health) {
     ProxyHealth.Unreachable -> stringResource(R.string.proxy_health_unreachable)
 }
 
-/** Status-dot colour. Latency tiers use fixed signal colours (green/amber/orange) so reachability
- *  reads at a glance independent of the M3 palette; failure falls back to the theme error colour. */
+/** Status-dot colour. Latency tiers use theme-aware but palette-independent signal colours
+ *  (green/amber/orange, from [LocalHortayStatusColors]) so reachability reads at a glance the
+ *  same way in light or dark mode, regardless of the active M3 (possibly dynamic) palette;
+ *  failure falls back to the theme error colour. */
 @Composable
 private fun healthColor(health: ProxyHealth): Color = when (health) {
     ProxyHealth.Unknown -> MaterialTheme.colorScheme.outline
     ProxyHealth.Checking -> MaterialTheme.colorScheme.tertiary
     ProxyHealth.Unreachable -> MaterialTheme.colorScheme.error
-    is ProxyHealth.Reachable -> when {
-        health.latencyMs < 150 -> Color(0xFF34A853)
-        health.latencyMs < 500 -> Color(0xFFF9AB00)
-        else -> Color(0xFFE8710A)
+    is ProxyHealth.Reachable -> {
+        val status = LocalHortayStatusColors.current
+        when {
+            health.latencyMs < 150 -> status.success
+            health.latencyMs < 500 -> status.caution
+            else -> status.degraded
+        }
     }
 }

@@ -12,7 +12,9 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -88,6 +90,13 @@ private val DarkScheme: ColorScheme = darkColorScheme(
 )
 
 /**
+ * [HortayStatusColors] for the theme currently in effect — chosen by the same `darkTheme` flag
+ * [HortayTheme] uses for [ColorScheme], independent of whether dynamic color is on. Defaults to
+ * the light set so previews / call sites outside [HortayTheme] still resolve to something sane.
+ */
+val LocalHortayStatusColors = staticCompositionLocalOf { LightStatusColors }
+
+/**
  * Hortay's Material 3 Expressive theme entry point.
  *
  * Layers, in order of how they shape what the user sees:
@@ -134,11 +143,15 @@ fun HortayTheme(
         }
     }
 
-    MaterialExpressiveTheme(
-        colorScheme = scheme,
-        typography = HortayTypography,
-        shapes = HortayShapes,
-        motionScheme = MotionScheme.expressive(),
-        content = content,
-    )
+    CompositionLocalProvider(
+        LocalHortayStatusColors provides if (darkTheme) DarkStatusColors else LightStatusColors,
+    ) {
+        MaterialExpressiveTheme(
+            colorScheme = scheme,
+            typography = HortayTypography,
+            shapes = HortayShapes,
+            motionScheme = MotionScheme.expressive(),
+            content = content,
+        )
+    }
 }
