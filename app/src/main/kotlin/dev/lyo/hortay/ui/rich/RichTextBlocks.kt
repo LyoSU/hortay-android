@@ -43,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -64,6 +63,7 @@ import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichInline
 import dev.lyo.hortay.data.rich.RichListItem
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.text.EditorialQuoteFrame
 import dev.lyo.hortay.ui.util.rememberReducedMotion
 
 /**
@@ -231,30 +231,13 @@ private fun RichCodeBox(text: RichInline, language: String?) {
 
 // ---- Quotes ----
 
-private val QUOTE_BAR = 3.dp
-private val QUOTE_RADIUS = 10.dp
-private val QUOTE_PADDING = 12.dp
-
-/** Which tonal accent a block quote at [depth] (0 = top-level) paints its bar + tint with.
- *  Nested quotes rotate the hue every level instead of stacking identical accent frames, so a
- *  quote-inside-a-quote reads as a distinct layer; the cycle repeats every three levels, which
- *  caps the visual nesting to three recognisable shades. A PURE function so the mapping is
- *  unit-testable ([dev.lyo.hortay.ui.rich.RichQuoteShadeTest]) without a `MaterialTheme`. */
-internal enum class QuoteAccentRole { Primary, Tertiary, Secondary }
-
-internal fun quoteAccentRole(depth: Int): QuoteAccentRole = when (depth.coerceAtLeast(0) % 3) {
-    0 -> QuoteAccentRole.Primary
-    1 -> QuoteAccentRole.Tertiary
-    else -> QuoteAccentRole.Secondary
-}
+private val PULL_QUOTE_RULE = 3.dp
 
 /**
- * `pageBlockBlockQuote` — a rounded container carrying a very light accent tint (accent @ 6%),
- * a rounded-cap accent bar down its start edge, and NO border, elevation or decorative quote
- * glyph (Telegram's editorial idiom). [depth] rotates the accent through the tonal palette so a
- * nested quote reads as a new layer rather than another identical frame (see [quoteAccentRole]).
- * An optional [credit] byline sits under the quote body at footer size, a touch more contrast
- * than plain secondary text.
+ * `pageBlockBlockQuote` — rendered through the app-wide [EditorialQuoteFrame] (shared with regular
+ * posts), which owns the accent tint, rounded-cap bar, radius and body/credit arrangement.
+ * [depth] rotates the accent through the tonal palette so a nested quote reads as a new layer (see
+ * [dev.lyo.hortay.ui.text.quoteAccentRole]); an optional [credit] byline sits under the quote body.
  */
 @Composable
 private fun RichBlockQuote(
@@ -262,38 +245,12 @@ private fun RichBlockQuote(
     depth: Int,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val accent = when (quoteAccentRole(depth)) {
-        QuoteAccentRole.Primary -> MaterialTheme.colorScheme.primary
-        QuoteAccentRole.Tertiary -> MaterialTheme.colorScheme.tertiary
-        QuoteAccentRole.Secondary -> MaterialTheme.colorScheme.secondary
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(QUOTE_RADIUS))
-            .background(accent.copy(alpha = 0.06f))
-            .drawBehind {
-                val barWidth = QUOTE_BAR.toPx()
-                drawRoundRect(
-                    color = accent,
-                    size = Size(barWidth, size.height),
-                    cornerRadius = CornerRadius(barWidth / 2f),
-                )
-            },
-    ) {
-        Column(
-            modifier = Modifier.padding(
-                start = QUOTE_PADDING,
-                end = QUOTE_PADDING,
-                top = QUOTE_PADDING,
-                bottom = QUOTE_PADDING,
-            ),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            content()
-            RichQuoteCredit(credit)
-        }
-    }
+    EditorialQuoteFrame(
+        modifier = Modifier.fillMaxWidth(),
+        depth = depth,
+        credit = credit?.let { { RichQuoteCredit(it) } },
+        content = content,
+    )
 }
 
 /**
@@ -314,8 +271,8 @@ private fun RichPullQuote(text: RichInline, credit: RichInline?) {
         Box(
             modifier = Modifier
                 .width(32.dp)
-                .height(QUOTE_BAR)
-                .clip(RoundedCornerShape(QUOTE_BAR / 2))
+                .height(PULL_QUOTE_RULE)
+                .clip(RoundedCornerShape(PULL_QUOTE_RULE / 2))
                 .background(accent),
         )
         RichInlineText(

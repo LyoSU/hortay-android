@@ -3,7 +3,9 @@ package dev.lyo.hortay.ui.text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -19,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
@@ -198,6 +199,9 @@ private fun ClampedPost(
     val maxHeightPx = (lineHeightPx * maxLines).toInt()
     val gapPx = with(density) { SEGMENT_GAP.toPx() }.toInt()
     val blockPadPx = with(density) { BLOCK_VPAD.toPx() }
+    // Quote boxes render through the shared editorial frame, whose inset differs from a code box's;
+    // the snap math has to use each box's REAL top padding or the line cut drifts.
+    val quotePadPx = with(density) { EDITORIAL_QUOTE_PADDING.toPx() }
     val codeHeaderPx = with(density) { (codeHeaderLine.toPx() + CODE_HEADER_GAP.toPx()) }
     // Distance from each segment's TOP edge to its first text line (0 for plain text, the box's
     // top padding for a quote, plus the language-header strip for a code block) and from its
@@ -205,11 +209,17 @@ private fun ClampedPost(
     val topInsets = segments.map { seg ->
         when (val b = seg.block) {
             is FormattedText.Style.Pre -> blockPadPx + (if (!b.language.isNullOrBlank()) codeHeaderPx else 0f)
-            is FormattedText.Style.BlockQuote -> blockPadPx
+            is FormattedText.Style.BlockQuote -> quotePadPx
             else -> 0f
         }
     }
-    val bottomInsets = segments.map { if (it.block != null) blockPadPx else 0f }
+    val bottomInsets = segments.map { seg ->
+        when (seg.block) {
+            is FormattedText.Style.Pre -> blockPadPx
+            is FormattedText.Style.BlockQuote -> quotePadPx
+            else -> 0f
+        }
+    }
 
     Column {
         Layout(
@@ -404,8 +414,9 @@ private val CODE_HEADER_GAP = 4.dp
  * A padded block quote or code block. Renders identically on every surface (feed, channel,
  * comments, full post).
  *
- *  * **Quote** — accent bar + `primary @ 10%` tint, a quote-mark glyph in the top-right
- *    corner that marks it as a quote, body at full readability.
+ *  * **Quote** — the app-wide [EditorialQuoteFrame] (shared with rich messages): a light accent
+ *    tint, a rounded-cap accent bar, and NO decorative glyph. The collapse chevron rides the
+ *    bottom-right corner.
  *  * **Code** — `surfaceContainerHigh` box, monospace body, optional language header.
  *
  * The box hugs its content width rather than filling the row, so a short quote reads as a
@@ -465,17 +476,8 @@ private fun BlockBox(
     val expandLabel = stringResource(if (expanded) R.string.post_show_less else R.string.post_show_more)
 
     val accent = MaterialTheme.colorScheme.primary
-    val boxBg = if (isCode) MaterialTheme.colorScheme.surfaceContainerHigh else accent.copy(alpha = 0.10f)
     val contentStyle = if (isCode) style.copy(fontFamily = FontFamily.Monospace) else style
     val rt = rememberRenderableText(text)
-    // Right gutter clears the corner affordances: a quote always carries the top-right
-    // quote glyph; the expand chevron shares that strip on the bottom-right. Code has no
-    // quote glyph, so it only reserves the gutter when the chevron is present.
-    val endPad = when {
-        !isCode -> 26.dp
-        showChevron -> 26.dp
-        else -> 12.dp
-    }
 
     val body: @Composable () -> Unit = {
         LinkAwareText(
@@ -491,31 +493,36 @@ private fun BlockBox(
         )
     }
 
-    // The accent bar is painted with drawBehind (full box height) rather than a
-    // fillMaxHeight child under IntrinsicSize.Min: with the box now sized to its content,
-    // pairing IntrinsicSize.Min height with content-driven width forced a double intrinsic
-    // measure that flickered the box on every collapse/expand toggle. drawBehind sizes off
-    // the laid-out height directly, so there's nothing to re-measure.
-    Box(
-        modifier = Modifier
-            .clip(MaterialTheme.shapes.extraSmall)
-            .background(boxBg)
-            .then(
-                if (isCode) {
-                    Modifier
-                } else {
-                    Modifier.drawBehind { drawRect(accent, size = Size(3.dp.toPx(), size.height)) }
-                },
-            )
-            .then(
-                if (showChevron && chevronToggles) {
-                    Modifier.clickable(role = Role.Button, onClickLabel = expandLabel) { expanded = !expanded }
-                } else {
-                    Modifier
-                },
-            ),
-    ) {
-        if (isCode) {
+    // Chevron shared by both block kinds: down ("›" rotated 90°) when collapsed = "expand", up
+    // (270°) when expanded = "collapse". In a clamped feed preview it stays the collapsed (down)
+    // form as a passive "there's more" cue — the card tap, not this glyph, opens the post.
+    val chevron: @Composable BoxScope.() -> Unit = {
+        Symbol(
+            name = "chevron_right",
+            tint = (if (isCode) MaterialTheme.colorScheme.onSurfaceVariant else accent).copy(alpha = 0.7f),
+            size = 16.dp,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 6.dp, end = 8.dp)
+                .rotate(if (expanded) 270f else 90f),
+        )
+    }
+
+    if (isCode) {
+        // Right gutter reserves the chevron strip on the bottom-right when it's present.
+        val endPad = if (showChevron) 26.dp else 12.dp
+        Box(
+            modifier = Modifier
+                .clip(MaterialTheme.shapes.extraSmall)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .then(
+                    if (showChevron && chevronToggles) {
+                        Modifier.clickable(role = Role.Button, onClickLabel = expandLabel) { expanded = !expanded }
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
             Column(
                 modifier = Modifier.padding(start = 12.dp, end = endPad, top = BLOCK_VPAD, bottom = BLOCK_VPAD),
             ) {
@@ -529,39 +536,33 @@ private fun BlockBox(
                 }
                 body()
             }
-        } else {
-            // Content inset past the drawn 3.dp bar (start = 13) so text never touches it.
-            Box(modifier = Modifier.padding(start = 13.dp, end = endPad, top = BLOCK_VPAD, bottom = BLOCK_VPAD)) {
-                body()
-            }
-            // Quote marker — a faint quote-mark glyph in the top-right corner so the block
-            // reads as a quote even before the reader notices the accent bar.
-            Symbol(
-                name = "format_quote",
-                tint = accent.copy(alpha = 0.55f),
-                size = 16.dp,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 6.dp, end = 8.dp),
-            )
+            if (showChevron) chevron()
         }
-        if (showChevron) {
-            // Chevron: down ("›" rotated 90°) when collapsed = "expand", up (270°) when
-            // expanded = "collapse". Reuses the bundled `chevron_right` drawable. In a feed preview
-            // it stays the collapsed (down) form as a passive "there's more" cue — the card tap,
-            // not this glyph, opens the post.
-            Symbol(
-                name = "chevron_right",
-                tint = (if (isCode) MaterialTheme.colorScheme.onSurfaceVariant else accent).copy(alpha = 0.7f),
-                size = 16.dp,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(bottom = 6.dp, end = 8.dp)
-                    .rotate(if (expanded) 270f else 90f),
-            )
-        }
+    } else {
+        // Quote → the app-wide editorial frame (shared with rich messages). The end gutter reserves
+        // the chevron's bottom-right strip so a preview line never runs under it.
+        EditorialQuoteFrame(
+            contentPadding = PaddingValues(
+                start = EDITORIAL_QUOTE_PADDING,
+                top = EDITORIAL_QUOTE_PADDING,
+                bottom = EDITORIAL_QUOTE_PADDING,
+                end = if (showChevron) QUOTE_CHEVRON_GUTTER else EDITORIAL_QUOTE_PADDING,
+            ),
+            onClick = if (showChevron && chevronToggles) {
+                { expanded = !expanded }
+            } else {
+                null
+            },
+            onClickLabel = expandLabel,
+            overlay = if (showChevron) chevron else null,
+            content = { body() },
+        )
     }
 }
+
+/** End gutter reserved on a collapsible quote so its preview text never runs under the
+ *  bottom-right chevron. */
+private val QUOTE_CHEVRON_GUTTER = 26.dp
 
 /** A piece of the body: plain text ([block] == null) or a [block] quote / code run. */
 private data class Segment(val text: FormattedText, val block: FormattedText.Style?)

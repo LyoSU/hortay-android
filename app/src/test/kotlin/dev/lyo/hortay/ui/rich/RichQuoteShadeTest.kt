@@ -1,5 +1,7 @@
 package dev.lyo.hortay.ui.rich
 
+import dev.lyo.hortay.ui.text.QuoteAccentRole
+import dev.lyo.hortay.ui.text.quoteAccentRole
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
