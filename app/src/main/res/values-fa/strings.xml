@@ -775,4 +775,5 @@
     <string name="rich_audio_play">پخش</string>
     <string name="rich_audio_pause">توقف</string>
     <string name="rich_audio_loading">در حال بارگذاری</string>
+    <string name="rich_map_open">باز کردن در نقشه</string>
 </resources>

@@ -762,4 +762,5 @@
     <string name="rich_audio_play">Putar</string>
     <string name="rich_audio_pause">Jeda</string>
     <string name="rich_audio_loading">Memuat</string>
+    <string name="rich_map_open">Buka di peta</string>
 </resources>

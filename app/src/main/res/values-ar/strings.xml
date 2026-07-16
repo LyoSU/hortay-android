@@ -841,4 +841,5 @@
     <string name="rich_audio_play">تشغيل</string>
     <string name="rich_audio_pause">إيقاف مؤقت</string>
     <string name="rich_audio_loading">جارٍ التحميل</string>
+    <string name="rich_map_open">فتح في الخرائط</string>
 </resources>

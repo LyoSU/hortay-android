@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
@@ -35,15 +36,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.InlineAutoplay
@@ -52,10 +56,12 @@ import dev.lyo.hortay.data.VideoQualities
 import dev.lyo.hortay.data.VideoQuality
 import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichCaption
+import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalMediaViewer
 import dev.lyo.hortay.ui.theme.mediaFrame
 import dev.lyo.hortay.ui.timeline.MediaWithSpoiler
 import dev.lyo.hortay.ui.util.rememberReducedMotion
+import dev.lyo.hortay.ui.timeline.IconBadge
 import dev.lyo.hortay.ui.timeline.NonPlayableFileRow
 import dev.lyo.hortay.ui.timeline.SingleMedia
 import dev.lyo.hortay.ui.timeline.mediaAspectRatio
@@ -328,15 +334,55 @@ internal fun RichSlideshow(block: RichBlock.Slideshow) {
 
 @Composable
 internal fun RichMapPreview(block: RichBlock.MapPreview) {
+    val context = LocalContext.current
+    val openLabel = stringResource(R.string.rich_map_open)
     RichMediaColumn(block.caption) {
-        // Mirrors the feed's Location card idiom (surfaceContainerHigh card + place badge);
-        // TDLib delivers only coordinates in a rich message (no static-map image URL), so we
-        // surface the position rather than a rendered tile.
-        NonPlayableFileRow(
-            symbol = "place",
-            primary = "%.5f, %.5f".format(block.latitude, block.longitude),
-            secondary = "",
-            onClick = null,
+        // TDLib delivers only coordinates on a rich `pageBlockMap` (no static-map image), so
+        // there's no tile to size by the block's width/height — we keep the compact card and
+        // make the whole row tappable, routing to the system maps app via a generic geo: URI.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .clickable(
+                    role = Role.Button,
+                    onClickLabel = openLabel,
+                    onClick = { openInMaps(context, block.latitude, block.longitude) },
+                )
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            IconBadge("place")
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "%.5f, %.5f".format(block.latitude, block.longitude),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = openLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Symbol(name = "open_in_new", tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 18.dp)
+        }
+    }
+}
+
+/**
+ * Open a coordinate in the system maps app. Uses a generic `geo:lat,lng?q=lat,lng` URI (the
+ * `?q` pin drops a marker) through an Intent chooser — no Google-specific host, so any
+ * installed maps app can handle it, and nothing is fetched by us (INTERNET rules unaffected).
+ */
+private fun openInMaps(context: android.content.Context, latitude: Double, longitude: Double) {
+    val uri = "geo:$latitude,$longitude?q=$latitude,$longitude".toUri()
+    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
+    runCatching {
+        context.startActivity(
+            android.content.Intent.createChooser(intent, null)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
         )
     }
 }

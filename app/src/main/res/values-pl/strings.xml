@@ -808,4 +808,5 @@
     <string name="rich_audio_play">Odtwórz</string>
     <string name="rich_audio_pause">Pauza</string>
     <string name="rich_audio_loading">Ładowanie</string>
+    <string name="rich_map_open">Otwórz w mapach</string>
 </resources>

@@ -776,4 +776,5 @@
     <string name="rich_audio_play">Oynat</string>
     <string name="rich_audio_pause">Duraklat</string>
     <string name="rich_audio_loading">Yükleniyor</string>
+    <string name="rich_map_open">Haritalarda aç</string>
 </resources>

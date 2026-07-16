@@ -796,4 +796,5 @@
     <string name="rich_audio_play">Lire</string>
     <string name="rich_audio_pause">Pause</string>
     <string name="rich_audio_loading">Chargement</string>
+    <string name="rich_map_open">Ouvrir dans Plans</string>
 </resources>

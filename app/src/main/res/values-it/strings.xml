@@ -798,4 +798,5 @@
     <string name="rich_audio_play">Riproduci</string>
     <string name="rich_audio_pause">Pausa</string>
     <string name="rich_audio_loading">Caricamento</string>
+    <string name="rich_map_open">Apri in Mappe</string>
 </resources>
