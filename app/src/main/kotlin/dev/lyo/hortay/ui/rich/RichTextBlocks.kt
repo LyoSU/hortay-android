@@ -139,8 +139,9 @@ internal fun RichBlocks(
     }
 }
 
-/** Corner radius on the anchor-landing highlight wash. */
-private val ANCHOR_HIGHLIGHT_SHAPE = RoundedCornerShape(10.dp)
+/** Corner radius on the anchor-landing highlight wash — matches the 12 dp block-container idiom
+ *  (details / table / code / mosaic / media placeholder) the wash sits over. */
+private val ANCHOR_HIGHLIGHT_SHAPE = RoundedCornerShape(12.dp)
 
 /**
  * Soft accent wash over a top-level block an in-document anchor jump just landed on. Fades in and

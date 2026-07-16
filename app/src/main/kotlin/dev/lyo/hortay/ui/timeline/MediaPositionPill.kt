@@ -1,6 +1,7 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.util.rememberReducedMotion
 
 /**
  * A position indicator rendered OVER media, inside a translucent scrim pill so it stays legible on
@@ -59,12 +61,14 @@ private val DOT_SELECTED_WIDTH = 16.dp
 
 @Composable
 private fun MediaPositionDots(count: Int, selected: Int) {
+    val reducedMotion = rememberReducedMotion()
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         repeat(count) { index ->
             val active = index == selected
             val width by animateDpAsState(
                 targetValue = if (active) DOT_SELECTED_WIDTH else DOT_SIZE,
-                animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+                // Reduced motion snaps the active-dot lozenge instead of animating its width.
+                animationSpec = if (reducedMotion) snap() else MaterialTheme.motionScheme.fastSpatialSpec(),
                 label = "media-position-dot",
             )
             // On-scrim palette: accent for the selected item, dimmed white for the rest — the

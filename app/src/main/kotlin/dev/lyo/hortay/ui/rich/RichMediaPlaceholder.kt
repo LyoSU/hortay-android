@@ -2,13 +2,11 @@ package dev.lyo.hortay.ui.rich
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
@@ -42,14 +40,12 @@ internal fun RichMediaPlaceholder(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Symbol(
-                name = icon,
-                size = 22.dp,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                contentDescription = stringResource(R.string.rich_media_content_description),
-            )
-        }
+        Symbol(
+            name = icon,
+            size = 22.dp,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            contentDescription = stringResource(R.string.rich_media_content_description),
+        )
         val captionText = caption?.text
         if (captionText != null) {
             RichInlineText(
