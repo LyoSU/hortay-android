@@ -1,4 +1,7 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+// The only top-level class here (RichReferenceSheetData) is a support type deliberately
+// co-located with RichReferenceSheet, the composable this file is named for.
+@file:Suppress("MatchingDeclarationName")
 
 package dev.lyo.hortay.ui.rich
 
@@ -25,7 +28,8 @@ import dev.lyo.hortay.ui.text.TonalActionRow
 import kotlinx.coroutines.launch
 
 /** Content of the footnote / reference sheet: the in-document [excerpt] and the [target] its
- *  "Go to reference" action scrolls to. */
+ *  "Go to reference" action scrolls to. Deliberately co-located with [RichReferenceSheet], the
+ *  composable this file is named for. */
 @Immutable
 internal data class RichReferenceSheetData(val excerpt: String, val target: AnchorTarget)
 
@@ -50,7 +54,7 @@ internal fun RichReferenceSheet(
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
             Text(
                 text = data.excerpt,
-                style = RichType.paragraph.copy(color = MaterialTheme.colorScheme.onSurface),
+                style = RichTypography.paragraph.copy(color = MaterialTheme.colorScheme.onSurface),
                 maxLines = 10,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier

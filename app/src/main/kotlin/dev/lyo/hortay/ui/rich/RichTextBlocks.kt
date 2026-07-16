@@ -237,12 +237,12 @@ private fun RichBlockContent(block: RichBlock, path: String, quoteDepth: Int = 0
             inline = block.text,
             style = richHeadingStyle(block.size),
         )
-        is RichBlock.Paragraph -> RichInlineText(block.text, RichType.paragraph)
+        is RichBlock.Paragraph -> RichInlineText(block.text, RichTypography.paragraph)
         is RichBlock.Footer -> RichInlineText(
             block.text,
-            RichType.footer.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+            RichTypography.footer.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
         )
-        is RichBlock.Unknown -> RichInlineText(RichInline.Plain(block.plainText), RichType.paragraph)
+        is RichBlock.Unknown -> RichInlineText(RichInline.Plain(block.plainText), RichTypography.paragraph)
 
         is RichBlock.Preformatted -> RichCodeBox(block.text, block.language)
         is RichBlock.Math -> RichMathBlock(block.expression)
@@ -276,7 +276,7 @@ private fun RichBlockContent(block: RichBlock, path: String, quoteDepth: Int = 0
 /**
  * Renders through the app-wide [CodeBlock] (shared with regular posts), which owns the neutral
  * container, language pill, copy button, horizontal scroll and long-block cap. The code text is
- * drawn here at [RichType.code] (tighter line spacing than body); [CodeBlock] pins it LTR and
+ * drawn here at [RichTypography.code] (tighter line spacing than body); [CodeBlock] pins it LTR and
  * scrolls long lines. The internal cap engages only on the reading surface — a feed preview is
  * clamped post-wide by `ClampedContent`.
  *
@@ -288,10 +288,10 @@ internal fun RichCodeBox(text: RichInline, language: String?) {
     CodeBlock(
         rawText = RichPlainText.of(text),
         language = language,
-        codeStyle = RichType.code,
+        codeStyle = RichTypography.code,
         collapsedLines = if (LocalRichReading.current) CODE_COLLAPSED_LINES else null,
     ) {
-        RichInlineText(inline = text, style = RichType.code, softWrap = false)
+        RichInlineText(inline = text, style = RichTypography.code, softWrap = false)
     }
 }
 
@@ -343,7 +343,7 @@ private fun RichPullQuote(text: RichInline, credit: RichInline?) {
         )
         RichInlineText(
             text,
-            RichType.h4.copy(textAlign = TextAlign.Center),
+            RichTypography.h4.copy(textAlign = TextAlign.Center),
             modifier = Modifier.fillMaxWidth(),
         )
         RichQuoteCredit(credit)
@@ -357,7 +357,7 @@ private fun RichQuoteCredit(credit: RichInline?) {
     if (credit == null) return
     RichInlineText(
         inline = credit,
-        style = RichType.footer.copy(
+        style = RichTypography.footer.copy(
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
         ),

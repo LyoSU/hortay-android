@@ -30,7 +30,7 @@ import dev.lyo.hortay.ui.text.TonalActionRow
  * is no detail surface), so it is never a parallel navigation path.
  *
  * [clampStyle] drives only the clamp's height budget (kept as the feed body style so a rich post
- * collapses to the same height as a text post); the blocks render at their own [RichType] scale.
+ * collapses to the same height as a text post); the blocks render at their own [RichTypography] scale.
  */
 @Composable
 internal fun RichFeedPreview(

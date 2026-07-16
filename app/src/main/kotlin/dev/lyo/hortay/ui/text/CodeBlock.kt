@@ -62,7 +62,7 @@ import kotlinx.coroutines.delay
  * the flat neutral `surfaceContainerHigh` container (12dp radius), the top-corner language pill,
  * the top-right copy button, horizontal scrolling with a scroll-derived edge fade, and the
  * long-block line cap + expand — while each caller renders the code TEXT itself through [content]
- * (regular posts a monospace [LinkAwareText]; rich messages `RichInlineText` at `RichType.code`).
+ * (regular posts a monospace [LinkAwareText]; rich messages `RichInlineText` at `RichTypography.code`).
  *
  * The code content is pinned LTR regardless of document / UI direction (source lines read
  * left-to-right) and is NOT wrapped — long lines scroll horizontally instead. [rawText] is the

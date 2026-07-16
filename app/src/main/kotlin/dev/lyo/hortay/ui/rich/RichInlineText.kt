@@ -1,3 +1,7 @@
+// The only top-level class here (RichLinkKind) is a support type deliberately co-located
+// with RichInlineText, the composable this file is named for.
+@file:Suppress("MatchingDeclarationName")
+
 package dev.lyo.hortay.ui.rich
 
 import androidx.compose.foundation.clickable
@@ -50,7 +54,8 @@ import kotlinx.collections.immutable.toImmutableList
 /** Which in-document link kind a tap came from — an [RichInline.AnchorLink] (scroll to an
  *  invisible anchor) or a [RichInline.ReferenceLink] (open the footnote sheet). [RichMessageBody]
  *  routes the two differently; the AST node type is lost by the time the tap fires, so it's
- *  carried here. */
+ *  carried here. Deliberately co-located with [RichInlineText], the composable this file is
+ *  named for. */
 internal enum class RichLinkKind { Anchor, Reference }
 
 /**

@@ -23,7 +23,7 @@ import dev.lyo.hortay.ui.theme.DisplayFontFamily
  * colour from the theme at the call site, so the scale stays theme-independent (usable from
  * unit tests and previews without a `MaterialTheme`).
  */
-internal object RichType {
+internal object RichTypography {
     /** `pageBlockSectionHeading` size 1 — the document title. */
     val h1 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, lineHeight = 34.sp, letterSpacing = (-0.3).sp)
     val h2 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 24.sp, lineHeight = 30.sp, letterSpacing = (-0.2).sp)
@@ -44,15 +44,15 @@ internal object RichType {
 
 /**
  * Type style for a `pageBlockSectionHeading` of TDLib [size] (1 = largest .. 6 = smallest),
- * clamped to the [RichType] heading ladder.
+ * clamped to the [RichTypography] heading ladder.
  */
 internal fun richHeadingStyle(size: Int): TextStyle = when (size.coerceIn(1, 6)) {
-    1 -> RichType.h1
-    2 -> RichType.h2
-    3 -> RichType.h3
-    4 -> RichType.h4
-    5 -> RichType.h5
-    else -> RichType.h6
+    1 -> RichTypography.h1
+    2 -> RichTypography.h2
+    3 -> RichTypography.h3
+    4 -> RichTypography.h4
+    5 -> RichTypography.h5
+    else -> RichTypography.h6
 }
 
 /** Fallback sibling gap when no asymmetric rule applies — the paragraph rhythm. */

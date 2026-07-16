@@ -348,7 +348,7 @@ private fun RichMathViewerDialog(expression: String, onDismiss: () -> Unit) {
                     } else {
                         Text(
                             text = expression,
-                            style = RichType.code,
+                            style = RichTypography.code,
                             color = onSurface,
                             modifier = Modifier
                                 .horizontalScroll(rememberScrollState())
@@ -395,7 +395,7 @@ private fun RichMathViewerBar(expression: String, onClose: () -> Unit) {
 /** Fallback inline math size when the surrounding run's font size isn't expressed in sp. */
 private val DEFAULT_MATH_TEXT_SIZE = 16.sp
 
-/** Block (display) math sits a touch larger than body text ([RichType.paragraph] is 16 sp) for
+/** Block (display) math sits a touch larger than body text ([RichTypography.paragraph] is 16 sp) for
  *  presence on its own line. */
 private val BLOCK_MATH_TEXT_SIZE = 20.sp
 

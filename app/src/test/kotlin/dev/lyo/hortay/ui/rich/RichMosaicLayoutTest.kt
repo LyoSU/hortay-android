@@ -81,7 +81,10 @@ class RichMosaicLayoutTest {
         val l = layout(4)
         assertEquals(4, l.cells.size)
         assertEquals(width, l.height, 1e-4f) // aspect 1.0
-        val (tl, tr, bl, br) = l.cells
+        val tl = l.cells[0]
+        val tr = l.cells[1]
+        val bl = l.cells[2]
+        val br = l.cells[3]
         assertTrue(tl.roundTopLeft)
         assertFalse(tl.roundTopRight || tl.roundBottomLeft || tl.roundBottomRight)
         assertTrue(tr.roundTopRight)
