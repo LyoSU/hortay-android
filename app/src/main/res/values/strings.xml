@@ -815,6 +815,9 @@
     <string name="rich_audio_loading">Loading</string>
     <string name="rich_map_open">Open in maps</string>
     <string name="rich_go_to_reference">Go to reference</string>
+    <string name="rich_math_copy">Copy formula</string>
+    <string name="rich_math_enlarge">Enlarge formula</string>
+    <string name="rich_math_description">Formula: %1$s</string>
     <!-- Accessibility names for custom media controls, localized status badges,
          feed refresh accessibility action and generic media descriptions. -->
     <string name="video_control_play">Play</string>

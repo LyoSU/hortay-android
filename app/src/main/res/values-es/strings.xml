@@ -804,6 +804,9 @@
     <string name="rich_audio_loading">Cargando</string>
     <string name="rich_map_open">Abrir en mapas</string>
     <string name="rich_go_to_reference">Ir a la referencia</string>
+    <string name="rich_math_copy">Copiar fórmula</string>
+    <string name="rich_math_enlarge">Ampliar fórmula</string>
+    <string name="rich_math_description">Fórmula: %1$s</string>
     <string name="video_control_play">Reproducir</string>
     <string name="video_control_pause">Pausa</string>
     <string name="video_control_mute">Silenciar</string>

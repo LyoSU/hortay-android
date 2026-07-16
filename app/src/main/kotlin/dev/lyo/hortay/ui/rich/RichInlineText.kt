@@ -85,7 +85,7 @@ internal fun RichInlineText(
     softWrap: Boolean = true,
 ) {
     LinkAwareText(
-        renderable = rememberRichInline(inline),
+        renderable = rememberRichInline(inline, style),
         style = style,
         modifier = modifier,
         maxLines = maxLines,
@@ -99,9 +99,13 @@ internal fun RichInlineText(
  * [dev.lyo.hortay.ui.text.rememberRenderableText] but walks the recursive `RichText` tree
  * (styling nests) instead of a flat span list, and adds the three inline decorations the
  * flat model can't express — marked highlight, subscript, superscript.
+ *
+ * [baseStyle] is the run's text style — inline math ([RichInline.Math]) is laid out to match its
+ * font size and placed baseline-aware through an extra [InlineTextContent] slot (see
+ * [rememberInlineMathContent]).
  */
 @Composable
-internal fun rememberRichInline(inline: RichInline): RenderableText {
+internal fun rememberRichInline(inline: RichInline, baseStyle: TextStyle): RenderableText {
     val accent = MaterialTheme.colorScheme.primary
     val onSurface = MaterialTheme.colorScheme.onSurface
     val codeBg = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -167,9 +171,12 @@ internal fun rememberRichInline(inline: RichInline): RenderableText {
         }
     }
 
+    val mathContent = rememberInlineMathContent(built.mathExpressions, baseStyle)
+    val allInlineContent = remember(inlineContent, mathContent) { inlineContent + mathContent }
+
     return RenderableText(
         text = built.text,
-        inlineContent = inlineContent,
+        inlineContent = allInlineContent,
         linkRanges = built.linkRanges,
         spoilerGroups = built.spoilerGroups,
         spoilerDispersion = spoiler.dispersion,
@@ -211,6 +218,8 @@ private class BuiltRich(
     /** (dst placeholder position, spoiler group id) for each custom emoji under an
      *  unrevealed cover — rendered as a blank tap-to-reveal box. */
     val coveredEmoji: List<Pair<Int, Int>>,
+    /** Distinct inline math sources, each backed by a [mathTag] inline-content slot. */
+    val mathExpressions: Set<String>,
 )
 
 /**
@@ -234,6 +243,7 @@ private class RichBuildContext(
     val emojiIds: MutableSet<Long> = mutableSetOf(),
     val coveredEmoji: MutableList<Pair<Int, Int>> = mutableListOf(),
     val spoilerRanges: MutableList<SpoilerGroupInfo> = mutableListOf(),
+    val mathExpressions: MutableSet<String> = mutableSetOf(),
 ) {
     var spoilerCounter = 0
 }
@@ -277,6 +287,7 @@ private fun buildRichAnnotated(
         spoilerGroups = ctx.spoilerRanges,
         emojiIds = ctx.emojiIds,
         coveredEmoji = ctx.coveredEmoji,
+        mathExpressions = ctx.mathExpressions,
     )
 }
 
@@ -315,8 +326,12 @@ private fun AnnotatedString.Builder.walkRich(node: RichInline, ctx: RichBuildCon
                 appendInlineContent(customEmojiTag(node.customEmojiId), INLINE_PLACEHOLDER)
             }
         }
-        // Inline math: monospace fallback of the raw expression (no LaTeX layout).
-        is RichInline.Math -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = palette.codeBg)) { append(node.expression) }
+        // Inline math: a jLaTeXMath-rendered formula placed as an inline-content slot (see
+        // rememberInlineMathContent). The slot itself owns the parse-failure → monospace fallback.
+        is RichInline.Math -> {
+            ctx.mathExpressions += node.expression
+            appendInlineContent(mathTag(node.expression), INLINE_PLACEHOLDER)
+        }
 
         is RichInline.Url -> richLink(ctx, node.url, node.child, covering, canLink, masked = true)
         is RichInline.EmailAddress -> richLink(ctx, "mailto:${node.email}", node.child, covering, canLink, masked = false)

@@ -765,6 +765,9 @@
     <string name="rich_audio_loading">Memuat</string>
     <string name="rich_map_open">Buka di peta</string>
     <string name="rich_go_to_reference">Buka referensi</string>
+    <string name="rich_math_copy">Salin rumus</string>
+    <string name="rich_math_enlarge">Perbesar rumus</string>
+    <string name="rich_math_description">Rumus: %1$s</string>
     <string name="video_control_play">Putar</string>
     <string name="video_control_pause">Jeda</string>
     <string name="video_control_mute">Bisukan</string>

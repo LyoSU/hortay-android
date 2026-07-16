@@ -814,6 +814,9 @@
     <string name="rich_audio_loading">Загрузка</string>
     <string name="rich_map_open">Открыть в картах</string>
     <string name="rich_go_to_reference">Перейти к источнику</string>
+    <string name="rich_math_copy">Копировать формулу</string>
+    <string name="rich_math_enlarge">Увеличить формулу</string>
+    <string name="rich_math_description">Формула: %1$s</string>
     <string name="video_control_play">Воспроизвести</string>
     <string name="video_control_pause">Пауза</string>
     <string name="video_control_mute">Выключить звук</string>

@@ -779,6 +779,9 @@
     <string name="rich_audio_loading">Yükleniyor</string>
     <string name="rich_map_open">Haritalarda aç</string>
     <string name="rich_go_to_reference">Referansa git</string>
+    <string name="rich_math_copy">Formülü kopyala</string>
+    <string name="rich_math_enlarge">Formülü büyüt</string>
+    <string name="rich_math_description">Formül: %1$s</string>
     <string name="video_control_play">Oynat</string>
     <string name="video_control_pause">Duraklat</string>
     <string name="video_control_mute">Sesi kapat</string>

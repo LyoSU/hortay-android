@@ -811,6 +811,9 @@
     <string name="rich_audio_loading">Ładowanie</string>
     <string name="rich_map_open">Otwórz w mapach</string>
     <string name="rich_go_to_reference">Przejdź do odniesienia</string>
+    <string name="rich_math_copy">Kopiuj wzór</string>
+    <string name="rich_math_enlarge">Powiększ wzór</string>
+    <string name="rich_math_description">Wzór: %1$s</string>
     <string name="video_control_play">Odtwórz</string>
     <string name="video_control_pause">Wstrzymaj</string>
     <string name="video_control_mute">Wycisz</string>

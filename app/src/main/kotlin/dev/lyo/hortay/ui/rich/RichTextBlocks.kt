@@ -245,7 +245,7 @@ private fun RichBlockContent(block: RichBlock, path: String, quoteDepth: Int = 0
         is RichBlock.Unknown -> RichInlineText(RichInline.Plain(block.plainText), RichType.paragraph)
 
         is RichBlock.Preformatted -> RichCodeBox(block.text, block.language)
-        is RichBlock.Math -> RichCodeBox(RichInline.Plain(block.expression), language = "")
+        is RichBlock.Math -> RichMathBlock(block.expression)
 
         RichBlock.Divider -> HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         is RichBlock.Anchor -> Unit // invisible scroll target — renders nothing
@@ -279,9 +279,12 @@ private fun RichBlockContent(block: RichBlock, path: String, quoteDepth: Int = 0
  * drawn here at [RichType.code] (tighter line spacing than body); [CodeBlock] pins it LTR and
  * scrolls long lines. The internal cap engages only on the reading surface — a feed preview is
  * clamped post-wide by `ClampedContent`.
+ *
+ * Also the parse-failure fallback for [RichMathBlock] — a malformed formula renders as its raw
+ * monospace source in the same box a `pageBlockPreformatted` uses.
  */
 @Composable
-private fun RichCodeBox(text: RichInline, language: String?) {
+internal fun RichCodeBox(text: RichInline, language: String?) {
     CodeBlock(
         rawText = RichPlainText.of(text),
         language = language,
