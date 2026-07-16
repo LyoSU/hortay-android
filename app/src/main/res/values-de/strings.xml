@@ -774,6 +774,7 @@
     <string name="rich_collage_more">+%d</string>
     <string name="rich_slideshow_counter">%1$d / %2$d</string>
     <string name="rich_read_full_post">Ganzen Beitrag lesen</string>
+    <string name="rich_table_view_full">Ganze Tabelle ansehen</string>
     <string name="rich_full_post_error">Der ganze Beitrag konnte nicht geladen werden</string>
     <string name="rich_full_post_retry">Erneut versuchen</string>
 </resources>

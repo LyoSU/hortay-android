@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +28,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.MeasurePolicy
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CollectionInfo
 import androidx.compose.ui.semantics.CollectionItemInfo
 import androidx.compose.ui.semantics.collectionInfo
@@ -33,14 +37,17 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.R
 import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichHorizontalAlignment
 import dev.lyo.hortay.data.rich.RichTableCell
 import dev.lyo.hortay.data.rich.RichVerticalAlignment
+import dev.lyo.hortay.ui.text.LocalShowFullPost
 
 /**
  * Renders a [RichBlock.Table] as a custom-measured grid.
@@ -75,7 +82,18 @@ internal fun RichTable(block: RichBlock.Table) {
         block.caption?.let { RichInlineText(it, MaterialTheme.typography.bodyLarge) }
         return
     }
+    // Reading surface → the full scrollable grid; a feed preview → a compact, non-scrolling,
+    // one-line-per-cell excerpt with an escalation affordance. LocalRichReading is the same
+    // signal media captions read to pick their feed-vs-reading policy.
+    if (LocalRichReading.current) {
+        RichTableFull(block, placements)
+    } else {
+        RichTableCompactPreview(block, placements)
+    }
+}
 
+@Composable
+private fun RichTableFull(block: RichBlock.Table, placements: TablePlacements) {
     val separatorColor = MaterialTheme.colorScheme.outlineVariant
     val headerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -240,6 +258,7 @@ private val CELL_PADDING_H = 12.dp
 private val CELL_PADDING_V = 10.dp
 private val MIN_COLUMN_WIDTH = 44.dp
 private val MIN_ROW_HEIGHT = 44.dp
+private val COMPACT_MIN_ROW_HEIGHT = 40.dp
 
 /** A visible (non-continuation) cell placed at its anchor grid position. */
 internal data class CellSpan(
@@ -282,6 +301,162 @@ internal fun buildPlacements(block: RichBlock.Table): TablePlacements {
         }
     }
     return TablePlacements(cells, columns, block.rows.size)
+}
+
+// ---- Compact feed preview ----
+
+/** Body rows a compact preview shows beneath the header row(s). */
+private const val COMPACT_BODY_ROWS = 3
+
+/** A compact preview squeezes every column into the card width; beyond this many columns the
+ *  cells read as cramped, so the "View full table" escalation is offered even for a short table. */
+private const val COMPACT_WIDE_COLS = 3
+
+/** One rendered slot of a compact preview row: an [Anchor] cell (spanning [colspan] columns) or a
+ *  [Filler] holding a single column covered by a rowspan reaching down from an earlier row. */
+internal sealed interface CompactSlot {
+    data class Anchor(val cell: RichTableCell, val colspan: Int) : CompactSlot
+    data object Filler : CompactSlot
+}
+
+/**
+ * Pure rectangular projection of the first [rowLimit] rows of a table's [placements] into
+ * left-to-right render slots, so a compact preview keeps its columns aligned under colspan /
+ * rowspan without a custom measure pass. A colspan anchor emits one [CompactSlot.Anchor] and the
+ * covered columns are skipped; a column covered by a rowspan from an earlier row emits a
+ * [CompactSlot.Filler] so the row still spans the full width. Slot weights (an anchor's colspan,
+ * a filler's 1) sum to the column count on every row, keeping columns vertically aligned.
+ */
+internal fun compactPreviewRows(placements: TablePlacements, rowLimit: Int): List<List<CompactSlot>> {
+    val rows = minOf(placements.rows, rowLimit)
+    val cols = placements.columns
+    if (rows <= 0 || cols <= 0) return emptyList()
+    val anchorAt = Array(rows) { arrayOfNulls<CellSpan>(cols) }
+    placements.cells.forEach { span ->
+        if (span.row < rows && span.col < cols) anchorAt[span.row][span.col] = span
+    }
+    return (0 until rows).map { r ->
+        buildList {
+            var c = 0
+            while (c < cols) {
+                val anchor = anchorAt[r][c]
+                if (anchor != null) {
+                    val span = anchor.colspan.coerceIn(1, cols - c)
+                    add(CompactSlot.Anchor(anchor.cell, span))
+                    c += span
+                } else {
+                    add(CompactSlot.Filler)
+                    c += 1
+                }
+            }
+        }
+    }
+}
+
+/** Count of leading rows whose visible cells are all headers — the shaded header band of a
+ *  compact preview sits above [COMPACT_BODY_ROWS] body rows. */
+internal fun leadingHeaderRowCount(placements: TablePlacements): Int {
+    var count = 0
+    for (r in 0 until placements.rows) {
+        val rowCells = placements.cells.filter { it.row == r }
+        if (rowCells.isNotEmpty() && rowCells.all { it.cell.isHeader }) count++ else break
+    }
+    return count
+}
+
+@Composable
+private fun RichTableCompactPreview(block: RichBlock.Table, placements: TablePlacements) {
+    val headerRows = remember(placements) { leadingHeaderRowCount(placements) }
+    val rowLimit = headerRows + COMPACT_BODY_ROWS
+    val previewRows = remember(placements, rowLimit) { compactPreviewRows(placements, rowLimit) }
+    val hasMore = placements.rows > rowLimit || placements.columns > COMPACT_WIDE_COLS
+
+    val headerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val separatorColor = MaterialTheme.colorScheme.outlineVariant
+
+    val tableViewer = LocalTableViewer.current
+    val showFullPost = LocalShowFullPost.current
+    val openFull = remember(tableViewer, showFullPost, block) {
+        { tableViewer?.open(block) ?: showFullPost?.invoke() ?: Unit }
+    }
+
+    Column {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(TABLE_CONTAINER_SHAPE)
+                .background(containerColor),
+        ) {
+            previewRows.forEachIndexed { r, slots ->
+                val isHeaderRow = r < headerRows
+                val drawsSeparator = r < previewRows.lastIndex
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(if (isHeaderRow) headerColor else Color.Transparent)
+                        .then(
+                            if (drawsSeparator) {
+                                Modifier.drawBehind {
+                                    val w = HAIRLINE.toPx()
+                                    drawRect(
+                                        color = separatorColor,
+                                        topLeft = Offset(0f, size.height - w),
+                                        size = Size(size.width, w),
+                                    )
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    slots.forEach { slot ->
+                        when (slot) {
+                            is CompactSlot.Anchor -> CompactCell(slot)
+                            CompactSlot.Filler -> Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+        if (hasMore) {
+            RichTonalAction(text = stringResource(R.string.rich_table_view_full), onClick = openFull)
+        }
+        block.caption?.let {
+            Spacer(Modifier.height(8.dp))
+            RichInlineText(
+                it,
+                MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+            )
+        }
+    }
+}
+
+@Composable
+private fun RowScope.CompactCell(slot: CompactSlot.Anchor) {
+    val cell = slot.cell
+    Box(
+        modifier = Modifier
+            .weight(slot.colspan.toFloat())
+            .heightIn(min = COMPACT_MIN_ROW_HEIGHT)
+            .semantics {
+                if (cell.isHeader) heading()
+            }
+            .padding(horizontal = CELL_PADDING_H, vertical = CELL_PADDING_V),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        RichInlineText(
+            inline = cell.text!!,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = if (cell.isHeader) FontWeight.Bold else FontWeight.Normal,
+                textAlign = textAlignOf(cell.align),
+            ),
+            modifier = Modifier.fillMaxWidth(),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 private fun tableMeasurePolicy(

@@ -67,13 +67,23 @@ internal fun RichFeedPreview(
     )
 }
 
-/** Low-profile tonal "Read full post ›" button. The chevron glyph lives in the Compose row, not
- *  the translated string. */
+/** Low-profile tonal "Read full post ›" button. */
 @Composable
 private fun RichReadFullButton(onClick: () -> Unit) {
+    RichTonalAction(text = stringResource(R.string.rich_read_full_post), onClick = onClick)
+}
+
+/**
+ * The shared low-profile tonal affordance the rich renderer uses to invite a deeper surface —
+ * "Read full post ›" under a clamped feed body, "View full table ›" under a compact table
+ * preview. A full-width `surfaceContainerHigh` row with a primary label and a trailing chevron
+ * glyph (the chevron lives in the Compose row, never in the translated string).
+ */
+@Composable
+internal fun RichTonalAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         onClick = onClick,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(top = 10.dp),
         shape = MaterialTheme.shapes.medium,
@@ -87,7 +97,7 @@ private fun RichReadFullButton(onClick: () -> Unit) {
             horizontalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = stringResource(R.string.rich_read_full_post),
+                text = text,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )

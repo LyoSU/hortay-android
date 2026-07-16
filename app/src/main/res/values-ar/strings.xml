@@ -834,6 +834,7 @@
     <string name="rich_collage_more">+%d</string>
     <string name="rich_slideshow_counter">%1$d / %2$d</string>
     <string name="rich_read_full_post">قراءة المنشور كاملاً</string>
+    <string name="rich_table_view_full">عرض الجدول كاملاً</string>
     <string name="rich_full_post_error">تعذّر تحميل المنشور كاملاً</string>
     <string name="rich_full_post_retry">إعادة المحاولة</string>
 </resources>
