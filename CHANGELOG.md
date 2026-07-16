@@ -8,6 +8,8 @@
 - Richly formatted posts now render natively — headings, ordered and checklist lists, tables, collapsible sections, quotes, code blocks, photo collages and swipeable slideshows.
 - A long richly formatted post in the feed now fades into a "Read full post" button that opens the whole document.
 - A wide table in the feed now shows a compact preview with a "View full table" button that opens it fullscreen to pan, pinch-zoom, and copy as tab-separated text.
+- Audio and voice messages inside richly formatted posts now play inline, with a progress bar and a waveform for voice.
+- A map location inside a richly formatted post now opens in your maps app when tapped.
 
 ### Changed
 - Opening a richly formatted post now reads as an article — tuned heading and paragraph spacing, a comfortable text column on wide screens, edge-to-edge images and tables, and full-length media captions.
