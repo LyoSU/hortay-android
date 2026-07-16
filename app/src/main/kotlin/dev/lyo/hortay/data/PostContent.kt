@@ -376,6 +376,28 @@ sealed interface ServiceEvent {
     data object Other : ServiceEvent
 }
 
+/**
+ * Inline-autoplay policy for [AlbumItem.Video] / [AlbumItem.Animation].
+ *
+ * The feed has no per-item autoplay flag — it derives the decision from clip
+ * length ([ShortClip]) — while Telegram rich (instant-view) blocks carry an
+ * explicit `needAutoplay`, so their renderer sets [Always] / [Never] and skips
+ * the duration heuristic entirely. The three cases keep the shared
+ * [dev.lyo.hortay.ui.timeline.MediaWithSpoiler] probe (cache-ready + master
+ * toggle + active-page gate) intact and only swap the "is this slot eligible"
+ * predicate.
+ */
+enum class InlineAutoplay {
+    /** Never autoplay: static poster + play badge (video) or "GIF" chip (animation); tap opens fullscreen. */
+    Never,
+
+    /** Autoplay a silent loop when the clip is ≤ `INLINE_AUTOPLAY_MAX_SEC` — the feed's duration heuristic. */
+    ShortClip,
+
+    /** Autoplay whenever cache-ready and visible — TDLib rich `needAutoplay = true`. */
+    Always,
+}
+
 /** A single item inside a media album — either a photo, video or animation. */
 sealed interface AlbumItem {
     val media: TdMedia
@@ -419,6 +441,18 @@ sealed interface AlbumItem {
          * would (and did) just hand ExoPlayer a JPEG.
          */
         val remoteVideoUrl: String? = null,
+        /**
+         * Inline-autoplay policy. Feed video keeps the default [InlineAutoplay.ShortClip]
+         * (silent-loop clips ≤ `INLINE_AUTOPLAY_MAX_SEC`, longer ones show a play badge);
+         * rich (instant-view) video sets [InlineAutoplay.Always] / [InlineAutoplay.Never]
+         * from TDLib's `needAutoplay`.
+         */
+        val autoplay: InlineAutoplay = InlineAutoplay.ShortClip,
+        /**
+         * Whether inline playback loops. Feed clips loop (Telegram's "glanceable" UX);
+         * rich video honours TDLib's `isLooped`, so a one-shot IV video plays once.
+         */
+        val loop: Boolean = true,
     ) : AlbumItem
 
     @Immutable
@@ -429,6 +463,14 @@ sealed interface AlbumItem {
         val isSecret: Boolean = false,
         /** Web-mode CDN URL of the playback stream. See [Video.remoteVideoUrl]. */
         val remoteVideoUrl: String? = null,
+        /**
+         * Inline-autoplay policy. Defaults to [InlineAutoplay.Never] — the feed renders
+         * album animations as a static poster + "GIF" chip (its dedicated
+         * [dev.lyo.hortay.ui.timeline.AnimationBlock] owns the always-on inline GIF path).
+         * Rich animation honours TDLib's `needAutoplay`: [InlineAutoplay.Always] animates
+         * inline through the shared media surface, [InlineAutoplay.Never] keeps the poster.
+         */
+        val autoplay: InlineAutoplay = InlineAutoplay.Never,
     ) : AlbumItem
 }
 

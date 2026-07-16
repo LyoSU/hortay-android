@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
+import dev.lyo.hortay.data.InlineAutoplay
 import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.data.VideoQualities
 import dev.lyo.hortay.data.VideoQuality
@@ -462,11 +463,23 @@ private fun RichBlock.Video.toAlbumItem(): AlbumItem.Video? =
             // playback file so the inline poster + fullscreen open still work.
             qualities = qualities ?: singleQuality(playbackFileId, it),
             hasSpoiler = hasSpoiler,
+            // TDLib's instant-view flags drive playback instead of the feed's duration
+            // heuristic: `needAutoplay=false` → static poster + play button, `isLooped=false`
+            // → play once.
+            autoplay = if (needAutoplay) InlineAutoplay.Always else InlineAutoplay.Never,
+            loop = isLooped,
         )
     }
 
 private fun RichBlock.Animation.toAlbumItem(): AlbumItem.Animation? =
-    media?.let { AlbumItem.Animation(media = it, playbackFileId = playbackFileId, hasSpoiler = hasSpoiler) }
+    media?.let {
+        AlbumItem.Animation(
+            media = it,
+            playbackFileId = playbackFileId,
+            hasSpoiler = hasSpoiler,
+            autoplay = if (needAutoplay) InlineAutoplay.Always else InlineAutoplay.Never,
+        )
+    }
 
 private fun richBlockToAlbumItem(block: RichBlock): AlbumItem? = when (block) {
     is RichBlock.Photo -> block.toAlbumItem()

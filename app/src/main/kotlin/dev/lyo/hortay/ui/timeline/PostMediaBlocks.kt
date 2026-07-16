@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.FormattedText
+import dev.lyo.hortay.data.InlineAutoplay
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.hasSpoiler
 import dev.lyo.hortay.data.isSecret
@@ -137,7 +138,10 @@ internal fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Bo
         && isActive
         && asVideo != null
         && !unplayable
-        && asVideo.durationSec in 1..INLINE_AUTOPLAY_MAX_SEC
+        // Feed video keeps the duration heuristic via [InlineAutoplay.ShortClip];
+        // rich (instant-view) video carries TDLib's explicit `needAutoplay` as
+        // [InlineAutoplay.Always] / [InlineAutoplay.Never] and skips the heuristic.
+        && asVideo.autoplayAllowed()
         && inlineAutoplayEnabled
         && !passive
     // K2 smart-casts asVideo to AlbumItem.Video — autoplayEligible's chain
@@ -145,6 +149,23 @@ internal fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Bo
     val autoplayVideo = autoplayEligible && isCachedReady(
         fileId = asVideo.playbackFileId,
         remoteUrl = asVideo.remoteVideoUrl,
+    )
+    // Animation inline autoplay. The feed never routes here for its always-on GIFs
+    // (its dedicated [AnimationBlock] owns that path); album animations default to
+    // [InlineAutoplay.Never] and stay a static poster + "GIF" chip. Only a rich
+    // animation block with TDLib `needAutoplay = true` ([InlineAutoplay.Always])
+    // opts into inline playback, reusing the same cache-ready + master-toggle +
+    // active-page gates as the video branch above — no separate visibility tracker.
+    val asAnimation = item as? AlbumItem.Animation
+    val animationAutoplayEligible = revealed
+        && isActive
+        && asAnimation != null
+        && asAnimation.autoplay == InlineAutoplay.Always
+        && inlineAutoplayEnabled
+        && !passive
+    val autoplayAnimation = animationAutoplayEligible && isCachedReady(
+        fileId = asAnimation.playbackFileId,
+        remoteUrl = asAnimation.remoteVideoUrl,
     )
     // Hide the play badge while the poster is downloading. The poster's own
     // [MediaLoadingOverlay] spinner sits in the same centred slot, so showing
@@ -185,33 +206,55 @@ internal fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Bo
         TdMediaImage(
             media = item.media,
             contentDescription = null,
-            showProgress = !autoplayVideo,
+            showProgress = !(autoplayVideo || autoplayAnimation),
             modifier = Modifier
                 .fillMaxSize()
                 .let { if (blur > 0.dp) it.blur(blur) else it },
         )
-        if (autoplayVideo) {
-            TdVideoPlayer(
-                fileId = asVideo.playbackFileId,
-                remoteUrl = asVideo.remoteVideoUrl,
-                autoPlay = true,
-                autoLoop = true,
-                showControls = false,
-                muted = true,
-                // Seed the player's [AspectRatioFrameLayout] with the poster's
-                // geometry so the first layout pass already matches the outer
-                // [SingleMedia] [Modifier.aspectRatio]. Without it the texture
-                // fills the parent box until [Player.Listener.onVideoSizeChanged]
-                // fires, visible as a brief stretch-then-snap on autoplay mount.
-                initialAspect = asVideo.media.aspectRatio,
-                modifier = Modifier.fillMaxSize(),
-            )
-            DurationChip(
-                text = formatDuration(asVideo.durationSec),
-                modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
-            )
-        } else {
-            MediaOverlay(item, hidePlayBadge = posterLoading || passive)
+        when {
+            autoplayVideo -> {
+                TdVideoPlayer(
+                    fileId = asVideo.playbackFileId,
+                    remoteUrl = asVideo.remoteVideoUrl,
+                    autoPlay = true,
+                    // Feed clips loop; rich video honours TDLib's `isLooped` via [loop].
+                    autoLoop = asVideo.loop,
+                    showControls = false,
+                    muted = true,
+                    // Seed the player's [AspectRatioFrameLayout] with the poster's
+                    // geometry so the first layout pass already matches the outer
+                    // [SingleMedia] [Modifier.aspectRatio]. Without it the texture
+                    // fills the parent box until [Player.Listener.onVideoSizeChanged]
+                    // fires, visible as a brief stretch-then-snap on autoplay mount.
+                    initialAspect = asVideo.media.aspectRatio,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                DurationChip(
+                    text = formatDuration(asVideo.durationSec),
+                    modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+                )
+            }
+            autoplayAnimation -> {
+                // Silent looping MP4 GIF — same inline path the feed's [AnimationBlock]
+                // uses, kept to the "GIF" chip affordance (no play badge, per the rich
+                // animation design). Loops unconditionally (animations are inherently
+                // looped; TDLib exposes no `isLooped` on `pageBlockAnimation`).
+                TdVideoPlayer(
+                    fileId = asAnimation.playbackFileId,
+                    remoteUrl = asAnimation.remoteVideoUrl,
+                    autoPlay = true,
+                    autoLoop = true,
+                    showControls = false,
+                    muted = true,
+                    initialAspect = asAnimation.media.aspectRatio,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                DurationChip(
+                    text = "GIF",
+                    modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+                )
+            }
+            else -> MediaOverlay(item, hidePlayBadge = posterLoading || passive)
         }
         if (!revealed) {
             SpoilerOverlay(
@@ -221,6 +264,19 @@ internal fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Bo
             )
         }
     }
+}
+
+/**
+ * Whether this video slot is eligible for silent inline autoplay, by policy:
+ *  - [InlineAutoplay.ShortClip] (feed default) — the duration heuristic;
+ *  - [InlineAutoplay.Always] (rich `needAutoplay = true`) — always;
+ *  - [InlineAutoplay.Never] (rich `needAutoplay = false`) — never (static poster + play badge).
+ * The cache-ready / master-toggle / active-page gates apply on top of this in [MediaWithSpoiler].
+ */
+private fun AlbumItem.Video.autoplayAllowed(): Boolean = when (autoplay) {
+    InlineAutoplay.Never -> false
+    InlineAutoplay.ShortClip -> durationSec in 1..INLINE_AUTOPLAY_MAX_SEC
+    InlineAutoplay.Always -> true
 }
 
 @Composable

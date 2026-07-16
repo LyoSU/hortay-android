@@ -5,6 +5,7 @@ import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.StringResolver
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -115,6 +116,45 @@ class RichMessageMapperTest {
     }
 
     @Test
+    fun `maps video block preserving needAutoplay isLooped and playback file`() {
+        val video = TdApi.Video().apply {
+            duration = 12
+            width = 640
+            height = 360
+            thumbnail = makeThumbnail(fileId = 7)
+            video = makeFile(fileId = 8)
+        }
+        val block = TdApi.PageBlockVideo(video, null, /* needAutoplay = */ true, /* isLooped = */ false, false)
+        val mapped = assertInstanceOf(
+            RichBlock.Video::class.java,
+            richMessage(block).toRichDocument().blocks.single(),
+        )
+        assertTrue(mapped.needAutoplay, "needAutoplay must survive the mapper")
+        assertFalse(mapped.isLooped, "isLooped must survive the mapper")
+        assertEquals(12, mapped.durationSec)
+        assertEquals(8, mapped.playbackFileId)
+    }
+
+    @Test
+    fun `maps animation block preserving needAutoplay and playback file`() {
+        val animation = TdApi.Animation().apply {
+            duration = 3
+            width = 200
+            height = 200
+            thumbnail = makeThumbnail(fileId = 3)
+            animation = makeFile(fileId = 4)
+        }
+        val block = TdApi.PageBlockAnimation(animation, null, /* needAutoplay = */ false, /* hasSpoiler = */ true)
+        val mapped = assertInstanceOf(
+            RichBlock.Animation::class.java,
+            richMessage(block).toRichDocument().blocks.single(),
+        )
+        assertFalse(mapped.needAutoplay, "needAutoplay must survive the mapper")
+        assertTrue(mapped.hasSpoiler)
+        assertEquals(4, mapped.playbackFileId)
+    }
+
+    @Test
     fun `folds instant-view-only blocks to Unknown with best-effort text`() {
         val document = richMessage(
             TdApi.PageBlockTitle(TdApi.RichTextPlain("Doc Title")),
@@ -189,6 +229,14 @@ class RichMessageMapperTest {
         0,
         "",
     )
+
+    private fun makeFile(fileId: Int) = TdApi.File().apply { id = fileId }
+
+    private fun makeThumbnail(fileId: Int) = TdApi.Thumbnail().apply {
+        width = 320
+        height = 320
+        file = makeFile(fileId)
+    }
 
     private fun tableCell(text: String) = TdApi.PageBlockTableCell(
         TdApi.RichTextPlain(text),
