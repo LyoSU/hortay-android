@@ -10,11 +10,22 @@
 - A wide table in the feed now shows a compact preview with a "View full table" button that opens it fullscreen to pan, pinch-zoom, and copy as tab-separated text.
 - Audio tracks and voice messages now play inline in the feed — a play button, a progress bar, and a waveform for voice — instead of only opening in Telegram.
 - A map location inside a richly formatted post now opens in your maps app when tapped.
+- The feed can now be refreshed through a screen-reader accessibility action.
+- Screen readers announce the "new posts" alert as it appears.
+- Password managers can now fill the phone number, login code and 2FA password on sign-in.
 
 ### Changed
 - Opening a richly formatted post now reads as an article — tuned heading and paragraph spacing, a comfortable text column on wide screens, edge-to-edge images and tables, and full-length media captions.
+- On tablets and in desktop windows, the feed, channels and the sign-in form keep a comfortable reading width instead of stretching edge to edge.
+- Tapping the @username in a profile now has a comfortable touch target and tells screen readers it copies the username.
 
 ### Fixed
+- Video player controls now announce play, pause and mute to screen readers in your interface language instead of English.
+- SCAM and FAKE badges on posts and profiles now follow the interface language.
+- Screen readers now announce navigation tabs with their selected state.
+- Photos, videos, GIFs and video messages in posts are now described to screen readers.
+- The cancel button on downloading media is now labelled for screen readers.
+- Proxy status colours are now readable in dark theme, and the "reachable" label meets contrast standards in light theme.
 - Long-pressing a post no longer crashes the app when the quick-action labels don't fit the row — the extra actions tuck into a "…" menu instead.
 - The rest of a truncated richly formatted post now loads in place with a brief placeholder and a Retry option if it can't be fetched, instead of appearing with no sign there was more.
 - Tapping a footnote or reference link in a richly formatted post that leads outside Telegram now asks for confirmation first, like every other external link.
