@@ -97,74 +97,78 @@ internal fun RichTable(block: RichBlock.Table) {
 @Composable
 private fun RichTableFull(block: RichBlock.Table, placements: TablePlacements) {
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-    // Inset-at-rest, bleed-on-scroll (Telegram / iOS idiom). The scroll viewport spans the full
-    // bled width (the block is edge-to-edge — see RichTextBlocks.isEdgeToEdge), but the content is
-    // padded back to the text-column inset so at rest the table's leading edge lines up with the
-    // article text; swiping pulls columns under the physical screen edges. Physical left/right (the
-    // host resolved direction — see [RichBleedInset]); an inset of 0 (no host / feed) collapses to
-    // a plain full-width table.
+    // Inset-at-rest, bleed-on-scroll (Telegram / iOS idiom). The table block itself sits in the text
+    // column (it is NOT edge-to-edge — see RichTextBlocks.isEdgeToEdge), so its caption and rounded
+    // container stay aligned with the article text. Only the scroll VIEWPORT is bled out to the
+    // surface edges (via readingBleed), and the content is padded back to the text inset so at rest
+    // the leading edge lines up with the text and columns pull under the physical screen edges as
+    // you swipe. Physical left/right (the host resolved direction — see [RichBleedInset]); an inset
+    // of 0 (no host) collapses to a plain full-width table.
     val bleed = LocalRichBleedInset.current
 
     Column {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            // Cap a single column against the readable TEXT column (viewport minus the resting
-            // insets), not the full bled viewport, so one column can't balloon to 60% of the screen.
-            val maxColumnWidth = (maxWidth - bleed.left - bleed.right) * COLUMN_WIDTH_FRACTION
+            // maxWidth here is the TEXT column (the block is not bled), so a single column caps
+            // directly against the readable width — no need to subtract the insets.
+            val maxColumnWidth = maxWidth * COLUMN_WIDTH_FRACTION
             val scrollState = rememberScrollState()
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // Edge fade drawn OVER the viewport at the PHYSICAL screen edges, and only where
-                    // a column is actually clipped there: the left edge clips once the content has
-                    // scrolled past its leading inset, the right edge until the last column + its
-                    // trailing inset reach the edge. The fade doubles as a live "more this way" hint.
-                    .drawWithContent {
-                        drawContent()
-                        val fadeW = EDGE_FADE_WIDTH.toPx()
-                        if (scrollState.value > bleed.left.toPx()) {
-                            drawRect(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(containerColor, Color.Transparent),
-                                    startX = 0f,
-                                    endX = fadeW,
-                                ),
-                            )
-                        }
-                        if (scrollState.value < scrollState.maxValue - bleed.right.toPx()) {
-                            drawRect(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(Color.Transparent, containerColor),
-                                    startX = size.width - fadeW,
-                                    endX = size.width,
-                                ),
-                            )
-                        }
-                    }
-                    .semantics {
-                        collectionInfo = CollectionInfo(
-                            rowCount = placements.rows,
-                            columnCount = placements.columns,
-                        )
-                    },
-            ) {
+            // Bleed ONLY the viewport out to the surface edges; the block stays text-column-wide.
+            Box(modifier = Modifier.readingBleed(bleed.left, bleed.right)) {
                 Box(
                     modifier = Modifier
-                        .horizontalScroll(scrollState)
-                        .absolutePadding(left = bleed.left, right = bleed.right),
+                        .fillMaxWidth()
+                        // Edge fade drawn OVER the viewport at the PHYSICAL screen edges, and only
+                        // where a column is actually clipped there: the left edge clips once the
+                        // content has scrolled past its leading inset, the right edge until the last
+                        // column + its trailing inset reach the edge. Doubles as a "more this way" hint.
+                        .drawWithContent {
+                            drawContent()
+                            val fadeW = EDGE_FADE_WIDTH.toPx()
+                            if (scrollState.value > bleed.left.toPx()) {
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(containerColor, Color.Transparent),
+                                        startX = 0f,
+                                        endX = fadeW,
+                                    ),
+                                )
+                            }
+                            if (scrollState.value < scrollState.maxValue - bleed.right.toPx()) {
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(Color.Transparent, containerColor),
+                                        startX = size.width - fadeW,
+                                        endX = size.width,
+                                    ),
+                                )
+                            }
+                        }
+                        .semantics {
+                            collectionInfo = CollectionInfo(
+                                rowCount = placements.rows,
+                                columnCount = placements.columns,
+                            )
+                        },
                 ) {
-                    // The rounded container + header/stripe shading hug the GRID (measured to its
-                    // natural width), NOT the viewport — a narrow table sits at its own width at the
-                    // text inset instead of painting a full-bled empty band.
                     Box(
                         modifier = Modifier
-                            .clip(TABLE_CONTAINER_SHAPE)
-                            .background(containerColor),
+                            .horizontalScroll(scrollState)
+                            .absolutePadding(left = bleed.left, right = bleed.right),
                     ) {
-                        RichTableGridLayout(
-                            placements = placements,
-                            isStriped = block.isStriped,
-                            maxColumnWidth = maxColumnWidth,
-                        )
+                        // The rounded container + header/stripe shading hug the GRID (measured to its
+                        // natural width), NOT the viewport — a narrow table sits at its own width at
+                        // the text inset instead of painting a full-bled empty band.
+                        Box(
+                            modifier = Modifier
+                                .clip(TABLE_CONTAINER_SHAPE)
+                                .background(containerColor),
+                        ) {
+                            RichTableGridLayout(
+                                placements = placements,
+                                isStriped = block.isStriped,
+                                maxColumnWidth = maxColumnWidth,
+                            )
+                        }
                     }
                 }
             }

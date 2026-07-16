@@ -197,11 +197,14 @@ internal data class RichBleedInset(val left: Dp, val right: Dp)
 internal val LocalRichBleedInset = staticCompositionLocalOf { RichBleedInset(READING_EDGE_BLEED, READING_EDGE_BLEED) }
 
 /**
- * Visual-figure blocks that read as full-bleed in the reading surface. Quotes, details, and the
- * inline Audio / VoiceNote player rows deliberately stay in the text column — a player row is a
- * text-column citizen (controls + waveform sized to the reading measure), not a figure, so bleeding
- * it would just stretch a control strip across the screen. (A Table is "edge-to-edge" only in that
- * its scroll viewport spans the width; its content is re-inset at rest — see RichTableFull.)
+ * Visual-figure blocks that read as full-bleed in the reading surface — photos, video, animation,
+ * and photo groups. Everything else stays at the text-column inset: quotes and details are
+ * text-column structures; the Audio / VoiceNote player rows and the MapPreview card are
+ * text-column citizens (a control strip / a fixed-height map sized to the reading measure), not
+ * figures, so bleeding them would just stretch chrome across the screen. A Table is NOT here
+ * either — it owns its own inset-at-rest / bleed-on-scroll geometry internally ([RichTableFull]
+ * bleeds only its scroll viewport via [readingBleed]), so its caption and container stay in the
+ * text column while columns pull under the edges as you swipe.
  */
 private fun RichBlock.isEdgeToEdge(): Boolean = when (this) {
     is RichBlock.Photo,
@@ -209,7 +212,6 @@ private fun RichBlock.isEdgeToEdge(): Boolean = when (this) {
     is RichBlock.Animation,
     is RichBlock.Collage,
     is RichBlock.Slideshow,
-    is RichBlock.Table,
     -> true
     else -> false
 }
@@ -222,8 +224,11 @@ private fun RichBlock.isEdgeToEdge(): Boolean = when (this) {
  * loop). Physical (not start/end) because the host resolves its avatar-side inset against the DEVICE
  * direction while this runs under the document's forced direction — see [RichBleedInset]. A no-op
  * when the incoming width is unbounded (nothing to bleed into).
+ *
+ * Reused by [RichTableFull] to bleed only the table's scroll viewport (the block itself stays at
+ * the text-column width, so the table caption and container do not bleed).
  */
-private fun Modifier.readingBleed(left: Dp, right: Dp): Modifier = layout { measurable, constraints ->
+internal fun Modifier.readingBleed(left: Dp, right: Dp): Modifier = layout { measurable, constraints ->
     if (!constraints.hasBoundedWidth) {
         val placeable = measurable.measure(constraints)
         return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
