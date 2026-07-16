@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -59,8 +61,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -105,10 +110,16 @@ fun AuthScreen(graph: AppGraph, stage: AuthStage) {
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding(),
+        // Centers the capped-width form on tablet/desktop-windowing; on phones the
+        // column's fillMaxWidth() below already consumes the whole box width, so
+        // TopCenter vs the previous default TopStart has no visible effect there.
+        contentAlignment = Alignment.TopCenter,
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxHeight()
+                .widthIn(max = 520.dp)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp),
         ) {
@@ -472,7 +483,9 @@ private fun PhoneNumberRow(
                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
             ),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .semantics { contentType = ContentType.PhoneNumber },
         )
     }
 }
@@ -703,7 +716,9 @@ private fun PasswordForm(graph: AppGraph, stage: AuthStage.WaitPassword, errorMe
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
                 ),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { contentType = ContentType.Password },
             )
             AnimatedFieldError(text = errorMessage)
             if (stage.hint.isNotEmpty()) {
