@@ -10,17 +10,27 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.MeasurePolicy
+import androidx.compose.ui.semantics.CollectionInfo
+import androidx.compose.ui.semantics.CollectionItemInfo
+import androidx.compose.ui.semantics.collectionInfo
+import androidx.compose.ui.semantics.collectionItemInfo
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
@@ -38,7 +48,16 @@ import dev.lyo.hortay.data.rich.RichVerticalAlignment
  * Layout model: TDLib emits one [RichTableCell] per grid column in every row; a cell covered
  * by a neighbour's `colspan` / `rowspan` arrives with `text == null` and is dropped — the
  * spanning cell paints over its slot. So a visible cell's list index IS its physical column,
- * and the anchor cell spans `colspan` columns × `rowspan` rows from there.
+ * and the anchor cell spans `colspan` columns × `rowspan` rows from there. [buildPlacements]
+ * is the pure function that turns the ragged row/cell lists into that grid (row, column, spans);
+ * it drives both the measure pass and the TalkBack `collectionItemInfo` indices.
+ *
+ * Editorial styling: a flat rounded-12dp neutral container (no elevation, no heavy grid); the
+ * header row sits on a slightly higher neutral surface; body rows stripe at a barely-there
+ * `onSurface` tint; rows are parted by hairline horizontal separators only. When the content is
+ * wider than the viewport it scrolls inside its own [horizontalScroll] and a gradient edge fade
+ * scrims whichever side is clipped — which doubles as a stateless swipe hint (no persisted
+ * one-time affordance).
  *
  * Sizing (single measure pass, driven by intrinsics so no child is measured twice):
  *  - Column width = max intrinsic width of the single-column cells in that column, capped at
@@ -57,46 +76,69 @@ internal fun RichTable(block: RichBlock.Table) {
         return
     }
 
-    val borderColor = MaterialTheme.colorScheme.outlineVariant
+    val separatorColor = MaterialTheme.colorScheme.outlineVariant
     val headerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-    val stripeColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val stripeColor = MaterialTheme.colorScheme.onSurface.copy(alpha = STRIPE_ALPHA)
 
     Column {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val maxColumnWidth = maxWidth * COLUMN_WIDTH_FRACTION
-            val hairline = HAIRLINE
+            val scrollState = rememberScrollState()
             Box(
                 modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .then(
-                        if (block.isBordered) {
-                            Modifier.drawBehind {
-                                // Outer top + left edges; each cell paints its own right + bottom,
-                                // so the two together close every internal + outer grid line.
-                                val w = hairline.toPx()
-                                drawRect(color = borderColor, topLeft = Offset.Zero, size = Size(size.width, w))
-                                drawRect(color = borderColor, topLeft = Offset.Zero, size = Size(w, size.height))
-                            }
-                        } else {
-                            Modifier
-                        },
-                    ),
-            ) {
-                Layout(
-                    content = {
-                        placements.cells.forEach { span ->
-                            RichTableCellContent(
-                                span = span,
-                                isBordered = block.isBordered,
-                                isStriped = block.isStriped,
-                                borderColor = borderColor,
-                                headerColor = headerColor,
-                                stripeColor = stripeColor,
+                    .clip(TABLE_CONTAINER_SHAPE)
+                    .background(containerColor)
+                    // Trailing (and, once scrolled, leading) edge fade drawn OVER the scrolled
+                    // content: the content dissolves into the container colour at whichever side
+                    // still has clipped columns, so the fade reads as a live "more this way"
+                    // swipe hint derived purely from the scroll position.
+                    .drawWithContent {
+                        drawContent()
+                        val fadeW = EDGE_FADE_WIDTH.toPx()
+                        if (scrollState.value > 0) {
+                            drawRect(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(containerColor, Color.Transparent),
+                                    startX = 0f,
+                                    endX = fadeW,
+                                ),
                             )
                         }
+                        if (scrollState.value < scrollState.maxValue) {
+                            drawRect(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(Color.Transparent, containerColor),
+                                    startX = size.width - fadeW,
+                                    endX = size.width,
+                                ),
+                            )
+                        }
+                    }
+                    .semantics {
+                        collectionInfo = CollectionInfo(
+                            rowCount = placements.rows,
+                            columnCount = placements.columns,
+                        )
                     },
-                    measurePolicy = tableMeasurePolicy(placements, maxColumnWidth),
-                )
+            ) {
+                Box(modifier = Modifier.horizontalScroll(scrollState)) {
+                    Layout(
+                        content = {
+                            placements.cells.forEach { span ->
+                                RichTableCellContent(
+                                    span = span,
+                                    rows = placements.rows,
+                                    isStriped = block.isStriped,
+                                    separatorColor = separatorColor,
+                                    headerColor = headerColor,
+                                    stripeColor = stripeColor,
+                                )
+                            }
+                        },
+                        measurePolicy = tableMeasurePolicy(placements, maxColumnWidth),
+                    )
+                }
             }
         }
         block.caption?.let {
@@ -112,9 +154,9 @@ internal fun RichTable(block: RichBlock.Table) {
 @Composable
 private fun RichTableCellContent(
     span: CellSpan,
-    isBordered: Boolean,
+    rows: Int,
     isStriped: Boolean,
-    borderColor: Color,
+    separatorColor: Color,
     headerColor: Color,
     stripeColor: Color,
 ) {
@@ -124,22 +166,19 @@ private fun RichTableCellContent(
         isStriped && span.row % 2 == 1 -> stripeColor
         else -> Color.Transparent
     }
+    // A hairline row separator only — the flat editorial grid drops vertical rules; the header
+    // shade + row stripes carry column scanability. Skipped on the last row so it doesn't ride
+    // the container's rounded bottom edge.
+    val drawsSeparator = span.row + span.rowspan < rows
     Box(
         modifier = Modifier
             .background(background)
             .then(
-                if (isBordered) {
+                if (drawsSeparator) {
                     Modifier.drawBehind {
                         val w = HAIRLINE.toPx()
-                        // Right edge.
                         drawRect(
-                            color = borderColor,
-                            topLeft = Offset(size.width - w, 0f),
-                            size = Size(w, size.height),
-                        )
-                        // Bottom edge.
-                        drawRect(
-                            color = borderColor,
+                            color = separatorColor,
                             topLeft = Offset(0f, size.height - w),
                             size = Size(size.width, w),
                         )
@@ -148,7 +187,16 @@ private fun RichTableCellContent(
                     Modifier
                 },
             )
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .semantics {
+                collectionItemInfo = CollectionItemInfo(
+                    rowIndex = span.row,
+                    rowSpan = span.rowspan,
+                    columnIndex = span.col,
+                    columnSpan = span.colspan,
+                )
+                if (cell.isHeader) heading()
+            }
+            .padding(horizontal = CELL_PADDING_H, vertical = CELL_PADDING_V),
         contentAlignment = verticalAlignmentOf(cell.valign),
     ) {
         RichInlineText(
@@ -181,12 +229,20 @@ private fun textAlignOf(align: RichHorizontalAlignment): TextAlign = when (align
 
 /** Fraction of the viewport a single column may occupy before its text starts wrapping. */
 private const val COLUMN_WIDTH_FRACTION = 0.6f
+
+/** Barely-there stripe on odd body rows — a 3.5% onSurface wash over the neutral container. */
+private const val STRIPE_ALPHA = 0.035f
+
+private val TABLE_CONTAINER_SHAPE = RoundedCornerShape(12.dp)
 private val HAIRLINE = 0.5.dp
+private val EDGE_FADE_WIDTH = 28.dp
+private val CELL_PADDING_H = 12.dp
+private val CELL_PADDING_V = 10.dp
 private val MIN_COLUMN_WIDTH = 44.dp
-private val MIN_ROW_HEIGHT = 28.dp
+private val MIN_ROW_HEIGHT = 44.dp
 
 /** A visible (non-continuation) cell placed at its anchor grid position. */
-private data class CellSpan(
+internal data class CellSpan(
     val row: Int,
     val col: Int,
     val colspan: Int,
@@ -194,9 +250,19 @@ private data class CellSpan(
     val cell: RichTableCell,
 )
 
-private class TablePlacements(val cells: List<CellSpan>, val columns: Int, val rows: Int)
+/** The pure placement grid of a [RichBlock.Table]: the visible [cells] with their grid anchors,
+ *  and the total [columns] / [rows] extent. */
+internal class TablePlacements(val cells: List<CellSpan>, val columns: Int, val rows: Int)
 
-private fun buildPlacements(block: RichBlock.Table): TablePlacements {
+/**
+ * Pure projection of a [RichBlock.Table] onto its placement grid — the visible cells (text
+ * non-null) at their `(row, col)` anchors with their `colspan` / `rowspan`, plus the table's
+ * total column / row extent. A cell's list index within its row IS its physical column, because
+ * TDLib emits a dropped `text == null` placeholder for every slot a neighbour's span covers (see
+ * the [RichTable] KDoc). Extracted so the grid index math the TalkBack `collectionItemInfo`
+ * relies on is unit-testable without a Compose layout pass.
+ */
+internal fun buildPlacements(block: RichBlock.Table): TablePlacements {
     val columns = block.rows.maxOfOrNull { it.cells.size } ?: 0
     val cells = buildList {
         block.rows.forEachIndexed { r, row ->
