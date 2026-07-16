@@ -132,44 +132,11 @@ object RichPlainText {
         if (item.hasCheckbox) return if (item.isChecked) "[x] " else "[ ] "
         return when (item.type) {
             "1" -> "${item.value}. "
-            "a" -> "${alpha(item.value, upper = false)}. "
-            "A" -> "${alpha(item.value, upper = true)}. "
-            "i" -> "${roman(item.value).lowercase()}. "
-            "I" -> "${roman(item.value)}. "
+            "a" -> "${alphaOrdinal(item.value, upper = false)}. "
+            "A" -> "${alphaOrdinal(item.value, upper = true)}. "
+            "i" -> "${romanNumeral(item.value).lowercase()}. "
+            "I" -> "${romanNumeral(item.value)}. "
             else -> "- "
         }
-    }
-
-    /** Bijective base-26: 1 -> a, 26 -> z, 27 -> aa. Non-positive values fall back to the number. */
-    private fun alpha(value: Int, upper: Boolean): String {
-        if (value <= 0) return value.toString()
-        val sb = StringBuilder()
-        var n = value
-        while (n > 0) {
-            n--
-            sb.append('a' + (n % 26))
-            n /= 26
-        }
-        val s = sb.reverse().toString()
-        return if (upper) s.uppercase() else s
-    }
-
-    /** Uppercase Roman numerals. Non-positive values fall back to the number. */
-    private fun roman(value: Int): String {
-        if (value <= 0) return value.toString()
-        val symbols = listOf(
-            1000 to "M", 900 to "CM", 500 to "D", 400 to "CD",
-            100 to "C", 90 to "XC", 50 to "L", 40 to "XL",
-            10 to "X", 9 to "IX", 5 to "V", 4 to "IV", 1 to "I",
-        )
-        val sb = StringBuilder()
-        var n = value
-        for ((magnitude, symbol) in symbols) {
-            while (n >= magnitude) {
-                sb.append(symbol)
-                n -= magnitude
-            }
-        }
-        return sb.toString()
     }
 }

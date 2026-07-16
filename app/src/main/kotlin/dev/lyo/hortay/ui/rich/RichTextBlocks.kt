@@ -73,6 +73,8 @@ import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichInline
 import dev.lyo.hortay.data.rich.RichListItem
 import dev.lyo.hortay.data.rich.RichPlainText
+import dev.lyo.hortay.data.rich.alphaOrdinal
+import dev.lyo.hortay.data.rich.romanNumeral
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.text.CODE_COLLAPSED_LINES
 import dev.lyo.hortay.ui.text.CodeBlock
@@ -477,49 +479,18 @@ private fun RichChecklistBox(checked: Boolean, modifier: Modifier = Modifier) {
 }
 
 /** Marker text for an ordered/unordered/checkbox list item. Prefers TDLib's pre-rendered
- *  [RichListItem.label]; otherwise derives one from `type` + `value`. */
+ *  [RichListItem.label]; otherwise derives one from `type` + `value` via the shared, cap-guarded
+ *  numeral converters ([romanNumeral] / [alphaOrdinal]). */
 private fun listMarker(item: RichListItem): String {
     item.label.takeIf { it.isNotBlank() }?.let { return it }
     return when (item.type) {
         "1" -> "${item.value}."
-        "a" -> "${alpha(item.value, upper = false)}."
-        "A" -> "${alpha(item.value, upper = true)}."
-        "i" -> "${roman(item.value).lowercase()}."
-        "I" -> "${roman(item.value)}."
+        "a" -> "${alphaOrdinal(item.value, upper = false)}."
+        "A" -> "${alphaOrdinal(item.value, upper = true)}."
+        "i" -> "${romanNumeral(item.value).lowercase()}."
+        "I" -> "${romanNumeral(item.value)}."
         else -> "•"
     }
-}
-
-/** Bijective base-26: 1 -> a, 26 -> z, 27 -> aa. */
-private fun alpha(value: Int, upper: Boolean): String {
-    if (value <= 0) return value.toString()
-    val sb = StringBuilder()
-    var n = value
-    while (n > 0) {
-        n--
-        sb.append('a' + (n % 26))
-        n /= 26
-    }
-    val s = sb.reverse().toString()
-    return if (upper) s.uppercase() else s
-}
-
-private fun roman(value: Int): String {
-    if (value <= 0) return value.toString()
-    val symbols = listOf(
-        1000 to "M", 900 to "CM", 500 to "D", 400 to "CD",
-        100 to "C", 90 to "XC", 50 to "L", 40 to "XL",
-        10 to "X", 9 to "IX", 5 to "V", 4 to "IV", 1 to "I",
-    )
-    val sb = StringBuilder()
-    var n = value
-    for ((magnitude, symbol) in symbols) {
-        while (n >= magnitude) {
-            sb.append(symbol)
-            n -= magnitude
-        }
-    }
-    return sb.toString()
 }
 
 // ---- Details (collapsible) ----
