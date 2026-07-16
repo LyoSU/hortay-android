@@ -9,6 +9,9 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -24,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -84,98 +88,117 @@ internal fun TimelineFeedColumn(
         else emptySet()
     }
 
-    LazyColumn(
-        state = state,
-        flingBehavior = flingBehavior,
-        reverseLayout = reverseLayout,
-        contentPadding = PaddingValues(
-            top = topPadding,
-            bottom = bottomPadding,
-        ),
-        modifier = modifier,
-    ) {
-        itemsIndexed(
-            items = feedItems,
-            key = { _, item -> item.key },
-            contentType = { _, item ->
+    // Reading-width cap (tablets / desktop windowing): the LazyColumn is capped
+    // to [READING_WIDTH_CAP] and centred inside the caller's box instead of
+    // stretching edge to edge on wide windows. Below the cap (phones) this is
+    // a no-op — [widthIn]'s max never binds tighter than the box's own width,
+    // so the column still measures to fillMaxWidth() edge to edge exactly as
+    // before this cap existed, and `align(TopCenter)` has no slack to centre
+    // into. Scroll state, keys, reverseLayout and the anchoring logic in this
+    // file are untouched — only the LazyColumn's own width/position changed.
+    // Overlaid controls (arrivals pill, unread FAB, the collapsing header
+    // overlay) are rendered by the caller ([TimelineScreen]) as siblings
+    // outside this composable's [Box] and keep aligning to the window edge,
+    // not this capped column — seen as an accepted caveat on wide windows
+    // rather than a change made here (see Task 6 report).
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = state,
+            flingBehavior = flingBehavior,
+            reverseLayout = reverseLayout,
+            contentPadding = PaddingValues(
+                top = topPadding,
+                bottom = bottomPadding,
+            ),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = READING_WIDTH_CAP)
+                .fillMaxWidth()
+                .fillMaxHeight(),
+        ) {
+            itemsIndexed(
+                items = feedItems,
+                key = { _, item -> item.key },
+                contentType = { _, item ->
+                    when (item) {
+                        is FeedItem.Boundary -> "boundary"
+                        is FeedItem.Post -> "post"
+                    }
+                },
+            ) { index, item ->
+                // M4 animateItem is fully RETIRED after two retreats — do not reintroduce.
+                // (1) fade specs: a disappearing row faded out IN PLACE over the re-laid-out
+                // list — "phantom channel avatars next to the wrong post". (2) placement
+                // spec: placement springs fire on ANY relayout (live ingest at index 0,
+                // reaction rows appearing, media height settling), and Compose keeps
+                // drawing a mid-animation row even outside the viewport — during a fast
+                // fling rows visibly lagged behind the scroll as phantom posts/avatars,
+                // and on arrivals-pill accept the springs fought smartScrollTo's viewport
+                // jump. Rows reflow instantly; keyed-scroll preservation still pins the
+                // user's anchor item.
                 when (item) {
-                    is FeedItem.Boundary -> "boundary"
-                    is FeedItem.Post -> "post"
-                }
-            },
-        ) { index, item ->
-            // M4 animateItem is fully RETIRED after two retreats — do not reintroduce.
-            // (1) fade specs: a disappearing row faded out IN PLACE over the re-laid-out
-            // list — "phantom channel avatars next to the wrong post". (2) placement
-            // spec: placement springs fire on ANY relayout (live ingest at index 0,
-            // reaction rows appearing, media height settling), and Compose keeps
-            // drawing a mid-animation row even outside the viewport — during a fast
-            // fling rows visibly lagged behind the scroll as phantom posts/avatars,
-            // and on arrivals-pill accept the springs fought smartScrollTo's viewport
-            // jump. Rows reflow instantly; keyed-scroll preservation still pins the
-            // user's anchor item.
-            when (item) {
-                is FeedItem.Boundary -> UnreadBoundaryRow()
-                is FeedItem.Post -> {
-                    // Per-item [derivedStateOf] reads [centeredItemKeyState]
-                    // INSIDE its lambda, not at the items() body level — so the
-                    // centre-flip stream invalidates only the two items whose
-                    // boolean output actually changed (old centre → false, new
-                    // centre → true). The previous `mutableStateOf` + write-
-                    // during-composition pattern was an antipattern (state
-                    // mutation in composition phase) and didn't even achieve
-                    // the localised-recomposition it claimed: every items()
-                    // lambda read centeredItemKey directly, so all visible item
-                    // lambdas re-ran on every centre flip during scroll.
-                    val isCenteredState = remember(item.key) {
-                        derivedStateOf { centeredItemKeyState.value == item.key }
-                    }
-                    val post = item.post
-                    val highlighted = highlightedPostKey?.let { (cid, mid) ->
-                        post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
-                    } == true
-                    // Captured ABSOLUTE screen-Y of this card's top, refreshed on every
-                    // (re)layout via onGloballyPositioned. Tapping the post or its "Показати
-                    // більше" opens the full post (comments) hero pinned to this exact Y, so
-                    // the post stays where it sits and the feed behind it dims — works the
-                    // same in both feed orders because it's a real on-screen coordinate, not
-                    // the reverseLayout-flipped LazyListItemInfo.offset. floatArray (not
-                    // State) so the per-frame position writes don't recompose the card.
-                    val topY = remember(item.key) { floatArrayOf(0f) }
-                    // Hero-open wiring only when a handler exists (auth feed). In guest mode
-                    // onShowFull is null, so "Показати більше" falls back to inline expand and
-                    // a tap keeps the screen's own onPostClick (guest sign-in snackbar).
-                    val showFull = remember(post, interactions, topY) {
-                        interactions.onShowFull?.let { hero -> { hero(post, topY[0].toInt()) } }
-                    }
-                    val itemInteractions = remember(post, interactions, topY) {
-                        val hero = interactions.onShowFull
-                        if (hero != null) {
-                            interactions.copy(onPostClick = { hero(post, topY[0].toInt()) })
-                        } else {
-                            interactions
+                    is FeedItem.Boundary -> UnreadBoundaryRow()
+                    is FeedItem.Post -> {
+                        // Per-item [derivedStateOf] reads [centeredItemKeyState]
+                        // INSIDE its lambda, not at the items() body level — so the
+                        // centre-flip stream invalidates only the two items whose
+                        // boolean output actually changed (old centre → false, new
+                        // centre → true). The previous `mutableStateOf` + write-
+                        // during-composition pattern was an antipattern (state
+                        // mutation in composition phase) and didn't even achieve
+                        // the localised-recomposition it claimed: every items()
+                        // lambda read centeredItemKey directly, so all visible item
+                        // lambdas re-ran on every centre flip during scroll.
+                        val isCenteredState = remember(item.key) {
+                            derivedStateOf { centeredItemKeyState.value == item.key }
                         }
-                    }
-                    // J1: first-paint stagger — the first STAGGER_COUNT cards fade in
-                    // and rise 12 dp, each delayed index × STAGGER_STEP_MS, ONCE per
-                    // process. Membership is by first-mount KEY (see [staggerKeys]),
-                    // so later arrivals occupying the same top indices never replay it.
-                    val staggerThisItem = staggerEnabled && item.key in staggerKeys
-                    val staggerModifier = if (staggerThisItem) {
-                        rememberStaggerEntrance(itemKey = item.key, index = index)
-                    } else {
-                        Modifier
-                    }
-                    CompositionLocalProvider(
-                        LocalIsCenteredItem provides isCenteredState,
-                        LocalIsHighlightedItem provides highlighted,
-                        LocalShowFullPost provides showFull,
-                    ) {
-                        Box(
-                            modifier = staggerModifier
-                                .onGloballyPositioned { topY[0] = it.positionInWindow().y },
+                        val post = item.post
+                        val highlighted = highlightedPostKey?.let { (cid, mid) ->
+                            post.chatId == cid && (post.id == mid || mid in post.albumMessageIds)
+                        } == true
+                        // Captured ABSOLUTE screen-Y of this card's top, refreshed on every
+                        // (re)layout via onGloballyPositioned. Tapping the post or its "Показати
+                        // більше" opens the full post (comments) hero pinned to this exact Y, so
+                        // the post stays where it sits and the feed behind it dims — works the
+                        // same in both feed orders because it's a real on-screen coordinate, not
+                        // the reverseLayout-flipped LazyListItemInfo.offset. floatArray (not
+                        // State) so the per-frame position writes don't recompose the card.
+                        val topY = remember(item.key) { floatArrayOf(0f) }
+                        // Hero-open wiring only when a handler exists (auth feed). In guest mode
+                        // onShowFull is null, so "Показати більше" falls back to inline expand and
+                        // a tap keeps the screen's own onPostClick (guest sign-in snackbar).
+                        val showFull = remember(post, interactions, topY) {
+                            interactions.onShowFull?.let { hero -> { hero(post, topY[0].toInt()) } }
+                        }
+                        val itemInteractions = remember(post, interactions, topY) {
+                            val hero = interactions.onShowFull
+                            if (hero != null) {
+                                interactions.copy(onPostClick = { hero(post, topY[0].toInt()) })
+                            } else {
+                                interactions
+                            }
+                        }
+                        // J1: first-paint stagger — the first STAGGER_COUNT cards fade in
+                        // and rise 12 dp, each delayed index × STAGGER_STEP_MS, ONCE per
+                        // process. Membership is by first-mount KEY (see [staggerKeys]),
+                        // so later arrivals occupying the same top indices never replay it.
+                        val staggerThisItem = staggerEnabled && item.key in staggerKeys
+                        val staggerModifier = if (staggerThisItem) {
+                            rememberStaggerEntrance(itemKey = item.key, index = index)
+                        } else {
+                            Modifier
+                        }
+                        CompositionLocalProvider(
+                            LocalIsCenteredItem provides isCenteredState,
+                            LocalIsHighlightedItem provides highlighted,
+                            LocalShowFullPost provides showFull,
                         ) {
-                            PostCard(post = post, interactions = itemInteractions, onTapRevisions = onTapRevisions)
+                            Box(
+                                modifier = staggerModifier
+                                    .onGloballyPositioned { topY[0] = it.positionInWindow().y },
+                            ) {
+                                PostCard(post = post, interactions = itemInteractions, onTapRevisions = onTapRevisions)
+                            }
                         }
                     }
                 }
@@ -219,4 +242,14 @@ private val STAGGER_RISE_DP = 12.dp
 
 /** Process-global one-shot latch for the J1 first-paint stagger (see usage KDoc). */
 private var hasStaggeredThisProcess = false
+
+/**
+ * Reading-width cap for the feed's LazyColumn on tablets / desktop windowing.
+ * Internal (not private) so [ChannelScreen] — same package — caps its own
+ * post list to the same value; feed and channel read consistently on wide
+ * windows. 640 dp comfortably fits a post card's photo/table/code-block
+ * content while stopping the card from stretching into an unreadably wide
+ * line-length on large-screen or freeform-windowed layouts.
+ */
+internal val READING_WIDTH_CAP = 640.dp
 

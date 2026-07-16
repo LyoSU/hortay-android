@@ -866,6 +866,14 @@ fun ChannelScreen(
 
                         Box(modifier = Modifier.fillMaxSize()) {
                         CompositionLocalProvider(LocalScrollGate provides scrollGate) {
+                            // Reading-width cap (tablets / desktop windowing) — same
+                            // [READING_WIDTH_CAP] as [TimelineFeedColumn], so a channel
+                            // reads as the same column width as the merged feed. Below
+                            // the cap (phones) this is a no-op: [widthIn]'s max never
+                            // binds tighter than the box's own width, so the column
+                            // still measures edge to edge exactly as before this cap
+                            // existed. Scroll state, keys, reverseLayout and the
+                            // anchoring logic in this file are untouched.
                             LazyColumn(
                                 state = listState,
                                 reverseLayout = feedOrder.reverseLayout,
@@ -873,7 +881,11 @@ fun ChannelScreen(
                                     top = 8.dp,
                                     bottom = contentPadding.calculateBottomPadding(),
                                 ),
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .widthIn(max = READING_WIDTH_CAP)
+                                    .fillMaxWidth()
+                                    .fillMaxHeight(),
                             ) {
                                 items(
                                     items = displayedList,
