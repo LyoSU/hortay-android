@@ -34,7 +34,7 @@ lifecycle = "2.11.0"
 coroutines = "1.11.0"
 serialization = "1.11.0"
 # java-diff-utils — text-diff for the post-archive edit-history snapshots.
-diffUtils = "4.12"
+diffUtils = "4.17"
 datastore = "1.2.1"
 coil = "3.4.0"
 splashscreen = "1.2.0"
