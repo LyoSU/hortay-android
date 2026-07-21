@@ -9,7 +9,7 @@ composeBom = "2026.06.01"
 # is built on. We override the BOM-supplied version explicitly (Google's
 # documented escape hatch for ranged early-adopt of material3 ahead of the
 # next BOM cut). When the next BOM ships >=1.5.0, drop this override.
-composeMaterial3 = "1.5.0-alpha23"
+composeMaterial3 = "1.5.0-alpha24"
 # graphics-shapes powers the Morph API used for shape interpolation between
 # MaterialShapes presets (e.g. Square <-> Cookie9Sided on reaction toggle).
 # Pulled transitively by material3 1.5.x, but declaring it explicitly lets the
