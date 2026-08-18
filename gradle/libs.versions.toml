@@ -1,7 +1,7 @@
 [versions]
-agp = "9.3.0"
+agp = "9.3.1"
 kotlin = "2.4.0"
-composeBom = "2026.06.01"
+composeBom = "2026.08.00"
 # material3 explicitly pinned to the Expressive alpha (released 2026-05-06).
 # The April BOM ships material3 1.4.0 stable, which lacks MaterialShapes,
 # LoadingIndicator, FloatingToolbar, ButtonGroup, FlexibleTopAppBar and the
@@ -9,7 +9,7 @@ composeBom = "2026.06.01"
 # is built on. We override the BOM-supplied version explicitly (Google's
 # documented escape hatch for ranged early-adopt of material3 ahead of the
 # next BOM cut). When the next BOM ships >=1.5.0, drop this override.
-composeMaterial3 = "1.5.0-alpha23"
+composeMaterial3 = "1.5.0-alpha26"
 # graphics-shapes powers the Morph API used for shape interpolation between
 # MaterialShapes presets (e.g. Square <-> Cookie9Sided on reaction toggle).
 # Pulled transitively by material3 1.5.x, but declaring it explicitly lets the
@@ -22,7 +22,7 @@ graphicsShapes = "1.1.0"
 # (BOM-managed) via SharedTransitionLayout; nav3 supplies NavDisplay + entry-scoping.
 navigation3 = "1.1.4"
 coreKtx = "1.19.0"
-appcompat = "1.7.1"
+appcompat = "1.8.0"
 activityCompose = "1.13.0"
 # androidx.browser — Custom Tabs for the Safety-section external links. 1.9+ raised
 # minSdk to 23 (we're 26) and added Auth Tab / ephemeral-tab APIs; the basic
@@ -38,7 +38,7 @@ diffUtils = "4.12"
 datastore = "1.2.1"
 coil = "3.4.0"
 splashscreen = "1.2.0"
-media3 = "1.10.1"
+media3 = "1.11.0"
 immutable = "0.5.0"
 leakcanary = "2.14"
 lottie = "6.7.1"
@@ -57,7 +57,7 @@ sqldelight = "2.3.2"
 junit5 = "6.1.0"
 junitPlatform = "6.1.0"
 kotlinxCoroutinesTest = "1.11.0"
-benchmark = "1.5.0-alpha07"
+benchmark = "1.5.0-rc01"
 profileinstaller = "1.4.1"
 uiautomator = "2.4.0"
 androidxTestExt = "1.3.0"
