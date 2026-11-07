@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import kotlin.coroutines.resume
@@ -533,30 +533,27 @@ class TdClient private constructor(
      *     420, parse the retry-after seconds out of the message and push the
      *     deadline forward. We do NOT auto-retry — the failed call still throws
      *     and the caller decides; all we guarantee is that the *next* send waits.
+     *     Offline requests ([isOfflineRequest]) skip the gate: they never reach the
+     *     server, so a FLOOD_WAIT penalty must not freeze cache-served reads.
      *   • Result/error translation into [TdException], same as before.
-     *   • **Defense-in-depth timeout.** [withTimeout] guards against a hung JNI
+     *   • **Defense-in-depth timeout.** [withTimeoutOrNull] guards against a hung JNI
      *     callback (daemon livelock / native crash mid-call) leaking a permanently
-     *     suspended coroutine. 60s is generous enough that legitimately slow calls
-     *     (e.g. `GetMessageThreadHistory` on a cold cache, large `SearchMessages`)
-     *     have headroom; well past that, the daemon is the problem, not the call.
-     *     [suspendCancellableCoroutine] is cancellation-aware, so timeout
-     *     propagates correctly — the callback from TDLib will still fire eventually
-     *     but `cont.resume` becomes a no-op once the cont completed via cancel.
+     *     suspended coroutine. A timeout is reported as a [TdException] with
+     *     [SEND_TIMEOUT_CODE] — NOT as the raw `TimeoutCancellationException`, which is a
+     *     [CancellationException] subtype: every `warnUnlessCancelled` / `if (err is
+     *     CancellationException) throw err` site would rethrow it as if the caller had
+     *     been cancelled, silently killing long-lived consumer loops after one offline
+     *     minute. [TdApi.SetTdlibParameters] is exempt — a database migration after a
+     *     TDLib upgrade can legitimately exceed the ceiling.
      */
     override suspend fun <T : TdApi.Object> send(query: TdApi.Function<T>): T {
-        awaitFloodGate()
+        if (!isOfflineRequest(query)) awaitFloodGate()
         return try {
-            withTimeout(SEND_TIMEOUT_MS) {
-                suspendCancellableCoroutine { cont ->
-                    client.send(query) { result ->
-                        if (result is TdApi.Error) {
-                            cont.resumeWith(Result.failure(TdException(result.code, result.message)))
-                        } else {
-                            @Suppress("UNCHECKED_CAST")
-                            cont.resume(result as T)
-                        }
-                    }
-                }
+            if (query is TdApi.SetTdlibParameters) {
+                sendRaw(query)
+            } else {
+                withTimeoutOrNull(SEND_TIMEOUT_MS) { sendRaw(query) }
+                    ?: throw TdException(SEND_TIMEOUT_CODE, "SEND_TIMEOUT ${query.javaClass.simpleName}")
             }
         } catch (e: TdException) {
             // TDLib hands us back rate-limit errors under two distinct codes
@@ -576,6 +573,18 @@ class TdClient private constructor(
             throw e
         }
     }
+
+    private suspend fun <T : TdApi.Object> sendRaw(query: TdApi.Function<T>): T =
+        suspendCancellableCoroutine { cont ->
+            client.send(query) { result ->
+                if (result is TdApi.Error) {
+                    cont.resumeWith(Result.failure(TdException(result.code, result.message)))
+                } else {
+                    @Suppress("UNCHECKED_CAST")
+                    cont.resume(result as T)
+                }
+            }
+        }
 
     private suspend fun awaitFloodGate() {
         // Loop, not single-shot: a concurrent 420/429 landing DURING our delay
@@ -740,6 +749,30 @@ class TdClient private constructor(
         // the daemon is the problem, not the call — fail the coroutine instead of
         // leaking it. See [send]'s KDoc for the full rationale.
         private const val SEND_TIMEOUT_MS = 60_000L
+
+        /**
+         * [TdException.code] for a [send] that hit [SEND_TIMEOUT_MS]. 0 maps to
+         * `TdErrorKind.Network` in `TdErrorMapping` — from the user's side a hung call is
+         * indistinguishable from a dead connection.
+         */
+        const val SEND_TIMEOUT_CODE = 0
+
+        /**
+         * TDLib requests documented as offline ("this is an offline method") — answered
+         * from TDLib's local state without a server round-trip, so they can't earn or
+         * be affected by a FLOOD_WAIT and must not wait on the global gate.
+         */
+        internal fun isOfflineRequest(query: TdApi.Function<*>): Boolean = when (query) {
+            is TdApi.GetChat,
+            is TdApi.GetUser,
+            is TdApi.GetSupergroup,
+            is TdApi.GetBasicGroup,
+            is TdApi.GetMessageLocally,
+            is TdApi.GetFile,
+            is TdApi.GetOption,
+            -> true
+            else -> false
+        }
 
         private const val OPTIMIZE_INTERVAL_MS = 24L * 60 * 60 * 1000 // once per day
 
