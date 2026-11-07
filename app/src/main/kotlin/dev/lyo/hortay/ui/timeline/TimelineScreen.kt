@@ -2111,12 +2111,16 @@ fun TimelineScreen(
     // Revision sheet: shown when the user taps EditedChip on a post.
     val currentRevisionPost = revisionsForPost
     if (currentRevisionPost != null && archiveRepository != null) {
-        val revisions by archiveRepository
-            .observeRevisions(
+        // Remember the Flow per post: observeRevisions builds a fresh SQLDelight Flow on
+        // every call, and collectAsState keys on the instance — un-remembered, each root
+        // recomposition cancelled the collection and reset the sheet to empty.
+        val revisionsFlow = androidx.compose.runtime.remember(currentRevisionPost.chatId, currentRevisionPost.id) {
+            archiveRepository.observeRevisions(
                 ChatRef.tdlib(currentRevisionPost.chatId),
                 currentRevisionPost.id.toString(),
             )
-            .collectAsState(initial = persistentListOf())
+        }
+        val revisions by revisionsFlow.collectAsState(initial = persistentListOf())
         PostRevisionSheet(
             revisions = revisions,
             onDismiss = { revisionsForPost = null },

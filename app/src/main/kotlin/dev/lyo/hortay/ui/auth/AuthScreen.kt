@@ -54,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -282,21 +283,29 @@ private fun PhoneForm(graph: AppGraph, errorMessage: String?) {
     LaunchedEffect(Unit) { graph.countries.load() }
 
     var selected by remember { mutableStateOf<Country?>(null) }
-    var phoneNational by remember { mutableStateOf("") }
+    // Typed input survives configuration changes (rotation, theme flip, fold/unfold) —
+    // the Activity doesn't declare configChanges, so plain `remember` wiped the number.
+    // The picked country is saved by ISO and re-resolved against the catalogue.
+    var selectedIso by rememberSaveable { mutableStateOf<String?>(null) }
+    var phoneNational by rememberSaveable { mutableStateOf("") }
     var sheetOpen by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
     // Used only when the user picks the synthetic "Інша країна" row — they can type any
     // dial code into the prefix field (e.g. +1268, +672). For real countries the prefix
     // stays read-only and equals the picked country's dialCode.
-    var customDial by remember { mutableStateOf("+") }
+    var customDial by rememberSaveable { mutableStateOf("+") }
 
-    // Pick the default country once the catalogue + detection arrive. Prefer the carrier
-    // ISO; fall back to UA — this app's audience is Ukraine-first and a sensible default
-    // beats a blank dial-code field on first launch.
+    LaunchedEffect(selected) { selected?.let { selectedIso = it.iso } }
+
+    // Pick the default country once the catalogue + detection arrive. Prefer the
+    // country restored from saved state, then the carrier ISO; fall back to UA — this
+    // app's audience is Ukraine-first and a sensible default beats a blank dial-code
+    // field on first launch.
     LaunchedEffect(countries, detectedIso) {
         if (selected == null && countries.isNotEmpty()) {
             val iso = detectedIso?.uppercase() ?: "UA"
-            selected = countries.firstOrNull { it.iso.equals(iso, ignoreCase = true) }
+            selected = selectedIso?.let { saved -> countries.firstOrNull { it.iso.equals(saved, ignoreCase = true) } }
+                ?: countries.firstOrNull { it.iso.equals(iso, ignoreCase = true) }
                 ?: countries.firstOrNull { it.iso.equals("UA", ignoreCase = true) }
                 ?: countries.first()
         }
@@ -504,7 +513,7 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
     // PHONE_CODE_INVALID even if the user re-typed correctly afterwards. Keying on
     // (codeLength, channelLabel) means the field clears on a real channel switch but stays
     // put through harmless recompositions of the same WaitCode payload.
-    var code by remember(stage.codeLength, stage.channelLabel) { mutableStateOf("") }
+    var code by rememberSaveable(stage.codeLength, stage.channelLabel) { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
     var resending by remember { mutableStateOf(false) }
 
