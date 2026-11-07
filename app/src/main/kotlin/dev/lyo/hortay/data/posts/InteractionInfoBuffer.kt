@@ -3,6 +3,7 @@ package dev.lyo.hortay.data.posts
 import dev.lyo.hortay.data.MessageContentMapper
 import dev.lyo.hortay.data.TimelinePost
 import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.mutate
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
