@@ -1081,6 +1081,9 @@ class PostsRepository(
     suspend fun runFirstSignInBackfill() {
         val store = coldStartBackfill ?: return
         if (store.isDone()) return
+        // A logout mid-loop resets the store in runLogoutCleanup; marking it done
+        // afterwards would disable the backfill for the NEXT account.
+        val epoch = sessionEpoch.get()
 
         // Snapshot top-K under the live state. Not held under refreshMutex —
         // the throttled fetch loop is too long (~22 s) to block pull-to-refresh
@@ -1140,7 +1143,7 @@ class PostsRepository(
                 ?.let { messages -> ingest(chat.id, messages) }
             delay(BACKFILL_THROTTLE_MS)
         }
-        store.markDone()
+        if (sessionEpoch.get() == epoch) store.markDone()
     }
 
     /**
@@ -1231,18 +1234,38 @@ class PostsRepository(
         val chat = chatCache[chatId] ?: td.send(TdApi.GetChat(chatId)).also { chatCache[chatId] = it }
         if (!chat.isChannel()) return false
 
-        val history = td.send(TdApi.GetChatHistory(chatId, /* fromMessageId */ 0, 0, limit, false))
-        // On-demand single-channel open: one chat at a time, so a networked
-        // surround fetch is within the FLOOD_WAIT budget.
-        val raw = coalesceAlbumFragments(chatId, history.messages.orEmpty().toList(), onlyLocal = false)
-        val mapped = raw.map { mapper.toChannelPost(it, chat) }
-        if (mapped.isEmpty()) return false
-
-        // Session-epoch guard (see [ingest]): a logout that wiped the feed while the
-        // networked fetch above was in flight must not re-inject account A's history.
-        if (sessionEpoch.get() != epoch) return false
-        _posts.update { current -> foldRawIntoCurrent(current, mapped) }
-        return true
+        // TDLib chooses how many messages a GetChatHistory page returns — on a cold
+        // cache the first page is often just the locally-known tail (1-2 messages).
+        // Treating that as "loaded" pinned the channel behind DEEP_LOAD_COOLDOWN_MS
+        // with a single post. Walk back from the oldest message seen until [limit]
+        // distinct messages arrived, a page brings nothing new, or the attempt cap
+        // hits. Each page is folded as it lands so the push-side prefetch await
+        // (CHANNEL_PUSH_PREFETCH_TIMEOUT_MS) sees the first page without waiting
+        // for the whole walk. On-demand single-channel open: one chat at a time,
+        // so these networked fetches stay within the FLOOD_WAIT budget.
+        val seenIds = HashSet<Long>()
+        var fromMessageId = 0L
+        var landed = false
+        var pages = 0
+        while (pages++ < CHANNEL_HISTORY_FETCH_ATTEMPTS) {
+            val page = td.send(TdApi.GetChatHistory(chatId, fromMessageId, 0, limit, false))
+                .messages.orEmpty()
+                .filter { seenIds.add(it.id) }
+            if (page.isEmpty()) break
+            val raw = coalesceAlbumFragments(chatId, page, onlyLocal = false)
+            val mapped = raw.map { mapper.toChannelPost(it, chat) }
+            // Session-epoch guard (see [ingest]): a logout that wiped the feed while
+            // the networked fetch above was in flight must not re-inject account A's
+            // history.
+            if (sessionEpoch.get() != epoch) return false
+            if (mapped.isNotEmpty()) {
+                _posts.update { current -> foldRawIntoCurrent(current, mapped) }
+                landed = true
+            }
+            if (seenIds.size >= limit) break
+            fromMessageId = seenIds.min()
+        }
+        return landed
     }
 
     /**
@@ -1308,6 +1331,34 @@ class PostsRepository(
 
     /** Per-channel "we already paginated to the bottom of TDLib's local store" sentinel. */
     private val pageEnded = ConcurrentHashMap.newKeySet<Long>()
+
+    /**
+     * Permanently deleted `(chatId, messageId)` → expiry (epoch ms). Each update type
+     * has its own collector, so an `UpdateDeleteMessages` can be processed BEFORE the
+     * ingest of the same message — notably an album parked in the 1 s debounce
+     * buffer, or an `UpdateChatLastMessage` ingest suspended on GetChat. Without
+     * this ledger the delete found nothing to remove and the late ingest resurrected
+     * the post until restart. [ingest] drops any raw message still in the ledger.
+     */
+    private val recentlyDeleted = ConcurrentHashMap<Pair<Long, Long>, Long>()
+
+    private fun rememberDeleted(chatId: Long, messageIds: LongArray) {
+        val now = System.currentTimeMillis()
+        if (recentlyDeleted.size > RECENTLY_DELETED_MAX) {
+            recentlyDeleted.entries.removeIf { it.value < now }
+        }
+        val expiry = now + RECENTLY_DELETED_TTL_MS
+        for (id in messageIds) recentlyDeleted[chatId to id] = expiry
+    }
+
+    private fun isRecentlyDeleted(chatId: Long, messageId: Long): Boolean {
+        if (recentlyDeleted.isEmpty()) return false
+        val expiry = recentlyDeleted[chatId to messageId] ?: return false
+        return expiry >= System.currentTimeMillis()
+    }
+
+    /** Per-channel oldest raw message id paged so far — see [loadOlderLocked]. */
+    private val olderRawCursor = ConcurrentHashMap<Long, Long>()
     private val pageJobs = ConcurrentHashMap<Long, Deferred<Result<Int>>>()
 
     /**
@@ -1340,52 +1391,62 @@ class PostsRepository(
 
     private suspend fun loadOlderLocked(chatId: Long, limit: Int): Int {
         val epoch = sessionEpoch.get()
-        val oldestId = _posts.value
+        val oldestCardId = _posts.value
             .filter { it.chatId == chatId }
             .minOfOrNull { it.id }
             ?: return 0
         val chat = chatCache[chatId] ?: td.send(TdApi.GetChat(chatId)).also { chatCache[chatId] = it }
         if (!chat.isChannel()) return 0
 
-        val history = td.send(
-            TdApi.GetChatHistory(
-                chatId,
-                /* fromMessageId */ oldestId,
-                /* offset */ 0,
-                limit,
-                /* onlyLocal */ false,
-            ),
-        )
-        val raw = history.messages.orEmpty().toList()
-        // TDLib returns an empty page once we've walked off the end of its locally-stored
-        // history. Mark the sentinel so the scroll listener stops pinging.
-        if (raw.isEmpty()) {
-            pageEnded += chatId
-            return 0
-        }
-        // Pagination scroll-down inside one channel: networked surround fetch is fine.
-        val coalesced = coalesceAlbumFragments(chatId, raw, onlyLocal = false)
-        val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
+        // Page from the oldest RAW message seen, not the oldest card: a page made only
+        // of album siblings / unsupported / service messages adds zero cards, and
+        // re-anchoring on the card id would fetch that same page forever.
+        var cursor = minOf(oldestCardId, olderRawCursor[chatId] ?: Long.MAX_VALUE)
+        var added = 0
+        var pages = 0
+        while (pages++ < OLDER_PAGE_SKIP_ATTEMPTS) {
+            val history = td.send(
+                TdApi.GetChatHistory(
+                    chatId,
+                    /* fromMessageId */ cursor,
+                    /* offset */ 0,
+                    limit,
+                    /* onlyLocal */ false,
+                ),
+            )
+            // End of history = no message strictly older than the cursor. A plain
+            // `isEmpty()` isn't enough: GetChatHistory(fromMessageId, offset=0, …) can
+            // be INCLUSIVE on the boundary message, so at the channel's first-ever post
+            // TDLib keeps returning that one message in a non-empty page.
+            val raw = history.messages.orEmpty().filter { it.id < cursor }
+            if (raw.isEmpty()) {
+                pageEnded += chatId
+                return added
+            }
+            cursor = raw.minOf { it.id }
+            olderRawCursor[chatId] = cursor
+            // Pagination scroll-down inside one channel: networked surround fetch is fine.
+            val coalesced = coalesceAlbumFragments(chatId, raw, onlyLocal = false)
+            val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
 
-        // Session-epoch guard (see [ingest]): a logout during the fetch above must not
-        // re-inject the previous account's older posts into the wiped feed.
-        if (sessionEpoch.get() != epoch) return 0
-        var prevChannelSize = 0
-        var nextChannelSize = 0
-        _posts.update { current ->
-            prevChannelSize = current.count { it.chatId == chatId }
-            val result = foldRawIntoCurrent(current, mapped)
-            nextChannelSize = result.count { it.chatId == chatId }
-            result
+            // Session-epoch guard (see [ingest]): a logout during the fetch above must not
+            // re-inject the previous account's older posts into the wiped feed.
+            if (sessionEpoch.get() != epoch) return 0
+            var prevChannelSize = 0
+            var nextChannelSize = 0
+            _posts.update { current ->
+                prevChannelSize = current.count { it.chatId == chatId }
+                val result = foldRawIntoCurrent(current, mapped)
+                nextChannelSize = result.count { it.chatId == chatId }
+                result
+            }
+            // chatId-specific cardinality (not whole-feed delta) keeps unrelated ingest
+            // racing alongside this update from masking the real count.
+            added += (nextChannelSize - prevChannelSize).coerceAtLeast(0)
+            // A page of only non-card messages added nothing visible — keep walking
+            // (bounded) so the scroll listener gets content instead of a dead end.
+            if (added > 0) break
         }
-        // End-of-history detection: GetChatHistory(fromMessageId, offset=0, …) is
-        // INCLUSIVE on the boundary message — at the channel's first-ever post TDLib
-        // keeps returning that single message in a non-empty page. Treat "no net new
-        // posts of this channel landed" as the sentinel and stop pinging. Counting on
-        // chatId-specific cardinality (not whole-feed delta) keeps unrelated ingest
-        // racing alongside this update from masking the actual end-of-history.
-        val added = (nextChannelSize - prevChannelSize).coerceAtLeast(0)
-        if (added == 0) pageEnded += chatId
         return added
     }
 
@@ -1870,6 +1931,7 @@ class PostsRepository(
         val full = coalesceAlbumFragments(chatId, messages, onlyLocal = !_initialSyncDone.value)
 
         val newPosts = full
+            .filterNot { isRecentlyDeleted(it.chatId, it.id) }
             .map { mapper.toChannelPost(it, chat) }
             .filter { it.content !is PostContent.Unsupported }
         if (newPosts.isEmpty()) return
@@ -2365,6 +2427,7 @@ class PostsRepository(
 
     private fun handleDeleted(update: TdApi.UpdateDeleteMessages) {
         if (!update.isPermanent) return
+        rememberDeleted(update.chatId, update.messageIds)
 
         // Single read of the archive-enabled gate up front. Capture and feed-side
         // branches use the SAME observation, so a Settings flip between them can't
@@ -2874,6 +2937,8 @@ class PostsRepository(
             deepLoadJobs.clear()
             deepLoadCooldownUntilMs.clear()
             pageEnded.clear()
+            olderRawCursor.clear()
+            recentlyDeleted.clear()
             pageJobs.values.forEach { it.cancel() }
             pageJobs.clear()
             lastRefreshAtMs = 0L
@@ -3021,6 +3086,18 @@ class PostsRepository(
         // budget while covering TDLib's "local slice first, server on repeat"
         // under-return.
         const val ALBUM_REPAIR_FETCH_ATTEMPTS = 3
+
+        /** Max GetChatHistory pages per [loadChannelHistory] walk (cold-cache under-return). */
+        const val CHANNEL_HISTORY_FETCH_ATTEMPTS = 3
+
+        /** Max pages [loadOlder] walks past pages that produce no visible card. */
+        const val OLDER_PAGE_SKIP_ATTEMPTS = 3
+
+        /** How long a permanent delete blocks a late ingest of the same message. */
+        const val RECENTLY_DELETED_TTL_MS = 5 * 60_000L
+
+        /** Ledger size past which expired entries are swept on the next insert. */
+        const val RECENTLY_DELETED_MAX = 2_000
         const val ALBUM_REPAIR_RETRY_DELAY_MS = 350L
     }
 }

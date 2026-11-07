@@ -73,6 +73,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -238,22 +239,20 @@ class AppGraph(context: Context) {
     init {
         // One-shot session-start sync. Fires the first time TDLib reaches
         // `Ready` (cold start with existing creds OR fresh login completes),
-        // and once more on every re-Ready edge (re-login after logout). Per
-        // Levin (tdlib/td#3019): updates are the source of truth, LoadChats
-        // is the trigger. See [PostsRepository.triggerInitialSync] for what
-        // happens during the drain.
+        // and once more on every re-Ready edge (re-login after logout). Updates
+        // are the source of truth, LoadChats is the trigger. See
+        // [PostsRepository.triggerInitialSync] for what happens during the drain.
+        // collectLatest: leaving Ready (logout) cancels an in-flight sync/backfill
+        // instead of letting it finish against the next account's state.
         appScope.launch {
             tdClient.authStage
-                .collect { stage ->
-                    if (stage !is AuthStage.Ready) return@collect
+                .collectLatest { stage ->
+                    if (stage !is AuthStage.Ready) return@collectLatest
                     postsRepository.triggerInitialSync()
                     // Backfill runs AFTER the chat-list drain returns so
                     // [PostsRepository._mainChatIds] / [chatCache] have a
                     // reasonable snapshot to pick top-K from. Sequential in the
-                    // same coroutine — emitting a non-Ready stage while
-                    // backfill is mid-loop is fine: each TDLib call will start
-                    // erroring on a torn-down client and the loop bails out
-                    // through the FLOOD_WAIT/CancellationException branches.
+                    // same coroutine — a non-Ready stage cancels it mid-loop.
                     // The persisted flag stays unset on any failure path, so
                     // the next Ready edge retries.
                     postsRepository.runFirstSignInBackfill()

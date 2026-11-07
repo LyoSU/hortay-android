@@ -153,11 +153,13 @@ class AlbumCoalesceTest {
             val q = req as TdApi.GetChatHistory
             when {
                 q.fromMessageId == 0L -> TdApi.Messages(1, arrayOf(members.last())) // head load: just M10 (partial → triggers surround)
-                else -> {
+                q.offset != 0 -> {
                     capturedOffset = q.offset
                     capturedLimit = q.limit
                     TdApi.Messages(members.size, members.toTypedArray())
                 }
+                // loadChannelHistory's walk-back page (offset 0): nothing older.
+                else -> TdApi.Messages(0, emptyArray())
             }
         }
 
