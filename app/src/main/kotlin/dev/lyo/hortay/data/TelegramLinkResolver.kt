@@ -2,9 +2,6 @@ package dev.lyo.hortay.data
 
 import android.net.Uri
 import android.util.LruCache
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
 
 /**
@@ -45,18 +42,17 @@ class TelegramLinkResolver(private val td: TdSender) {
     private val cache = LruCache<String, DeepLink>(CACHE_CAPACITY)
 
     /**
-     * Subscribe the resolver to a logout fan-out flow. The cache holds typed [DeepLink]
-     * entries that reference TDLib chat ids; those ids belong to the active session and
-     * shift on the next login. Wiring this in [AppGraph] guarantees the cache is wiped
-     * before the new session's chats start arriving — without it, a re-tapped URL would
-     * return a [DeepLink.Message] / [DeepLink.PublicChannel] pointing at the previous
-     * account's chat, which is both a privacy regression (referrer-style identifier
-     * leak across accounts) and a correctness one (silent miss / wrong-chat open).
+     * Drop every cached resolution. The cache holds typed [DeepLink] entries that
+     * reference TDLib chat ids; those ids belong to the active session and shift on the
+     * next login. Registered as an [AccountSession] end hook in [AppGraph] so the cache
+     * is wiped before the new session's chats start arriving — without it, a re-tapped
+     * URL would return a [DeepLink.Message] / [DeepLink.PublicChannel] pointing at the
+     * previous account's chat, which is both a privacy regression (referrer-style
+     * identifier leak across accounts) and a correctness one (silent miss / wrong-chat
+     * open).
      */
-    fun bindLogoutClear(loggedOut: SharedFlow<Unit>, scope: CoroutineScope) {
-        scope.launch {
-            loggedOut.collect { cache.evictAll() }
-        }
+    fun clear() {
+        cache.evictAll()
     }
 
     suspend fun resolve(uri: Uri): DeepLink? {
