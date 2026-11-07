@@ -1244,23 +1244,27 @@ class PostsRepository(
         var fromMessageId = 0L
         var landed = false
         var pages = 0
-        while (pages++ < CHANNEL_HISTORY_FETCH_ATTEMPTS) {
+        var keepWalking = true
+        while (keepWalking && pages++ < CHANNEL_HISTORY_FETCH_ATTEMPTS) {
             val page = td.send(TdApi.GetChatHistory(chatId, fromMessageId, 0, limit, false))
                 .messages.orEmpty()
                 .filter { seenIds.add(it.id) }
-            if (page.isEmpty()) break
-            val raw = coalesceAlbumFragments(chatId, page, onlyLocal = false)
-            val mapped = raw.map { mapper.toChannelPost(it, chat) }
-            // Session-epoch guard (see [ingest]): a logout that wiped the feed while
-            // the networked fetch above was in flight must not re-inject account A's
-            // history.
-            if (sessionEpoch.get() != epoch) return false
-            if (mapped.isNotEmpty()) {
-                _posts.update { current -> foldRawIntoCurrent(current, mapped) }
-                landed = true
+            if (page.isEmpty()) {
+                keepWalking = false
+            } else {
+                val raw = coalesceAlbumFragments(chatId, page, onlyLocal = false)
+                val mapped = raw.map { mapper.toChannelPost(it, chat) }
+                // Session-epoch guard (see [ingest]): a logout that wiped the feed while
+                // the networked fetch above was in flight must not re-inject account A's
+                // history.
+                if (sessionEpoch.get() != epoch) return false
+                if (mapped.isNotEmpty()) {
+                    _posts.update { current -> foldRawIntoCurrent(current, mapped) }
+                    landed = true
+                }
+                keepWalking = seenIds.size < limit
+                fromMessageId = seenIds.min()
             }
-            if (seenIds.size >= limit) break
-            fromMessageId = seenIds.min()
         }
         return landed
     }
