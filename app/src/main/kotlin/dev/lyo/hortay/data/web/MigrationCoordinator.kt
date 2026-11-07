@@ -3,7 +3,7 @@ package dev.lyo.hortay.data.web
 import android.util.Log
 import dev.lyo.hortay.data.AuthStage
 import dev.lyo.hortay.data.ChannelActionsRepository
-import dev.lyo.hortay.data.posts.PostsRepository
+import dev.lyo.hortay.data.ChannelDirectory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -51,7 +51,7 @@ import kotlinx.coroutines.sync.withLock
 class MigrationCoordinator(
     private val migrationStore: MigrationStore,
     private val subscriptions: SubscriptionsStore,
-    private val postsRepository: PostsRepository,
+    private val channels: ChannelDirectory,
     private val channelActions: ChannelActionsRepository,
     private val authStage: StateFlow<AuthStage>,
     private val scope: CoroutineScope,
@@ -152,7 +152,7 @@ class MigrationCoordinator(
             if (cleaned.isEmpty()) continue
             _progress.value = Progress(total = usernames.size, processed = i, lastUsername = cleaned)
             val chatId = try {
-                postsRepository.resolvePublicChat(cleaned)
+                channels.resolvePublicChat(cleaned)
             } catch (cancellation: kotlinx.coroutines.CancellationException) {
                 throw cancellation
             } catch (t: Throwable) {

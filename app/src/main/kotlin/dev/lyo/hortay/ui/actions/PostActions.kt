@@ -8,7 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.widget.Toast
 import androidx.core.net.toUri
-import dev.lyo.hortay.data.posts.PostsRepository
+import dev.lyo.hortay.data.ChannelDirectory
 import dev.lyo.hortay.data.TimelinePost
 
 /**
@@ -31,7 +31,7 @@ object PostActions {
      * Resolved share URL: TDLib-minted when available, hand-rolled otherwise. Always
      * returns a non-empty string suitable for embedding in share text / OS clipboard.
      *
-     * Mode discriminator is the nullability of [repo], not the chatId range. The previous
+     * Mode discriminator is the nullability of [channels], not the chatId range. The previous
      * `chatId <= -1_000_000_000_000` check looked like a clean way to detect synthetic
      * web ids, but TDLib supergroup ids share the same range — they're computed as
      * `-1_000_000_000_000 - <internal 32-bit channelId>`, so real channels land in
@@ -39,11 +39,11 @@ object PostActions {
      * exactly. That misrouted real TDLib posts into the fallback path for a small but
      * not vanishingly small fraction of channels — visible to the user as a `t.me/<handle>/<huge-mangled-id>`
      * link when "open in Telegram" / "share" was tapped. The callers already pass
-     * `null` for guest mode and the live repo for TDLib mode, so the safe2-derive2
-     * boolean is just `repo == null`.
+     * `null` for guest mode and the live directory for TDLib mode, so the safe2-derive2
+     * boolean is just `channels == null`.
      */
-    private suspend fun shareUrl(repo: PostsRepository?, post: TimelinePost): String =
-        repo?.canonicalShareUrl(post) ?: fallbackShareUri(post, isGuest = repo == null).toString()
+    private suspend fun shareUrl(channels: ChannelDirectory?, post: TimelinePost): String =
+        channels?.canonicalShareUrl(post) ?: fallbackShareUri(post, isGuest = channels == null).toString()
 
     /**
      * Hand-rolled `https://t.me/...` fallback. Public channels get `t.me/<handle>/<post>`;
@@ -71,13 +71,13 @@ object PostActions {
     private fun fallbackServerPostId(post: TimelinePost, isGuest: Boolean): Long =
         if (isGuest) post.id else post.id ushr 20
 
-    suspend fun openInTelegram(context: Context, repo: PostsRepository?, post: TimelinePost) {
+    suspend fun openInTelegram(context: Context, channels: ChannelDirectory?, post: TimelinePost) {
         // Hand the OS an https://t.me/... URL — Telegram's intent-filter claims it and
         // routes into the official client cleanly, just as well as tg:// did, but
         // without the "no client installed → ActivityNotFoundException" failure mode
         // (the OS chooser steps in for unknown handlers, vs tg:// where the absence
         // crashes the dispatch).
-        val intent = Intent(Intent.ACTION_VIEW, shareUrl(repo, post).toUri()).apply {
+        val intent = Intent(Intent.ACTION_VIEW, shareUrl(channels, post).toUri()).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         runCatching { context.startActivity(intent) }
@@ -97,8 +97,8 @@ object PostActions {
         }
     }
 
-    suspend fun share(context: Context, repo: PostsRepository?, post: TimelinePost) {
-        val url = shareUrl(repo, post)
+    suspend fun share(context: Context, channels: ChannelDirectory?, post: TimelinePost) {
+        val url = shareUrl(channels, post)
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, buildShareText(post, url))

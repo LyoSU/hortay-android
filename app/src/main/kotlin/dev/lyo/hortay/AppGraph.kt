@@ -16,6 +16,7 @@ import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.discover.ChannelDiscoveryRepository
 import dev.lyo.hortay.data.discover.ChannelSuggestionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
+import dev.lyo.hortay.data.ChannelDirectory
 import dev.lyo.hortay.data.ChatRegistry
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.CountryRepository
@@ -161,6 +162,9 @@ class AppGraph(context: Context) {
     // Shared between PostsRepository (channel feed) and CommentsRepository (discussion
     // threads) so an author resolved in one context is reused in the other.
     private val messageMapper: MessageMapper = MessageMapper(tdClient, res, chatRegistry)
+
+    /** Read-only channel lookups (header metadata, handle resolution, share links). */
+    val channelDirectory: ChannelDirectory = ChannelDirectory(tdClient, chatRegistry)
 
     /**
      * Channels the user has chosen to hide from the merged feed. See
@@ -607,7 +611,7 @@ class AppGraph(context: Context) {
     val migrationCoordinator: MigrationCoordinator = MigrationCoordinator(
         migrationStore = migrationStore,
         subscriptions = webSubscriptions,
-        postsRepository = postsRepository,
+        channels = channelDirectory,
         channelActions = channelActions,
         authStage = tdClient.authStage,
         scope = appScope,

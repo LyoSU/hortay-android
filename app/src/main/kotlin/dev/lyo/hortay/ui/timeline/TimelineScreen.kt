@@ -47,6 +47,7 @@ import androidx.lifecycle.viewmodel.initializer
 import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.isUnplayableVideo
 import dev.lyo.hortay.data.ChannelActionsRepository
+import dev.lyo.hortay.data.ChannelDirectory
 import dev.lyo.hortay.data.ChatFoldersRepository
 import dev.lyo.hortay.data.isUnreadAt
 import dev.lyo.hortay.data.orderedFor
@@ -123,6 +124,8 @@ fun TimelineScreen(
      */
     onChannelOpen: (chatId: Long, scrollToMessageId: Long?) -> Unit = { _, _ -> },
     tdlibRepo: PostsRepository? = null,
+    /** Share / open-in-Telegram links; null in guest mode (hand-rolled URLs). */
+    channels: ChannelDirectory? = null,
     commentsRepo: CommentsRepository? = null,
     folders: ChatFoldersRepository? = null,
     translations: TranslationsStore? = null,
@@ -1292,6 +1295,7 @@ fun TimelineScreen(
         translations,
         channelActions,
         tdlibRepo,
+        channels,
         feed,
         bookmarks,
         onReportClick,
@@ -1324,7 +1328,7 @@ fun TimelineScreen(
                 // remoteVideoUrl and ExoPlayer would spin trying to prepare nothing.
                 val items = (post.content as? dev.lyo.hortay.data.PostContent.PhotoAlbum)?.items.orEmpty()
                 if (items.getOrNull(idx)?.isUnplayableVideo == true) {
-                    scope.launch { dev.lyo.hortay.ui.actions.PostActions.openInTelegram(context, tdlibRepo, post) }
+                    scope.launch { dev.lyo.hortay.ui.actions.PostActions.openInTelegram(context, channels, post) }
                 } else {
                     viewer.openFor(post.content, idx)
                 }
@@ -1386,11 +1390,11 @@ fun TimelineScreen(
                 }
             },
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
-            onShareClick = { post -> scope.launch { PostActions.share(context, tdlibRepo, post) } },
+            onShareClick = { post -> scope.launch { PostActions.share(context, channels, post) } },
             onCopyClick = { post -> PostActions.copyText(context, post) },
             onOpenClick = { post ->
                 markPostReadState.value(post)
-                scope.launch { PostActions.openInTelegram(context, tdlibRepo, post) }
+                scope.launch { PostActions.openInTelegram(context, channels, post) }
             },
             onTranslateClick = { post ->
                 val t = translations ?: return@PostInteractions
@@ -2126,7 +2130,7 @@ fun TimelineScreen(
             onDismiss = { revisionsForPost = null },
             onOpenInTelegram = {
                 scope.launch {
-                    PostActions.openInTelegram(context, tdlibRepo, currentRevisionPost)
+                    PostActions.openInTelegram(context, channels, currentRevisionPost)
                 }
             },
             mediaStore = archiveMediaStore,

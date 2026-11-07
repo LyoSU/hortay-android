@@ -37,6 +37,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.ChannelActionsRepository
+import dev.lyo.hortay.data.ChannelDirectory
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.FeedOrder
@@ -109,6 +110,7 @@ import kotlinx.coroutines.launch
 fun ChannelScreen(
     chatId: Long,
     repo: PostsRepository,
+    channels: ChannelDirectory,
     commentsRepo: CommentsRepository,
     translations: TranslationsStore,
     channelActions: ChannelActionsRepository,
@@ -162,11 +164,12 @@ fun ChannelScreen(
     // with the same key reuse the existing instance regardless of the factory parameter.
     val vm: ChannelViewModel = viewModel(
         key = "channel:$chatId",
-        factory = remember(repo, bookmarks, chatId, scrollToMessage) {
+        factory = remember(repo, channels, bookmarks, chatId, scrollToMessage) {
             viewModelFactory {
                 initializer {
                     ChannelViewModel(
                         repo = repo,
+                        channels = channels,
                         bookmarks = bookmarks,
                         chatId = chatId,
                         scrollToMessageId = scrollToMessage?.second,
@@ -528,13 +531,13 @@ fun ChannelScreen(
 
     // PostInteractions — keyed on the long-lived dependencies to avoid stale captures
     // across logout/login, mirrors TimelineScreen's keying rationale.
-    val interactions = remember(vm, viewer, translations, channelActions, repo, bookmarks, onReportClick, canReport) {
+    val interactions = remember(vm, viewer, translations, channelActions, repo, channels, bookmarks, onReportClick, canReport) {
         PostInteractions(
             onMediaClick = { post, idx ->
                 markPostReadState.value(post)
                 val items = (post.content as? dev.lyo.hortay.data.PostContent.PhotoAlbum)?.items.orEmpty()
                 if (items.getOrNull(idx)?.isUnplayableVideo == true) {
-                    scope.launch { PostActions.openInTelegram(context, repo, post) }
+                    scope.launch { PostActions.openInTelegram(context, channels, post) }
                 } else {
                     viewer.openFor(post.content, idx)
                 }
@@ -599,11 +602,11 @@ fun ChannelScreen(
                 }
             },
             onBookmarkClick = { post -> vm.toggleBookmark(post) },
-            onShareClick = { post -> scope.launch { PostActions.share(context, repo, post) } },
+            onShareClick = { post -> scope.launch { PostActions.share(context, channels, post) } },
             onCopyClick = { post -> PostActions.copyText(context, post) },
             onOpenClick = { post ->
                 markPostReadState.value(post)
-                scope.launch { PostActions.openInTelegram(context, repo, post) }
+                scope.launch { PostActions.openInTelegram(context, channels, post) }
             },
             onTranslateClick = { post ->
                 scope.launch {
