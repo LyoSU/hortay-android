@@ -72,7 +72,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -116,6 +115,8 @@ import java.util.concurrent.atomic.AtomicLong
  *     (channel-as-sender vs personal-author split).
  *   • [foldRawIntoCurrent] in `SnapshotRestorer.kt` holds the canonical raw →
  *     feed fold (partial-album guard). Unit-tested in isolation.
+ *   • [InteractionInfoBuffer] / [applyInteractionInfo] in `InteractionInfoBuffer.kt`
+ *     coalesce live view / reaction / comment counters and apply a window in one pass.
  *   • Read-only channel lookups (subscriber count, title, avatar, handle / chat-id
  *     resolution, share links) live in [dev.lyo.hortay.data.ChannelDirectory]; chat /
  *     supergroup metadata in [ChatRegistry].
@@ -285,26 +286,8 @@ class PostsRepository(
     private val deepLoadJobs = ConcurrentHashMap<Long, Deferred<Result<Boolean>>>()
     private val deepLoadCooldownUntilMs = ConcurrentHashMap<Long, Long>()
 
-    // Coalescing buffer for UpdateMessageInteractionInfo. On busy days these arrive in
-    // dozens-per-second bursts for *every* channel in the user's list (not just visible
-    // ones). Each event used to fan out one O(N) `_posts.update` — at 1000 posts and 50
-    // events/sec that's ~50MB/sec of garbage. Buffer per-message updates and flush all
-    // pending mutations in a single `mutate {}` block every INTERACTION_INFO_COALESCE_MS.
-    // Non-nullable values: ConcurrentHashMap forbids null. TDLib does occasionally emit
-    // UpdateMessageInteractionInfo with null `interactionInfo` (which the original
-    // per-field-fallback handler treated as a no-op), so we drop those at the entry.
-    //
-    // Inserts go through `merge`, not `put`: TDLib often emits two updates back-to-back
-    // for the same message — first one carrying fresh views/replies with `reactions=null`
-    // ("no change to reactions, see your local copy"), then one with the new `reactions`.
-    // A naive `put` lets a later null-reactions heartbeat overwrite an earlier
-    // non-null-reactions update inside the same 200 ms coalesce window, silently dropping
-    // the reaction change. The merge keeps the latest non-null value per field — the same
-    // null-preserve rule [flushPendingInteractionInfo] applies field-by-field against
-    // [TimelinePost], lifted up so the buffer never loses information.
-    private val pendingInteractionInfo =
-        ConcurrentHashMap<Pair<Long, Long>, TdApi.MessageInteractionInfo>()
-    private val interactionFlushScheduled = AtomicBoolean(false)
+    /** `UpdateMessageInteractionInfo` coalescing window — see [InteractionInfoBuffer]. */
+    private val interactionInfo = InteractionInfoBuffer()
 
     /**
      * Per-chat debounce buffer for `UpdateDeleteMessages`. We coalesce all
@@ -1947,105 +1930,17 @@ class PostsRepository(
     }
 
     /**
-     * Buffer the update; if a flush isn't already scheduled, schedule one. A single
-     * coroutine drains the buffer after [INTERACTION_INFO_COALESCE_MS] and writes all
-     * pending mutations in one `_posts.update { mutate { ... } }` call — the persistent
-     * list builds the new snapshot once, regardless of how many keys we touch.
+     * Buffer the update; the call that opens a window schedules its single flush, which
+     * applies everything buffered in one `_posts.update` after
+     * [INTERACTION_INFO_COALESCE_MS].
      */
     private fun handleInteractionInfo(update: TdApi.UpdateMessageInteractionInfo) {
-        // null interactionInfo: original handler resolved every field to its current value
-        // (effectively no-op). Drop here so the buffer stays non-null for ConcurrentHashMap.
         val info = update.interactionInfo ?: return
-        pendingInteractionInfo.merge(update.chatId to update.messageId, info) { existing, incoming ->
-            TdApi.MessageInteractionInfo().apply {
-                // viewCount is monotonic per Telegram; take max so a slightly-stale heartbeat
-                // can't downgrade a fresher value already in the buffer.
-                viewCount = maxOf(existing.viewCount, incoming.viewCount)
-                // forwardCount: TDLib emits 0 to mean "not changed" in heartbeats too,
-                // so keep the prior non-zero value when the incoming says zero.
-                forwardCount = if (incoming.forwardCount != 0) incoming.forwardCount
-                else existing.forwardCount
-                // reactions / replyInfo: null in the incoming update means "see your local
-                // copy" — fall through to the existing buffered value, NOT overwrite it.
-                reactions = incoming.reactions ?: existing.reactions
-                replyInfo = incoming.replyInfo ?: existing.replyInfo
-            }
-        }
-        if (interactionFlushScheduled.compareAndSet(false, true)) {
+        if (interactionInfo.offer(update.chatId, update.messageId, info)) {
             scope.launch {
                 delay(INTERACTION_INFO_COALESCE_MS)
-                interactionFlushScheduled.set(false)
-                flushPendingInteractionInfo()
-            }
-        }
-    }
-
-    private fun flushPendingInteractionInfo() {
-        if (pendingInteractionInfo.isEmpty()) return
-        // Single-pass drain: snapshot what's there now, atomically remove only those
-        // entries. Updates that arrive *after* the snapshot stay in the map and trip the
-        // next compareAndSet, so we don't lose any.
-        val drained = HashMap<Pair<Long, Long>, TdApi.MessageInteractionInfo>()
-        val it = pendingInteractionInfo.entries.iterator()
-        while (it.hasNext()) {
-            val e = it.next()
-            drained[e.key] = e.value
-            it.remove()
-        }
-        if (drained.isEmpty()) return
-
-        // Album-aware lookup: an update's messageId may target ANY member of an
-        // already-merged album, but post.id is the anchor (oldest member). Build a
-        // (chatId, memberId) → postIdx index covering the anchor AND every
-        // albumMessageIds entry once, then dispatch each drained event in O(1).
-        // Without this fallback, views / reactions / commentCount updates for
-        // non-anchor album members were silently dropped — the user-visible
-        // symptom was reactions never appearing on photo-album posts, because
-        // TDLib only fills MessageReactions via these updates after the initial
-        // GetChatHistory response (which returns interactionInfo with reactions=null).
-        // Mirrors the same album-id normalisation handleEdited /
-        // handleIsPinnedChanged / handleContentChanged already do via
-        // updateOnePostByAnyMemberId.
-        _posts.update { current ->
-            current.mutate { list ->
-                val byMessageId = HashMap<Pair<Long, Long>, Int>(list.size * 2)
-                for (i in list.indices) {
-                    val post = list[i]
-                    byMessageId[post.chatId to post.id] = i
-                    for (memberId in post.albumMessageIds) {
-                        if (memberId != post.id) byMessageId[post.chatId to memberId] = i
-                    }
-                }
-                for ((key, info) in drained) {
-                    val idx = byMessageId[key] ?: continue
-                    val post = list[idx]
-                    list[idx] = post.copy(
-                        // Max instead of overwrite: for an album, every member can fire
-                        // its own UpdateMessageInteractionInfo against this anchor's idx,
-                        // and the per-member viewCount can lag (TDLib catching up after
-                        // a reconnect, individual member view count slightly behind the
-                        // aggregate). Telegram view counts are monotonically
-                        // non-decreasing per message, so taking the max — both against
-                        // the post's previous value AND across the burst of member
-                        // updates that flow through this loop — never downgrades a card
-                        // that already showed a higher number.
-                        views = maxOf(post.views, info.viewCount),
-                        // forwardCount is monotonic like views; the same per-album-member
-                        // burst can fire against this anchor's idx, so take the max so a
-                        // lagging member's update never downgrades the shown count. The
-                        // drained buffer already kept the prior non-zero value when a
-                        // heartbeat reported 0 (see handleInteractionInfo merge).
-                        forwardCount = maxOf(post.forwardCount, info.forwardCount),
-                        // Preserve current reactions/comments when the inner field is null —
-                        // TDLib often omits sub-fields it hasn't recomputed. Per
-                        // tdlib/td#2312, only the first album member ever carries non-null
-                        // reactions / replyInfo, so the null-preserve branch is what
-                        // protects the merged card against non-first members' updates
-                        // overwriting the live aggregate with empties.
-                        reactions = info.reactions?.let(::reactionsFromUpdate) ?: post.reactions,
-                        commentCount = info.replyInfo?.replyCount ?: post.commentCount,
-                    )
-                }
+                val drained = interactionInfo.drain()
+                _posts.update { current -> applyInteractionInfo(current, drained) }
             }
         }
     }
@@ -2361,7 +2256,7 @@ class PostsRepository(
      * `AddMessageReaction` / `RemoveMessageReaction` via [ChannelActionsRepository].
      * The eventual `UpdateMessageInteractionInfo` overwrites this state with server
      * truth on the same `_posts.update` path the live update stream uses
-     * ([flushPendingInteractionInfo]) — so a slightly-off optimistic guess can never
+     * ([applyInteractionInfo]) — so a slightly-off optimistic guess can never
      * stick. On RPC failure, the caller invokes this method again with the inverted
      * [nowChosen] to roll back the visual change.
      *
@@ -2598,9 +2493,6 @@ class PostsRepository(
         _posts.update { current -> applyChatPhotoToFeed(current, update.chatId, newThumb, newFileId) }
     }
 
-    private fun reactionsFromUpdate(reactions: TdApi.MessageReactions): Reactions =
-        MessageContentMapper.mapReactions(reactions)
-
     /**
      * Set of chatIds the user has archived in Telegram. Populated by the same
      * dual path as [_mainChatIds]: [handleNewChat] reads `chat.positions`
@@ -2638,8 +2530,7 @@ class PostsRepository(
             // The registry (chats, supergroups, users) wipes itself through its own
             // AccountSession hook.
             _chatReadCursors.value = persistentMapOf()
-            pendingInteractionInfo.clear()
-            interactionFlushScheduled.set(false)
+            interactionInfo.clear()
             albumBuffers.clear()
             albumDebounce.values.forEach { it.cancel() }
             albumDebounce.clear()
@@ -2766,7 +2657,7 @@ class PostsRepository(
          * Quiet-window length after which an album's accumulated DELETED ids are
          * flushed as a single archive row. Sliding-window — every new arrival for
          * the same album resets the timer. 200 ms matches the existing
-         * `pendingInteractionInfo` coalesce window and is large enough to absorb
+         * interaction-info coalesce window and is large enough to absorb
          * a typical slow-network album delete fan-out (~tens of ms between
          * siblings), small enough not to delay the user-visible tombstone.
          */

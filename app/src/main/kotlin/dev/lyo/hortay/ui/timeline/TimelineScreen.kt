@@ -1418,7 +1418,7 @@ fun TimelineScreen(
                 // the tap feels instant — the canonical pattern (Telegram-Android,
                 // Twitter, Reddit, Slack). The eventual `UpdateMessageInteractionInfo`
                 // overwrites the local guess with server truth via
-                // [PostsRepository.flushPendingInteractionInfo]; on RPC failure we
+                // [dev.lyo.hortay.data.posts.applyInteractionInfo]; on RPC failure we
                 // revert by applying the inverse toggle.
                 val target = post.albumMessageIds.ifEmpty { listOf(post.id) }.first()
                 val nowChosen = !item.isChosen
