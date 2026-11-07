@@ -11,20 +11,19 @@ import org.drinkless.tdlib.TdApi
  * (discussion threads) share an instance — the resolver methods here drive author /
  * handle / verification badges for both surfaces, so they share the same TDLib path.
  *
- * No in-process LRU. Per TDLib docs:
- *
- *   "getUser / getChat / getSupergroup — This is an offline method if the current
- *    user is not a bot."
- *
- * With `useChatInfoDatabase = true` TDLib keeps Users / Chats / Supergroups in its
- * own local store and re-emits `updateUser` / `updateNewChat` / `updateSupergroup`
- * BEFORE returning any id that references them, so by the time we hold a
- * `userId` / `chatId` / `supergroupId` the upstream cache is already warm. Layering
- * our own `LinkedHashMap` LRU on top added microseconds of "win" and a steady supply
- * of stale-rename / stale-avatar bugs whenever an UpdateUser / UpdateSupergroup
- * arrived while a row was already on screen.
+ * Users and supergroups come from [registry] — a mirror fed by `updateUser` /
+ * `updateSupergroup`, so mapping a post costs no TDLib round-trip once the update
+ * stream has announced its author / channel. It is NOT an LRU of RPC answers: an
+ * earlier `LinkedHashMap` LRU filled from `GetUser` went stale on every rename /
+ * avatar change; the registry is refreshed by the same updates TDLib itself applies.
+ * Without a registry (tests, previews) every lookup is the offline `GetUser` /
+ * `GetSupergroup` RPC ("This is an offline method if the current user is not a bot").
  */
-class MessageMapper(private val td: TdSender, private val res: StringResolver) {
+class MessageMapper(
+    private val td: TdSender,
+    private val res: StringResolver,
+    private val registry: ChatRegistry? = null,
+) {
 
     private val defaultUserName: String get() = res.getString(R.string.user_default_name)
     private val defaultChannelName: String get() = res.getString(R.string.channel_default_name)
@@ -198,21 +197,26 @@ class MessageMapper(private val td: TdSender, private val res: StringResolver) {
         // Intentionally empty — see KDoc.
     }
 
-    private suspend fun resolveChannelHandle(chat: TdApi.Chat): String? {
+    private suspend fun supergroupOf(chat: TdApi.Chat): TdApi.Supergroup? {
         val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
-        val sg = runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }.getOrNull()
-        return sg?.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" }
+        return if (registry != null) {
+            registry.supergroup(supergroupId)
+        } else {
+            runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }.getOrNull()
+        }
     }
 
-    private suspend fun resolveChannelVerification(chat: TdApi.Chat): SenderVerification? {
-        val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
-        val sg = runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }.getOrNull()
-        return sg?.verificationStatus?.toMark()
-    }
+    private suspend fun resolveChannelHandle(chat: TdApi.Chat): String? =
+        supergroupOf(chat)?.usernames?.activeUsernames?.firstOrNull()?.let { "@$it" }
+
+    private suspend fun resolveChannelVerification(chat: TdApi.Chat): SenderVerification? =
+        supergroupOf(chat)?.verificationStatus?.toMark()
 
     private suspend fun fetchUser(userId: Long): ResolvedSender {
-        val u = runCatching { td.send(TdApi.GetUser(userId)) }.getOrNull()
-            ?: return ResolvedSender(defaultUserName, null, null, null)
+        val u = (
+            if (registry != null) registry.user(userId)
+            else runCatching { td.send(TdApi.GetUser(userId)) }.getOrNull()
+            ) ?: return ResolvedSender(defaultUserName, null, null, null)
         val username = u.usernames?.activeUsernames?.firstOrNull()
         val name = listOfNotNull(
             u.firstName?.takeUnless { it.isBlank() },
