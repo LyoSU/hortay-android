@@ -112,7 +112,12 @@ class WebTelegramClient(
 
         return runCatching { execute(request) }.fold(
             onSuccess = { response ->
-                response.use { handleResponse(it, username) }
+                // Body read (30-136 KB), Jsoup parse and the OkHttp cache write all
+                // happen in handleResponse — keep them off the caller's dispatcher,
+                // which is Main for pull-to-refresh and the Add-channel lookups.
+                withContext(Dispatchers.IO) {
+                    response.use { handleResponse(it, username) }
+                }
             },
             onFailure = { error ->
                 Log.w(TAG, "fetchChannelPage(${username}) failed: ${error.message}")
