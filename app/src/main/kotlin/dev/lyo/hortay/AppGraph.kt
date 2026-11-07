@@ -11,6 +11,7 @@ import dev.lyo.hortay.data.report.ReportLogStore
 import dev.lyo.hortay.data.report.ReportRepository
 import dev.lyo.hortay.data.toStringResolver
 import dev.lyo.hortay.ui.report.GuestReportDelegator
+import dev.lyo.hortay.data.AccountSession
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.discover.ChannelDiscoveryRepository
 import dev.lyo.hortay.data.discover.ChannelSuggestionsRepository
@@ -77,6 +78,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Manual dependency graph for the app. Lightweight alternative to Hilt for a single-process
@@ -109,12 +111,22 @@ class AppGraph(context: Context) {
     val tdClient: TdClient = TdClient.create(context, settingsStore).also { it.start() }
 
     /**
+     * Lifetime of the signed-in account. Every session-scoped state holder registers its
+     * logout wipe here ([AccountSession.onEnd]) next to its construction; bound to
+     * [TdClient.loggedOut] in `init` once every hook is registered.
+     */
+    val session: AccountSession = AccountSession(appScope)
+
+    /**
      * Per-user profile accent colours (the gradients Telegram users pick for
      * themselves). Bound to the update stream + logout signal here; consumed by the
      * Settings hero and the user-profile sheet via `LocalProfileAccent`.
      */
     val profileAccent: ProfileAccentRegistry =
-        ProfileAccentRegistry().also { it.bind(tdClient.updates, tdClient.loggedOut, appScope) }
+        ProfileAccentRegistry().also { registry ->
+            registry.bind(tdClient.updates, appScope)
+            session.onEnd("profileAccent") { registry.clear() }
+        }
 
     // Bridge ProcessLifecycleOwner + ConnectivityManager into TDLib so the daemon knows
     // when we're foreground/online and what network it should plan downloads for. The
@@ -141,7 +153,10 @@ class AppGraph(context: Context) {
 
     /** Update-fed users / supergroups mirror — see [ChatRegistry]. */
     private val chatRegistry: ChatRegistry =
-        ChatRegistry(tdClient).also { it.bind(tdClient.loggedOut, appScope) }
+        ChatRegistry(tdClient).also { registry ->
+            registry.bind(appScope)
+            session.onEnd("chatRegistry") { registry.clear() }
+        }
 
     // Shared between PostsRepository (channel feed) and CommentsRepository (discussion
     // threads) so an author resolved in one context is reused in the other.
@@ -370,8 +385,10 @@ class AppGraph(context: Context) {
     // pooled audio ExoPlayer that outlives the player rows, so playback survives scrolling;
     // cleared on logout (session-scoped state hard rule).
     val audioPlaybackSession: dev.lyo.hortay.ui.media.AudioPlaybackSession =
-        dev.lyo.hortay.ui.media.AudioPlaybackSession(exoPlayerPool, mediaCache)
-            .also { it.bindLogoutClear(tdClient.loggedOut, appScope) }
+        dev.lyo.hortay.ui.media.AudioPlaybackSession(exoPlayerPool, mediaCache).also { audio ->
+            // ExoPlayer must be touched on its application (main) thread.
+            session.onEnd("audioPlayback") { withContext(Dispatchers.Main) { audio.clear() } }
+        }
 
     // Decoded-frame LRU cache for VP9+alpha WebM animations (stickers, custom emoji).
     // Shares appScope so decode coroutines are cancelled with the process; maxBytes
@@ -397,7 +414,7 @@ class AppGraph(context: Context) {
      * truth for "is this a Telegram URL, and what does it mean".
      */
     val linkResolver: TelegramLinkResolver = TelegramLinkResolver(tdClient)
-        .also { it.bindLogoutClear(tdClient.loggedOut, appScope) }
+        .also { resolver -> session.onEnd("linkResolver") { resolver.clear() } }
 
     /**
      * Process-wide dialog state for link-confirmation flows. Hoisted off the scaffolds
@@ -670,10 +687,9 @@ class AppGraph(context: Context) {
         // signs in to a *different* Telegram account on the same device,
         // even though that account has never seen the offer.
         //
-        // collect on appScope so the handler outlives any UI scope.
-        appScope.launch {
-            tdClient.loggedOut.collect { runLogoutCleanup() }
-        }
+        // Registered last, so these run after the hooks registered at construction.
+        session.onEnd("graph") { runLogoutCleanup() }
+        session.bind(tdClient.loggedOut)
     }
 
     /**

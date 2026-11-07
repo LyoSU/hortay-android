@@ -65,16 +65,14 @@ interface ProfileAccentResolver {
 class ProfileAccentRegistry : ProfileAccentResolver {
     private val byId = AtomicReference<Map<Int, TdApi.ProfileAccentColor>>(emptyMap())
 
-    /** Collect the one-shot palette update and the logout signal. Call once at graph build. */
-    fun bind(
-        updates: SharedFlow<TdApi.Update>,
-        loggedOut: SharedFlow<Unit>,
-        scope: CoroutineScope,
-    ) {
+    /**
+     * Collect the one-shot palette update. Call once at graph build; [clear] is
+     * registered as an [AccountSession] end hook.
+     */
+    fun bind(updates: SharedFlow<TdApi.Update>, scope: CoroutineScope) {
         scope.launch {
             updates.collect { u -> if (u is TdApi.UpdateProfileAccentColors) ingest(u.colors) }
         }
-        scope.launch { loggedOut.collect { clear() } }
     }
 
     fun ingest(colors: Array<TdApi.ProfileAccentColor>) {

@@ -1,7 +1,6 @@
 package dev.lyo.hortay.data
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
@@ -23,10 +22,12 @@ class ChatRegistry(private val td: TdSender) {
     private val users = ConcurrentHashMap<Long, TdApi.User>()
     private val supergroups = ConcurrentHashMap<Long, TdApi.Supergroup>()
 
-    /** Collect user/supergroup updates and the logout signal. Call once at graph build. */
-    fun bind(loggedOut: SharedFlow<Unit>, scope: CoroutineScope) {
+    /**
+     * Collect user/supergroup updates. Call once at graph build; [clear] is registered
+     * as an [AccountSession] end hook.
+     */
+    fun bind(scope: CoroutineScope) {
         scope.launch { td.updates.collect(::onUpdate) }
-        scope.launch { loggedOut.collect { clear() } }
     }
 
     internal fun onUpdate(update: TdApi.Update) {

@@ -108,8 +108,8 @@ class CommentsRepository(
     // feed where the user dwells, scrolls, returns — the same chat racks up
     // dozens of identical history requests per minute and Telegram rate-limits
     // it (live logcat caught a "[429] retry after 31" on prefetchHistory).
-    // Permanent for the lifetime of the repo: history doesn't decay during a
-    // session, and a tap-driven [observeThread] still fetches fresh history if
+    // Permanent for the session (wiped by [clear] on logout): history doesn't decay
+    // during a session, and a tap-driven [observeThread] still fetches fresh history if
     // the prefetched batch doesn't cover the viewport. ~16 bytes per entry, on
     // par with [resolvedAnchors].
     private val prefetchedAnchors = ConcurrentHashMap.newKeySet<Pair<Long, Long>>()
@@ -856,6 +856,13 @@ class CommentsRepository(
      */
     fun clear() {
         resolvedAnchors.clear()
+        // Wake account A's in-flight anchor waiters with "no resolution" and drop the
+        // entries, so account B never awaits (and caches) a resolution fetched under the
+        // previous session. Prefetch dedup keys are per-session too: left in place they
+        // silently suppressed account B's warm-up for any matching (chat, message) pair.
+        inflightAnchors.values.forEach { it.complete(null) }
+        inflightAnchors.clear()
+        prefetchedAnchors.clear()
         optimisticOverrides.clear()
         pendingCommentEdits.clear()
         synchronized(streams) { streams.clear() }

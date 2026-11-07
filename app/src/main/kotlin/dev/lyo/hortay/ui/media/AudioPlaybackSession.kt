@@ -14,7 +14,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -41,8 +40,9 @@ import kotlinx.coroutines.launch
  * ([Dispatchers.Main.immediate]). [MediaCache] observe/ensure is thread-safe and rides
  * the same scope.
  *
- * Session-scoped state hard rule: cleared on TDLib `loggedOut` via [bindLogoutClear] —
- * a fresh sign-in never inherits the previous account's playing track or its player.
+ * Session-scoped state hard rule: cleared on TDLib `loggedOut` via an `AccountSession`
+ * end hook, on Main — a fresh sign-in never inherits the previous account's playing
+ * track or its player.
  */
 @Stable
 class AudioPlaybackSession(
@@ -173,11 +173,6 @@ class AudioPlaybackSession(
         player?.let { pool.release(it, muted = false) }
         player = null
         _state.value = null
-    }
-
-    /** Clear on TDLib logout — session-scoped state hard rule. */
-    fun bindLogoutClear(loggedOut: SharedFlow<Unit>, appScope: CoroutineScope) {
-        appScope.launch { loggedOut.collect { clear() } }
     }
 
     private companion object {

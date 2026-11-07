@@ -96,7 +96,7 @@ Each `❌` carries a **Revisit:** clause — the concrete condition that would j
 - ❌ Hand-editing `libtdlib/.../{Client,TdApi}.java` — vendored upstream.
 - ❌ `LOG_VERBOSITY > 1`.
 - ✅ `OpenChat` / `CloseChat` / `ViewMessages` go through `ChatPresence`. Wrap critical pairs in `NonCancellable` (`tdlib/td#2312`).
-- ✅ Every session-scoped state holder subscribes to `TdClient.loggedOut.collect { clear() }`. Includes process-wide sets and Composable state.
+- ✅ Every session-scoped state holder registers its logout wipe with `AppGraph.session.onEnd(name) { … }` (`data/AccountSession.kt`), next to where it is constructed — not an ad-hoc `loggedOut.collect`. Hooks run in registration order; one failing hook doesn't abort the rest. Account-bound background work launches in `session.scope`, which logout cancels. Includes process-wide sets and Composable state.
 
 ### Compose
 
