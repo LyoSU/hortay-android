@@ -172,8 +172,8 @@ fun ArchiveScreen(
 
     val current = openSnapshot
     if (current != null) {
-        val revisions by viewModel.observeRevisionsFor(current)
-            .collectAsState(initial = persistentListOf())
+        val revisionsFlow = remember(current) { viewModel.observeRevisionsFor(current) }
+        val revisions by revisionsFlow.collectAsState(initial = persistentListOf())
         PostRevisionSheet(
             revisions = revisions,
             onDismiss = { openSnapshot = null },

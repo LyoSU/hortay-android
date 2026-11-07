@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- Photo albums in the feed keep filling in after a stretch without connection, instead of staying incomplete until the app restarts.
+- Opening a channel for the first time now loads its recent history instead of sometimes showing a single post.
+- Scrolling back through a channel no longer stops early at a run of posts that can't be shown.
+- A post deleted by the channel moments after it was published no longer reappears in the feed.
+- Cached posts and channels keep opening while Telegram temporarily rate-limits the app.
+- Guest-mode refresh and channel search no longer stutter the interface while pages load.
+- The phone number and login code you typed survive rotating the screen or switching the theme.
+- The edit-history sheet of a post no longer flickers empty while it's open.
+- Signing out during the first feed fill-in no longer leaves the next account with a sparse feed.
+
 ## [0.12.0] — 2026-07-16
 
 ### Added
