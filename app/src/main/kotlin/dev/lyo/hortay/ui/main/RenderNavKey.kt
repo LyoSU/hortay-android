@@ -58,6 +58,7 @@ internal fun RenderNavKey(
         is ChannelKey -> ChannelScreen(
             chatId = key.chatId,
             repo = graph.postsRepository,
+            channels = graph.channelDirectory,
             commentsRepo = graph.commentsRepository,
             bookmarks = graph.bookmarkStore,
             translations = graph.translations,

@@ -32,7 +32,7 @@ import dev.lyo.hortay.data.nav.ChannelKey
 import dev.lyo.hortay.data.nav.CommentsKey
 import dev.lyo.hortay.data.nav.HomeKey
 import dev.lyo.hortay.data.nav.WebChannelKey
-import dev.lyo.hortay.data.posts.PublicHandleResult
+import dev.lyo.hortay.data.PublicHandleResult
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.report.ReportTarget
@@ -253,7 +253,7 @@ fun MainScaffold(graph: AppGraph) {
      */
     val safelyOpenChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
         scope.launch {
-            when (val resolved = graph.postsRepository.resolveChatKind(chatId)) {
+            when (val resolved = graph.channelDirectory.resolveChatKind(chatId)) {
                 is PublicHandleResult.Channel -> {
                     val below = graph.backStack.getOrNull(graph.backStack.lastIndex - 1)
                     val matchesBelow = scrollTo == null &&
@@ -284,8 +284,8 @@ fun MainScaffold(graph: AppGraph) {
         router = graph.deepLinkRouter,
         userMessages = graph.userMessages,
         linkDialogs = graph.linkDialogs,
-        resolvePublicHandle = graph.postsRepository::resolvePublicHandle,
-        resolveChatKind = graph.postsRepository::resolveChatKind,
+        resolvePublicHandle = graph.channelDirectory::resolvePublicHandle,
+        resolveChatKind = graph.channelDirectory::resolveChatKind,
         previewChatInvite = graph.channelActions::previewChatInvite,
         onPushChannel = pushChannel,
         onOpenUser = { userId -> userProfileOpener.open(userId) },

@@ -3,6 +3,7 @@ package dev.lyo.hortay.ui.timeline
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.lyo.hortay.data.BookmarkStore
+import dev.lyo.hortay.data.ChannelDirectory
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
 import kotlinx.collections.immutable.PersistentList
@@ -53,9 +54,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  *   - [channelTitle] is derived reactively from the channel slice
  *     (preferred, same canonical-identity rule as the old TimelineScreen
- *     filter bar) with a suspend [PostsRepository.chatTitle] fallback
+ *     filter bar) with a suspend [ChannelDirectory.chatTitle] fallback
  *     for channels not yet in the merged feed.
- *     [channelSubscribers] uses [PostsRepository.channelSubscribers]
+ *     [channelSubscribers] uses [ChannelDirectory.channelSubscribers]
  *     which is a one-shot TDLib cache hit in steady state.
  *
  *   - Search is fully owned here — 300 ms debounce on [searchQuery],
@@ -71,6 +72,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class ChannelViewModel(
     private val repo: PostsRepository,
+    private val channels: ChannelDirectory,
     private val bookmarks: BookmarkStore,
     val chatId: Long,
     val scrollToMessageId: Long?,
@@ -156,7 +158,7 @@ class ChannelViewModel(
     private val _channelTitle = MutableStateFlow<String?>(null)
     val channelTitle: StateFlow<String?> = _channelTitle.asStateFlow()
 
-    // Subscriber count: seeded SYNCHRONOUSLY from [PostsRepository]'s
+    // Subscriber count: seeded SYNCHRONOUSLY from [ChannelDirectory]'s
     // in-memory [TdApi.UpdateSupergroup] mirror so the [ChannelHeaderBar]
     // subtitle paints with the count on its first frame instead of as a
     // null that recomposes a beat later. For channels the user has already
@@ -165,13 +167,13 @@ class ChannelViewModel(
     // constructed, so the synchronous read returns the live count
     // immediately. The cold-cache fallback (deep-link into a never-seen
     // channel) is handled by the [init] launcher below.
-    private val _channelSubscribers = MutableStateFlow(repo.channelSubscribersCached(chatId))
+    private val _channelSubscribers = MutableStateFlow(channels.channelSubscribersCached(chatId))
     val channelSubscribers: StateFlow<Int?> = _channelSubscribers.asStateFlow()
 
     // Channel avatar source for the top-bar TdAvatar — same minithumb /
     // fileId pair ChannelsScreen rows use. Resolved reactively from the
     // post stream (every channel post carries the channel's identity in
-    // its sender fields) with a one-shot [PostsRepository.chatAvatar]
+    // its sender fields) with a one-shot [ChannelDirectory.chatAvatar]
     // fallback for channels not yet in the merged feed. Until both
     // resolve, [TdAvatar] paints the initial-letter placeholder on its
     // primaryContainer disc.
@@ -354,7 +356,7 @@ class ChannelViewModel(
                 // Suspension fallback: TDLib serves this from its local
                 // chat cache, which is warm after UpdateNewChat has
                 // fired for this chat.
-                _channelTitle.value = repo.chatTitle(chatId)
+                _channelTitle.value = channels.chatTitle(chatId)
             }
             // Avatar minithumb/fileId from the same anchor when present.
             // Non-anonymous posts (admin posting under their own
@@ -375,7 +377,7 @@ class ChannelViewModel(
                 _channelAvatarFileId.value = avatarFromPosts.first
                 _channelAvatarThumb.value = avatarFromPosts.second
             } else {
-                val cached = repo.chatAvatar(chatId)
+                val cached = channels.chatAvatar(chatId)
                 if (cached != null) {
                     _channelAvatarFileId.value = cached.first
                     _channelAvatarThumb.value = cached.second
@@ -425,7 +427,7 @@ class ChannelViewModel(
         // still in flight).
         if (_channelSubscribers.value == null) {
             viewModelScope.launch {
-                _channelSubscribers.value = repo.channelSubscribers(chatId)
+                _channelSubscribers.value = channels.channelSubscribers(chatId)
             }
         }
     }
