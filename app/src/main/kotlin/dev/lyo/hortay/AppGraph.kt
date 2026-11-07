@@ -15,6 +15,7 @@ import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.discover.ChannelDiscoveryRepository
 import dev.lyo.hortay.data.discover.ChannelSuggestionsRepository
 import dev.lyo.hortay.data.ChatFoldersRepository
+import dev.lyo.hortay.data.ChatRegistry
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.CountryRepository
 import dev.lyo.hortay.data.CustomEmojiRepository
@@ -138,10 +139,13 @@ class AppGraph(context: Context) {
             res = res,
         )
 
+    /** Update-fed users / supergroups mirror — see [ChatRegistry]. */
+    private val chatRegistry: ChatRegistry =
+        ChatRegistry(tdClient).also { it.bind(tdClient.loggedOut, appScope) }
+
     // Shared between PostsRepository (channel feed) and CommentsRepository (discussion
-    // threads) so an author resolved in one context is reused in the other — same user
-    // appearing as a feed post AND as a thread reply hits the cache twice.
-    private val messageMapper: MessageMapper = MessageMapper(tdClient, res)
+    // threads) so an author resolved in one context is reused in the other.
+    private val messageMapper: MessageMapper = MessageMapper(tdClient, res, chatRegistry)
 
     /**
      * Channels the user has chosen to hide from the merged feed. See
