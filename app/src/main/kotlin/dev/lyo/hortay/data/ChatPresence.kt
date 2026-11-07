@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.drinkless.tdlib.TdApi
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Single source of truth for the family of TDLib presence + read-state signals:
@@ -72,7 +73,22 @@ internal object ChatPresence {
     private val refMutex = Mutex()
     private val refCounts = mutableMapOf<Long, Int>()
 
-    suspend fun openChat(td: TdSender, chatId: Long) {
+    /**
+     * Per-chat transition lock held across the refcount change AND the matching
+     * OpenChat / CloseChat send. Releasing [refMutex] before sending (the old shape)
+     * let a concurrent open→close on the same chat reach TDLib as Close, Open —
+     * leaving TDLib with the chat open at a local count of 0. Per-chat (not global)
+     * so a slow send for one chat never stalls transitions or [isOpen] for others.
+     */
+    private val transitionLocks = ConcurrentHashMap<Long, Mutex>()
+
+    private fun transitionLock(chatId: Long): Mutex = transitionLocks.computeIfAbsent(chatId) { Mutex() }
+
+    suspend fun openChat(td: TdSender, chatId: Long): Unit = transitionLock(chatId).withLock {
+        openChatLocked(td, chatId)
+    }
+
+    private suspend fun openChatLocked(td: TdSender, chatId: Long) {
         val shouldSend = refMutex.withLock {
             val next = (refCounts[chatId] ?: 0) + 1
             refCounts[chatId] = next
@@ -121,7 +137,11 @@ internal object ChatPresence {
         (refCounts[chatId] ?: 0) > 0
     }
 
-    suspend fun closeChat(td: TdSender, chatId: Long) {
+    suspend fun closeChat(td: TdSender, chatId: Long): Unit = transitionLock(chatId).withLock {
+        closeChatLocked(td, chatId)
+    }
+
+    private suspend fun closeChatLocked(td: TdSender, chatId: Long) {
         val shouldSend = refMutex.withLock {
             val current = refCounts[chatId] ?: 0
             // Defensive: an unbalanced close (no matching open) is treated as a no-op
