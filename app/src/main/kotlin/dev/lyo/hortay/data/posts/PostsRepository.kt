@@ -654,11 +654,8 @@ class PostsRepository(
             .onEach { update -> handleChatPhoto(update) }
             .launchIn(scope)
 
-        // UpdateUser arrives whenever a user's profile (name, avatar, username) changes.
-        // The mapper no longer holds a parallel User cache — every resolveSender hits
-        // TDLib's own local cache via GetUser (offline read), so a rename surfaces on the
-        // next mapping without any per-update bookkeeping here. The listener is kept off
-        // the wire entirely.
+        // UpdateUser / UpdateSupergroup for author and handle resolution are mirrored by
+        // [dev.lyo.hortay.data.ChatRegistry], which the shared MessageMapper reads.
 
         // Supergroup metadata changed: mirror the [TdApi.Supergroup] object into
         // [supergroupCache] so reads that only need this lightweight shape (subscriber
@@ -666,7 +663,7 @@ class PostsRepository(
         // synchronously without an RPC. TDLib emits one update per cached supergroup on
         // session warm-up — so by the time a channel that the merged feed already showed
         // is opened, its memberCount is in memory. Handle / verification lookups in the
-        // mapper read through TDLib's own GetSupergroup cache, so no invalidation needed.
+        // mapper go through ChatRegistry, which collects the same update.
         td.updates.filterIsInstance<TdApi.UpdateSupergroup>()
             .onEach { update ->
                 supergroupCache[update.supergroup.id] = update.supergroup
