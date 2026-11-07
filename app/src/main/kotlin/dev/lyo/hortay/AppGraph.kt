@@ -205,6 +205,7 @@ class AppGraph(context: Context) {
     val postsRepository: PostsRepository = PostsRepository(
         td = tdClient,
         mapper = messageMapper,
+        registry = chatRegistry,
         scope = appScope,
         userMessages = userMessages,
         connection = tdClient.connection,
@@ -269,7 +270,7 @@ class AppGraph(context: Context) {
                     if (stage !is AuthStage.Ready) return@collectLatest
                     postsRepository.triggerInitialSync()
                     // Backfill runs AFTER the chat-list drain returns so
-                    // [PostsRepository._mainChatIds] / [chatCache] have a
+                    // [PostsRepository._mainChatIds] / the chat registry have a
                     // reasonable snapshot to pick top-K from. Sequential in the
                     // same coroutine — a non-Ready stage cancels it mid-loop.
                     // The persisted flag stays unset on any failure path, so

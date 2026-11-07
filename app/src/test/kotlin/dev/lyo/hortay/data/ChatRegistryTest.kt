@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 
 class ChatRegistryTest {
@@ -57,5 +58,34 @@ class ChatRegistryTest {
         registry.clear()
         assertNull(registry.supergroup(5L), "after clear the slot misses and the failing RPC yields null")
         assertEquals(1, td.rpcCount("GetSupergroup"))
+    }
+
+    @Test
+    fun `chats are written explicitly, read without an RPC, and evicted on forget`() = runTest {
+        val td = FakeTdSender()
+        td.onAny("GetChat") { req -> TdApi.Chat().apply { id = (req as TdApi.GetChat).chatId; title = "Fetched" } }
+        val registry = ChatRegistry(td)
+        val chat = TdApi.Chat().apply { id = -100L; title = "Known" }
+
+        registry.rememberChat(chat)
+        assertSame(chat, registry.cachedChat(-100L))
+        assertSame(chat, registry.chat(-100L))
+        assertEquals(0, td.rpcCount("GetChat"))
+
+        registry.forgetChat(-100L)
+        assertNull(registry.cachedChat(-100L))
+        assertEquals("Fetched", registry.chat(-100L)?.title, "a miss re-reads TDLib's local store")
+        assertEquals("Fetched", registry.cachedChat(-100L)?.title, "and stores the fresh object")
+        assertEquals(1, td.rpcCount("GetChat"))
+    }
+
+    @Test
+    fun `UpdateNewChat alone does not register a chat`() = runTest {
+        // PostsRepository owns chat writes (its UpdateChatLastMessage race gate needs the
+        // write in its own coroutine); a collector here would reopen that race.
+        val registry = ChatRegistry(FakeTdSender())
+        registry.onUpdate(TdApi.UpdateNewChat(TdApi.Chat().apply { id = -100L }))
+
+        assertNull(registry.cachedChat(-100L))
     }
 }

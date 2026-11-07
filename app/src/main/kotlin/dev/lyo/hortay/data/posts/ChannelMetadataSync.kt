@@ -8,7 +8,7 @@ import kotlinx.collections.immutable.mutate
  * Pure-feed mutators for `UpdateChatTitle` / `UpdateChatPhoto`.
  *
  * Extracted from [PostsRepository] so the class body keeps only the
- * mutable-state plumbing (chatCache POJO swap, `_posts.update { … }`),
+ * mutable-state plumbing (chat-registry eviction, `_posts.update { … }`),
  * and the per-row decision logic — channel-as-sender vs personal-author
  * (TDLib's `channelContext`) — lives in one place. Same correctness
  * invariants the long-form rationale in CHANGELOG 0.5 describes: only

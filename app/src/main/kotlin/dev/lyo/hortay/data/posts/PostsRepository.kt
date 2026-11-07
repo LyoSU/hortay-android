@@ -6,6 +6,7 @@ import dev.lyo.hortay.data.ColdStartBackfillStore
 import dev.lyo.hortay.data.ConnectionStatus
 import dev.lyo.hortay.data.FeedSource
 import dev.lyo.hortay.data.IgnoredChannelsStore
+import dev.lyo.hortay.data.ChatRegistry
 import dev.lyo.hortay.data.MessageContentMapper
 import dev.lyo.hortay.data.MessageMapper
 import dev.lyo.hortay.data.PostContent
@@ -84,8 +85,8 @@ import java.util.concurrent.atomic.AtomicLong
  * `UpdateChatLastMessage`, `UpdateChatAddedToList` for every chat in the lists.
  * Our listeners catch those, route messages through [ingest], and populate
  * `_mainChatIds` / `_archivedChatIds` along the way. No `GetChats` round-trip,
- * no per-channel `chat.lastMessage` harvest pass, no 2 s "wait for chatCache"
- * timeout — Levin's canonical pattern (tdlib/td#3019: updates are the source of
+ * no per-channel `chat.lastMessage` harvest pass, no 2 s "wait for the chat
+ * cache" timeout — Levin's canonical pattern (tdlib/td#3019: updates are the source of
  * truth; LoadChats is what makes them flow).
  *
  * On-demand paths (untouched by [triggerInitialSync]):
@@ -119,6 +120,8 @@ import java.util.concurrent.atomic.AtomicLong
 class PostsRepository(
     private val td: TdSender,
     private val mapper: MessageMapper,
+    /** Session entity mirror; this repository is the writer of its chat entries. */
+    private val registry: ChatRegistry,
     private val scope: CoroutineScope,
     private val userMessages: UserMessageBus,
     private val connection: kotlinx.coroutines.flow.StateFlow<ConnectionStatus>,
@@ -181,70 +184,13 @@ class PostsRepository(
     private val refreshMutex = Mutex()
 
     /**
-     * Chat metadata mirror, fed by [TdApi.UpdateNewChat] and refreshed on
-     * [TdApi.UpdateChatTitle] / [TdApi.UpdateChatPhoto] eviction. Two
-     * load-bearing reasons it stays even after [MessageMapper] dropped its
-     * own `User`/`Chat`/`Supergroup` mirrors:
-     *
-     *   1. **`UpdateChatLastMessage` race gate** (see the listener below):
-     *      containment check short-circuits the per-update fallback that
-     *      would otherwise re-create a `GetChat` × N fanout during the
-     *      cold-start storm — the FLOOD_WAIT-class regression ARCHITECTURE.md's
-     *      "Load-bearing" table forbids. The race is buffered in
-     *      [pendingLastMessages] rather than dropped.
-     *   2. **Synchronous reads** for [channelSubscribersCached] (seeds
-     *      `ChannelHeaderBar` subtitle on the first frame) and the synchronous
-     *      branches of [chatTitle] / [chatAvatar] / [resolveChatKind] /
-     *      [loadChannelHistoryLocked] / [searchInChannel]. Skipping the JNI
-     *      hop avoids contention with the `td.send` queue that handles
-     *      user-driven RPCs during scroll. Cost is trivial (one Chat POJO
-     *      per subscribed channel, ~hundreds of bytes).
-     *
-     * Invariant maintenance: [handleChatTitle] / [handleChatPhoto] evict
-     * (`remove`) on the corresponding update instead of in-place mutation —
-     * the shared POJO would otherwise be read mid-write by a concurrent
-     * worker. Consumers that miss the cache fall back to `td.send(GetChat)`
-     * and re-populate.
+     * Chat / supergroup metadata lives in [registry] ([ChatRegistry]). This class writes
+     * its chat entries: [handleNewChat] remembers the chat before flushing
+     * [pendingLastMessages] — the `UpdateChatLastMessage` race gate below reads
+     * "chat known?" from the same map, so the write must happen in this coroutine — and
+     * [handleChatTitle] / [handleChatPhoto] evict. Synchronous reads skip the JNI hop that
+     * would contend with user-driven RPCs during scroll.
      */
-    private val chatCache = ConcurrentHashMap<Long, TdApi.Chat>()
-
-    /**
-     * Supergroup metadata mirror, fed by [TdApi.UpdateSupergroup]. TDLib emits
-     * one update per cached supergroup on cold-start session warm-up (when
-     * `useChatInfoDatabase = true`, which we set in [TdClient]) and on every
-     * live change to a field on the [TdApi.Supergroup] object — including
-     * [TdApi.Supergroup.memberCount].
-     *
-     * Caching the full [TdApi.Supergroup] (not just the count) costs ~200B per
-     * channel and lets every supergroup-derived read short-circuit the
-     * [TdApi.GetSupergroup] RPC.
-     *
-     * **Why this stays after Wave 1** (mapper dropped its parallel
-     * `User`/`Chat`/`Supergroup` caches in favour of direct `td.send`): the
-     * sole load-bearing reader is [channelSubscribersCached], called from
-     * [dev.lyo.hortay.ui.timeline.ChannelViewModel]`.init` to seed the
-     * subscribers `StateFlow` *before* the first frame. A suspending
-     * variant ([channelSubscribers]) is provided too, but the cached read
-     * is what makes the [ChannelHeaderBar] subtitle paint a count on the
-     * first frame instead of `null` followed by a recomposition once the
-     * suspend resolves (see the CHANGELOG fix "Channel header subscriber
-     * count appears on the first frame instead of with a delay"). The
-     * suspending fallback could call `td.send(GetSupergroup)` directly,
-     * but the cache is the only synchronous path.
-     */
-    private val supergroupCache = ConcurrentHashMap<Long, TdApi.Supergroup>()
-
-    /**
-     * Test-only accessor. Exposes the internal chat cache so unit tests can verify that
-     * UpdateNewChat / UpdateChatLastMessage listeners populate it correctly. Not annotated
-     * @VisibleForTesting because that requires an extra androidx dependency on this module;
-     * the `ForTest` suffix is the convention used elsewhere in this codebase.
-     */
-    internal fun chatCacheForTest(chatId: Long): TdApi.Chat? = chatCache[chatId]
-
-    /** Test-only mirror of [chatCacheForTest] for the supergroup cache. */
-    internal fun supergroupCacheForTest(supergroupId: Long): TdApi.Supergroup? =
-        supergroupCache[supergroupId]
 
     // Stamped on successful triggerInitialSync completion. refreshIfStale uses it to
     // skip re-running LoadChats when the previous drain is still warm. With the new
@@ -255,13 +201,13 @@ class PostsRepository(
 
     /**
      * Buffers an [TdApi.UpdateChatLastMessage] that arrived BEFORE the matching
-     * [TdApi.UpdateNewChat] seeded [chatCache]. The previous shape dropped these
+     * [TdApi.UpdateNewChat] registered the chat in [registry]. The previous shape dropped these
      * outright (to avoid a [TdApi.GetChat] × N fan-out storm on cold-start);
      * with the harvest gone, a drop here is a permanent miss for that message.
      *
      * Buffer cost: at most ~hundreds of entries (one per subscribed chat) during
      * the first cold-start tick; flushed and emptied as [TdApi.UpdateNewChat]
-     * arrivals seed [chatCache]. Bounded by the chat list size — no eviction
+     * arrivals register the chat. Bounded by the chat list size — no eviction
      * needed.
      */
     private val pendingLastMessages = ConcurrentHashMap<Long, TdApi.Message>()
@@ -390,9 +336,7 @@ class PostsRepository(
      * ingest paths capture it on entry and re-check before touching [_posts]: a
      * [logOut]→[clear] can land while an [ingest] is parked on its networked
      * `GetChat` / album coalesce, and without this guard the resumed write would
-     * re-inject the previous account's posts into the freshly-wiped feed. Mirrors
-     * the `chatCache[...] == null` guard [performAlbumRepair] already uses, but
-     * generalised so it survives even if `chatCache` gets re-seeded in between.
+     * re-inject the previous account's posts into the freshly-wiped feed.
      */
     private val sessionEpoch = AtomicLong(0L)
 
@@ -657,19 +601,6 @@ class PostsRepository(
         // UpdateUser / UpdateSupergroup for author and handle resolution are mirrored by
         // [dev.lyo.hortay.data.ChatRegistry], which the shared MessageMapper reads.
 
-        // Supergroup metadata changed: mirror the [TdApi.Supergroup] object into
-        // [supergroupCache] so reads that only need this lightweight shape (subscriber
-        // count today; potentially status / verification flags later) can resolve
-        // synchronously without an RPC. TDLib emits one update per cached supergroup on
-        // session warm-up — so by the time a channel that the merged feed already showed
-        // is opened, its memberCount is in memory. Handle / verification lookups in the
-        // mapper go through ChatRegistry, which collects the same update.
-        td.updates.filterIsInstance<TdApi.UpdateSupergroup>()
-            .onEach { update ->
-                supergroupCache[update.supergroup.id] = update.supergroup
-            }
-            .launchIn(scope)
-
         // Single entry-point for chat metadata. We deliberately DO NOT issue
         // GetChatHistory here:
         //   - On startup TDLib re-emits the entire chat list as UpdateNewChat; auto-
@@ -685,7 +616,7 @@ class PostsRepository(
         //      later via UpdateChatAddedToList, which our listener also handles).
         //   3. Ingest `chat.lastMessage` directly — no harvest, no 2 s wait. If a
         //      racing UpdateChatLastMessage stashed its payload in
-        //      `pendingLastMessages` before chatCache was seeded, prefer it
+        //      `pendingLastMessages` before the chat was registered, prefer it
         //      (freshest known message wins).
         td.updates.filterIsInstance<TdApi.UpdateNewChat>()
             .onEach { update -> handleNewChat(update.chat) }
@@ -720,7 +651,7 @@ class PostsRepository(
         td.updates.filterIsInstance<TdApi.UpdateChatLastMessage>()
             .onEach { update ->
                 val msg = update.lastMessage ?: return@onEach
-                if (chatCache[update.chatId] == null) {
+                if (registry.cachedChat(update.chatId) == null) {
                     pendingLastMessages[update.chatId] = msg
                     return@onEach
                 }
@@ -948,9 +879,7 @@ class PostsRepository(
         // object — saves one GetChat per message in the cold-cache case.
         val byChat = messages.groupBy { it.chatId }
         return byChat.flatMap { (chatId, msgs) ->
-            val chat = chatCache[chatId]
-                ?: runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()?.also { chatCache[chatId] = it }
-                ?: return@flatMap emptyList()
+            val chat = registry.chat(chatId) ?: return@flatMap emptyList()
             if (!chat.isChannel()) emptyList()
             // Snapshot restore is a cold-start path and already has every member
             // id (fetched via local GetMessage upstream), so coalesce stays
@@ -1001,7 +930,7 @@ class PostsRepository(
      *   - No `GetChats` call. The set is built incrementally from the
      *     listener stream, which is the canonical TDLib pattern (Levin in
      *     tdlib/td#3019: updates are the source of truth).
-     *   - No 2 s wait for chatCache to fill. Updates either arrived
+     *   - No 2 s wait for the chat cache to fill. Updates either arrived
      *     synchronously during the LoadChats drain (warm cache) or will
      *     arrive on the wire (first-auth) — in both cases our listeners
      *     handle them.
@@ -1090,7 +1019,7 @@ class PostsRepository(
         // of "the user's top channels" and the live update stream picks up
         // post-snapshot deltas anyway.
         val topK = _mainChatIds.value.asSequence()
-            .mapNotNull { chatCache[it] }
+            .mapNotNull { registry.cachedChat(it) }
             .filter { it.isChannel() }
             .sortedByDescending { chat ->
                 chat.positions?.firstOrNull { it.list is TdApi.ChatListMain }?.order ?: 0L
@@ -1228,7 +1157,7 @@ class PostsRepository(
 
     private suspend fun loadChannelHistoryLocked(chatId: Long, limit: Int): Boolean {
         val epoch = sessionEpoch.get()
-        val chat = chatCache[chatId] ?: td.send(TdApi.GetChat(chatId)).also { chatCache[chatId] = it }
+        val chat = registry.cachedChat(chatId) ?: td.send(TdApi.GetChat(chatId)).also(registry::rememberChat)
         if (!chat.isChannel()) return false
 
         // TDLib chooses how many messages a GetChatHistory page returns — on a cold
@@ -1288,12 +1217,7 @@ class PostsRepository(
      */
     suspend fun loadHistoryAround(chatId: Long, anchorMessageId: Long, limit: Int = 80): Boolean {
         val epoch = sessionEpoch.get()
-        val chat = chatCache[chatId]
-            ?: runCatching { td.send(TdApi.GetChat(chatId)) }
-                .warnUnlessCancelled(TAG, "loadHistoryAround/getChat")
-                .getOrNull()
-                ?.also { chatCache[chatId] = it }
-            ?: return false
+        val chat = registry.chat(chatId) ?: return false
         if (!chat.isChannel()) return false
 
         // Prime TDLib's local cache for the anchor BEFORE the history fetch. Per
@@ -1396,7 +1320,7 @@ class PostsRepository(
             .filter { it.chatId == chatId }
             .minOfOrNull { it.id }
             ?: return 0
-        val chat = chatCache[chatId] ?: td.send(TdApi.GetChat(chatId)).also { chatCache[chatId] = it }
+        val chat = registry.cachedChat(chatId) ?: td.send(TdApi.GetChat(chatId)).also(registry::rememberChat)
         if (!chat.isChannel()) return 0
 
         // Page from the oldest RAW message seen, not the oldest card: a page made only
@@ -1461,10 +1385,10 @@ class PostsRepository(
      */
     suspend fun searchInChannel(chatId: Long, query: String, limit: Int = 50): List<TimelinePost> {
         if (query.isBlank()) return emptyList()
-        val chat = chatCache[chatId] ?: runCatching { td.send(TdApi.GetChat(chatId)) }
+        val chat = registry.cachedChat(chatId) ?: runCatching { td.send(TdApi.GetChat(chatId)) }
             .warnUnlessCancelled(TAG, "searchInChannel/getChat")
             .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_search, connection.value) }
-            .getOrNull()?.also { chatCache[chatId] = it } ?: return emptyList()
+            .getOrNull()?.also(registry::rememberChat) ?: return emptyList()
         // Search failures used to be silently swallowed → empty list, leaving the
         // user wondering whether the channel really has nothing matching or
         // whether the query failed (FLOOD_WAIT, transient TDLib reject…).
@@ -1498,8 +1422,7 @@ class PostsRepository(
 
     /**
      * Synchronous subscriber count read for a channel chat. Returns `null` when
-     * either the [chatCache] or [supergroupCache] mirror is missing the chat /
-     * supergroup, or the chat is not a supergroup, or TDLib has not yet delivered
+     * the [registry] has not seen the chat / supergroup yet, or the chat is not a supergroup, or TDLib has not yet delivered
      * a positive count for it.
      *
      * Why a separate function from [channelSubscribers]: this one is called from
@@ -1515,9 +1438,9 @@ class PostsRepository(
      * mirrors are warm and this returns the count immediately.
      */
     fun channelSubscribersCached(chatId: Long): Int? {
-        val chat = chatCache[chatId] ?: return null
+        val chat = registry.cachedChat(chatId) ?: return null
         val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
-        return supergroupCache[supergroupId]?.memberCount?.takeIf { it > 0 }
+        return registry.cachedSupergroup(supergroupId)?.memberCount?.takeIf { it > 0 }
     }
 
     /**
@@ -1536,25 +1459,11 @@ class PostsRepository(
      */
     suspend fun channelSubscribers(chatId: Long): Int? {
         channelSubscribersCached(chatId)?.let { return it }
-        // Cold-cache fallback. Skip [GetChat] when the cached Chat already
-        // yielded the supergroupId — only [GetSupergroup] is missing.
-        val cachedChat = chatCache[chatId]
-        val supergroupId = (cachedChat?.type as? TdApi.ChatTypeSupergroup)?.supergroupId
-            ?: run {
-                val chat = runCatching { td.send(TdApi.GetChat(chatId)) }
-                    .warnUnlessCancelled(TAG, "channelSubscribers/getChat")
-                    .getOrNull() ?: return null
-                chatCache[chatId] = chat
-                (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
-            }
-        val sg = runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }
-            .warnUnlessCancelled(TAG, "channelSubscribers/getSupergroup")
-            .getOrNull() ?: return null
-        // Mirror into [supergroupCache] so subsequent reads (re-entry into the
-        // same channel within this session) hit the fast path even when the
-        // [TdApi.UpdateSupergroup] burst was missed at session start.
-        supergroupCache[supergroupId] = sg
-        return sg.memberCount.takeIf { it > 0 }
+        // Cold-cache fallback: both lookups are offline TDLib reads, and the registry
+        // stores what they return so re-entry hits the synchronous path.
+        val chat = registry.chat(chatId) ?: return null
+        val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId ?: return null
+        return registry.supergroup(supergroupId)?.memberCount?.takeIf { it > 0 }
     }
 
     /**
@@ -1565,30 +1474,20 @@ class PostsRepository(
      * Telegram-Android offers when you open a public channel preview.
      */
     suspend fun chatTitle(chatId: Long): String? {
-        val chat = chatCache[chatId]
-            ?: runCatching { td.send(TdApi.GetChat(chatId)) }
-                .warnUnlessCancelled(TAG, "chatTitle")
-                .getOrNull()
-                ?.also { chatCache[chatId] = it }
-        return chat?.title?.takeIf { it.isNotBlank() }
+        return registry.chat(chatId)?.title?.takeIf { it.isNotBlank() }
     }
 
     /**
      * Channel avatar source for the [ChannelScreen] header. Returns
      * (smallFileId, minithumbBytes) — both nullable, both fed into [TdAvatar]
      * which paints the 3-tier ladder (minithumb → file → initial letter). Same
-     * `chatCache → GetChat` lookup pattern as [chatTitle] / [channelSubscribers]:
+     * registry → offline `GetChat` lookup as [chatTitle] / [channelSubscribers]:
      * served from TDLib's local cache after the first touch, no network in
      * steady state. Either field may be null for channels whose [TdApi.Chat.photo]
      * is itself null (rare — channel without a profile photo).
      */
     suspend fun chatAvatar(chatId: Long): Pair<Int?, ByteArray?>? {
-        val chat = chatCache[chatId]
-            ?: runCatching { td.send(TdApi.GetChat(chatId)) }
-                .warnUnlessCancelled(TAG, "chatAvatar")
-                .getOrNull()
-                ?.also { chatCache[chatId] = it }
-            ?: return null
+        val chat = registry.chat(chatId) ?: return null
         return chat.photo?.small?.id to chat.photo?.minithumbnail?.data
     }
 
@@ -1637,7 +1536,6 @@ class PostsRepository(
         val chat = runCatching { td.send(TdApi.SearchPublicChat(cleaned)) }
             .warnUnlessCancelled(TAG, "resolvePublicHandle($cleaned)")
             .getOrNull() ?: return PublicHandleResult.NotFound
-        chatCache.putIfAbsent(chat.id, chat)
         return chat.toPublicHandleResult()
     }
 
@@ -1654,12 +1552,7 @@ class PostsRepository(
      * (private chat the user lost access to, transient network failure on GetChat).
      */
     suspend fun resolveChatKind(chatId: Long): PublicHandleResult {
-        val chat = chatCache[chatId]
-            ?: runCatching { td.send(TdApi.GetChat(chatId)) }
-                .warnUnlessCancelled(TAG, "resolveChatKind($chatId)")
-                .getOrNull()
-                ?.also { chatCache[chatId] = it }
-            ?: return PublicHandleResult.NotFound
+        val chat = registry.chat(chatId) ?: return PublicHandleResult.NotFound
         return chat.toPublicHandleResult()
     }
 
@@ -1801,7 +1694,7 @@ class PostsRepository(
      * may suspend on its own GetChat fallback or on the [_posts] CAS loop.
      */
     private suspend fun handleNewChat(chat: TdApi.Chat) {
-        chatCache[chat.id] = chat
+        registry.rememberChat(chat)
         seedReadCursor(chat)
         hydrateChatListMembership(chat)
         val msg = pendingLastMessages.remove(chat.id) ?: chat.lastMessage
@@ -1897,10 +1790,7 @@ class PostsRepository(
         // below bumps this; we re-check before writing so a resumed ingest can't
         // re-populate the wiped feed with the previous account's data.
         val epoch = sessionEpoch.get()
-        val chat = chatCache[chatId] ?: runCatching { td.send(TdApi.GetChat(chatId)) }
-            .getOrNull()
-            ?.also { chatCache[it.id] = it }
-            ?: return
+        val chat = registry.chat(chatId) ?: return
         if (!chat.isChannel()) return
         // No subscription filter at ingest. `_posts` is the global post pool —
         // every chat the daemon resolves (subscribed channels, deep-link
@@ -2073,7 +1963,8 @@ class PostsRepository(
     }
 
     private suspend fun performAlbumRepair(req: AlbumRepairRequest) {
-        val chat = chatCache[req.chatId] ?: return
+        val epoch = sessionEpoch.get()
+        val chat = registry.chat(req.chatId) ?: return
         if (!chat.isChannel()) return
         // The anchor is the degraded card already in _posts, so this GetMessage is
         // a local cache hit (per-message index); the only call that actually reaches
@@ -2099,10 +1990,9 @@ class PostsRepository(
         val mapped = coalesced.map { mapper.toChannelPost(it, chat) }
             .filter { it.content !is PostContent.Unsupported }
         if (mapped.isEmpty()) return
-        // Logout may have wiped state during the networked coalesce/map suspension;
-        // chatCache is cleared by clear(), so a miss here means don't re-inject the
-        // previous account's posts into a freshly-cleared feed.
-        if (chatCache[req.chatId] == null) return
+        // Logout may have wiped state during the networked coalesce/map suspension —
+        // don't re-inject the previous account's posts into a freshly-cleared feed.
+        if (sessionEpoch.get() != epoch) return
         _posts.update { foldRawIntoCurrent(it, mapped) }
     }
 
@@ -2863,13 +2753,13 @@ class PostsRepository(
 
     private fun handleChatTitle(update: TdApi.UpdateChatTitle) {
         // Drop the cached TdApi.Chat instead of mutating its `title` in place.
-        // Multiple workers read chatCache[chatId] concurrently (handleNewChat,
+        // Multiple workers read the registry's chat concurrently (handleNewChat,
         // ingest, coalesceAlbum…) and TdApi.Chat is a plain Java POJO without
         // internal synchronisation — a mid-flight reader could otherwise see
         // torn fields (fresh title paired with stale photo). The next reader
         // falls back to `td.send(GetChat(...))`, which is an offline read off
         // TDLib's own local cache and returns a fully-constructed new object.
-        chatCache.remove(update.chatId)
+        registry.forgetChat(update.chatId)
         val newTitle = update.title.orEmpty()
         // Per-row decision logic (channel-as-sender vs personal-author) lives in
         // [applyChatTitleToFeed] in `ChannelMetadataSync.kt`.
@@ -2879,7 +2769,7 @@ class PostsRepository(
     private fun handleChatPhoto(update: TdApi.UpdateChatPhoto) {
         // See [handleChatTitle] — same rationale for invalidating the entry
         // rather than mutating it in place.
-        chatCache.remove(update.chatId)
+        registry.forgetChat(update.chatId)
         val newThumb = update.photo?.minithumbnail?.data
         val newFileId = update.photo?.small?.id
         // Per-row decision logic in [applyChatPhotoToFeed] (`ChannelMetadataSync.kt`).
@@ -2923,8 +2813,8 @@ class PostsRepository(
     suspend fun clear() {
         refreshMutex.withLock {
             _posts.value = persistentListOf()
-            chatCache.clear()
-            supergroupCache.clear()
+            // The registry (chats, supergroups, users) wipes itself through its own
+            // AccountSession hook.
             _chatReadCursors.value = persistentMapOf()
             pendingInteractionInfo.clear()
             interactionFlushScheduled.set(false)

@@ -18,8 +18,8 @@ class PostsRepositoryUpdateChatLastMessageTest {
         harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
         harness.advanceUntilIdle()
         // Verify UpdateNewChat seeded the cache before proceeding.
-        assertNotNull(harness.repo.chatCacheForTest(chat.id),
-            "UpdateNewChat must seed chatCache before the UpdateChatLastMessage test")
+        assertNotNull(harness.registry.cachedChat(chat.id),
+            "UpdateNewChat must register the chat before the UpdateChatLastMessage test")
 
         // Step B: emit UpdateChatLastMessage with a fresh message.
         val msg = harness.fakeChannelMessage(chatId = chat.id, messageId = 42L, date = 1_700_000_000)
@@ -31,9 +31,9 @@ class PostsRepositoryUpdateChatLastMessageTest {
         // was a write-through race on a shared mutable TdApi.Chat object (see the
         // UpdateChatLastMessage listener comment in PostsRepository). The cache field
         // stays null; feed correctness depends on ingest, not on the cache field.
-        val cachedChat = harness.repo.chatCacheForTest(chat.id)
+        val cachedChat = harness.registry.cachedChat(chat.id)
         assertEquals(1, harness.repo.posts.value.size,
-            "feed should have 1 post after UpdateChatLastMessage; chatCache hit: ${cachedChat != null}")
+            "feed should have 1 post after UpdateChatLastMessage; chat registered: ${cachedChat != null}")
         assertEquals(msg.id, harness.repo.posts.value[0].id)
     }
 
