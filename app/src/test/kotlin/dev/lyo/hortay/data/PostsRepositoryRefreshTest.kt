@@ -32,7 +32,7 @@ class PostsRepositoryRefreshTest {
         harness.advanceUntilIdle()
 
         assertEquals(0, harness.td.rpcCount("GetChat"),
-            "refresh must not fan out GetChat per chat — chatCache is populated by UpdateNewChat")
+            "refresh must not fan out GetChat per chat — the chat registry is fed by UpdateNewChat")
     }
 
     @Test
@@ -118,7 +118,7 @@ class PostsRepositoryRefreshTest {
     }
 
     @Test
-    fun `refresh ingests lastMessage from chatCache for every channel chat`() = runTest {
+    fun `refresh ingests lastMessage from the chat registry for every channel chat`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
         val ids = listOf(-3000L, -3001L, -3002L)
         ids.forEachIndexed { i, id ->
@@ -300,7 +300,7 @@ class PostsRepositoryRefreshTest {
     @Test
     fun `UpdateChatLastMessage racing UpdateNewChat is buffered and flushed`() = runTest {
         // Race window: UpdateChatLastMessage arrives BEFORE the matching
-        // UpdateNewChat seeded chatCache. The previous shape dropped the
+        // UpdateNewChat registered the chat. The previous shape dropped the
         // payload outright; the post-rework buffer captures it in
         // [pendingLastMessages] and [handleNewChat] flushes the buffered
         // message through ingest as soon as the chat lands.
@@ -309,12 +309,12 @@ class PostsRepositoryRefreshTest {
         val racingMsg = harness.fakeChannelMessage(chatId, 901L)
 
         // Step A: UpdateChatLastMessage with NO prior UpdateNewChat —
-        // chatCache miss. The old design would have dropped this; the new
+        // chat-registry miss. The old design would have dropped this; the new
         // one buffers it.
         harness.td.emitUpdate(TdApi.UpdateChatLastMessage(chatId, racingMsg, emptyArray()))
         harness.advanceUntilIdle()
         assertEquals(0, harness.repo.posts.value.size,
-            "buffered payload must not surface until UpdateNewChat seeds chatCache")
+            "buffered payload must not surface until UpdateNewChat registers the chat")
 
         // Step B: UpdateNewChat lands. handleNewChat must see the buffered
         // payload via `pendingLastMessages.remove(chat.id)` and ingest it.

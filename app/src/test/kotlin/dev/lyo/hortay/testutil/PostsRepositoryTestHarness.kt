@@ -1,5 +1,6 @@
 package dev.lyo.hortay.testutil
 
+import dev.lyo.hortay.data.ChatRegistry
 import dev.lyo.hortay.data.ColdStartBackfillStore
 import dev.lyo.hortay.data.ConnectionStatus
 import dev.lyo.hortay.data.FakeStrings
@@ -45,7 +46,7 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
      * Scope for the repository's long-lived coroutines. Uses [UnconfinedTestDispatcher] so
      * `.launchIn` subscribers run eagerly (inline) whenever the upstream SharedFlow emits —
      * no scheduler tick is needed between `emitUpdate(...)` and the side-effect being visible
-     * in `chatCache` / `posts`. The scope is a child of the outer test scope so cancellation
+     * in the chat registry / `posts`. The scope is a child of the outer test scope so cancellation
      * propagates, but it is created via [CoroutineScope] (not the outer TestScope directly)
      * to avoid adding uncompleted active jobs to the test's `runTest` join set.
      */
@@ -62,7 +63,7 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
                 verificationStatus = null
             }
         }
-        // Default responder for GetChat — ingest falls back to this when chatCache
+        // Default responder for GetChat — ingest falls back to this when the chat registry
         // misses (e.g. UpdateChatLastMessage before UpdateNewChat). Return a basic
         // channel-type Chat so isChannel() returns true and the post is accepted.
         // Tests that seed via UpdateNewChat won't hit this path.
@@ -108,9 +109,13 @@ class PostsRepositoryTestHarness(private val outerScope: TestScope) {
      */
     val coldStartBackfill: InMemoryColdStartBackfillStore = InMemoryColdStartBackfillStore()
 
+    /** Bound like in `AppGraph`, so `UpdateSupergroup` / `UpdateUser` reach it. */
+    val registry: ChatRegistry = ChatRegistry(td).also { it.bind(scope) }
+
     val repo: PostsRepository = PostsRepository(
         td = td,
         mapper = mapper,
+        registry = registry,
         scope = scope,
         userMessages = userMessages,
         connection = connection,

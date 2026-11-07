@@ -29,7 +29,7 @@ class ReadCursorsTest {
 
     @Test
     fun `post in chat with no recorded cursor counts as read`() {
-        // Cold-start race: chatCache has not yet emitted UpdateNewChat for this
+        // Cold-start race: TDLib has not yet emitted UpdateNewChat for this
         // chat, so we have no cursor. Treat as read — flashing the whole feed as
         // unread for the first 500ms after auth reads as a UI bug.
         assertFalse(post(id = 9_999L).isUnreadIn(EmptyReadCursors))

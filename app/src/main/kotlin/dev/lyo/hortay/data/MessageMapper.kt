@@ -11,13 +11,13 @@ import org.drinkless.tdlib.TdApi
  * (discussion threads) share an instance — the resolver methods here drive author /
  * handle / verification badges for both surfaces, so they share the same TDLib path.
  *
- * Users and supergroups come from [registry] — a mirror fed by `updateUser` /
- * `updateSupergroup`, so mapping a post costs no TDLib round-trip once the update
+ * Users, supergroups and chats come from [registry] — a mirror fed by `updateUser` /
+ * `updateSupergroup` (chats by `PostsRepository`), so mapping a post costs no TDLib round-trip once the update
  * stream has announced its author / channel. It is NOT an LRU of RPC answers: an
  * earlier `LinkedHashMap` LRU filled from `GetUser` went stale on every rename /
  * avatar change; the registry is refreshed by the same updates TDLib itself applies.
  * Without a registry (tests, previews) every lookup is the offline `GetUser` /
- * `GetSupergroup` RPC ("This is an offline method if the current user is not a bot").
+ * `GetSupergroup` / `GetChat` RPC ("This is an offline method if the current user is not a bot").
  */
 class MessageMapper(
     private val td: TdSender,
@@ -126,7 +126,7 @@ class MessageMapper(
                 ?.takeUnless { it == chat.id },
             // Per-chat report eligibility from TDLib (TdApi.Chat.canBeReported).
             // Cheaper than [TdApi.GetMessageProperties] per post — TDLib already
-            // populated this field on the Chat object via chatCache updates, and
+            // populated this field on the Chat object via chat updates, and
             // for the long-press action sheet's "Report" row gate, chat-level
             // truth is sufficient. Telegram-Android uses the same gate on its
             // own post overflow menu.
@@ -235,8 +235,11 @@ class MessageMapper(
     }
 
     private suspend fun fetchChat(chatId: Long): ResolvedSender {
-        val c = runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
-            ?: return ResolvedSender(defaultChannelName, null, null, null)
+        val c = if (registry != null) {
+            registry.chat(chatId)
+        } else {
+            runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
+        } ?: return ResolvedSender(defaultChannelName, null, null, null)
         return ResolvedSender(
             name = c.title.orEmpty().ifBlank { defaultChannelName },
             handle = resolveChannelHandle(c),

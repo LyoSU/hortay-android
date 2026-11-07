@@ -54,7 +54,7 @@ fun TimelinePost.isUnreadAt(cursor: Long?): Boolean {
 /**
  * Returns `true` when [TimelinePost.id] is strictly greater than the cursor for
  * its [TimelinePost.chatId]. Posts in chats without a recorded cursor count as
- * read — the cold-start race where `chatCache` hasn't populated yet would
+ * read — the cold-start race where the chat registry hasn't been fed yet would
  * otherwise light every visible card up as "unread" for the first ~500 ms after
  * auth, which reads as a UI bug.
  *

@@ -36,8 +36,8 @@ class PostsRepositorySupergroupCacheTest {
         harness.advanceUntilIdle()
         // [ChatTypeSupergroup] in the harness seeds `supergroupId = 1L`. No
         // UpdateSupergroup has fired yet, so the supergroup mirror is empty.
-        assertNotNull(harness.repo.chatCacheForTest(chat.id))
-        assertNull(harness.repo.supergroupCacheForTest(supergroupId = 1L))
+        assertNotNull(harness.registry.cachedChat(chat.id))
+        assertNull(harness.registry.cachedSupergroup(1L))
 
         assertNull(harness.repo.channelSubscribersCached(chatId = chat.id))
     }
@@ -96,7 +96,7 @@ class PostsRepositorySupergroupCacheTest {
     }
 
     @Test
-    fun `clear wipes supergroup cache so account-switch does not leak counts`() = runTest {
+    fun `session end wipes the mirrors so account-switch does not leak counts`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
 
         val chat = harness.fakeChannel(id = -1001L, title = "Test channel")
@@ -107,12 +107,29 @@ class PostsRepositorySupergroupCacheTest {
         harness.advanceUntilIdle()
         assertEquals(500, harness.repo.channelSubscribersCached(chatId = chat.id))
 
+        // Logout runs both as AccountSession hooks (see AppGraph).
         harness.repo.clear()
+        harness.registry.clear()
         harness.advanceUntilIdle()
 
         // Both mirrors wiped: cached read fails closed so the next account's
         // channel doesn't paint the previous account's subscriber count.
-        assertNull(harness.repo.supergroupCacheForTest(supergroupId = 1L))
+        assertNull(harness.registry.cachedSupergroup(1L))
         assertNull(harness.repo.channelSubscribersCached(chatId = chat.id))
+    }
+
+    @Test
+    fun `channel rename evicts the cached chat so the next read is fresh`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+
+        val chat = harness.fakeChannel(id = -1001L, title = "Old")
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+        assertNotNull(harness.registry.cachedChat(chat.id))
+
+        harness.td.emitUpdate(TdApi.UpdateChatTitle(chat.id, "New"))
+        harness.advanceUntilIdle()
+
+        assertNull(harness.registry.cachedChat(chat.id))
     }
 }
