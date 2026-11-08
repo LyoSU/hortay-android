@@ -8,7 +8,18 @@ class AuthErrorMessagesTest {
 
     @Test
     fun `a resend with no next channel maps to its own message, not the raw TDLib prose`() {
-        val err = TdClient.TdException(400, RESEND_IMPOSSIBLE_MESSAGE)
+        // Literal text from tdlib/td SendCodeHelper.cpp, typo included — never the
+        // production constant, or the test could not catch a mismatch.
+        val err = TdClient.TdException(400, "Authentication code can't be resend")
+        assertEquals(
+            FakeStrings.getString(R.string.auth_err_code_cant_resend),
+            friendlyAuthErrorMessage(FakeStrings, err),
+        )
+    }
+
+    @Test
+    fun `the mapping survives an upstream fix of the typo`() {
+        val err = TdClient.TdException(400, "Authentication code can't be resent")
         assertEquals(
             FakeStrings.getString(R.string.auth_err_code_cant_resend),
             friendlyAuthErrorMessage(FakeStrings, err),

@@ -603,7 +603,7 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
         )
         Spacer(Modifier.height(8.dp))
         // No next_type means TDLib has nowhere else to send the code: the call fails with
-        // "Authentication code can't be resent" (issue #50). Third-party apps only ever get
+        // "Authentication code can't be resend" (sic, issue #50). Third-party apps only ever get
         // the in-app channel (tdlib/td#2310), so this is the usual case — hide the button
         // instead of offering an action that can only error.
         val nextChannel = stage.nextChannelLabel
