@@ -1,5 +1,8 @@
 package dev.lyo.hortay.data
 
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.CoroutineDispatcher
@@ -241,6 +244,24 @@ class MediaCache(
             // just things this app rendered. Slots are created lazily by [observe]
             // / [ensure].
             .onEach { update -> fileEvents.send(FileEvent.FromTdLib(update.file)) }
+            .launchIn(scope)
+
+        // Connection came back: retry the failed files someone is still looking at. The
+        // watchdog gives up after a few stalls (often because the network dropped), and
+        // without this those tiles kept their retry button after the link returned.
+        connection
+            .map { it == ConnectionStatus.Ready }
+            .distinctUntilChanged()
+            // Skip the current value: only a transition INTO Ready means "came back".
+            .drop(1)
+            .filter { it }
+            .onEach {
+                for ((id, flow) in states) {
+                    if (flow.value is MediaState.Failed && flow.subscriptionCount.value > 0) {
+                        retry(id, DownloadPriority.VisibleMedia)
+                    }
+                }
+            }
             .launchIn(scope)
 
         // Battery-aware stall watchdog. Three regimes:

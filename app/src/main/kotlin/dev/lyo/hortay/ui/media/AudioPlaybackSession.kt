@@ -16,9 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -74,8 +72,8 @@ class AudioPlaybackSession(
 
     /**
      * Tap handler for a play/pause button. Same track playing → pause; same track paused →
-     * resume; anything else → stop whatever's playing and download-then-play [fileId]. Taps
-     * while [Phase.Loading] are ignored (the download is already in flight).
+     * resume; anything else → stop whatever's playing and download-then-play [fileId]. A tap
+     * while [Phase.Loading] cancels the load, so a stuck download never locks the button.
      */
     fun toggle(fileId: Int, durationSec: Int) {
         val current = _state.value
@@ -83,7 +81,10 @@ class AudioPlaybackSession(
             when (current.phase) {
                 Phase.Playing -> pause()
                 Phase.Paused -> resume()
-                Phase.Loading -> Unit
+                Phase.Loading -> {
+                    stopInternal()
+                    _state.value = null
+                }
             }
             return
         }
@@ -94,14 +95,28 @@ class AudioPlaybackSession(
         stopInternal()
         _state.value = Playback(fileId, Phase.Loading, positionMs = 0L, durationMs = durationSec * 1000L)
         loadJob = scope.launch {
-            cache.ensure(fileId, DownloadPriority.Foreground)
-            // Suspend until the file lands on disk (Ready with a non-empty path).
-            val path = cache.observe(fileId)
-                .map { (it as? MediaState.Ready)?.path?.takeIf(String::isNotEmpty) }
-                .filterNotNull()
-                .first()
+            // A track whose last download failed or was cancelled restarts it; anything
+            // else (idle, in flight, on disk) just ensures.
+            val previous = cache.observe(fileId).value
+            if (previous is MediaState.Failed || previous is MediaState.Paused) {
+                cache.retry(fileId, DownloadPriority.Foreground)
+            } else {
+                cache.ensure(fileId, DownloadPriority.Foreground)
+            }
+            // Suspend until the file lands on disk (Ready with a non-empty path) or the
+            // download ends without it (failed / cancelled) — waiting on Ready alone left
+            // the track stuck in Loading forever after a failed download.
+            val outcome = cache.observe(fileId)
+                .first { st ->
+                    (st is MediaState.Ready && st.path.isNotEmpty()) ||
+                        st is MediaState.Failed || st is MediaState.Paused
+                }
             // A newer tap may have superseded this track while the download was in flight.
             if (_state.value?.key != fileId) return@launch
+            val path = (outcome as? MediaState.Ready)?.path ?: run {
+                _state.value = null
+                return@launch
+            }
             val active = ensurePlayer()
             active.setMediaItem(MediaItem.fromUri("file://$path"))
             active.prepare()
