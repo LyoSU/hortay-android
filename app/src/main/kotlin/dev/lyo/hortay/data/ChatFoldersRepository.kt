@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Mirror of the user's Telegram chat folders ("filters"). Both the folder *list*
@@ -70,9 +71,19 @@ class ChatFoldersRepository(
     private val _folderChatIds = MutableStateFlow<Map<Int, Set<Long>>>(emptyMap())
     val folderChatIds: StateFlow<Map<Int, Set<Long>>> = _folderChatIds.asStateFlow()
 
-    // Serialise the drain+get pair per folder so two concurrent callers don't both
-    // pay the LoadChats round-trip when the answer is already in flight.
-    private val folderChatIdsMutex = ConcurrentHashMap<Int, Mutex>()
+    // Serialises the drain+get pair so two concurrent callers don't both pay the
+    // LoadChats round-trip when the answer is already in flight. ONE mutex for the
+    // repository's lifetime: [clear] used to swap out a per-folder mutex map, but a
+    // [folderChatIds] call already holding the old mutex kept running and wrote the
+    // previous account's membership into the freshly-cleared cache. The mutex can't
+    // fence that on its own — [generation] does.
+    private val folderChatIdsMutex = Mutex()
+
+    // Bumped by [clear] (logout) and [onChatFolders] (rules changed) BEFORE the membership
+    // cache is reset. [folderChatIds] captures it before its RPCs and drops its result if
+    // it moved meanwhile, so a resolve that straddles a logout or a folder-rule change can
+    // never re-populate the cache with stale membership.
+    private val generation = AtomicLong(0L)
 
     init {
         // TDLib emits an UpdateChatFolders shortly after auth, then again whenever the user
@@ -98,6 +109,7 @@ class ChatFoldersRepository(
         _folders.value = list
         fullFoldersCache.clear()
         _fullFolders.value = emptyMap()
+        generation.incrementAndGet()
         _folderChatIds.value = emptyMap()
         scope.launch { resolveAll(list) }
     }
@@ -174,9 +186,9 @@ class ChatFoldersRepository(
      */
     suspend fun folderChatIds(folderId: Int): Set<Long> {
         _folderChatIds.value[folderId]?.let { return it }
-        val mutex = folderChatIdsMutex.getOrPut(folderId) { Mutex() }
-        return mutex.withLock {
+        return folderChatIdsMutex.withLock {
             _folderChatIds.value[folderId]?.let { return@withLock it }
+            val startGeneration = generation.get()
             val list = TdApi.ChatListFolder(folderId)
             drainChatList(list)
             val ids: Set<Long> = runCatching { td.send(TdApi.GetChats(list, Int.MAX_VALUE)) }
@@ -185,7 +197,12 @@ class ChatFoldersRepository(
                 ?.chatIds
                 ?.toHashSet()
                 ?: emptySet()
-            _folderChatIds.update { it + (folderId to ids) }
+            // Generation re-checked INSIDE the CAS lambda: [clear] bumps it before resetting
+            // the map, so a write that loses the race either sees the new generation and
+            // skips, or lands first and is then wiped by the reset (a CAS retry re-reads).
+            _folderChatIds.update { current ->
+                if (generation.get() != startGeneration) current else current + (folderId to ids)
+            }
             ids
         }
     }
@@ -235,11 +252,11 @@ class ChatFoldersRepository(
      * after re-sign-in to repopulate.
      */
     fun clear() {
+        generation.incrementAndGet()
         _folders.value = emptyList()
         _fullFolders.value = emptyMap()
         fullFoldersCache.clear()
         _folderChatIds.value = emptyMap()
-        folderChatIdsMutex.clear()
     }
 
     private companion object {
