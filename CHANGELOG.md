@@ -31,6 +31,7 @@
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
 
 ### Fixed
+- Comments that simply reply to the post no longer show a quote card, and a hand-picked quote in a comment shows up to four lines with a quote mark.
 - The ❤ reaction shows as the red emoji instead of a black heart.
 - Scrolling to the newest posts no longer briefly shows an empty gap where posts should be.
 - Tapping a paid ⭐ reaction on a comment no longer crashes the app.

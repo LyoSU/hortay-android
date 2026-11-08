@@ -337,7 +337,10 @@ class MessageMapper(
         return ReplyPreview(
             authorName = author,
             excerpt = excerpt,
-            isQuote = reply.quote != null,
+            // Only a quote the sender picked by hand. TDLib also attaches automatic quotes
+            // (`textQuote.is_manual = false`), and treating those as quotes surfaced a quote
+            // card on plain replies to the channel post in comments.
+            isQuote = reply.quote?.isManual == true,
             replyToChatId = effectiveReplyChatId,
             replyToMessageId = reply.messageId,
             mediaThumb = thumb,

@@ -1220,11 +1220,13 @@ private fun ReplyBlock(reply: ReplyPreview) {
                                 Spacer(Modifier.width(4.dp))
                             }
                         }
+                        // A hand-picked quote is the point of the card: give it room
+                        // instead of clipping it after two lines.
                         Text(
                             text = bodyText,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 2,
+                            maxLines = if (reply.isQuote) QUOTE_MAX_LINES else 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
@@ -1253,7 +1255,7 @@ private fun ReplyBlock(reply: ReplyPreview) {
         }
         if (reply.mediaThumb == null) {
             Symbol(
-                name = "reply",
+                name = if (reply.isQuote) "format_quote" else "reply",
                 tint = accent.copy(alpha = 0.55f),
                 size = 12.dp,
                 modifier = Modifier
@@ -1294,3 +1296,6 @@ private const val TOP_FADE_DP = 20
  * "viewed in an opened chat" (see tdlib/td#46).
  */
 private const val COMMENT_READ_DWELL_MS = 500L
+
+/** Lines of a hand-picked quote shown in a comment's quote card. */
+private const val QUOTE_MAX_LINES = 4
