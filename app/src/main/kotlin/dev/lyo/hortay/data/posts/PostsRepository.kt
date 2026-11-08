@@ -15,6 +15,7 @@ import dev.lyo.hortay.data.PostFilterStrategy
 import dev.lyo.hortay.data.rich.RichPlainText
 import dev.lyo.hortay.data.rich.toRichDocument
 import dev.lyo.hortay.data.ReactionKind
+import dev.lyo.hortay.data.PollVotePolicy
 import dev.lyo.hortay.data.ReactionTogglePolicy
 import dev.lyo.hortay.data.Reactions
 import dev.lyo.hortay.data.StringResolver
@@ -2252,18 +2253,7 @@ class PostsRepository(
         val selection: Set<Int> = chosenIndices.toHashSet()
         updateOnePostByAnyMemberId(chatId, messageId) { post ->
             val poll = post.content as? PostContent.Poll ?: return@updateOnePostByAnyMemberId post
-            val newOptions = poll.options.map { opt ->
-                opt.copy(
-                    isChosen = opt.index in selection,
-                    isBeingChosen = opt.index in selection,
-                )
-            }
-            post.copy(
-                content = poll.copy(
-                    options = newOptions.toPersistentList(),
-                    hasVoted = newOptions.any { it.isChosen },
-                ),
-            )
+            post.copy(content = PollVotePolicy.applyOptimistic(poll, selection))
         }
     }
 
@@ -2271,26 +2261,15 @@ class PostsRepository(
      * Drop [PollOption.isBeingChosen] shimmer set by [applyOptimisticPollAnswer]. Called from
      * the action repository's coroutine when the SetPollAnswer RPC settles — on success the
      * eventual `UpdateMessageContent` carries the final percentages so we just drop the
-     * shimmer. On failure ([revert]=true) we also reset `isChosen` on previously-being-chosen
-     * rows so the visible flip is undone.
+     * shimmer. On failure ([revert]=true) every option the optimistic step flipped is flipped
+     * back, restoring the pre-tap selection (retracts and vote changes included) — see
+     * [PollVotePolicy].
      */
     fun clearPollPending(chatId: Long, messageId: Long, revert: Boolean) {
         updateOnePostByAnyMemberId(chatId, messageId) { post ->
             val poll = post.content as? PostContent.Poll ?: return@updateOnePostByAnyMemberId post
-            if (poll.options.none { it.isBeingChosen }) return@updateOnePostByAnyMemberId post
-            val newOptions = poll.options.map { opt ->
-                if (!opt.isBeingChosen) opt
-                else opt.copy(
-                    isBeingChosen = false,
-                    isChosen = if (revert) false else opt.isChosen,
-                )
-            }
-            post.copy(
-                content = poll.copy(
-                    options = newOptions.toPersistentList(),
-                    hasVoted = newOptions.any { it.isChosen },
-                ),
-            )
+            val cleared = PollVotePolicy.clearPending(poll, revert) ?: return@updateOnePostByAnyMemberId post
+            post.copy(content = cleared)
         }
     }
 
