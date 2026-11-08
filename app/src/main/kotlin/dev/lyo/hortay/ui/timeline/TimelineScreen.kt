@@ -218,6 +218,12 @@ fun TimelineScreen(
      */
     archiveInAllFeed: Boolean = false,
     /**
+     * Fold copies of one forwarded post and the tail of a channel's posting burst into the
+     * row that stands for them ([clusterFeed]). The merged feed only — the Saved view and
+     * guest mode keep every post.
+     */
+    groupFeed: Boolean = false,
+    /**
      * True while a channel/comments nav overlay covers this feed. The feed stays
      * mounted so Back is instant and scroll state is retained, but viewport-driven
      * background effects must pause: under an overlay the user is not actually
@@ -479,7 +485,29 @@ fun TimelineScreen(
 
     // Repository order (newest first) is final for both FeedOrder values — FeedOrder
     // only flips `reverseLayout`; see [dev.lyo.hortay.data.FeedOrder].
-    val visiblePosts = filteredPosts
+    // Series the user opened with "N more posts in this series" stay expanded for the
+    // session; the set only ever grows, so an opened burst never folds back under them.
+    var expandedSeries by remember { mutableStateOf(emptySet<String>()) }
+    val clustered = remember(filteredPosts, groupFeed, showOnlyBookmarked, expandedSeries) {
+        if (groupFeed && !showOnlyBookmarked) {
+            clusterFeed(filteredPosts, expandedSeries) { p ->
+                ChannelBadge(
+                    chatId = p.chatId,
+                    title = p.channelContext?.name ?: p.senderName,
+                    thumb = p.channelContext?.avatarThumb ?: p.avatarThumb,
+                    fileId = p.channelContext?.avatarFileId ?: p.avatarFileId,
+                    avatarUrl = p.avatarUrl,
+                    latestPostDate = p.date,
+                )
+            }
+        } else {
+            ClusteredFeed(filteredPosts, kotlinx.collections.immutable.persistentMapOf())
+        }
+    }
+    val feedAnnotations = remember(clustered.annotations) {
+        FeedAnnotations(clustered.annotations) { key -> expandedSeries = expandedSeries + key }
+    }
+    val visiblePosts = clustered.posts
 
     // Cold-start "cursors usable for the boundary picker" signal. Source of
     // truth is [TimelineViewModel.coldStartCursorsSettled] — an Activity-scoped
@@ -1819,6 +1847,7 @@ fun TimelineScreen(
                             // [Ready.initialIndex] row in one frame — no
                             // animate-through, no transient wrong-order frame.
                             Box(modifier = Modifier.fillMaxSize()) {
+                                CompositionLocalProvider(LocalFeedAnnotations provides feedAnnotations) {
                                 TimelineFeedColumn(
                                     state = listState,
                                     flingBehavior = flingBehavior,
@@ -1839,6 +1868,7 @@ fun TimelineScreen(
                                     },
                                     modifier = Modifier.fillMaxSize(),
                                 )
+                                }
                                 if (!boundaryRevealed) {
                                     SkeletonFeed(modifier = Modifier.fillMaxSize())
                                 }

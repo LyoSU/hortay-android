@@ -372,6 +372,16 @@
     <string name="settings_snap_scroll_subtitle">Каждый пост встаёт на место после быстрого свайпа — как в TikTok</string>
     <string name="settings_archive_in_all_title">Архив во «Все»</string>
     <string name="settings_archive_in_all_subtitle">Показывать посты из архивированных каналов и в ленте «Все»</string>
+    <string name="settings_group_feed_title">Группировать репосты и серии</string>
+    <string name="settings_group_feed_subtitle">Одна карточка для поста, который переслали несколько каналов, а серия постов канала сворачивается под первый</string>
+    <string name="feed_also_forwarded_by">Также переслали %1$s</string>
+    <string name="post_fact_check_title">Проверка фактов</string>
+    <plurals name="feed_series_more">
+        <item quantity="one">Ещё %d пост этой серии</item>
+        <item quantity="few">Ещё %d поста этой серии</item>
+        <item quantity="many">Ещё %d постов этой серии</item>
+        <item quantity="other">Ещё %d поста этой серии</item>
+    </plurals>
     <string name="settings_inline_autoplay_title">Автовоспроизведение видео в ленте</string>
     <string name="settings_inline_autoplay_subtitle">Короткие видео из кеша воспроизводятся без звука при прокрутке. Нажмите, чтобы открыть на весь экран со звуком.</string>
     <string name="settings_section_privacy">Конфиденциальность</string>

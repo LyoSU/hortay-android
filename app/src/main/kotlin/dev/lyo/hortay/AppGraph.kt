@@ -115,6 +115,10 @@ class AppGraph(context: Context) {
     internal val archiveInAllFeedState: StateFlow<Boolean> =
         settingsStore.archiveInAllFeed.stateIn(appScope, SharingStarted.Eagerly, initialValue = false)
 
+    /** [SettingsStore.groupFeed], pre-warmed like [archiveInAllFeedState]. */
+    internal val groupFeedState: StateFlow<Boolean> =
+        settingsStore.groupFeed.stateIn(appScope, SharingStarted.Eagerly, initialValue = true)
+
     /**
      * [SettingsStore.dynamicColor], pre-warmed for the same reason as [archiveInAllFeedState]:
      * `MainActivity` themes the whole window from it, and a lazily started collector would paint

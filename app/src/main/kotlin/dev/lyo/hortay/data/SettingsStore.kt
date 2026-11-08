@@ -108,6 +108,20 @@ class SettingsStore(context: Context) {
     }
 
     /**
+     * Declutter the merged feed: copies of one forwarded post collapse into the earliest
+     * one ("also forwarded by…"), and a channel's burst of posts folds under its first
+     * post ("N more posts in this series"). See `ui/timeline/FeedClustering.kt`.
+     * Default true — the feed reads better, and every folded post is one tap away.
+     */
+    val groupFeed: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[KEY_GROUP_FEED] ?: true
+    }
+
+    suspend fun setGroupFeed(enabled: Boolean) {
+        dataStore.edit { it[KEY_GROUP_FEED] = enabled }
+    }
+
+    /**
      * Silent inline autoplay of short videos in the feed. Only videos already on
      * disk (TDLib mode: [MediaState.Ready], i.e. fetched by the user's configured
      * [AutoDownloadStore] policy) auto-play; non-cached posts keep the static
@@ -182,6 +196,7 @@ class SettingsStore(context: Context) {
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val KEY_SNAP_SCROLL = booleanPreferencesKey("snap_scroll")
         val KEY_ARCHIVE_IN_ALL_FEED = booleanPreferencesKey("archive_in_all_feed")
+        val KEY_GROUP_FEED = booleanPreferencesKey("group_feed")
         val KEY_INLINE_VIDEO_AUTOPLAY = booleanPreferencesKey("inline_video_autoplay")
         val KEY_HIDE_ONLINE_STATUS = booleanPreferencesKey("hide_online_status")
     }

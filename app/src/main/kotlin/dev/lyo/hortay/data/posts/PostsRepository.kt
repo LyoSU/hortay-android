@@ -1461,6 +1461,10 @@ class PostsRepository(
             is TdApi.UpdateMessageContent -> handleContentChanged(update)
             // Pin / unpin badge changes on a channel post.
             is TdApi.UpdateMessageIsPinned -> handleIsPinnedChanged(update)
+            is TdApi.UpdateMessageFactCheck -> {
+                val note = update.factCheck?.text?.text?.takeIf { it.isNotBlank() }
+                updateOnePostByAnyMemberId(update.chatId, update.messageId) { it.copy(factCheck = note) }
+            }
             // Channel renamed → all visible posts of that chat update their senderName.
             is TdApi.UpdateChatTitle -> handleChatTitle(update)
             // Channel avatar changed → all visible posts of that chat refresh avatar.

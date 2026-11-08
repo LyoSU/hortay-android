@@ -362,6 +362,14 @@
     <string name="settings_snap_scroll_subtitle">Cada publicación encaja en su lugar al deslizar — sensación TikTok/Reels</string>
     <string name="settings_archive_in_all_title">Archivo en «Todo»</string>
     <string name="settings_archive_in_all_subtitle">Mostrar también las publicaciones de los canales archivados en «Todo»</string>
+    <string name="settings_group_feed_title">Agrupar reenvíos y series</string>
+    <string name="settings_group_feed_subtitle">Una tarjeta para una publicación que reenviaron varios canales, y las ráfagas de un canal se pliegan bajo la primera</string>
+    <string name="feed_also_forwarded_by">También reenviado por %1$s</string>
+    <string name="post_fact_check_title">Verificación de datos</string>
+    <plurals name="feed_series_more">
+        <item quantity="one">%d publicación más de esta serie</item>
+        <item quantity="other">%d publicaciones más de esta serie</item>
+    </plurals>
     <string name="settings_inline_autoplay_title">Reproducir videos automáticamente</string>
     <string name="settings_inline_autoplay_subtitle">Los videos cortos ya en caché se reproducen sin sonido mientras desplazas. Toca para abrir en pantalla completa con sonido.</string>
     <string name="settings_section_privacy">Privacidad</string>

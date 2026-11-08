@@ -170,6 +170,48 @@ internal fun ArchiveInAllFeedRow(
     )
 }
 
+/** Settings → Feed toggle for [dev.lyo.hortay.data.SettingsStore.groupFeed]. */
+@Composable
+internal fun GroupFeedRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = 0,
+        count = 1,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        onClick = { onToggle(!enabled) },
+        shapes = shapes,
+        leadingContent = {
+            Symbol(
+                name = "forward",
+                tint = if (enabled) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 22.dp,
+            )
+        },
+        supportingContent = {
+            Text(
+                text = stringResource(R.string.settings_group_feed_subtitle),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        trailingContent = {
+            Switch(checked = enabled, onCheckedChange = onToggle)
+        },
+        content = {
+            Text(
+                text = stringResource(R.string.settings_group_feed_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+    )
+}
+
 /**
  * Standalone [SegmentedListItem] for the inline-video-autoplay toggle. Independent
  * of [SnapScrollRow] in the layout — autoplay is a media-playback policy

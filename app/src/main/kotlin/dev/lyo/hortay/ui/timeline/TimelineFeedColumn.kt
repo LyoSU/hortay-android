@@ -197,7 +197,18 @@ internal fun TimelineFeedColumn(
                                 modifier = staggerModifier
                                     .onGloballyPositioned { topY[0] = it.positionInWindow().y },
                             ) {
-                                PostCard(post = post, interactions = itemInteractions, onTapRevisions = onTapRevisions)
+                                val annotations = LocalFeedAnnotations.current
+                                val itemKey = item.key
+                                val onExpandSeries = remember(annotations, itemKey) {
+                                    { annotations?.onExpandSeries?.invoke(itemKey); Unit }
+                                }
+                                PostCard(
+                                    post = post,
+                                    interactions = itemInteractions,
+                                    onTapRevisions = onTapRevisions,
+                                    annotation = annotations?.byKey?.get(itemKey),
+                                    onExpandSeries = onExpandSeries,
+                                )
                             }
                         }
                     }

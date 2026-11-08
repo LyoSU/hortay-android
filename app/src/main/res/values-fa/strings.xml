@@ -352,6 +352,14 @@
     <string name="settings_snap_scroll_subtitle">با هر فلیک، پست سر جایش قفل می‌شود — حس TikTok/Reels</string>
     <string name="settings_archive_in_all_title">آرشیو در «همه»</string>
     <string name="settings_archive_in_all_subtitle">پست‌های کانال‌های آرشیوشده در فید «همه» هم نمایش داده شود</string>
+    <string name="settings_group_feed_title">گروه‌بندی بازارسال‌ها و سری‌ها</string>
+    <string name="settings_group_feed_subtitle">یک کارت برای پستی که چند کانال بازارسال کرده‌اند، و پست‌های پشت‌سرهم یک کانال زیر اولی جمع می‌شوند</string>
+    <string name="feed_also_forwarded_by">بازارسال‌شده توسط %1$s</string>
+    <string name="post_fact_check_title">راستی‌آزمایی</string>
+    <plurals name="feed_series_more">
+        <item quantity="one">%d پست دیگر از این سری</item>
+        <item quantity="other">%d پست دیگر از این سری</item>
+    </plurals>
     <string name="settings_inline_autoplay_title">پخش خودکار ویدیو در فید</string>
     <string name="settings_inline_autoplay_subtitle">ویدیوهای کوتاه موجود در کش هنگام اسکرول بی‌صدا پخش می‌شوند. برای باز کردن با صدا در تمام‌صفحه ضربه بزنید.</string>
     <string name="settings_section_privacy">حریم خصوصی</string>

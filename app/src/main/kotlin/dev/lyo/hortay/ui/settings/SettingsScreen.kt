@@ -155,6 +155,8 @@ fun SettingsScreen(
      * only; when null (guest mode — no Telegram chat lists, so no archive) the row is hidden.
      */
     archiveInAllFeedState: StateFlow<Boolean>? = null,
+    /** Pre-warmed [SettingsStore.groupFeed]; null hides the row (guest mode). */
+    groupFeedState: StateFlow<Boolean>? = null,
 ) {
     // Settings sub-screens run on a NESTED Navigation 3 NavDisplay over a LOCAL back stack (not
     // the app-wide [dev.lyo.hortay.AppGraph.backStack]): the Settings master/detail is
@@ -208,6 +210,7 @@ fun SettingsScreen(
                     archiveLossOnLogout = archiveLossOnLogout,
                     // [channelActions] is the TDLib-mode marker (null in guest mode).
                     archiveInAllFeedState = archiveInAllFeedState.takeIf { channelActions != null },
+                    groupFeedState = groupFeedState.takeIf { channelActions != null },
                 )
             }
             entry<SettingsNavKey.AutoDownload> {
@@ -293,6 +296,8 @@ private fun SettingsMain(
     archiveLossOnLogout: Boolean = false,
     /** TDLib mode only — guest mode has no Telegram chat lists, so no archive. Null hides the row. */
     archiveInAllFeedState: StateFlow<Boolean>? = null,
+    /** Pre-warmed [SettingsStore.groupFeed]; null hides the row (guest mode). */
+    groupFeedState: StateFlow<Boolean>? = null,
 ) {
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -384,6 +389,13 @@ private fun SettingsMain(
                 ArchiveInAllFeedRow(
                     enabled = currentArchiveInAll,
                     onToggle = { next -> if (next != currentArchiveInAll) scope.launch { settings.setArchiveInAllFeed(next) } },
+                )
+            }
+            if (groupFeedState != null) {
+                val currentGroupFeed by groupFeedState.collectAsStateWithLifecycle()
+                GroupFeedRow(
+                    enabled = currentGroupFeed,
+                    onToggle = { next -> if (next != currentGroupFeed) scope.launch { settings.setGroupFeed(next) } },
                 )
             }
             if (ignoredChannels != null) {

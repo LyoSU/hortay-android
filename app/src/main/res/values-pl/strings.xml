@@ -370,6 +370,16 @@
     <string name="settings_snap_scroll_subtitle">Każdy wpis zatrzymuje się w miejscu po szybkim przewinięciu — efekt TikToka / Reels</string>
     <string name="settings_archive_in_all_title">Archiwum w feedzie „Wszystkie”</string>
     <string name="settings_archive_in_all_subtitle">Pokazuj posty z zarchiwizowanych kanałów także w feedzie „Wszystkie”</string>
+    <string name="settings_group_feed_title">Grupuj przekazania i serie</string>
+    <string name="settings_group_feed_subtitle">Jedna karta dla posta przekazanego przez kilka kanałów, a seria postów kanału zwija się pod pierwszy</string>
+    <string name="feed_also_forwarded_by">Przekazane też przez %1$s</string>
+    <string name="post_fact_check_title">Weryfikacja faktów</string>
+    <plurals name="feed_series_more">
+        <item quantity="one">Jeszcze %d post z tej serii</item>
+        <item quantity="few">Jeszcze %d posty z tej serii</item>
+        <item quantity="many">Jeszcze %d postów z tej serii</item>
+        <item quantity="other">Jeszcze %d posta z tej serii</item>
+    </plurals>
     <string name="settings_inline_autoplay_title">Autoodtwarzanie filmów w feedzie</string>
     <string name="settings_inline_autoplay_subtitle">Krótkie filmy z cache odtwarzają się bez dźwięku podczas przewijania. Dotknij, żeby otworzyć pełny ekran z dźwiękiem.</string>
     <string name="settings_section_privacy">Prywatność</string>
