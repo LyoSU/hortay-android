@@ -1373,6 +1373,56 @@ class PostsRepository(
     }
 
     /**
+     * Telegram's AI summary of a long post (td_api.tl `summarizeMessage`, offered only for
+     * messages with a non-empty `summary_language_code`), translated into [languageCode]
+     * when it differs from the post's language. Null on failure, which is surfaced to the
+     * message bus like other user-initiated operations.
+     */
+    suspend fun summarize(chatId: Long, messageId: Long, languageCode: String): String? =
+        runCatching { td.send(TdApi.SummarizeMessage(chatId, messageId, languageCode, "")) }
+            .warnUnlessCancelled(TAG, "summarize")
+            .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_summarize, connection.value) }
+            .getOrNull()?.text?.takeIf { it.isNotBlank() }
+
+    /**
+     * Full-text search across every channel the user follows, newest first — one
+     * `searchMessages` call (td_api.tl: "Searches for messages in all chats except secret
+     * chats"), narrowed to channels by its chat-type filter so private chats and groups
+     * never surface in a channel reader. Albums are completed from the local DB only, so
+     * a page of hits costs a single server round-trip.
+     */
+    suspend fun searchAllChannels(query: String, limit: Int = 50): List<TimelinePost> {
+        if (query.isBlank()) return emptyList()
+        val result = runCatching {
+            td.send(
+                TdApi.SearchMessages(
+                    /* chatList */ null,
+                    query,
+                    /* offset */ "",
+                    limit,
+                    /* filter */ null,
+                    TdApi.SearchMessagesChatTypeFilterChannel(),
+                    /* minDate */ 0,
+                    /* maxDate */ 0,
+                ),
+            )
+        }
+            .warnUnlessCancelled(TAG, "searchAllChannels")
+            .onFailure { it.surfaceTo(userMessages, res, dev.lyo.hortay.R.string.op_search_all, connection.value) }
+            .getOrNull() ?: return emptyList()
+
+        val out = ArrayList<TimelinePost>(result.messages.size)
+        for ((chatId, messages) in result.messages.orEmpty().groupBy { it.chatId }) {
+            val chat = registry.cachedChat(chatId) ?: runCatching { td.send(TdApi.GetChat(chatId)) }
+                .warnUnlessCancelled(TAG, "searchAllChannels/getChat")
+                .getOrNull()?.also(registry::rememberChat) ?: continue
+            albums.coalesce(chatId, messages, onlyLocal = true).mapTo(out) { mapper.toChannelPost(it, chat) }
+        }
+        out.sortWith(compareByDescending<TimelinePost> { it.date }.thenByDescending { it.id })
+        return PostFilterStrategy.apply(out)
+    }
+
+    /**
      * Registers that the user has seen the given messages in [chatId]. Bumps the
      * server-side view counter AND advances [TdApi.Chat.lastReadInboxMessageId] —
      * i.e. the channel's unread badge in the official Telegram client clears as the

@@ -858,4 +858,14 @@
     <string name="media_desc_video_note">Wiadomość wideo</string>
     <string name="channel_jump_back">Wróć do miejsca czytania</string>
     <string name="channel_jump_latest">Przejdź do najnowszych postów</string>
+    <string name="channels_similar_title">Podobne kanały</string>
+    <string name="channels_filter_all">Wszystkie</string>
+    <string name="channels_filter_unread">Nieprzeczytane</string>
+    <string name="channels_filter_today">Dzisiaj</string>
+    <string name="channels_filter_hidden">Ukryte</string>
+    <string name="op_summarize">podsumować post</string>
+    <string name="op_search_all">szukać w Twoich kanałach</string>
+    <string name="post_summarize">Podsumuj</string>
+    <string name="post_summary_title">Podsumowanie</string>
+    <string name="media_download">pobierz</string>
 </resources>

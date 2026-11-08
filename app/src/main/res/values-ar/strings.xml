@@ -895,4 +895,14 @@
     <string name="media_desc_video_note">رسالة فيديو</string>
     <string name="channel_jump_back">العودة إلى موضع القراءة</string>
     <string name="channel_jump_latest">الانتقال إلى أحدث المنشورات</string>
+    <string name="channels_similar_title">قنوات مشابهة</string>
+    <string name="channels_filter_all">الكل</string>
+    <string name="channels_filter_unread">غير مقروءة</string>
+    <string name="channels_filter_today">اليوم</string>
+    <string name="channels_filter_hidden">مخفية</string>
+    <string name="op_summarize">تلخيص المنشور</string>
+    <string name="op_search_all">البحث في قنواتك</string>
+    <string name="post_summarize">تلخيص</string>
+    <string name="post_summary_title">الملخص</string>
+    <string name="media_download">تنزيل</string>
 </resources>

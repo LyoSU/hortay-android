@@ -844,4 +844,14 @@
     <string name="media_desc_video_note">Videomessaggio</string>
     <string name="channel_jump_back">Torna al punto di lettura</string>
     <string name="channel_jump_latest">Vai ai post più recenti</string>
+    <string name="channels_similar_title">Canali simili</string>
+    <string name="channels_filter_all">Tutti</string>
+    <string name="channels_filter_unread">Non letti</string>
+    <string name="channels_filter_today">Oggi</string>
+    <string name="channels_filter_hidden">Nascosti</string>
+    <string name="op_summarize">riassumere il post</string>
+    <string name="op_search_all">cercare nei tuoi canali</string>
+    <string name="post_summarize">Riassumi</string>
+    <string name="post_summary_title">Riassunto</string>
+    <string name="media_download">scarica</string>
 </resources>

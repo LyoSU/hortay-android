@@ -28,6 +28,7 @@ class ChannelDiscoveryRepository(
     private val td: TdSender,
 ) {
     private val resolveCache = ConcurrentHashMap<String, DiscoverChannel>()
+    private val similarCache = ConcurrentHashMap<Long, List<DiscoverChannel>>()
     private val throttle = Mutex()
 
     @Volatile
@@ -68,8 +69,32 @@ class ChannelDiscoveryRepository(
         return out
     }
 
+    /**
+     * Channels Telegram recommends next to [chatId] (td_api.tl `getChatSimilarChats`:
+     * "Returns a list of chats similar to the given chat"), minus ones the user already
+     * follows. One RPC per channel per session — cached, since the list is server-curated
+     * and changes slowly.
+     */
+    suspend fun similar(chatId: Long): List<DiscoverChannel> {
+        similarCache[chatId]?.let { cached -> return cached.filterNot { it.isMember } }
+        val chats = runCatching { td.send(TdApi.GetChatSimilarChats(chatId)) }
+            .warnUnlessCancelled(TAG, "similar($chatId)")
+            .getOrNull() ?: return emptyList()
+        val out = ArrayList<DiscoverChannel>(chats.chatIds.size)
+        for (id in chats.chatIds) {
+            // Local after getChatSimilarChats returned the chats.
+            val chat = runCatching { td.send(TdApi.GetChat(id)) }
+                .warnUnlessCancelled(TAG, "similar/getChat")
+                .getOrNull() ?: continue
+            toCard(chat)?.let(out::add)
+        }
+        similarCache[chatId] = out
+        return out.filterNot { it.isMember }
+    }
+
     fun clear() {
         resolveCache.clear()
+        similarCache.clear()
     }
 
     /**
@@ -82,6 +107,11 @@ class ChannelDiscoveryRepository(
         for ((key, card) in resolveCache) {
             if (card.chatId == chatId && card.isMember != isMember) {
                 resolveCache.replace(key, card, card.copy(isMember = isMember))
+            }
+        }
+        for ((key, list) in similarCache) {
+            if (list.any { it.chatId == chatId && it.isMember != isMember }) {
+                similarCache.replace(key, list, list.map { if (it.chatId == chatId) it.copy(isMember = isMember) else it })
             }
         }
     }

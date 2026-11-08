@@ -132,6 +132,7 @@ class MessageMapper(
             // own post overflow menu.
             canReportChat = chat.canBeReported,
             factCheck = message.factCheck?.text?.text?.takeIf { it.isNotBlank() },
+            canSummarize = !message.summaryLanguageCode.isNullOrEmpty(),
         )
     }
 
@@ -318,8 +319,11 @@ class MessageMapper(
             runCatching { td.send(TdApi.GetMessage(effectiveReplyChatId, reply.messageId)) }
                 .getOrNull()
         } else null
-        val author = refMsg?.let { resolveSender(it.senderId).name }
-            ?: if (effectiveReplyChatId != 0L) fetchChat(effectiveReplyChatId).name else ""
+        val parentChat = if (effectiveReplyChatId != 0L) fetchChat(effectiveReplyChatId) else null
+        val author = refMsg?.let { resolveSender(it.senderId).name } ?: parentChat?.name.orEmpty()
+        val otherChannelAvatar = parentChat
+            ?.takeIf { effectiveReplyChatId != chatId }
+            ?.let { ChannelAvatarRef(thumb = it.avatarThumb, fileId = it.avatarFileId) }
         val effectiveContent: TdApi.MessageContent? = refMsg?.content ?: reply.content
         val (thumb, kind) = extractReplyMedia(effectiveContent)
         val fallback = extractTextOrCaption(effectiveContent)
@@ -333,11 +337,15 @@ class MessageMapper(
         return ReplyPreview(
             authorName = author,
             excerpt = excerpt,
-            isQuote = reply.quote != null,
+            // Only a quote the sender picked by hand. TDLib also attaches automatic quotes
+            // (`textQuote.is_manual = false`), and treating those as quotes surfaced a quote
+            // card on plain replies to the channel post in comments.
+            isQuote = reply.quote?.isManual == true,
             replyToChatId = effectiveReplyChatId,
             replyToMessageId = reply.messageId,
             mediaThumb = thumb,
             mediaKind = kind,
+            otherChannelAvatar = otherChannelAvatar,
         )
     }
 

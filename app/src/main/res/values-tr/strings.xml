@@ -822,4 +822,14 @@
     <string name="media_desc_video_note">Görüntülü mesaj</string>
     <string name="channel_jump_back">Okuduğun yere dön</string>
     <string name="channel_jump_latest">En yeni gönderilere git</string>
+    <string name="channels_similar_title">Benzer kanallar</string>
+    <string name="channels_filter_all">Tümü</string>
+    <string name="channels_filter_unread">Okunmamış</string>
+    <string name="channels_filter_today">Bugün</string>
+    <string name="channels_filter_hidden">Gizli</string>
+    <string name="op_summarize">gönderiyi özetlemek</string>
+    <string name="op_search_all">kanallarında aramak</string>
+    <string name="post_summarize">Özetle</string>
+    <string name="post_summary_title">Özet</string>
+    <string name="media_download">indir</string>
 </resources>

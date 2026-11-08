@@ -1,5 +1,8 @@
 package dev.lyo.hortay.data
 
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.CoroutineDispatcher
@@ -243,6 +246,24 @@ class MediaCache(
             .onEach { update -> fileEvents.send(FileEvent.FromTdLib(update.file)) }
             .launchIn(scope)
 
+        // Connection came back: retry the failed files someone is still looking at. The
+        // watchdog gives up after a few stalls (often because the network dropped), and
+        // without this those tiles kept their retry button after the link returned.
+        connection
+            .map { it == ConnectionStatus.Ready }
+            .distinctUntilChanged()
+            // Skip the current value: only a transition INTO Ready means "came back".
+            .drop(1)
+            .filter { it }
+            .onEach {
+                for ((id, flow) in states) {
+                    if (flow.value is MediaState.Failed && flow.subscriptionCount.value > 0) {
+                        retry(id, DownloadPriority.VisibleMedia)
+                    }
+                }
+            }
+            .launchIn(scope)
+
         // Battery-aware stall watchdog. Three regimes:
         //   • App backgrounded → suspend on `foreground.first { it }` (zero CPU; resumes
         //     when ProcessLifecycleOwner reports ON_START again). We don't need recovery
@@ -315,7 +336,8 @@ class MediaCache(
                     return@compute flow
                 }
                 val s = flow.value
-                val terminal = s is MediaState.Ready || s is MediaState.Failed || s is MediaState.Idle
+                val terminal = s is MediaState.Ready || s is MediaState.Failed || s is MediaState.Idle ||
+                    s is MediaState.Paused
                 if (!terminal) return@compute flow
                 activePriority.remove(id)
                 null
@@ -372,6 +394,11 @@ class MediaCache(
             // through so the watchdog can recover the slot.
             previous is MediaState.Ready
                 && (file.local.path.orEmpty().isNotEmpty() || file.local.downloadedSize > 0L) -> previous
+            // A cancelled file stays Paused until a download is really running again —
+            // the UpdateFile TDLib sends for the cancel itself (inactive, incomplete)
+            // can land after the reset and would otherwise read as a frozen 0 % spinner.
+            previous is MediaState.Paused && incoming is MediaState.Downloading &&
+                !file.local.isDownloadingActive -> previous
             else -> incoming
         }
 
@@ -590,6 +617,22 @@ class MediaCache(
      * Also aborts any debounced cancel for the same fileId — a quick scroll past a card
      * and back must not tear the in-flight download down.
      */
+    /**
+     * The auto-download policy for the current network (null = offline), wired by
+     * `AppGraph`. Scroll-ahead prefetch asks [allowsPosterPrefetch] /
+     * [allowsPlaybackPrefetch] before speculating on files the user hasn't reached —
+     * otherwise "videos off on mobile" only governed live arrivals while scrolling
+     * still pulled every upcoming GIF and short clip.
+     */
+    @Volatile
+    var prefetchPolicy: () -> AutoDownloadPolicy? = { null }
+
+    /** Posters / photos of posts just ahead of the viewport. */
+    fun allowsPosterPrefetch(): Boolean = prefetchPolicy()?.photos == true
+
+    /** Whole playback files (short videos, GIFs, round videos) of the next post. */
+    fun allowsPlaybackPrefetch(): Boolean = prefetchPolicy()?.let { it.videos && it.animations } == true
+
     suspend fun ensure(fileId: Int, priority: DownloadPriority = DownloadPriority.VisibleMedia) {
         // Aborting first means a re-mount that beats the debounce window keeps the
         // in-flight download. Done before the hot-path guards because the cancel job
@@ -692,7 +735,7 @@ class MediaCache(
             // queued UpdateFile from before the cancel drains first; everything
             // arriving AFTER the reset is a fresh-state event that the user expects
             // to see.
-            fileEvents.send(FileEvent.Reset(fileId, MediaState.Idle))
+            fileEvents.send(FileEvent.Reset(fileId, MediaState.Paused))
         }
     }
 
@@ -1079,6 +1122,12 @@ sealed interface MediaState {
     ) : MediaState
     data class Ready(val path: String) : MediaState
     data class Failed(val reason: String) : MediaState
+    /**
+     * The user cancelled the download. Distinct from [Idle] (which renderers treat as
+     * "about to load" and paint a spinner for) so the tile offers a download button
+     * instead of spinning forever.
+     */
+    data object Paused : MediaState
 }
 
 private fun TdApi.File.toMediaState(): MediaState {

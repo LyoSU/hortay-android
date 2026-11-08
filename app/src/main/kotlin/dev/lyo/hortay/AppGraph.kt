@@ -1,5 +1,6 @@
 package dev.lyo.hortay
 
+import dev.lyo.hortay.data.resolveActivePolicy
 import android.content.Context
 import dev.lyo.hortay.data.AuthStage
 import dev.lyo.hortay.data.AutoDownloadStore
@@ -324,7 +325,7 @@ class AppGraph(context: Context) {
         td = tdClient,
         authStage = tdClient.authStage,
         scope = appScope,
-    )
+    ).also { store -> session.onEnd("autoDownloadStore") { store.clear() } }
 
     /**
      * Background service that prefetches photos / videos / animations for posts that
@@ -347,6 +348,13 @@ class AppGraph(context: Context) {
         startupPhase = startupCoordinator.phase,
         scope = appScope,
     ).also { it.bind() }
+
+    init {
+        // Scroll-ahead prefetch follows the same per-network policy as live arrivals.
+        mediaCache.prefetchPolicy = {
+            resolveActivePolicy(lifecycleBridge.networkType.value, autoDownloadStore.settings.value)
+        }
+    }
 
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 

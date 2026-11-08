@@ -1,5 +1,7 @@
 package dev.lyo.hortay.ui.timeline
 
+import dev.lyo.hortay.ui.text.LocalQuoteHighlight
+import dev.lyo.hortay.ui.text.QuoteHighlights
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -119,6 +121,8 @@ fun PostCard(
     // Hosted at the card level (not inside the action sheet) so it survives the
     // action sheet dismissing when the user taps "Select text".
     var selectTextOpen by remember { mutableStateOf(false) }
+    var summaryOpen by remember { mutableStateOf(false) }
+    val summarizer = LocalPostSummarizer.current
 
     // Hand each section ONLY the primitive fields it actually paints. When TDLib emits
     // an UpdateMessageInteractionInfo and the post's `views` change, Compose passes a
@@ -377,7 +381,14 @@ fun PostCard(
 
                 post.reply?.let {
                     Spacer(Modifier.height(8.dp))
-                    ReplyBlock(it, onClick = { interactions.onQuotedSourceClick(post) })
+                    ReplyBlock(
+                        it,
+                        onClick = {
+                            // A hand-picked quote lights up its fragment where the tap lands.
+                            if (it.isQuote) QuoteHighlights.show(it.replyToChatId, it.replyToMessageId, it.excerpt)
+                            interactions.onQuotedSourceClick(post)
+                        },
+                    )
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -403,7 +414,11 @@ fun PostCard(
                 // is the fix for the "scroll hangs near deleted posts" report — see
                 // [dev.lyo.hortay.ui.media.LocalMediaPassive]. Scoped to the body only; the
                 // channel avatar above stays on the normal (shared, cached) download path.
-                CompositionLocalProvider(LocalMediaPassive provides post.isDeleted) {
+                val quoteHighlight = QuoteHighlights.forPost(post.chatId, post.albumMessageIds + post.id)
+                CompositionLocalProvider(
+                    LocalMediaPassive provides post.isDeleted,
+                    LocalQuoteHighlight provides quoteHighlight,
+                ) {
                     val body: @Composable () -> Unit = {
                         PostBody(
                             content = post.content,
@@ -470,11 +485,15 @@ fun PostCard(
             post = post,
             interactions = interactions,
             onSelectText = { selectTextOpen = true },
+            onSummarize = if (post.canSummarize && summarizer != null) ({ summaryOpen = true }) else null,
             onDismiss = { sheetOpen = false },
         )
     }
     if (selectTextOpen) {
         SelectTextSheet(post = post, onDismiss = { selectTextOpen = false })
+    }
+    if (summaryOpen && summarizer != null) {
+        PostSummarySheet(post = post, summarizer = summarizer, onDismiss = { summaryOpen = false })
     }
 }
 
@@ -973,14 +992,30 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
                         bottom = 8.dp,
                     ),
             ) {
-                Text(
-                    text = reply.authorName,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = accent,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // A reply to ANOTHER channel's post carries that channel's avatar, so
+                    // it reads as a cross-post (tapping it leaves this channel) rather
+                    // than as one more message of the same thread.
+                    reply.otherChannelAvatar?.let { avatar ->
+                        TdAvatar(
+                            name = reply.authorName,
+                            thumb = avatar.thumb,
+                            fileId = avatar.fileId,
+                            size = 16.dp,
+                            textStyle = MaterialTheme.typography.labelSmall,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = reply.authorName,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = accent,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
                 // Resolve a body line. Priority:
                 //   1. The actual excerpt (quote text, or first line of the parent's text).
                 //   2. A localized kind label ("Фото", "Голосове" …) when the parent is media-only.
@@ -1036,7 +1071,8 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
         // flips the arrow direction in RTL automatically (declared in sym_reply.xml).
         if (reply.mediaThumb == null) {
             Symbol(
-                name = "reply",
+                // Another channel's post: an "opens elsewhere" chevron instead of the reply arrow.
+                name = if (reply.otherChannelAvatar != null) "chevron_right" else "reply",
                 tint = accent.copy(alpha = 0.55f),
                 size = 14.dp,
                 modifier = Modifier
@@ -1366,6 +1402,7 @@ private fun PostActionSheet(
     post: TimelinePost,
     interactions: PostInteractions,
     onSelectText: () -> Unit,
+    onSummarize: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1456,6 +1493,13 @@ private fun PostActionSheet(
                         },
                     )
                 }
+            }
+            if (onSummarize != null) {
+                SheetItem(
+                    symbol = "description",
+                    label = stringResource(R.string.post_summarize),
+                    onClick = { runAndDismiss { onSummarize() } },
+                )
             }
             if (interactions.canReport(post)) {
                 SheetItem(

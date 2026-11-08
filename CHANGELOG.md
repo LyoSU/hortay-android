@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- Tapping a quoted fragment in a post or a comment jumps to the original and briefly highlights the quoted words.
+- Long posts that Telegram can summarize offer “Summarize” in their ⋯ menu, with the summary in your app language.
+- The Channels tab has quick filters — Unread, Today and Hidden — with a count on each.
+- A search button next to the logo searches posts across all your channels, including ones that never reached your feed — tap a result to open the channel at that post.
+- A channel's info card lists similar channels Telegram recommends — subscribe in one tap or tap one to open it.
 - When several of your channels forward the same post, the feed shows it once with "Also forwarded by …" instead of repeating it.
 - A channel's burst of posts folds under its first one with "N more posts in this series" and a preview of the latest, so one busy channel no longer floods the feed — Settings → Feed can turn this off.
 - Posts carrying an official Telegram fact check now show it in a plate under the text.
@@ -14,6 +19,7 @@
 - Settings → Feed can now show archived channels in the “All” feed too, so channels you archive to tidy Telegram still reach your main feed.
 
 ### Changed
+- A reply to another channel's post shows that channel's avatar and an arrow, so it no longer passes for a reply within the same channel.
 - Posts in the feed and channels now use the full screen width — the channel photo and name sit in a header row above the post, so photos and text are noticeably larger.
 - Reactions under a post wrap onto a new line instead of being cut off at the screen edge, and comment, forward and view counts sit on a quieter line of their own.
 - The bottom navigation is now a frosted-glass bar with a label under every icon, and the Channels tab has a megaphone icon.
@@ -26,6 +32,13 @@
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
 
 ### Fixed
+- Signing in no longer overwrites the auto-download settings you set in other Telegram apps, and signing out no longer carries them over to the next account.
+- Media that failed to load while offline retries on its own once the connection is back, and a voice message or audio track whose download fails no longer stays stuck loading.
+- Cancelling a photo or video download shows a download button to start it again instead of a spinner that never finishes.
+- A video whose file was cleared from the cache downloads again instead of staying stuck on its preview, and expired guest-mode videos fetch a fresh link.
+- Scrolling no longer pre-downloads upcoming GIFs and videos on mobile data or roaming, and follows your auto-download settings for photos too.
+- Photos and videos keep downloading, and the cancel button keeps working, while Telegram temporarily rate-limits the app.
+- Comments that simply reply to the post no longer show a quote card, and a hand-picked quote in a comment shows up to four lines with a quote mark.
 - The ❤ reaction shows as the red emoji instead of a black heart.
 - Scrolling to the newest posts no longer briefly shows an empty gap where posts should be.
 - Tapping a paid ⭐ reaction on a comment no longer crashes the app.

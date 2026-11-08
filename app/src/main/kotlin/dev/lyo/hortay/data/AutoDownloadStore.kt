@@ -214,6 +214,15 @@ class AutoDownloadStore(
         update { AutoDownloadSettings.DEFAULT }
     }
 
+    /**
+     * Logout wipe: the stored choices belong to the signed-out account. Without it the
+     * next account inherited them (and, before sign-in stopped re-uploading, pushed them
+     * to its own Telegram settings).
+     */
+    suspend fun clear() {
+        dataStore.edit { it.remove(KEY_SETTINGS) }
+    }
+
     private suspend fun persistTransform(
         transform: (AutoDownloadSettings) -> AutoDownloadSettings,
     ): Pair<AutoDownloadSettings, AutoDownloadSettings> {
@@ -253,19 +262,14 @@ class AutoDownloadStore(
         // DEFAULT seed if the DataStore upstream hasn't pushed its first
         // emission yet, and using that would mistakenly upload defaults to
         // TDLib for a returning user.
+        // Returning user: keep the local copy and push NOTHING. Telegram's record is
+        // shared with the account's other clients, and `toTdSettings` fills the fields
+        // Hortay doesn't model (other-file size, large-video preload, call data saver)
+        // with neutral values — re-uploading on every sign-in silently reset those for
+        // the user's other apps. The server copy now changes only when the user edits
+        // the settings here.
         val raw = dataStore.data.map { it[KEY_SETTINGS] }.first()
-        if (raw != null) {
-            // Returning user — push the cached values up to TDLib so the server's
-            // copy reflects local state. Covers the case where the user edited
-            // Hortay while offline (or before this refactor landed and the local
-            // store was the only source) and then signed in. Best-effort; if any
-            // call fails it'll retry on the next user mutation.
-            val current = raw.decodeOrNull() ?: AutoDownloadSettings.DEFAULT
-            pushToTdlib(current.onWifi, TdApi.NetworkTypeWiFi())
-            pushToTdlib(current.onMobile, TdApi.NetworkTypeMobile())
-            pushToTdlib(current.onRoaming, TdApi.NetworkTypeMobileRoaming())
-            return
-        }
+        if (raw != null) return
         val presets = runCatching { td.send(TdApi.GetAutoDownloadSettingsPresets()) }.getOrNull()
             ?: return
         val seeded = AutoDownloadSettings(

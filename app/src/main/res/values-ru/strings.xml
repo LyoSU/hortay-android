@@ -861,4 +861,14 @@
     <string name="media_desc_video_note">Видеосообщение</string>
     <string name="channel_jump_back">Вернуться к месту чтения</string>
     <string name="channel_jump_latest">К последним постам</string>
+    <string name="channels_similar_title">Похожие каналы</string>
+    <string name="channels_filter_all">Все</string>
+    <string name="channels_filter_unread">Непрочитанные</string>
+    <string name="channels_filter_today">Сегодня</string>
+    <string name="channels_filter_hidden">Скрытые</string>
+    <string name="op_summarize">сделать краткое содержание поста</string>
+    <string name="op_search_all">искать в ваших каналах</string>
+    <string name="post_summarize">Кратко</string>
+    <string name="post_summary_title">Краткое содержание</string>
+    <string name="media_download">загрузить</string>
 </resources>

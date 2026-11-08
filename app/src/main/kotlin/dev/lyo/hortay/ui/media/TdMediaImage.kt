@@ -224,11 +224,12 @@ fun TdMediaImage(
                     )
                 }
             }
-            is MediaState.Failed -> if (showProgress && fileId != null && !passive) {
+            is MediaState.Failed, MediaState.Paused -> if (showProgress && fileId != null && !passive) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     val coScope = rememberCoroutineScope()
                     MediaFailedOverlay(
                         onRetry = { coScope.launch { binding.retry(priority) } },
+                        paused = state == MediaState.Paused,
                     )
                 }
             }

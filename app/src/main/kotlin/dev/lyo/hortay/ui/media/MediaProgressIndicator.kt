@@ -128,6 +128,9 @@ fun MediaFailedOverlay(
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
     onRetry: (() -> Unit)? = null,
+    // "download" after a user cancel ([dev.lyo.hortay.data.MediaState.Paused]), where
+    // "retry" would wrongly suggest something failed.
+    paused: Boolean = false,
 ) {
     val diskShape = HortayExpressive.ReactionSelected.asComposeShape()
     Box(
@@ -139,8 +142,8 @@ fun MediaFailedOverlay(
         contentAlignment = Alignment.Center,
     ) {
         Symbol(
-            name = "refresh",
-            contentDescription = stringResource(R.string.media_retry),
+            name = if (paused) "download" else "refresh",
+            contentDescription = stringResource(if (paused) R.string.media_download else R.string.media_retry),
             tint = Color.White,
             size = size * ICON_FRACTION,
         )

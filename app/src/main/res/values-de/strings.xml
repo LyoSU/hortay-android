@@ -827,4 +827,14 @@
     <string name="media_desc_video_note">Videonachricht</string>
     <string name="channel_jump_back">Zurück zur Lesestelle</string>
     <string name="channel_jump_latest">Zu den neuesten Beiträgen</string>
+    <string name="channels_similar_title">Ähnliche Kanäle</string>
+    <string name="channels_filter_all">Alle</string>
+    <string name="channels_filter_unread">Ungelesen</string>
+    <string name="channels_filter_today">Heute</string>
+    <string name="channels_filter_hidden">Ausgeblendet</string>
+    <string name="op_summarize">den Beitrag zusammenfassen</string>
+    <string name="op_search_all">in deinen Kanälen suchen</string>
+    <string name="post_summarize">Zusammenfassen</string>
+    <string name="post_summary_title">Zusammenfassung</string>
+    <string name="media_download">herunterladen</string>
 </resources>
