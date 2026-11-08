@@ -354,7 +354,10 @@ class AppGraph(context: Context) {
         TranslationsStore(tdClient, appScope, userMessages, tdClient.connection, res)
 
     val channelActions: ChannelActionsRepository =
-        ChannelActionsRepository(tdClient, userMessages, tdClient.connection, res)
+        ChannelActionsRepository(tdClient, userMessages, tdClient.connection, res) { chatId, isMember ->
+            // Read lazily at call time — [channelDiscovery] is declared further down.
+            channelDiscovery.updateMembership(chatId, isMember)
+        }
 
     /**
      * Proxy support (SOCKS5 / HTTP / MTProto). A thin driver over TDLib's native proxy API plus

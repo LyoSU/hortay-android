@@ -72,6 +72,20 @@ class ChannelDiscoveryRepository(
         resolveCache.clear()
     }
 
+    /**
+     * Keep cached cards' [DiscoverChannel.isMember] true to a join / leave that just
+     * succeeded. Without it a re-opened sheet painted the pre-join membership from
+     * [resolveCache] (offering Subscribe for a joined channel, or hiding a left one)
+     * for the rest of the session.
+     */
+    fun updateMembership(chatId: Long, isMember: Boolean) {
+        for ((key, card) in resolveCache) {
+            if (card.chatId == chatId && card.isMember != isMember) {
+                resolveCache.replace(key, card, card.copy(isMember = isMember))
+            }
+        }
+    }
+
     private suspend fun toCard(chat: TdApi.Chat, withSubscribers: Boolean = true): DiscoverChannel? {
         val supergroupId = (chat.type as? TdApi.ChatTypeSupergroup)?.supergroupId
         // Channels only — a public group/user resolved by an exact handle isn't a
@@ -82,9 +96,6 @@ class ChannelDiscoveryRepository(
                 .getOrNull()
         } ?: return null
         if (!supergroup.isChannel) return null
-        val isMember = supergroup.status.let {
-            it !is TdApi.ChatMemberStatusLeft && it !is TdApi.ChatMemberStatusBanned
-        }
         return DiscoverChannel(
             chatId = chat.id,
             username = supergroup.usernames?.activeUsernames?.firstOrNull(),
@@ -92,7 +103,7 @@ class ChannelDiscoveryRepository(
             subscribers = if (withSubscribers) supergroup.memberCount.takeIf { it > 0 } else null,
             avatarThumb = chat.photo?.minithumbnail?.data,
             avatarFileId = chat.photo?.small?.id,
-            isMember = isMember,
+            isMember = isChannelMember(supergroup.status),
         )
     }
 
@@ -111,6 +122,19 @@ class ChannelDiscoveryRepository(
         private const val TAG = "ChannelDiscovery"
         private const val THROTTLE_MS = 1_000L
     }
+}
+
+/**
+ * Whether [status] means the current user is in the channel. `Restricted` and `Creator`
+ * carry an explicit `isMember` flag (a restricted user can have left; the owner can be
+ * outside their own channel) — treating every non-Left/Banned status as membership
+ * mislabelled those as subscribed.
+ */
+internal fun isChannelMember(status: TdApi.ChatMemberStatus?): Boolean = when (status) {
+    null, is TdApi.ChatMemberStatusLeft, is TdApi.ChatMemberStatusBanned -> false
+    is TdApi.ChatMemberStatusRestricted -> status.isMember
+    is TdApi.ChatMemberStatusCreator -> status.isMember
+    else -> true
 }
 
 /**

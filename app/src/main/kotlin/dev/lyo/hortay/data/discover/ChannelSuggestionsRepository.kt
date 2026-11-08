@@ -16,7 +16,7 @@ import java.io.File
  * Source of the curated channel-suggestions catalog (see [SuggestionCatalog]).
  *
  * Resolution order, cheapest-first, on every [groups] call:
- *   1. in-memory catalog (parsed once per process after the first successful load),
+ *   1. in-memory catalog (kept once per process after the first successful network fetch),
  *   2. a fresh network fetch from GitHub via jsDelivr,
  *   3. the last network payload persisted to [cacheFile],
  *   4. the tiny [FALLBACK] compiled into the app.
@@ -54,9 +54,11 @@ class ChannelSuggestionsRepository(
         memory?.let { return it }
         return loadMutex.withLock {
             memory?.let { return it }
-            val loaded = fetchRemote() ?: readCache() ?: FALLBACK
-            memory = loaded
-            loaded
+            // Memoise only a fresh network catalog. The disk cache and [FALLBACK] are
+            // stand-ins for an offline first open; pinning either in [memory] froze the
+            // stale / tiny list for the whole process, so going online later never
+            // fetched the real one. Not memoised, the next open retries the network.
+            fetchRemote()?.also { memory = it } ?: readCache() ?: FALLBACK
         }
     }
 

@@ -168,13 +168,13 @@ class MigrationCoordinator(
                     Log.w(TAG, "migration: SearchPublicChat($cleaned) returned null (skip, won't retry)")
                 }
             } else {
-                try {
-                    channelActions.joinChat(chatId)
+                // joinChat swallows (and surfaces) its own failure and reports it as
+                // false — a failed join must not count as migrated, or the handle would
+                // be dropped from the guest subscriptions below without a TDLib join.
+                if (channelActions.joinChat(chatId)) {
                     migrated += cleaned
-                } catch (cancellation: kotlinx.coroutines.CancellationException) {
-                    throw cancellation
-                } catch (t: Throwable) {
-                    Log.w(TAG, "migration: JoinChat($cleaned) failed: ${t.message}")
+                } else {
+                    Log.w(TAG, "migration: JoinChat($cleaned) failed")
                     anyFailure.set(true)
                 }
             }

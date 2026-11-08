@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data
 
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.discover.isChannelMember
 import kotlinx.coroutines.flow.StateFlow
 import org.drinkless.tdlib.TdApi
 
@@ -22,6 +23,8 @@ class ChannelActionsRepository(
     private val userMessages: UserMessageBus,
     private val connection: StateFlow<ConnectionStatus>,
     private val res: StringResolver,
+    /** Notified after a successful join / leave so membership caches (discovery) stay true. */
+    private val onMembershipChanged: (chatId: Long, isMember: Boolean) -> Unit = { _, _ -> },
 ) {
 
     /**
@@ -217,17 +220,24 @@ class ChannelActionsRepository(
         return chat.notificationSettings?.muteFor.let { it != null && it > 0 }
     }
 
-    suspend fun joinChat(chatId: Long) {
+    /**
+     * Join [chatId]. Returns whether TDLib accepted the join, so optimistic UI can roll
+     * back; the failure itself is already surfaced through [userMessages].
+     */
+    suspend fun joinChat(chatId: Long): Boolean =
         runCatching { td.send(TdApi.JoinChat(chatId)) }
             .warnUnlessCancelled(TAG, "joinChat")
             .onFailure { it.surfaceTo(userMessages, res, R.string.op_join_channel, connection.value) }
-    }
+            .onSuccess { onMembershipChanged(chatId, true) }
+            .isSuccess
 
-    suspend fun leaveChat(chatId: Long) {
+    /** Leave [chatId]. Same result contract as [joinChat]. */
+    suspend fun leaveChat(chatId: Long): Boolean =
         runCatching { td.send(TdApi.LeaveChat(chatId)) }
             .warnUnlessCancelled(TAG, "leaveChat")
             .onFailure { it.surfaceTo(userMessages, res, R.string.op_leave_channel, connection.value) }
-    }
+            .onSuccess { onMembershipChanged(chatId, false) }
+            .isSuccess
 
     /**
      * Resolve a channel info bundle for the bottom sheet: title, handle, description,
@@ -249,9 +259,7 @@ class ChannelActionsRepository(
                 .warnUnlessCancelled(TAG, "channelInfo/getSupergroupFullInfo")
                 .getOrNull()
         }
-        val isMember = supergroup?.status?.let { status ->
-            status !is TdApi.ChatMemberStatusLeft && status !is TdApi.ChatMemberStatusBanned
-        } ?: false
+        val isMember = isChannelMember(supergroup?.status)
         return ChannelInfo(
             chatId = chatId,
             title = chat.title.orEmpty(),
