@@ -41,4 +41,14 @@ class LinkDialogState {
 
     fun showInvitePreview(preview: ChatInvitePreview) { _invitePreview.value = preview }
     fun dismissInvitePreview() { _invitePreview.value = null }
+
+    /**
+     * Drop both pending dialogs. Registered as an [AccountSession] end hook in AppGraph:
+     * an invite preview carries the previous account's chat id, and a masked-link prompt
+     * opened before logout must not greet the next account (or guest mode).
+     */
+    fun clear() {
+        _maskedLink.value = null
+        _invitePreview.value = null
+    }
 }

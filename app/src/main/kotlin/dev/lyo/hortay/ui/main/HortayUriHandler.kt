@@ -50,7 +50,7 @@ class HortayUriHandler(
         // and similar. Telegram-Android's own link handler enforces an explicit
         // allowlist for the same reason. Without this gate, a malicious post
         // could hand `file:///sdcard/...` to ACTION_VIEW via our delegate.
-        if (scheme !in ALLOWED_SCHEMES) return
+        if (!isAllowedLinkScheme(scheme)) return
         scope.launch {
             val link = resolver.resolve(parsed)
             when (link) {
@@ -68,13 +68,20 @@ class HortayUriHandler(
             }
         }
     }
-
-    private companion object {
-        // Explicit allowlist: HTTP(S) for real web links, Telegram's own scheme for
-        // `tg://resolve` / `tg://join` etc., and the two non-web schemes inline post
-        // text legitimately carries (`mailto:` press contacts, `tel:` for phone
-        // numbers in service messages). Anything else is rejected before it can
-        // reach ACTION_VIEW. Mirrors Telegram-Android's BrowserLink allowlist.
-        val ALLOWED_SCHEMES = setOf("http", "https", "tg", "mailto", "tel")
-    }
 }
+
+// Explicit allowlist: HTTP(S) for real web links, Telegram's own scheme for
+// `tg://resolve` / `tg://join` etc., and the two non-web schemes inline post
+// text legitimately carries (`mailto:` press contacts, `tel:` for phone
+// numbers in service messages). Anything else is rejected before it can
+// reach ACTION_VIEW. Mirrors Telegram-Android's BrowserLink allowlist.
+private val ALLOWED_LINK_SCHEMES = setOf("http", "https", "tg", "mailto", "tel")
+
+/**
+ * Whether a link with [scheme] may be opened at all. Shared by [HortayUriHandler] and the
+ * masked-link confirm path in [LinkAwareScaffold], so a `javascript:` / `intent:` /
+ * `file:` masked link is rejected before it gets a confirmation dialog whose confirm
+ * would then silently no-op. Case-insensitive; null (no scheme) is rejected.
+ */
+internal fun isAllowedLinkScheme(scheme: String?): Boolean =
+    scheme?.lowercase() in ALLOWED_LINK_SCHEMES

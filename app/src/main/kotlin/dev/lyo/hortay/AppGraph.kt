@@ -440,6 +440,7 @@ class AppGraph(context: Context) {
      * buffered links arriving during the recreation.
      */
     val deepLinkRouter: DeepLinkRouter = DeepLinkRouter()
+        .also { router -> session.onEnd("deepLinkRouter") { router.clear() } }
 
     /**
      * Canonical Telegram-URL parser. Delegates to TDLib's `GetInternalLinkType` (knows
@@ -468,6 +469,7 @@ class AppGraph(context: Context) {
      * not pending intent. Telegram-Android has the same boundary.
      */
     val linkDialogs: LinkDialogState = LinkDialogState()
+        .also { dialogs -> session.onEnd("linkDialogs") { dialogs.clear() } }
 
     /**
      * Navigation 3 back stack shared by both scaffolds (authenticated
