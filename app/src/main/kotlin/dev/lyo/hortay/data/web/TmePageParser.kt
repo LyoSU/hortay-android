@@ -55,11 +55,17 @@ object TmePageParser {
         // until the next sweep picks up the real title.
         val title = titleSpan.text().trim().ifEmpty { "@$fallbackUsername" }
 
-        val username = doc.selectFirst(".tgme_channel_info_header_username a")
-            ?.text()
-            ?.removePrefix("@")
-            ?.ifBlank { null }
-            ?: fallbackUsername
+        // Lowercased: the page renders the handle in the channel's own casing
+        // ("@Durov"), but `channel.username` is a case-sensitive PK keyed on the
+        // lowercased subscription — a mixed-case header would upsert a second row
+        // for the same channel (and its posts would hang off the wrong one).
+        val username = (
+            doc.selectFirst(".tgme_channel_info_header_username a")
+                ?.text()
+                ?.removePrefix("@")
+                ?.ifBlank { null }
+                ?: fallbackUsername
+            ).lowercase()
 
         val description = doc.selectFirst(".tgme_channel_info_description")?.text().orEmpty()
 
@@ -113,6 +119,10 @@ object TmePageParser {
         val msg = wrapper.selectFirst(".tgme_widget_message[data-post]") ?: return null
         val dataPost = msg.attr("data-post").ifBlank { return null }
         val seq = dataPost.substringAfterLast('/').toLongOrNull() ?: return null
+        // `data-post` carries the channel's display casing ("Durov/123"); the id's
+        // channel part doubles as the post → channel FK, so normalise it like the
+        // channel username above.
+        val postId = "${dataPost.substringBeforeLast('/').lowercase()}/$seq"
 
         val publishedAt = msg.selectFirst(".tgme_widget_message_date time")
             ?.attr("datetime")
@@ -158,7 +168,7 @@ object TmePageParser {
         val reactions = parseReactions(msg)
 
         return WebPost(
-            id = dataPost,
+            id = postId,
             seq = seq,
             publishedAt = publishedAt,
             textHtml = textHtml,

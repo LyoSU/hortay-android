@@ -265,6 +265,37 @@ class TmePageParserTest {
         assertEquals(42L, page.posts.first().seq)
     }
 
+    @Test
+    fun `mixed-case handle and data-post are normalised to lowercase`() {
+        // The channel row's PK and the post -> channel FK are case-sensitive and keyed
+        // on the lowercased subscription; a display-cased "@Durov" header must not
+        // create a second channel row.
+        val html = """
+            <html><body>
+              <div class="tgme_channel_info">
+                <div class="tgme_channel_info_header">
+                  <div class="tgme_channel_info_header_title"><span>Durov</span></div>
+                  <div class="tgme_channel_info_header_username"><a href="">@Durov</a></div>
+                </div>
+              </div>
+              <section class="tgme_channel_history">
+                <div class="tgme_widget_message_wrap">
+                  <div class="tgme_widget_message" data-post="Durov/7">
+                    <div class="tgme_widget_message_bubble">
+                      <div class="tgme_widget_message_text">Hello</div>
+                      <a class="tgme_widget_message_date" href=""><time datetime="2025-01-01T00:00:00+00:00"></time></a>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </body></html>
+        """.trimIndent()
+        val page = TmePageParser.parse(html, "durov")
+        assertNotNull(page)
+        assertEquals("durov", page!!.channel.username)
+        assertEquals("durov/7", page.posts.single().id)
+    }
+
     private fun loadFixture(name: String): String {
         val resource = javaClass.classLoader!!.getResourceAsStream("tme-samples/$name")
             ?: error("Missing fixture: tme-samples/$name")
