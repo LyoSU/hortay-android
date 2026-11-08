@@ -363,6 +363,15 @@
     <string name="settings_snap_scroll_subtitle">Cada publicação encaixa no lugar ao dar um gesto rápido — estilo TikTok/Reels</string>
     <string name="settings_archive_in_all_title">Arquivo em “Todos”</string>
     <string name="settings_archive_in_all_subtitle">Mostrar também as publicações dos canais arquivados no feed “Todos”</string>
+    <string name="settings_group_feed_title">Agrupar encaminhamentos e séries</string>
+    <string name="settings_group_feed_subtitle">Um cartão para uma publicação encaminhada por vários canais, e as sequências de um canal se recolhem sob a primeira</string>
+    <string name="feed_also_forwarded_by">Também encaminhado por %1$s</string>
+    <string name="post_fact_check_title">Checagem de fatos</string>
+    <plurals name="feed_series_more">
+        <item quantity="one">Mais %d publicação desta série</item>
+        <item quantity="many">Mais %d publicações desta série</item>
+        <item quantity="other">Mais %d publicações desta série</item>
+    </plurals>
     <string name="settings_inline_autoplay_title">Reprodução automática de vídeos no feed</string>
     <string name="settings_inline_autoplay_subtitle">Vídeos curtos já em cache são reproduzidos sem som ao rolar. Toque para abrir em tela cheia com som.</string>
     <string name="settings_section_privacy">Privacidade</string>

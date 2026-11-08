@@ -388,6 +388,18 @@
     <string name="settings_snap_scroll_subtitle">كل منشور ينقر في مكانه عند التمرير السريع — تجربة TikTok/Reels</string>
     <string name="settings_archive_in_all_title">الأرشيف في «الكل»</string>
     <string name="settings_archive_in_all_subtitle">يعرض منشورات القنوات المؤرشفة في موجز «الكل» أيضاً</string>
+    <string name="settings_group_feed_title">تجميع إعادات التوجيه والسلاسل</string>
+    <string name="settings_group_feed_subtitle">بطاقة واحدة لمنشور أعادت توجيهه عدة قنوات، وتُطوى منشورات القناة المتتالية تحت أولها</string>
+    <string name="feed_also_forwarded_by">أعاد توجيهه أيضًا %1$s</string>
+    <string name="post_fact_check_title">تدقيق الحقائق</string>
+    <plurals name="feed_series_more">
+        <item quantity="zero">لا منشورات أخرى في هذه السلسلة</item>
+        <item quantity="one">منشور آخر في هذه السلسلة</item>
+        <item quantity="two">منشوران آخران في هذه السلسلة</item>
+        <item quantity="few">%d منشورات أخرى في هذه السلسلة</item>
+        <item quantity="many">%d منشورًا آخر في هذه السلسلة</item>
+        <item quantity="other">%d منشور آخر في هذه السلسلة</item>
+    </plurals>
     <string name="settings_inline_autoplay_title">تشغيل الفيديوهات تلقائياً في الخلاصة</string>
     <string name="settings_inline_autoplay_subtitle">الفيديوهات القصيرة المخزنة مؤقتاً تُشغَّل بصمت أثناء التمرير. اضغط لفتحها بملء الشاشة مع الصوت.</string>
     <string name="settings_section_privacy">الخصوصية</string>

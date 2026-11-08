@@ -354,6 +354,14 @@
     <string name="settings_snap_scroll_subtitle">Hızlı kaydırdığında her gönderi yerine kilitlenir — TikTok/Reels hissi</string>
     <string name="settings_archive_in_all_title">Arşiv “Tümü” akışında</string>
     <string name="settings_archive_in_all_subtitle">Arşivlenmiş kanalların gönderilerini “Tümü” akışında da göster</string>
+    <string name="settings_group_feed_title">İletmeleri ve serileri grupla</string>
+    <string name="settings_group_feed_subtitle">Birden çok kanalın ilettiği gönderi için tek kart; bir kanalın art arda gönderileri ilkinin altında toplanır</string>
+    <string name="feed_also_forwarded_by">Ayrıca iletenler: %1$s</string>
+    <string name="post_fact_check_title">Doğruluk kontrolü</string>
+    <plurals name="feed_series_more">
+        <item quantity="one">Bu seriden %d gönderi daha</item>
+        <item quantity="other">Bu seriden %d gönderi daha</item>
+    </plurals>
     <string name="settings_inline_autoplay_title">Akışta videoları otomatik oynat</string>
     <string name="settings_inline_autoplay_subtitle">Önbellekte bulunan kısa videolar kaydırırken sessiz oynar. Sesle tam ekranda açmak için tıkla.</string>
     <string name="settings_section_privacy">Gizlilik</string>

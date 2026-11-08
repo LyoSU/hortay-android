@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -110,6 +111,9 @@ fun PostCard(
     actionsEnabled: Boolean = clickable,
     expanded: Boolean = false,
     onTapRevisions: (TimelinePost) -> Unit = {},
+    /** What this merged-feed row stands for (forwards / a folded series); see [clusterFeed]. */
+    annotation: FeedAnnotation? = null,
+    onExpandSeries: () -> Unit = {},
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
     // Hosted at the card level (not inside the action sheet) so it survives the
@@ -293,6 +297,10 @@ fun PostCard(
             val scopeHandle = if (post.parentId == null) post.senderHandle else null
             HashtagScope(scopeHandle) {
                 Column(modifier = Modifier.fillMaxWidth()) {
+                annotation?.forwardedBy?.takeIf { it.isNotEmpty() }?.let { forwarders ->
+                    ForwardedByRow(forwarders)
+                    Spacer(Modifier.height(8.dp))
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                 Avatar(
                     name = post.senderName,
@@ -418,6 +426,15 @@ fun PostCard(
                     }
                 }
 
+                post.factCheck?.let { note ->
+                    Spacer(Modifier.height(10.dp))
+                    FactCheckPlate(note)
+                }
+                val seriesHidden = annotation?.seriesHidden ?: 0
+                if (seriesHidden > 0) {
+                    Spacer(Modifier.height(10.dp))
+                    SeriesMoreButton(count = seriesHidden, latest = annotation?.seriesLatest, onClick = onExpandSeries)
+                }
                 if (!post.isDeleted && (post.views > 0 || post.forwardCount > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty())) {
                     Spacer(Modifier.height(10.dp))
                     ActionRow(
@@ -458,6 +475,111 @@ fun PostCard(
     }
     if (selectTextOpen) {
         SelectTextSheet(post = post, onDismiss = { selectTextOpen = false })
+    }
+}
+
+/**
+ * "Also forwarded by A, B +N" above a post that stands for several channels' copies of the
+ * same original ([clusterFeed] hid the others). Up to three overlapping avatars.
+ */
+@Composable
+private fun ForwardedByRow(forwarders: kotlinx.collections.immutable.ImmutableList<ChannelBadge>) {
+    val names = forwarders.take(2).joinToString(", ") { it.title } +
+        if (forwarders.size > 2) " +${forwarders.size - 2}" else ""
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Symbol(name = "forward", tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 14.dp)
+        Spacer(Modifier.width(6.dp))
+        Box {
+            forwarders.take(3).forEachIndexed { i, ch ->
+                Box(
+                    modifier = Modifier
+                        .padding(start = (i * 12).dp)
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .border(1.5.dp, MaterialTheme.colorScheme.background, CircleShape),
+                ) {
+                    TdAvatar(
+                        name = ch.title,
+                        thumb = ch.thumb,
+                        fileId = ch.fileId,
+                        remoteUrl = ch.avatarUrl,
+                        size = 20.dp,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = stringResource(R.string.feed_also_forwarded_by, names),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Telegram's official fact-check note, as a warm-tinted plate under the post body. */
+@Composable
+private fun FactCheckPlate(note: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.tertiaryContainer)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Symbol(name = "verified", tint = MaterialTheme.colorScheme.onTertiaryContainer, size = 16.dp)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(R.string.post_fact_check_title),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = note,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+    }
+}
+
+/** "N more posts in this series" — expands a burst [clusterFeed] folded under this post. */
+@Composable
+private fun SeriesMoreButton(count: Int, latest: String?, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Symbol(name = "dynamic_feed", tint = MaterialTheme.colorScheme.primary, size = 18.dp)
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = pluralStringResource(R.plurals.feed_series_more, count, count),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (!latest.isNullOrBlank()) {
+                Text(
+                    text = latest,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Symbol(name = "chevron_right", tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 18.dp)
     }
 }
 

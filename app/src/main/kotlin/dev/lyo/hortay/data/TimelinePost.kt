@@ -128,6 +128,11 @@ data class TimelinePost(
      * surface how many revisions exist.
      */
     val revisionCount: Int = 0,
+    /**
+     * Telegram's official fact-check note on this post (`Message.fact_check`), plain text.
+     * Rendered as a plate under the body. Null when the post has none, and in web mode.
+     */
+    val factCheck: String? = null,
 )
 
 /**

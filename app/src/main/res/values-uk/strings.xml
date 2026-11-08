@@ -367,6 +367,16 @@
     <string name="settings_snap_scroll_subtitle">Кожен пост зупиняється на місці після швидкого гортання</string>
     <string name="settings_archive_in_all_title">Архів у «Усі»</string>
     <string name="settings_archive_in_all_subtitle">Показувати пости з архівованих каналів і в стрічці «Усі»</string>
+    <string name="settings_group_feed_title">Групувати репости й серії</string>
+    <string name="settings_group_feed_subtitle">Одна картка для поста, який переслали кілька каналів, а серія дописів каналу згортається під перший</string>
+    <string name="feed_also_forwarded_by">Також переслали %1$s</string>
+    <string name="post_fact_check_title">Перевірка фактів</string>
+    <plurals name="feed_series_more">
+        <item quantity="one">Ще %d допис цієї серії</item>
+        <item quantity="few">Ще %d дописи цієї серії</item>
+        <item quantity="many">Ще %d дописів цієї серії</item>
+        <item quantity="other">Ще %d допису цієї серії</item>
+    </plurals>
     <string name="settings_inline_autoplay_title">Автозапуск відео у стрічці</string>
     <string name="settings_inline_autoplay_subtitle">Короткі відео, які вже в кеші, без звуку відтворюються під час прокручування. Натисни, щоб відкрити на весь екран зі звуком.</string>
     <string name="settings_section_privacy">Приватність</string>

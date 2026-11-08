@@ -355,6 +355,14 @@
     <string name="settings_snap_scroll_subtitle">Each post clicks into place when you fling — TikTok/Reels feel</string>
     <string name="settings_archive_in_all_title">Archive in “All”</string>
     <string name="settings_archive_in_all_subtitle">Show posts from archived channels in the “All” feed too</string>
+    <string name="settings_group_feed_title">Group reposts and series</string>
+    <string name="settings_group_feed_subtitle">One card for a post several channels forwarded, and a channel\'s burst of posts folds under its first one</string>
+    <string name="feed_also_forwarded_by">Also forwarded by %1$s</string>
+    <string name="post_fact_check_title">Fact check</string>
+    <plurals name="feed_series_more">
+        <item quantity="one">%d more post in this series</item>
+        <item quantity="other">%d more posts in this series</item>
+    </plurals>
     <string name="settings_inline_autoplay_title">Autoplay videos in feed</string>
     <string name="settings_inline_autoplay_subtitle">Short videos already in cache play silently as you scroll. Tap to open full-screen with sound.</string>
     <string name="settings_section_privacy">Privacy</string>

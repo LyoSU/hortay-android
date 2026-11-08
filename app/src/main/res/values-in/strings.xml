@@ -343,6 +343,13 @@
     <string name="settings_snap_scroll_subtitle">Setiap kiriman terkunci saat kamu flinging — nuansa TikTok/Reels</string>
     <string name="settings_archive_in_all_title">Arsip di “Semua”</string>
     <string name="settings_archive_in_all_subtitle">Tampilkan juga postingan dari kanal yang diarsipkan di feed “Semua”</string>
+    <string name="settings_group_feed_title">Kelompokkan teruskan dan seri</string>
+    <string name="settings_group_feed_subtitle">Satu kartu untuk postingan yang diteruskan beberapa saluran, dan rentetan postingan saluran dilipat di bawah yang pertama</string>
+    <string name="feed_also_forwarded_by">Juga diteruskan oleh %1$s</string>
+    <string name="post_fact_check_title">Cek fakta</string>
+    <plurals name="feed_series_more">
+        <item quantity="other">%d postingan lagi dalam seri ini</item>
+    </plurals>
     <string name="settings_inline_autoplay_title">Putar otomatis video di feed</string>
     <string name="settings_inline_autoplay_subtitle">Video pendek yang sudah di cache diputar tanpa suara saat digulir. Ketuk untuk membuka layar penuh dengan suara.</string>
     <string name="settings_section_privacy">Privasi</string>

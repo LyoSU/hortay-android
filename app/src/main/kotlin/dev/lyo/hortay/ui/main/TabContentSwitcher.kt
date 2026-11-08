@@ -64,6 +64,7 @@ internal fun TabContentSwitcher(
     canReportPost: (TimelinePost) -> Boolean,
     tdlibMarkAsRead: suspend (List<TimelinePost>) -> Unit,
 ) {
+    val groupFeed by graph.groupFeedState.collectAsStateWithLifecycle()
     val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
     val res = androidx.compose.ui.platform.LocalContext.current.resources
 
@@ -130,6 +131,7 @@ internal fun TabContentSwitcher(
                             feedOrder = feedOrder,
                             snapScroll = snapScroll,
                             archiveInAllFeed = archiveInAllFeed,
+                            groupFeed = groupFeed,
                             coveredByOverlay = coveredByOverlay,
                             archiveRepository = graph.archiveRepository,
                             archiveMediaStore = graph.archivedMediaStore,
@@ -198,6 +200,7 @@ internal fun TabContentSwitcher(
                         archiveLossOnLogout = archiveSettings.enabled,
                         proxy = graph.proxyRepository,
                         archiveInAllFeedState = graph.archiveInAllFeedState,
+                        groupFeedState = graph.groupFeedState,
                     )
                 }
             }

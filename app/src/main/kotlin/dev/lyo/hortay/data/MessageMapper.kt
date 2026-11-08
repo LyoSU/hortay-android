@@ -131,6 +131,7 @@ class MessageMapper(
             // truth is sufficient. Telegram-Android uses the same gate on its
             // own post overflow menu.
             canReportChat = chat.canBeReported,
+            factCheck = message.factCheck?.text?.text?.takeIf { it.isNotBlank() },
         )
     }
 
