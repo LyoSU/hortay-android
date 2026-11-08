@@ -63,6 +63,7 @@ internal fun TabContentSwitcher(
     onPostReportClick: (TimelinePost) -> Unit,
     canReportPost: (TimelinePost) -> Boolean,
     tdlibMarkAsRead: suspend (List<TimelinePost>) -> Unit,
+    onSearchClick: (() -> Unit)? = null,
 ) {
     val groupFeed by graph.groupFeedState.collectAsStateWithLifecycle()
     val tabEffectsSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
@@ -135,6 +136,7 @@ internal fun TabContentSwitcher(
                             coveredByOverlay = coveredByOverlay,
                             archiveRepository = graph.archiveRepository,
                             archiveMediaStore = graph.archivedMediaStore,
+                            onSearchClick = onSearchClick,
                         )
                     }
                 }

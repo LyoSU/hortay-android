@@ -2,6 +2,11 @@
 
 package dev.lyo.hortay.ui.main
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import dev.lyo.hortay.ui.search.ChannelsSearchScreen
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -157,6 +162,10 @@ fun MainScaffold(graph: AppGraph) {
     // inside the prefetch await would otherwise push a second ChannelKey on top of the
     // first. Main-thread only (composition scope), so a plain set is enough.
     val channelPushesInFlight = remember { HashSet<Long>() }
+    // Cross-channel search overlay. The query outlives the overlay so reopening search
+    // shows what the reader looked for last.
+    var searchOpen by remember { mutableStateOf(false) }
+    val searchText = rememberTextFieldState()
     val pushChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
         if (channelPushesInFlight.add(chatId)) {
             scope.launch {
@@ -521,6 +530,7 @@ fun MainScaffold(graph: AppGraph) {
                                         onPostReportClick = onPostReportClick,
                                         canReportPost = canReportPost,
                                         tdlibMarkAsRead = tdlibMarkAsRead,
+                                        onSearchClick = { searchOpen = true },
                                     )
                                     }
                                 }
@@ -575,6 +585,20 @@ fun MainScaffold(graph: AppGraph) {
                             .statusBarsPadding(),
                     )
                 }
+            }
+
+            if (searchOpen) {
+                ChannelsSearchScreen(
+                    textFieldState = searchText,
+                    repo = graph.postsRepository,
+                    channels = graph.channelDirectory,
+                    bookmarks = graph.bookmarkStore,
+                    onOpenPost = { chatId, messageId ->
+                        searchOpen = false
+                        pushChannel(chatId, messageId)
+                    },
+                    onDismiss = { searchOpen = false },
+                )
             }
 
             MainScaffoldDialogs(
