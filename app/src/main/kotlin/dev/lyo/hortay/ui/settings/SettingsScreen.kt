@@ -198,6 +198,8 @@ fun SettingsScreen(
                     userMessages = userMessages,
                     onNavigateToArchiveSettings = onNavigateToArchiveSettings,
                     archiveLossOnLogout = archiveLossOnLogout,
+                    // [channelActions] is the TDLib-mode marker (null in guest mode).
+                    showArchiveInAllToggle = channelActions != null,
                 )
             }
             entry<SettingsNavKey.AutoDownload> {
@@ -281,6 +283,8 @@ private fun SettingsMain(
     userMessages: UserMessageBus?,
     onNavigateToArchiveSettings: (() -> Unit)? = null,
     archiveLossOnLogout: Boolean = false,
+    /** TDLib mode only — guest mode has no Telegram chat lists, so no archive. */
+    showArchiveInAllToggle: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -368,9 +372,7 @@ private fun SettingsMain(
                 enabled = currentInlineAutoplay,
                 onToggle = { next -> if (next != currentInlineAutoplay) scope.launch { settings.setInlineVideoAutoplay(next) } },
             )
-            // Archive is a TDLib-only concept — guest mode has no chat lists, and
-            // [channelActions] is the TDLib-mode marker (null in guest mode).
-            if (channelActions != null) {
+            if (showArchiveInAllToggle) {
                 ArchiveInAllFeedRow(
                     enabled = currentArchiveInAll,
                     onToggle = { next -> if (next != currentArchiveInAll) scope.launch { settings.setArchiveInAllFeed(next) } },
