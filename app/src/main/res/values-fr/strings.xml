@@ -535,6 +535,9 @@
     <!-- Badges de statut inline à côté d\'une publication. -->
     <string name="post_badge_edited">Modifié</string>
     <string name="post_badge_pinned">Épinglé</string>
+    <string name="pinned_bar_title">Message épinglé</string>
+    <string name="pinned_bar_title_position">Message épinglé %1$d sur %2$d</string>
+    <string name="pinned_bar_open">Aller au message épinglé</string>
     <!-- Menu contextuel (appui long) sur un lien dans le corps d\'une publication. -->
     <string name="link_action_open">Ouvrir</string>
     <string name="link_action_copy">Copier le lien</string>

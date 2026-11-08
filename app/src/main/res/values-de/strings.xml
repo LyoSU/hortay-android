@@ -528,6 +528,9 @@
     <!-- Inline-Statusbadges neben einem Beitrag. -->
     <string name="post_badge_edited">Bearbeitet</string>
     <string name="post_badge_pinned">Angeheftet</string>
+    <string name="pinned_bar_title">Angeheftete Nachricht</string>
+    <string name="pinned_bar_title_position">Angeheftete Nachricht %1$d von %2$d</string>
+    <string name="pinned_bar_open">Zur angehefteten Nachricht</string>
     <!-- Long-Press-Menü auf einem Inline-Link im Beitragstext. -->
     <string name="link_action_open">Öffnen</string>
     <string name="link_action_copy">Link kopieren</string>

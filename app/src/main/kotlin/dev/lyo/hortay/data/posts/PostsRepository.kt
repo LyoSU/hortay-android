@@ -20,6 +20,7 @@ import dev.lyo.hortay.data.Reactions
 import dev.lyo.hortay.data.StringResolver
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdSender
+import dev.lyo.hortay.data.PinnedPreview
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.UserMessageBus
@@ -932,6 +933,31 @@ class PostsRepository(
             delay(BACKFILL_THROTTLE_MS)
         }
         if (sessionEpoch.get() == epoch) store.markDone()
+    }
+
+    private val _pinnedChanged = MutableSharedFlow<Long>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+
+    /** Chat ids whose pinned set changed (`UpdateMessageIsPinned`); [pinnedMessages] re-reads. */
+    val pinnedChanged: SharedFlow<Long> = _pinnedChanged.asSharedFlow()
+
+    /**
+     * The channel's pinned messages, newest first, for the channel screen's pinned bar.
+     * One `SearchChatMessages(filter = Pinned)` per channel open or pin change — an
+     * on-demand call like [loadChannelHistory], never a cold-start fan-out. Empty on
+     * failure: a missing bar is better than an error for a secondary surface.
+     */
+    suspend fun pinnedMessages(chatId: Long): ImmutableList<PinnedPreview> {
+        val found = runCatching {
+            td.send(
+                TdApi.SearchChatMessages(
+                    chatId, null, "", null, 0L, 0, PINNED_FETCH_LIMIT, TdApi.SearchMessagesFilterPinned(),
+                ),
+            )
+        }.warnUnlessCancelled(TAG, "pinnedMessages($chatId)").getOrNull() ?: return persistentListOf()
+        return found.messages.orEmpty().map(mapper::toPinnedPreview).toPersistentList()
     }
 
     /**
@@ -2202,6 +2228,7 @@ class PostsRepository(
     }
 
     private fun handleIsPinnedChanged(update: TdApi.UpdateMessageIsPinned) {
+        _pinnedChanged.tryEmit(update.chatId)
         // Pin badge: TDLib pins one specific message; for an album in our timeline that
         // can be any sibling (Telegram typically pins the caption-carrier, but admins
         // can pin any). Match by either anchor id or any album member id and set the
@@ -2535,6 +2562,9 @@ class PostsRepository(
         // against burst suppression. Telegram's official Android client coalesces in a
         // similar window.
         const val INTERACTION_INFO_COALESCE_MS = 200L
+
+        /** Pinned messages fetched for the channel screen's pinned bar. */
+        const val PINNED_FETCH_LIMIT = 20
         // Snapshot persistence: top-N posts saved on background. 50 covers a typical
         // first-screen view with comfortable scroll headroom; bigger payloads make the
         // DataStore write feel measurable on the way out without UX benefit because

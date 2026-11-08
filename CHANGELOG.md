@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- Channels now show their pinned messages in a bar under the header — tap it to jump to the pinned post, tap again to step through older pins.
 - Settings → Feed can now show archived channels in the “All” feed too, so channels you archive to tidy Telegram still reach your main feed.
 
 ### Fixed

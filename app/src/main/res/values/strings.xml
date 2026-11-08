@@ -545,6 +545,9 @@
     <!-- Inline status badges next to a post. -->
     <string name="post_badge_edited">Edited</string>
     <string name="post_badge_pinned">Pinned</string>
+    <string name="pinned_bar_title">Pinned message</string>
+    <string name="pinned_bar_title_position">Pinned message %1$d of %2$d</string>
+    <string name="pinned_bar_open">Go to pinned message</string>
     <!-- Long-press menu on an inline link inside a post body. -->
     <string name="link_action_open">Open</string>
     <string name="link_action_copy">Copy link</string>

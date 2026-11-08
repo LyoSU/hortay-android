@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.ChannelDirectory
 import dev.lyo.hortay.data.posts.PostsRepository
+import dev.lyo.hortay.data.PinnedPreview
 import dev.lyo.hortay.data.TimelinePost
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -17,12 +20,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -170,6 +176,13 @@ class ChannelViewModel(
     private val _channelSubscribers = MutableStateFlow(channels.channelSubscribersCached(chatId))
     val channelSubscribers: StateFlow<Int?> = _channelSubscribers.asStateFlow()
 
+    /**
+     * The channel's pinned messages, newest first, for the pinned bar under the header.
+     * Loaded once on open and re-read whenever TDLib reports a pin change in this chat.
+     */
+    private val _pinned = MutableStateFlow<ImmutableList<PinnedPreview>>(persistentListOf())
+    val pinned: StateFlow<ImmutableList<PinnedPreview>> = _pinned.asStateFlow()
+
     // Channel avatar source for the top-bar TdAvatar — same minithumb /
     // fileId pair ChannelsScreen rows use. Resolved reactively from the
     // post stream (every channel post carries the channel's identity in
@@ -213,6 +226,14 @@ class ChannelViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     init {
+        viewModelScope.launch {
+            // onSubscription seeds the first fetch only after the subscription is live, so
+            // a pin change that lands while that fetch is in flight is not lost.
+            repo.pinnedChanged
+                .onSubscription { emit(chatId) }
+                .filter { it == chatId }
+                .collectLatest { _pinned.value = repo.pinnedMessages(chatId) }
+        }
         // OpenChat for the lifetime of this VM, with the history loads
         // issued inside the open window. Per TDLib (Aliaksei Levin /
         // [tdlib/td#2937] + the [TdApi.OpenChat] docstring):

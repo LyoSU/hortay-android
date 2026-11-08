@@ -537,6 +537,9 @@
     <!-- Badge di stato inline accanto a un post. -->
     <string name="post_badge_edited">Modificato</string>
     <string name="post_badge_pinned">Fissato</string>
+    <string name="pinned_bar_title">Messaggio fissato</string>
+    <string name="pinned_bar_title_position">Messaggio fissato %1$d di %2$d</string>
+    <string name="pinned_bar_open">Vai al messaggio fissato</string>
     <!-- Menu al pressione prolungata su un link nel corpo del post. -->
     <string name="link_action_open">Apri</string>
     <string name="link_action_copy">Copia link</string>

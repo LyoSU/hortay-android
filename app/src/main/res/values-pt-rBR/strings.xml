@@ -538,6 +538,9 @@
     <!-- Selos de status inline ao lado de uma publicação. -->
     <string name="post_badge_edited">Editado</string>
     <string name="post_badge_pinned">Fixado</string>
+    <string name="pinned_bar_title">Mensagem fixada</string>
+    <string name="pinned_bar_title_position">Mensagem fixada %1$d de %2$d</string>
+    <string name="pinned_bar_open">Ir para a mensagem fixada</string>
     <!-- Menu de pressão longa em um link inline no corpo da publicação. -->
     <string name="link_action_open">Abrir</string>
     <string name="link_action_copy">Copiar link</string>

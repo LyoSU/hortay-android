@@ -523,6 +523,9 @@
     <!-- Gönderi yanındaki satır içi durum rozetleri. -->
     <string name="post_badge_edited">Düzenlendi</string>
     <string name="post_badge_pinned">Sabitlendi</string>
+    <string name="pinned_bar_title">Sabitlenmiş mesaj</string>
+    <string name="pinned_bar_title_position">Sabitlenmiş mesaj %1$d/%2$d</string>
+    <string name="pinned_bar_open">Sabitlenmiş mesaja git</string>
     <!-- Gönderi gövdesindeki satır içi bağlantıya uzun basma menüsü. -->
     <string name="link_action_open">Aç</string>
     <string name="link_action_copy">Bağlantıyı kopyala</string>

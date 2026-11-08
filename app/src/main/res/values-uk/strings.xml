@@ -536,6 +536,9 @@
     <!-- Інлайн-позначки біля поста. -->
     <string name="post_badge_edited">Відредаговано</string>
     <string name="post_badge_pinned">Закріплено</string>
+    <string name="pinned_bar_title">Закріплене повідомлення</string>
+    <string name="pinned_bar_title_position">Закріплене %1$d з %2$d</string>
+    <string name="pinned_bar_open">Перейти до закріпленого повідомлення</string>
     <!-- Меню при довгому натисканні на посилання в тексті поста. -->
     <string name="link_action_open">Відкрити</string>
     <string name="link_action_copy">Скопіювати посилання</string>

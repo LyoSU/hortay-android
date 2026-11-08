@@ -541,6 +541,9 @@
     <!-- Wbudowane odznaki przy wpisie. -->
     <string name="post_badge_edited">Edytowano</string>
     <string name="post_badge_pinned">Przypięto</string>
+    <string name="pinned_bar_title">Przypięta wiadomość</string>
+    <string name="pinned_bar_title_position">Przypięta wiadomość %1$d z %2$d</string>
+    <string name="pinned_bar_open">Przejdź do przypiętej wiadomości</string>
     <!-- Menu po długim naciśnięciu linku w treści wpisu. -->
     <string name="link_action_open">Otwórz</string>
     <string name="link_action_copy">Kopiuj link</string>

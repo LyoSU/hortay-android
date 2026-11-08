@@ -543,6 +543,9 @@
     <!-- Inline-значки рядом с постом. -->
     <string name="post_badge_edited">Изменено</string>
     <string name="post_badge_pinned">Закреплено</string>
+    <string name="pinned_bar_title">Закреплённое сообщение</string>
+    <string name="pinned_bar_title_position">Закреплённое %1$d из %2$d</string>
+    <string name="pinned_bar_open">Перейти к закреплённому сообщению</string>
     <!-- Меню по долгому нажатию на ссылку в тексте поста. -->
     <string name="link_action_open">Открыть</string>
     <string name="link_action_copy">Копировать ссылку</string>
