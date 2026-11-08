@@ -68,5 +68,5 @@ dependencies {
     // TdApi.java is post-processed by AddIntDef.php to sprinkle @IntDef/@LongDef
     // annotations from androidx.annotation. They're SOURCE-retention only, so
     // compileOnly is enough — no runtime jar shipped.
-    compileOnly("androidx.annotation:annotation:1.10.0")
+    compileOnly("androidx.annotation:annotation:1.11.0")
 }
