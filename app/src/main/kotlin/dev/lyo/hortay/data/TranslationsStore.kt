@@ -4,9 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
@@ -62,17 +60,17 @@ class TranslationsStore(
         // We listen here rather than relying on PostsRepository to call us so the cache
         // stays consistent regardless of which surface (channel feed, comments thread)
         // produced the original translation.
-        merge(
-            td.updates.filterIsInstance<TdApi.UpdateMessageContent>()
-                .onEach { invalidate(it.chatId, it.messageId) },
-            td.updates.filterIsInstance<TdApi.UpdateMessageEdited>()
-                .onEach { invalidate(it.chatId, it.messageId) },
-            td.updates.filterIsInstance<TdApi.UpdateDeleteMessages>()
-                .onEach { upd ->
-                    if (!upd.isPermanent) return@onEach
-                    upd.messageIds.forEach { id -> invalidate(upd.chatId, id) }
-                },
-        ).launchIn(scope)
+        td.updates
+            .onEach { update ->
+                when (update) {
+                    is TdApi.UpdateMessageContent -> invalidate(update.chatId, update.messageId)
+                    is TdApi.UpdateMessageEdited -> invalidate(update.chatId, update.messageId)
+                    is TdApi.UpdateDeleteMessages ->
+                        if (update.isPermanent) update.messageIds.forEach { id -> invalidate(update.chatId, id) }
+                    else -> Unit
+                }
+            }
+            .launchIn(scope)
     }
 
     suspend fun translate(chatId: Long, messageId: Long): Boolean {
