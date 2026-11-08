@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.main
 
+import androidx.compose.foundation.indication
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -105,13 +106,15 @@ private fun NavTabButton(
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "nav-icon",
     )
+    // The whole cell is the touch target, but the press ripple paints only inside the
+    // indicator pill (Material's navigation-bar pattern). A ripple over the full cell
+    // stacked a third rounded shape between the bar and the pill on every tap.
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
             .selectable(
                 selected = selected,
                 interactionSource = interactionSource,
-                indication = ripple(bounded = true),
+                indication = null,
                 role = Role.Tab,
                 onClick = {
                     // Discrete destination switch (or home re-tap → scroll-to-top) —
@@ -130,6 +133,7 @@ private fun NavTabButton(
             modifier = Modifier
                 .clip(IndicatorShape)
                 .background(indicator, IndicatorShape)
+                .indication(interactionSource, ripple(bounded = true))
                 .padding(horizontal = 16.dp, vertical = 3.dp),
             contentAlignment = Alignment.Center,
         ) {
