@@ -865,4 +865,5 @@
     <string name="media_desc_video_note">Відеоповідомлення</string>
     <string name="channel_jump_back">Повернутися, де читали</string>
     <string name="channel_jump_latest">До найновіших дописів</string>
+    <string name="channels_similar_title">Схожі канали</string>
 </resources>

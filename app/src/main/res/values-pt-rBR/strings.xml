@@ -848,4 +848,5 @@
     <string name="media_desc_video_note">Mensagem de vídeo</string>
     <string name="channel_jump_back">Voltar ao ponto de leitura</string>
     <string name="channel_jump_latest">Ir para as publicações mais recentes</string>
+    <string name="channels_similar_title">Canais semelhantes</string>
 </resources>

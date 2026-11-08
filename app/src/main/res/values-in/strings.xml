@@ -806,4 +806,5 @@
     <string name="media_desc_video_note">Pesan video</string>
     <string name="channel_jump_back">Kembali ke posisi terakhir</string>
     <string name="channel_jump_latest">Ke postingan terbaru</string>
+    <string name="channels_similar_title">Saluran serupa</string>
 </resources>

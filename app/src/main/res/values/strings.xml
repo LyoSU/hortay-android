@@ -863,4 +863,5 @@
     <string name="media_desc_video_note">Video message</string>
     <string name="channel_jump_back">Back to where you were</string>
     <string name="channel_jump_latest">Jump to the latest posts</string>
+    <string name="channels_similar_title">Similar channels</string>
 </resources>

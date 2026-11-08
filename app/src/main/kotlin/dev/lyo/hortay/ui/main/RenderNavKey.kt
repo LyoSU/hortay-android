@@ -65,6 +65,7 @@ internal fun RenderNavKey(
             translations = graph.translations,
             channelActions = graph.channelActions,
             ignoredChannels = graph.ignoredChannels,
+            discovery = graph.channelDiscovery,
             contentPadding = padding,
             onBack = onPopNav,
             onChannelOpen = { cid, scrollTo -> onSafelyOpenChannel(cid, scrollTo) },

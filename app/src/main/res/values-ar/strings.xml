@@ -895,4 +895,5 @@
     <string name="media_desc_video_note">رسالة فيديو</string>
     <string name="channel_jump_back">العودة إلى موضع القراءة</string>
     <string name="channel_jump_latest">الانتقال إلى أحدث المنشورات</string>
+    <string name="channels_similar_title">قنوات مشابهة</string>
 </resources>

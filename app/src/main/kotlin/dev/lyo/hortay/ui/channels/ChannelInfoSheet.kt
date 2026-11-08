@@ -1,5 +1,16 @@
 package dev.lyo.hortay.ui.channels
 
+import kotlinx.collections.immutable.toImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.ImmutableList
+import dev.lyo.hortay.ui.timeline.formatSubscribers
+import dev.lyo.hortay.ui.discover.ChannelDiscoverRow
+import dev.lyo.hortay.data.discover.DiscoverChannel
+import dev.lyo.hortay.data.discover.ChannelDiscoveryRepository
+import androidx.compose.runtime.key
+import androidx.compose.runtime.produceState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -76,6 +87,10 @@ fun ChannelInfoSheet(
      * yet (or test harnesses) still compile.
      */
     ignoredChannels: IgnoredChannelsStore? = null,
+    /** Source of "Similar channels"; null hides the section (guest mode). */
+    discovery: ChannelDiscoveryRepository? = null,
+    /** Opens a similar channel; the sheet dismisses itself first. */
+    onOpenChannel: ((Long) -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -93,10 +108,17 @@ fun ChannelInfoSheet(
     LaunchedEffect(chatId) {
         info = actions.channelInfo(chatId)
     }
+    val similar by produceState<ImmutableList<DiscoverChannel>>(persistentListOf(), chatId, discovery) {
+        value = discovery?.similar(chatId).orEmpty().take(SIMILAR_MAX).toImmutableList()
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         val current = info
-        Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+        ) {
             if (current == null) {
                 Text(
                     stringResource(R.string.channels_loading),
@@ -210,6 +232,13 @@ fun ChannelInfoSheet(
                     },
                 )
             }
+            if (similar.isNotEmpty()) {
+                SimilarChannels(
+                    channels = similar,
+                    onSubscribe = { channel -> actions.joinChat(channel.chatId) },
+                    onOpen = onOpenChannel?.let { open -> { id: Long -> onDismiss(); open(id) } },
+                )
+            }
         }
     }
 }
@@ -258,6 +287,49 @@ private fun ActionRow(
         },
     )
 }
+
+/**
+ * "Similar channels" — Telegram's own recommendations for this channel, one tap to
+ * subscribe and a tap on the row to open it. Already-followed channels are filtered
+ * out upstream, so every row is something new.
+ */
+@Composable
+private fun SimilarChannels(
+    channels: ImmutableList<DiscoverChannel>,
+    onSubscribe: suspend (DiscoverChannel) -> Boolean,
+    onOpen: ((Long) -> Unit)?,
+) {
+    val subscribeLabel = stringResource(R.string.discover_subscribe)
+    val subscribedLabel = stringResource(R.string.discover_subscribed)
+    Spacer(Modifier.height(20.dp))
+    Text(
+        text = stringResource(R.string.channels_similar_title),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = 4.dp),
+    )
+    channels.forEach { channel ->
+        key(channel.chatId) {
+            ChannelDiscoverRow(
+                name = channel.title,
+                handle = channel.username?.let { "@$it" }.orEmpty(),
+                subscribers = channel.subscribers?.let { formatSubscribers(it) },
+                description = null,
+                avatarThumb = channel.avatarThumb,
+                avatarFileId = channel.avatarFileId,
+                avatarUrl = null,
+                actionLabel = subscribeLabel,
+                subscribedLabel = subscribedLabel,
+                actionEnabled = true,
+                onAction = { onSubscribe(channel) },
+                onClick = onOpen?.let { open -> { open(channel.chatId) } },
+            )
+        }
+    }
+}
+
+private const val SIMILAR_MAX = 6
 
 private fun formatThousands(n: Int): String =
     NumberFormat.getNumberInstance(Locale.forLanguageTag("uk")).format(n)

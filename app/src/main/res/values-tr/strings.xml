@@ -822,4 +822,5 @@
     <string name="media_desc_video_note">Görüntülü mesaj</string>
     <string name="channel_jump_back">Okuduğun yere dön</string>
     <string name="channel_jump_latest">En yeni gönderilere git</string>
+    <string name="channels_similar_title">Benzer kanallar</string>
 </resources>

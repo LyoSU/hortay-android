@@ -827,4 +827,5 @@
     <string name="media_desc_video_note">Videonachricht</string>
     <string name="channel_jump_back">Zurück zur Lesestelle</string>
     <string name="channel_jump_latest">Zu den neuesten Beiträgen</string>
+    <string name="channels_similar_title">Ähnliche Kanäle</string>
 </resources>

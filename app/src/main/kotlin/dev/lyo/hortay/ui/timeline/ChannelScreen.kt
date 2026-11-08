@@ -2,6 +2,7 @@
 
 package dev.lyo.hortay.ui.timeline
 
+import dev.lyo.hortay.data.discover.ChannelDiscoveryRepository
 import dev.lyo.hortay.ui.theme.tabularFigures
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
@@ -156,6 +157,8 @@ fun ChannelScreen(
      * accepts a channel-level report against the whole chat). Null hides the row.
      */
     onReportChannel: (() -> Unit)? = null,
+    /** Feeds the info sheet's "Similar channels"; null hides that section. */
+    discovery: ChannelDiscoveryRepository? = null,
     /**
      * Hidden-channels store. When non-null, propagated to [ChannelInfoSheet]
      * which renders a "Hide from feed" toggle row. Optional so the screen
@@ -1050,6 +1053,8 @@ fun ChannelScreen(
             onDismiss = { infoSheetVisible = false },
             onReport = onReportChannel,
             ignoredChannels = ignoredChannels,
+            discovery = discovery,
+            onOpenChannel = { id -> onChannelOpen(id, null) },
         )
     }
 }

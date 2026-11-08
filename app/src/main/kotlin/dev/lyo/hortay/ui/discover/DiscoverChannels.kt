@@ -2,6 +2,8 @@
 
 package dev.lyo.hortay.ui.discover
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.clickable
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
@@ -182,10 +184,13 @@ fun ChannelDiscoverRow(
     subscribedLabel: String,
     actionEnabled: Boolean,
     onAction: suspend () -> Boolean,
+    // Opens the channel itself; null keeps the row a plain card (curated / search lists).
+    onClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
