@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
 
     <!-- Auth screen -->
     <string name="auth_phone_label">Номер телефону</string>
@@ -104,7 +103,6 @@
     <string name="auth_resend_sending">Надсилаємо…</string>
     <string name="auth_resend_countdown">Ще раз за %1$d:%2$02d</string>
     <string name="auth_resend_via">Надіслати код ще раз (%1$s)</string>
-    <string name="auth_resend_again">Надіслати ще раз</string>
 
     <!-- Country picker -->
     <string name="country_picker_title">Вибери країну</string>
@@ -136,6 +134,7 @@
     <string name="auth_err_phone_occupied">На цьому номері вже є акаунт. Увійди в нього замість реєстрації</string>
     <string name="auth_err_code_invalid">Код не підходить. Перевір і спробуй ще раз</string>
     <string name="auth_err_code_expired">Код прострочився. Запроси новий</string>
+    <string name="auth_err_code_cant_resend">Telegram не може надіслати код інакше. Відкрий Telegram на пристрої, де вже виконано вхід, або зміни номер</string>
     <string name="auth_err_password_invalid">Пароль не підходить. Спробуй ще раз</string>
     <string name="auth_err_password_too_fresh">Пароль щойно змінили. Telegram попросить трохи почекати</string>
     <string name="auth_err_password_recovery_na">Відновлення пароля тут недоступне. Скинь 2FA в офіційному Telegram</string>
@@ -348,6 +347,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Стрічку переупорядковано — нові внизу, як у чаті</string>
     <string name="settings_snap_scroll_title">Покрокове гортання</string>
     <string name="settings_snap_scroll_subtitle">Кожен пост зупиняється на місці після швидкого гортання</string>
+    <string name="settings_archive_in_all_title">Архів у «Усі»</string>
+    <string name="settings_archive_in_all_subtitle">Показувати пости з архівованих каналів і в стрічці «Усі»</string>
     <string name="settings_inline_autoplay_title">Автозапуск відео у стрічці</string>
     <string name="settings_inline_autoplay_subtitle">Короткі відео, які вже в кеші, без звуку відтворюються під час прокручування. Натисни, щоб відкрити на весь екран зі звуком.</string>
     <string name="settings_section_privacy">Приватність</string>
@@ -416,10 +417,6 @@
     <string name="size_mb_int">%1$d МБ</string>
 
     <!-- Sizes -->
-    <string name="size_bytes">%1$d Б</string>
-    <string name="size_kb">%1$.1f КБ</string>
-    <string name="size_mb">%1$.1f МБ</string>
-    <string name="size_gb">%1$.2f ГБ</string>
     <string-array name="size_units">
         <item>Б</item>
         <item>КБ</item>

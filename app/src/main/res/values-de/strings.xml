@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
 
     <!-- Anmeldebildschirm -->
     <string name="auth_phone_label">Telefonnummer</string>
@@ -106,7 +105,6 @@
     <string name="auth_resend_sending">Wird gesendet…</string>
     <string name="auth_resend_countdown">Erneut versuchen in %1$d:%2$02d</string>
     <string name="auth_resend_via">Code erneut senden (%1$s)</string>
-    <string name="auth_resend_again">Erneut senden</string>
 
     <!-- Länderauswahl -->
     <string name="country_picker_title">Land auswählen</string>
@@ -138,6 +136,7 @@
     <string name="auth_err_phone_occupied">Diese Nummer hat bereits ein Konto. Melde dich an statt zu registrieren</string>
     <string name="auth_err_code_invalid">Falscher Code. Prüfen und erneut versuchen</string>
     <string name="auth_err_code_expired">Code abgelaufen. Neuen anfordern</string>
+    <string name="auth_err_code_cant_resend">Telegram kann den Code nicht anders senden. Öffne Telegram auf einem Gerät, auf dem du bereits angemeldet bist, oder ändere die Nummer</string>
     <string name="auth_err_password_invalid">Falsches Passwort. Erneut versuchen</string>
     <string name="auth_err_password_too_fresh">Passwort wurde gerade geändert. Telegram bittet dich, kurz zu warten</string>
     <string name="auth_err_password_recovery_na">Passwortwiederherstellung ist hier nicht verfügbar. 2FA in Telegram zurücksetzen</string>
@@ -337,6 +336,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed neu sortiert — Neuestes unten wie im Chat</string>
     <string name="settings_snap_scroll_title">Snap-Scroll</string>
     <string name="settings_snap_scroll_subtitle">Jeder Beitrag rastet beim Wischen ein — wie TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Archiv in „Alle“</string>
+    <string name="settings_archive_in_all_subtitle">Beiträge aus archivierten Kanälen auch im Feed „Alle“ zeigen</string>
     <string name="settings_inline_autoplay_title">Videos im Feed automatisch abspielen</string>
     <string name="settings_inline_autoplay_subtitle">Kurze Videos im Cache spielen beim Scrollen stumm ab. Tippen zum Vollbild mit Ton.</string>
     <string name="settings_section_privacy">Datenschutz</string>
@@ -405,10 +406,6 @@
     <string name="size_mb_int">%1$d MB</string>
 
     <!-- Größen -->
-    <string name="size_bytes">%1$d B</string>
-    <string name="size_kb">%1$.1f KB</string>
-    <string name="size_mb">%1$.1f MB</string>
-    <string name="size_gb">%1$.2f GB</string>
     <string-array name="size_units">
         <item>B</item>
         <item>KB</item>

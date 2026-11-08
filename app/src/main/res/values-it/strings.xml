@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
 
     <!-- Schermata di accesso -->
     <string name="auth_phone_label">Numero di telefono</string>
@@ -106,7 +105,6 @@
     <string name="auth_resend_sending">Invio in corso…</string>
     <string name="auth_resend_countdown">Riprova tra %1$d:%2$02d</string>
     <string name="auth_resend_via">Invia di nuovo il codice (%1$s)</string>
-    <string name="auth_resend_again">Reinvia</string>
 
     <!-- Selettore paese -->
     <string name="country_picker_title">Scegli paese</string>
@@ -138,6 +136,7 @@
     <string name="auth_err_phone_occupied">Questo numero ha già un account. Accedi invece di registrarti</string>
     <string name="auth_err_code_invalid">Codice errato. Controlla e riprova</string>
     <string name="auth_err_code_expired">Codice scaduto. Richiedine uno nuovo</string>
+    <string name="auth_err_code_cant_resend">Telegram non può inviare il codice in un altro modo. Apri Telegram su un dispositivo in cui hai già effettuato l\'accesso o cambia numero</string>
     <string name="auth_err_password_invalid">Password errata. Riprova</string>
     <string name="auth_err_password_too_fresh">La password è appena stata cambiata. Telegram ti chiederà di aspettare un po\'</string>
     <string name="auth_err_password_recovery_na">Il recupero della password non è disponibile qui. Reimposta il 2FA dall\'app ufficiale Telegram</string>
@@ -345,6 +344,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed riordinato — i più recenti in fondo, come in una chat</string>
     <string name="settings_snap_scroll_title">Scorrimento a scatto</string>
     <string name="settings_snap_scroll_subtitle">Ogni post si posiziona esattamente quando scorri — effetto TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Archivio in «Tutti»</string>
+    <string name="settings_archive_in_all_subtitle">Mostra anche i post dei canali archiviati nel feed «Tutti»</string>
     <string name="settings_inline_autoplay_title">Riproduci automaticamente i video nel feed</string>
     <string name="settings_inline_autoplay_subtitle">I video brevi già in cache si riproducono in silenzio mentre scorri. Tocca per aprirli a schermo intero con audio.</string>
     <string name="settings_section_privacy">Privacy</string>
@@ -413,10 +414,6 @@
     <string name="size_mb_int">%1$d MB</string>
 
     <!-- Dimensioni -->
-    <string name="size_bytes">%1$d B</string>
-    <string name="size_kb">%1$.1f KB</string>
-    <string name="size_mb">%1$.1f MB</string>
-    <string name="size_gb">%1$.2f GB</string>
     <string-array name="size_units">
         <item>B</item>
         <item>KB</item>

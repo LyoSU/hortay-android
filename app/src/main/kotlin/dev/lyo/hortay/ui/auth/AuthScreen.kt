@@ -602,30 +602,37 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
             },
         )
         Spacer(Modifier.height(8.dp))
+        // No next_type means TDLib has nowhere else to send the code: the call fails with
+        // "Authentication code can't be resend" (sic, issue #50). Third-party apps only ever get
+        // the in-app channel (tdlib/td#2310), so this is the usual case — hide the button
+        // instead of offering an action that can only error.
+        val nextChannel = stage.nextChannelLabel
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = if (nextChannel != null) Arrangement.SpaceBetween else Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(
-                enabled = !resending && !submitting && secondsLeft == 0,
-                onClick = {
-                    resending = true
-                    scope.launch {
-                        try { client.resendCode() } finally { resending = false }
-                    }
-                },
-            ) {
-                val ctxRes = LocalContext.current.resources
-                Text(
-                    text = resendLabel(
-                        res = ctxRes,
-                        secondsLeft = secondsLeft,
-                        resending = resending,
-                        nextChannelLabel = stage.nextChannelLabel,
-                    ),
-                    style = MaterialTheme.typography.labelLarge,
-                )
+            if (nextChannel != null) {
+                TextButton(
+                    enabled = !resending && !submitting && secondsLeft == 0,
+                    onClick = {
+                        resending = true
+                        scope.launch {
+                            try { client.resendCode() } finally { resending = false }
+                        }
+                    },
+                ) {
+                    val ctxRes = LocalContext.current.resources
+                    Text(
+                        text = resendLabel(
+                            res = ctxRes,
+                            secondsLeft = secondsLeft,
+                            resending = resending,
+                            nextChannelLabel = nextChannel,
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
             }
             TextButton(
                 enabled = !submitting,
@@ -650,21 +657,20 @@ private fun minSubmitLength(stage: AuthStage.WaitCode): Int =
 
 /**
  * Resend button label by cooldown state: "Sending…" while in flight, a "0:42" countdown
- * while the server cooldown is non-zero, then either "Send code again (<next channel>)"
- * when TDLib advertises a next_type (for us only ever Fragment — tdlib/td#2310) or a plain
- * "Resend" when there's none. We never name SMS here because a third-party app's next_type
- * is never SMS. Pulling this out keeps CodeForm's layout block readable.
+ * while the server cooldown is non-zero, then "Send code again (<next channel>)". Only
+ * called when TDLib advertises a next_type (for us only ever Fragment — tdlib/td#2310);
+ * with none the button is hidden. We never name SMS here because a third-party app's
+ * next_type is never SMS. Pulling this out keeps CodeForm's layout block readable.
  */
 private fun resendLabel(
     res: android.content.res.Resources,
     secondsLeft: Int,
     resending: Boolean,
-    nextChannelLabel: String?,
+    nextChannelLabel: String,
 ): String = when {
     resending -> res.getString(R.string.auth_resend_sending)
     secondsLeft > 0 -> res.getString(R.string.auth_resend_countdown, secondsLeft / 60, secondsLeft % 60)
-    nextChannelLabel != null -> res.getString(R.string.auth_resend_via, nextChannelLabel)
-    else -> res.getString(R.string.auth_resend_again)
+    else -> res.getString(R.string.auth_resend_via, nextChannelLabel)
 }
 
 // ---------- Password ----------

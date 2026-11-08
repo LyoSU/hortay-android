@@ -1,49 +1,16 @@
 package dev.lyo.hortay.ui.main
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.lyo.hortay.ui.theme.DisplayFontFamily
-
-/**
- * App brand mark used where a compact square glyph is wanted (launcher-adjacent
- * surfaces). A solid primary square with the "H" glyph — recognisable,
- * single-colour (no muddy gradient mid-tones), works in both schemes.
- *
- * (The wordmark in [BrandRow] is the primary brand surface; this mark is the
- * compact fallback. The glyph was "t" — a leftover from the old telread name —
- * and is now the product initial.)
- */
-@Composable
-fun BrandMark(modifier: Modifier = Modifier, size: Int = 36) {
-    Box(
-        modifier = modifier
-            .size(size.dp)
-            .clip(RoundedCornerShape(percent = 28))
-            .background(MaterialTheme.colorScheme.primary),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "H",
-            fontFamily = DisplayFontFamily,
-            fontSize = (size * 0.58).sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = MaterialTheme.colorScheme.onPrimary,
-        )
-    }
-}
 
 /**
  * Brand wordmark for the feed's top bar — the primary brand surface on the clean

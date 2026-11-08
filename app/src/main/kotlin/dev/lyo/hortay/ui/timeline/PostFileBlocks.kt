@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.timeline
 
+import dev.lyo.hortay.ui.components.formatByteSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -45,7 +46,7 @@ internal fun DocumentBlock(
     NonPlayableFileRow(
         symbol = "description",
         primary = content.fileName.ifBlank { stringResource(R.string.document_unnamed) },
-        secondary = formatFileSize(content.sizeBytes, stringArrayResource(R.array.size_units)),
+        secondary = if (content.sizeBytes > 0) formatByteSize(content.sizeBytes, stringArrayResource(R.array.size_units)) else "—",
         onClick = onOpenInSource,
     )
     // Documents never carry the caption-above flag (Telegram only exposes that toggle for

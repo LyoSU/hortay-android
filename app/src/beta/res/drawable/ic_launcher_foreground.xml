@@ -1,0 +1,43 @@
+<!-- Beta copy of main's foreground with the lavender accents warmed to match the
+     amber beta background (values/colors.xml). Shape must stay identical to main. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.85"
+        android:scaleY="0.85">
+
+        <path
+            android:fillColor="@color/brand_foreground"
+            android:pathData="M36.18,25.55 L71.72,25.55 Q77,25.55 77,30.80 L77,65.07 L66.45,65.07 A5.27,5.27 0 0 0 61.17,70.34 L61.17,81.79 L36.18,81.79 Q30.91,81.79 30.91,76.51 L30.91,30.80 Q30.91,25.55 36.18,25.55 Z" />
+
+        <path android:pathData="M66.45,65.07 L77,65.07 L61.17,81.79 L61.17,70.34 A5.27,5.27 0 0 1 66.45,65.07 Z">
+            <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="64.33"
+                    android:startY="68.41"
+                    android:endX="77"
+                    android:endY="81.79">
+                    <item android:offset="0.0" android:color="#FFFFF4E8" />
+                    <item android:offset="1.0" android:color="#FFF6CDA4" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <path
+            android:fillColor="#FFF2A35E"
+            android:pathData="M39.40,43.45 L68.42,43.45 A1.74,1.74 0 0 1 68.42,46.93 L39.40,46.93 A1.74,1.74 0 0 1 39.40,43.45 Z" />
+        <path
+            android:fillColor="#FFF2A35E"
+            android:pathData="M39.40,52.42 L62.09,52.42 A1.74,1.74 0 0 1 62.09,55.90 L39.40,55.90 A1.74,1.74 0 0 1 39.40,52.42 Z" />
+        <path
+            android:fillColor="#FFF2A35E"
+            android:pathData="M39.40,61.40 L55.00,61.40 A1.74,1.74 0 0 1 55.00,64.88 L39.40,64.88 A1.74,1.74 0 0 1 39.40,61.40 Z" />
+    </group>
+</vector>

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
 
     <!-- Écran de connexion -->
     <string name="auth_phone_label">Numéro de téléphone</string>
@@ -106,7 +105,6 @@
     <string name="auth_resend_sending">Envoi…</string>
     <string name="auth_resend_countdown">Réessayer dans %1$d:%2$02d</string>
     <string name="auth_resend_via">Renvoyer le code (%1$s)</string>
-    <string name="auth_resend_again">Renvoyer</string>
 
     <!-- Sélecteur de pays -->
     <string name="country_picker_title">Choisir un pays</string>
@@ -138,6 +136,7 @@
     <string name="auth_err_phone_occupied">Ce numéro a déjà un compte. Connecte-toi plutôt qu\'inscrire</string>
     <string name="auth_err_code_invalid">Code incorrect. Vérifie et réessaie</string>
     <string name="auth_err_code_expired">Code expiré. Demandes-en un nouveau</string>
+    <string name="auth_err_code_cant_resend">Telegram ne peut pas envoyer le code autrement. Ouvre Telegram sur un appareil où ta session est déjà ouverte, ou change de numéro</string>
     <string name="auth_err_password_invalid">Mot de passe incorrect. Réessaie</string>
     <string name="auth_err_password_too_fresh">Le mot de passe vient d\'être modifié. Telegram va te demander d\'attendre un peu</string>
     <string name="auth_err_password_recovery_na">La récupération du mot de passe n\'est pas disponible ici. Réinitialise la 2FA dans l\'application Telegram officielle</string>
@@ -345,6 +344,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Fil réorganisé — les plus récents en bas, comme un chat</string>
     <string name="settings_snap_scroll_title">Défilement par clic</string>
     <string name="settings_snap_scroll_subtitle">Chaque publication se verrouille à sa place quand tu fais défiler vite — effet TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Archive dans « Toutes »</string>
+    <string name="settings_archive_in_all_subtitle">Afficher aussi les publications des chaînes archivées dans « Toutes »</string>
     <string name="settings_inline_autoplay_title">Lecture auto des vidéos dans le fil</string>
     <string name="settings_inline_autoplay_subtitle">Les courtes vidéos déjà en cache sont lues silencieusement pendant le défilement. Appuie pour ouvrir en plein écran avec le son.</string>
     <string name="settings_section_privacy">Confidentialité</string>
@@ -413,10 +414,6 @@
     <string name="size_mb_int">%1$d Mo</string>
 
     <!-- Tailles -->
-    <string name="size_bytes">%1$d o</string>
-    <string name="size_kb">%1$.1f Ko</string>
-    <string name="size_mb">%1$.1f Mo</string>
-    <string name="size_gb">%1$.2f Go</string>
     <string-array name="size_units">
         <item>o</item>
         <item>Ko</item>

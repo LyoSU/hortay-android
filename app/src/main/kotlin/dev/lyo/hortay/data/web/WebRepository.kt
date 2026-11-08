@@ -3,7 +3,6 @@ package dev.lyo.hortay.data.web
 import android.util.Log
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
-import app.cash.sqldelight.coroutines.mapToOneOrNull
 import dev.lyo.hortay.data.ReadCursors
 import dev.lyo.hortay.data.StringResolver
 import dev.lyo.hortay.data.TimelinePost
@@ -104,25 +103,6 @@ class WebRepository(
             .distinctUntilChanged()
             .flowOn(ioDispatcher)
 
-    @OptIn(FlowPreview::class)
-    fun observeBookmarked(): Flow<PersistentList<TimelinePost>> =
-        postQueries
-            .selectBookmarked(mapper = ::rowToTimelinePost)
-            .asFlow()
-            .sample(FEED_REEMIT_SAMPLE_MS)
-            .mapToList(ioDispatcher)
-            .map { it.toPersistentList() }
-            .distinctUntilChanged()
-            .flowOn(ioDispatcher)
-
-    fun observePost(id: String): Flow<TimelinePost?> =
-        postQueries
-            .selectById(id, mapper = ::rowToTimelinePost)
-            .asFlow()
-            .mapToOneOrNull(ioDispatcher)
-            .distinctUntilChanged()
-            .flowOn(ioDispatcher)
-
     /**
      * Cross-channel substring search over post plain-text. Uses LIKE on the
      * `text_plain` column — FTS5 isn't available on most Android SQLite
@@ -158,23 +138,6 @@ class WebRepository(
             .asFlow()
             .mapToList(ioDispatcher)
             .map { it.toPersistentList() }
-            .distinctUntilChanged()
-            .flowOn(ioDispatcher)
-
-    fun observeSubscribedChannels(): Flow<PersistentList<ChannelEntry>> =
-        channelQueries
-            .selectAllSubscribed(mapper = ::channelEntryMapper)
-            .asFlow()
-            .mapToList(ioDispatcher)
-            .map { it.toPersistentList() }
-            .distinctUntilChanged()
-            .flowOn(ioDispatcher)
-
-    fun observeChannel(username: String): Flow<ChannelEntry?> =
-        channelQueries
-            .selectByUsername(username, mapper = ::channelEntryMapper)
-            .asFlow()
-            .mapToOneOrNull(ioDispatcher)
             .distinctUntilChanged()
             .flowOn(ioDispatcher)
 

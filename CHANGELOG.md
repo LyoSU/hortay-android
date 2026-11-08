@@ -4,7 +4,12 @@
 
 ## [Unreleased]
 
+### Added
+- Settings → Feed can now show archived channels in the “All” feed too, so channels you archive to tidy Telegram still reach your main feed.
+
 ### Fixed
+- Saved posts from archived channels now show up in the Saved tab.
+- The sign-in screen no longer offers to resend the login code when Telegram has no other way to deliver it, which only ever failed with an unclear error.
 - Photo albums in the feed keep filling in after a stretch without connection, instead of staying incomplete until the app restarts.
 - Opening a channel for the first time now loads its recent history instead of sometimes showing a single post.
 - Scrolling back through a channel no longer stops early at a run of posts that can't be shown.
@@ -14,6 +19,9 @@
 - The phone number and login code you typed survive rotating the screen or switching the theme.
 - The edit-history sheet of a post no longer flickers empty while it's open.
 - Signing out during the first feed fill-in no longer leaves the next account with a sparse feed.
+
+### Build
+- Toolchain and dependencies updated: AGP 9.4, Gradle 9.7, Kotlin 2.4.10, Compose BOM 2026.09 with Material 3 1.5.0-alpha29, Media3 1.11, Coil 3.5, OkHttp 5.5, JUnit 6.1.3 and refreshed CI actions.
 
 ## [0.12.0] — 2026-07-16
 

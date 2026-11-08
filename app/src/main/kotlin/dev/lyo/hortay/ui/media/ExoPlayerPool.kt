@@ -82,17 +82,6 @@ class ExoPlayerPool(
         }
     }
 
-    /** Tear down all pooled instances. Call on Activity/Process destroy. */
-    @Synchronized
-    fun shutdown() {
-        sequenceOf(mutedAvailable, audioAvailable).forEach { queue ->
-            while (true) {
-                val p = queue.pollFirst() ?: break
-                p.release()
-            }
-        }
-    }
-
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun build(muted: Boolean): ExoPlayer {
         val builder = ExoPlayer.Builder(context).apply {

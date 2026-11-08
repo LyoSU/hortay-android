@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
 
     <!-- Ekran logowania -->
     <string name="auth_phone_label">Numer telefonu</string>
@@ -104,7 +103,6 @@
     <string name="auth_resend_sending">Wysyłanie…</string>
     <string name="auth_resend_countdown">Spróbuj ponownie za %1$d:%2$02d</string>
     <string name="auth_resend_via">Wyślij kod ponownie (%1$s)</string>
-    <string name="auth_resend_again">Wyślij ponownie</string>
 
     <!-- Wybór kraju -->
     <string name="country_picker_title">Wybierz kraj</string>
@@ -136,6 +134,7 @@
     <string name="auth_err_phone_occupied">Ten numer ma już konto. Zaloguj się zamiast rejestrować</string>
     <string name="auth_err_code_invalid">Błędny kod. Sprawdź i spróbuj ponownie</string>
     <string name="auth_err_code_expired">Kod wygasł. Poproś o nowy</string>
+    <string name="auth_err_code_cant_resend">Telegram nie może wysłać kodu w inny sposób. Otwórz Telegram na urządzeniu, na którym masz aktywną sesję, lub zmień numer</string>
     <string name="auth_err_password_invalid">Błędne hasło. Spróbuj ponownie</string>
     <string name="auth_err_password_too_fresh">Hasło zostało właśnie zmienione. Telegram poprosi o chwilę przerwy</string>
     <string name="auth_err_password_recovery_na">Odzyskiwanie hasła jest tu niedostępne. Zresetuj 2FA w oficjalnym Telegramie</string>
@@ -351,6 +350,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed posortowany — najnowsze na dole, jak w czacie</string>
     <string name="settings_snap_scroll_title">Przewijanie z przeskakiwaniem</string>
     <string name="settings_snap_scroll_subtitle">Każdy wpis zatrzymuje się w miejscu po szybkim przewinięciu — efekt TikToka / Reels</string>
+    <string name="settings_archive_in_all_title">Archiwum w feedzie „Wszystkie”</string>
+    <string name="settings_archive_in_all_subtitle">Pokazuj posty z zarchiwizowanych kanałów także w feedzie „Wszystkie”</string>
     <string name="settings_inline_autoplay_title">Autoodtwarzanie filmów w feedzie</string>
     <string name="settings_inline_autoplay_subtitle">Krótkie filmy z cache odtwarzają się bez dźwięku podczas przewijania. Dotknij, żeby otworzyć pełny ekran z dźwiękiem.</string>
     <string name="settings_section_privacy">Prywatność</string>
@@ -419,10 +420,6 @@
     <string name="size_mb_int">%1$d MB</string>
 
     <!-- Rozmiary -->
-    <string name="size_bytes">%1$d B</string>
-    <string name="size_kb">%1$.1f KB</string>
-    <string name="size_mb">%1$.1f MB</string>
-    <string name="size_gb">%1$.2f GB</string>
     <string-array name="size_units">
         <item>B</item>
         <item>KB</item>

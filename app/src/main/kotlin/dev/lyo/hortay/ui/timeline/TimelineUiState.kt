@@ -13,7 +13,7 @@ import kotlinx.collections.immutable.PersistentList
 /**
  * Source-of-truth for what TimelineScreen renders. Built from the same
  * `List<FeedItem>` the LazyColumn renders — scope/bookmark/service filters,
- * `orderedFor`, and `groupReplies` have already been applied by the caller.
+ * and `groupReplies` have already been applied by the caller.
  *
  * The scroll anchor index lives in row-space (FeedItem indices), not
  * post-space, so first paint of the LazyColumn lands at the correct row

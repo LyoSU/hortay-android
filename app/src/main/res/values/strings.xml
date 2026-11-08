@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
+    <!-- Brand name: not translated, and kept out of every values-<lang> mirror so the
+         beta source set's override applies on every device language. -->
+    <string name="app_name" translatable="false">Hortay</string>
 
     <!-- Auth screen -->
     <string name="auth_phone_label">Phone number</string>
@@ -106,7 +108,6 @@
     <string name="auth_resend_sending">Sending…</string>
     <string name="auth_resend_countdown">Try again in %1$d:%2$02d</string>
     <string name="auth_resend_via">Send code again (%1$s)</string>
-    <string name="auth_resend_again">Resend</string>
 
     <!-- Country picker -->
     <string name="country_picker_title">Choose country</string>
@@ -138,6 +139,7 @@
     <string name="auth_err_phone_occupied">This number already has an account. Sign in instead of registering</string>
     <string name="auth_err_code_invalid">Wrong code. Check and try again</string>
     <string name="auth_err_code_expired">Code expired. Request a new one</string>
+    <string name="auth_err_code_cant_resend">Telegram can\'t send the code another way. Open Telegram on a device where you\'re already signed in, or change the number</string>
     <string name="auth_err_password_invalid">Wrong password. Try again</string>
     <string name="auth_err_password_too_fresh">Password was just changed. Telegram will ask you to wait a bit</string>
     <string name="auth_err_password_recovery_na">Password recovery isn\'t available here. Reset 2FA in the official Telegram</string>
@@ -335,6 +337,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed reordered — newest at the bottom, like a chat</string>
     <string name="settings_snap_scroll_title">Snap scroll</string>
     <string name="settings_snap_scroll_subtitle">Each post clicks into place when you fling — TikTok/Reels feel</string>
+    <string name="settings_archive_in_all_title">Archive in “All”</string>
+    <string name="settings_archive_in_all_subtitle">Show posts from archived channels in the “All” feed too</string>
     <string name="settings_inline_autoplay_title">Autoplay videos in feed</string>
     <string name="settings_inline_autoplay_subtitle">Short videos already in cache play silently as you scroll. Tap to open full-screen with sound.</string>
     <string name="settings_section_privacy">Privacy</string>
@@ -417,10 +421,6 @@
     <string name="size_mb_int">%1$d MB</string>
 
     <!-- Sizes -->
-    <string name="size_bytes">%1$d B</string>
-    <string name="size_kb">%1$.1f KB</string>
-    <string name="size_mb">%1$.1f MB</string>
-    <string name="size_gb">%1$.2f GB</string>
     <string-array name="size_units">
         <item>B</item>
         <item>KB</item>

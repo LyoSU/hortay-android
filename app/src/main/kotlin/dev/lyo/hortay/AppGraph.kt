@@ -104,6 +104,15 @@ class AppGraph(context: Context) {
     // every cold start).
     val settingsStore: SettingsStore = SettingsStore(context)
 
+    /**
+     * [SettingsStore.archiveInAllFeed], pre-warmed. It is part of the feed's scene key, so
+     * a `collectAsState(initialValue = false)` flipping to `true` after the snapshot has
+     * latched would rebuild the feed under the reader. Started eagerly here, DataStore has
+     * long emitted by the time `MainScaffold` mounts (it waits for TDLib auth).
+     */
+    internal val archiveInAllFeedState: StateFlow<Boolean> =
+        settingsStore.archiveInAllFeed.stateIn(appScope, SharingStarted.Eagerly, initialValue = false)
+
     // Tiny `(chatId, messageId)` snapshot of the top of the feed, persisted across
     // process death so cold start renders real content sub-100ms instead of a blank
     // screen for the multi-second refresh round-trip storm.

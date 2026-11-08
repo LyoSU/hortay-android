@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
 
     <!-- Auth screen -->
     <string name="auth_phone_label">Número de teléfono</string>
@@ -106,7 +105,6 @@
     <string name="auth_resend_sending">Enviando…</string>
     <string name="auth_resend_countdown">Reintentar en %1$d:%2$02d</string>
     <string name="auth_resend_via">Enviar código de nuevo (%1$s)</string>
-    <string name="auth_resend_again">Reenviar</string>
 
     <!-- Country picker -->
     <string name="country_picker_title">Elegir país</string>
@@ -138,6 +136,7 @@
     <string name="auth_err_phone_occupied">Este número ya tiene una cuenta. Inicia sesión en lugar de registrarte</string>
     <string name="auth_err_code_invalid">Código incorrecto. Revísalo e inténtalo de nuevo</string>
     <string name="auth_err_code_expired">El código expiró. Solicita uno nuevo</string>
+    <string name="auth_err_code_cant_resend">Telegram no puede enviar el código de otra forma. Abre Telegram en un dispositivo donde ya hayas iniciado sesión o cambia el número</string>
     <string name="auth_err_password_invalid">Contraseña incorrecta. Inténtalo de nuevo</string>
     <string name="auth_err_password_too_fresh">La contraseña acaba de cambiarse. Telegram te pedirá esperar un momento</string>
     <string name="auth_err_password_recovery_na">La recuperación de contraseña no está disponible aquí. Restablece el 2FA desde Telegram oficial</string>
@@ -345,6 +344,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Inicio reordenado — las nuevas abajo, como un chat</string>
     <string name="settings_snap_scroll_title">Desplazamiento ajustado</string>
     <string name="settings_snap_scroll_subtitle">Cada publicación encaja en su lugar al deslizar — sensación TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Archivo en «Todo»</string>
+    <string name="settings_archive_in_all_subtitle">Mostrar también las publicaciones de los canales archivados en «Todo»</string>
     <string name="settings_inline_autoplay_title">Reproducir videos automáticamente</string>
     <string name="settings_inline_autoplay_subtitle">Los videos cortos ya en caché se reproducen sin sonido mientras desplazas. Toca para abrir en pantalla completa con sonido.</string>
     <string name="settings_section_privacy">Privacidad</string>
@@ -413,10 +414,6 @@
     <string name="size_mb_int">%1$d MB</string>
 
     <!-- Sizes -->
-    <string name="size_bytes">%1$d B</string>
-    <string name="size_kb">%1$.1f KB</string>
-    <string name="size_mb">%1$.1f MB</string>
-    <string name="size_gb">%1$.2f GB</string>
     <string-array name="size_units">
         <item>B</item>
         <item>KB</item>

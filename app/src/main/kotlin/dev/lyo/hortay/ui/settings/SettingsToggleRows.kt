@@ -148,6 +148,52 @@ internal fun SnapScrollRow(
 }
 
 /**
+ * Standalone [SegmentedListItem] for "show archived channels in All"
+ * ([dev.lyo.hortay.data.SettingsStore.archiveInAllFeed]). A feed-scope choice,
+ * independent of how the list scrolls or plays media, so its own single-row card.
+ */
+@Composable
+internal fun ArchiveInAllFeedRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    val shapes = ListItemDefaults.segmentedShapes(
+        index = 0,
+        count = 1,
+        defaultShapes = ListItemDefaults.shapes(),
+    )
+    SegmentedListItem(
+        onClick = { onToggle(!enabled) },
+        shapes = shapes,
+        leadingContent = {
+            Symbol(
+                name = "dynamic_feed",
+                tint = if (enabled) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 22.dp,
+            )
+        },
+        supportingContent = {
+            Text(
+                text = stringResource(R.string.settings_archive_in_all_subtitle),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        trailingContent = {
+            Switch(checked = enabled, onCheckedChange = onToggle)
+        },
+        content = {
+            Text(
+                text = stringResource(R.string.settings_archive_in_all_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+    )
+}
+
+/**
  * Standalone [SegmentedListItem] for the inline-video-autoplay toggle. Independent
  * of [SnapScrollRow] in the layout — autoplay is a media-playback policy
  * orthogonal to how the list scrolls. Single-row segment so it reads as its own

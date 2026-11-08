@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
 
     <!-- Tela de autenticação -->
     <string name="auth_phone_label">Número de telefone</string>
@@ -106,7 +105,6 @@
     <string name="auth_resend_sending">Enviando…</string>
     <string name="auth_resend_countdown">Tentar novamente em %1$d:%2$02d</string>
     <string name="auth_resend_via">Reenviar código (%1$s)</string>
-    <string name="auth_resend_again">Reenviar</string>
 
     <!-- Seletor de país -->
     <string name="country_picker_title">Escolha o país</string>
@@ -138,6 +136,7 @@
     <string name="auth_err_phone_occupied">Este número já tem uma conta. Entre nela em vez de se registrar</string>
     <string name="auth_err_code_invalid">Código incorreto. Verifique e tente novamente</string>
     <string name="auth_err_code_expired">Código expirado. Solicite um novo</string>
+    <string name="auth_err_code_cant_resend">O Telegram não pode enviar o código de outra forma. Abra o Telegram em um dispositivo onde sua conta já está conectada ou altere o número</string>
     <string name="auth_err_password_invalid">Senha incorreta. Tente novamente</string>
     <string name="auth_err_password_too_fresh">A senha foi alterada recentemente. O Telegram pedirá que você aguarde um pouco</string>
     <string name="auth_err_password_recovery_na">A recuperação de senha não está disponível aqui. Redefina o 2FA no Telegram oficial</string>
@@ -345,6 +344,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed reordenado — mais recentes no rodapé, como um chat</string>
     <string name="settings_snap_scroll_title">Rolagem por encaixe</string>
     <string name="settings_snap_scroll_subtitle">Cada publicação encaixa no lugar ao dar um gesto rápido — estilo TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Arquivo em “Todos”</string>
+    <string name="settings_archive_in_all_subtitle">Mostrar também as publicações dos canais arquivados no feed “Todos”</string>
     <string name="settings_inline_autoplay_title">Reprodução automática de vídeos no feed</string>
     <string name="settings_inline_autoplay_subtitle">Vídeos curtos já em cache são reproduzidos sem som ao rolar. Toque para abrir em tela cheia com som.</string>
     <string name="settings_section_privacy">Privacidade</string>
@@ -413,10 +414,6 @@
     <string name="size_mb_int">%1$d MB</string>
 
     <!-- Tamanhos -->
-    <string name="size_bytes">%1$d B</string>
-    <string name="size_kb">%1$.1f KB</string>
-    <string name="size_mb">%1$.1f MB</string>
-    <string name="size_gb">%1$.2f GB</string>
     <string-array name="size_units">
         <item>B</item>
         <item>KB</item>

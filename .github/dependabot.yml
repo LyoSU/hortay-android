@@ -27,7 +27,11 @@ updates:
           - "org.jetbrains.kotlinx*"
 
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # Actions are pinned to commit SHAs with a version comment; Dependabot bumps both.
+    # "/" covers .github/workflows only — the composite actions need their own entry.
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

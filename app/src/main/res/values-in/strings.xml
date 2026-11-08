@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
 
     <!-- Layar autentikasi -->
     <string name="auth_phone_label">Nomor telepon</string>
@@ -104,7 +103,6 @@
     <string name="auth_resend_sending">Mengirim…</string>
     <string name="auth_resend_countdown">Coba lagi dalam %1$d:%2$02d</string>
     <string name="auth_resend_via">Kirim ulang kode (%1$s)</string>
-    <string name="auth_resend_again">Kirim ulang</string>
 
     <!-- Pemilih negara -->
     <string name="country_picker_title">Pilih negara</string>
@@ -136,6 +134,7 @@
     <string name="auth_err_phone_occupied">Nomor ini sudah memiliki akun. Masuk alih-alih mendaftar</string>
     <string name="auth_err_code_invalid">Kode salah. Periksa dan coba lagi</string>
     <string name="auth_err_code_expired">Kode kadaluarsa. Minta kode baru</string>
+    <string name="auth_err_code_cant_resend">Telegram tidak dapat mengirim kode dengan cara lain. Buka Telegram di perangkat tempat kamu sudah masuk, atau ganti nomor</string>
     <string name="auth_err_password_invalid">Kata sandi salah. Coba lagi</string>
     <string name="auth_err_password_too_fresh">Kata sandi baru saja diganti. Telegram akan meminta kamu menunggu sebentar</string>
     <string name="auth_err_password_recovery_na">Pemulihan kata sandi tidak tersedia di sini. Reset 2FA di Telegram resmi</string>
@@ -327,6 +326,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed diurutkan ulang — terbaru di bawah, seperti obrolan</string>
     <string name="settings_snap_scroll_title">Snap scroll</string>
     <string name="settings_snap_scroll_subtitle">Setiap kiriman terkunci saat kamu flinging — nuansa TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Arsip di “Semua”</string>
+    <string name="settings_archive_in_all_subtitle">Tampilkan juga postingan dari kanal yang diarsipkan di feed “Semua”</string>
     <string name="settings_inline_autoplay_title">Putar otomatis video di feed</string>
     <string name="settings_inline_autoplay_subtitle">Video pendek yang sudah di cache diputar tanpa suara saat digulir. Ketuk untuk membuka layar penuh dengan suara.</string>
     <string name="settings_section_privacy">Privasi</string>
@@ -395,10 +396,6 @@
     <string name="size_mb_int">%1$d MB</string>
 
     <!-- Ukuran -->
-    <string name="size_bytes">%1$d B</string>
-    <string name="size_kb">%1$.1f KB</string>
-    <string name="size_mb">%1$.1f MB</string>
-    <string name="size_gb">%1$.2f GB</string>
     <string-array name="size_units">
         <item>B</item>
         <item>KB</item>

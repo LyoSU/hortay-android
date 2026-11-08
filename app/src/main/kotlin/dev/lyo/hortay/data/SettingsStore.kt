@@ -10,8 +10,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-enum class ThemeMode { System, Light, Dark }
-
 /**
  * How the merged feed is ordered. The post data is ALWAYS sorted descending
  * (newest = index 0); this enum selects only the LazyColumn's layout direction
@@ -34,20 +32,12 @@ enum class ThemeMode { System, Light, Dark }
 enum class FeedOrder { Newest, OldestUnreadFirst }
 
 /**
- * User preferences persisted across launches: theme, notifications opt-in, etc.
+ * User preferences persisted across launches: feed order, scroll and playback toggles, etc.
  * Backed by Preferences DataStore for async, blocking-free reads/writes.
  */
 class SettingsStore(context: Context) {
 
     private val dataStore = context.applicationContext.settingsDataStore
-
-    val themeMode: Flow<ThemeMode> = dataStore.data.map { prefs ->
-        prefs[KEY_THEME]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.System
-    }
-
-    suspend fun setThemeMode(mode: ThemeMode) {
-        dataStore.edit { it[KEY_THEME] = mode.name }
-    }
 
     val feedOrder: Flow<FeedOrder> = dataStore.data.map { prefs ->
         prefs[KEY_FEED_ORDER]?.let { runCatching { FeedOrder.valueOf(it) }.getOrNull() } ?: FeedOrder.OldestUnreadFirst
@@ -95,6 +85,26 @@ class SettingsStore(context: Context) {
 
     suspend fun setSnapScroll(enabled: Boolean) {
         dataStore.edit { it[KEY_SNAP_SCROLL] = enabled }
+    }
+
+    /**
+     * Whether the "All" feed tab also shows posts from archived channels. Telegram's
+     * archive is a chat-list housekeeping tool — users park busy news channels there to
+     * keep their inbox clean, yet still want to READ them in one feed (issue #54). Off
+     * keeps the Telegram split ("All" = main list, archive in its own tab); on merges
+     * the archive into "All". The Archive tab stays either way. Folder membership is
+     * unaffected (TDLib resolves it, archive rules included); only the "this folder
+     * duplicates All" hiding rule follows the setting — see
+     * [ChatFoldersRepository.isEquivalentToAll].
+     *
+     * Default false — matches the shipped behaviour and Telegram's own split.
+     */
+    val archiveInAllFeed: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[KEY_ARCHIVE_IN_ALL_FEED] ?: false
+    }
+
+    suspend fun setArchiveInAllFeed(enabled: Boolean) {
+        dataStore.edit { it[KEY_ARCHIVE_IN_ALL_FEED] = enabled }
     }
 
     /**
@@ -167,11 +177,11 @@ class SettingsStore(context: Context) {
     }
 
     private companion object {
-        val KEY_THEME = stringPreferencesKey("theme_mode")
         val KEY_LAST_STORAGE_OPTIMIZE_AT = longPreferencesKey("last_storage_optimize_at")
         val KEY_FEED_ORDER = stringPreferencesKey("feed_order")
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val KEY_SNAP_SCROLL = booleanPreferencesKey("snap_scroll")
+        val KEY_ARCHIVE_IN_ALL_FEED = booleanPreferencesKey("archive_in_all_feed")
         val KEY_INLINE_VIDEO_AUTOPLAY = booleanPreferencesKey("inline_video_autoplay")
         val KEY_HIDE_ONLINE_STATUS = booleanPreferencesKey("hide_online_status")
     }

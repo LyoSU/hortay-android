@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.media
 
+import dev.lyo.hortay.ui.components.humanizeBytes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -179,21 +180,6 @@ private fun formatProgressBytes(downloaded: Long, total: Long, units: Array<Stri
     }
 }
 
-private fun humanizeBytes(bytes: Long, units: Array<String>): Pair<String, String> {
-    if (bytes <= 0L) return "0" to units[0]
-    var size = bytes.toDouble()
-    var idx = 0
-    while (size >= 1024 && idx < units.lastIndex) {
-        size /= 1024
-        idx++
-    }
-    val value = if (size >= 100 || idx == 0 || size == size.toLong().toDouble()) {
-        size.toLong().toString()
-    } else {
-        "%.1f".format(size)
-    }
-    return value to units[idx]
-}
 
 /**
  * Returns `true` only after [graceMs] elapsed continuously in a "loading" state. Resets

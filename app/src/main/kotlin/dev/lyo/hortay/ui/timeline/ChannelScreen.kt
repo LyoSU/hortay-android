@@ -48,7 +48,6 @@ import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TranslationsStore
 import dev.lyo.hortay.data.bookmarkKey
 import dev.lyo.hortay.data.isUnplayableVideo
-import dev.lyo.hortay.data.orderedFor
 import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.ui.channels.ChannelInfoSheet
 import dev.lyo.hortay.ui.components.HortayTopBar
@@ -276,7 +275,7 @@ fun ChannelScreen(
         posts, searchActive, searchResults, feedOrder,
         boundaryCursors, cursorEpoch, recencyCutoffMs,
     ) {
-        val source = if (searchActive) searchResults else posts.orderedFor(feedOrder)
+        val source = if (searchActive) searchResults else posts
         val postItems = source.map(FeedItem::Post)
         val withDivider = if (!searchActive && feedOrder == FeedOrder.OldestUnreadFirst) {
             withBoundary(

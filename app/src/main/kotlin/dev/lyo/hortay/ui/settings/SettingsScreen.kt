@@ -198,6 +198,8 @@ fun SettingsScreen(
                     userMessages = userMessages,
                     onNavigateToArchiveSettings = onNavigateToArchiveSettings,
                     archiveLossOnLogout = archiveLossOnLogout,
+                    // [channelActions] is the TDLib-mode marker (null in guest mode).
+                    showArchiveInAllToggle = channelActions != null,
                 )
             }
             entry<SettingsNavKey.AutoDownload> {
@@ -281,6 +283,8 @@ private fun SettingsMain(
     userMessages: UserMessageBus?,
     onNavigateToArchiveSettings: (() -> Unit)? = null,
     archiveLossOnLogout: Boolean = false,
+    /** TDLib mode only — guest mode has no Telegram chat lists, so no archive. */
+    showArchiveInAllToggle: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -341,6 +345,7 @@ private fun SettingsMain(
             val currentFeedOrder by settings.feedOrder.collectAsStateWithLifecycle(FeedOrder.OldestUnreadFirst)
             val currentSnapScroll by settings.snapScroll.collectAsStateWithLifecycle(false)
             val currentInlineAutoplay by settings.inlineVideoAutoplay.collectAsStateWithLifecycle(true)
+            val currentArchiveInAll by settings.archiveInAllFeed.collectAsStateWithLifecycle(false)
             SectionLabel(stringResource(R.string.settings_section_feed))
             val feedOrderToNewestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_newest)
             val feedOrderToOldestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_oldest)
@@ -367,6 +372,12 @@ private fun SettingsMain(
                 enabled = currentInlineAutoplay,
                 onToggle = { next -> if (next != currentInlineAutoplay) scope.launch { settings.setInlineVideoAutoplay(next) } },
             )
+            if (showArchiveInAllToggle) {
+                ArchiveInAllFeedRow(
+                    enabled = currentArchiveInAll,
+                    onToggle = { next -> if (next != currentArchiveInAll) scope.launch { settings.setArchiveInAllFeed(next) } },
+                )
+            }
             if (ignoredChannels != null) {
                 val hidden by ignoredChannels.ignored.collectAsStateWithLifecycle(initialValue = persistentSetOf())
                 SettingsRow(

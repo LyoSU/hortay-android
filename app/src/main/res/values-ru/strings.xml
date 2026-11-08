@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
 
     <!-- Auth screen -->
     <string name="auth_phone_label">Номер телефона</string>
@@ -106,7 +105,6 @@
     <string name="auth_resend_sending">Отправляем…</string>
     <string name="auth_resend_countdown">Ещё раз через %1$d:%2$02d</string>
     <string name="auth_resend_via">Отправить код снова (%1$s)</string>
-    <string name="auth_resend_again">Отправить снова</string>
 
     <!-- Country picker -->
     <string name="country_picker_title">Выберите страну</string>
@@ -138,6 +136,7 @@
     <string name="auth_err_phone_occupied">На этом номере уже есть аккаунт. Войдите в него, а не регистрируйтесь</string>
     <string name="auth_err_code_invalid">Неверный код. Проверьте и попробуйте снова</string>
     <string name="auth_err_code_expired">Код устарел. Запросите новый</string>
+    <string name="auth_err_code_cant_resend">Telegram не может отправить код другим способом. Откройте Telegram на устройстве, где вы уже вошли, или измените номер</string>
     <string name="auth_err_password_invalid">Неверный пароль. Попробуйте снова</string>
     <string name="auth_err_password_too_fresh">Пароль только что изменили. Telegram попросит немного подождать</string>
     <string name="auth_err_password_recovery_na">Восстановление пароля здесь недоступно. Сбросьте 2FA в официальном Telegram</string>
@@ -353,6 +352,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Лента изменена — новые снизу, как в чате</string>
     <string name="settings_snap_scroll_title">Пролистывание с фиксацией</string>
     <string name="settings_snap_scroll_subtitle">Каждый пост встаёт на место после быстрого свайпа — как в TikTok</string>
+    <string name="settings_archive_in_all_title">Архив во «Все»</string>
+    <string name="settings_archive_in_all_subtitle">Показывать посты из архивированных каналов и в ленте «Все»</string>
     <string name="settings_inline_autoplay_title">Автовоспроизведение видео в ленте</string>
     <string name="settings_inline_autoplay_subtitle">Короткие видео из кеша воспроизводятся без звука при прокрутке. Нажмите, чтобы открыть на весь экран со звуком.</string>
     <string name="settings_section_privacy">Конфиденциальность</string>
@@ -421,10 +422,6 @@
     <string name="size_mb_int">%1$d МБ</string>
 
     <!-- Sizes -->
-    <string name="size_bytes">%1$d Б</string>
-    <string name="size_kb">%1$.1f КБ</string>
-    <string name="size_mb">%1$.1f МБ</string>
-    <string name="size_gb">%1$.2f ГБ</string>
     <string-array name="size_units">
         <item>Б</item>
         <item>КБ</item>
