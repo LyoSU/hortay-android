@@ -32,6 +32,13 @@ class HortayApp : Application(), SingletonImageLoader.Factory {
         graph = AppGraph(this)
     }
 
+    // Drop idle pooled ExoPlayers under memory pressure — each pins MediaCodec decoders.
+    // Players in use are untouched; the pool refills on the next acquire.
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (::graph.isInitialized) graph.exoPlayerPool.drainIdle()
+    }
+
     // Catch accidental main-thread disk/network I/O and leaked Closeables/registrations
     // early, while the codebase is clean (no runBlocking; AppGraph init is async). DEBUG
     // only. penaltyLog — NOT penaltyDeath: TDLib JNI and profileinstaller produce a few

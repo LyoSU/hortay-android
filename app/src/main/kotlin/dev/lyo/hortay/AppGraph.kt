@@ -65,6 +65,8 @@ import dev.lyo.hortay.data.archive.db.ArchiveDatabase
 import dev.lyo.hortay.data.web.db.WebDatabase
 import dev.lyo.hortay.data.web.db.WebDatabaseProvider
 import java.io.File
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
@@ -403,7 +405,13 @@ class AppGraph(context: Context) {
     // `Builder().build()` pattern in TdVideoPlayer / WebmStickerPlayer churned 38 of
     // them per minute of fast scroll on profiling — most living 0 ms. Pooling makes
     // scroll past video cards essentially free at the player layer.
-    val exoPlayerPool: ExoPlayerPool = ExoPlayerPool(context)
+    // Idle pooled players are drained when the app leaves the foreground (and on
+    // onTrimMemory, see HortayApp) so their decoders don't outlive the visible session.
+    val exoPlayerPool: ExoPlayerPool = ExoPlayerPool(context).also { pool ->
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStop(owner: LifecycleOwner) = pool.drainIdle()
+        })
+    }
 
     // App-wide single-active-source session for inline audio / voice-note playback, shared
     // by the regular feed's Audio/VoiceNote posts and the rich audio/voice blocks. Owns one
