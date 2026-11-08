@@ -3,7 +3,8 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
@@ -102,6 +103,7 @@ fun FeedFloatingControl(
 ) {
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val widthSpec = MaterialTheme.motionScheme.fastSpatialSpec<IntSize>()
     val showArrivals = pendingCount > 0
     val showUnread = unreadCount > 0
     // Newest-on-top mounts the control under the header with an upward arrow; there it
@@ -110,20 +112,19 @@ fun FeedFloatingControl(
     Box(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
-                .align(if (atTop) Alignment.TopCenter else Alignment.BottomEnd)
-                // animateContentSize clips to its bounds, which sliced the segments'
-                // shadows flat at the edges. Pad the animated box so the shadow fits
-                // inside the clip, and offset it back so the button keeps its spot.
-                .offset(x = if (atTop) 0.dp else SHADOW_ROOM, y = if (atTop) -SHADOW_ROOM else SHADOW_ROOM)
-                .animateContentSize(MaterialTheme.motionScheme.fastSpatialSpec())
-                .padding(SHADOW_ROOM),
+                // No animateContentSize here: it clips to its bounds and sliced the
+                // segments' shadows flat at the bottom edge. Each segment animates its own
+                // width instead, with clipping off, so the shadows render whole.
+                .align(if (atTop) Alignment.TopCenter else Alignment.BottomEnd),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(SEGMENT_GAP),
         ) {
             AnimatedVisibility(
                 visible = showArrivals,
-                enter = scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
-                exit = scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
+                enter = expandHorizontally(widthSpec, clip = false) +
+                    scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
+                exit = shrinkHorizontally(widthSpec, clip = false) +
+                    scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
             ) {
                 ArrivalsSegment(
                     channels = pendingChannels,
@@ -135,8 +136,10 @@ fun FeedFloatingControl(
             }
             AnimatedVisibility(
                 visible = showUnread,
-                enter = scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
-                exit = scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
+                enter = expandHorizontally(widthSpec, clip = false) +
+                    scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
+                exit = shrinkHorizontally(widthSpec, clip = false) +
+                    scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
             ) {
                 UnreadSegment(
                     count = unreadCount,
@@ -289,4 +292,3 @@ private const val MAX_AVATARS = 2
 private val SEGMENT_HEIGHT = 44.dp
 private val INNER_CORNER = 6.dp
 private val SEGMENT_GAP = 2.dp
-private val SHADOW_ROOM = 12.dp
