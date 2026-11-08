@@ -3,8 +3,10 @@
 --
 -- Storage shape choices:
 --   • text_html — original markup from the parser. Source of truth for rendering.
---   • text_plain — HTML-stripped plain text. Indexed by post_fts for search and
---     also surfaced by the UI's "first 280 chars" preview without re-parsing.
+--   • text_plain — HTML-stripped plain text, stored LOWERCASED (Kotlin
+--     String.lowercase(), Unicode-aware) because it is only a search column:
+--     SQLite's LOWER() folds ASCII only, so searchPlain can't case-fold
+--     Cyrillic / accented text at query time. Never displayed.
 --   • media_json / web_preview_json / forwarded_from_json / reactions_json —
 --     these are already-immutable Compose-stable structures (kotlinx.collections.immutable).
 --     Storing as JSON avoids fan-out into auxiliary tables — we never query
@@ -18,11 +20,11 @@
 -- Media URL staleness:
 --   t.me/s/ embeds CDN URLs with short-lived signed tokens (empirically 1-4 hours
 --   for fresh posts). We don't store an explicit expiry — instead [fetched_at_ms]
---   doubles as a freshness probe: if (now - fetched_at_ms) > MEDIA_TTL_MS the row
---   is considered to have stale media URLs, and the next sweep prioritises that
+--   doubles as a freshness probe: if a channel's LATEST post has
+--   (now - fetched_at_ms) > MEDIA_TTL_MS, the next sweep prioritises that
 --   channel for re-fetch. Coil's image loader catches 401/403/410 from a stale
---   URL and the UI calls markMediaStale(:id) which zeroes fetched_at_ms so the
---   *next* sweep refetches even sooner. Locally cached image bytes (Coil disk
+--   URL; the UI then calls markMediaStale(:id), which zeroes fetched_at_ms so the
+--   immediate channel re-fetch it triggers gets past the ingest fingerprint guard. Locally cached image bytes (Coil disk
 --   cache) survive URL rotation because they're keyed by URL — only when a new
 --   URL replaces the old one do we re-download bytes.
 
@@ -110,13 +112,13 @@ LIMIT :limit;
 -- because we don't have bm25 ranking — newest match wins, which matches user
 -- expectation for a news feed anyway.
 --
--- Case-insensitivity: SQLite's default LIKE folds case for ASCII only — for
--- Cyrillic / accented Latin / any non-ASCII a case-sensitive comparison is
--- the silent default on Android's bundled SQLite (no ICU module). To match
--- "Привіт" against rows containing "привіт" we LOWER() both sides; the
--- caller is expected to lowercase the bare query before wrapping it with
--- %…%. LOWER() in Kotlin (Unicode-aware via java.lang.Character) catches
--- Cyrillic + Greek + accented Latin uniformly.
+-- Case-insensitivity: SQLite's LIKE and LOWER() fold case for ASCII only —
+-- Android's bundled SQLite has no ICU module, so LOWER('Привіт') stays
+-- 'Привіт'. The fold therefore happens in Kotlin on BOTH sides: ingest stores
+-- text_plain already lowercased (String.lowercase(), Unicode-aware) and the
+-- caller lowercases the bare query before wrapping it with %…%. The SQL-side
+-- LOWER() is kept only for rows written before ingest lowercased (ASCII still
+-- matches); WebRepository.vacuum() rewrites those rows.
 --
 -- Index trade-off: post_text_plain_idx is unused by this query because
 -- LOWER() on the indexed column defeats it. That's acceptable — the LIKE
@@ -176,6 +178,15 @@ WHERE channel_username = :channelUsername AND seq = :seq;
 -- the reactive stale-URL refetch, deliberately NOT a blanket pull-to-refresh) so a
 -- plateaued post whose text/views are unchanged still picks up rotated CDN media
 -- URLs, and on fetched_at_ms == 0 (markMediaStale escape hatch).
+-- Search-text normalisation backfill (WebRepository.vacuum): rows ingested
+-- before text_plain was stored lowercased. Kotlin decides which rows differ —
+-- SQLite's LOWER() can't fold non-ASCII.
+selectSearchText:
+SELECT id, text_plain FROM post;
+
+updateSearchText:
+UPDATE post SET text_plain = :textPlain WHERE id = :id;
+
 selectFingerprint:
 SELECT text_html, views, fetched_at_ms FROM post
 WHERE channel_username = :channelUsername AND seq = :seq;
@@ -188,8 +199,9 @@ UPDATE post SET is_bookmarked = :bookmarked WHERE id = :id;
 
 -- Called by the UI when Coil reports a 401/403/410 loading a media URL — that
 -- post's CDN tokens have expired and need fresh signing. Zeroing fetched_at_ms
--- guarantees the channel is picked up by the next selectChannelsWithStaleMedia
--- sweep regardless of the configured MEDIA_TTL_MS.
+-- lets the caller's immediate channel re-fetch past the ingest fingerprint guard
+-- (and, for a channel's latest post, also into the next
+-- selectChannelsWithStaleMedia sweep).
 markMediaStale:
 UPDATE post SET fetched_at_ms = 0 WHERE id = :id;
 
@@ -206,15 +218,24 @@ WHERE media_json LIKE :pattern ESCAPE '\'
    OR (web_preview_json IS NOT NULL AND web_preview_json LIKE :pattern ESCAPE '\')
 LIMIT 1;
 
--- Distinct channel usernames whose latest post is older than the media TTL. Used
--- by WebFeedSource to drive proactive re-fetch when the user starts scrolling a
--- channel whose CDN URLs are likely already invalid. Returns at most one row per
--- channel because we only need to know "yes, refresh this channel".
+-- Channel usernames whose LATEST post (highest seq) was fetched before the media
+-- TTL. Used by WebFeedSource to drive proactive re-fetch of channels whose CDN URLs
+-- are likely already invalid. One row per channel.
+--
+-- Must look at the latest post only: a fetch re-stamps fetched_at_ms on just the
+-- one page of posts it returned, so older history keeps its original stamp
+-- forever. Matching ANY old post flagged nearly every channel on every sweep and
+-- turned each refresh into a forced, guard-bypassing full re-ingest. The
+-- (channel_username, seq) primary key serves the MAX(seq) subquery.
 selectChannelsWithStaleMedia:
-SELECT DISTINCT post.channel_username
+SELECT post.channel_username
 FROM post
 JOIN channel ON channel.username = post.channel_username
 WHERE channel.is_subscribed = 1
+  AND post.seq = (
+      SELECT MAX(p2.seq) FROM post AS p2
+      WHERE p2.channel_username = post.channel_username
+  )
   AND post.fetched_at_ms < :olderThanMs;
 
 -- Vacuum old posts. Retains the latest :keepCount per channel; called from
