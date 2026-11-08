@@ -156,6 +156,9 @@ class TimelineViewModel(
      * before refresh + cursor map land in the new one). Same rationale as
      * [pinnedScrollSeedKeys] below.
      */
+    /** Session-start sync completion from the feed source — see [FeedSource.initialSyncDone]. */
+    val initialSyncDone: StateFlow<Boolean> = repo.initialSyncDone
+
     private val _coldStartCursorsSettled = MutableStateFlow(false)
     val coldStartCursorsSettled: StateFlow<Boolean> = _coldStartCursorsSettled.asStateFlow()
 

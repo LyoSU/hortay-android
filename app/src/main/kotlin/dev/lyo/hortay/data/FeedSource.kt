@@ -1,7 +1,9 @@
 package dev.lyo.hortay.data
 
 import kotlinx.collections.immutable.PersistentList
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Mode-agnostic post stream. Both [PostsRepository] (TDLib) and
@@ -63,4 +65,14 @@ interface FeedSource {
      * Default no-op — implementers without a snapshot source need do nothing.
      */
     suspend fun restoreFromSnapshot() {}
+
+    /**
+     * `true` once the impl's session-start sync has delivered the chat list (and with
+     * it the read cursors) — TDLib mode flips it when the cold-start `LoadChats` drain
+     * returns. TimelineScreen's cold-start boundary picker waits on this instead of a
+     * fixed timer. Default: always settled (guest mode has no such sync phase).
+     */
+    val initialSyncDone: StateFlow<Boolean> get() = ALWAYS_SETTLED
 }
+
+private val ALWAYS_SETTLED: StateFlow<Boolean> = MutableStateFlow(true).asStateFlow()

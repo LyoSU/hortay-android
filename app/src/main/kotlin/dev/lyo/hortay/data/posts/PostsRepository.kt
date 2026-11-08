@@ -236,9 +236,9 @@ class PostsRepository(
      */
     private val _initialSyncDone = MutableStateFlow(false)
 
-    // Exposed for tests / potential future consumers; internally `_initialSyncDone`
-    // gates ingest's onlyLocal decision. No external consumer at present.
-    val initialSyncDone: StateFlow<Boolean> = _initialSyncDone.asStateFlow()
+    // Internally `_initialSyncDone` gates ingest's onlyLocal decision; externally it is
+    // the cold-start "cursors have landed" signal TimelineScreen's boundary picker waits on.
+    override val initialSyncDone: StateFlow<Boolean> = _initialSyncDone.asStateFlow()
 
     // Album coalescing: TDLib emits one UpdateNewMessage per album member with no
     // "album complete" signal — confirmed upstream by tdlib/td#1482 (closed 2021
