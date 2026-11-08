@@ -19,3 +19,21 @@ internal fun <T> Result<T>.warnUnlessCancelled(tag: String, label: String = ""):
 /** Same as [warnUnlessCancelled] but with a fixed [PostsRepository]-style "TAG". */
 internal fun <T> Result<T>.warnUnlessCancelled(label: String = ""): Result<T> =
     warnUnlessCancelled(tag = "Hortay", label = label)
+
+/**
+ * [runCatching] for suspending blocks: failures become a [Result], but a
+ * [CancellationException] is rethrown instead of captured. Plain `runCatching` around a
+ * `suspend` call swallows the cancellation of the enclosing coroutine (a logout cancelling
+ * `session.scope`, a composable leaving the tree), so the caller keeps running — and acting
+ * on a "failure" — after it was told to stop. Use this wherever the block suspends and no
+ * [warnUnlessCancelled] follows.
+ */
+@Suppress("TooGenericExceptionCaught")
+internal inline fun <T> suspendRunCatching(block: () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Result.failure(e)
+    }

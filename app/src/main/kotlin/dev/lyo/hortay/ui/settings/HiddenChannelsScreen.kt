@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.IgnoredChannelsStore
+import dev.lyo.hortay.data.suspendRunCatching
 import dev.lyo.hortay.data.web.WebPostAdapter
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
@@ -179,7 +180,7 @@ fun HiddenChannelsScreen(
                         if (chatId in pendingUnhide) return@HiddenChannelRow
                         pendingUnhide.add(chatId)
                         scope.launch {
-                            val ok = runCatching { store.remove(chatId) }.isSuccess
+                            val ok = suspendRunCatching { store.remove(chatId) }.isSuccess
                             if (!ok) {
                                 pendingUnhide.remove(chatId)
                                 snackbarHostState.showSnackbar(unhideFailed)
