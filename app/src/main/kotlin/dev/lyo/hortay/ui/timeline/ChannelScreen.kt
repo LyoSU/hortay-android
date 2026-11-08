@@ -383,10 +383,15 @@ fun ChannelScreen(
     // jump path — same-channel reply navigation from a [PostInteractions.onQuotedSourceClick]
     // tap. [rememberPendingScrollToMessage] resolves the target and clears it.
     var pendingScrollToMessage by remember(chatId) { mutableStateOf<Pair<Long, Long>?>(null) }
-    // Way back from in-channel jumps, newest jump last. A reply tap pushes the post it was
-    // tapped on, so walking a reply chain back takes one tap per hop. Stepping through
-    // several pins pushes only the spot before the first pin.
+    // Way back from in-channel jumps, newest jump last. Every jump — a reply tap or a pinned
+    // bar tap — goes through [jumpWithinChannel] and pushes where it started, so each step
+    // back is one tap: a reply returns to the post it was tapped on, a pin to the spot the
+    // reader was at.
     val returnStack = remember(chatId) { mutableStateListOf<ReturnPoint>() }
+    val jumpWithinChannel: (messageId: Long, from: ReturnPoint?) -> Unit = { messageId, from ->
+        from?.let { returnStack += it }
+        pendingScrollToMessage = chatId to messageId
+    }
     // Which pin the bar shows, by message id (null = newest). Each tap jumps to it and
     // steps to the next older one (wrapping), so repeated taps walk the whole pinned
     // set. Identity, not a position: a pin added or removed mid-walk must not make the
@@ -622,8 +627,10 @@ fun ChannelScreen(
                     // to the host post's own chatId before it reaches the UI.
                     if (r.replyToChatId == chatId) {
                         // Same channel: queue an in-place scroll to the target message.
-                        returnStack += ReturnPoint(key = post.feedKey(), offset = null, messageId = post.id)
-                        pendingScrollToMessage = chatId to r.replyToMessageId
+                        jumpWithinChannel(
+                            r.replyToMessageId,
+                            ReturnPoint(key = post.feedKey(), offset = null, messageId = post.id),
+                        )
                     } else {
                         // Different channel: drill in WITH the replied-to messageId
                         // baked into the new ChannelKey — the freshly mounted
@@ -735,10 +742,7 @@ fun ChannelScreen(
                         position = shown + 1,
                         total = pinned.size,
                         onClick = {
-                            if (returnStack.lastOrNull()?.fromPinned != true) {
-                                listState.currentReturnPoint()?.let { returnStack += it }
-                            }
-                            pendingScrollToMessage = chatId to pinned[shown].messageId
+                            jumpWithinChannel(pinned[shown].messageId, listState.currentReturnPoint())
                             pinnedCursorId = pinned[(shown + 1) % pinned.size].messageId
                         },
                     )
@@ -1062,17 +1066,16 @@ private data class ReturnPoint(
     val key: Any,
     val offset: Int?,
     val messageId: Long? = null,
-    val fromPinned: Boolean = false,
 )
 
 private fun LazyListState.currentReturnPoint(): ReturnPoint? =
     layoutInfo.visibleItemsInfo.firstOrNull()?.let {
-        ReturnPoint(key = it.key, offset = firstVisibleItemScrollOffset, fromPinned = true)
+        ReturnPoint(key = it.key, offset = firstVisibleItemScrollOffset)
     }
 
 /**
  * Round button in the channel's bottom corner: steps back after jumps to pinned or quoted
- * posts ([backCount] steps left, shown as a badge past one), otherwise scrolls to the
+ * posts ([backCount] steps left, shown next to the arrow past one), otherwise scrolls to the
  * newest posts. Without it, a jump left the reader deep in old history with no way back.
  */
 @Composable

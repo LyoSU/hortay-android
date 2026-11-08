@@ -8,7 +8,7 @@
 - When several of your channels forward the same post, the feed shows it once with "Also forwarded by …" instead of repeating it.
 - A channel's burst of posts folds under its first one with "N more posts in this series" and a preview of the latest, so one busy channel no longer floods the feed — Settings → Feed can turn this off.
 - Posts carrying an official Telegram fact check now show it in a plate under the text.
-- After jumping to a pinned post or a reply inside a channel, a corner button takes you back one step at a time — through a whole reply chain — and otherwise scrolls to the newest posts.
+- After jumping to a pinned post or a reply inside a channel, a corner button takes you back one jump at a time, and otherwise scrolls to the newest posts.
 - Channels now show their pinned messages in a bar under the header — tap it to jump to the pinned post, tap again to step through older pins.
 - The Channels tab can hide every channel from the feed or show them all again in one step, so keeping only a few channels in a long list no longer takes a tap per channel.
 - Settings → Feed can now show archived channels in the “All” feed too, so channels you archive to tidy Telegram still reach your main feed.
@@ -26,6 +26,7 @@
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
 
 ### Fixed
+- The ❤ reaction shows as the red emoji instead of a black heart.
 - Scrolling to the newest posts no longer briefly shows an empty gap where posts should be.
 - Tapping a paid ⭐ reaction on a comment no longer crashes the app.
 - A poll vote change or retraction that fails now restores your previous vote.
