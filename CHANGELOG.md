@@ -22,7 +22,7 @@
 - A reply to another channel's post shows that channel's avatar and an arrow, so it no longer passes for a reply within the same channel.
 - Posts in the feed and channels now use the full screen width — the channel photo and name sit in a header row above the post, so photos and text are noticeably larger.
 - Reactions under a post wrap onto a new line instead of being cut off at the screen edge, and comment, forward and view counts sit on a quieter line of their own.
-- The bottom navigation is now a frosted-glass bar with a label under every icon, and the Channels tab has a megaphone icon.
+- The bottom navigation is now a frosted-glass bar with a label under every icon and a capsule that glides to the selected tab, and the Channels tab has a megaphone icon.
 - The Channels tab shows each channel's real number of unread posts, has a search field, and hides a channel from the feed with a sideways swipe instead of an eye button on every row.
 - "New posts" and "↓ N unread" now share one compact split button in the corner instead of two separate buttons over the text.
 - Feed order in Settings is a two-option switch that explains the selected option underneath.
