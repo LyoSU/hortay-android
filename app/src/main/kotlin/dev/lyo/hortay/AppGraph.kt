@@ -113,6 +113,17 @@ class AppGraph(context: Context) {
     internal val archiveInAllFeedState: StateFlow<Boolean> =
         settingsStore.archiveInAllFeed.stateIn(appScope, SharingStarted.Eagerly, initialValue = false)
 
+    /**
+     * [SettingsStore.dynamicColor], pre-warmed for the same reason as [archiveInAllFeedState]:
+     * `MainActivity` themes the whole window from it, and a lazily started collector would paint
+     * its `initialValue` for the first frames. Started eagerly at graph construction, DataStore
+     * has usually emitted by the time the first composition reads it. `initialValue` matches the
+     * store default (`false`, brand palette), so even a lost race never flashes wallpaper colours
+     * for a user who hasn't opted in.
+     */
+    internal val dynamicColorState: StateFlow<Boolean> =
+        settingsStore.dynamicColor.stateIn(appScope, SharingStarted.Eagerly, initialValue = false)
+
     // Tiny `(chatId, messageId)` snapshot of the top of the feed, persisted across
     // process death so cold start renders real content sub-100ms instead of a blank
     // screen for the multi-second refresh round-trip storm.

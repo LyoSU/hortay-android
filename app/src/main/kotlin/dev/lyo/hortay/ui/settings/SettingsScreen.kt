@@ -70,6 +70,7 @@ import dev.lyo.hortay.ui.theme.profileCoverBrush
 import dev.lyo.hortay.ui.theme.profileOnCoverColor
 import org.drinkless.tdlib.TdApi
 import kotlinx.collections.immutable.persistentSetOf
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -147,6 +148,13 @@ fun SettingsScreen(
      * row entirely.
      */
     proxy: dev.lyo.hortay.data.proxy.ProxyRepository? = null,
+    /**
+     * Pre-warmed [SettingsStore.archiveInAllFeed] ([dev.lyo.hortay.AppGraph.archiveInAllFeedState]).
+     * Passed instead of collecting the cold flow with a guessed `initialValue`, which made the
+     * toggle flick from off to on when the screen opened for a user who had it on. TDLib mode
+     * only; when null (guest mode — no Telegram chat lists, so no archive) the row is hidden.
+     */
+    archiveInAllFeedState: StateFlow<Boolean>? = null,
 ) {
     // Settings sub-screens run on a NESTED Navigation 3 NavDisplay over a LOCAL back stack (not
     // the app-wide [dev.lyo.hortay.AppGraph.backStack]): the Settings master/detail is
@@ -199,7 +207,7 @@ fun SettingsScreen(
                     onNavigateToArchiveSettings = onNavigateToArchiveSettings,
                     archiveLossOnLogout = archiveLossOnLogout,
                     // [channelActions] is the TDLib-mode marker (null in guest mode).
-                    showArchiveInAllToggle = channelActions != null,
+                    archiveInAllFeedState = archiveInAllFeedState.takeIf { channelActions != null },
                 )
             }
             entry<SettingsNavKey.AutoDownload> {
@@ -283,8 +291,8 @@ private fun SettingsMain(
     userMessages: UserMessageBus?,
     onNavigateToArchiveSettings: (() -> Unit)? = null,
     archiveLossOnLogout: Boolean = false,
-    /** TDLib mode only — guest mode has no Telegram chat lists, so no archive. */
-    showArchiveInAllToggle: Boolean = false,
+    /** TDLib mode only — guest mode has no Telegram chat lists, so no archive. Null hides the row. */
+    archiveInAllFeedState: StateFlow<Boolean>? = null,
 ) {
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -333,7 +341,7 @@ private fun SettingsMain(
 
             // ---- Appearance (inline quick toggle) ---------------------------------
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val currentDynamicColor by settings.dynamicColor.collectAsStateWithLifecycle(true)
+                val currentDynamicColor by settings.dynamicColor.collectAsStateWithLifecycle(false)
                 SectionLabel(stringResource(R.string.settings_section_appearance))
                 DynamicColorRow(
                     enabled = currentDynamicColor,
@@ -345,7 +353,6 @@ private fun SettingsMain(
             val currentFeedOrder by settings.feedOrder.collectAsStateWithLifecycle(FeedOrder.OldestUnreadFirst)
             val currentSnapScroll by settings.snapScroll.collectAsStateWithLifecycle(false)
             val currentInlineAutoplay by settings.inlineVideoAutoplay.collectAsStateWithLifecycle(true)
-            val currentArchiveInAll by settings.archiveInAllFeed.collectAsStateWithLifecycle(false)
             SectionLabel(stringResource(R.string.settings_section_feed))
             val feedOrderToNewestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_newest)
             val feedOrderToOldestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_oldest)
@@ -372,7 +379,8 @@ private fun SettingsMain(
                 enabled = currentInlineAutoplay,
                 onToggle = { next -> if (next != currentInlineAutoplay) scope.launch { settings.setInlineVideoAutoplay(next) } },
             )
-            if (showArchiveInAllToggle) {
+            if (archiveInAllFeedState != null) {
+                val currentArchiveInAll by archiveInAllFeedState.collectAsStateWithLifecycle()
                 ArchiveInAllFeedRow(
                     enabled = currentArchiveInAll,
                     onToggle = { next -> if (next != currentArchiveInAll) scope.launch { settings.setArchiveInAllFeed(next) } },
