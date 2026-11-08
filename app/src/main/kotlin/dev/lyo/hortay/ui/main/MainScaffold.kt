@@ -152,12 +152,23 @@ fun MainScaffold(graph: AppGraph) {
     // inverts: the cold-harvest post sits at the bottom (newest) of
     // an asc-sort, and history insertions land above — squarely in
     // the user's field of view.
+    //
+    // In-flight dedupe: a second tap on the same channel while the first is still
+    // inside the prefetch await would otherwise push a second ChannelKey on top of the
+    // first. Main-thread only (composition scope), so a plain set is enough.
+    val channelPushesInFlight = remember { HashSet<Long>() }
     val pushChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
-        scope.launch {
-            kotlinx.coroutines.withTimeoutOrNull(CHANNEL_PUSH_PREFETCH_TIMEOUT_MS) {
-                graph.postsRepository.loadChannelHistory(chatId)
+        if (channelPushesInFlight.add(chatId)) {
+            scope.launch {
+                try {
+                    kotlinx.coroutines.withTimeoutOrNull(CHANNEL_PUSH_PREFETCH_TIMEOUT_MS) {
+                        graph.postsRepository.loadChannelHistory(chatId)
+                    }
+                    graph.backStack.add(ChannelKey(chatId = chatId, scrollToMessageId = scrollTo))
+                } finally {
+                    channelPushesInFlight.remove(chatId)
+                }
             }
-            graph.backStack.add(ChannelKey(chatId = chatId, scrollToMessageId = scrollTo))
         }
         Unit
     }

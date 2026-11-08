@@ -1057,10 +1057,17 @@ class PostsRepository(
         return System.currentTimeMillis() < until
     }
 
-    suspend fun loadChannelHistory(chatId: Long, limit: Int = 80): Result<Unit> {
+    /**
+     * @param force Skip the [DEEP_LOAD_COOLDOWN_MS] short-circuit — a user pull-to-refresh
+     *   on the channel screen explicitly asks for fresh history. Still single-flight, and
+     *   every RPC still goes through [TdClient]'s FLOOD_WAIT gate.
+     */
+    suspend fun loadChannelHistory(chatId: Long, limit: Int = 80, force: Boolean = false): Result<Unit> {
         val now = System.currentTimeMillis()
-        deepLoadCooldownUntilMs[chatId]?.let { until ->
-            if (now < until) return Result.success(Unit)
+        if (!force) {
+            deepLoadCooldownUntilMs[chatId]?.let { until ->
+                if (now < until) return Result.success(Unit)
+            }
         }
         val deferred = deepLoadJobs.computeIfAbsent(chatId) {
             scope.async { runCatching { loadChannelHistoryLocked(chatId, limit) } }

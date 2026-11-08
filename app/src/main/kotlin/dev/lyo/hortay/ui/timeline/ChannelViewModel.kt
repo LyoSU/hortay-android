@@ -459,7 +459,9 @@ class ChannelViewModel(
         viewModelScope.launch {
             _refreshing.value = true
             try {
-                repo.loadChannelHistory(chatId)
+                // force: inside the 60 s deep-load cooldown a plain call returns
+                // immediately, so the pull would otherwise do nothing.
+                repo.loadChannelHistory(chatId, force = true)
             } finally {
                 _refreshing.value = false
             }
