@@ -82,6 +82,26 @@ class ExoPlayerPool(
         }
     }
 
+    /**
+     * Release every idle pooled instance. Players currently handed out are untouched — they
+     * come back through [release] and repopulate the pool on demand.
+     *
+     * Called when the process leaves the foreground (ProcessLifecycleOwner ON_STOP, wired in
+     * [dev.lyo.hortay.AppGraph]) and from [android.app.Application.onTrimMemory]: an idle
+     * player still pins its MediaCodec decoders and playback thread, which a backgrounded
+     * app has no use for and which would otherwise live until process death. Pooling while
+     * the user scrolls is unaffected — the pool only drains on those two signals.
+     */
+    @Synchronized
+    fun drainIdle() {
+        for (pool in arrayOf(mutedAvailable, audioAvailable)) {
+            while (true) {
+                val player = pool.pollFirst() ?: break
+                player.release()
+            }
+        }
+    }
+
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun build(muted: Boolean): ExoPlayer {
         val builder = ExoPlayer.Builder(context).apply {

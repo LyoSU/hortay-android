@@ -65,11 +65,13 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            // Material You (wallpaper) vs brand palette — user preference, default on.
-            // HortayTheme still guards the actual dynamic-colour call behind SDK >= S,
-            // so passing `true` on pre-12 devices safely falls through to the brand scheme.
-            val dynamicColor by graph.settingsStore.dynamicColor
-                .collectAsStateWithLifecycle(initialValue = true)
+            // Material You (wallpaper) vs brand palette — user preference, default off
+            // (brand periwinkle; see SettingsStore.dynamicColor). Read from the graph's
+            // pre-warmed StateFlow so the first frame already carries the persisted choice
+            // instead of an initialValue that disagrees with it. HortayTheme still guards
+            // the actual dynamic-colour call behind SDK >= S, so `true` on pre-12 devices
+            // safely falls through to the brand scheme.
+            val dynamicColor by graph.dynamicColorState.collectAsStateWithLifecycle()
             HortayTheme(dynamicColor = dynamicColor) {
                 val webmClock = remember { WebmAnimationClock() }
                 CompositionLocalProvider(

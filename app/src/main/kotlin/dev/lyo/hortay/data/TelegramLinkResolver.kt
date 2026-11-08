@@ -65,7 +65,7 @@ class TelegramLinkResolver(private val td: TdSender) {
         // our own allow-list ahead of that misses canonical aliases (`telegram.me`,
         // `telegram.dog`, future-domains-the-server-issues-as-config) AND bakes in
         // assumptions about which schemes carry Telegram payloads.
-        val result = parseWithTd(raw) ?: parseLocal(uri, raw)
+        val result = parseWithTd(uri, raw) ?: parseLocal(uri, raw)
         // Cache only the typed results that translate to a stable in-app destination.
         // [DeepLink.External] means "TDLib didn't recognise this as an internal link
         // right now" — which can also be the cold-launch race ("TDLib not yet wired,
@@ -85,7 +85,7 @@ class TelegramLinkResolver(private val td: TdSender) {
      * `GetMessageLinkInfo` to extract `(chatId, message.id)`; without that, we'd have a
      * URL but no addressable target for our timeline scroll-to-message dispatcher.
      */
-    private suspend fun parseWithTd(rawUrl: String): DeepLink? {
+    private suspend fun parseWithTd(uri: Uri, rawUrl: String): DeepLink? {
         val type = runCatching {
             td.send(TdApi.GetInternalLinkType(rawUrl))
         }.getOrNull() ?: return null
@@ -98,15 +98,19 @@ class TelegramLinkResolver(private val td: TdSender) {
                     originalUrl = rawUrl,
                 )
             is TdApi.InternalLinkTypeMessage -> {
+                // GetMessageLinkInfo failure / unknown chat (`chat_id == 0`): return null
+                // so the local parser types the URL (public handle or `t.me/c/<id>`) and
+                // the dispatcher's own resolve reports "link not found" in-app — not an
+                // External punt that bounces a dead link out to the OS.
                 val info = runCatching {
                     td.send(TdApi.GetMessageLinkInfo(type.url))
-                }.getOrNull() ?: return DeepLink.External(rawUrl)
-                val message = info.message
-                if (info.chatId == 0L || message == null) DeepLink.External(rawUrl)
-                else DeepLink.Message(
+                }.getOrNull() ?: return null
+                if (info.chatId == 0L) return null
+                messageLinkTarget(
                     chatId = info.chatId,
-                    messageId = message.id,
-                    originalUrl = rawUrl,
+                    messageId = info.message?.id,
+                    serverPostId = { localServerPostId(uri, rawUrl) },
+                    rawUrl = rawUrl,
                 )
             }
             // Global hashtag / cashtag search field. TDLib's `InternalLinkTypeSearch`
@@ -140,6 +144,14 @@ class TelegramLinkResolver(private val td: TdSender) {
             else -> DeepLink.External(rawUrl)
         }
     }
+
+    /** Server post number the URL itself names, via the local parser; null if none. */
+    private fun localServerPostId(uri: Uri, rawUrl: String): Long? =
+        when (val local = parseLocal(uri, rawUrl)) {
+            is DeepLink.PublicChannel -> local.serverPostId
+            is DeepLink.PrivateChannel -> local.serverPostId
+            else -> null
+        }
 
     /**
      * Pull a normalised `#tag` token out of a raw URL's `?query=` / `?q=` parameter.
@@ -220,6 +232,26 @@ class TelegramLinkResolver(private val td: TdSender) {
          * (TDLib) produced ChatInvite. The inconsistency made cold-launched invite
          * taps skip the in-app preview dialog. Now both paths agree.
          */
+        /**
+         * Typed target for a `GetMessageLinkInfo` result whose chat resolved. A found
+         * message → [DeepLink.Message]. A missing one (`message` is "may be null" in
+         * td_api.tl: deleted, or not visible to this account) → the chat by id with the
+         * URL's own post number as the anchor, so the channel opens in-app and its
+         * scroll-to-message miss path shows "link not found" — previously the whole
+         * link was punted to the OS as [DeepLink.External].
+         */
+        internal fun messageLinkTarget(
+            chatId: Long,
+            messageId: Long?,
+            serverPostId: () -> Long?,
+            rawUrl: String,
+        ): DeepLink =
+            if (messageId != null) {
+                DeepLink.Message(chatId = chatId, messageId = messageId, originalUrl = rawUrl)
+            } else {
+                DeepLink.PrivateChannel(chatId = chatId, serverPostId = serverPostId(), originalUrl = rawUrl)
+            }
+
         internal fun parseLocalFromParts(
             scheme: String?,
             host: String?,
@@ -325,6 +357,16 @@ class TelegramLinkResolver(private val td: TdSender) {
                         originalUrl = rawUrl,
                     )
                 else null
+            // `t.me/s/<handle>[/<post>]` — the web-preview flavour of a public channel
+            // link. Without this case the handle parsed as "s".
+            segments[0] == "s" ->
+                segments.getOrNull(1)?.removePrefix("@")?.takeIf { it.isNotBlank() }?.let { handle ->
+                    DeepLink.PublicChannel(
+                        handle = handle,
+                        serverPostId = segments.getOrNull(2)?.toLongOrNull(),
+                        originalUrl = rawUrl,
+                    )
+                }
             segments[0] in BLOCKED_PUBLIC_HOSTS -> null
             else -> {
                 val handle = segments[0]

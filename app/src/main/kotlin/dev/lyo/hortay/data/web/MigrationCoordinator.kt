@@ -6,6 +6,7 @@ import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChannelDirectory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Surfaces a one-time PROPOSAL to migrate the user's anonymous-mode subscriptions
@@ -168,52 +170,35 @@ class MigrationCoordinator(
                     Log.w(TAG, "migration: SearchPublicChat($cleaned) returned null (skip, won't retry)")
                 }
             } else {
-                try {
-                    channelActions.joinChat(chatId)
+                // joinChat swallows (and surfaces) its own failure and reports it as
+                // false — a failed join must not count as migrated, or the handle would
+                // be dropped from the guest subscriptions below without a TDLib join.
+                if (channelActions.joinChat(chatId)) {
                     migrated += cleaned
-                } catch (cancellation: kotlinx.coroutines.CancellationException) {
-                    throw cancellation
-                } catch (t: Throwable) {
-                    Log.w(TAG, "migration: JoinChat($cleaned) failed: ${t.message}")
+                    // Book-keep each success the moment it lands, not after the loop:
+                    // a run cancelled mid-way (sheet swipe-down, sign-out) used to drop
+                    // the whole `migrated` list — already-joined channels were re-offered
+                    // and stayed duplicated as guest-mode subscriptions.
+                    recordMigrated(cleaned)
+                } else {
+                    Log.w(TAG, "migration: JoinChat($cleaned) failed")
                     anyFailure.set(true)
                 }
             }
             if (i < usernames.lastIndex) delay(THROTTLE_MS)
         }
-        if (migrated.isNotEmpty()) {
-            migrationStore.addMigrated(migrated)
-            // Remove the successfully-migrated handles from the web-mode
-            // subscription list. Without this, the user's anonymous-mode
-            // `webSubscriptions` set continues to track the same channels
-            // they just joined via TDLib — and if they ever sign out
-            // again, they'd see those channels as guest-mode subs even
-            // though the canonical "subscribed via TDLib" record now
-            // exists in their account. Removing here makes the migration
-            // a true move (anon → authenticated) rather than a copy that
-            // leaves stale guest-mode duplicates behind.
-            //
-            // Channels the user explicitly skipped (in the proposal sheet)
-            // stay in webSubscriptions — those are intentional guest-mode
-            // reads, not migration candidates. They still appear in the
-            // tier-2 web fetch the next time the user is in guest mode.
-            for (username in migrated) {
-                runCatching { subscriptions.remove(username) }
-                    .onFailure { err ->
-                        if (err is kotlinx.coroutines.CancellationException) throw err
-                        Log.w(TAG, "migration: subscriptions.remove($username) failed: ${err.message}")
-                    }
-            }
-            // No manual refresh after JoinChat: TDLib emits UpdateNewChat with
-            // chat.lastMessage populated, followed by UpdateChatAddedToList
-            // (ChatListMain), and [PostsRepository]'s live listeners ingest both
-            // — the freshly-joined channels surface in `_posts` without any
-            // extra RPC. The previous explicit refresh() existed for the legacy
-            // cold-start path (`GetChat × N` / `GetChatHistory × N`); the
-            // current `drainChatList(ChatListMain)` + `Chat.lastMessage`
-            // harvest in `refreshLocked` makes that redundant, and re-running
-            // it right after a 50-channel batch JoinChat would amplify
-            // FLOOD_WAIT risk during the post-auth storm window for no gain.
-        }
+        // Successful joins were already recorded per channel by [recordMigrated].
+        //
+        // No manual refresh after JoinChat: TDLib emits UpdateNewChat with
+        // chat.lastMessage populated, followed by UpdateChatAddedToList
+        // (ChatListMain), and [PostsRepository]'s live listeners ingest both
+        // — the freshly-joined channels surface in `_posts` without any
+        // extra RPC. The previous explicit refresh() existed for the legacy
+        // cold-start path (`GetChat × N` / `GetChatHistory × N`); the
+        // current `drainChatList(ChatListMain)` + `Chat.lastMessage`
+        // harvest in `refreshLocked` makes that redundant, and re-running
+        // it right after a 50-channel batch JoinChat would amplify
+        // FLOOD_WAIT risk during the post-auth storm window for no gain.
         // Only suppress future proposals when EVERY requested handle either
         // succeeded (in `migrated`) or was conclusively a no-op (null without
         // throw — wrong handle / deleted channel). Any transient failure leaves
@@ -232,6 +217,24 @@ class MigrationCoordinator(
             delay(POST_COMPLETE_HOLD_MS)
             _progress.value = null
         }
+    }
+
+    /**
+     * Persist one successful join: never re-offer it ([MigrationStore.addMigrated]) and
+     * drop it from the web-mode subscription list. Removing makes the migration a true
+     * move (anon → authenticated) rather than a copy — otherwise a later sign-out would
+     * show the channel as a guest-mode sub although the account now follows it.
+     * Channels the user skipped in the sheet stay in webSubscriptions (intentional
+     * guest-mode reads).
+     *
+     * [NonCancellable]: the join already happened server-side, so the bookkeeping must
+     * complete even when the run is being cancelled right now.
+     */
+    private suspend fun recordMigrated(username: String) = withContext(NonCancellable) {
+        runCatching { migrationStore.addMigrated(listOf(username)) }
+            .onFailure { Log.w(TAG, "migration: addMigrated($username) failed: ${it.message}") }
+        runCatching { subscriptions.remove(username) }
+            .onFailure { Log.w(TAG, "migration: subscriptions.remove($username) failed: ${it.message}") }
     }
 
     /**

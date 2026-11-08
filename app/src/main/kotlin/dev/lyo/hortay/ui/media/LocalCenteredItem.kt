@@ -11,13 +11,12 @@ import androidx.compose.runtime.staticCompositionLocalOf
  * item whose centre is closest to the visible viewport centre, `false` for every
  * other item including off-centre visible cards.
  *
- * Why this exists: TDLib serves only ~4 simultaneous downloads per DC on
- * [org.drinkless.tdlib.TdApi.NetworkTypeMobile] (per
- * [tdlib/td#786](https://github.com/tdlib/td/issues/786)) and same-priority files
- * are served in LIFO order. With every visible card issuing
- * [dev.lyo.hortay.data.MediaCache.ensure] at
+ * Why this exists: TDLib downloads only a few files at a time on
+ * [org.drinkless.tdlib.TdApi.NetworkTypeMobile], and same-priority files are served
+ * in LIFO order ([tdlib/td#786](https://github.com/tdlib/td/issues/786)). With every
+ * visible card issuing [dev.lyo.hortay.data.MediaCache.ensure] at
  * [dev.lyo.hortay.data.DownloadPriority.VisibleMedia] (16), 3 simultaneously-on-
- * screen cards on a 4-slot pool put the dominant card in a coin-flip race against
+ * screen cards on a small pool put the dominant card in a coin-flip race against
  * its neighbours. Telegram-Android handles this by *priority decay from viewport
  * centre*: the most-centred cell gets the highest priority, edges fall to lower
  * priorities. We approximate the same with a binary split — centre gets

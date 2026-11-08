@@ -197,6 +197,7 @@ internal fun TabContentSwitcher(
                         },
                         archiveLossOnLogout = archiveSettings.enabled,
                         proxy = graph.proxyRepository,
+                        archiveInAllFeedState = graph.archiveInAllFeedState,
                     )
                 }
             }

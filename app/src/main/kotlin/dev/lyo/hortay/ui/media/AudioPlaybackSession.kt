@@ -111,6 +111,23 @@ class AudioPlaybackSession(
         }
     }
 
+    /**
+     * Silence the session because a video with sound is taking over (fullscreen viewer).
+     * A playing track pauses in place (a later tap resumes it); a track still downloading is
+     * cancelled so it can't start over the video once its file lands.
+     */
+    fun yieldToVideo() {
+        val current = _state.value ?: return
+        when (current.phase) {
+            Phase.Playing -> pause()
+            Phase.Loading -> {
+                stopInternal()
+                _state.value = null
+            }
+            Phase.Paused -> Unit
+        }
+    }
+
     private fun pause() {
         player?.playWhenReady = false
         tickJob?.cancel()

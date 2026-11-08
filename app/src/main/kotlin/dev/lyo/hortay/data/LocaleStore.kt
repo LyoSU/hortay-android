@@ -42,10 +42,29 @@ object LocaleStore {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val lm = context.getSystemService(LocaleManager::class.java) ?: return null
             val locales = lm.applicationLocales
-            return if (locales.isEmpty) null else locales[0].language
+            // Full BCP-47 tag, not `.language`: the picker offers `pt-BR`, which
+            // `.language` collapses to `pt` (and `id` to the legacy `in`), so the
+            // active choice never matched its entry. [matchOffered] reconciles.
+            return if (locales.isEmpty) null else locales[0].toLanguageTag()
         }
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_TAG, null)
+    }
+
+    /**
+     * Map a stored / platform-reported tag onto one of the [offered] picker tags, or
+     * `null` when none fits. Exact match first (case-insensitive), then a
+     * language-only fallback for region-less offers — the system picker or an
+     * older build may report `uk-UA` for the `uk` entry, while `pt-PT` must NOT
+     * select `pt-BR`. The legacy ISO 639 code `in` (what `Locale.getLanguage`
+     * returns for Indonesian) is folded to `id`.
+     */
+    fun matchOffered(tag: String?, offered: Collection<String>): String? {
+        if (tag.isNullOrEmpty()) return null
+        val normalized = tag.replace('_', '-')
+        offered.firstOrNull { it.equals(normalized, ignoreCase = true) }?.let { return it }
+        val language = normalized.substringBefore('-').lowercase().let { if (it == "in") "id" else it }
+        return offered.firstOrNull { !it.contains('-') && it.equals(language, ignoreCase = true) }
     }
 
     /**

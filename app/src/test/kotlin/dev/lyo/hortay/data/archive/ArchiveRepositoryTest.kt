@@ -321,7 +321,7 @@ class ArchiveRepositoryTest {
             album_key = null, kind = "VERSION", seen_at_ms = 500L, edited_at_ms = null,
             content_kind = "tdlib", content_blob = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8),
             content_hash = "deadbeef", text_preview = "garbage",
-            media_minithumb = null, deleted_msg_keys = null, is_comment = 0,
+            media_minithumb = null, deleted_msg_keys = null, is_comment = 0, captured_at_ms = 500L,
         )
 
         val revisions = repo.observeRevisions(ChatRef.tdlib(42), "100").first()
@@ -348,12 +348,43 @@ class ArchiveRepositoryTest {
             album_key = null, kind = "VERSION", seen_at_ms = 500L, edited_at_ms = null,
             content_kind = "tdlib", content_blob = future,
             content_hash = "cafe", text_preview = "future",
-            media_minithumb = null, deleted_msg_keys = null, is_comment = 0,
+            media_minithumb = null, deleted_msg_keys = null, is_comment = 0, captured_at_ms = 500L,
         )
 
         val all = repo.observe(ArchiveFilter()).first()
         assertEquals(1, all.size)
         assertEquals("", (all[0].content as ArchivedContent.Tdlib).meta.text)
+    }
+
+    @Test
+    fun observe_queryMatchesLikeMetacharactersLiterally() = runTest {
+        val (repo, _) = newRepo()
+        val chat = ChatRef.tdlib(42)
+        repo.captureTdlibEdit(chat, "1", null, 2_000L, meta("discount 50% today"))
+        repo.captureTdlibEdit(chat, "2", null, 2_000L, meta("discount 50 today"))
+        repo.captureTdlibEdit(chat, "3", null, 2_000L, meta("snake_case"))
+        repo.captureTdlibEdit(chat, "4", null, 2_000L, meta("snakeXcase"))
+
+        val percent = repo.observe(ArchiveFilter(query = "50%")).first()
+        assertEquals(listOf("1"), percent.map { it.messageKey })
+        val underscore = repo.observe(ArchiveFilter(query = "e_c")).first()
+        assertEquals(listOf("3"), underscore.map { it.messageKey })
+    }
+
+    @Test
+    fun capturesEditsFor_honoursEnabledCaptureEditsAndExclusions() {
+        val chat = ChatRef.tdlib(42)
+        assertEquals(false, newRepo(ArchiveSettings(enabled = false)).first.capturesEditsFor(chat))
+        assertEquals(
+            false,
+            newRepo(ArchiveSettings(enabled = true, captureEdits = false)).first.capturesEditsFor(chat),
+        )
+        assertEquals(
+            false,
+            newRepo(ArchiveSettings(enabled = true, excludedChats = persistentSetOf(chat)))
+                .first.capturesEditsFor(chat),
+        )
+        assertEquals(true, newRepo(ArchiveSettings(enabled = true)).first.capturesEditsFor(chat))
     }
 
     private fun toContent(row: dev.lyo.hortay.data.archive.db.PostSnapshot): ArchivedContent.Tdlib =

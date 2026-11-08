@@ -6,6 +6,7 @@ import app.cash.sqldelight.coroutines.mapToList
 import dev.lyo.hortay.data.ReadCursors
 import dev.lyo.hortay.data.StringResolver
 import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.data.escapeSqlLike
 import dev.lyo.hortay.data.web.db.ChannelQueries
 import dev.lyo.hortay.data.web.db.ChannelReadCursorQueries
 import dev.lyo.hortay.data.web.db.CustomEmojiQueries
@@ -114,15 +115,17 @@ class WebRepository(
      * trigger a tautology.
      *
      * Case-insensitivity: lowercase the query here (Kotlin's `lowercase()` is
-     * Unicode-aware) and the SQL side mirrors with `LOWER(text_plain)`. Without
-     * this, Android's bundled SQLite (no ICU) only folds ASCII case — Cyrillic
-     * "Привіт" wouldn't match a row containing "привіт". Index loss is a
+     * Unicode-aware) and match it against `text_plain`, which ingest already
+     * stores lowercased the same way. Android's bundled SQLite (no ICU) folds
+     * ASCII case only, so `LOWER(text_plain)` alone never matched "Привіт"
+     * against "привіт"; it is kept in the SQL only for rows that predate the
+     * ingest-side fold ([vacuum] rewrites those). Index loss is a
      * non-issue because the existing leading `%` already defeated
      * `post_text_plain_idx` lookups; the LIKE has always been a sequential
      * scan, just one with case-folding now.
      */
     fun search(query: String, limit: Long = DEFAULT_SEARCH_LIMIT): Flow<PersistentList<TimelinePost>> {
-        val pattern = "%${escapeLike(query.lowercase())}%"
+        val pattern = "%${escapeSqlLike(query.lowercase())}%"
         return postQueries
             .searchPlain(pattern, limit, mapper = ::rowToTimelinePost)
             .asFlow()
@@ -165,7 +168,7 @@ class WebRepository(
      */
     suspend fun postIdForMediaUrl(url: String): String? = withContext(ioDispatcher) {
         if (url.isBlank()) return@withContext null
-        postQueries.selectIdByMediaUrl("%${escapeLike(url)}%").executeAsOneOrNull()
+        postQueries.selectIdByMediaUrl("%${escapeSqlLike(url)}%").executeAsOneOrNull()
     }
 
     /**
@@ -323,7 +326,9 @@ class WebRepository(
         val previewJson = post.webPreview?.let { json.encodeToString(WebPreview.serializer(), it) }
         val forwardedJson = post.forwardedFrom?.let { json.encodeToString(WebForwardSource.serializer(), it) }
         val reactionsJson = json.encodeToString(reactionListSerializer, post.reactions.toList())
-        val plainText = WebTextRenderer.toPlainText(post.textHtml)
+        // Lowercased here (Unicode-aware) because SQLite's LOWER() only folds ASCII —
+        // text_plain is a search-only column, see searchPlain in Post.sq.
+        val plainText = WebTextRenderer.toPlainText(post.textHtml).lowercase()
         // Fall back to fetchedAtMs (the wallclock at the moment the page was
         // received) instead of 0L on parse failure. The feed is sorted
         // `published_at_ms DESC`; a single malformed ISO timestamp would otherwise
@@ -395,6 +400,11 @@ class WebRepository(
         channelQueries.clearStaleLoading()
     }
 
+    /** Demote one channel's `loading` status to `idle` — a cancelled fetch's cleanup. */
+    suspend fun clearLoading(username: String) = withContext(ioDispatcher) {
+        channelQueries.clearLoading(username)
+    }
+
     /**
      * Subscribe-by-intent. Bootstraps a placeholder row if the user has never seen
      * the channel before; the next successful fetch replaces the placeholder.
@@ -462,20 +472,33 @@ class WebRepository(
      * the Coil image-error path: [dev.lyo.hortay.ui.media.TdMediaImage] reports the
      * failed URL through [dev.lyo.hortay.ui.media.LocalWebStaleMedia], which
      * [WebFeedSource.refetchForStaleMediaUrl] maps back to this post id via
-     * [postIdForMediaUrl] before re-fetching the channel. Zeroing guarantees the
-     * `selectChannelsWithStaleMedia` sweep picks the channel up and the fingerprint
-     * guard in [ingestPost] lets the fresh URLs through.
+     * [postIdForMediaUrl] before re-fetching the channel. Zeroing makes the
+     * fingerprint guard in [ingestPost] let the fresh URLs through (the re-fetch
+     * itself is driven by that caller; the proactive `selectChannelsWithStaleMedia`
+     * sweep only looks at each channel's latest post).
      */
     suspend fun markMediaStale(postId: String) = withContext(ioDispatcher) {
         postQueries.markMediaStale(postId)
     }
 
     /**
-     * Vacuum old non-bookmarked posts to bound DB growth. Driven by Phase 1.5's
-     * background scheduler; cheap enough to call after every sweep too.
+     * Periodic maintenance, driven at most daily by [WebFeedSource] after a
+     * successful sweep:
+     *  - drops old non-bookmarked posts beyond [keepPerChannel] per channel to
+     *    bound DB growth;
+     *  - rewrites any `text_plain` not yet stored lowercased (rows ingested before
+     *    ingest folded case — and unchanged since, so the fingerprint guard never
+     *    re-wrote them), so non-ASCII search matches them too. After the first
+     *    pass this is a read-only scan.
      */
     suspend fun vacuum(keepPerChannel: Long = DEFAULT_KEEP_PER_CHANNEL) = withContext(ioDispatcher) {
-        postQueries.deleteOldPerChannel(keepPerChannel)
+        db.transaction {
+            postQueries.deleteOldPerChannel(keepPerChannel)
+            for (row in postQueries.selectSearchText().executeAsList()) {
+                val folded = row.text_plain.lowercase()
+                if (folded != row.text_plain) postQueries.updateSearchText(folded, row.id)
+            }
+        }
     }
 
     /**
@@ -633,13 +656,6 @@ class WebRepository(
     private fun decodeForward(jsonStr: String): WebForwardSource? = runCatching {
         json.decodeFromString(WebForwardSource.serializer(), jsonStr)
     }.getOrNull()
-
-    // Escape the three SQL LIKE metacharacters so a user query / URL matches
-    // literally. Paired with `ESCAPE '\'` on every LIKE that consumes the result
-    // (searchPlain, selectIdByMediaUrl). Order matters: escape the escape char
-    // first so we don't double-escape the backslashes we just introduced.
-    private fun escapeLike(s: String): String =
-        s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     private fun parseIsoToMillis(iso: String): Long? = runCatching {
         // ISO-8601 with offset, e.g. "2026-04-12T18:43:00+00:00". java.time can do

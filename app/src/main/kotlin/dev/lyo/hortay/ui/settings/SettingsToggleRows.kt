@@ -2,102 +2,79 @@
 
 package dev.lyo.hortay.ui.settings
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.ui.icons.Symbol
 
 /**
- * Two-row [SegmentedListItem] group for the feed-order preference. Selection is
- * shown by tinting the active row's leading icon — no [androidx.compose.material3.RadioButton]
- * on the trailing slot, which would import additional metaphor (mutually-exclusive
- * choices in a dialog) on top of an already-affordant row pair. Matches the rest of
- * the settings vocabulary where rows are tappable surfaces, not radio-style picks.
+ * Feed-order preference as one card: a two-option segmented control with an icon per
+ * option and, below it, a one-line explanation of the selected option. The previous
+ * pair of rows marked the choice only by tinting a small leading icon, which on device
+ * read as two identical rows — the segmented control makes the active choice obvious
+ * and switching it one tap.
  */
 @Composable
 internal fun FeedOrderRows(
     current: FeedOrder,
     onSelect: (FeedOrder) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
-        FeedOrderRow(
-            symbol = "arrow_upward",
-            title = stringResource(R.string.settings_feed_order_oldest_title),
-            subtitle = stringResource(R.string.settings_feed_order_oldest_subtitle),
-            isSelected = current == FeedOrder.OldestUnreadFirst,
-            index = 0,
-            count = 2,
-            onClick = { onSelect(FeedOrder.OldestUnreadFirst) },
-        )
-        FeedOrderRow(
-            symbol = "arrow_downward",
-            title = stringResource(R.string.settings_feed_order_newest_title),
-            subtitle = stringResource(R.string.settings_feed_order_newest_subtitle),
-            isSelected = current == FeedOrder.Newest,
-            index = 1,
-            count = 2,
-            onClick = { onSelect(FeedOrder.Newest) },
-        )
-    }
-}
-
-@Composable
-private fun FeedOrderRow(
-    symbol: String,
-    title: String,
-    subtitle: String,
-    isSelected: Boolean,
-    index: Int,
-    count: Int,
-    onClick: () -> Unit,
-) {
-    val shapes = ListItemDefaults.segmentedShapes(
-        index = index,
-        count = count,
-        defaultShapes = ListItemDefaults.shapes(),
+    val options = listOf(
+        Triple(FeedOrder.OldestUnreadFirst, "arrow_upward", R.string.settings_feed_order_oldest_title),
+        Triple(FeedOrder.Newest, "arrow_downward", R.string.settings_feed_order_newest_title),
     )
-    val leadingTint by animateColorAsState(
-        targetValue = if (isSelected) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
-        label = "feed-order-tint",
-    )
-    SegmentedListItem(
-        onClick = onClick,
-        shapes = shapes,
-        // Naked Solar icon — no tonal disc. Selection is carried by the icon tint
-        // (primary when active) per the unified settings icon language (doctrine §5).
-        leadingContent = { Symbol(name = symbol, tint = leadingTint, size = 22.dp) },
-        supportingContent = {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                options.forEachIndexed { i, (order, symbol, titleRes) ->
+                    SegmentedButton(
+                        selected = current == order,
+                        onClick = { onSelect(order) },
+                        shape = SegmentedButtonDefaults.itemShape(i, options.size),
+                        icon = { Symbol(name = symbol, size = 18.dp) },
+                        label = {
+                            Text(
+                                text = stringResource(titleRes),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                    )
+                }
+            }
             Text(
-                text = subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = stringResource(
+                    if (current == FeedOrder.Newest) R.string.settings_feed_order_newest_subtitle
+                    else R.string.settings_feed_order_oldest_subtitle,
+                ),
                 style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 10.dp),
             )
-        },
-        trailingContent = null,
-        content = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-        },
-    )
+        }
+    }
 }
 
 /**

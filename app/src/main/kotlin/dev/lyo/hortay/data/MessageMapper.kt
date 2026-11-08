@@ -340,6 +340,17 @@ class MessageMapper(
         )
     }
 
+    /** Pinned-bar preview of [message]: its text or caption plus a media thumbnail. */
+    fun toPinnedPreview(message: TdApi.Message): PinnedPreview {
+        val (thumb, kind) = extractReplyMedia(message.content)
+        return PinnedPreview(
+            messageId = message.id,
+            excerpt = extractTextOrCaption(message.content),
+            mediaThumb = thumb,
+            mediaKind = kind,
+        )
+    }
+
     /**
      * Coarse classification + thumbnail from a parent message's content. Stickers, video
      * notes, animations and documents all expose a `thumbnail` field; photos/videos expose

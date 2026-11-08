@@ -238,6 +238,7 @@
     <string name="post_open_telegram">فتح في Telegram</string>
     <string name="post_copied_toast">تم النسخ</string>
     <string name="post_show_more">عرض المزيد</string>
+    <string name="post_more_actions">إجراءات أخرى</string>
     <string name="post_show_less">عرض أقل</string>
 
     <!-- رسائل الخدمة / الوسائط المنتهية الصلاحية -->
@@ -325,6 +326,9 @@
     <string name="comments_disabled_title">التعليقات مغلقة</string>
     <string name="comments_disabled_body">هذه القناة لا تمتلك مجموعة نقاش مرتبطة</string>
     <string name="comments_unavailable">النقاش غير متاح</string>
+    <string name="comments_load_failed_title">تعذّر تحميل التعليقات</string>
+    <string name="comments_load_failed_body">تحقّق من اتصالك وحاول مرة أخرى</string>
+    <string name="comments_retry">إعادة المحاولة</string>
 
     <!-- القنوات -->
     <string name="channels_title">القنوات</string>
@@ -338,6 +342,22 @@
     <string name="channels_unhide_from_feed">إظهار في الخلاصة</string>
     <string name="channels_hide_from_feed_for">إخفاء %1$s من الخلاصة</string>
     <string name="channels_unhide_from_feed_for">إظهار %1$s في الخلاصة</string>
+    <string name="channels_feed_menu">قنوات الموجز</string>
+    <string name="channels_hide_all">إخفاء الكل من الموجز</string>
+    <string name="channels_show_all">إظهار الكل في الموجز</string>
+    <string name="channels_hide_all_confirm">ستُخفى جميع القنوات من الموجز. ثم اسحب جانبًا القنوات التي تريد إبقاءها لإعادتها.</string>
+    <string name="channels_show_all_confirm">ستظهر القنوات التي أخفيتها في الموجز مجددًا.</string>
+    <string name="channels_search_hint">البحث في القنوات</string>
+    <string name="channels_swipe_hint">اسحب القناة جانبًا لإخفائها من الموجز.</string>
+    <string name="channels_hidden_label">مخفية من الموجز</string>
+    <plurals name="channels_unread_count">
+        <item quantity="zero">لا منشورات غير مقروءة</item>
+        <item quantity="one">منشور واحد غير مقروء</item>
+        <item quantity="two">منشوران غير مقروءين</item>
+        <item quantity="few">%d منشورات غير مقروءة</item>
+        <item quantity="many">%d منشورًا غير مقروء</item>
+        <item quantity="other">%d منشور غير مقروء</item>
+    </plurals>
     <string name="channels_empty_title">لا توجد قنوات بعد</string>
     <string name="channels_empty_helper">اشترك في قنوات على Telegram وستظهر هنا</string>
 
@@ -404,6 +424,7 @@
     <string name="settings_storage_clearing">جارٍ المسح…</string>
     <string name="settings_storage_clear">مسح ذاكرة الوسائط المؤقتة</string>
     <string name="settings_storage_clear_helper">يزيل الصور والفيديوهات والملفات المخزنة مؤقتاً. تبقى قاعدة بيانات الرسائل والجلسة، ولا تُمسح إلا بتسجيل الخروج</string>
+    <string name="settings_storage_clear_failed">تعذّر مسح ذاكرة الوسائط المؤقتة. حاول مرة أخرى</string>
     <string name="settings_storage_media">الوسائط</string>
     <string name="settings_storage_db">قاعدة البيانات</string>
 
@@ -558,6 +579,9 @@
     <!-- شارات الحالة المضمّنة بجانب المنشور. -->
     <string name="post_badge_edited">تم التعديل</string>
     <string name="post_badge_pinned">مثبّت</string>
+    <string name="pinned_bar_title">رسالة مثبّتة</string>
+    <string name="pinned_bar_title_position">رسالة مثبّتة %1$d من %2$d</string>
+    <string name="pinned_bar_open">الانتقال إلى الرسالة المثبّتة</string>
     <!-- قائمة الضغط المطوّل على رابط مضمّن في نص المنشور. -->
     <string name="link_action_open">فتح</string>
     <string name="link_action_copy">نسخ الرابط</string>

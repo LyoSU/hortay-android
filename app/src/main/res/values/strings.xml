@@ -225,6 +225,7 @@
     <string name="post_open_telegram">Open in Telegram</string>
     <string name="post_copied_toast">Copied</string>
     <string name="post_show_more">Show more</string>
+    <string name="post_more_actions">More actions</string>
     <string name="post_show_less">Show less</string>
 
     <!-- Service / expired media -->
@@ -296,6 +297,9 @@
     <string name="comments_disabled_title">Comments are off</string>
     <string name="comments_disabled_body">This channel doesn\'t have a linked discussion group</string>
     <string name="comments_unavailable">Discussion unavailable</string>
+    <string name="comments_load_failed_title">Couldn\'t load comments</string>
+    <string name="comments_load_failed_body">Check your connection and try again</string>
+    <string name="comments_retry">Try again</string>
 
     <!-- Channels -->
     <string name="channels_title">Channels</string>
@@ -309,6 +313,18 @@
     <string name="channels_unhide_from_feed">Show in feed</string>
     <string name="channels_hide_from_feed_for">Hide %1$s from feed</string>
     <string name="channels_unhide_from_feed_for">Show %1$s in feed</string>
+    <string name="channels_feed_menu">Feed channels</string>
+    <string name="channels_hide_all">Hide all from feed</string>
+    <string name="channels_show_all">Show all in feed</string>
+    <string name="channels_hide_all_confirm">All channels will be hidden from the feed. Then swipe the ones you want to keep to bring them back.</string>
+    <string name="channels_show_all_confirm">Channels you hid will appear in the feed again.</string>
+    <string name="channels_search_hint">Search channels</string>
+    <string name="channels_swipe_hint">Swipe a channel sideways to hide it from the feed.</string>
+    <string name="channels_hidden_label">Hidden from feed</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d unread post</item>
+        <item quantity="other">%d unread posts</item>
+    </plurals>
     <string name="channels_empty_title">No channels yet</string>
     <string name="channels_empty_helper">Subscribe to channels in Telegram and they\'ll show up here</string>
 
@@ -389,6 +405,7 @@
     <string name="settings_storage_clearing">Clearing…</string>
     <string name="settings_storage_clear">Clear media cache</string>
     <string name="settings_storage_clear_helper">Removes cached photos, videos and files. Message database and session stay, only signing out clears those</string>
+    <string name="settings_storage_clear_failed">Couldn\'t clear the media cache. Try again</string>
     <string name="settings_storage_media">Media</string>
     <string name="settings_storage_db">Database</string>
 
@@ -545,6 +562,9 @@
     <!-- Inline status badges next to a post. -->
     <string name="post_badge_edited">Edited</string>
     <string name="post_badge_pinned">Pinned</string>
+    <string name="pinned_bar_title">Pinned message</string>
+    <string name="pinned_bar_title_position">Pinned message %1$d of %2$d</string>
+    <string name="pinned_bar_open">Go to pinned message</string>
     <!-- Long-press menu on an inline link inside a post body. -->
     <string name="link_action_open">Open</string>
     <string name="link_action_copy">Copy link</string>

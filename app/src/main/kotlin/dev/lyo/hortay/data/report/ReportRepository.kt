@@ -8,6 +8,7 @@ package dev.lyo.hortay.data.report
 import dev.lyo.hortay.data.StringResolver
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdSender
+import dev.lyo.hortay.data.suspendRunCatching
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import org.drinkless.tdlib.TdApi
@@ -110,7 +111,7 @@ class ReportRepository(
     ): ReportStep {
         val messageIds = if (messageId != null && messageId != 0L) longArrayOf(messageId)
         else longArrayOf()
-        val result = runCatching {
+        val result = suspendRunCatching {
             td.send(TdApi.ReportChat(chatId, optionId, messageIds, text))
         }
         return result.fold(

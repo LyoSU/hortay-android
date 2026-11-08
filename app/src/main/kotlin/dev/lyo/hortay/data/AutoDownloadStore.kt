@@ -243,7 +243,7 @@ class AutoDownloadStore(
     }
 
     private suspend fun pushToTdlib(policy: AutoDownloadPolicy, type: TdApi.NetworkType) {
-        runCatching {
+        suspendRunCatching {
             td.send(TdApi.SetAutoDownloadSettings(policy.toTdSettings(), type))
         }
     }

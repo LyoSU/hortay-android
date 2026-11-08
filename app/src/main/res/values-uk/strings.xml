@@ -228,6 +228,7 @@
     <string name="post_open_telegram">Відкрити в Telegram</string>
     <string name="post_copied_toast">Скопійовано</string>
     <string name="post_show_more">Показати більше</string>
+    <string name="post_more_actions">Інші дії</string>
     <string name="post_show_less">Показати менше</string>
 
     <!-- Service / expired media -->
@@ -306,6 +307,9 @@
     <string name="comments_disabled_title">Коментарі вимкнено</string>
     <string name="comments_disabled_body">Автор каналу не підключив групу для обговорень</string>
     <string name="comments_unavailable">Обговорення недоступне</string>
+    <string name="comments_load_failed_title">Не вдалося завантажити коментарі</string>
+    <string name="comments_load_failed_body">Перевір зʼєднання й спробуй ще раз</string>
+    <string name="comments_retry">Спробувати ще раз</string>
 
     <!-- Channels -->
     <string name="channels_title">Канали</string>
@@ -319,6 +323,20 @@
     <string name="channels_unhide_from_feed">Повернути у стрічку</string>
     <string name="channels_hide_from_feed_for">Сховати %1$s зі стрічки</string>
     <string name="channels_unhide_from_feed_for">Повернути %1$s у стрічку</string>
+    <string name="channels_feed_menu">Канали у стрічці</string>
+    <string name="channels_hide_all">Сховати всі зі стрічки</string>
+    <string name="channels_show_all">Показати всі в стрічці</string>
+    <string name="channels_hide_all_confirm">Усі канали зникнуть зі стрічки. Потім проведи вбік ті, які хочеш залишити, щоб повернути їх.</string>
+    <string name="channels_show_all_confirm">Сховані канали знову з\'являться у стрічці.</string>
+    <string name="channels_search_hint">Пошук каналів</string>
+    <string name="channels_swipe_hint">Проведи канал убік, щоб сховати його зі стрічки.</string>
+    <string name="channels_hidden_label">Приховано зі стрічки</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d непрочитаний допис</item>
+        <item quantity="few">%d непрочитані дописи</item>
+        <item quantity="many">%d непрочитаних дописів</item>
+        <item quantity="other">%d непрочитаного допису</item>
+    </plurals>
     <string name="channels_empty_title">Каналів немає</string>
     <string name="channels_empty_helper">Підпишись на канали в Telegram, і вони зʼявляться тут</string>
 
@@ -385,6 +403,7 @@
     <string name="settings_storage_clearing">Очищаємо…</string>
     <string name="settings_storage_clear">Очистити кеш медіа</string>
     <string name="settings_storage_clear_helper">Видаляє кеш фото, відео й файлів. База повідомлень і сесія залишаються; їх скидає лише вихід з акаунта</string>
+    <string name="settings_storage_clear_failed">Не вдалося очистити кеш медіа. Спробуй ще раз</string>
     <string name="settings_storage_media">Медіа</string>
     <string name="settings_storage_db">База даних</string>
 
@@ -536,6 +555,9 @@
     <!-- Інлайн-позначки біля поста. -->
     <string name="post_badge_edited">Відредаговано</string>
     <string name="post_badge_pinned">Закріплено</string>
+    <string name="pinned_bar_title">Закріплене повідомлення</string>
+    <string name="pinned_bar_title_position">Закріплене %1$d з %2$d</string>
+    <string name="pinned_bar_open">Перейти до закріпленого повідомлення</string>
     <!-- Меню при довгому натисканні на посилання в тексті поста. -->
     <string name="link_action_open">Відкрити</string>
     <string name="link_action_copy">Скопіювати посилання</string>

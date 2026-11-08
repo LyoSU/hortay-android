@@ -125,6 +125,7 @@ private fun symbolDrawable(name: String, filled: Boolean = false): Int {
         "logout" -> R.drawable.sym_logout
         "mic" -> R.drawable.sym_mic
         "mic_off" -> R.drawable.sym_mic_off
+        "more_horiz" -> R.drawable.sym_more_horiz
         "network_check" -> R.drawable.sym_network_check
         "notifications_active" -> R.drawable.sym_notifications_active
         "notifications_off" -> R.drawable.sym_notifications_off

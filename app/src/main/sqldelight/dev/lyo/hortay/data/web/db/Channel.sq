@@ -50,6 +50,12 @@ WHERE is_subscribed = 1
 -- the operation is still atomic. SQLite optimises the no-op INSERT (PK conflict)
 -- to a single B-tree probe — performance overhead is negligible.
 
+-- Ingest never touches is_subscribed: subscription is user intent, owned by
+-- subscribeInsert / subscribeUpdate / unsubscribe. Writing 1 here let an
+-- unsubscribe that landed while a fetch was in flight be silently undone when
+-- that fetch's page was ingested. A row the INSERT actually creates (no
+-- subscribe ever wrote one, or it was deleted mid-fetch) is therefore not a
+-- subscription, hence 0.
 upsertFromFetchInsert:
 INSERT OR IGNORE INTO channel(
     username, title, description, avatar_url, subscribers, is_verified,
@@ -57,7 +63,7 @@ INSERT OR IGNORE INTO channel(
     fetch_status, fetch_error, fetch_retry_after_ms
 ) VALUES (
     :username, :title, :description, :avatarUrl, :subscribers, :isVerified,
-    1, :lastFetchedAtMs, :lastEtag, :lastModified, :olderCursor,
+    0, :lastFetchedAtMs, :lastEtag, :lastModified, :olderCursor,
     'ok', NULL, NULL
 );
 
@@ -68,7 +74,6 @@ UPDATE channel SET
     avatar_url = :avatarUrl,
     subscribers = :subscribers,
     is_verified = :isVerified,
-    is_subscribed = 1,
     last_fetched_at_ms = :lastFetchedAtMs,
     last_etag = :lastEtag,
     last_modified = :lastModified,
@@ -105,6 +110,12 @@ WHERE username = :username;
 -- stuck rows to 'idle' so the next sweep can pick them up cleanly.
 clearStaleLoading:
 UPDATE channel SET fetch_status = 'idle' WHERE fetch_status = 'loading';
+
+-- Per-channel variant for a fetch cancelled mid-flight (sweep cancelled, scope
+-- torn down). Conditional on 'loading' so a fetch whose ingest already committed
+-- its 'ok' / error status before the cancellation surfaced keeps that status.
+clearLoading:
+UPDATE channel SET fetch_status = 'idle' WHERE username = :username AND fetch_status = 'loading';
 
 -- Subscription-intent operations. Calling subscribe on a never-seen channel
 -- bootstraps the row with a placeholder title — the next fetch fills it in.

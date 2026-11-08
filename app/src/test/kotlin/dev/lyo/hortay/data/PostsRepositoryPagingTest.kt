@@ -59,6 +59,30 @@ class PostsRepositoryPagingTest {
     }
 
     @Test
+    fun `forced loadChannelHistory bypasses the deep-load cooldown`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chat = harness.fakeChannel(id = -9150L)
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+        harness.historyPages(chat.id, mapOf(0L to listOf(100L, 99L), 99L to emptyList()))
+
+        harness.repo.loadChannelHistory(chat.id, limit = 80)
+        harness.advanceUntilIdle()
+        val afterFirst = harness.td.rpcCount("GetChatHistory")
+
+        // Inside the cooldown a plain call is a no-op…
+        harness.repo.loadChannelHistory(chat.id, limit = 80)
+        harness.advanceUntilIdle()
+        assertEquals(afterFirst, harness.td.rpcCount("GetChatHistory"))
+
+        // …while a user pull-to-refresh (force) really refetches.
+        val forced = harness.repo.loadChannelHistory(chat.id, limit = 80, force = true)
+        harness.advanceUntilIdle()
+        assertTrue(forced.isSuccess)
+        assertTrue(harness.td.rpcCount("GetChatHistory") > afterFirst)
+    }
+
+    @Test
     fun `loadOlder marks end of history on a boundary-only page and stops pinging`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
         val chat = harness.fakeChannel(id = -9200L)

@@ -197,6 +197,7 @@ fun ChannelScreen(
     val bookmarkedKeys by vm.bookmarkedKeys.collectAsStateWithLifecycle()
     val searchActive by vm.searchActive.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val pinned by vm.pinned.collectAsStateWithLifecycle()
     val searchResults by vm.searchResults.collectAsStateWithLifecycle()
     val translationsMap = translations.translations.collectAsStateWithLifecycle().value
     val context = LocalContext.current
@@ -357,6 +358,11 @@ fun ChannelScreen(
     // jump path — same-channel reply navigation from a [PostInteractions.onQuotedSourceClick]
     // tap. [rememberPendingScrollToMessage] resolves the target and clears it.
     var pendingScrollToMessage by remember(chatId) { mutableStateOf<Pair<Long, Long>?>(null) }
+    // Which pin the bar shows, by message id (null = newest). Each tap jumps to it and
+    // steps to the next older one (wrapping), so repeated taps walk the whole pinned
+    // set. Identity, not a position: a pin added or removed mid-walk must not make the
+    // cursor skip or repeat a pin.
+    var pinnedCursorId by remember(chatId) { mutableStateOf<Long?>(null) }
 
     // Scroll state. First paint lands at the correct row in one frame
     // (cold-start landing) AND drill-out/drill-in preserves user scroll, even
@@ -692,6 +698,18 @@ fun ChannelScreen(
                     onTitleTap = { infoSheetVisible = true },
                     scrollBehavior = scrollBehavior,
                 )
+                if (!searchActive && pinned.isNotEmpty()) {
+                    val shown = pinned.indexOfFirst { it.messageId == pinnedCursorId }.coerceAtLeast(0)
+                    PinnedMessageBar(
+                        pinned = pinned[shown],
+                        position = shown + 1,
+                        total = pinned.size,
+                        onClick = {
+                            pendingScrollToMessage = chatId to pinned[shown].messageId
+                            pinnedCursorId = pinned[(shown + 1) % pinned.size].messageId
+                        },
+                    )
+                }
             }
         },
         containerColor = MaterialTheme.colorScheme.background,

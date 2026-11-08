@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -37,9 +38,10 @@ enum class DownloadPriority(val tdValue: Int) {
     /**
      * Card whose centre is closest to the viewport centre — i.e. what the user is
      * most likely staring at right now. Sits one tier above plain [VisibleMedia]
-     * so on a tight TDLib pool (mobile/roaming, ~4 active slots per
-     * [tdlib/td#786](https://github.com/tdlib/td/issues/786)) the dominant card
-     * always grabs a slot first regardless of LIFO ordering inside lane 16. On
+     * so on a tight TDLib download pool (mobile/roaming, where fewer files download
+     * concurrently) the dominant card always grabs a slot first regardless of the
+     * LIFO order TDLib applies to same-priority requests inside lane 16
+     * ([tdlib/td#786](https://github.com/tdlib/td/issues/786)). On
      * Wi-Fi the pool is wide enough that the priority gap is invisible — same
      * file lands on both, the gap is just defence in depth.
      */
@@ -90,6 +92,13 @@ class MediaCache(
     private val networkType: StateFlow<HortayNetworkType>,
     private val res: StringResolver,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /**
+     * Monotonic clock for the watchdog's `changedAt` and the progress throttle — in-memory
+     * intervals only, so [SystemClock.elapsedRealtime] (immune to wall-clock jumps from NTP
+     * sync or a manual time change, which could otherwise fire or suppress the stall
+     * watchdog). Injectable because `android.os.SystemClock` returns 0 under JVM unit tests.
+     */
+    private val clock: () -> Long = SystemClock::elapsedRealtime,
 ) {
 
     private val states = ConcurrentHashMap<Int, MutableStateFlow<MediaState>>()
@@ -366,7 +375,7 @@ class MediaCache(
             else -> incoming
         }
 
-        val now = System.currentTimeMillis()
+        val now = clock()
         if (merged is MediaState.Downloading) {
             val bytes = file.local.downloadedSize
             val isActive = file.local.isDownloadingActive
@@ -491,7 +500,7 @@ class MediaCache(
      * gets its Ready state clobbered with Failed.
      */
     private suspend fun checkStalled() {
-        val now = System.currentTimeMillis()
+        val now = clock()
         // Snapshot — we mutate the map inside the loop.
         val snapshot = tracks.entries.toList()
         for ((fileId, track) in snapshot) {
@@ -638,7 +647,7 @@ class MediaCache(
             // first reducer event will flip this from `file.local.isDownloadingActive`.
             tracks.putIfAbsent(
                 fileId,
-                Track(0L, System.currentTimeMillis(), retries = 0, lastEmitMs = 0L, isActive = false),
+                Track(0L, clock(), retries = 0, lastEmitMs = 0L, isActive = false),
             )
         } catch (t: Throwable) {
             // A Composable leaving composition cancels its LaunchedEffect — that surfaces

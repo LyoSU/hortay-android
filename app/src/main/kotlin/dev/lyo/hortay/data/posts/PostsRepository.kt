@@ -15,11 +15,13 @@ import dev.lyo.hortay.data.PostFilterStrategy
 import dev.lyo.hortay.data.rich.RichPlainText
 import dev.lyo.hortay.data.rich.toRichDocument
 import dev.lyo.hortay.data.ReactionKind
+import dev.lyo.hortay.data.PollVotePolicy
 import dev.lyo.hortay.data.ReactionTogglePolicy
 import dev.lyo.hortay.data.Reactions
 import dev.lyo.hortay.data.StringResolver
 import dev.lyo.hortay.data.TdClient
 import dev.lyo.hortay.data.TdSender
+import dev.lyo.hortay.data.PinnedPreview
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.TimelineSnapshotStore
 import dev.lyo.hortay.data.UserMessageBus
@@ -84,8 +86,9 @@ import java.util.concurrent.atomic.AtomicLong
  * Our listeners catch those, route messages through [ingest], and populate
  * `_mainChatIds` / `_archivedChatIds` along the way. No `GetChats` round-trip,
  * no per-channel `chat.lastMessage` harvest pass, no 2 s "wait for the chat
- * cache" timeout — Levin's canonical pattern (tdlib/td#3019: updates are the source of
- * truth; LoadChats is what makes them flow).
+ * cache" timeout — the pattern td_api.tl prescribes: `loadChats` "loaded chats and
+ * their positions in the chat list will be sent through updates", while `getChats` is
+ * "for informational purposes only. Use loadChats and updates processing instead".
  *
  * On-demand paths (untouched by [triggerInitialSync]):
  *   • [loadChannelHistory] — when the user opens a single-channel filter.
@@ -233,14 +236,14 @@ class PostsRepository(
      */
     private val _initialSyncDone = MutableStateFlow(false)
 
-    // Exposed for tests / potential future consumers; internally `_initialSyncDone`
-    // gates ingest's onlyLocal decision. No external consumer at present.
-    val initialSyncDone: StateFlow<Boolean> = _initialSyncDone.asStateFlow()
+    // Internally `_initialSyncDone` gates ingest's onlyLocal decision; externally it is
+    // the cold-start "cursors have landed" signal TimelineScreen's boundary picker waits on.
+    override val initialSyncDone: StateFlow<Boolean> = _initialSyncDone.asStateFlow()
 
     // Album coalescing: TDLib emits one UpdateNewMessage per album member with no
     // "album complete" signal — confirmed upstream by tdlib/td#1482 (closed 2021
-    // with "use a timeout") and reiterated in tdlib/td#2523 (closed 2023 with the
-    // same verdict). The wire-level gap is permanent, so we treat album reassembly
+    // with "use a timeout"); td_api.tl's `media_album_id` only groups members and
+    // carries no member count. The wire-level gap is permanent, so we treat album reassembly
     // as a layered defence with three independent rescue paths, each addressing a
     // different timing window:
     //
@@ -516,6 +519,12 @@ class PostsRepository(
     private val _chatReadCursors = MutableStateFlow<PersistentMap<Long, Long>>(persistentMapOf())
     val chatReadCursors: StateFlow<PersistentMap<Long, Long>> = _chatReadCursors.asStateFlow()
 
+    // TDLib's own per-chat unread message count (`Chat.unreadCount`, then each
+    // `UpdateChatReadInbox`), for the Channels tab's numeric badge. The feed slice can only
+    // prove a channel HAS unread (newest id > cursor); the count has to come from TDLib.
+    private val _chatUnreadCounts = MutableStateFlow<PersistentMap<Long, Int>>(persistentMapOf())
+    val chatUnreadCounts: StateFlow<PersistentMap<Long, Int>> = _chatUnreadCounts.asStateFlow()
+
     // Real-time *new* post stream — emits ONLY for posts that arrived via
     // [TdApi.UpdateNewMessage] (direct + album-debounce flush), i.e. through
     // [ingest]. Refresh / loadOlder / restoreFromSnapshot / loadChannelHistory /
@@ -547,6 +556,21 @@ class PostsRepository(
     )
     val newArrivals: SharedFlow<TimelinePost> = _newArrivals.asSharedFlow()
 
+    // Declared before `init`, which launches its consumer. Ingest of an UpdateNewChat's lastMessage runs on its own single consumer, in TDLib
+    // order, instead of inline on the update collector: after the initial sync, ingest
+    // can coalesce an album over the network and wait out a FLOOD_WAIT, which inline
+    // would hold every other update type (new posts, deletes, edits) behind it.
+    private val newChatIngests = Channel<Pair<Long, TdApi.Message>>(Channel.UNLIMITED)
+
+    // Declared before `init`: the update collector launched there emits into it.
+    private val _pinnedChanged = MutableSharedFlow<Long>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+
+    /** Chat ids whose pinned set changed (`UpdateMessageIsPinned`); [pinnedMessages] re-reads. */
+    val pinnedChanged: SharedFlow<Long> = _pinnedChanged.asSharedFlow()
+
     init {
         // One collector for every TDLib update this repository handles, dispatched in
         // [onUpdate]. Separate `filterIsInstance` collectors per type woke ~14
@@ -571,6 +595,12 @@ class PostsRepository(
                 .drop(1) // Skip the initial value; only act on real transitions.
                 .filter { !it }
                 .collect { saveSnapshotNow() }
+        }
+
+        scope.launch {
+            for ((chatId, msg) in newChatIngests) {
+                runCatching { ingest(chatId, listOf(msg)) }.warnUnlessCancelled(TAG, "newChatIngest")
+            }
         }
 
         // Layer-2 album repair drain: single consumer, one dispatch per throttle window.
@@ -679,8 +709,9 @@ class PostsRepository(
      * ingest writes `_posts` on the first `UpdateNewChat` (immediate), while this restore
      * has to await a `GetMessage` batch before its first write, so the stub almost always
      * won that race — the bail then discarded the snapshot and the feed collapsed to one
-     * post per channel after every restart (tdlib/td#3019 keeps the cold-start stream at
-     * one post per channel by design; the snapshot is the only thing carrying deep history
+     * post per channel after every restart (the cold-start contract keeps the stream at one
+     * post per channel by design — `UpdateNewChat` carries only `chat.lastMessage` and
+     * per-channel history fan-out is off-limits, see the class KDoc; the snapshot is the only thing carrying deep history
      * across warm restarts once the one-shot [runFirstSignInBackfill] is done).
      *
      * Album completeness is still owned by the Layer-1 local rehydration in
@@ -790,8 +821,9 @@ class PostsRepository(
      *
      * What it deliberately doesn't do:
      *   - No `GetChats` call. The set is built incrementally from the
-     *     listener stream, which is the canonical TDLib pattern (Levin in
-     *     tdlib/td#3019: updates are the source of truth).
+     *     listener stream, which is the canonical TDLib pattern (td_api.tl:
+     *     `getChats` is "for informational purposes only. Use loadChats and
+     *     updates processing instead to maintain chat lists").
      *   - No 2 s wait for the chat cache to fill. Updates either arrived
      *     synchronously during the LoadChats drain (warm cache) or will
      *     arrive on the wire (first-auth) — in both cases our listeners
@@ -848,6 +880,17 @@ class PostsRepository(
      * stall for no UX gain. Next sign-in (or next launch after this one, if
      * we never marked done) retries.
      *
+     * **Done only on evidence.** The flag is marked only when at least one
+     * channel's `GetChatHistory` succeeded, or when top-K is empty after a
+     * SUCCESSFUL chat-list drain ([_initialSyncDone]). An offline sign-in (drain
+     * failed → empty top-K) or a loop where every channel failed retries on the
+     * next Ready edge instead of silently giving up for this account.
+     *
+     * **Album coalesce stays offline.** Backfill ingest forces the local-only
+     * album path so a fragmented album at the window edge can't add unthrottled
+     * networked `GetChatHistory` calls on top of the budgeted loop; the Layer-2
+     * focus repair completes such albums when the card is read.
+     *
      * **One-shot per auth session.** Persisted via [coldStartBackfill]; reset
      * on TDLib `loggedOut` via the standard cleanup fan-out in
      * [dev.lyo.hortay.AppGraph]. Re-runs only on a fresh sign-in (different
@@ -892,10 +935,17 @@ class PostsRepository(
             // No subscribed channels — nothing to backfill but also nothing to
             // retry. Mark done so we don't re-walk the empty list on every
             // foreground transition; logout/login will reset the flag.
-            store.markDone()
+            // ONLY when the chat-list drain actually succeeded: an empty top-K
+            // after a failed drain (offline sign-in) means "unknown", not "none",
+            // and marking done there would lose the backfill for this account.
+            if (_initialSyncDone.value && sessionEpoch.get() == epoch) store.markDone()
             return
         }
 
+        // Set once any channel's GetChatHistory succeeds. A loop where every
+        // channel failed (offline, transient TDLib errors) must not mark the
+        // one-shot flag — it accomplished nothing and the next Ready edge retries.
+        var anyFetched = false
         for (chat in topK) {
             val res = runCatching {
                 td.send(
@@ -927,11 +977,44 @@ class PostsRepository(
             // TDLib hiccup) are non-fatal — log and move on. The next channel
             // in the top-K list is independent.
             err?.let { runCatching { Log.w(TAG, "Backfill GetChatHistory failed for chat=${chat.id}: ${it.message}") } }
+            if (res.isSuccess) anyFetched = true
+            // localAlbumsOnly: the backfill's GetChatHistory calls already spend the
+            // 30 req / 30 s budget at the throttle's edge. A networked album coalesce
+            // here would add unthrottled GetChatHistory calls on top of it; fragmented
+            // albums at the window edge are repaired by the Layer-2 focus repair instead.
             res.getOrNull()?.messages?.toList()?.takeIf { it.isNotEmpty() }
-                ?.let { messages -> ingest(chat.id, messages) }
+                ?.let { messages -> ingest(chat.id, messages, localAlbumsOnly = true) }
             delay(BACKFILL_THROTTLE_MS)
         }
-        if (sessionEpoch.get() == epoch) store.markDone()
+        if (anyFetched && sessionEpoch.get() == epoch) store.markDone()
+    }
+
+    /**
+     * The channel's pinned messages, newest first, for the channel screen's pinned bar.
+     * One `SearchChatMessages(filter = Pinned)` per channel open or pin change — an
+     * on-demand call like [loadChannelHistory], never a cold-start fan-out. Empty on
+     * failure: a missing bar is better than an error for a secondary surface.
+     */
+    suspend fun pinnedMessages(chatId: Long): ImmutableList<PinnedPreview> {
+        // TDLib may return fewer than `limit` per page, so follow next_from_message_id
+        // until it runs out (0) or the cap is reached — one page would undercount "N of M".
+        val collected = ArrayList<TdApi.Message>()
+        var from = 0L
+        var more = true
+        while (more && collected.size < PINNED_MAX) {
+            val page = runCatching {
+                td.send(
+                    TdApi.SearchChatMessages(
+                        chatId, null, "", null, from, 0, PINNED_FETCH_LIMIT, TdApi.SearchMessagesFilterPinned(),
+                    ),
+                )
+            }.warnUnlessCancelled(TAG, "pinnedMessages($chatId)").getOrNull()
+            val messages = page?.messages.orEmpty()
+            collected += messages
+            from = page?.nextFromMessageId ?: 0L
+            more = messages.isNotEmpty() && from != 0L
+        }
+        return collected.distinctBy { it.id }.take(PINNED_MAX).map(mapper::toPinnedPreview).toPersistentList()
     }
 
     /**
@@ -980,10 +1063,17 @@ class PostsRepository(
         return System.currentTimeMillis() < until
     }
 
-    suspend fun loadChannelHistory(chatId: Long, limit: Int = 80): Result<Unit> {
+    /**
+     * @param force Skip the [DEEP_LOAD_COOLDOWN_MS] short-circuit — a user pull-to-refresh
+     *   on the channel screen explicitly asks for fresh history. Still single-flight, and
+     *   every RPC still goes through [TdClient]'s FLOOD_WAIT gate.
+     */
+    suspend fun loadChannelHistory(chatId: Long, limit: Int = 80, force: Boolean = false): Result<Unit> {
         val now = System.currentTimeMillis()
-        deepLoadCooldownUntilMs[chatId]?.let { until ->
-            if (now < until) return Result.success(Unit)
+        if (!force) {
+            deepLoadCooldownUntilMs[chatId]?.let { until ->
+                if (now < until) return Result.success(Unit)
+            }
         }
         val deferred = deepLoadJobs.computeIfAbsent(chatId) {
             scope.async { runCatching { loadChannelHistoryLocked(chatId, limit) } }
@@ -1404,7 +1494,10 @@ class PostsRepository(
             // of the server ack landing here. monotonic-only update — TDLib has been
             // observed to emit redundant resets with smaller ids during chat repair
             // flows; clamping to monoMax(...) keeps the cursor from rewinding under us.
-            is TdApi.UpdateChatReadInbox -> advanceReadCursor(update.chatId, update.lastReadInboxMessageId)
+            is TdApi.UpdateChatReadInbox -> {
+                advanceReadCursor(update.chatId, update.lastReadInboxMessageId)
+                _chatUnreadCounts.update { it.put(update.chatId, update.unreadCount) }
+            }
 
             is TdApi.UpdateChatLastMessage -> handleChatLastMessage(update)
 
@@ -1491,13 +1584,14 @@ class PostsRepository(
      * Called from the [TdApi.UpdateNewChat] listener; suspending because [ingest]
      * may suspend on its own GetChat fallback or on the [_posts] CAS loop.
      */
-    private suspend fun handleNewChat(chat: TdApi.Chat) {
+    private fun handleNewChat(chat: TdApi.Chat) {
         registry.rememberChat(chat)
         seedReadCursor(chat)
         hydrateChatListMembership(chat)
         val msg = pendingLastMessages.remove(chat.id) ?: chat.lastMessage
-        if (msg != null && chat.isChannel()) ingest(chat.id, listOf(msg))
+        if (msg != null && chat.isChannel()) newChatIngests.trySend(chat.id to msg)
     }
+
 
     /**
      * Monotonic advance of the local read cursor for [chatId] to [cursor]. The single
@@ -1522,6 +1616,7 @@ class PostsRepository(
     }
 
     private fun seedReadCursor(chat: TdApi.Chat) {
+        _chatUnreadCounts.update { it.put(chat.id, chat.unreadCount) }
         val cursor = chat.lastReadInboxMessageId
         val hasReadState = cursor > 0L || chat.unreadCount > 0
         if (!hasReadState) return
@@ -1582,7 +1677,14 @@ class PostsRepository(
         albumDebounce[key] = jobRef
     }
 
-    private suspend fun ingest(chatId: Long, messages: List<TdApi.Message>) {
+    private suspend fun ingest(
+        chatId: Long,
+        messages: List<TdApi.Message>,
+        // Force the offline album coalesce even after the initial sync. Set by
+        // [runFirstSignInBackfill], whose own GetChatHistory calls already sit at the
+        // server's rate budget.
+        localAlbumsOnly: Boolean = false,
+    ) {
         // Capture the session epoch before any suspend point. A logout→clear() that
         // lands while we're parked on the GetChat fallback / networked album coalesce
         // below bumps this; we re-check before writing so a resumed ingest can't
@@ -1617,7 +1719,7 @@ class PostsRepository(
         // Locally-cached siblings still merge; the rest are repaired by the
         // post-drain snapshot pass or an on-demand open. After the drain settles
         // a live arrival is one chat at a time, so networking is back on.
-        val full = albums.coalesce(chatId, messages, onlyLocal = !_initialSyncDone.value)
+        val full = albums.coalesce(chatId, messages, onlyLocal = localAlbumsOnly || !_initialSyncDone.value)
 
         val newPosts = full
             .filterNot { isRecentlyDeleted(it.chatId, it.id) }
@@ -1711,6 +1813,9 @@ class PostsRepository(
         chat: TdApi.Chat,
     ) {
         val repo = archiveRepository ?: return
+        // Gate before the media copy: copyIfAvailable bumps the refcount, which a
+        // skipped capture (excluded chat, edits capture off) would never release.
+        if (!repo.capturesEditsFor(ChatRef.tdlib(chat.id))) return
         val mediaSha = archiveMediaStore?.let { store ->
             MediaFileFromContent.extract(message.content)?.let { store.copyIfAvailable(it) }
         }
@@ -1857,6 +1962,10 @@ class PostsRepository(
                 (p.id == update.messageId || update.messageId in p.albumMessageIds)
         }
         val buffered = pendingArchiveEdits.commitOnEdited(update.chatId, update.messageId)
+        // Archive off (the default), chat excluded or edit capture disabled: skip the
+        // GetMessage fallback and — crucially — the media copy below, whose refcount
+        // bump only a written VERSION row would ever release.
+        if (!archiveRepository.capturesEditsFor(ChatRef.tdlib(update.chatId))) return
         scope.launch {
             val content: TdApi.MessageContent = buffered
                 ?: runCatching { td.send(TdApi.GetMessage(update.chatId, update.messageId)) }
@@ -2159,18 +2268,7 @@ class PostsRepository(
         val selection: Set<Int> = chosenIndices.toHashSet()
         updateOnePostByAnyMemberId(chatId, messageId) { post ->
             val poll = post.content as? PostContent.Poll ?: return@updateOnePostByAnyMemberId post
-            val newOptions = poll.options.map { opt ->
-                opt.copy(
-                    isChosen = opt.index in selection,
-                    isBeingChosen = opt.index in selection,
-                )
-            }
-            post.copy(
-                content = poll.copy(
-                    options = newOptions.toPersistentList(),
-                    hasVoted = newOptions.any { it.isChosen },
-                ),
-            )
+            post.copy(content = PollVotePolicy.applyOptimistic(poll, selection))
         }
     }
 
@@ -2178,30 +2276,20 @@ class PostsRepository(
      * Drop [PollOption.isBeingChosen] shimmer set by [applyOptimisticPollAnswer]. Called from
      * the action repository's coroutine when the SetPollAnswer RPC settles — on success the
      * eventual `UpdateMessageContent` carries the final percentages so we just drop the
-     * shimmer. On failure ([revert]=true) we also reset `isChosen` on previously-being-chosen
-     * rows so the visible flip is undone.
+     * shimmer. On failure ([revert]=true) every option the optimistic step flipped is flipped
+     * back, restoring the pre-tap selection (retracts and vote changes included) — see
+     * [PollVotePolicy].
      */
     fun clearPollPending(chatId: Long, messageId: Long, revert: Boolean) {
         updateOnePostByAnyMemberId(chatId, messageId) { post ->
             val poll = post.content as? PostContent.Poll ?: return@updateOnePostByAnyMemberId post
-            if (poll.options.none { it.isBeingChosen }) return@updateOnePostByAnyMemberId post
-            val newOptions = poll.options.map { opt ->
-                if (!opt.isBeingChosen) opt
-                else opt.copy(
-                    isBeingChosen = false,
-                    isChosen = if (revert) false else opt.isChosen,
-                )
-            }
-            post.copy(
-                content = poll.copy(
-                    options = newOptions.toPersistentList(),
-                    hasVoted = newOptions.any { it.isChosen },
-                ),
-            )
+            val cleared = PollVotePolicy.clearPending(poll, revert) ?: return@updateOnePostByAnyMemberId post
+            post.copy(content = cleared)
         }
     }
 
     private fun handleIsPinnedChanged(update: TdApi.UpdateMessageIsPinned) {
+        _pinnedChanged.tryEmit(update.chatId)
         // Pin badge: TDLib pins one specific message; for an album in our timeline that
         // can be any sibling (Telegram typically pins the caption-carrier, but admins
         // can pin any). Match by either anchor id or any album member id and set the
@@ -2378,6 +2466,13 @@ class PostsRepository(
     private val _mainChatIds = MutableStateFlow<Set<Long>>(emptySet())
 
     /**
+     * Every chat the account is subscribed to (Main + Archive membership), whether or not
+     * it has a post in [posts] yet — the scope of the Channels tab's "Hide all / Show all
+     * in feed" so a channel whose post hasn't landed is not left out.
+     */
+    fun subscribedChatIds(): Set<Long> = _mainChatIds.value + _archivedChatIds.value
+
+    /**
      * Wipe every piece of per-account in-memory state held by this repo.
      * Called from [AppGraph]'s logout handler in response to
      * [TdClient.loggedOut] so account A's cached posts / chat metadata /
@@ -2395,6 +2490,7 @@ class PostsRepository(
             // The registry (chats, supergroups, users) wipes itself through its own
             // AccountSession hook.
             _chatReadCursors.value = persistentMapOf()
+            _chatUnreadCounts.value = persistentMapOf()
             interactionInfo.clear()
             albumBuffers.clear()
             albumDebounce.values.forEach { it.cancel() }
@@ -2535,6 +2631,10 @@ class PostsRepository(
         // against burst suppression. Telegram's official Android client coalesces in a
         // similar window.
         const val INTERACTION_INFO_COALESCE_MS = 200L
+
+        /** Pinned messages fetched for the channel screen's pinned bar. */
+        const val PINNED_FETCH_LIMIT = 20
+        const val PINNED_MAX = 50
         // Snapshot persistence: top-N posts saved on background. 50 covers a typical
         // first-screen view with comfortable scroll headroom; bigger payloads make the
         // DataStore write feel measurable on the way out without UX benefit because

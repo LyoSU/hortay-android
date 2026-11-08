@@ -30,11 +30,11 @@ class ArchiveViewModel(
 
     val snapshots: StateFlow<ImmutableList<PostSnapshot>> =
         _filter.flatMapLatest { repo.observe(it) }
-            .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
 
     val channels: StateFlow<ImmutableList<ArchivedChannelEntry>> =
         repo.observeChannelIndex()
-            .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), persistentListOf())
 
     fun setKind(kind: SnapshotKind?) { _filter.value = _filter.value.copy(kind = kind) }
     fun setScope(scope: ArchiveScope?) { _filter.value = _filter.value.copy(scope = scope) }
@@ -46,4 +46,10 @@ class ArchiveViewModel(
 
     fun observeRevisionsFor(snapshot: PostSnapshot): Flow<ImmutableList<PostSnapshot>> =
         repo.observeRevisions(snapshot.chat, snapshot.messageKey)
+
+    private companion object {
+        // Same linger as the timeline VMs: survives a rotation / brief recomposition gap
+        // without re-running the archive queries, but stops them once the screen is gone.
+        const val STOP_TIMEOUT_MS = 5_000L
+    }
 }

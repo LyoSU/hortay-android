@@ -520,12 +520,13 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
     // Server-mandated cooldown ticks down from stage.resendAvailableInSec to 0. While it
     // is non-zero the resend button is disabled with a "0:42" label, which is what the
     // official Telegram client does — and saves users from spamming themselves into a
-    // FLOOD_WAIT. Resets whenever the stage emits a fresh cooldown (e.g. after a resend
-    // succeeds and TDLib hands back a new AuthorizationStateWaitCode with a new timeout).
-    var secondsLeft by remember(stage.resendAvailableInSec) {
+    // FLOOD_WAIT. Resets whenever a new WaitCode stage arrives (e.g. after a resend
+    // succeeds and TDLib hands back a new delivery channel) — keyed on the whole stage,
+    // not just the timeout, so a resend with the same timeout still restarts the cooldown.
+    var secondsLeft by remember(stage) {
         mutableIntStateOf(stage.resendAvailableInSec)
     }
-    LaunchedEffect(stage.resendAvailableInSec) {
+    LaunchedEffect(stage) {
         while (secondsLeft > 0) {
             kotlinx.coroutines.delay(1000)
             secondsLeft -= 1

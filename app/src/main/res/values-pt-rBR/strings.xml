@@ -228,6 +228,7 @@
     <string name="post_open_telegram">Abrir no Telegram</string>
     <string name="post_copied_toast">Copiado</string>
     <string name="post_show_more">Ver mais</string>
+    <string name="post_more_actions">Mais ações</string>
     <string name="post_show_less">Ver menos</string>
 
     <!-- Serviço / mídia expirada -->
@@ -303,6 +304,9 @@
     <string name="comments_disabled_title">Comentários desativados</string>
     <string name="comments_disabled_body">Este canal não tem um grupo de discussão vinculado</string>
     <string name="comments_unavailable">Discussão indisponível</string>
+    <string name="comments_load_failed_title">Não foi possível carregar os comentários</string>
+    <string name="comments_load_failed_body">Verifique sua conexão e tente de novo</string>
+    <string name="comments_retry">Tentar de novo</string>
 
     <!-- Canais -->
     <string name="channels_title">Canais</string>
@@ -316,6 +320,19 @@
     <string name="channels_unhide_from_feed">Mostrar no feed</string>
     <string name="channels_hide_from_feed_for">Ocultar %1$s do feed</string>
     <string name="channels_unhide_from_feed_for">Mostrar %1$s no feed</string>
+    <string name="channels_feed_menu">Canais no feed</string>
+    <string name="channels_hide_all">Ocultar todos do feed</string>
+    <string name="channels_show_all">Mostrar todos no feed</string>
+    <string name="channels_hide_all_confirm">Todos os canais serão ocultados do feed. Depois deslize os que quiser manter para trazê-los de volta.</string>
+    <string name="channels_show_all_confirm">Os canais ocultados voltarão a aparecer no feed.</string>
+    <string name="channels_search_hint">Buscar canais</string>
+    <string name="channels_swipe_hint">Deslize um canal para o lado para ocultá-lo do feed.</string>
+    <string name="channels_hidden_label">Oculto do feed</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d publicação não lida</item>
+        <item quantity="many">%d publicações não lidas</item>
+        <item quantity="other">%d publicações não lidas</item>
+    </plurals>
     <string name="channels_empty_title">Nenhum canal ainda</string>
     <string name="channels_empty_helper">Inscreva-se em canais no Telegram e eles aparecerão aqui</string>
 
@@ -382,6 +399,7 @@
     <string name="settings_storage_clearing">Limpando…</string>
     <string name="settings_storage_clear">Limpar cache de mídia</string>
     <string name="settings_storage_clear_helper">Remove fotos, vídeos e arquivos em cache. O banco de mensagens e a sessão são mantidos — só sair da conta limpa esses dados</string>
+    <string name="settings_storage_clear_failed">Não foi possível limpar o cache de mídia. Tente novamente</string>
     <string name="settings_storage_media">Mídia</string>
     <string name="settings_storage_db">Banco de dados</string>
 
@@ -538,6 +556,9 @@
     <!-- Selos de status inline ao lado de uma publicação. -->
     <string name="post_badge_edited">Editado</string>
     <string name="post_badge_pinned">Fixado</string>
+    <string name="pinned_bar_title">Mensagem fixada</string>
+    <string name="pinned_bar_title_position">Mensagem fixada %1$d de %2$d</string>
+    <string name="pinned_bar_open">Ir para a mensagem fixada</string>
     <!-- Menu de pressão longa em um link inline no corpo da publicação. -->
     <string name="link_action_open">Abrir</string>
     <string name="link_action_copy">Copiar link</string>

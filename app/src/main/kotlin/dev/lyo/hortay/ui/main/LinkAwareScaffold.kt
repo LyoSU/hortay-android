@@ -59,12 +59,16 @@ fun LinkAwareScaffold(graph: AppGraph, content: @Composable () -> Unit) {
     // before the suspending call returned on rotation and the dialog disappeared.
     val confirmMaskedLink = remember(graph) {
         { url: String ->
-            graph.appScope.launch {
-                val parsed = runCatching { Uri.parse(url) }.getOrNull()
-                val link = parsed?.let { graph.linkResolver.resolve(it) }
-                when (link) {
-                    null, is DeepLink.External -> graph.linkDialogs.showMaskedLink(url)
-                    else -> graph.deepLinkRouter.submit(link)
+            // Scheme gate BEFORE the resolver and the dialog — same allowlist as
+            // [HortayUriHandler]. Otherwise a `javascript:` / `intent:` masked link got
+            // an anti-phishing prompt whose Open button then silently did nothing.
+            val parsed = runCatching { Uri.parse(url) }.getOrNull()
+            if (parsed != null && isAllowedLinkScheme(parsed.scheme)) {
+                graph.appScope.launch {
+                    when (val link = graph.linkResolver.resolve(parsed)) {
+                        null, is DeepLink.External -> graph.linkDialogs.showMaskedLink(url)
+                        else -> graph.deepLinkRouter.submit(link)
+                    }
                 }
             }
             Unit

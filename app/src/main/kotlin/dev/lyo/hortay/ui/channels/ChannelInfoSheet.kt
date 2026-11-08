@@ -176,7 +176,11 @@ fun ChannelInfoSheet(
                     tint = MaterialTheme.colorScheme.error,
                     onClick = {
                         info = current.copy(isMember = false)
-                        scope.launch { actions.leaveChat(chatId) }
+                        // Optimistic flip; roll back if TDLib rejects the leave (the
+                        // error itself surfaces through UserMessageBus).
+                        scope.launch {
+                            if (!actions.leaveChat(chatId)) info = info?.copy(isMember = true)
+                        }
                     },
                 )
             } else {
@@ -186,7 +190,9 @@ fun ChannelInfoSheet(
                     tint = MaterialTheme.colorScheme.primary,
                     onClick = {
                         info = current.copy(isMember = true)
-                        scope.launch { actions.joinChat(chatId) }
+                        scope.launch {
+                            if (!actions.joinChat(chatId)) info = info?.copy(isMember = false)
+                        }
                     },
                 )
             }

@@ -218,6 +218,7 @@
     <string name="post_open_telegram">Buka di Telegram</string>
     <string name="post_copied_toast">Disalin</string>
     <string name="post_show_more">Tampilkan lebih banyak</string>
+    <string name="post_more_actions">Tindakan lainnya</string>
     <string name="post_show_less">Tampilkan lebih sedikit</string>
 
     <!-- Pesan layanan / media kadaluarsa -->
@@ -285,6 +286,9 @@
     <string name="comments_disabled_title">Komentar dinonaktifkan</string>
     <string name="comments_disabled_body">Kanal ini tidak memiliki grup diskusi yang terhubung</string>
     <string name="comments_unavailable">Diskusi tidak tersedia</string>
+    <string name="comments_load_failed_title">Tidak dapat memuat komentar</string>
+    <string name="comments_load_failed_body">Periksa koneksi Anda dan coba lagi</string>
+    <string name="comments_retry">Coba lagi</string>
 
     <!-- Kanal -->
     <string name="channels_title">Kanal</string>
@@ -298,6 +302,17 @@
     <string name="channels_unhide_from_feed">Tampilkan di feed</string>
     <string name="channels_hide_from_feed_for">Sembunyikan %1$s dari feed</string>
     <string name="channels_unhide_from_feed_for">Tampilkan %1$s di feed</string>
+    <string name="channels_feed_menu">Saluran di feed</string>
+    <string name="channels_hide_all">Sembunyikan semua dari feed</string>
+    <string name="channels_show_all">Tampilkan semua di feed</string>
+    <string name="channels_hide_all_confirm">Semua saluran akan disembunyikan dari feed. Lalu geser saluran yang ingin dipertahankan untuk mengembalikannya.</string>
+    <string name="channels_show_all_confirm">Saluran yang disembunyikan akan muncul lagi di feed.</string>
+    <string name="channels_search_hint">Cari saluran</string>
+    <string name="channels_swipe_hint">Geser saluran ke samping untuk menyembunyikannya dari feed.</string>
+    <string name="channels_hidden_label">Disembunyikan dari feed</string>
+    <plurals name="channels_unread_count">
+        <item quantity="other">%d postingan belum dibaca</item>
+    </plurals>
     <string name="channels_empty_title">Belum ada kanal</string>
     <string name="channels_empty_helper">Ikuti kanal di Telegram dan mereka akan muncul di sini</string>
 
@@ -364,6 +379,7 @@
     <string name="settings_storage_clearing">Menghapus…</string>
     <string name="settings_storage_clear">Hapus cache media</string>
     <string name="settings_storage_clear_helper">Menghapus foto, video, dan file yang di-cache. Database pesan dan sesi tetap ada, hanya dihapus saat keluar</string>
+    <string name="settings_storage_clear_failed">Gagal menghapus cache media. Coba lagi</string>
     <string name="settings_storage_media">Media</string>
     <string name="settings_storage_db">Database</string>
 
@@ -516,6 +532,9 @@
     <!-- Label status inline di samping kiriman. -->
     <string name="post_badge_edited">Diedit</string>
     <string name="post_badge_pinned">Disematkan</string>
+    <string name="pinned_bar_title">Pesan disematkan</string>
+    <string name="pinned_bar_title_position">Pesan disematkan %1$d dari %2$d</string>
+    <string name="pinned_bar_open">Buka pesan yang disematkan</string>
     <!-- Menu long-press pada tautan inline di isi kiriman. -->
     <string name="link_action_open">Buka</string>
     <string name="link_action_copy">Salin tautan</string>

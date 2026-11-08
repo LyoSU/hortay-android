@@ -3,7 +3,7 @@
 package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -46,13 +47,12 @@ import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
 import dev.lyo.hortay.ui.theme.tabularFigures
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.toImmutableList
 
 /**
- * The floating feed cluster: the arrivals ALERT (former `NewPostsPill`) CENTRED,
- * and the ambient "next unread" button (former `UnreadCounterPill`) in the
- * trailing corner — one full-width container owning both anchors so the two can
- * never collide (the audit found the old independent pills stacked in one
- * corner region).
+ * The floating feed cluster: the arrivals ALERT (former `NewPostsPill`) and the
+ * ambient "next unread" button (former `UnreadCounterPill`) as the two halves of
+ * one split button — one container owning both so the two can never collide.
  *
  * Layout contract (settled over several on-device iterations with the owner):
  *  1. A single state-swapping control replaced the unread "↓ N" with the
@@ -61,12 +61,16 @@ import kotlinx.collections.immutable.ImmutableList
  *  2. A side-by-side row read fine but pulled the arrivals alert out of centre.
  *  3. A constant one-row lift kept the pill overlap-free but left it hovering
  *     too high when no unread button was on screen. Rejected.
- *  4. Final: arrivals stay CENTRED (their pre-merge home, where an alert reads
- *     as an alert) at the slot bottom; the unread button keeps the trailing
- *     corner and never moves; and ONLY while the button is visible the pill
- *     lifts one row above it (animated [UNREAD_ROW_CLEARANCE] spring) —
- *     overlap-free at any screen width or label length, no measuring needed,
- *     and flush with the navbar whenever the corner is empty.
+ *  4. Arrivals CENTRED at the slot bottom, the unread button in the trailing
+ *     corner, the pill lifting one row while the button showed. On device the
+ *     wide bright pill plus the button stacked two controls over the text the
+ *     user was reading. Replaced.
+ *  5. Current: ONE compact split button in the trailing corner. The "↓ N"
+ *     segment is the stable trailing half — it never changes meaning under the
+ *     finger (the objection to #1); the arrivals segment (2 avatars + "↓ N")
+ *     joins on its leading side while posts are pending. Two tap targets, one
+ *     silhouette, one corner. Newest-on-top keeps the arrivals segment alone,
+ *     centred under the header.
  *
  *  - [pendingCount] > 0 → arrivals stadium: avatar stack + "N нових постів" +
  *    direction arrow. Tap = [onArrivalsClick] (the proven arrivals-commit path:
@@ -97,86 +101,92 @@ fun FeedFloatingControl(
 ) {
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     val effectsSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-    // Lift the centred pill above the unread button's row ONLY while the button
-    // is actually on screen; with the corner empty the pill rests flush at the
-    // slot bottom. Animated so a mid-session button toggle reads as the pill
-    // gliding out of the way, not teleporting. The spatial spring OVERSHOOTS by
-    // design — on the way back to 0 it briefly dips negative, and a negative
-    // padding is an IllegalArgumentException (caused a field crash), so the
-    // value is clamped at the consumer.
-    val pillLift by animateDpAsState(
-        targetValue = if (unreadCount > 0) UNREAD_ROW_CLEARANCE else 0.dp,
-        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-        label = "arrivals-lift",
-    )
+    val showArrivals = pendingCount > 0
+    val showUnread = unreadCount > 0
+    // Newest-on-top mounts the control under the header with an upward arrow; there it
+    // stays centred. Everywhere else it is a compact split button in the trailing corner.
+    val atTop = arrowGlyph == "arrow_upward"
     Box(modifier = modifier.fillMaxWidth()) {
-        AnimatedVisibility(
-            visible = pendingCount > 0,
-            enter = scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
-            exit = scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
+        Row(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = pillLift.coerceAtLeast(0.dp)),
+                .align(if (atTop) Alignment.TopCenter else Alignment.BottomEnd)
+                .animateContentSize(MaterialTheme.motionScheme.fastSpatialSpec()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(SEGMENT_GAP),
         ) {
-            ArrivalsPill(
-                channels = pendingChannels,
-                count = pendingCount,
-                arrowGlyph = arrowGlyph,
-                onClick = onArrivalsClick,
-            )
-        }
-        AnimatedVisibility(
-            visible = unreadCount > 0,
-            enter = scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
-            exit = scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
-            modifier = Modifier.align(Alignment.BottomEnd),
-        ) {
-            UnreadButton(
-                count = unreadCount,
-                onClick = onUnreadClick,
-            )
+            AnimatedVisibility(
+                visible = showArrivals,
+                enter = scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
+                exit = scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
+            ) {
+                ArrivalsSegment(
+                    channels = pendingChannels,
+                    count = pendingCount,
+                    arrowGlyph = arrowGlyph,
+                    joinedToUnread = showUnread,
+                    onClick = onArrivalsClick,
+                )
+            }
+            AnimatedVisibility(
+                visible = showUnread,
+                enter = scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
+                exit = scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
+            ) {
+                UnreadSegment(
+                    count = unreadCount,
+                    joinedToArrivals = showArrivals,
+                    onClick = onUnreadClick,
+                )
+            }
         }
     }
 }
 
+/** Split-button halves: full stadium on the outer edge, a tight radius where they meet. */
+private fun segmentShape(roundStart: Boolean, roundEnd: Boolean): Shape = RoundedCornerShape(
+    topStart = if (roundStart) SEGMENT_HEIGHT / 2 else INNER_CORNER,
+    bottomStart = if (roundStart) SEGMENT_HEIGHT / 2 else INNER_CORNER,
+    topEnd = if (roundEnd) SEGMENT_HEIGHT / 2 else INNER_CORNER,
+    bottomEnd = if (roundEnd) SEGMENT_HEIGHT / 2 else INNER_CORNER,
+)
+
 @Composable
-private fun ArrivalsPill(
+private fun ArrivalsSegment(
     channels: ImmutableList<ChannelBadge>,
     count: Int,
     arrowGlyph: String,
+    joinedToUnread: Boolean,
     onClick: () -> Unit,
 ) {
     val label = newPostsLabel(LocalContext.current.resources, count)
     Surface(
         onClick = onClick,
-        // CircleShape on a wide Row collapses to a true stadium bounded to the
-        // content width — same idiom the former NewPostsPill used.
-        shape = CircleShape,
+        shape = segmentShape(roundStart = true, roundEnd = !joinedToUnread),
         color = MaterialTheme.colorScheme.primary,
         contentColor = MaterialTheme.colorScheme.onPrimary,
-        tonalElevation = 4.dp,
         shadowElevation = 6.dp,
-        // Polite live region: this pill only exists while `pendingCount > 0` (see
-        // `FeedFloatingControl`'s `AnimatedVisibility`), so its very appearance IS
-        // the "new posts arrived" announcement — TalkBack users get the same signal
-        // sighted users get from the pill sliding into view.
-        modifier = Modifier.semantics(mergeDescendants = true) {
-            contentDescription = label
-            liveRegion = LiveRegionMode.Polite
-        },
+        // Polite live region: this segment only exists while `pendingCount > 0`, so its
+        // very appearance IS the "new posts arrived" announcement — TalkBack users get
+        // the same signal sighted users get from it sliding into view.
+        modifier = Modifier
+            .height(SEGMENT_HEIGHT)
+            .semantics(mergeDescendants = true) {
+                contentDescription = label
+                liveRegion = LiveRegionMode.Polite
+            },
     ) {
         Row(
-            modifier = Modifier.padding(start = 8.dp, end = 18.dp, top = 8.dp, bottom = 8.dp),
+            modifier = Modifier.padding(start = if (channels.isNotEmpty()) 6.dp else 14.dp, end = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (channels.isNotEmpty()) {
-                AvatarStack(channels = channels)
-                Spacer(Modifier.width(10.dp))
+                AvatarStack(channels = channels.take(MAX_AVATARS).toImmutableList())
+                Spacer(Modifier.width(8.dp))
             }
             Symbol(name = arrowGlyph, size = 18.dp)
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(4.dp))
             Text(
-                text = label,
+                text = countText(count),
                 style = MaterialTheme.typography.labelLarge.tabularFigures(),
                 fontWeight = FontWeight.SemiBold,
             )
@@ -185,40 +195,40 @@ private fun ArrivalsPill(
 }
 
 @Composable
-private fun UnreadButton(
+private fun UnreadSegment(
     count: Int,
+    joinedToArrivals: Boolean,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    // Clean pressed-scale cue on a regular circle. The former Circle→Burst shape
-    // morph (FabPressMorph) deformed the silhouette mid-press and was read as a
-    // rendering defect on device — interactive surfaces keep regular geometry.
+    // Clean pressed-scale cue on a regular shape — the former Circle→Burst morph read as
+    // a rendering defect on device; interactive surfaces keep regular geometry.
     val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.92f else 1f,
+        targetValue = if (isPressed) 0.94f else 1f,
         animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "feed-unread-press",
     )
     val label = newPostsLabel(LocalContext.current.resources, count)
     Surface(
         onClick = onClick,
-        shape = CircleShape,
+        shape = segmentShape(roundStart = !joinedToArrivals, roundEnd = true),
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        tonalElevation = 4.dp,
         shadowElevation = 6.dp,
         interactionSource = interactionSource,
         modifier = Modifier
+            .height(SEGMENT_HEIGHT)
             .scale(pressScale)
             .semantics(mergeDescendants = true) { contentDescription = label },
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            Symbol(name = "arrow_downward", size = 20.dp, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
+            Symbol(name = "arrow_downward", size = 18.dp, contentDescription = null)
+            Spacer(Modifier.width(4.dp))
             Text(
                 text = countText(count),
                 style = MaterialTheme.typography.labelLarge.tabularFigures(),
@@ -267,14 +277,9 @@ private fun newPostsLabel(res: android.content.res.Resources, n: Int): String {
 
 private fun countText(n: Int): String = if (n > 99) "99+" else n.toString()
 
-private val AVATAR_SIZE = 28.dp
-private val AVATAR_OFFSET = 18.dp
-
-/**
- * Vertical clearance the centred arrivals pill keeps above the trailing "↓ N"
- * button's row while that button is VISIBLE: the button is ~48 dp tall, plus a
- * 10 dp visual gap. Animated in/out with the button's presence (see `pillLift`
- * in [FeedFloatingControl]) so the pill rests flush at the slot bottom whenever
- * the corner is empty — and the two can never overlap at any screen width.
- */
-private val UNREAD_ROW_CLEARANCE = 58.dp
+private val AVATAR_SIZE = 32.dp
+private val AVATAR_OFFSET = 20.dp
+private const val MAX_AVATARS = 2
+private val SEGMENT_HEIGHT = 44.dp
+private val INNER_CORNER = 6.dp
+private val SEGMENT_GAP = 2.dp

@@ -224,6 +224,7 @@
     <string name="post_open_telegram">Telegram\'da aç</string>
     <string name="post_copied_toast">Kopyalandı</string>
     <string name="post_show_more">Daha fazla göster</string>
+    <string name="post_more_actions">Diğer işlemler</string>
     <string name="post_show_less">Daha az göster</string>
 
     <!-- Sistem / süresi dolmuş medya -->
@@ -295,6 +296,9 @@
     <string name="comments_disabled_title">Yorumlar kapalı</string>
     <string name="comments_disabled_body">Bu kanalın bağlı bir tartışma grubu yok</string>
     <string name="comments_unavailable">Tartışma kullanılamıyor</string>
+    <string name="comments_load_failed_title">Yorumlar yüklenemedi</string>
+    <string name="comments_load_failed_body">Bağlantını kontrol edip tekrar dene</string>
+    <string name="comments_retry">Tekrar dene</string>
 
     <!-- Kanallar -->
     <string name="channels_title">Kanallar</string>
@@ -308,6 +312,18 @@
     <string name="channels_unhide_from_feed">Akışta göster</string>
     <string name="channels_hide_from_feed_for">%1$s kanalını akıştan gizle</string>
     <string name="channels_unhide_from_feed_for">%1$s kanalını akışta göster</string>
+    <string name="channels_feed_menu">Akıştaki kanallar</string>
+    <string name="channels_hide_all">Tümünü akıştan gizle</string>
+    <string name="channels_show_all">Tümünü akışta göster</string>
+    <string name="channels_hide_all_confirm">Tüm kanallar akıştan gizlenecek. Sonra tutmak istediklerini geri getirmek için yana kaydır.</string>
+    <string name="channels_show_all_confirm">Gizlediğin kanallar akışta yeniden görünecek.</string>
+    <string name="channels_search_hint">Kanal ara</string>
+    <string name="channels_swipe_hint">Bir kanalı akıştan gizlemek için yana kaydır.</string>
+    <string name="channels_hidden_label">Akıştan gizlendi</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d okunmamış gönderi</item>
+        <item quantity="other">%d okunmamış gönderi</item>
+    </plurals>
     <string name="channels_empty_title">Henüz kanal yok</string>
     <string name="channels_empty_helper">Telegram\'da kanallara abone ol; burada görünmeye başlasınlar</string>
 
@@ -374,6 +390,7 @@
     <string name="settings_storage_clearing">Temizleniyor…</string>
     <string name="settings_storage_clear">Medya önbelleğini temizle</string>
     <string name="settings_storage_clear_helper">Önbelleğe alınan fotoğraf, video ve dosyaları siler. Mesaj veritabanı ve oturum korunur; bunları yalnızca çıkış yapmak siler</string>
+    <string name="settings_storage_clear_failed">Medya önbelleği temizlenemedi. Tekrar dene</string>
     <string name="settings_storage_media">Medya</string>
     <string name="settings_storage_db">Veritabanı</string>
 
@@ -523,6 +540,9 @@
     <!-- Gönderi yanındaki satır içi durum rozetleri. -->
     <string name="post_badge_edited">Düzenlendi</string>
     <string name="post_badge_pinned">Sabitlendi</string>
+    <string name="pinned_bar_title">Sabitlenmiş mesaj</string>
+    <string name="pinned_bar_title_position">Sabitlenmiş mesaj %1$d/%2$d</string>
+    <string name="pinned_bar_open">Sabitlenmiş mesaja git</string>
     <!-- Gönderi gövdesindeki satır içi bağlantıya uzun basma menüsü. -->
     <string name="link_action_open">Aç</string>
     <string name="link_action_copy">Bağlantıyı kopyala</string>

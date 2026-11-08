@@ -36,6 +36,16 @@ class DeepLinkRouter {
     fun submit(link: DeepLink) {
         _events.trySend(link)
     }
+
+    /**
+     * Discard links still buffered for the collector. Registered as an [AccountSession]
+     * end hook in AppGraph: typed links carry the previous account's chat ids (and a
+     * channel push queued while the scaffold was swapping), which must not be replayed
+     * into the next session.
+     */
+    fun clear() {
+        while (_events.tryReceive().isSuccess) Unit
+    }
 }
 
 /**

@@ -34,6 +34,7 @@ import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay
+import dev.lyo.hortay.ui.media.LocalMediaPassive
 import dev.lyo.hortay.ui.media.TdMediaImage
 
 @Composable
@@ -101,7 +102,10 @@ internal fun VideoNoteBlock(content: PostContent.VideoNote, onOpenInSource: () -
     val videoFileId = content.video?.fileId
     val hasPlayback = videoFileId != null && videoFileId != 0
     val inlineAutoplayEnabled = LocalInlineVideoAutoplay.current
-    val cacheReady = hasPlayback && inlineAutoplayEnabled &&
+    // Tombstone (deleted post): never probe/resync the cache or spin up playback — same
+    // `!passive` gate PostMediaBlocks applies to inline video. The static poster still renders.
+    val passive = LocalMediaPassive.current
+    val cacheReady = hasPlayback && inlineAutoplayEnabled && !passive &&
         isCachedReady(fileId = videoFileId, remoteUrl = null)
 
     // [cacheReady] is `true` only when [videoFileId] is non-null and non-zero

@@ -228,6 +228,7 @@
     <string name="post_open_telegram">Apri in Telegram</string>
     <string name="post_copied_toast">Copiato</string>
     <string name="post_show_more">Mostra altro</string>
+    <string name="post_more_actions">Altre azioni</string>
     <string name="post_show_less">Mostra meno</string>
 
     <!-- Messaggi di servizio / media scaduti -->
@@ -303,6 +304,9 @@
     <string name="comments_disabled_title">Commenti disattivati</string>
     <string name="comments_disabled_body">Questo canale non ha un gruppo di discussione collegato</string>
     <string name="comments_unavailable">Discussione non disponibile</string>
+    <string name="comments_load_failed_title">Impossibile caricare i commenti</string>
+    <string name="comments_load_failed_body">Controlla la connessione e riprova</string>
+    <string name="comments_retry">Riprova</string>
 
     <!-- Canali -->
     <string name="channels_title">Canali</string>
@@ -316,6 +320,18 @@
     <string name="channels_unhide_from_feed">Mostra nel feed</string>
     <string name="channels_hide_from_feed_for">Nascondi %1$s dal feed</string>
     <string name="channels_unhide_from_feed_for">Mostra %1$s nel feed</string>
+    <string name="channels_feed_menu">Canali nel feed</string>
+    <string name="channels_hide_all">Nascondi tutti dal feed</string>
+    <string name="channels_show_all">Mostra tutti nel feed</string>
+    <string name="channels_hide_all_confirm">Tutti i canali verranno nascosti dal feed. Poi scorri di lato quelli che vuoi tenere per riportarli.</string>
+    <string name="channels_show_all_confirm">I canali nascosti torneranno nel feed.</string>
+    <string name="channels_search_hint">Cerca canali</string>
+    <string name="channels_swipe_hint">Scorri un canale di lato per nasconderlo dal feed.</string>
+    <string name="channels_hidden_label">Nascosto dal feed</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d post non letto</item>
+        <item quantity="other">%d post non letti</item>
+    </plurals>
     <string name="channels_empty_title">Nessun canale ancora</string>
     <string name="channels_empty_helper">Iscriviti ai canali su Telegram e appariranno qui</string>
 
@@ -382,6 +398,7 @@
     <string name="settings_storage_clearing">Svuotamento…</string>
     <string name="settings_storage_clear">Svuota cache media</string>
     <string name="settings_storage_clear_helper">Rimuove foto, video e file in cache. Il database dei messaggi e la sessione restano; vengono eliminati solo all\'uscita dall\'account</string>
+    <string name="settings_storage_clear_failed">Impossibile svuotare la cache media. Riprova</string>
     <string name="settings_storage_media">Media</string>
     <string name="settings_storage_db">Database</string>
 
@@ -537,6 +554,9 @@
     <!-- Badge di stato inline accanto a un post. -->
     <string name="post_badge_edited">Modificato</string>
     <string name="post_badge_pinned">Fissato</string>
+    <string name="pinned_bar_title">Messaggio fissato</string>
+    <string name="pinned_bar_title_position">Messaggio fissato %1$d di %2$d</string>
+    <string name="pinned_bar_open">Vai al messaggio fissato</string>
     <!-- Menu al pressione prolungata su un link nel corpo del post. -->
     <string name="link_action_open">Apri</string>
     <string name="link_action_copy">Copia link</string>

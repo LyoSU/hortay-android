@@ -47,6 +47,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
+import dev.lyo.hortay.data.BookmarkStore
+import dev.lyo.hortay.data.ChannelDirectory
+import dev.lyo.hortay.data.bookmarkKey
+import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.posts.PostsRepository
@@ -205,6 +209,16 @@ fun CommentsScreen(
      * retract (regular polls only).
      */
     onPollVote: (chatId: Long, messageId: Long, chosenIndices: IntArray) -> Unit = { _, _, _ -> },
+    /**
+     * Bookmark store backing the pinned anchor's long-press "Save" action and its filled
+     * icon. Null (previews/tests) leaves Save a no-op, as before.
+     */
+    bookmarks: BookmarkStore? = null,
+    /**
+     * Resolves canonical share/open URLs for the anchor's long-press Share / Open actions.
+     * Null in guest mode — [PostActions] then falls back to the hand-rolled t.me URL.
+     */
+    channels: ChannelDirectory? = null,
 ) {
     // Live anchor: track the feed entry whose chat+id matches the post we were
     // opened with so reactions / view count / comment count stay fresh while the
@@ -270,7 +284,10 @@ fun CommentsScreen(
     // viewport-dwell ack effect dormant for the same reason (no thread to ack
     // against).
     val threadDisabled = disabledOverride != null || repo == null
-    val state by remember(post.chatId, candidateIds, threadDisabled, repo) {
+    // Bumped by the LoadFailed retry button: re-keys the subscription so observeThread
+    // hands back a fresh stream (the failed one evicted itself from the repo cache).
+    var threadRetryNonce by remember { mutableIntStateOf(0) }
+    val state by remember(post.chatId, candidateIds, threadDisabled, repo, threadRetryNonce) {
         if (threadDisabled || repo == null) {
             kotlinx.coroutines.flow.flowOf(CommentsRepository.ThreadState.Loading)
         } else {
@@ -279,8 +296,18 @@ fun CommentsScreen(
     }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
 
     val viewer = LocalMediaViewer.current
+    val context = LocalContext.current
+    val actionScope = rememberCoroutineScope()
+    val bookmarkedKeys by remember(bookmarks) {
+        bookmarks?.bookmarks ?: kotlinx.coroutines.flow.flowOf(emptySet())
+    }.collectAsStateWithLifecycle(initialValue = emptySet())
+    val bookmarkedState = rememberUpdatedState(bookmarkedKeys)
     val pinnedPostInteractions = remember(
         viewer,
+        context,
+        actionScope,
+        bookmarks,
+        channels,
         onChannelClick,
         onAuthorChatClick,
         onQuotedSourceClick,
@@ -318,6 +345,12 @@ fun CommentsScreen(
                 onPollVote(p.chatId, target, indices)
             },
             pollVotingEnabled = true,
+            // Long-press Save / Share / Copy / Open — same wiring as the feed.
+            onBookmarkClick = { p -> bookmarks?.let { b -> actionScope.launch { b.toggle(p) } } },
+            onShareClick = { p -> actionScope.launch { PostActions.share(context, channels, p) } },
+            onCopyClick = { p -> PostActions.copyText(context, p) },
+            onOpenClick = { p -> actionScope.launch { PostActions.openInTelegram(context, channels, p) } },
+            isBookmarked = { p -> p.bookmarkKey() in bookmarkedState.value },
         )
     }
 
@@ -486,10 +519,12 @@ fun CommentsScreen(
                         }
                     }
                 ) {
+                    // One compact row: the reply count IS the title ("36 comments"), falling
+                    // back to "Post" with no replies. The medium two-line bar spent a fifth of
+                    // the screen on chrome above the post being discussed.
                     HortayTopBar(
-                        title = stringResource(R.string.comments_title),
-                        subtitle = subtitleText,
-                        size = HortayTopBarSize.Medium,
+                        title = subtitleText ?: stringResource(R.string.comments_title),
+                        size = HortayTopBarSize.Compact,
                         navigationIcon = {
                             IconButton(onClick = onDismiss) {
                                 Symbol(name = "arrow_back", contentDescription = stringResource(R.string.action_back))
@@ -735,6 +770,15 @@ fun CommentsScreen(
                         symbol = "chat_bubble",
                         title = stringResource(R.string.comments_disabled_title),
                         body = stringResource(R.string.comments_disabled_body),
+                    )
+                }
+                CommentsRepository.ThreadState.LoadFailed -> item(key = "load-failed") {
+                    CommentsEmptyState(
+                        symbol = "cloud_off",
+                        title = stringResource(R.string.comments_load_failed_title),
+                        body = stringResource(R.string.comments_load_failed_body),
+                        actionLabel = stringResource(R.string.comments_retry),
+                        onAction = { threadRetryNonce++ },
                     )
                 }
             }
@@ -990,13 +1034,31 @@ private fun CommentBubble(
                         .horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Paid (⭐) reactions are read-only, as in the feed: the tap explains
+                    // why instead of dispatching a toggle that TDLib can't accept.
+                    val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
+                    val paidExplainer = stringResource(R.string.reactions_paid_explainer)
                     // Key by reaction-bucket identity, not slot — see [ReactionChip] call
                     // site in PostCard for why a positional loop renders the wrong custom
                     // emoji when TDLib re-ranks the buckets mid-read.
                     message.reactions.items.forEachIndexed { idx, item ->
                         key(item.kind.stableKey) {
                             if (idx > 0) Spacer(Modifier.width(6.dp))
-                            ReactionChip(item, onClick = { onReactionTap(item) })
+                            val isPaid = item.kind is ReactionKind.Paid
+                            ReactionChip(
+                                item,
+                                onClick = if (isPaid) {
+                                    {
+                                        bus?.post(
+                                            text = paidExplainer,
+                                            severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
+                                        )
+                                    }
+                                } else {
+                                    { onReactionTap(item) }
+                                },
+                                disabled = isPaid,
+                            )
                         }
                     }
                 }

@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data
 
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.discover.isChannelMember
 import kotlinx.coroutines.flow.StateFlow
 import org.drinkless.tdlib.TdApi
 
@@ -22,6 +23,8 @@ class ChannelActionsRepository(
     private val userMessages: UserMessageBus,
     private val connection: StateFlow<ConnectionStatus>,
     private val res: StringResolver,
+    /** Notified after a successful join / leave so membership caches (discovery) stay true. */
+    private val onMembershipChanged: (chatId: Long, isMember: Boolean) -> Unit = { _, _ -> },
 ) {
 
     /**
@@ -47,7 +50,8 @@ class ChannelActionsRepository(
         kind: ReactionKind,
         isChosen: Boolean,
     ): Boolean {
-        val type = kind.toTd()
+        // Paid reactions are read-only (see [toTd]) — report failure, never throw.
+        val type = kind.toTd() ?: return false
         val outcome = runCatching {
             if (isChosen) {
                 td.send(TdApi.RemoveMessageReaction(chatId, messageId, type))
@@ -154,16 +158,16 @@ class ChannelActionsRepository(
         return outcome.isSuccess
     }
 
-    private fun ReactionKind.toTd(): TdApi.ReactionType = when (this) {
+    private fun ReactionKind.toTd(): TdApi.ReactionType? = when (this) {
         is ReactionKind.Emoji -> TdApi.ReactionTypeEmoji(text)
         is ReactionKind.CustomEmoji -> TdApi.ReactionTypeCustomEmoji(customEmojiId)
         // Paid reactions require AddPendingPaidMessageReaction (a flow with
         // star-amount confirmation), not AddMessageReaction. We render incoming
         // paid counts but never send our own — passing the same constructor
-        // would crash on the server. The toggle call upstream is already
-        // gated, so reaching this branch in production would be a bug;
-        // surface it as an IllegalStateException for the crash reporter.
-        is ReactionKind.Paid -> error("Paid reactions are read-only in this client")
+        // would fail on the server. The UI gates paid chips as read-only; if one
+        // still reaches here, return null so the caller reports a no-op failure
+        // instead of crashing the app.
+        is ReactionKind.Paid -> null
     }
 
     // Inverse of [toTd] for the picker read path. Mirrors the forward mapping field-for-field:
@@ -216,17 +220,28 @@ class ChannelActionsRepository(
         return chat.notificationSettings?.muteFor.let { it != null && it > 0 }
     }
 
-    suspend fun joinChat(chatId: Long) {
-        runCatching { td.send(TdApi.JoinChat(chatId)) }
+    /**
+     * Join [chatId]. Returns whether TDLib accepted the join, so optimistic UI can roll
+     * back; the failure itself is already surfaced through [userMessages].
+     */
+    suspend fun joinChat(chatId: Long): Boolean {
+        // JoinChat answers with a ChatJoinResult: only Success means the user is now a
+        // member — RequestSent / Declined / a guard-bot approval leave them outside.
+        val joined = runCatching { td.send(TdApi.JoinChat(chatId)) }
             .warnUnlessCancelled(TAG, "joinChat")
             .onFailure { it.surfaceTo(userMessages, res, R.string.op_join_channel, connection.value) }
+            .getOrNull() is TdApi.ChatJoinResultSuccess
+        if (joined) onMembershipChanged(chatId, true)
+        return joined
     }
 
-    suspend fun leaveChat(chatId: Long) {
+    /** Leave [chatId]. Same result contract as [joinChat]. */
+    suspend fun leaveChat(chatId: Long): Boolean =
         runCatching { td.send(TdApi.LeaveChat(chatId)) }
             .warnUnlessCancelled(TAG, "leaveChat")
             .onFailure { it.surfaceTo(userMessages, res, R.string.op_leave_channel, connection.value) }
-    }
+            .onSuccess { onMembershipChanged(chatId, false) }
+            .isSuccess
 
     /**
      * Resolve a channel info bundle for the bottom sheet: title, handle, description,
@@ -248,9 +263,7 @@ class ChannelActionsRepository(
                 .warnUnlessCancelled(TAG, "channelInfo/getSupergroupFullInfo")
                 .getOrNull()
         }
-        val isMember = supergroup?.status?.let { status ->
-            status !is TdApi.ChatMemberStatusLeft && status !is TdApi.ChatMemberStatusBanned
-        } ?: false
+        val isMember = isChannelMember(supergroup?.status)
         return ChannelInfo(
             chatId = chatId,
             title = chat.title.orEmpty(),

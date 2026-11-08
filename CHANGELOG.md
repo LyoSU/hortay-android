@@ -5,9 +5,55 @@
 ## [Unreleased]
 
 ### Added
+- Channels now show their pinned messages in a bar under the header — tap it to jump to the pinned post, tap again to step through older pins.
+- The Channels tab can hide every channel from the feed or show them all again in one step, so keeping only a few channels in a long list no longer takes a tap per channel.
 - Settings → Feed can now show archived channels in the “All” feed too, so channels you archive to tidy Telegram still reach your main feed.
 
+### Changed
+- Posts in the feed and channels now use the full screen width — the channel photo and name sit in a header row above the post, so photos and text are noticeably larger.
+- Reactions under a post wrap onto a new line instead of being cut off at the screen edge, and comment, forward and view counts sit on a quieter line of their own.
+- The bottom navigation is now a frosted-glass bar with a label under every icon, and the Channels tab has a megaphone icon.
+- The Channels tab shows each channel's real number of unread posts, has a search field, and hides a channel from the feed with a sideways swipe instead of an eye button on every row.
+- "New posts" and "↓ N unread" now share one compact split button in the corner instead of two separate buttons over the text.
+- Feed order in Settings is a two-option switch that explains the selected option underneath.
+- The comments screen has a slim one-line header showing the number of comments.
+- Each post shows its time and author under the channel name and has a visible "⋯" button for its actions, which used to be reachable only by long-pressing.
+- Folder tabs above the feed are now plain labels with an underline under the selected one.
+
 ### Fixed
+- Tapping a paid ⭐ reaction on a comment no longer crashes the app.
+- A poll vote change or retraction that fails now restores your previous vote.
+- Save, Share, Copy and Open in a post's long-press menu now work on the comments screen.
+- New comments and reactions arriving while a thread loads are no longer missed, and comments that fail to load offer Retry instead of an empty thread.
+- Animated stickers no longer go blank while still on screen.
+- Deleted posts no longer try to download their media, and opening a video fullscreen pauses a playing voice message.
+- The profile's Message button shows a chat icon, and profile counts follow your app language.
+- In guest mode, bookmarking a post inside a channel now shows as saved.
+- The app no longer flashes wallpaper colours on launch, and the "archive in All" switch no longer flickers when Settings opens.
+- Changing the device clock no longer cuts short or freezes a Telegram rate-limit wait.
+- Folder tabs no longer carry over the previous account's channels after signing out.
+- Signing in while offline no longer skips the first fill-in of recent posts.
+- Live updates keep arriving while the app catches up on a newly loaded channel during a rate limit.
+- The pinned-message bar counts every pin, and pins changed while a channel opens show up right away.
+- Small photos no longer show a confusing "0 B / 41 KB" counter while loading.
+- Posts you only scroll past, or that are half on screen when you leave the app, are no longer marked as read.
+- Live reactions and view counts follow the post you're actually reading even when new posts arrive above it.
+- A cold start in "Newest at the bottom" lands on the right unread post more reliably.
+- Hiding every channel in the selected folder no longer leaves an empty feed under an invisible tab.
+- A failed subscribe or unsubscribe no longer shows as done, and Discover shows the right Subscribe state after you join or leave.
+- Channel suggestions load the full list once you're back online instead of keeping the offline set until restart.
+- Pull-to-refresh inside a channel now actually refreshes, and double-tapping a channel no longer opens it twice.
+- Links to deleted posts open the channel and say the post is gone instead of leaving the app, and t.me/s/ links open the right channel.
+- Custom emoji after an overlapping one in a post no longer show as plain characters.
+- Signing out clears any pending link prompt, and links with unsafe schemes no longer show a confirmation that does nothing.
+- Turning the post archive off, or excluding a channel, no longer leaves copied media files piling up on disk.
+- The post archive no longer loses the original version of older posts that are edited or deleted later.
+- Archive search now finds text containing %, _ or \.
+- Settings shows Portuguese (Brazil) as the selected language on Android 13 and newer.
+- Automatic proxy switching works right after launch and keeps checking each proxy it switches to.
+- Clearing the media cache now tells you when it fails.
+- In guest mode, refreshes no longer re-download every channel on each sweep, an unsubscribe during a refresh sticks, channels with capital letters no longer show up twice, and search ignores letter case in Cyrillic and other non-Latin text.
+- Channels moved from guest mode to your account during an interrupted move are no longer offered again.
 - Saved posts from archived channels now show up in the Saved tab.
 - The sign-in screen no longer offers to resend the login code when Telegram has no other way to deliver it, which only ever failed with an unclear error.
 - Photo albums in the feed keep filling in after a stretch without connection, instead of staying incomplete until the app restarts.
@@ -20,11 +66,15 @@
 - The edit-history sheet of a post no longer flickers empty while it's open.
 - Signing out during the first feed fill-in no longer leaves the next account with a sparse feed.
 
+### Performance
+- Idle video players are released when the app goes to the background.
+
 ### Architecture
 - The feed, folder tabs and translation cache now each handle Telegram's updates in one ordered stream instead of one listener per update type.
 
 ### Build
 - Toolchain and dependencies updated: AGP 9.5, Gradle 9.8, Kotlin 2.4.21, Compose BOM 2026.09 with Material 3 1.5.0-rc01, Media3 1.11, Coil 3.6, OkHttp 5.5, SQLDelight 2.4, DataStore 1.3, JUnit 6.1.3 and refreshed CI actions.
+- CI retries dependency downloads before building, so a brief Maven or Gradle outage no longer fails the build.
 
 ## [0.12.0] — 2026-07-16
 

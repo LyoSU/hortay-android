@@ -16,6 +16,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
+import dev.lyo.hortay.ui.theme.LocalGlassBackdrop
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -149,12 +152,23 @@ fun MainScaffold(graph: AppGraph) {
     // inverts: the cold-harvest post sits at the bottom (newest) of
     // an asc-sort, and history insertions land above — squarely in
     // the user's field of view.
+    //
+    // In-flight dedupe: a second tap on the same channel while the first is still
+    // inside the prefetch await would otherwise push a second ChannelKey on top of the
+    // first. Main-thread only (composition scope), so a plain set is enough.
+    val channelPushesInFlight = remember { HashSet<Long>() }
     val pushChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
-        scope.launch {
-            kotlinx.coroutines.withTimeoutOrNull(CHANNEL_PUSH_PREFETCH_TIMEOUT_MS) {
-                graph.postsRepository.loadChannelHistory(chatId)
+        if (channelPushesInFlight.add(chatId)) {
+            scope.launch {
+                try {
+                    kotlinx.coroutines.withTimeoutOrNull(CHANNEL_PUSH_PREFETCH_TIMEOUT_MS) {
+                        graph.postsRepository.loadChannelHistory(chatId)
+                    }
+                    graph.backStack.add(ChannelKey(chatId = chatId, scrollToMessageId = scrollTo))
+                } finally {
+                    channelPushesInFlight.remove(chatId)
+                }
             }
-            graph.backStack.add(ChannelKey(chatId = chatId, scrollToMessageId = scrollTo))
         }
         Unit
     }
@@ -460,7 +474,12 @@ fun MainScaffold(graph: AppGraph) {
                                 // when the feed leaves composition (tab switch) via TimelineScreen's
                                 // DisposableEffect.
                                 val navBarCollapse = remember { mutableFloatStateOf(0f) }
-                                CompositionLocalProvider(LocalNavBarCollapse provides navBarCollapse) {
+                                // The tab content is the backdrop the glass nav bar blurs.
+                                val glassBackdrop = rememberHazeState()
+                                CompositionLocalProvider(
+                                    LocalNavBarCollapse provides navBarCollapse,
+                                    LocalGlassBackdrop provides glassBackdrop,
+                                ) {
                                 Scaffold(
                                     modifier = Modifier.fillMaxSize(),
                                     bottomBar = {
@@ -482,6 +501,7 @@ fun MainScaffold(graph: AppGraph) {
                                     },
                                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                                 ) { homePadding ->
+                                    Box(Modifier.fillMaxSize().hazeSource(glassBackdrop)) {
                                     TabContentSwitcher(
                                         selectedTab = selectedTab,
                                         tabStateHolder = tabStateHolder,
@@ -502,6 +522,7 @@ fun MainScaffold(graph: AppGraph) {
                                         canReportPost = canReportPost,
                                         tdlibMarkAsRead = tdlibMarkAsRead,
                                     )
+                                    }
                                 }
                                 }
                             }

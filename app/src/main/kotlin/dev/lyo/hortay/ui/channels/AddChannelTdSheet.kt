@@ -128,12 +128,13 @@ fun AddChannelTdSheet(
     // Optimistic subscribe (DESIGN_POLISH M2): the row flips to its in-flight then
     // "Subscribed" state the moment the tap lands; the row's own state machine owns
     // that. We dispatch the join, hold the row mounted long enough for the check-circle
-    // morph to read (SUBSCRIBE_CONFIRM_HOLD_MS), then drop it from the list. Join RPC
-    // failures surface independently through UserMessageBus (ChannelActionsRepository),
-    // so the returned boolean only reports whether the channel could be resolved at all.
+    // morph to read (SUBSCRIBE_CONFIRM_HOLD_MS), then drop it from the list. The returned
+    // boolean is the join's real outcome: false rolls the row back to Idle (the error
+    // itself surfaces through UserMessageBus from ChannelActionsRepository), so a failed
+    // join never reads as subscribed.
     suspend fun subscribeByUsername(username: String): Boolean {
         val card = discovery.resolve(username) ?: return false
-        actions.joinChat(card.chatId)
+        if (!actions.joinChat(card.chatId)) return false
         scope.launch {
             delay(SUBSCRIBE_CONFIRM_HOLD_MS)
             justSubscribed[username.lowercase()] = Unit
@@ -142,7 +143,7 @@ fun AddChannelTdSheet(
     }
 
     suspend fun subscribeResult(channel: DiscoverChannel): Boolean {
-        actions.joinChat(channel.chatId)
+        if (!actions.joinChat(channel.chatId)) return false
         channel.username?.let { u ->
             scope.launch {
                 delay(SUBSCRIBE_CONFIRM_HOLD_MS)

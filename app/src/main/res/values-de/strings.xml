@@ -224,6 +224,7 @@
     <string name="post_open_telegram">In Telegram öffnen</string>
     <string name="post_copied_toast">Kopiert</string>
     <string name="post_show_more">Mehr anzeigen</string>
+    <string name="post_more_actions">Weitere Aktionen</string>
     <string name="post_show_less">Weniger anzeigen</string>
 
     <!-- Dienst- / abgelaufene Medien -->
@@ -295,6 +296,9 @@
     <string name="comments_disabled_title">Kommentare deaktiviert</string>
     <string name="comments_disabled_body">Dieser Kanal hat keine verknüpfte Diskussionsgruppe</string>
     <string name="comments_unavailable">Diskussion nicht verfügbar</string>
+    <string name="comments_load_failed_title">Kommentare konnten nicht geladen werden</string>
+    <string name="comments_load_failed_body">Prüfe deine Verbindung und versuche es erneut</string>
+    <string name="comments_retry">Erneut versuchen</string>
 
     <!-- Kanäle -->
     <string name="channels_title">Kanäle</string>
@@ -308,6 +312,18 @@
     <string name="channels_unhide_from_feed">Im Feed anzeigen</string>
     <string name="channels_hide_from_feed_for">%1$s aus Feed ausblenden</string>
     <string name="channels_unhide_from_feed_for">%1$s im Feed anzeigen</string>
+    <string name="channels_feed_menu">Kanäle im Feed</string>
+    <string name="channels_hide_all">Alle aus dem Feed ausblenden</string>
+    <string name="channels_show_all">Alle im Feed anzeigen</string>
+    <string name="channels_hide_all_confirm">Alle Kanäle werden im Feed ausgeblendet. Wische dann die Kanäle, die du behalten willst, zur Seite, um sie zurückzuholen.</string>
+    <string name="channels_show_all_confirm">Ausgeblendete Kanäle erscheinen wieder im Feed.</string>
+    <string name="channels_search_hint">Kanäle suchen</string>
+    <string name="channels_swipe_hint">Wische einen Kanal zur Seite, um ihn im Feed auszublenden.</string>
+    <string name="channels_hidden_label">Im Feed ausgeblendet</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d ungelesener Beitrag</item>
+        <item quantity="other">%d ungelesene Beiträge</item>
+    </plurals>
     <string name="channels_empty_title">Noch keine Kanäle</string>
     <string name="channels_empty_helper">Abonniere Kanäle in Telegram, damit sie hier erscheinen</string>
 
@@ -374,6 +390,7 @@
     <string name="settings_storage_clearing">Wird geleert…</string>
     <string name="settings_storage_clear">Mediencache leeren</string>
     <string name="settings_storage_clear_helper">Entfernt gecachte Fotos, Videos und Dateien. Nachrichtendatenbank und Sitzung bleiben erhalten — nur Abmelden löscht diese</string>
+    <string name="settings_storage_clear_failed">Mediencache konnte nicht geleert werden. Versuche es erneut</string>
     <string name="settings_storage_media">Medien</string>
     <string name="settings_storage_db">Datenbank</string>
 
@@ -528,6 +545,9 @@
     <!-- Inline-Statusbadges neben einem Beitrag. -->
     <string name="post_badge_edited">Bearbeitet</string>
     <string name="post_badge_pinned">Angeheftet</string>
+    <string name="pinned_bar_title">Angeheftete Nachricht</string>
+    <string name="pinned_bar_title_position">Angeheftete Nachricht %1$d von %2$d</string>
+    <string name="pinned_bar_open">Zur angehefteten Nachricht</string>
     <!-- Long-Press-Menü auf einem Inline-Link im Beitragstext. -->
     <string name="link_action_open">Öffnen</string>
     <string name="link_action_copy">Link kopieren</string>

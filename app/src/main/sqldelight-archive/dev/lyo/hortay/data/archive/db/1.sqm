@@ -1,0 +1,11 @@
+-- v1 -> v2: record when each snapshot row was written, so retention can key on
+-- capture time instead of seen_at_ms (which is the publication time for
+-- baselines). Pre-existing rows have no known capture time; stamping them with
+-- the upgrade time gives them one full retention window from now, so the
+-- migration never deletes a row sooner than the old rule would have.
+ALTER TABLE PostSnapshot ADD COLUMN captured_at_ms INTEGER NOT NULL DEFAULT 0;
+
+UPDATE PostSnapshot SET captured_at_ms = CAST(strftime('%s', 'now') AS INTEGER) * 1000;
+
+CREATE INDEX idx_PostSnapshot_captured
+    ON PostSnapshot(captured_at_ms);

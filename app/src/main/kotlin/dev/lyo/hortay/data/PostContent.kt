@@ -778,6 +778,19 @@ data class ReplyPreview(
 )
 
 /**
+ * One pinned message of a channel, as the channel screen's pinned bar shows it: an
+ * excerpt plus an optional thumbnail, built from the same media / text extraction as
+ * [ReplyPreview]. [messageId] is the jump target.
+ */
+@Immutable
+data class PinnedPreview(
+    val messageId: Long,
+    val excerpt: String,
+    val mediaThumb: TdMedia? = null,
+    val mediaKind: ReplyMediaKind = ReplyMediaKind.None,
+)
+
+/**
  * Coarse classification of the parent's media. Drives the icon shown in the quote card when
  * no thumbnail is available (audio / voice / poll have no still preview, but their kind is
  * still meaningful to the reader). [None] = pure-text or unknown.

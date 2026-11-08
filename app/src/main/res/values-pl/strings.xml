@@ -230,6 +230,7 @@
     <string name="post_open_telegram">Otwórz w Telegramie</string>
     <string name="post_copied_toast">Skopiowano</string>
     <string name="post_show_more">Pokaż więcej</string>
+    <string name="post_more_actions">Więcej działań</string>
     <string name="post_show_less">Pokaż mniej</string>
 
     <!-- Usługi systemowe / media, które wygasły -->
@@ -309,6 +310,9 @@
     <string name="comments_disabled_title">Komentarze są wyłączone</string>
     <string name="comments_disabled_body">Ten kanał nie ma podłączonej grupy dyskusyjnej</string>
     <string name="comments_unavailable">Dyskusja niedostępna</string>
+    <string name="comments_load_failed_title">Nie udało się wczytać komentarzy</string>
+    <string name="comments_load_failed_body">Sprawdź połączenie i spróbuj ponownie</string>
+    <string name="comments_retry">Spróbuj ponownie</string>
 
     <!-- Kanały -->
     <string name="channels_title">Kanały</string>
@@ -322,6 +326,20 @@
     <string name="channels_unhide_from_feed">Pokaż w feedzie</string>
     <string name="channels_hide_from_feed_for">Ukryj %1$s z feedu</string>
     <string name="channels_unhide_from_feed_for">Pokaż %1$s w feedzie</string>
+    <string name="channels_feed_menu">Kanały w feedzie</string>
+    <string name="channels_hide_all">Ukryj wszystkie w feedzie</string>
+    <string name="channels_show_all">Pokaż wszystkie w feedzie</string>
+    <string name="channels_hide_all_confirm">Wszystkie kanały zostaną ukryte w aktualnościach. Potem przesuń w bok te, które chcesz zostawić, aby je przywrócić.</string>
+    <string name="channels_show_all_confirm">Ukryte kanały znów pojawią się w feedzie.</string>
+    <string name="channels_search_hint">Szukaj kanałów</string>
+    <string name="channels_swipe_hint">Przesuń kanał w bok, aby ukryć go w aktualnościach.</string>
+    <string name="channels_hidden_label">Ukryty w aktualnościach</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d nieprzeczytany post</item>
+        <item quantity="few">%d nieprzeczytane posty</item>
+        <item quantity="many">%d nieprzeczytanych postów</item>
+        <item quantity="other">%d nieprzeczytanego posta</item>
+    </plurals>
     <string name="channels_empty_title">Brak kanałów</string>
     <string name="channels_empty_helper">Zasubskrybuj kanały w Telegramie, a pojawią się tutaj</string>
 
@@ -388,6 +406,7 @@
     <string name="settings_storage_clearing">Czyszczenie…</string>
     <string name="settings_storage_clear">Wyczyść cache mediów</string>
     <string name="settings_storage_clear_helper">Usuwa zbuforowane zdjęcia, filmy i pliki. Baza wiadomości i sesja zostają — czyści je tylko wylogowanie</string>
+    <string name="settings_storage_clear_failed">Nie udało się wyczyścić cache mediów. Spróbuj ponownie</string>
     <string name="settings_storage_media">Media</string>
     <string name="settings_storage_db">Baza danych</string>
 
@@ -541,6 +560,9 @@
     <!-- Wbudowane odznaki przy wpisie. -->
     <string name="post_badge_edited">Edytowano</string>
     <string name="post_badge_pinned">Przypięto</string>
+    <string name="pinned_bar_title">Przypięta wiadomość</string>
+    <string name="pinned_bar_title_position">Przypięta wiadomość %1$d z %2$d</string>
+    <string name="pinned_bar_open">Przejdź do przypiętej wiadomości</string>
     <!-- Menu po długim naciśnięciu linku w treści wpisu. -->
     <string name="link_action_open">Otwórz</string>
     <string name="link_action_copy">Kopiuj link</string>

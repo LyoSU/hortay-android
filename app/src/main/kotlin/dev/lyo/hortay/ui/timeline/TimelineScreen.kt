@@ -490,7 +490,7 @@ fun TimelineScreen(
     // reset on every Feed-tab remount and re-armed the grace timer, painting a
     // `SkeletonFeed` for ~800 ms on every Feed → Channels → Feed swap.
     //
-    // Gated on `refresh idle + COLD_START_CURSOR_GRACE_MS` only — NOT on
+    // Gated on `initialSyncDone + refresh idle + COLD_START_CURSOR_GRACE_MS` — NOT on
     // "first cursor put landed", which was a race: the flag would flip true
     // the moment ANY chat's `UpdateChatReadInbox` arrived, but the boundary
     // picker then ran against a partially-seeded cursor map. Chats whose
@@ -514,6 +514,14 @@ fun TimelineScreen(
         if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
             vm.markColdStartCursorsSettled()
             return@LaunchedEffect
+        }
+        // Wait for the real session-start sync. `refreshing` alone is not that signal:
+        // the cold-start LoadChats drain runs from AppGraph and never touches the VM's
+        // PTR flag, so a `refreshing` wait returned immediately and the gate degraded
+        // into a bare COLD_START_CURSOR_GRACE_MS timer. Capped so a stalled / offline
+        // drain can't hold the skeleton forever — the snapshot paint takes over.
+        kotlinx.coroutines.withTimeoutOrNull(COLD_START_SYNC_MAX_WAIT_MS) {
+            vm.initialSyncDone.first { it }
         }
         androidx.compose.runtime.snapshotFlow { refreshing }.first { !it }
         kotlinx.coroutines.delay(COLD_START_CURSOR_GRACE_MS)
@@ -898,6 +906,21 @@ fun TimelineScreen(
         }
     }
     val hasFolderUi = headerTabs.isNotEmpty() || archivedChatIds.isNotEmpty()
+    // The selected folder can drop out of [headerTabs] while selected — every channel in
+    // it hidden from the feed, or the "archive in All" toggle making it equivalent to All.
+    // Left as is, the feed would scope to an invisible tab (empty feed, nothing
+    // highlighted). Fall back to All. Only when the folder still exists in [foldersList]:
+    // a folder missing from the list entirely is the cold-start / not-yet-loaded case,
+    // which [scope_filter] already renders as All without discarding the saved selection.
+    // Also only after the session's initial sync: mid cold start the slice is partial, so a
+    // folder whose channels haven't landed yet would look hidden and lose the selection.
+    val syncDone by vm.initialSyncDone.collectAsStateWithLifecycle()
+    LaunchedEffect(selectedFolderId, headerTabs, foldersList, syncDone) {
+        if (!syncDone) return@LaunchedEffect
+        val selected = selectedFolderId ?: return@LaunchedEffect
+        val exists = foldersList.any { it.id == selected }
+        if (exists && headerTabs.none { it.id == selected }) selectedFolderId = null
+    }
 
     // One-shot "scroll to this messageId once it lands in the list". Two producers feed
     // this: in-app quote-card taps (see [PostInteractions.onQuotedSourceClick]) and
@@ -1081,9 +1104,9 @@ fun TimelineScreen(
     // Warm the discussion-thread cache for posts that linger in the viewport.
     // Extracted to [rememberCommentsPrefetch] — shared with [ChannelScreen]. Cold
     // GetMessageThread is ~1.5–2 s per channel; after a single fetch TDLib answers
-    // from local cache (~200 ms). Cap of [COMMENTS_PREFETCH_LIMIT] keeps the TDLib
-    // RPC pipe clear (per Levin tdlib/td#3019 the pipe is a single per-client
-    // queue), and the [StartupCoordinator] gate keeps us silent during the post-auth
+    // from local cache (~200 ms). Cap of [COMMENTS_PREFETCH_LIMIT] bounds the
+    // speculative RPC volume so it can't crowd out user-driven requests (which share
+    // the account's server-side rate limits), and the [StartupCoordinator] gate keeps us silent during the post-auth
     // storm. commentCount > 0 (not just != null) skips the typical "0 replies
     // forever" case that would otherwise burn 2 wasted RPCs per post on the
     // dominant share of first-launch volume.
@@ -1156,6 +1179,9 @@ fun TimelineScreen(
     //
     // Cleanup: try/finally with NonCancellable on the close so a fast screen exit
     // still flushes CloseChat.
+    // The dedup set is re-created when the mode-specific markAsRead wrapper changes;
+    // read it through State so the long-lived focus effect below sees the live set.
+    val ackedReadState = rememberUpdatedState(ackedRead)
     if (tdlibRepo != null && !coveredByOverlay) {
         LaunchedEffect(listState, tdlibRepo) {
             var opened: Long? = null
@@ -1171,15 +1197,21 @@ fun TimelineScreen(
                             val clippedEnd = minOf(itemEnd, viewportEnd)
                             (clippedEnd - clippedStart).coerceAtLeast(0)
                         }
-                        ?.index
+                        ?.key
                 }
                     .distinctUntilChanged()
-                    .collectLatest { focusIdx ->
-                        if (focusIdx == null) return@collectLatest
+                    .collectLatest { focusKey ->
+                        if (focusKey == null) return@collectLatest
                         kotlinx.coroutines.delay(FOCUS_DWELL_MS)
-                        // Latest displayed list — same staleness reason as the read-ack effect.
+                        // Resolve by item KEY against the latest displayed list, not by the
+                        // index captured before the dwell: an insert above the viewport
+                        // (UpdateNewMessage, history hydration) during FOCUS_DWELL_MS shifts
+                        // indices, and an index lookup would then focus — and re-ack — a
+                        // post the user never looked at. Same reasoning as the read-ack
+                        // dwell in [rememberReadAckDwell]. Non-feed rows (divider, header)
+                        // have no matching FeedItem and drop out here.
                         val items = feedItemsState.value
-                        val focusedPost = items.getOrNull(focusIdx)?.posts()?.firstOrNull()
+                        val focusedPost = items.firstOrNull { it.key == focusKey }?.posts()?.firstOrNull()
                             ?: return@collectLatest
                         val focusChat = focusedPost.chatId
                         // Atomic close+open+re-ack via NonCancellable. Three reasons it
@@ -1221,9 +1253,23 @@ fun TimelineScreen(
                                 tdlibRepo.openChat(focusChat)
                                 opened = focusChat
                             }
-                            val ids = focusedPost.albumMessageIds
-                                .ifEmpty { listOf(focusedPost.id) }
-                            tdlibRepo.viewMessages(focusChat, ids)
+                            // Re-ack ONLY a post the read-ack dwell has already accepted
+                            // (60 % visible, list idle, lifecycle RESUMED — see
+                            // [rememberReadAckDwell]). viewMessages advances the local read
+                            // cursor, and this effect has none of those gates: a card that
+                            // merely dominated the viewport for FOCUS_DWELL_MS mid-drag, at
+                            // ~35 % visibility, or right before Home must not be marked read.
+                            // Gating on the dwell's own dedup set keeps one source of truth
+                            // for "the user read this" while preserving the contract's point:
+                            // an already-read post gets its force_read=false ack now that the
+                            // chat is open. A post whose dwell lands AFTER this block runs
+                            // needs no re-ack — the chat is already open, so the dwell's own
+                            // viewMessages picks force_read=false.
+                            if ((focusChat to focusedPost.id) in ackedReadState.value) {
+                                val ids = focusedPost.albumMessageIds
+                                    .ifEmpty { listOf(focusedPost.id) }
+                                tdlibRepo.viewMessages(focusChat, ids)
+                            }
                             // Layer-2 album repair: if the focused card is a degraded album (one
                             // member, mediaAlbumId set — the cold-start residual the local index
                             // couldn't fill), request a throttled networked rebuild. No-op for
@@ -2132,7 +2178,7 @@ fun TimelineScreen(
                 currentRevisionPost.id.toString(),
             )
         }
-        val revisions by revisionsFlow.collectAsState(initial = persistentListOf())
+        val revisions by revisionsFlow.collectAsStateWithLifecycle(initialValue = persistentListOf())
         PostRevisionSheet(
             revisions = revisions,
             onDismiss = { revisionsForPost = null },
@@ -2165,6 +2211,14 @@ private const val SEARCH_DEBOUNCE_MS = 300L
  * stall.
  */
 private const val COLD_START_CURSOR_GRACE_MS = 800L
+
+/**
+ * Upper bound on how long the cold-start boundary picker waits for
+ * [dev.lyo.hortay.data.FeedSource.initialSyncDone]. A warm-cache LoadChats drain
+ * returns well inside this; a first sign-in on a slow link or an offline launch
+ * falls through to the snapshot after it rather than sitting on a skeleton.
+ */
+private const val COLD_START_SYNC_MAX_WAIT_MS = 3_000L
 
 /**
  * Recency floor for cold-start landing in [dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst].

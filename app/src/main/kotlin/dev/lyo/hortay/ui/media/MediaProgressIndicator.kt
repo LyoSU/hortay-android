@@ -80,8 +80,8 @@ fun MediaIndeterminateIndicator(
 
 /**
  * Combined "downloading" overlay: progress (or indeterminate) circle plus a Telegram-style
- * "5.2 / 12.4 MB" pill underneath. The label is hidden when [totalBytes] is zero (TDLib
- * sometimes hasn't resolved the file size yet — better no label than a "5.2 / 0 MB").
+ * "5.2 / 12.4 MB" pill underneath. The label is hidden below [BYTE_PILL_MIN_BYTES] — which
+ * also covers a zero [totalBytes] (TDLib sometimes hasn't resolved the file size yet).
  *
  * Tap on the indicator → [onCancel] (matches Telegram's tap-to-cancel during download).
  *
@@ -106,7 +106,10 @@ fun MediaLoadingOverlay(
         verticalArrangement = Arrangement.Center,
     ) {
         MediaIndeterminateIndicator(onClick = onCancel)
-        if (totalBytes > 0) {
+        // Only files big enough for the count to mean something get the byte pill. On a
+        // photo of a few dozen KB it only ever read "0 B / 41.9 KB" — which looks stuck,
+        // not informative — while the disc alone already says "downloading".
+        if (totalBytes >= BYTE_PILL_MIN_BYTES) {
             val units = stringArrayResource(R.array.size_units)
             Spacer(Modifier.height(BYTE_LABEL_GAP))
             BytePill(text = formatProgressBytes(downloadedBytes, totalBytes, units))
@@ -235,3 +238,6 @@ private const val LOADING_OVERLAY_GRACE_MS = 600L
 private const val DISK_ALPHA = 0.45f
 private const val ICON_FRACTION = 0.42f
 private val BYTE_LABEL_GAP = 8.dp
+
+/** Smallest file (1 MiB) whose download shows the "X / Y MB" byte pill. */
+private const val BYTE_PILL_MIN_BYTES = 1L shl 20

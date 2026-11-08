@@ -121,10 +121,16 @@ internal fun DataStorageScreen(
                     onClearCache = {
                         scope.launch {
                             clearing = true
-                            stats.clearCache()
-                            SingletonImageLoader.get(context).diskCache?.clear()
-                            refreshStats()
-                            clearing = false
+                            // finally: the spinner must clear on failure / cancellation too.
+                            // A failed clear is reported by StatsRepository itself; the
+                            // Coil disk cache is local and still worth wiping either way.
+                            try {
+                                stats.clearCache()
+                                SingletonImageLoader.get(context).diskCache?.clear()
+                                refreshStats()
+                            } finally {
+                                clearing = false
+                            }
                         }
                     },
                 )
@@ -167,7 +173,16 @@ internal fun DataStorageScreen(
             confirmButton = {
                 TextButton(onClick = {
                     confirmClearWebCache = false
-                    if (!clearing) scope.launch { clearing = true; onClearWebCache(); clearing = false }
+                    if (!clearing) {
+                        scope.launch {
+                            clearing = true
+                            try {
+                                onClearWebCache()
+                            } finally {
+                                clearing = false
+                            }
+                        }
+                    }
                 }) {
                     Text(
                         stringResource(R.string.web_settings_clear_cache_confirm_action),

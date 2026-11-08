@@ -2,6 +2,7 @@
 
 package dev.lyo.hortay.ui.main
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -68,6 +69,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun ConnectionBanner(
     status: ConnectionStatus,
+    /** FLOOD_WAIT deadline on the [SystemClock.elapsedRealtime] timebase; `0` = no gate. */
     floodWaitUntilMs: Long = 0L,
     modifier: Modifier = Modifier,
 ) {
@@ -82,11 +84,12 @@ fun ConnectionBanner(
             return@produceState
         }
         while (true) {
-            val now = System.currentTimeMillis()
+            // Same monotonic timebase as TdClient.floodWaitUntilMs.
+            val now = SystemClock.elapsedRealtime()
             val remaining = ((floodWaitUntilMs - now + 999L) / 1_000L).coerceAtLeast(0L)
             value = remaining
             if (remaining <= 0L) break
-            // 1s tick aligns the displayed countdown to wall-clock seconds —
+            // 1s tick aligns the displayed countdown to whole seconds —
             // sub-second updates would just churn recomposition without any
             // user-visible change.
             delay(1_000L)

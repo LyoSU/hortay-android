@@ -138,8 +138,8 @@ fun rememberMediaBinding(
         onDispose { if (!isRemote && !passive) fileId?.let(cache::cancelDeferred) }
     }
 
-    return remember(state, fileId, isRemote, cache) {
-        MediaBinding(state = state, fileId = fileId, isRemote = isRemote, cache = cache)
+    return remember(state, fileId, isRemote, cache, passive) {
+        MediaBinding(state = state, fileId = fileId, isRemote = isRemote, cache = cache, passive = passive)
     }
 }
 
@@ -162,6 +162,8 @@ class MediaBinding internal constructor(
     val fileId: Int?,
     val isRemote: Boolean,
     private val cache: MediaCache,
+    /** Tombstone (observe-only) binding — see [LocalMediaPassive]. Gates [invalidate]. */
+    private val passive: Boolean = false,
 ) {
     /** Convenience: file is on disk and the path is non-empty. */
     val isReady: Boolean get() = state is MediaState.Ready
@@ -201,8 +203,12 @@ class MediaBinding internal constructor(
      * UpdateFile drains. Call from Coil / ExoPlayer error listeners when the
      * Ready path turned out to be unreadable (TDLib storage optimiser
      * silently evicted it; tdlib/td#3178).
+     *
+     * No-op on a passive (tombstone) binding: invalidate re-downloads, and a deleted
+     * post's media can't be re-fetched — the job would only spin through the reducer.
      */
     fun invalidate(priority: DownloadPriority = DownloadPriority.VisibleMedia) {
+        if (passive) return
         fileId?.let { cache.invalidate(it, priority) }
     }
 }

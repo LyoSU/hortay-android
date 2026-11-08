@@ -65,6 +65,8 @@ import dev.lyo.hortay.data.archive.db.ArchiveDatabase
 import dev.lyo.hortay.data.web.db.WebDatabase
 import dev.lyo.hortay.data.web.db.WebDatabaseProvider
 import java.io.File
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
@@ -112,6 +114,17 @@ class AppGraph(context: Context) {
      */
     internal val archiveInAllFeedState: StateFlow<Boolean> =
         settingsStore.archiveInAllFeed.stateIn(appScope, SharingStarted.Eagerly, initialValue = false)
+
+    /**
+     * [SettingsStore.dynamicColor], pre-warmed for the same reason as [archiveInAllFeedState]:
+     * `MainActivity` themes the whole window from it, and a lazily started collector would paint
+     * its `initialValue` for the first frames. Started eagerly at graph construction, DataStore
+     * has usually emitted by the time the first composition reads it. `initialValue` matches the
+     * store default (`false`, brand palette), so even a lost race never flashes wallpaper colours
+     * for a user who hasn't opted in.
+     */
+    internal val dynamicColorState: StateFlow<Boolean> =
+        settingsStore.dynamicColor.stateIn(appScope, SharingStarted.Eagerly, initialValue = false)
 
     // Tiny `(chatId, messageId)` snapshot of the top of the feed, persisted across
     // process death so cold start renders real content sub-100ms instead of a blank
@@ -333,7 +346,7 @@ class AppGraph(context: Context) {
 
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 
-    val statsRepository: StatsRepository = StatsRepository(tdClient)
+    val statsRepository: StatsRepository = StatsRepository(tdClient, userMessages, res)
 
     val chatFoldersRepository: ChatFoldersRepository = ChatFoldersRepository(tdClient, appScope)
 
@@ -341,7 +354,10 @@ class AppGraph(context: Context) {
         TranslationsStore(tdClient, appScope, userMessages, tdClient.connection, res)
 
     val channelActions: ChannelActionsRepository =
-        ChannelActionsRepository(tdClient, userMessages, tdClient.connection, res)
+        ChannelActionsRepository(tdClient, userMessages, tdClient.connection, res) { chatId, isMember ->
+            // Read lazily at call time — [channelDiscovery] is declared further down.
+            channelDiscovery.updateMembership(chatId, isMember)
+        }
 
     /**
      * Proxy support (SOCKS5 / HTTP / MTProto). A thin driver over TDLib's native proxy API plus
@@ -392,7 +408,13 @@ class AppGraph(context: Context) {
     // `Builder().build()` pattern in TdVideoPlayer / WebmStickerPlayer churned 38 of
     // them per minute of fast scroll on profiling — most living 0 ms. Pooling makes
     // scroll past video cards essentially free at the player layer.
-    val exoPlayerPool: ExoPlayerPool = ExoPlayerPool(context)
+    // Idle pooled players are drained when the app leaves the foreground (and on
+    // onTrimMemory, see HortayApp) so their decoders don't outlive the visible session.
+    val exoPlayerPool: ExoPlayerPool = ExoPlayerPool(context).also { pool ->
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStop(owner: LifecycleOwner) = pool.drainIdle()
+        })
+    }
 
     // App-wide single-active-source session for inline audio / voice-note playback, shared
     // by the regular feed's Audio/VoiceNote posts and the rich audio/voice blocks. Owns one
@@ -418,6 +440,7 @@ class AppGraph(context: Context) {
      * buffered links arriving during the recreation.
      */
     val deepLinkRouter: DeepLinkRouter = DeepLinkRouter()
+        .also { router -> session.onEnd("deepLinkRouter") { router.clear() } }
 
     /**
      * Canonical Telegram-URL parser. Delegates to TDLib's `GetInternalLinkType` (knows
@@ -446,6 +469,7 @@ class AppGraph(context: Context) {
      * not pending intent. Telegram-Android has the same boundary.
      */
     val linkDialogs: LinkDialogState = LinkDialogState()
+        .also { dialogs -> session.onEnd("linkDialogs") { dialogs.clear() } }
 
     /**
      * Navigation 3 back stack shared by both scaffolds (authenticated

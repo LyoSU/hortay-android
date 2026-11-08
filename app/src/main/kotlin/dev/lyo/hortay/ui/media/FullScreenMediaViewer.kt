@@ -461,6 +461,10 @@ private fun MediaPage(
         is AlbumItem.Photo -> ZoomableImage(item)
         is AlbumItem.Video -> {
             val quality = pickedQuality ?: item.qualities.defaultPick
+            // Fullscreen video plays WITH sound once its page is active; silence an inline
+            // voice note / audio track first so the two never talk over each other.
+            val audioSession = LocalAudioPlaybackSession.current
+            LaunchedEffect(isActive) { if (isActive) audioSession.yieldToVideo() }
             VideoSurfaceWithPoster(item) {
                 TdVideoPlayer(
                     fileId = quality.fileId,

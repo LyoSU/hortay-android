@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -174,6 +176,10 @@ class WebFeedSource(
     @Volatile
     private var lastSuccessfulRefreshAtMs: Long = 0L
 
+    /** Wall-clock of the last [WebRepository.vacuum]; process-local, so the first good sweep of a launch runs it. */
+    @Volatile
+    private var lastVacuumAtMs: Long = 0L
+
     // Adaptive backoff signal for [WebFeedScheduler]. Incremented on each
     // sweep that ingested NO new posts (every channel returned 304 NotModified
     // or the same seq it already had). Reset to 0 when a sweep brings new
@@ -309,6 +315,7 @@ class WebFeedSource(
                 _consecutiveNoOpSweeps.value = nextNoOpStreak(outcomes, _consecutiveNoOpSweeps.value)
                 lastSuccessfulRefreshAtMs = System.currentTimeMillis()
                 _refreshState.value = RefreshState.Idle
+                maybeVacuum()
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
                 Log.w(TAG, "refresh failed: ${t.message}")
@@ -470,13 +477,40 @@ class WebFeedSource(
             // Channels tab paints a real failure chip instead of a permanent
             // spinner. We re-throw cancellation so the caller's structured
             // concurrency stays intact.
-            if (t is kotlinx.coroutines.CancellationException) throw t
+            if (t is kotlinx.coroutines.CancellationException) {
+                // A cancelled fetch (sweep / scope cancelled) would otherwise leave the
+                // row at Loading — a permanent spinner until the next process start's
+                // clearStaleLoading. NonCancellable: we're already cancelled, so a plain
+                // suspending write would throw before reaching the DB.
+                withContext(NonCancellable) {
+                    runCatching { repository.clearLoading(username) }
+                }
+                throw t
+            }
             repository.markFetchStatus(
                 username = username,
                 status = ChannelFetchStatus.Error,
                 error = t.message,
             )
             return FetchOutcome.Transient
+        }
+    }
+
+    /**
+     * Run [WebRepository.vacuum] at most once per [VACUUM_INTERVAL_MS]. Called after a
+     * successful sweep (still under [refreshMutex], so it never races a sweep's
+     * ingest). A failure is logged and retried on the next interval — maintenance
+     * must never fail the refresh that triggered it.
+     */
+    private suspend fun maybeVacuum() {
+        val now = System.currentTimeMillis()
+        if (now - lastVacuumAtMs < VACUUM_INTERVAL_MS) return
+        lastVacuumAtMs = now
+        try {
+            repository.vacuum()
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            Log.w(TAG, "vacuum failed: ${t.message}")
         }
     }
 
@@ -604,6 +638,9 @@ class WebFeedSource(
 
     companion object {
         private const val TAG = "WebFeedSource"
+
+        /** Minimum gap between [WebRepository.vacuum] runs. */
+        private const val VACUUM_INTERVAL_MS = 24L * 60 * 60 * 1000
 
         /**
          * Adaptive-backoff aggregator. Three outcome buckets matter:

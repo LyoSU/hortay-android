@@ -309,4 +309,49 @@ class TelegramLinkResolverParseLocalTest {
             parse("tg", "search", query = mapOf("query" to "foo bar"), rawUrl = "tg://search?query=foo+bar"),
         )
     }
+
+    // ---------- t.me/s/<handle> web-preview links ----------
+
+    @Test
+    fun `t_me s handle resolves to the channel, not to a handle named s`() {
+        val raw = "https://t.me/s/durov"
+        assertEquals(
+            DeepLink.PublicChannel(handle = "durov", serverPostId = null, originalUrl = raw),
+            parse("https", "t.me", listOf("s", "durov"), rawUrl = raw),
+        )
+    }
+
+    @Test
+    fun `t_me s handle with post id captures the post`() {
+        val raw = "https://t.me/s/durov/42"
+        assertEquals(
+            DeepLink.PublicChannel(handle = "durov", serverPostId = 42L, originalUrl = raw),
+            parse("https", "t.me", listOf("s", "durov", "42"), rawUrl = raw),
+        )
+    }
+
+    @Test
+    fun `bare t_me s is rejected`() {
+        assertNull(parse("https", "t.me", listOf("s"), rawUrl = "https://t.me/s"))
+    }
+
+    // ---------- GetMessageLinkInfo result mapping ----------
+
+    @Test
+    fun `message link with a found message targets the message`() {
+        val raw = "https://t.me/durov/42"
+        assertEquals(
+            DeepLink.Message(chatId = -100L, messageId = 42L shl 20, originalUrl = raw),
+            TelegramLinkResolver.messageLinkTarget(-100L, 42L shl 20, { 42L }, raw),
+        )
+    }
+
+    @Test
+    fun `message link to a deleted post stays in-app on the channel with its post anchor`() {
+        val raw = "https://t.me/durov/42"
+        assertEquals(
+            DeepLink.PrivateChannel(chatId = -100L, serverPostId = 42L, originalUrl = raw),
+            TelegramLinkResolver.messageLinkTarget(-100L, null, { 42L }, raw),
+        )
+    }
 }
