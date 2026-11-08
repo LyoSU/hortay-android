@@ -66,11 +66,13 @@ jobs:
 
       - name: Pre-resolve dependencies
         uses: ./.github/actions/prefetch-deps
+        with:
+          configuration: betaRuntimeClasspath
 
       - name: Build signed beta APK
         run: >
           ./gradlew :app:assembleBeta
-          --no-daemon --stacktrace
+          --stacktrace
 
       - name: Collect APK
         id: apk

@@ -68,6 +68,8 @@ jobs:
 
       - name: Pre-resolve dependencies
         uses: ./.github/actions/prefetch-deps
+        with:
+          configuration: releaseRuntimeClasspath
 
       # Static analysis and unit tests first (no native packaging, fast feedback),
       # then the release-lint translation gate. lintRelease pulls :libwebm's
@@ -75,11 +77,14 @@ jobs:
       # (built by scripts/build-ffmpeg.sh, not in CI). lint analyses code/resources,
       # not the .so, so we exclude that native task — it has no bearing on the
       # MissingTranslation/lint-vital findings this gate exists to enforce.
+      #
+      # Unit tests stay on debug: AGP 9 creates host tests only for the test build
+      # type, so there is no release unit-test variant to share lintRelease's compile.
       - name: detekt + unit tests + lintRelease
         run: >
           ./gradlew :app:detekt :app:testDebugUnitTest :app:lintRelease
           -x ':libwebm:buildCMakeRelWithDebInfo[arm64-v8a]'
-          --no-daemon --stacktrace
+          --stacktrace
 
       - name: Upload reports
         if: always()

@@ -93,6 +93,7 @@
 - The feed, folder tabs and translation cache now each handle Telegram's updates in one ordered stream instead of one listener per update type.
 
 ### Build
+- CI resolves only the dependencies each job builds and reuses one Gradle process per job, so check runs start building sooner.
 - Toolchain and dependencies updated: AGP 9.5, Gradle 9.8, Kotlin 2.4.21, Compose BOM 2026.09 with Material 3 1.5.0-rc01, Media3 1.11, Coil 3.6, OkHttp 5.5, SQLDelight 2.4, DataStore 1.3, JUnit 6.1.3 and refreshed CI actions.
 - CI retries dependency downloads before building, so a brief Maven or Gradle outage no longer fails the build.
 
