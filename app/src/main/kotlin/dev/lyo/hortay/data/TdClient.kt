@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import dev.lyo.hortay.BuildConfig
 import dev.lyo.hortay.R
@@ -174,6 +175,12 @@ class TdClient private constructor(
      * is frozen — silent multi-second sleeps were the worst part of the
      * previous experience. [update] with a `max` semantics ensures concurrent
      * flood responses can only push the deadline further, never pull it back.
+     *
+     * Timebase: [SystemClock.elapsedRealtime], NOT wall-clock. The deadline is an
+     * in-memory interval, and a wall-clock jump (NTP sync, manual time/zone change)
+     * would otherwise stretch the gate by hours or release it early into an active
+     * sanction. Consumers compare against `SystemClock.elapsedRealtime()`; `0` means
+     * "no gate".
      */
     private val _floodWaitUntilMs = MutableStateFlow(0L)
     val floodWaitUntilMs: StateFlow<Long> = _floodWaitUntilMs.asStateFlow()
@@ -596,7 +603,7 @@ class TdClient private constructor(
         // [WebTelegramClient.awaitGate].
         while (true) {
             val until = _floodWaitUntilMs.value
-            val now = System.currentTimeMillis()
+            val now = SystemClock.elapsedRealtime()
             if (until <= now) return
             Log.w(TAG, "FLOOD_WAIT throttle: sleeping ${(until - now) / 1000}s before next send")
             delay(until - now)
@@ -617,7 +624,7 @@ class TdClient private constructor(
         // Capping at 5 minutes preserves the throttle's intent (slow down) while
         // letting a stuck client recover via app restart in the worst case.
         val capped = seconds.coerceAtMost(FLOOD_WAIT_CAP_SECONDS)
-        val deadline = System.currentTimeMillis() + capped * 1000L
+        val deadline = SystemClock.elapsedRealtime() + capped * 1000L
         _floodWaitUntilMs.update { existing -> maxOf(existing, deadline) }
         Log.w(TAG, "FLOOD_WAIT registered: $message → throttle for ${capped}s")
     }
