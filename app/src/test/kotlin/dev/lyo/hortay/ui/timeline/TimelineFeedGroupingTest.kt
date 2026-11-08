@@ -1,6 +1,5 @@
 package dev.lyo.hortay.ui.timeline
 
-import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.ReadCursors
 import dev.lyo.hortay.testutil.testPost
 import kotlinx.collections.immutable.persistentMapOf
@@ -24,7 +23,6 @@ class TimelineFeedGroupingTest {
         val result = withBoundary(
             items = posts,
             cursors = cursors,
-            order = FeedOrder.OldestUnreadFirst,
             epoch = 42L,
             recencyCutoffMs = 0L,
         )
@@ -44,7 +42,6 @@ class TimelineFeedGroupingTest {
         val result = withBoundary(
             items = posts,
             cursors = cursors,
-            order = FeedOrder.OldestUnreadFirst,
             epoch = 1L,
             recencyCutoffMs = 0L,
         )
@@ -62,7 +59,6 @@ class TimelineFeedGroupingTest {
         val result = withBoundary(
             items = posts,
             cursors = cursors,
-            order = FeedOrder.OldestUnreadFirst,
             epoch = 1L,
             recencyCutoffMs = 0L,
         )
@@ -83,14 +79,12 @@ class TimelineFeedGroupingTest {
         val first = withBoundary(
             items = posts,
             cursors = cursors,
-            order = FeedOrder.OldestUnreadFirst,
             epoch = 7L,
             recencyCutoffMs = 0L,
         )
         val second = withBoundary(
             items = posts,
             cursors = cursors,
-            order = FeedOrder.OldestUnreadFirst,
             epoch = 7L,
             recencyCutoffMs = 0L,
         )
@@ -111,7 +105,6 @@ class TimelineFeedGroupingTest {
         val result = withBoundary(
             items = posts,
             cursors = cursors,
-            order = FeedOrder.Newest,
             epoch = 1L,
             recencyCutoffMs = 0L,
         )
@@ -130,7 +123,6 @@ class TimelineFeedGroupingTest {
         val result = withBoundary(
             items = posts,
             cursors = cursors,
-            order = FeedOrder.OldestUnreadFirst,
             epoch = 1L,
             recencyCutoffMs = 0L,
         )

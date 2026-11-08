@@ -303,7 +303,6 @@ fun TdVideoPlayer(
                 contentAlignment = Alignment.Center,
             ) {
                 MediaLoadingOverlay(
-                    progress = s.progress,
                     downloadedBytes = s.downloadedBytes,
                     totalBytes = s.totalBytes,
                     onCancel = { binding.cancelExplicit() },

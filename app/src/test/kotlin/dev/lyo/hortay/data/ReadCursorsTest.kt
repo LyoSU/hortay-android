@@ -61,32 +61,9 @@ class ReadCursorsTest {
     }
 
     @Test
-    fun `firstUnreadIndex returns the first unread iterator position`() {
-        val cursors = persistentMapOf(CHAT_ID to 50L)
-        val posts = listOf(
-            post(id = 100L), // unread
-            post(id = 80L),  // unread
-            post(id = 40L),  // read
-        )
-        assertEquals(0, firstUnreadIndex(posts, cursors))
-    }
-
-    @Test
-    fun `firstUnreadIndex returns -1 when everything is read`() {
-        val cursors = persistentMapOf(CHAT_ID to 1_000L)
-        val posts = listOf(post(id = 100L), post(id = 50L))
-        assertEquals(-1, firstUnreadIndex(posts, cursors))
-    }
-
-    @Test
-    fun `firstUnreadIndex returns -1 on empty input`() {
-        assertEquals(-1, firstUnreadIndex(emptyList(), EmptyReadCursors))
-    }
-
-    @Test
     fun `continueReadingIndex points to oldest unread (highest index) on descending data`() {
         // Descending data (newest=index 0): the resume boundary is the LAST
-        // entry in the unread block — indexOfLast. Same for both orders.
+        // entry in the unread block — indexOfLast.
         val cursors = persistentMapOf(CHAT_ID to 50L)
         val descending = listOf(
             post(id = 70L, date = 700L), // index 0, unread (newest)
@@ -94,9 +71,7 @@ class ReadCursorsTest {
             post(id = 40L, date = 400L), // index 2, read
             post(id = 30L, date = 300L), // index 3, read
         )
-        assertEquals(1, continueReadingIndex(FeedOrder.Newest, descending, cursors))
-        // OldestUnreadFirst yields the same result — data contract is identical
-        assertEquals(1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors))
+        assertEquals(1, continueReadingIndex(descending, cursors))
     }
 
     @Test
@@ -106,25 +81,7 @@ class ReadCursorsTest {
             post(id = 70L, date = 700L),
             post(id = 30L, date = 300L),
         )
-        assertEquals(-1, continueReadingIndex(FeedOrder.Newest, descending, cursors))
-        assertEquals(-1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors))
-    }
-
-    @Test
-    fun `continueReadingIndex is identical for Newest and OldestUnreadFirst on descending input`() {
-        // Both orders share the same "indexOfLast unread" logic — this test
-        // proves that the order parameter no longer forks the result.
-        val cursors = persistentMapOf(CHAT_ID to 50L)
-        val descending = listOf(
-            post(id = 80L, date = 800L), // unread
-            post(id = 70L, date = 700L), // unread
-            post(id = 60L, date = 600L), // unread — oldest unread, target
-            post(id = 40L, date = 400L), // read
-        )
-        val forNewest = continueReadingIndex(FeedOrder.Newest, descending, cursors)
-        val forOldest = continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors)
-        assertEquals(forNewest, forOldest)
-        assertEquals(2, forNewest)
+        assertEquals(-1, continueReadingIndex(descending, cursors))
     }
 
     @Test
@@ -132,8 +89,7 @@ class ReadCursorsTest {
         // -1 signals the caller to fall back to index 0 (newest, top of descending list).
         val cursors = persistentMapOf(CHAT_ID to 1_000L)
         val descending = listOf(post(id = 70L, date = 700L), post(id = 30L, date = 300L))
-        assertEquals(-1, continueReadingIndex(FeedOrder.Newest, descending, cursors))
-        assertEquals(-1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors))
+        assertEquals(-1, continueReadingIndex(descending, cursors))
     }
 
     @Test
@@ -151,11 +107,7 @@ class ReadCursorsTest {
         )
         assertEquals(
             1,
-            continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors, minUnreadDate = 500L),
-        )
-        assertEquals(
-            1,
-            continueReadingIndex(FeedOrder.Newest, descending, cursors, minUnreadDate = 500L),
+            continueReadingIndex(descending, cursors, minUnreadDate = 500L),
         )
     }
 
@@ -171,11 +123,7 @@ class ReadCursorsTest {
         )
         assertEquals(
             -1,
-            continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors, minUnreadDate = 500L),
-        )
-        assertEquals(
-            -1,
-            continueReadingIndex(FeedOrder.Newest, descending, cursors, minUnreadDate = 500L),
+            continueReadingIndex(descending, cursors, minUnreadDate = 500L),
         )
     }
 
@@ -193,11 +141,7 @@ class ReadCursorsTest {
         )
         assertEquals(
             1,
-            continueReadingIndex(FeedOrder.Newest, descending, cursors, minUnreadDate = 500L),
-        )
-        assertEquals(
-            1,
-            continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, cursors, minUnreadDate = 500L),
+            continueReadingIndex(descending, cursors, minUnreadDate = 500L),
         )
     }
 
@@ -207,9 +151,9 @@ class ReadCursorsTest {
         // Single-element descending list: indexOfLast of the only unread = 0.
         val cursors = persistentMapOf(CHAT_ID to 50L)
         val posts = listOf(post(id = 60L, date = 100L)) // dormant unread
-        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, posts, cursors))
-        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, posts, cursors, minUnreadDate = 0L))
-        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, posts, cursors, minUnreadDate = -1L))
+        assertEquals(0, continueReadingIndex(posts, cursors))
+        assertEquals(0, continueReadingIndex(posts, cursors, minUnreadDate = 0L))
+        assertEquals(0, continueReadingIndex(posts, cursors, minUnreadDate = -1L))
     }
 
     @Test
@@ -223,10 +167,10 @@ class ReadCursorsTest {
             post(id = 40L, date = 400L), // index 2, read
         )
         val before = persistentMapOf(CHAT_ID to 50L)
-        assertEquals(1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, before))
+        assertEquals(1, continueReadingIndex(descending, before))
         // Ack post 60 → cursor advances to 60. Boundary moves up to post 70 (index 0).
         val after = before.put(CHAT_ID, 60L)
-        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, after))
+        assertEquals(0, continueReadingIndex(descending, after))
     }
 
     @Test
@@ -236,10 +180,10 @@ class ReadCursorsTest {
             post(id = 40L, date = 400L), // read
         )
         val before = persistentMapOf(CHAT_ID to 50L)
-        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, before))
+        assertEquals(0, continueReadingIndex(descending, before))
         // Ack the last unread → -1 (caller maps to index 0 = newest).
         val after = before.put(CHAT_ID, 70L)
-        assertEquals(-1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, after))
+        assertEquals(-1, continueReadingIndex(descending, after))
     }
 
     @Test
@@ -249,9 +193,9 @@ class ReadCursorsTest {
         val album = post(id = 100L, date = 600L).copy(albumMessageIds = listOf(100L, 101L, 102L))
         val descending = listOf(post(id = 200L, date = 700L), album)
         val before = persistentMapOf(CHAT_ID to 50L)
-        assertEquals(1, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, before))
+        assertEquals(1, continueReadingIndex(descending, before))
         val after = before.put(CHAT_ID, album.albumMessageIds.maxOrNull()!!)
-        assertEquals(0, continueReadingIndex(FeedOrder.OldestUnreadFirst, descending, after))
+        assertEquals(0, continueReadingIndex(descending, after))
     }
 
     private companion object {

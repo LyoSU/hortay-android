@@ -218,7 +218,6 @@ fun TdMediaImage(
             is MediaState.Downloading -> if (showLoadingOverlay && showProgress && fileId != null && !passive) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     MediaLoadingOverlay(
-                        progress = s.progress,
                         downloadedBytes = s.downloadedBytes,
                         totalBytes = s.totalBytes,
                         onCancel = { binding.cancelExplicit() },

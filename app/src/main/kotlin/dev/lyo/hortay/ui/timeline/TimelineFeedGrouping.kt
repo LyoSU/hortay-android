@@ -7,7 +7,6 @@ package dev.lyo.hortay.ui.timeline
 
 import androidx.compose.runtime.Immutable
 import dev.lyo.hortay.data.AlbumItem
-import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.ReadCursors
 import dev.lyo.hortay.data.TimelinePost
@@ -244,7 +243,6 @@ internal fun FeedItem.posts(): List<TimelinePost> = when (this) {
 internal fun withBoundary(
     items: List<FeedItem.Post>,
     cursors: ReadCursors,
-    @Suppress("UNUSED_PARAMETER") order: FeedOrder,
     epoch: Long,
     recencyCutoffMs: Long,
 ): List<FeedItem> {

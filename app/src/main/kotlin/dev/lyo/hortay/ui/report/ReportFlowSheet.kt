@@ -84,7 +84,6 @@ fun ReportFlowSheet(
      * dismiss immediately or silently fail on the very next open.
      */
     openToken: Long,
-    @Suppress("UNUSED_PARAMETER") channelUsername: String?,
     /**
      * Called on every sheet exit. The `success` flag is true when the user reached
      * [ReportState.Success] — the parent can dispatch a confirmation snackbar

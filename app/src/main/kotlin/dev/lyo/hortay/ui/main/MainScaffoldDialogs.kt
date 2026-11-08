@@ -70,7 +70,6 @@ internal fun MainScaffoldDialogs(
             chatId = target.chatId,
             messageId = target.messageId,
             openToken = target.token,
-            channelUsername = null,
             onDismiss = { success ->
                 graph.reportDialogs.close()
                 // Surface a confirmation snackbar via the existing UserMessageBus

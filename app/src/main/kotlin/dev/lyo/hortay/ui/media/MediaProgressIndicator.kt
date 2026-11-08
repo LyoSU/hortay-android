@@ -95,18 +95,11 @@ fun MediaIndeterminateIndicator(
  */
 @Composable
 fun MediaLoadingOverlay(
-    progress: Float,
     downloadedBytes: Long,
     totalBytes: Long,
     modifier: Modifier = Modifier,
     onCancel: (() -> Unit)? = null,
 ) {
-    // `progress` parameter unused now — kept in the signature for API stability
-    // (callers still pass it). The numeric byte-progress pill below is the
-    // canonical surface for "how many bytes landed"; the visual disc is just
-    // "system is downloading".
-    @Suppress("UNUSED_PARAMETER", "unused")
-    val keepParam = progress
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,

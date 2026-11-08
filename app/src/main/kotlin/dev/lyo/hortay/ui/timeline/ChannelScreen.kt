@@ -281,7 +281,6 @@ fun ChannelScreen(
             withBoundary(
                 items = postItems,
                 cursors = boundaryCursors,
-                order = feedOrder,
                 epoch = cursorEpoch,
                 recencyCutoffMs = recencyCutoffMs,
             )
