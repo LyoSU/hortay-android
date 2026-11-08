@@ -50,28 +50,42 @@ internal fun MediaPositionPill(current: Int, count: Int, modifier: Modifier = Mo
                 color = Color.White,
             )
         } else {
-            MediaPositionDots(count = count, selected = current)
+            MediaPositionDots(
+                count = count,
+                selected = current,
+                activeColor = Color.White,
+                idleColor = Color.White.copy(alpha = 0.45f),
+            )
         }
     }
 }
 
 /**
- * "1 / 5" counter chip for the feed's [AlbumRow], pinned to the strip's top-right corner.
- * A centred dot pill sat on the seam between two peeking photos and read as part of the
- * image; a plain number in a corner says "there is more to swipe" at a glance.
+ * Position dots UNDER the feed's [AlbumRow], on the card surface rather than over the photos.
+ * A dot pill overlaid at the strip's centre sat on the seam between two peeking photos and
+ * its dark scrim blended into them; below the strip the dots read as the album's own
+ * pager, the way Instagram and Threads show them. Past [MEDIA_PILL_DOT_LIMIT] items the row
+ * becomes an "n / total" counter.
  */
 @Composable
-internal fun MediaCounterChip(current: Int, count: Int, modifier: Modifier = Modifier) {
-    Text(
-        text = stringResource(R.string.rich_slideshow_counter, current + 1, count),
-        style = MaterialTheme.typography.labelMedium.tabularFigures(),
-        fontWeight = FontWeight.SemiBold,
-        color = Color.White,
-        modifier = modifier
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.6f))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-    )
+internal fun AlbumPositionDots(current: Int, count: Int, modifier: Modifier = Modifier) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        if (count > MEDIA_PILL_DOT_LIMIT) {
+            Text(
+                text = stringResource(R.string.rich_slideshow_counter, current + 1, count),
+                style = MaterialTheme.typography.labelMedium.tabularFigures(),
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            MediaPositionDots(
+                count = count,
+                selected = current,
+                activeColor = MaterialTheme.colorScheme.primary,
+                idleColor = MaterialTheme.colorScheme.outlineVariant,
+            )
+        }
+    }
 }
 
 /** Beyond this item count the dot row is replaced by a compact "n / total" counter. */
@@ -81,7 +95,7 @@ private val DOT_SIZE = 6.dp
 private val DOT_SELECTED_WIDTH = 16.dp
 
 @Composable
-private fun MediaPositionDots(count: Int, selected: Int) {
+private fun MediaPositionDots(count: Int, selected: Int, activeColor: Color, idleColor: Color) {
     val reducedMotion = rememberReducedMotion()
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         repeat(count) { index ->
@@ -92,14 +106,12 @@ private fun MediaPositionDots(count: Int, selected: Int) {
                 animationSpec = if (reducedMotion) snap() else MaterialTheme.motionScheme.fastSpatialSpec(),
                 label = "media-position-dot",
             )
-            // On-scrim palette: solid white for the selected item, dimmed white for the rest.
-            // The accent read as near-black on the dark scrim and the dots blended together.
             Box(
                 modifier = Modifier
                     .size(width = width, height = DOT_SIZE)
                     .clip(CircleShape)
                     .background(
-                        if (active) Color.White else Color.White.copy(alpha = 0.45f),
+                        if (active) activeColor else idleColor,
                     ),
             )
         }

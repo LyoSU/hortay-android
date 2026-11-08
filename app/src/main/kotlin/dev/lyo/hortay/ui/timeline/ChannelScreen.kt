@@ -2,6 +2,17 @@
 
 package dev.lyo.hortay.ui.timeline
 
+import dev.lyo.hortay.ui.theme.tabularFigures
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.lazy.LazyListState
@@ -372,9 +383,10 @@ fun ChannelScreen(
     // jump path — same-channel reply navigation from a [PostInteractions.onQuotedSourceClick]
     // tap. [rememberPendingScrollToMessage] resolves the target and clears it.
     var pendingScrollToMessage by remember(chatId) { mutableStateOf<Pair<Long, Long>?>(null) }
-    // Where the reader was before an in-channel jump (pinned bar, quote tap). Kept across
-    // consecutive jumps so stepping through several pins still returns to the first spot.
-    var returnPoint by remember(chatId) { mutableStateOf<Pair<Any, Int>?>(null) }
+    // Way back from in-channel jumps, newest jump last. A reply tap pushes the post it was
+    // tapped on, so walking a reply chain back takes one tap per hop. Stepping through
+    // several pins pushes only the spot before the first pin.
+    val returnStack = remember(chatId) { mutableStateListOf<ReturnPoint>() }
     // Which pin the bar shows, by message id (null = newest). Each tap jumps to it and
     // steps to the next older one (wrapping), so repeated taps walk the whole pinned
     // set. Identity, not a position: a pin added or removed mid-walk must not make the
@@ -610,7 +622,7 @@ fun ChannelScreen(
                     // to the host post's own chatId before it reaches the UI.
                     if (r.replyToChatId == chatId) {
                         // Same channel: queue an in-place scroll to the target message.
-                        if (returnPoint == null) returnPoint = listState.currentReturnPoint()
+                        returnStack += ReturnPoint(key = post.feedKey(), offset = null, messageId = post.id)
                         pendingScrollToMessage = chatId to r.replyToMessageId
                     } else {
                         // Different channel: drill in WITH the replied-to messageId
@@ -723,7 +735,9 @@ fun ChannelScreen(
                         position = shown + 1,
                         total = pinned.size,
                         onClick = {
-                            if (returnPoint == null) returnPoint = listState.currentReturnPoint()
+                            if (returnStack.lastOrNull()?.fromPinned != true) {
+                                listState.currentReturnPoint()?.let { returnStack += it }
+                            }
                             pendingScrollToMessage = chatId to pinned[shown].messageId
                             pinnedCursorId = pinned[(shown + 1) % pinned.size].messageId
                         },
@@ -975,26 +989,35 @@ fun ChannelScreen(
                             }
                         }
                         // Way back after a jump, or to the newest posts once the reader is
-                        // a few posts away from them. Both targets sit on the newest side.
+                        // a few posts away from them.
                         val farFromNewest by remember(listState) {
                             derivedStateOf { listState.firstVisibleItemIndex > JUMP_BUTTON_MIN_INDEX }
                         }
-                        LaunchedEffect(listState) {
-                            snapshotFlow { listState.firstVisibleItemIndex == 0 }
-                                .filter { it }
-                                .collect { returnPoint = null }
+                        val jumpTargetIndex by remember(listState, displayedList) {
+                            derivedStateOf {
+                                val top = returnStack.lastOrNull() ?: return@derivedStateOf 0
+                                displayedList.indexOfFirst { it.key == top.key }.coerceAtLeast(0)
+                            }
                         }
+                        // Data is newest-first, so a higher index is older; reverseLayout puts
+                        // older posts above. The arrow points where the jump will go.
+                        val towardOlder = jumpTargetIndex > listState.firstVisibleItemIndex
                         ChannelJumpButton(
-                            visible = returnPoint != null || farFromNewest,
-                            isReturn = returnPoint != null,
-                            pointsDown = feedOrder.reverseLayout,
+                            visible = returnStack.isNotEmpty() || farFromNewest,
+                            backCount = returnStack.size,
+                            pointsDown = feedOrder.reverseLayout != towardOlder,
                             onClick = {
-                                val target = returnPoint
-                                returnPoint = null
+                                val target = returnStack.removeLastOrNull()
                                 scope.launch {
-                                    val idx = target?.let { (key, _) -> displayedList.indexOfFirst { it.key == key } } ?: -1
-                                    if (idx >= 0) listState.scrollToItem(idx, target?.second ?: 0)
-                                    else listState.scrollToItem(0)
+                                    val idx = target?.let { t -> displayedList.indexOfFirst { it.key == t.key } } ?: -1
+                                    when {
+                                        idx < 0 -> listState.scrollToItem(0)
+                                        target?.offset != null -> listState.scrollToItem(idx, target.offset)
+                                        else -> {
+                                            listState.scrollToTopAligned(idx)
+                                            target?.messageId?.let { highlightedPostKey = chatId to it }
+                                        }
+                                    }
                                 }
                             },
                             modifier = Modifier
@@ -1029,23 +1052,38 @@ fun ChannelScreen(
 
 private const val JUMP_BUTTON_MIN_INDEX = 3
 
-private fun LazyListState.currentReturnPoint(): Pair<Any, Int>? =
-    layoutInfo.visibleItemsInfo.firstOrNull()?.let { it.key to firstVisibleItemScrollOffset }
+/**
+ * One step back from an in-channel jump: the row [key] to return to, either at the exact
+ * scroll [offset] the reader left it at, or (null) top-aligned and highlighted as the
+ * post [messageId] a reply was tapped on.
+ */
+@Immutable
+private data class ReturnPoint(
+    val key: Any,
+    val offset: Int?,
+    val messageId: Long? = null,
+    val fromPinned: Boolean = false,
+)
+
+private fun LazyListState.currentReturnPoint(): ReturnPoint? =
+    layoutInfo.visibleItemsInfo.firstOrNull()?.let {
+        ReturnPoint(key = it.key, offset = firstVisibleItemScrollOffset, fromPinned = true)
+    }
 
 /**
- * Round button in the channel's bottom corner: returns to the reading spot after a jump
- * to a pinned or quoted post ([isReturn]), otherwise scrolls to the newest posts. Without
- * it, a tap on the pinned bar left the reader deep in old history with no way back.
+ * Round button in the channel's bottom corner: steps back after jumps to pinned or quoted
+ * posts ([backCount] steps left, shown as a badge past one), otherwise scrolls to the
+ * newest posts. Without it, a jump left the reader deep in old history with no way back.
  */
 @Composable
 private fun ChannelJumpButton(
     visible: Boolean,
-    isReturn: Boolean,
+    backCount: Int,
     pointsDown: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val label = stringResource(if (isReturn) R.string.channel_jump_back else R.string.channel_jump_latest)
+    val label = stringResource(if (backCount > 0) R.string.channel_jump_back else R.string.channel_jump_latest)
     AnimatedVisibility(
         visible = visible,
         enter = scaleIn(MaterialTheme.motionScheme.defaultSpatialSpec(), initialScale = 0.85f) +
@@ -1061,11 +1099,25 @@ private fun ChannelJumpButton(
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
             shadowElevation = 6.dp,
             modifier = Modifier
-                .size(48.dp)
+                .height(48.dp)
+                .widthIn(min = 48.dp)
                 .semantics { contentDescription = label },
         ) {
-            Box(contentAlignment = Alignment.Center) {
+            Row(
+                modifier = Modifier.padding(horizontal = if (backCount > 1) 14.dp else 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
                 Symbol(name = if (pointsDown) "arrow_downward" else "arrow_upward", size = 22.dp)
+                // Steps left in a reply chain, so the reader knows how far back it goes.
+                if (backCount > 1) {
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = backCount.toString(),
+                        style = MaterialTheme.typography.labelLarge.tabularFigures(),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
         }
     }
