@@ -398,6 +398,7 @@
     <string name="settings_storage_clearing">Limpando…</string>
     <string name="settings_storage_clear">Limpar cache de mídia</string>
     <string name="settings_storage_clear_helper">Remove fotos, vídeos e arquivos em cache. O banco de mensagens e a sessão são mantidos — só sair da conta limpa esses dados</string>
+    <string name="settings_storage_clear_failed">Não foi possível limpar o cache de mídia. Tente novamente</string>
     <string name="settings_storage_media">Mídia</string>
     <string name="settings_storage_db">Banco de dados</string>
 

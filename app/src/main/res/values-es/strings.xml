@@ -397,6 +397,7 @@
     <string name="settings_storage_clearing">Limpiando…</string>
     <string name="settings_storage_clear">Limpiar caché de medios</string>
     <string name="settings_storage_clear_helper">Elimina fotos, videos y archivos en caché. La base de datos de mensajes y la sesión se conservan; solo se borran al cerrar sesión</string>
+    <string name="settings_storage_clear_failed">No se pudo limpiar la caché de medios. Inténtalo de nuevo</string>
     <string name="settings_storage_media">Medios</string>
     <string name="settings_storage_db">Base de datos</string>
 

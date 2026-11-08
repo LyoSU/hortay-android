@@ -423,6 +423,7 @@
     <string name="settings_storage_clearing">جارٍ المسح…</string>
     <string name="settings_storage_clear">مسح ذاكرة الوسائط المؤقتة</string>
     <string name="settings_storage_clear_helper">يزيل الصور والفيديوهات والملفات المخزنة مؤقتاً. تبقى قاعدة بيانات الرسائل والجلسة، ولا تُمسح إلا بتسجيل الخروج</string>
+    <string name="settings_storage_clear_failed">تعذّر مسح ذاكرة الوسائط المؤقتة. حاول مرة أخرى</string>
     <string name="settings_storage_media">الوسائط</string>
     <string name="settings_storage_db">قاعدة البيانات</string>
 

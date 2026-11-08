@@ -397,6 +397,7 @@
     <string name="settings_storage_clearing">Svuotamento…</string>
     <string name="settings_storage_clear">Svuota cache media</string>
     <string name="settings_storage_clear_helper">Rimuove foto, video e file in cache. Il database dei messaggi e la sessione restano; vengono eliminati solo all\'uscita dall\'account</string>
+    <string name="settings_storage_clear_failed">Impossibile svuotare la cache media. Riprova</string>
     <string name="settings_storage_media">Media</string>
     <string name="settings_storage_db">Database</string>
 

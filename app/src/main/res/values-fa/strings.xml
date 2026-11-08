@@ -387,6 +387,7 @@
     <string name="settings_storage_clearing">در حال پاک کردن…</string>
     <string name="settings_storage_clear">پاک کردن کش رسانه</string>
     <string name="settings_storage_clear_helper">عکس‌ها، ویدیوها و فایل‌های کش‌شده را حذف می‌کند. پایگاه پیام‌ها و نشست باقی می‌مانند؛ فقط با خروج پاک می‌شوند</string>
+    <string name="settings_storage_clear_failed">پاک کردن کش رسانه انجام نشد. دوباره امتحان کنید</string>
     <string name="settings_storage_media">رسانه</string>
     <string name="settings_storage_db">پایگاه داده</string>
 

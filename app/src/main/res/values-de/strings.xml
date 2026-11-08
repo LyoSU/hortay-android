@@ -389,6 +389,7 @@
     <string name="settings_storage_clearing">Wird geleert…</string>
     <string name="settings_storage_clear">Mediencache leeren</string>
     <string name="settings_storage_clear_helper">Entfernt gecachte Fotos, Videos und Dateien. Nachrichtendatenbank und Sitzung bleiben erhalten — nur Abmelden löscht diese</string>
+    <string name="settings_storage_clear_failed">Mediencache konnte nicht geleert werden. Versuche es erneut</string>
     <string name="settings_storage_media">Medien</string>
     <string name="settings_storage_db">Datenbank</string>
 

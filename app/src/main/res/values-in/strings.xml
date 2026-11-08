@@ -378,6 +378,7 @@
     <string name="settings_storage_clearing">Menghapus…</string>
     <string name="settings_storage_clear">Hapus cache media</string>
     <string name="settings_storage_clear_helper">Menghapus foto, video, dan file yang di-cache. Database pesan dan sesi tetap ada, hanya dihapus saat keluar</string>
+    <string name="settings_storage_clear_failed">Gagal menghapus cache media. Coba lagi</string>
     <string name="settings_storage_media">Media</string>
     <string name="settings_storage_db">Database</string>
 

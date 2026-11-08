@@ -402,6 +402,7 @@
     <string name="settings_storage_clearing">Очищаємо…</string>
     <string name="settings_storage_clear">Очистити кеш медіа</string>
     <string name="settings_storage_clear_helper">Видаляє кеш фото, відео й файлів. База повідомлень і сесія залишаються; їх скидає лише вихід з акаунта</string>
+    <string name="settings_storage_clear_failed">Не вдалося очистити кеш медіа. Спробуй ще раз</string>
     <string name="settings_storage_media">Медіа</string>
     <string name="settings_storage_db">База даних</string>
 

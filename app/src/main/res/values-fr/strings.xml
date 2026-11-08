@@ -398,6 +398,7 @@
     <string name="settings_storage_clearing">Nettoyage…</string>
     <string name="settings_storage_clear">Vider le cache média</string>
     <string name="settings_storage_clear_helper">Supprime les photos, vidéos et fichiers en cache. La base de messages et la session sont conservées ; seule une déconnexion les efface</string>
+    <string name="settings_storage_clear_failed">Impossible de vider le cache média. Réessaie</string>
     <string name="settings_storage_media">Médias</string>
     <string name="settings_storage_db">Base de données</string>
 

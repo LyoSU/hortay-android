@@ -346,7 +346,7 @@ class AppGraph(context: Context) {
 
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 
-    val statsRepository: StatsRepository = StatsRepository(tdClient)
+    val statsRepository: StatsRepository = StatsRepository(tdClient, userMessages, res)
 
     val chatFoldersRepository: ChatFoldersRepository = ChatFoldersRepository(tdClient, appScope)
 

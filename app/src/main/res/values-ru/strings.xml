@@ -407,6 +407,7 @@
     <string name="settings_storage_clearing">Очищаем…</string>
     <string name="settings_storage_clear">Очистить кеш медиа</string>
     <string name="settings_storage_clear_helper">Удаляет кешированные фото, видео и файлы. База сообщений и сессия остаются — их сбрасывает только выход из аккаунта</string>
+    <string name="settings_storage_clear_failed">Не удалось очистить кеш медиа. Попробуйте ещё раз</string>
     <string name="settings_storage_media">Медиа</string>
     <string name="settings_storage_db">База данных</string>
 

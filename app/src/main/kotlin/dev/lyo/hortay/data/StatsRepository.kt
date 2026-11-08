@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data
 
 import androidx.compose.runtime.Immutable
+import dev.lyo.hortay.R
 import org.drinkless.tdlib.TdApi
 
 /**
@@ -8,7 +9,11 @@ import org.drinkless.tdlib.TdApi
  * surface that Telegram clients expose so the user knows how much data the app moves and
  * how much disk it has accumulated, with a "clear cache" escape hatch.
  */
-class StatsRepository(private val td: TdSender) {
+class StatsRepository(
+    private val td: TdSender,
+    private val userMessages: UserMessageBus,
+    private val res: StringResolver,
+) {
 
     /** Aggregated cellular + Wi-Fi + roaming traffic since TDLib started recording. */
     suspend fun networkUsage(): NetworkUsage {
@@ -58,6 +63,10 @@ class StatsRepository(private val td: TdSender) {
      * without freeing meaningful disk. A user tapping *"Очистити кеш"* expects
      * the photo / video bulk to disappear, not their sticker packs and
      * contacts' profile photos.
+     *
+     * A failure is reported to the user via [UserMessageBus] here (repositories own
+     * error routing), so a tap that did nothing never reads as a silent success; the
+     * [Result] is still returned for callers that need to branch on it.
      */
     suspend fun clearCache(): Result<Unit> = runCatching {
         td.send(
@@ -75,6 +84,7 @@ class StatsRepository(private val td: TdSender) {
         )
         Unit
     }.warnUnlessCancelled(TAG, "clearCache")
+        .onFailure { userMessages.post(res.getString(R.string.settings_storage_clear_failed)) }
 
     /** Zero out the lifetime traffic counters. Storage is unaffected. */
     suspend fun resetTrafficStats(): Result<Unit> = runCatching {

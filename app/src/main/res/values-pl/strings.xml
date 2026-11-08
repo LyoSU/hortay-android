@@ -405,6 +405,7 @@
     <string name="settings_storage_clearing">Czyszczenie…</string>
     <string name="settings_storage_clear">Wyczyść cache mediów</string>
     <string name="settings_storage_clear_helper">Usuwa zbuforowane zdjęcia, filmy i pliki. Baza wiadomości i sesja zostają — czyści je tylko wylogowanie</string>
+    <string name="settings_storage_clear_failed">Nie udało się wyczyścić cache mediów. Spróbuj ponownie</string>
     <string name="settings_storage_media">Media</string>
     <string name="settings_storage_db">Baza danych</string>
 

@@ -389,6 +389,7 @@
     <string name="settings_storage_clearing">Temizleniyor…</string>
     <string name="settings_storage_clear">Medya önbelleğini temizle</string>
     <string name="settings_storage_clear_helper">Önbelleğe alınan fotoğraf, video ve dosyaları siler. Mesaj veritabanı ve oturum korunur; bunları yalnızca çıkış yapmak siler</string>
+    <string name="settings_storage_clear_failed">Medya önbelleği temizlenemedi. Tekrar dene</string>
     <string name="settings_storage_media">Medya</string>
     <string name="settings_storage_db">Veritabanı</string>
 

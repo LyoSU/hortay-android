@@ -404,6 +404,7 @@
     <string name="settings_storage_clearing">Clearing…</string>
     <string name="settings_storage_clear">Clear media cache</string>
     <string name="settings_storage_clear_helper">Removes cached photos, videos and files. Message database and session stay, only signing out clears those</string>
+    <string name="settings_storage_clear_failed">Couldn\'t clear the media cache. Try again</string>
     <string name="settings_storage_media">Media</string>
     <string name="settings_storage_db">Database</string>
 
