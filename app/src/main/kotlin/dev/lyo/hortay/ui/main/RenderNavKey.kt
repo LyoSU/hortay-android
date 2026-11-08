@@ -129,6 +129,8 @@ internal fun RenderNavKey(
                     graph.postsRepository.clearPollPending(chatId, messageId, revert = !ok)
                 }
             },
+            bookmarks = graph.bookmarkStore,
+            channels = graph.channelDirectory,
         )
 
         is ArchiveKey -> {

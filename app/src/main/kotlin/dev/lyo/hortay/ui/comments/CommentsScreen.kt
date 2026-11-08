@@ -47,6 +47,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
+import dev.lyo.hortay.data.BookmarkStore
+import dev.lyo.hortay.data.ChannelDirectory
+import dev.lyo.hortay.data.bookmarkKey
+import dev.lyo.hortay.ui.actions.PostActions
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.PostContent
 import dev.lyo.hortay.data.posts.PostsRepository
@@ -205,6 +209,16 @@ fun CommentsScreen(
      * retract (regular polls only).
      */
     onPollVote: (chatId: Long, messageId: Long, chosenIndices: IntArray) -> Unit = { _, _, _ -> },
+    /**
+     * Bookmark store backing the pinned anchor's long-press "Save" action and its filled
+     * icon. Null (previews/tests) leaves Save a no-op, as before.
+     */
+    bookmarks: BookmarkStore? = null,
+    /**
+     * Resolves canonical share/open URLs for the anchor's long-press Share / Open actions.
+     * Null in guest mode — [PostActions] then falls back to the hand-rolled t.me URL.
+     */
+    channels: ChannelDirectory? = null,
 ) {
     // Live anchor: track the feed entry whose chat+id matches the post we were
     // opened with so reactions / view count / comment count stay fresh while the
@@ -279,8 +293,18 @@ fun CommentsScreen(
     }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
 
     val viewer = LocalMediaViewer.current
+    val context = LocalContext.current
+    val actionScope = rememberCoroutineScope()
+    val bookmarkedKeys by remember(bookmarks) {
+        bookmarks?.bookmarks ?: kotlinx.coroutines.flow.flowOf(emptySet())
+    }.collectAsStateWithLifecycle(initialValue = emptySet())
+    val bookmarkedState = rememberUpdatedState(bookmarkedKeys)
     val pinnedPostInteractions = remember(
         viewer,
+        context,
+        actionScope,
+        bookmarks,
+        channels,
         onChannelClick,
         onAuthorChatClick,
         onQuotedSourceClick,
@@ -318,6 +342,12 @@ fun CommentsScreen(
                 onPollVote(p.chatId, target, indices)
             },
             pollVotingEnabled = true,
+            // Long-press Save / Share / Copy / Open — same wiring as the feed.
+            onBookmarkClick = { p -> bookmarks?.let { b -> actionScope.launch { b.toggle(p) } } },
+            onShareClick = { p -> actionScope.launch { PostActions.share(context, channels, p) } },
+            onCopyClick = { p -> PostActions.copyText(context, p) },
+            onOpenClick = { p -> actionScope.launch { PostActions.openInTelegram(context, channels, p) } },
+            isBookmarked = { p -> p.bookmarkKey() in bookmarkedState.value },
         )
     }
 

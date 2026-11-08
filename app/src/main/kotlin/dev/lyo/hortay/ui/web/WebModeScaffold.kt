@@ -627,6 +627,7 @@ fun WebModeScaffold(graph: AppGraph) {
                                 feedRepo = null,
                                 onDismiss = { popNav() },
                                 disabledOverride = webCommentsOverride,
+                                bookmarks = graph.bookmarkStore,
                             )
                         }
 
