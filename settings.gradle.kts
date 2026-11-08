@@ -15,7 +15,17 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google()
+        // Same filter as pluginManagement: only Google-hosted groups are looked up on
+        // Google Maven, so every other artifact skips a guaranteed-miss round-trip
+        // there (and can't be shadowed by it). Groups outside the filter fall through
+        // to mavenCentral as before.
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
         mavenCentral()
     }
 }

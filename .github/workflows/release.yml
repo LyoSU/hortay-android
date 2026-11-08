@@ -105,6 +105,9 @@ jobs:
           telegram-api-id: ${{ secrets.TELEGRAM_API_ID }}
           telegram-api-hash: ${{ secrets.TELEGRAM_API_HASH }}
 
+      - name: Pre-resolve dependencies
+        uses: ./.github/actions/prefetch-deps
+
       - name: Build signed AAB + APK
         run: >
           ./gradlew :app:bundleRelease :app:assembleRelease

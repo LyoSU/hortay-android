@@ -66,6 +66,9 @@ jobs:
             echo "keyPassword=cipassword"
           } > keystore.properties
 
+      - name: Pre-resolve dependencies
+        uses: ./.github/actions/prefetch-deps
+
       # Static analysis and unit tests first (no native packaging, fast feedback),
       # then the release-lint translation gate. lintRelease pulls :libwebm's
       # RelWithDebInfo CMake build, which needs the gitignored ffmpeg static libs

@@ -1,0 +1,31 @@
+name: Pre-resolve Gradle dependencies
+description: >
+  Resolve every :app configuration (and with it the plugin classpath and the
+  :libtdlib / :libwebm project dependencies) before the main Gradle step, retrying
+  up to three times with backoff. A transient Maven Central / Google Maven hiccup
+  then costs a retry instead of failing a long build at the first artifact
+  download. Idempotent: resolution only fills the Gradle cache, so a re-run (or the
+  later step resolving the same graph) is a cache hit.
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve dependencies (3 attempts, backoff)
+      shell: bash
+      run: |
+        set -uo pipefail
+        log="$RUNNER_TEMP/prefetch-deps.log"
+        for attempt in 1 2 3; do
+          # `dependencies` exits 0 even when an artifact can't be fetched — it marks
+          # the node FAILED in the report instead — so check the output as well.
+          if ./gradlew :app:dependencies --no-daemon > "$log" 2>&1 && ! grep -q "FAILED" "$log"; then
+            echo "Dependencies resolved (attempt $attempt)."
+            exit 0
+          fi
+          echo "::warning::Dependency pre-resolve attempt $attempt failed"
+          grep -n "FAILED\|Could not" "$log" | head -n 20 || true
+          if [ "$attempt" -lt 3 ]; then sleep $((attempt * 30)); fi
+        done
+        tail -n 60 "$log"
+        echo "::error::Dependency pre-resolve failed after 3 attempts"
+        exit 1
