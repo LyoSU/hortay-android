@@ -60,7 +60,6 @@ import dev.lyo.hortay.ui.theme.profileOnCoverColor
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
 import java.text.NumberFormat
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
@@ -327,9 +326,8 @@ private fun MessageAction(onMessage: (Context) -> Unit) {
             .padding(horizontal = 24.dp),
     ) {
         Symbol(
-            // Android-convention share glyph (three connected nodes) for the
-            // outbound "share / open this user elsewhere" action.
-            name = "share",
+            // Chat glyph: the action opens a conversation with this user in Telegram.
+            name = "chat_bubble",
             tint = MaterialTheme.colorScheme.onSecondaryContainer,
             size = 18.dp,
         )
@@ -578,8 +576,11 @@ private fun formatOfflineLabel(wasOnlineSec: Long): String {
     }
 }
 
+// Grouping follows the current UI locale (observable via LocalConfiguration, so a
+// per-app language switch re-renders) instead of a hardcoded one.
+@Composable
 private fun formatThousands(n: Int): String =
-    NumberFormat.getNumberInstance(Locale.forLanguageTag("uk")).format(n)
+    NumberFormat.getNumberInstance(LocalConfiguration.current.locales[0]).format(n)
 
 /**
  * Hand the OS the right Telegram URL for "open a chat with this user". Prefers the
