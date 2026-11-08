@@ -18,8 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.theme.tabularFigures
 import dev.lyo.hortay.ui.util.rememberReducedMotion
 
 /**
@@ -48,7 +50,40 @@ internal fun MediaPositionPill(current: Int, count: Int, modifier: Modifier = Mo
                 color = Color.White,
             )
         } else {
-            MediaPositionDots(count = count, selected = current)
+            MediaPositionDots(
+                count = count,
+                selected = current,
+                activeColor = Color.White,
+                idleColor = Color.White.copy(alpha = 0.45f),
+            )
+        }
+    }
+}
+
+/**
+ * Position dots UNDER the feed's [AlbumRow], on the card surface rather than over the photos.
+ * A dot pill overlaid at the strip's centre sat on the seam between two peeking photos and
+ * its dark scrim blended into them; below the strip the dots read as the album's own
+ * pager, the way Instagram and Threads show them. Past [MEDIA_PILL_DOT_LIMIT] items the row
+ * becomes an "n / total" counter.
+ */
+@Composable
+internal fun AlbumPositionDots(current: Int, count: Int, modifier: Modifier = Modifier) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        if (count > MEDIA_PILL_DOT_LIMIT) {
+            Text(
+                text = stringResource(R.string.rich_slideshow_counter, current + 1, count),
+                style = MaterialTheme.typography.labelMedium.tabularFigures(),
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            MediaPositionDots(
+                count = count,
+                selected = current,
+                activeColor = MaterialTheme.colorScheme.primary,
+                idleColor = MaterialTheme.colorScheme.outlineVariant,
+            )
         }
     }
 }
@@ -60,7 +95,7 @@ private val DOT_SIZE = 6.dp
 private val DOT_SELECTED_WIDTH = 16.dp
 
 @Composable
-private fun MediaPositionDots(count: Int, selected: Int) {
+private fun MediaPositionDots(count: Int, selected: Int, activeColor: Color, idleColor: Color) {
     val reducedMotion = rememberReducedMotion()
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         repeat(count) { index ->
@@ -71,14 +106,12 @@ private fun MediaPositionDots(count: Int, selected: Int) {
                 animationSpec = if (reducedMotion) snap() else MaterialTheme.motionScheme.fastSpatialSpec(),
                 label = "media-position-dot",
             )
-            // On-scrim palette: accent for the selected item, dimmed white for the rest — the
-            // pill's dark scrim guarantees contrast over any underlying photo.
             Box(
                 modifier = Modifier
                     .size(width = width, height = DOT_SIZE)
                     .clip(CircleShape)
                     .background(
-                        if (active) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.55f),
+                        if (active) activeColor else idleColor,
                     ),
             )
         }

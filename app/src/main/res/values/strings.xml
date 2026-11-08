@@ -861,4 +861,6 @@
     <string name="media_desc_video">Video</string>
     <string name="media_desc_gif">GIF</string>
     <string name="media_desc_video_note">Video message</string>
+    <string name="channel_jump_back">Back to where you were</string>
+    <string name="channel_jump_latest">Jump to the latest posts</string>
 </resources>

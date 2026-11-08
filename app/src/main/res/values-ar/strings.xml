@@ -893,4 +893,6 @@
     <string name="media_desc_video">فيديو</string>
     <string name="media_desc_gif">GIF</string>
     <string name="media_desc_video_note">رسالة فيديو</string>
+    <string name="channel_jump_back">العودة إلى موضع القراءة</string>
+    <string name="channel_jump_latest">الانتقال إلى أحدث المنشورات</string>
 </resources>

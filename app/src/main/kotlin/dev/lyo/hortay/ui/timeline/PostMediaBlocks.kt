@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -360,50 +361,52 @@ internal fun AlbumRow(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
         }
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val rowWidth = maxWidth
-        val rowHeight = rowWidth * 0.75f
-        val maxItemWidth = rowWidth * 0.92f
-        val minItemWidth = rowWidth * 0.42f
+    Column(modifier = Modifier.fillMaxWidth()) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val rowWidth = maxWidth
+            val rowHeight = rowWidth * 0.75f
+            val maxItemWidth = rowWidth * 0.92f
+            val minItemWidth = rowWidth * 0.42f
 
-        LazyRow(
-            state = state,
-            flingBehavior = flingBehavior,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(rowHeight),
-        ) {
-            itemsIndexed(items) { index, item ->
-                val ratio = mediaAspectRatio(item.media.width, item.media.height)
-                val itemWidth = (rowHeight * ratio).coerceIn(minItemWidth, maxItemWidth)
-                Box(
-                    modifier = Modifier
-                        .width(itemWidth)
-                        .fillMaxHeight()
-                        // D2 — album inner tiles are nested media, so they take the
-                        // tighter nested radius (shapes.small, 12 dp) rather than the
-                        // in-card shapes.medium used by the single-media block.
-                        .clip(MaterialTheme.shapes.small)
-                        // D1 — rectangular photographic content, frame on the same shape.
-                        .mediaFrame(MaterialTheme.shapes.small),
-                ) {
-                    MediaWithSpoiler(
-                        item = item,
-                        onClick = { onItemClick(index) },
-                        isActive = index == activeIndex,
-                    )
+            LazyRow(
+                state = state,
+                flingBehavior = flingBehavior,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(rowHeight),
+            ) {
+                itemsIndexed(items) { index, item ->
+                    val ratio = mediaAspectRatio(item.media.width, item.media.height)
+                    val itemWidth = (rowHeight * ratio).coerceIn(minItemWidth, maxItemWidth)
+                    Box(
+                        modifier = Modifier
+                            .width(itemWidth)
+                            .fillMaxHeight()
+                            // D2 — album inner tiles are nested media, so they take the
+                            // tighter nested radius (shapes.small, 12 dp) rather than the
+                            // in-card shapes.medium used by the single-media block.
+                            .clip(MaterialTheme.shapes.small)
+                            // D1 — rectangular photographic content, frame on the same shape.
+                            .mediaFrame(MaterialTheme.shapes.small),
+                    ) {
+                        MediaWithSpoiler(
+                            item = item,
+                            onClick = { onItemClick(index) },
+                            isActive = index == activeIndex,
+                        )
+                    }
                 }
             }
         }
-        // Position pill (shared with the rich slideshow), driven by the centred item — a live
-        // "how much is left to scroll" cue for the snapping strip.
-        MediaPositionPill(
+        // Dots under the strip, driven by the centred item — a live "how much is left to
+        // scroll" cue for the snapping strip.
+        AlbumPositionDots(
             current = activeIndex,
             count = items.size,
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 8.dp),
+                .fillMaxWidth()
+                .padding(top = 10.dp),
         )
     }
 }

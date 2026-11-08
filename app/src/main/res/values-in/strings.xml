@@ -804,4 +804,6 @@
     <string name="media_desc_video">Video</string>
     <string name="media_desc_gif">GIF</string>
     <string name="media_desc_video_note">Pesan video</string>
+    <string name="channel_jump_back">Kembali ke posisi terakhir</string>
+    <string name="channel_jump_latest">Ke postingan terbaru</string>
 </resources>

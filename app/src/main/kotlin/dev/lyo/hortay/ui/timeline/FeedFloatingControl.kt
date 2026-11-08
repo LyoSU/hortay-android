@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -110,7 +111,12 @@ fun FeedFloatingControl(
         Row(
             modifier = Modifier
                 .align(if (atTop) Alignment.TopCenter else Alignment.BottomEnd)
-                .animateContentSize(MaterialTheme.motionScheme.fastSpatialSpec()),
+                // animateContentSize clips to its bounds, which sliced the segments'
+                // shadows flat at the edges. Pad the animated box so the shadow fits
+                // inside the clip, and offset it back so the button keeps its spot.
+                .offset(x = if (atTop) 0.dp else SHADOW_ROOM, y = if (atTop) -SHADOW_ROOM else SHADOW_ROOM)
+                .animateContentSize(MaterialTheme.motionScheme.fastSpatialSpec())
+                .padding(SHADOW_ROOM),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(SEGMENT_GAP),
         ) {
@@ -283,3 +289,4 @@ private const val MAX_AVATARS = 2
 private val SEGMENT_HEIGHT = 44.dp
 private val INNER_CORNER = 6.dp
 private val SEGMENT_GAP = 2.dp
+private val SHADOW_ROOM = 12.dp

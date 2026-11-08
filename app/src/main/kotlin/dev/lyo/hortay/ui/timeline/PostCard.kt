@@ -1263,7 +1263,7 @@ internal fun ReactionChip(
     ) {
         when (val k = item.kind) {
             is ReactionKind.Emoji -> Text(
-                text = k.text,
+                text = k.text.withEmojiPresentation(),
                 style = MaterialTheme.typography.titleSmall,
             )
             is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
@@ -1530,7 +1530,7 @@ internal fun ReactionPickerStrip(
             ) {
                 when (kind) {
                     is ReactionKind.Emoji -> Text(
-                        text = kind.text,
+                        text = kind.text.withEmojiPresentation(),
                         style = MaterialTheme.typography.titleLarge,
                     )
                     is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
@@ -1638,3 +1638,15 @@ private fun formatViews(count: Int): String = when {
     else -> "%.1fM".format(count / 1_000_000.0).trimEnd('0').trimEnd('.')
 }
 
+
+/**
+ * Telegram sends some reactions as a bare text-default code point — "❤" is U+2764 with no
+ * U+FE0F — and our bundled text fonts carry a monochrome glyph for it, so the heart drew
+ * black instead of as the red emoji. Appending the emoji variation selector asks for the
+ * colour emoji. Display only: the reaction key sent back to Telegram stays as received.
+ */
+internal fun String.withEmojiPresentation(): String =
+    if (codePointCount(0, length) == 1 && !endsWith(EMOJI_VARIATION_SELECTOR)) this + EMOJI_VARIATION_SELECTOR
+    else this
+
+private const val EMOJI_VARIATION_SELECTOR = "\uFE0F"
