@@ -14,8 +14,26 @@
 - Reactions under a post wrap onto a new line instead of being cut off at the screen edge, and comment, forward and view counts sit on a quieter line of their own.
 - The bottom navigation is now a frosted-glass bar with a label under every icon, and the Channels tab has a megaphone icon.
 - The Channels tab shows each channel's real number of unread posts, has a search field, and hides a channel from the feed with a sideways swipe instead of an eye button on every row.
+- "New posts" and "↓ N unread" now share one compact split button in the corner instead of two separate buttons over the text.
+- Feed order in Settings is a two-option switch that explains the selected option underneath.
+- The comments screen has a slim one-line header showing the number of comments.
 
 ### Fixed
+- Tapping a paid ⭐ reaction on a comment no longer crashes the app.
+- A poll vote change or retraction that fails now restores your previous vote.
+- Save, Share, Copy and Open in a post's long-press menu now work on the comments screen.
+- New comments and reactions arriving while a thread loads are no longer missed, and comments that fail to load offer Retry instead of an empty thread.
+- Animated stickers no longer go blank while still on screen.
+- Deleted posts no longer try to download their media, and opening a video fullscreen pauses a playing voice message.
+- The profile's Message button shows a chat icon, and profile counts follow your app language.
+- In guest mode, bookmarking a post inside a channel now shows as saved.
+- The app no longer flashes wallpaper colours on launch, and the "archive in All" switch no longer flickers when Settings opens.
+- Changing the device clock no longer cuts short or freezes a Telegram rate-limit wait.
+- Folder tabs no longer carry over the previous account's channels after signing out.
+- Signing in while offline no longer skips the first fill-in of recent posts.
+- Live updates keep arriving while the app catches up on a newly loaded channel during a rate limit.
+- The pinned-message bar counts every pin, and pins changed while a channel opens show up right away.
+- Small photos no longer show a confusing "0 B / 41 KB" counter while loading.
 - Saved posts from archived channels now show up in the Saved tab.
 - The sign-in screen no longer offers to resend the login code when Telegram has no other way to deliver it, which only ever failed with an unclear error.
 - Photo albums in the feed keep filling in after a stretch without connection, instead of staying incomplete until the app restarts.
@@ -28,11 +46,15 @@
 - The edit-history sheet of a post no longer flickers empty while it's open.
 - Signing out during the first feed fill-in no longer leaves the next account with a sparse feed.
 
+### Performance
+- Idle video players are released when the app goes to the background.
+
 ### Architecture
 - The feed, folder tabs and translation cache now each handle Telegram's updates in one ordered stream instead of one listener per update type.
 
 ### Build
 - Toolchain and dependencies updated: AGP 9.5, Gradle 9.8, Kotlin 2.4.21, Compose BOM 2026.09 with Material 3 1.5.0-rc01, Media3 1.11, Coil 3.6, OkHttp 5.5, SQLDelight 2.4, DataStore 1.3, JUnit 6.1.3 and refreshed CI actions.
+- CI retries dependency downloads before building, so a brief Maven or Gradle outage no longer fails the build.
 
 ## [0.12.0] — 2026-07-16
 
