@@ -13,7 +13,14 @@ CREATE TABLE PostSnapshot (
     text_preview    TEXT NOT NULL DEFAULT '',
     media_minithumb BLOB,
     deleted_msg_keys TEXT,
-    is_comment      INTEGER NOT NULL DEFAULT 0
+    is_comment      INTEGER NOT NULL DEFAULT 0,
+    -- Wall-clock time the row was WRITTEN. Retention keys on this, not on
+    -- seen_at_ms: a baseline carries seen_at_ms = publication time (the
+    -- "first dot = published" timeline anchor), so a seen_at-based sweep
+    -- deleted the baseline of every old post on the night it was captured —
+    -- an edited old post lost its original and a deleted one its tombstone.
+    -- Added by 1.sqm; last column so ALTER TABLE ADD COLUMN matches.
+    captured_at_ms  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_PostSnapshot_msg
@@ -25,11 +32,14 @@ CREATE INDEX idx_PostSnapshot_seen
 CREATE INDEX idx_PostSnapshot_id
     ON PostSnapshot(id);
 
+CREATE INDEX idx_PostSnapshot_captured
+    ON PostSnapshot(captured_at_ms);
+
 insert:
 INSERT INTO PostSnapshot(source_kind, source_key, message_key, album_key, kind, seen_at_ms, edited_at_ms,
                         content_kind, content_blob, content_hash, text_preview, media_minithumb,
-                        deleted_msg_keys, is_comment)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        deleted_msg_keys, is_comment, captured_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 latestForMessage:
 SELECT seen_at_ms, content_hash
@@ -49,13 +59,14 @@ SELECT COUNT(*) AS cnt
 FROM PostSnapshot
 WHERE source_kind = ? AND source_key = ? AND message_key = ? AND kind = 'VERSION';
 
+-- Caller escapes % / _ / \ in :query (escapeSqlLike); ESCAPE '\' makes them literal.
 selectAllForFilter:
 SELECT *
 FROM PostSnapshot
 WHERE (:sourceKind IS NULL OR source_kind = :sourceKind)
   AND (:kind IS NULL OR kind = :kind)
   AND (:isComment IS NULL OR is_comment = :isComment)
-  AND (:query IS NULL OR text_preview LIKE :query)
+  AND (:query IS NULL OR text_preview LIKE :query ESCAPE '\')
 ORDER BY seen_at_ms DESC;
 
 deleteByIds:
@@ -67,8 +78,10 @@ DELETE FROM PostSnapshot WHERE id IN ?;
 selectBlobsByIds:
 SELECT content_blob FROM PostSnapshot WHERE id IN ?;
 
+-- Retention: by capture time (captured_at_ms), never by seen_at_ms — see the
+-- column comment above.
 deleteOlderThan:
-DELETE FROM PostSnapshot WHERE seen_at_ms < ?;
+DELETE FROM PostSnapshot WHERE captured_at_ms < ?;
 
 deleteByCap:
 DELETE FROM PostSnapshot
@@ -81,7 +94,7 @@ WHERE id <= (SELECT MAX(id) FROM PostSnapshot) - ?;
 -- RETURNING clause portable across the older SQLite versions on min-SDK
 -- 26 devices (see Web-mode SQL portability note in ARCHITECTURE.md).
 selectBlobsOlderThan:
-SELECT content_blob FROM PostSnapshot WHERE seen_at_ms < ?;
+SELECT content_blob FROM PostSnapshot WHERE captured_at_ms < ?;
 
 -- Same idea for the cap-based eviction.
 selectBlobsByCap:

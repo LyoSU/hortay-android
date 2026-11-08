@@ -112,4 +112,34 @@ class ArchiveSweepTest {
         rows = db.postSnapshotQueries.selectAllForFilter(null, null, null, null).executeAsList()
         assertEquals(0, rows.size)
     }
+
+    /**
+     * A baseline is stamped `seen_at_ms = publication time` for the timeline's
+     * "first dot = published" anchor. Retention must key on capture time, or an
+     * old post's baseline is swept the night it is captured — losing the
+     * original of a later edit and the body of a later tombstone.
+     */
+    @Test
+    fun sweep_keepsFreshlyCapturedBaselineOfOldPost() = runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        ArchiveDatabase.Schema.create(driver)
+        val db = ArchiveDatabase(driver)
+        val now = 100L * 86_400_000L
+        val settingsFlow = MutableStateFlow(ArchiveSettings(enabled = true, retentionDays = 30))
+        val repo = ArchiveRepository(db, settingsFlow, clock = { now })
+
+        // Published 90 days ago, first observed (captured) now.
+        repo.captureTdlibBaseline(
+            ChatRef.tdlib(1), "1", null, meta("original"),
+            originalDateMs = now - 90L * 86_400_000L,
+        )
+        repo.captureTdlibEdit(ChatRef.tdlib(1), "1", null, editedAtMs = now, meta = meta("edited"))
+
+        ArchiveSweep(db, settingsFlow, clock = { now }).run()
+
+        val rows = db.postSnapshotQueries.selectRevisions("TDLIB", "1", "1").executeAsList()
+        assertEquals(2, rows.size)
+        // Timeline anchor is untouched: the first dot is still the publication time.
+        assertEquals(now - 90L * 86_400_000L, rows[0].seen_at_ms)
+    }
 }

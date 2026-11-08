@@ -6,6 +6,7 @@ import app.cash.sqldelight.coroutines.mapToList
 import dev.lyo.hortay.data.ReadCursors
 import dev.lyo.hortay.data.StringResolver
 import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.data.escapeSqlLike
 import dev.lyo.hortay.data.web.db.ChannelQueries
 import dev.lyo.hortay.data.web.db.ChannelReadCursorQueries
 import dev.lyo.hortay.data.web.db.CustomEmojiQueries
@@ -122,7 +123,7 @@ class WebRepository(
      * scan, just one with case-folding now.
      */
     fun search(query: String, limit: Long = DEFAULT_SEARCH_LIMIT): Flow<PersistentList<TimelinePost>> {
-        val pattern = "%${escapeLike(query.lowercase())}%"
+        val pattern = "%${escapeSqlLike(query.lowercase())}%"
         return postQueries
             .searchPlain(pattern, limit, mapper = ::rowToTimelinePost)
             .asFlow()
@@ -165,7 +166,7 @@ class WebRepository(
      */
     suspend fun postIdForMediaUrl(url: String): String? = withContext(ioDispatcher) {
         if (url.isBlank()) return@withContext null
-        postQueries.selectIdByMediaUrl("%${escapeLike(url)}%").executeAsOneOrNull()
+        postQueries.selectIdByMediaUrl("%${escapeSqlLike(url)}%").executeAsOneOrNull()
     }
 
     /**
@@ -633,13 +634,6 @@ class WebRepository(
     private fun decodeForward(jsonStr: String): WebForwardSource? = runCatching {
         json.decodeFromString(WebForwardSource.serializer(), jsonStr)
     }.getOrNull()
-
-    // Escape the three SQL LIKE metacharacters so a user query / URL matches
-    // literally. Paired with `ESCAPE '\'` on every LIKE that consumes the result
-    // (searchPlain, selectIdByMediaUrl). Order matters: escape the escape char
-    // first so we don't double-escape the backslashes we just introduced.
-    private fun escapeLike(s: String): String =
-        s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     private fun parseIsoToMillis(iso: String): Long? = runCatching {
         // ISO-8601 with offset, e.g. "2026-04-12T18:43:00+00:00". java.time can do

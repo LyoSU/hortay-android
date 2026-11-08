@@ -1812,6 +1812,9 @@ class PostsRepository(
         chat: TdApi.Chat,
     ) {
         val repo = archiveRepository ?: return
+        // Gate before the media copy: copyIfAvailable bumps the refcount, which a
+        // skipped capture (excluded chat, edits capture off) would never release.
+        if (!repo.capturesEditsFor(ChatRef.tdlib(chat.id))) return
         val mediaSha = archiveMediaStore?.let { store ->
             MediaFileFromContent.extract(message.content)?.let { store.copyIfAvailable(it) }
         }
@@ -1958,6 +1961,10 @@ class PostsRepository(
                 (p.id == update.messageId || update.messageId in p.albumMessageIds)
         }
         val buffered = pendingArchiveEdits.commitOnEdited(update.chatId, update.messageId)
+        // Archive off (the default), chat excluded or edit capture disabled: skip the
+        // GetMessage fallback and — crucially — the media copy below, whose refcount
+        // bump only a written VERSION row would ever release.
+        if (!archiveRepository.capturesEditsFor(ChatRef.tdlib(update.chatId))) return
         scope.launch {
             val content: TdApi.MessageContent = buffered
                 ?: runCatching { td.send(TdApi.GetMessage(update.chatId, update.messageId)) }

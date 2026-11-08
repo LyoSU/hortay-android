@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import dev.lyo.hortay.data.archive.db.ArchiveDatabase
+import dev.lyo.hortay.data.escapeSqlLike
 import dev.lyo.hortay.data.web.WebForwardSource
 import dev.lyo.hortay.data.web.WebMedia
 import dev.lyo.hortay.data.web.WebPost
@@ -78,6 +79,18 @@ class ArchiveRepository(
     fun isEnabled(): Boolean = settings.value.enabled
 
     /**
+     * True when a baseline / edit VERSION capture for [chat] would be written
+     * under the current settings. Callers check this BEFORE
+     * [ArchivedMediaStore.copyIfAvailable]: a copy bumps the media refcount and
+     * only a written row (or [releaseUnusedMedia] on an early return) ever
+     * releases it, so copying for a capture that is then skipped leaks the file.
+     */
+    fun capturesEditsFor(chat: ChatRef): Boolean {
+        val s = settings.value
+        return s.enabled && s.captureEdits && chat !in s.excludedChats
+    }
+
+    /**
      * Capture the as-published baseline VERSION row — `seen_at_ms = originalDateMs`,
      * `edited_at_ms = null` — so the revision timeline anchors on "when the post
      * was published" rather than "when Hortay first observed it".
@@ -123,8 +136,12 @@ class ArchiveRepository(
         priorEditedAtMs: Long? = null,
     ) {
         val s = settings.first()
-        if (!s.enabled || !s.captureEdits) return
-        if (chat in s.excludedChats) return
+        // Settings can flip between the caller's [capturesEditsFor] gate and here —
+        // release the pre-copied media ref so a skipped capture can't leak it.
+        if (!s.enabled || !s.captureEdits || chat in s.excludedChats) {
+            releaseUnusedMedia(meta)
+            return
+        }
 
         // [meta] already carries any pre-computed [ArchivedMediaRef.localArchiveSha]
         // (the caller invoked [ArchivedMediaStore.copyIfAvailable] before invoking
@@ -187,8 +204,10 @@ class ArchiveRepository(
         isComment: Boolean = false,
     ) {
         val s = settings.first()
-        if (!s.enabled || !s.captureEdits) return
-        if (chat in s.excludedChats) return
+        if (!s.enabled || !s.captureEdits || chat in s.excludedChats) {
+            releaseUnusedMedia(meta)
+            return
+        }
 
         val blob = ContentBlobCodec.encode(meta)
         val hash = ContentBlobCodec.hash(ContentNormalizer.canonicalBytes(meta))
@@ -333,6 +352,7 @@ class ArchiveRepository(
                 media_minithumb = null,
                 deleted_msg_keys = null,
                 is_comment = 0,
+                captured_at_ms = clock(),
             )
             maybeEvictByCap()
         }
@@ -390,7 +410,8 @@ class ArchiveRepository(
             sourceKind = filter.chatKind?.name,
             kind = filter.kind?.name,
             isComment = filter.scope?.toIsCommentFlag(),
-            query = filter.query?.let { "%$it%" },
+            // Escaped so a literal %, _ or \ in the query isn't a LIKE wildcard.
+            query = filter.query?.let { "%${escapeSqlLike(it)}%" },
         ).asFlow().mapToList(Dispatchers.IO)
             .map { rows -> rows.map(::toDomain).toPersistentList() }
 
@@ -555,6 +576,13 @@ class ArchiveRepository(
 
     // --- Private helpers ---
 
+    /** Drop the refcount a caller took via [ArchivedMediaStore.copyIfAvailable] for a capture that was skipped. */
+    private suspend fun releaseUnusedMedia(meta: TdlibContentMeta) {
+        meta.mediaRef?.localArchiveSha?.let { sha ->
+            runCatching { mediaStore?.releaseRef(sha) }
+        }
+    }
+
     private fun isDuplicate(chat: ChatRef, messageKey: String, hash: String): Boolean {
         val last = db.postSnapshotQueries.latestForMessage(
             chat.kind.name, chat.key, messageKey,
@@ -584,6 +612,9 @@ class ArchiveRepository(
             media_minithumb = minithumb,
             deleted_msg_keys = deletedKeys,
             is_comment = if (isComment) 1L else 0L,
+            // Retention clock — always "now", independent of the seenAtMs
+            // timeline position (a baseline's seenAtMs is its publication time).
+            captured_at_ms = clock(),
         )
     }
 
