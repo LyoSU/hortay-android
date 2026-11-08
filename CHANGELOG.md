@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- The Channels tab has quick filters — Unread, Today and Hidden — with a count on each.
 - A search button next to the logo searches posts across all your channels, including ones that never reached your feed — tap a result to open the channel at that post.
 - A channel's info card lists similar channels Telegram recommends — subscribe in one tap or tap one to open it.
 - When several of your channels forward the same post, the feed shows it once with "Also forwarded by …" instead of repeating it.

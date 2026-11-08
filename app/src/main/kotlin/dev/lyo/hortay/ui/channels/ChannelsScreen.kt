@@ -1,5 +1,10 @@
 package dev.lyo.hortay.ui.channels
 
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.FilterChip
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
@@ -120,15 +125,37 @@ fun ChannelsScreen(
     val channels = remember(posts) { aggregate(posts) }
     val unreadCounts by repo.chatUnreadCounts.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
-    val shown = remember(channels, query) {
-        val q = query.trim()
-        if (q.isEmpty()) channels else channels.filter { it.title.contains(q, ignoreCase = true) }
-    }
+    var filter by rememberSaveable { mutableStateOf(ChannelsFilter.All) }
     val hiddenChatIds by graph.ignoredChannels.ignored.collectAsStateWithLifecycle(
         initialValue = persistentSetOf(),
     )
     val scope = rememberCoroutineScope()
     val cursors = LocalReadCursors.current
+    // One pass decides which filter each channel falls under; the chips show the counts.
+    // derivedStateOf: read cursors live in a snapshot map, so the Unread bucket follows reading.
+    val buckets by remember(channels, hiddenChatIds, unreadCounts, cursors) {
+        derivedStateOf {
+            val dayAgo = System.currentTimeMillis() - DAY_MS
+            ChannelsFilter.entries.associateWith { f ->
+                channels.filter { ch ->
+                    when (f) {
+                        ChannelsFilter.All -> true
+                        ChannelsFilter.Unread -> (unreadCounts[ch.chatId] ?: 0) > 0 ||
+                            (ch.lastPostId > 0L && ch.lastPostId.isUnreadAgainst(cursors[ch.chatId]))
+                        ChannelsFilter.Today -> ch.lastPostDate >= dayAgo
+                        ChannelsFilter.Hidden -> ch.chatId in hiddenChatIds
+                    }
+                }
+            }
+        }
+    }
+    // A filter that emptied out (last hidden channel shown again) falls back to All.
+    val activeFilter = if (filter != ChannelsFilter.All && buckets[filter].isNullOrEmpty()) ChannelsFilter.All else filter
+    val shown = remember(buckets, activeFilter, query) {
+        val base = buckets[activeFilter].orEmpty()
+        val q = query.trim()
+        if (q.isEmpty()) base else base.filter { it.title.contains(q, ignoreCase = true) }
+    }
     val listState = rememberLazyListState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var addSheetOpen by remember { mutableStateOf(false) }
@@ -258,9 +285,15 @@ fun ChannelsScreen(
                             hint = stringResource(R.string.channels_search_hint),
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        ChannelsFilterChips(
+                            selected = activeFilter,
+                            counts = remember(buckets) { buckets.mapValues { it.value.size } },
+                            onSelect = { filter = it },
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
                         // Teach the swipe once it matters: shown until the user has hidden
                         // anything, after which they evidently know the gesture.
-                        if (hiddenChatIds.isEmpty() && query.isBlank()) {
+                        if (hiddenChatIds.isEmpty() && query.isBlank() && activeFilter == ChannelsFilter.All) {
                             Text(
                                 text = stringResource(R.string.channels_swipe_hint),
                                 style = MaterialTheme.typography.bodySmall,
@@ -599,3 +632,47 @@ private fun EmptyChannels(
 
 /** Bulk feed-visibility actions from the Channels top bar (issue #3: 500-channel users). */
 private enum class FeedBulkAction { HideAll, ShowAll }
+
+/** Quick filters above the channel list. */
+internal enum class ChannelsFilter(@param:StringRes val label: Int) {
+    All(R.string.channels_filter_all),
+    Unread(R.string.channels_filter_unread),
+    Today(R.string.channels_filter_today),
+    Hidden(R.string.channels_filter_hidden),
+}
+
+/**
+ * Filter chips with live counts. An empty filter other than All is left out instead of
+ * offered as a dead end, so with nothing hidden there is no "Hidden" chip.
+ */
+@Composable
+private fun ChannelsFilterChips(
+    selected: ChannelsFilter,
+    counts: Map<ChannelsFilter, Int>,
+    onSelect: (ChannelsFilter) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ChannelsFilter.entries.forEach { f ->
+            val count = counts[f] ?: 0
+            if (f != ChannelsFilter.All && count == 0) return@forEach
+            FilterChip(
+                selected = f == selected,
+                onClick = { onSelect(f) },
+                label = {
+                    Text(
+                        text = if (f == ChannelsFilter.All) stringResource(f.label) else "${stringResource(f.label)} · $count",
+                        style = MaterialTheme.typography.labelLarge.tabularFigures(),
+                    )
+                },
+            )
+        }
+    }
+}
+
+private const val DAY_MS = 24L * 60 * 60 * 1000

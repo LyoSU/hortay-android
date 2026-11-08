@@ -862,4 +862,8 @@
     <string name="channel_jump_back">Вернуться к месту чтения</string>
     <string name="channel_jump_latest">К последним постам</string>
     <string name="channels_similar_title">Похожие каналы</string>
+    <string name="channels_filter_all">Все</string>
+    <string name="channels_filter_unread">Непрочитанные</string>
+    <string name="channels_filter_today">Сегодня</string>
+    <string name="channels_filter_hidden">Скрытые</string>
 </resources>

@@ -859,4 +859,8 @@
     <string name="channel_jump_back">Wróć do miejsca czytania</string>
     <string name="channel_jump_latest">Przejdź do najnowszych postów</string>
     <string name="channels_similar_title">Podobne kanały</string>
+    <string name="channels_filter_all">Wszystkie</string>
+    <string name="channels_filter_unread">Nieprzeczytane</string>
+    <string name="channels_filter_today">Dzisiaj</string>
+    <string name="channels_filter_hidden">Ukryte</string>
 </resources>

@@ -848,4 +848,8 @@
     <string name="channel_jump_back">Volver a donde estabas</string>
     <string name="channel_jump_latest">Ir a las publicaciones más recientes</string>
     <string name="channels_similar_title">Canales similares</string>
+    <string name="channels_filter_all">Todos</string>
+    <string name="channels_filter_unread">No leídos</string>
+    <string name="channels_filter_today">Hoy</string>
+    <string name="channels_filter_hidden">Ocultos</string>
 </resources>

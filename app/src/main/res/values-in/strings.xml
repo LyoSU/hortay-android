@@ -807,4 +807,8 @@
     <string name="channel_jump_back">Kembali ke posisi terakhir</string>
     <string name="channel_jump_latest">Ke postingan terbaru</string>
     <string name="channels_similar_title">Saluran serupa</string>
+    <string name="channels_filter_all">Semua</string>
+    <string name="channels_filter_unread">Belum dibaca</string>
+    <string name="channels_filter_today">Hari ini</string>
+    <string name="channels_filter_hidden">Disembunyikan</string>
 </resources>
