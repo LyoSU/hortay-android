@@ -24,6 +24,7 @@
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
 
 ### Fixed
+- Scrolling to the newest posts no longer briefly shows an empty gap where posts should be.
 - Tapping a paid ⭐ reaction on a comment no longer crashes the app.
 - A poll vote change or retraction that fails now restores your previous vote.
 - Save, Share, Copy and Open in a post's long-press menu now work on the comments screen.

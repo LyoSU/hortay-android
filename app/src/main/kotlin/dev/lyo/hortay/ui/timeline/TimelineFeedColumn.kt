@@ -5,6 +5,7 @@
 
 package dev.lyo.hortay.ui.timeline
 
+import android.os.SystemClock
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.layout.Box
@@ -87,6 +88,11 @@ internal fun TimelineFeedColumn(
         if (staggerEnabled) feedItems.take(STAGGER_COUNT).map { it.key }.toHashSet()
         else emptySet()
     }
+    // The entrance belongs to the FIRST PAINT only. A first-mount row that was off screen
+    // (OldestUnreadFirst lands mid-feed, far from the newest rows) composes much later,
+    // when the user scrolls to it — replaying a delayed fade there left rows invisible
+    // while still taking up their height, read as an empty gap in the feed.
+    val staggerMountedAt = remember { SystemClock.uptimeMillis() }
 
     // Reading-width cap (tablets / desktop windowing): the LazyColumn is capped
     // to [READING_WIDTH_CAP] and centred inside the caller's box instead of
@@ -182,9 +188,12 @@ internal fun TimelineFeedColumn(
                         // and rise 12 dp, each delayed index × STAGGER_STEP_MS, ONCE per
                         // process. Membership is by first-mount KEY (see [staggerKeys]),
                         // so later arrivals occupying the same top indices never replay it.
-                        val staggerThisItem = staggerEnabled && item.key in staggerKeys
+                        val staggerThisItem = remember(item.key) {
+                            staggerEnabled && item.key in staggerKeys &&
+                                SystemClock.uptimeMillis() - staggerMountedAt < STAGGER_WINDOW_MS
+                        }
                         val staggerModifier = if (staggerThisItem) {
-                            rememberStaggerEntrance(itemKey = item.key, index = index)
+                            rememberStaggerEntrance(itemKey = item.key, index = index.coerceAtMost(STAGGER_COUNT))
                         } else {
                             Modifier
                         }
@@ -244,6 +253,9 @@ private fun LazyItemScope.rememberStaggerEntrance(itemKey: Any, index: Int): Mod
 
 /** First-paint stagger: how many leading cards animate in. */
 private const val STAGGER_COUNT = 8
+
+/** Rows composed later than this after the feed mounted skip the entrance. */
+private const val STAGGER_WINDOW_MS = 500L
 
 /** Per-card stagger delay. */
 private const val STAGGER_STEP_MS = 25L
