@@ -2,6 +2,9 @@
 
 package dev.lyo.hortay.ui.comments
 
+import androidx.compose.runtime.CompositionLocalProvider
+import dev.lyo.hortay.ui.text.LocalQuoteHighlight
+import dev.lyo.hortay.ui.text.QuoteHighlights
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -732,6 +735,21 @@ fun CommentsScreen(
                         var pickerOpen by remember(row.message.id) { mutableStateOf(false) }
                         CommentNode(
                             row = row,
+                            onQuoteClick = { reply ->
+                                // Jump to the quoted comment, or to the post above the thread
+                                // when the quote is from it, and light up the quoted words.
+                                val target = s.rows.indexOfFirst { it.message.id == reply.replyToMessageId }
+                                if (target >= 0) {
+                                    val quoted = s.rows[target].message
+                                    QuoteHighlights.show(quoted.chatId, quoted.id, reply.excerpt)
+                                    // Rows are the list's tail: index from the end.
+                                    val listIndex = listState.layoutInfo.totalItemsCount - s.rows.size + target
+                                    scope.launch { listState.animateScrollToItem(listIndex.coerceAtLeast(0)) }
+                                } else {
+                                    QuoteHighlights.show(anchor.chatId, anchor.id, reply.excerpt)
+                                    scope.launch { listState.animateScrollToItem(0) }
+                                }
+                            },
                             onMediaClick = { items, idx -> viewer.open(items, idx) },
                             onReactionTap = { item ->
                                 onReactionToggle(
@@ -880,6 +898,7 @@ private fun CommentsEmptyState(
 @Composable
 private fun CommentNode(
     row: ThreadRow,
+    onQuoteClick: (ReplyPreview) -> Unit,
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
     onReactionTap: (ReactionItem) -> Unit,
     onLongPress: () -> Unit,
@@ -911,6 +930,7 @@ private fun CommentNode(
         }
         CommentBubble(
             row = row,
+            onQuoteClick = onQuoteClick,
             avatarSize = avatarSize,
             onMediaClick = onMediaClick,
             onReactionTap = onReactionTap,
@@ -929,6 +949,7 @@ private fun CommentNode(
 @Composable
 private fun CommentBubble(
     row: ThreadRow,
+    onQuoteClick: (ReplyPreview) -> Unit,
     avatarSize: androidx.compose.ui.unit.Dp,
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
     onReactionTap: (ReactionItem) -> Unit,
@@ -1014,17 +1035,21 @@ private fun CommentBubble(
             // would just duplicate context the layout already conveys.
             message.reply?.takeIf { it.isQuote }?.let {
                 Spacer(Modifier.height(6.dp))
-                ReplyBlock(it)
+                ReplyBlock(it, onClick = { onQuoteClick(it) })
             }
 
             Spacer(Modifier.height(6.dp))
-            PostBody(
-                content = message.content,
-                onMediaClick = { _, idx ->
-                    message.content.toAlbumItems()?.let { items -> onMediaClick(items, idx) }
-                },
-                expanded = true,
-            )
+            CompositionLocalProvider(
+                LocalQuoteHighlight provides QuoteHighlights.forPost(message.chatId, message.albumMessageIds + message.id),
+            ) {
+                PostBody(
+                    content = message.content,
+                    onMediaClick = { _, idx ->
+                        message.content.toAlbumItems()?.let { items -> onMediaClick(items, idx) }
+                    },
+                    expanded = true,
+                )
+            }
 
             if (message.reactions.items.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
@@ -1169,13 +1194,14 @@ private fun CommentReactionSheet(
  * so the reply chip scales with them.
  */
 @Composable
-private fun ReplyBlock(reply: ReplyPreview) {
+private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit) {
     val accent = MaterialTheme.colorScheme.primary
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.extraSmall)
-            .background(accent.copy(alpha = 0.10f)),
+            .background(accent.copy(alpha = 0.10f))
+            .clickable(role = Role.Button, onClick = onClick),
     ) {
         Row(
             modifier = Modifier

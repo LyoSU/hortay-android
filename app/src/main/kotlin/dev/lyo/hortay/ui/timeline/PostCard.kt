@@ -1,5 +1,7 @@
 package dev.lyo.hortay.ui.timeline
 
+import dev.lyo.hortay.ui.text.LocalQuoteHighlight
+import dev.lyo.hortay.ui.text.QuoteHighlights
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -379,7 +381,14 @@ fun PostCard(
 
                 post.reply?.let {
                     Spacer(Modifier.height(8.dp))
-                    ReplyBlock(it, onClick = { interactions.onQuotedSourceClick(post) })
+                    ReplyBlock(
+                        it,
+                        onClick = {
+                            // A hand-picked quote lights up its fragment where the tap lands.
+                            if (it.isQuote) QuoteHighlights.show(it.replyToChatId, it.replyToMessageId, it.excerpt)
+                            interactions.onQuotedSourceClick(post)
+                        },
+                    )
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -405,7 +414,11 @@ fun PostCard(
                 // is the fix for the "scroll hangs near deleted posts" report — see
                 // [dev.lyo.hortay.ui.media.LocalMediaPassive]. Scoped to the body only; the
                 // channel avatar above stays on the normal (shared, cached) download path.
-                CompositionLocalProvider(LocalMediaPassive provides post.isDeleted) {
+                val quoteHighlight = QuoteHighlights.forPost(post.chatId, post.albumMessageIds + post.id)
+                CompositionLocalProvider(
+                    LocalMediaPassive provides post.isDeleted,
+                    LocalQuoteHighlight provides quoteHighlight,
+                ) {
                     val body: @Composable () -> Unit = {
                         PostBody(
                             content = post.content,

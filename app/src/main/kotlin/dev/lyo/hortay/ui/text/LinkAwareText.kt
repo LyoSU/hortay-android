@@ -2,6 +2,9 @@
 
 package dev.lyo.hortay.ui.text
 
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -160,6 +163,37 @@ fun LinkAwareText(
                 )
             }
             drawPath(path, linkHighlight)
+        }
+    } else Modifier
+
+    // ---- Tapped-quote highlight (see [QuoteHighlights]) ----
+    // The fragment a reader just tapped in a quote card lights up here, then fades. The
+    // alpha is read inside drawBehind, so the fade only redraws — no recomposition.
+    val quote = LocalQuoteHighlight.current
+    val quoteSpan = remember(renderable.contentKey, quote) {
+        quote?.let { quoteRange(renderable.text.text, it.text) }
+    }
+    val quoteAlpha = remember(quote?.token) { Animatable(0f) }
+    val quoteIn = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val quoteOut = MaterialTheme.motionScheme.slowEffectsSpec<Float>()
+    if (quote != null && quoteSpan != null) {
+        LaunchedEffect(quote.token) {
+            quoteAlpha.animateTo(1f, quoteIn)
+            delay(QUOTE_HOLD_MS)
+            quoteAlpha.animateTo(0f, quoteOut)
+        }
+    }
+    val quoteColor = MaterialTheme.colorScheme.primary
+    val quoteMod = if (quoteSpan != null) {
+        Modifier.drawBehind {
+            val layout = layoutResult ?: return@drawBehind
+            val a = quoteAlpha.value
+            if (a <= 0f) return@drawBehind
+            val len = layout.layoutInput.text.length
+            val start = quoteSpan.first.coerceIn(0, len)
+            val end = (quoteSpan.last + 1).coerceIn(start, len)
+            if (end <= start) return@drawBehind
+            drawPath(layout.getPathForRange(start, end), quoteColor.copy(alpha = QUOTE_HIGHLIGHT_ALPHA * a))
         }
     } else Modifier
 
@@ -341,6 +375,7 @@ fun LinkAwareText(
             .padding(vertical = if (blockDecorations.isNotEmpty()) BLOCK_VPAD else 0.dp)
             .then(linkMod)
             .then(pressMod)
+            .then(quoteMod)
             .then(highlightMod)
             .then(overlayMod),
     )
@@ -349,3 +384,9 @@ fun LinkAwareText(
         LinkActionsSheet(url = url, onDismiss = { pressedLink = null })
     }
 }
+
+/** How long a tapped quote stays fully lit before it fades. */
+private const val QUOTE_HOLD_MS = 1_600L
+
+/** Peak opacity of the tapped-quote highlight over the primary colour. */
+private const val QUOTE_HIGHLIGHT_ALPHA = 0.28f
