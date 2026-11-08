@@ -71,6 +71,24 @@ class IgnoredChannelsStore(context: Context) {
         }
     }
 
+    /** Hide every id in [chatIds] at once — the "Hide all from feed" bulk action. */
+    suspend fun addAll(chatIds: Collection<Long>) {
+        val keys = chatIds.filter { it != 0L }.map(Long::toString)
+        if (keys.isEmpty()) return
+        dataStore.edit { prefs -> prefs[KEY_IGNORED] = (prefs[KEY_IGNORED] ?: emptySet()) + keys }
+    }
+
+    /**
+     * Un-hide every id in [chatIds] at once — the "Show all in feed" bulk action. Scoped to
+     * the caller's ids rather than wiping the set, because the store is shared with guest
+     * mode and its hidden channels must survive a signed-in "Show all".
+     */
+    suspend fun removeAll(chatIds: Collection<Long>) {
+        val keys = chatIds.map(Long::toString).toSet()
+        if (keys.isEmpty()) return
+        dataStore.edit { prefs -> prefs[KEY_IGNORED] = (prefs[KEY_IGNORED] ?: emptySet()) - keys }
+    }
+
     suspend fun toggle(chatId: Long): Boolean {
         if (chatId == 0L) return false
         var resultingState = false

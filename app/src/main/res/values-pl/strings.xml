@@ -322,6 +322,11 @@
     <string name="channels_unhide_from_feed">Pokaż w feedzie</string>
     <string name="channels_hide_from_feed_for">Ukryj %1$s z feedu</string>
     <string name="channels_unhide_from_feed_for">Pokaż %1$s w feedzie</string>
+    <string name="channels_feed_menu">Kanały w feedzie</string>
+    <string name="channels_hide_all">Ukryj wszystkie w feedzie</string>
+    <string name="channels_show_all">Pokaż wszystkie w feedzie</string>
+    <string name="channels_hide_all_confirm">Wszystkie kanały znikną z feedu. Potem dotknij oka przy tych, które chcesz zostawić.</string>
+    <string name="channels_show_all_confirm">Ukryte kanały znów pojawią się w feedzie.</string>
     <string name="channels_empty_title">Brak kanałów</string>
     <string name="channels_empty_helper">Zasubskrybuj kanały w Telegramie, a pojawią się tutaj</string>
 

@@ -338,6 +338,11 @@
     <string name="channels_unhide_from_feed">إظهار في الخلاصة</string>
     <string name="channels_hide_from_feed_for">إخفاء %1$s من الخلاصة</string>
     <string name="channels_unhide_from_feed_for">إظهار %1$s في الخلاصة</string>
+    <string name="channels_feed_menu">قنوات الموجز</string>
+    <string name="channels_hide_all">إخفاء الكل من الموجز</string>
+    <string name="channels_show_all">إظهار الكل في الموجز</string>
+    <string name="channels_hide_all_confirm">ستُخفى كل القنوات من الموجز. ثم اضغط على أيقونة العين بجانب القنوات التي تريد إبقاءها.</string>
+    <string name="channels_show_all_confirm">ستظهر القنوات التي أخفيتها في الموجز مجددًا.</string>
     <string name="channels_empty_title">لا توجد قنوات بعد</string>
     <string name="channels_empty_helper">اشترك في قنوات على Telegram وستظهر هنا</string>
 

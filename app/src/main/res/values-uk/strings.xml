@@ -319,6 +319,11 @@
     <string name="channels_unhide_from_feed">Повернути у стрічку</string>
     <string name="channels_hide_from_feed_for">Сховати %1$s зі стрічки</string>
     <string name="channels_unhide_from_feed_for">Повернути %1$s у стрічку</string>
+    <string name="channels_feed_menu">Канали у стрічці</string>
+    <string name="channels_hide_all">Сховати всі зі стрічки</string>
+    <string name="channels_show_all">Показати всі в стрічці</string>
+    <string name="channels_hide_all_confirm">Усі канали зникнуть зі стрічки. Потім торкнися ока біля тих, які хочеш залишити.</string>
+    <string name="channels_show_all_confirm">Сховані канали знову з\'являться у стрічці.</string>
     <string name="channels_empty_title">Каналів немає</string>
     <string name="channels_empty_helper">Підпишись на канали в Telegram, і вони зʼявляться тут</string>
 

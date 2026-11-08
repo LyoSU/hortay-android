@@ -308,6 +308,11 @@
     <string name="channels_unhide_from_feed">Akışta göster</string>
     <string name="channels_hide_from_feed_for">%1$s kanalını akıştan gizle</string>
     <string name="channels_unhide_from_feed_for">%1$s kanalını akışta göster</string>
+    <string name="channels_feed_menu">Akıştaki kanallar</string>
+    <string name="channels_hide_all">Tümünü akıştan gizle</string>
+    <string name="channels_show_all">Tümünü akışta göster</string>
+    <string name="channels_hide_all_confirm">Tüm kanallar akıştan gizlenecek. Ardından tutmak istediklerinin yanındaki göze dokun.</string>
+    <string name="channels_show_all_confirm">Gizlediğin kanallar akışta yeniden görünecek.</string>
     <string name="channels_empty_title">Henüz kanal yok</string>
     <string name="channels_empty_helper">Telegram\'da kanallara abone ol; burada görünmeye başlasınlar</string>
 

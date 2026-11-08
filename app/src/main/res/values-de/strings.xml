@@ -308,6 +308,11 @@
     <string name="channels_unhide_from_feed">Im Feed anzeigen</string>
     <string name="channels_hide_from_feed_for">%1$s aus Feed ausblenden</string>
     <string name="channels_unhide_from_feed_for">%1$s im Feed anzeigen</string>
+    <string name="channels_feed_menu">Kanäle im Feed</string>
+    <string name="channels_hide_all">Alle aus dem Feed ausblenden</string>
+    <string name="channels_show_all">Alle im Feed anzeigen</string>
+    <string name="channels_hide_all_confirm">Alle Kanäle werden aus dem Feed ausgeblendet. Tippe danach auf das Auge neben den Kanälen, die du behalten willst.</string>
+    <string name="channels_show_all_confirm">Ausgeblendete Kanäle erscheinen wieder im Feed.</string>
     <string name="channels_empty_title">Noch keine Kanäle</string>
     <string name="channels_empty_helper">Abonniere Kanäle in Telegram, damit sie hier erscheinen</string>
 

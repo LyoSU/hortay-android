@@ -324,6 +324,11 @@
     <string name="channels_unhide_from_feed">Вернуть в ленту</string>
     <string name="channels_hide_from_feed_for">Скрыть %1$s из ленты</string>
     <string name="channels_unhide_from_feed_for">Вернуть %1$s в ленту</string>
+    <string name="channels_feed_menu">Каналы в ленте</string>
+    <string name="channels_hide_all">Скрыть все из ленты</string>
+    <string name="channels_show_all">Показать все в ленте</string>
+    <string name="channels_hide_all_confirm">Все каналы пропадут из ленты. Затем нажми на глаз рядом с теми, которые хочешь оставить.</string>
+    <string name="channels_show_all_confirm">Скрытые каналы снова появятся в ленте.</string>
     <string name="channels_empty_title">Каналов пока нет</string>
     <string name="channels_empty_helper">Подпишитесь на каналы в Telegram, и они появятся здесь</string>
 

@@ -298,6 +298,11 @@
     <string name="channels_unhide_from_feed">Tampilkan di feed</string>
     <string name="channels_hide_from_feed_for">Sembunyikan %1$s dari feed</string>
     <string name="channels_unhide_from_feed_for">Tampilkan %1$s di feed</string>
+    <string name="channels_feed_menu">Saluran di feed</string>
+    <string name="channels_hide_all">Sembunyikan semua dari feed</string>
+    <string name="channels_show_all">Tampilkan semua di feed</string>
+    <string name="channels_hide_all_confirm">Semua saluran akan disembunyikan dari feed. Lalu ketuk ikon mata di samping saluran yang ingin dipertahankan.</string>
+    <string name="channels_show_all_confirm">Saluran yang disembunyikan akan muncul lagi di feed.</string>
     <string name="channels_empty_title">Belum ada kanal</string>
     <string name="channels_empty_helper">Ikuti kanal di Telegram dan mereka akan muncul di sini</string>
 

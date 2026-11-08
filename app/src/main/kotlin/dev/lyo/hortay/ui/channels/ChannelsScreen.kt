@@ -14,6 +14,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -106,6 +109,55 @@ fun ChannelsScreen(
     val listState = rememberLazyListState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var addSheetOpen by remember { mutableStateOf(false) }
+    var feedMenuOpen by remember { mutableStateOf(false) }
+    var bulkConfirm by remember { mutableStateOf<FeedBulkAction?>(null) }
+    // Bulk hide/show acts on every subscribed channel, not just the rows on screen: a
+    // channel whose post hasn't landed yet would otherwise slip past "Hide all", and a
+    // transient drill/deep-link row of an unsubscribed chat would be hidden for good.
+    val bulkScope = { repo.subscribedChatIds().ifEmpty { channels.map { it.chatId }.toSet() } }
+
+    bulkConfirm?.let { action ->
+        AlertDialog(
+            onDismissRequest = { bulkConfirm = null },
+            title = {
+                Text(
+                    stringResource(
+                        if (action == FeedBulkAction.HideAll) R.string.channels_hide_all else R.string.channels_show_all,
+                    ),
+                )
+            },
+            text = {
+                Text(
+                    stringResource(
+                        if (action == FeedBulkAction.HideAll) R.string.channels_hide_all_confirm
+                        else R.string.channels_show_all_confirm,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        bulkConfirm = null
+                        scope.launch {
+                            when (action) {
+                                FeedBulkAction.HideAll -> graph.ignoredChannels.addAll(bulkScope())
+                                FeedBulkAction.ShowAll -> graph.ignoredChannels.removeAll(bulkScope())
+                            }
+                        }
+                    },
+                ) {
+                    Text(
+                        stringResource(
+                            if (action == FeedBulkAction.HideAll) R.string.channels_hide_all else R.string.channels_show_all,
+                        ),
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { bulkConfirm = null }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
+    }
 
     Scaffold(
         modifier = Modifier
@@ -116,6 +168,31 @@ fun ChannelsScreen(
                 title = stringResource(R.string.channels_title),
                 size = HortayTopBarSize.Large,
                 scrollBehavior = scrollBehavior,
+                actions = {
+                    if (channels.isNotEmpty()) {
+                        Box {
+                            IconButton(onClick = { feedMenuOpen = true }) {
+                                Symbol(
+                                    name = "dynamic_feed",
+                                    contentDescription = stringResource(R.string.channels_feed_menu),
+                                )
+                            }
+                            DropdownMenu(expanded = feedMenuOpen, onDismissRequest = { feedMenuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.channels_hide_all)) },
+                                    leadingIcon = { Symbol(name = "visibility_off", contentDescription = null) },
+                                    onClick = { feedMenuOpen = false; bulkConfirm = FeedBulkAction.HideAll },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.channels_show_all)) },
+                                    leadingIcon = { Symbol(name = "visibility", contentDescription = null) },
+                                    enabled = hiddenChatIds.any { it in bulkScope() },
+                                    onClick = { feedMenuOpen = false; bulkConfirm = FeedBulkAction.ShowAll },
+                                )
+                            }
+                        }
+                    }
+                },
             )
         },
         floatingActionButton = {
@@ -389,3 +466,6 @@ private fun EmptyChannels(
         }
     }
 }
+
+/** Bulk feed-visibility actions from the Channels top bar (issue #3: 500-channel users). */
+private enum class FeedBulkAction { HideAll, ShowAll }
