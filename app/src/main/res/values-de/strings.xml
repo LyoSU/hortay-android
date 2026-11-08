@@ -836,4 +836,5 @@
     <string name="op_search_all">in deinen Kanälen suchen</string>
     <string name="post_summarize">Zusammenfassen</string>
     <string name="post_summary_title">Zusammenfassung</string>
+    <string name="media_download">herunterladen</string>
 </resources>

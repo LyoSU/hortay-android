@@ -830,4 +830,5 @@
     <string name="op_search_all">جست‌وجو در کانال‌هایت</string>
     <string name="post_summarize">خلاصه</string>
     <string name="post_summary_title">خلاصه</string>
+    <string name="media_download">دانلود</string>
 </resources>

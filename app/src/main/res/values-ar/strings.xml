@@ -904,4 +904,5 @@
     <string name="op_search_all">البحث في قنواتك</string>
     <string name="post_summarize">تلخيص</string>
     <string name="post_summary_title">الملخص</string>
+    <string name="media_download">تنزيل</string>
 </resources>

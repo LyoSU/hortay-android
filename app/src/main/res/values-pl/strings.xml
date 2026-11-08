@@ -867,4 +867,5 @@
     <string name="op_search_all">szukać w Twoich kanałach</string>
     <string name="post_summarize">Podsumuj</string>
     <string name="post_summary_title">Podsumowanie</string>
+    <string name="media_download">pobierz</string>
 </resources>

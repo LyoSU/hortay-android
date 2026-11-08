@@ -853,4 +853,5 @@
     <string name="op_search_all">cercare nei tuoi canali</string>
     <string name="post_summarize">Riassumi</string>
     <string name="post_summary_title">Riassunto</string>
+    <string name="media_download">scarica</string>
 </resources>

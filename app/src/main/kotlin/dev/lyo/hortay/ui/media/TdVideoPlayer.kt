@@ -325,12 +325,13 @@ fun TdVideoPlayer(
                     onCancel = { binding.cancelExplicit() },
                 )
             }
-            is MediaState.Failed -> Box(
+            is MediaState.Failed, MediaState.Paused -> Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
                 MediaFailedOverlay(
                     onRetry = { coScope.launch { binding.retry(priority) } },
+                    paused = s == MediaState.Paused,
                 )
             }
             MediaState.Idle -> if (showLoadingOverlay) Box(

@@ -315,7 +315,8 @@ class MediaCache(
                     return@compute flow
                 }
                 val s = flow.value
-                val terminal = s is MediaState.Ready || s is MediaState.Failed || s is MediaState.Idle
+                val terminal = s is MediaState.Ready || s is MediaState.Failed || s is MediaState.Idle ||
+                    s is MediaState.Paused
                 if (!terminal) return@compute flow
                 activePriority.remove(id)
                 null
@@ -372,6 +373,11 @@ class MediaCache(
             // through so the watchdog can recover the slot.
             previous is MediaState.Ready
                 && (file.local.path.orEmpty().isNotEmpty() || file.local.downloadedSize > 0L) -> previous
+            // A cancelled file stays Paused until a download is really running again —
+            // the UpdateFile TDLib sends for the cancel itself (inactive, incomplete)
+            // can land after the reset and would otherwise read as a frozen 0 % spinner.
+            previous is MediaState.Paused && incoming is MediaState.Downloading &&
+                !file.local.isDownloadingActive -> previous
             else -> incoming
         }
 
@@ -708,7 +714,7 @@ class MediaCache(
             // queued UpdateFile from before the cancel drains first; everything
             // arriving AFTER the reset is a fresh-state event that the user expects
             // to see.
-            fileEvents.send(FileEvent.Reset(fileId, MediaState.Idle))
+            fileEvents.send(FileEvent.Reset(fileId, MediaState.Paused))
         }
     }
 
@@ -1095,6 +1101,12 @@ sealed interface MediaState {
     ) : MediaState
     data class Ready(val path: String) : MediaState
     data class Failed(val reason: String) : MediaState
+    /**
+     * The user cancelled the download. Distinct from [Idle] (which renderers treat as
+     * "about to load" and paint a spinner for) so the tile offers a download button
+     * instead of spinning forever.
+     */
+    data object Paused : MediaState
 }
 
 private fun TdApi.File.toMediaState(): MediaState {

@@ -831,4 +831,5 @@
     <string name="op_search_all">kanallarında aramak</string>
     <string name="post_summarize">Özetle</string>
     <string name="post_summary_title">Özet</string>
+    <string name="media_download">indir</string>
 </resources>

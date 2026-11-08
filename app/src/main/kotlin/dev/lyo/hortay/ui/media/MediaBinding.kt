@@ -179,7 +179,7 @@ class MediaBinding internal constructor(
     val readyPath: String? get() = (state as? MediaState.Ready)?.path?.takeIf { it.isNotEmpty() }
 
     /**
-     * User-initiated cancel: forces the slot to [MediaState.Idle] immediately,
+     * User-initiated cancel: forces the slot to [MediaState.Paused] immediately,
      * bypassing the debounce window and observer-count guard. Call from
      * tap-to-cancel affordances on loading overlays.
      */

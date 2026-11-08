@@ -856,4 +856,5 @@
     <string name="op_search_all">buscar en tus canales</string>
     <string name="post_summarize">Resumir</string>
     <string name="post_summary_title">Resumen</string>
+    <string name="media_download">descargar</string>
 </resources>

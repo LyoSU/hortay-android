@@ -853,4 +853,5 @@
     <string name="op_search_all">rechercher dans vos chaînes</string>
     <string name="post_summarize">Résumer</string>
     <string name="post_summary_title">Résumé</string>
+    <string name="media_download">télécharger</string>
 </resources>

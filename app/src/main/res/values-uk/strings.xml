@@ -874,4 +874,5 @@
     <string name="op_search_all">шукати у твоїх каналах</string>
     <string name="post_summarize">Підсумок</string>
     <string name="post_summary_title">Підсумок</string>
+    <string name="media_download">завантажити</string>
 </resources>

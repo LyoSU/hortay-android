@@ -32,6 +32,7 @@
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
 
 ### Fixed
+- Cancelling a photo or video download shows a download button to start it again instead of a spinner that never finishes.
 - A video whose file was cleared from the cache downloads again instead of staying stuck on its preview, and expired guest-mode videos fetch a fresh link.
 - Scrolling no longer pre-downloads upcoming GIFs and videos on mobile data or roaming, and follows your auto-download settings for photos too.
 - Photos and videos keep downloading, and the cancel button keeps working, while Telegram temporarily rate-limits the app.
