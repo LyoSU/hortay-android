@@ -16,6 +16,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
+import dev.lyo.hortay.ui.theme.LocalGlassBackdrop
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -460,7 +463,12 @@ fun MainScaffold(graph: AppGraph) {
                                 // when the feed leaves composition (tab switch) via TimelineScreen's
                                 // DisposableEffect.
                                 val navBarCollapse = remember { mutableFloatStateOf(0f) }
-                                CompositionLocalProvider(LocalNavBarCollapse provides navBarCollapse) {
+                                // The tab content is the backdrop the glass nav bar blurs.
+                                val glassBackdrop = rememberHazeState()
+                                CompositionLocalProvider(
+                                    LocalNavBarCollapse provides navBarCollapse,
+                                    LocalGlassBackdrop provides glassBackdrop,
+                                ) {
                                 Scaffold(
                                     modifier = Modifier.fillMaxSize(),
                                     bottomBar = {
@@ -482,6 +490,7 @@ fun MainScaffold(graph: AppGraph) {
                                     },
                                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                                 ) { homePadding ->
+                                    Box(Modifier.fillMaxSize().hazeSource(glassBackdrop)) {
                                     TabContentSwitcher(
                                         selectedTab = selectedTab,
                                         tabStateHolder = tabStateHolder,
@@ -502,6 +511,7 @@ fun MainScaffold(graph: AppGraph) {
                                         canReportPost = canReportPost,
                                         tdlibMarkAsRead = tdlibMarkAsRead,
                                     )
+                                    }
                                 }
                                 }
                             }

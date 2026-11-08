@@ -311,8 +311,15 @@
     <string name="channels_feed_menu">Akıştaki kanallar</string>
     <string name="channels_hide_all">Tümünü akıştan gizle</string>
     <string name="channels_show_all">Tümünü akışta göster</string>
-    <string name="channels_hide_all_confirm">Tüm kanallar akıştan gizlenecek. Ardından tutmak istediklerinin yanındaki göze dokun.</string>
+    <string name="channels_hide_all_confirm">Tüm kanallar akıştan gizlenecek. Sonra tutmak istediklerini geri getirmek için yana kaydır.</string>
     <string name="channels_show_all_confirm">Gizlediğin kanallar akışta yeniden görünecek.</string>
+    <string name="channels_search_hint">Kanal ara</string>
+    <string name="channels_swipe_hint">Bir kanalı akıştan gizlemek için yana kaydır.</string>
+    <string name="channels_hidden_label">Akıştan gizlendi</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d okunmamış gönderi</item>
+        <item quantity="other">%d okunmamış gönderi</item>
+    </plurals>
     <string name="channels_empty_title">Henüz kanal yok</string>
     <string name="channels_empty_helper">Telegram\'da kanallara abone ol; burada görünmeye başlasınlar</string>
 

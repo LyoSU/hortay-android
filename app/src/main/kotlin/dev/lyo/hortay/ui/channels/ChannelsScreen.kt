@@ -1,5 +1,22 @@
 package dev.lyo.hortay.ui.channels
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import dev.lyo.hortay.ui.discover.DiscoverSearchField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -101,6 +118,12 @@ fun ChannelsScreen(
 ) {
     val posts by repo.posts.collectAsStateWithLifecycle()
     val channels = remember(posts) { aggregate(posts) }
+    val unreadCounts by repo.chatUnreadCounts.collectAsStateWithLifecycle()
+    var query by rememberSaveable { mutableStateOf("") }
+    val shown = remember(channels, query) {
+        val q = query.trim()
+        if (q.isEmpty()) channels else channels.filter { it.title.contains(q, ignoreCase = true) }
+    }
     val hiddenChatIds by graph.ignoredChannels.ignored.collectAsStateWithLifecycle(
         initialValue = persistentSetOf(),
     )
@@ -166,7 +189,7 @@ fun ChannelsScreen(
         topBar = {
             HortayTopBar(
                 title = stringResource(R.string.channels_title),
-                size = HortayTopBarSize.Large,
+                size = HortayTopBarSize.Medium,
                 scrollBehavior = scrollBehavior,
                 actions = {
                     if (channels.isNotEmpty()) {
@@ -218,13 +241,36 @@ fun ChannelsScreen(
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
-                    top = padding.calculateTopPadding() + 8.dp,
-                    bottom = contentPadding.calculateBottomPadding() + 8.dp,
+                    top = padding.calculateTopPadding() + 4.dp,
+                    // Clear the floating nav bar AND the "Find channels" FAB stacked above
+                    // it, so the last rows can scroll fully into view instead of sitting
+                    // under the button.
+                    bottom = contentPadding.calculateBottomPadding() + FAB_CLEARANCE,
                 ),
                 verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                itemsIndexed(items = channels, key = { _, it -> it.chatId }) { index, ch ->
+                item(key = "search", contentType = "search") {
+                    Column(Modifier.padding(bottom = 10.dp)) {
+                        DiscoverSearchField(
+                            value = query,
+                            onValueChange = { query = it },
+                            hint = stringResource(R.string.channels_search_hint),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        // Teach the swipe once it matters: shown until the user has hidden
+                        // anything, after which they evidently know the gesture.
+                        if (hiddenChatIds.isEmpty() && query.isBlank()) {
+                            Text(
+                                text = stringResource(R.string.channels_swipe_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 8.dp, top = 8.dp),
+                            )
+                        }
+                    }
+                }
+                itemsIndexed(items = shown, key = { _, it -> it.chatId }) { index, ch ->
                     val isHidden = ch.chatId in hiddenChatIds
                     // Honest per-post unread, identical rule to PostCard's strip:
                     // newest (album-aware) id above the chat's read cursor.
@@ -236,11 +282,13 @@ fun ChannelsScreen(
                     ChannelRow(
                         channel = ch,
                         index = index,
-                        count = channels.size,
+                        count = shown.size,
                         isHidden = isHidden,
                         isUnread = isUnread,
+                        unreadCount = unreadCounts[ch.chatId] ?: 0,
                         onClick = onClick,
                         onHideToggle = onHideToggle,
+                        modifier = Modifier.animateItem(),
                     )
                 }
             }
@@ -314,7 +362,14 @@ private fun aggregate(posts: List<TimelinePost>): List<ChannelSummary> = posts
     }
     .sortedByDescending { it.lastPostDate }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/**
+ * One subscribed channel. Swipe left (or right) toggles "hidden from feed" — the row snaps
+ * back and dims, so the list keeps every channel in place and the state is reversible with
+ * the same gesture. TalkBack gets the same toggle as a custom action. The trailing column
+ * carries the recency and TDLib's real unread count as a badge (a dot when the count is
+ * unknown but the slice proves the channel has unread).
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun ChannelRow(
     channel: ChannelSummary,
@@ -322,94 +377,169 @@ private fun ChannelRow(
     count: Int,
     isHidden: Boolean,
     isUnread: Boolean,
+    unreadCount: Int,
     onClick: () -> Unit,
     onHideToggle: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val shapes = ListItemDefaults.segmentedShapes(
         index = index,
         count = count,
         defaultShapes = ListItemDefaults.shapes(),
     )
-    SegmentedListItem(
-        onClick = onClick,
-        shapes = shapes,
-        leadingContent = {
-            TdAvatar(
-                name = channel.title,
-                thumb = channel.avatarThumb,
-                fileId = channel.avatarFileId,
-                size = 48.dp,
-            )
+    val haptics = LocalHapticFeedback.current
+    val currentToggle by rememberUpdatedState(onHideToggle)
+    val swipeState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value != SwipeToDismissBoxValue.Settled) {
+                haptics.performHapticFeedback(HapticFeedbackType.ToggleOn)
+                currentToggle()
+            }
+            // Never actually dismiss: the row snaps back and re-renders in its new state.
+            false
         },
-        supportingContent = if (channel.lastPostExcerpt.isNotBlank()) {
-            {
+    )
+    val toggleLabel = stringResource(
+        if (isHidden) R.string.channels_unhide_from_feed_for else R.string.channels_hide_from_feed_for,
+        channel.title,
+    )
+    val dim = if (isHidden) 0.5f else 1f
+    SwipeToDismissBox(
+        state = swipeState,
+        modifier = modifier.semantics {
+            customActions = listOf(CustomAccessibilityAction(toggleLabel) { currentToggle(); true })
+        },
+        backgroundContent = {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(MaterialTheme.shapes.large)
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .padding(horizontal = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (swipeState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
+                    Arrangement.Start
+                } else {
+                    Arrangement.End
+                },
+            ) {
+                Symbol(
+                    name = if (isHidden) "visibility" else "visibility_off",
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    size = 22.dp,
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = channel.lastPostExcerpt,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    text = stringResource(
+                        if (isHidden) R.string.channels_unhide_from_feed else R.string.channels_hide_from_feed,
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
-        } else null,
-        trailingContent = {
-            // Trailing reading-metadata column: relative time on top (recedes in
-            // onSurfaceVariant), an unread dot beside the hide toggle below. The
-            // hide toggle is the same affordance the web channels list ships — tinted
-            // primary when this channel is hidden from the merged feed so a long list
-            // scans at a glance.
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        },
+    ) {
+        SegmentedListItem(
+            onClick = onClick,
+            shapes = shapes,
+            leadingContent = {
+                Box(Modifier.alpha(dim)) {
+                    TdAvatar(
+                        name = channel.title,
+                        thumb = channel.avatarThumb,
+                        fileId = channel.avatarFileId,
+                        size = 52.dp,
+                    )
+                }
+            },
+            supportingContent = {
+                if (isHidden) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Symbol(
+                            name = "visibility_off",
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            size = 14.dp,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(R.string.channels_hidden_label),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                } else if (channel.lastPostExcerpt.isNotBlank()) {
+                    Text(
+                        text = channel.lastPostExcerpt,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            },
+            trailingContent = {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = formatRelative(channel.lastPostDate),
                         style = MaterialTheme.typography.labelSmall.tabularFigures(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (unreadCount > 0 && !isHidden) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (isUnread) {
-                        Spacer(Modifier.height(4.dp))
-                        UnreadDot()
+                    Spacer(Modifier.height(6.dp))
+                    when {
+                        unreadCount > 0 -> UnreadBadge(count = unreadCount, muted = isHidden)
+                        isUnread -> UnreadDot()
+                        else -> Spacer(Modifier.height(20.dp))
                     }
                 }
-                IconButton(onClick = onHideToggle) {
-                    Symbol(
-                        name = if (isHidden) "visibility_off" else "visibility",
-                        contentDescription = stringResource(
-                            if (isHidden) R.string.channels_unhide_from_feed_for
-                            else R.string.channels_hide_from_feed_for,
-                            channel.title,
-                        ),
-                        tint = if (isHidden) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                        size = 20.dp,
-                    )
-                }
-            }
-        },
-        content = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            },
+            content = {
                 Text(
                     text = channel.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.alpha(dim),
                 )
-                if (isHidden) {
-                    // Explicit "hidden from feed" marker so a channel that won't
-                    // appear in the merged timeline is distinguishable in the list.
-                    Spacer(Modifier.width(6.dp))
-                    Symbol(
-                        name = "visibility_off",
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        size = 14.dp,
-                    )
-                }
-            }
-        },
-    )
+            },
+        )
+    }
 }
+
+/**
+ * TDLib's unread count as a Telegram-style pill. Muted (neutral tone) for channels hidden
+ * from the feed, so the eye isn't drawn to counts the user chose to ignore.
+ */
+@Composable
+private fun UnreadBadge(count: Int, muted: Boolean) {
+    val container = if (muted) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.primary
+    val content = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary
+    val description = pluralStringResource(R.plurals.channels_unread_count, count, count)
+    Box(
+        modifier = Modifier
+            .heightIn(min = 20.dp)
+            .widthIn(min = 20.dp)
+            .clip(CircleShape)
+            .background(container)
+            .padding(horizontal = 6.dp)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (count > MAX_BADGE) "$MAX_BADGE+" else count.toString(),
+            style = MaterialTheme.typography.labelSmall.tabularFigures(),
+            fontWeight = FontWeight.SemiBold,
+            color = content,
+        )
+    }
+}
+
+private const val MAX_BADGE = 999
+private val FAB_CLEARANCE = 88.dp
 
 /**
  * Unread dot in the trailing column — the honest signal for "this channel has unread"

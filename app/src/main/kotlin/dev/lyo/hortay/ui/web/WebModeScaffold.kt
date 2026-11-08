@@ -34,6 +34,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
+import dev.lyo.hortay.ui.theme.LocalGlassBackdrop
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
@@ -380,7 +383,11 @@ fun WebModeScaffold(graph: AppGraph) {
                             // vacates and stays fully on-screen, instead of sliding off the bottom with
                             // the bar.
                             val navBarHeightPx = remember { mutableIntStateOf(0) }
-                            CompositionLocalProvider(LocalNavBarCollapse provides navBarCollapse) {
+                            val glassBackdrop = rememberHazeState()
+                            CompositionLocalProvider(
+                                LocalNavBarCollapse provides navBarCollapse,
+                                LocalGlassBackdrop provides glassBackdrop,
+                            ) {
                             Scaffold(
                                 modifier = Modifier.fillMaxSize(),
                                 bottomBar = {
@@ -466,7 +473,8 @@ fun WebModeScaffold(graph: AppGraph) {
                                         fadeIn(tabEffectsSpec) togetherWith fadeOut(tabEffectsSpec)
                                     },
                                     label = "web-tab-switch",
-                                    modifier = Modifier.fillMaxSize(),
+                                    // The tab content is the backdrop the glass nav bar blurs.
+                                    modifier = Modifier.fillMaxSize().hazeSource(glassBackdrop),
                                 ) { tab ->
                                     tabStateHolder.SaveableStateProvider(key = tab.name) {
                                         when (tab) {

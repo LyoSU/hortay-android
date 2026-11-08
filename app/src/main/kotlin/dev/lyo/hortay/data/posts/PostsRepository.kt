@@ -517,6 +517,12 @@ class PostsRepository(
     private val _chatReadCursors = MutableStateFlow<PersistentMap<Long, Long>>(persistentMapOf())
     val chatReadCursors: StateFlow<PersistentMap<Long, Long>> = _chatReadCursors.asStateFlow()
 
+    // TDLib's own per-chat unread message count (`Chat.unreadCount`, then each
+    // `UpdateChatReadInbox`), for the Channels tab's numeric badge. The feed slice can only
+    // prove a channel HAS unread (newest id > cursor); the count has to come from TDLib.
+    private val _chatUnreadCounts = MutableStateFlow<PersistentMap<Long, Int>>(persistentMapOf())
+    val chatUnreadCounts: StateFlow<PersistentMap<Long, Int>> = _chatUnreadCounts.asStateFlow()
+
     // Real-time *new* post stream — emits ONLY for posts that arrived via
     // [TdApi.UpdateNewMessage] (direct + album-debounce flush), i.e. through
     // [ingest]. Refresh / loadOlder / restoreFromSnapshot / loadChannelHistory /
@@ -1448,7 +1454,10 @@ class PostsRepository(
             // of the server ack landing here. monotonic-only update — TDLib has been
             // observed to emit redundant resets with smaller ids during chat repair
             // flows; clamping to monoMax(...) keeps the cursor from rewinding under us.
-            is TdApi.UpdateChatReadInbox -> advanceReadCursor(update.chatId, update.lastReadInboxMessageId)
+            is TdApi.UpdateChatReadInbox -> {
+                advanceReadCursor(update.chatId, update.lastReadInboxMessageId)
+                _chatUnreadCounts.update { it.put(update.chatId, update.unreadCount) }
+            }
 
             is TdApi.UpdateChatLastMessage -> handleChatLastMessage(update)
 
@@ -1572,6 +1581,7 @@ class PostsRepository(
     }
 
     private fun seedReadCursor(chat: TdApi.Chat) {
+        _chatUnreadCounts.update { it.put(chat.id, chat.unreadCount) }
         val cursor = chat.lastReadInboxMessageId
         val hasReadState = cursor > 0L || chat.unreadCount > 0
         if (!hasReadState) return
@@ -2453,6 +2463,7 @@ class PostsRepository(
             // The registry (chats, supergroups, users) wipes itself through its own
             // AccountSession hook.
             _chatReadCursors.value = persistentMapOf()
+            _chatUnreadCounts.value = persistentMapOf()
             interactionInfo.clear()
             albumBuffers.clear()
             albumDebounce.values.forEach { it.cancel() }

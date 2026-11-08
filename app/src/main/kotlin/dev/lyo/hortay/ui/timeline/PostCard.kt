@@ -73,8 +73,6 @@ import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.CustomEmojiInlineView
 import dev.lyo.hortay.ui.media.LocalMediaPassive
 import dev.lyo.hortay.ui.media.TdAvatar
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.unit.LayoutDirection
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.rich.LocalRichBleedInset
 import dev.lyo.hortay.ui.rich.RichBleedInset
@@ -245,7 +243,10 @@ fun PostCard(
                 )
             },
     ) {
-        Row(
+        // Full-width layout: avatar + name + time share one header row and the body
+        // spans the whole card width below it, so photos, albums and text get the ~18%
+        // of the width a left avatar column used to eat. Telegram's own channel layout.
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
@@ -281,14 +282,6 @@ fun PostCard(
                 }
                 else -> ({ interactions.onChannelClick(post) })
             }
-            Avatar(
-                name = post.senderName,
-                thumb = post.avatarThumb,
-                fileId = post.avatarFileId,
-                avatarUrl = post.avatarUrl,
-                onClick = onSenderClick,
-            )
-            Spacer(Modifier.width(AVATAR_GAP))
             // Scope inline `#tag` taps to the post's channel when this is a channel
             // post with a known handle (matches Telegram-Android: tap `#foo` inside
             // channel X → "search #foo in X"). The `#tag@channel` text-entity form
@@ -302,6 +295,16 @@ fun PostCard(
             // bare-`#tag` taps.
             val scopeHandle = if (post.parentId == null) post.senderHandle else null
             HashtagScope(scopeHandle) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                Avatar(
+                    name = post.senderName,
+                    thumb = post.avatarThumb,
+                    fileId = post.avatarFileId,
+                    avatarUrl = post.avatarUrl,
+                    onClick = onSenderClick,
+                )
+                Spacer(Modifier.width(AVATAR_GAP))
                 Column(modifier = Modifier.weight(1f)) {
                     HeaderRow(
                     senderName = post.senderName,
@@ -331,6 +334,8 @@ fun PostCard(
                         ctx = ctx,
                         onClick = { interactions.onChannelClick(post) },
                     )
+                }
+                }
                 }
 
                 post.forwardOrigin?.let { origin ->
@@ -390,18 +395,10 @@ fun PostCard(
                     }
                     if (expanded) {
                         // Reading mode bleeds rich media / tables to the card edge (= the window
-                        // edge on a phone). This card insets its body by its header chrome — Row
-                        // padding + avatar + gap on the avatar (leading) side, Row padding on the
-                        // trailing side — so it DECLARES exactly that distance and the rich layer
-                        // keeps no PostCard constant. Resolved to PHYSICAL left/right against THIS
-                        // card's direction (the rich body may force RTL internally, but the avatar
-                        // column follows the device). Feed cards render collapsed and never read it.
-                        val leadingInset = CARD_H_PADDING + AVATAR_SIZE + AVATAR_GAP
-                        val bleedInset = if (LocalLayoutDirection.current == LayoutDirection.Ltr) {
-                            RichBleedInset(left = leadingInset, right = CARD_H_PADDING)
-                        } else {
-                            RichBleedInset(left = CARD_H_PADDING, right = leadingInset)
-                        }
+                        // edge on a phone). The body is inset by the card's horizontal padding on
+                        // both sides, so it DECLARES exactly that distance and the rich layer keeps
+                        // no PostCard constant. Feed cards render collapsed and never read it.
+                        val bleedInset = RichBleedInset(left = CARD_H_PADDING, right = CARD_H_PADDING)
                         CompositionLocalProvider(LocalRichBleedInset provides bleedInset) { body() }
                     } else {
                         body()
@@ -430,12 +427,10 @@ fun PostCard(
             }
         }
 
-        // Inset divider — starts at the text column (16 dp card padding + 40 dp avatar
-        // + 12 dp gap), the idiom Telegram / iOS lists use to tie a row to its avatar
-        // while keeping the separation whisper-quiet. Full-bleed hairlines under every
-        // card read as a table grid; the inset reads as typography.
+        // Hairline between cards, inset to the content margins on both sides so it reads
+        // as a quiet section break rather than a table grid.
         HorizontalDivider(
-            modifier = Modifier.padding(start = 68.dp),
+            modifier = Modifier.padding(horizontal = CARD_H_PADDING),
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
         )
     }
@@ -935,10 +930,13 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
 // share one source of truth — keeps icons and wording in lockstep across surfaces.
 
 /**
- * Stats + per-emoji reaction chips on a single horizontal-scrollable line. Twitter/Reddit-style:
- * tap is reserved for the post itself, secondary actions live in the long-press sheet so this row
- * stays read-only and uncluttered.
+ * Reactions, then a quiet stats line. Reactions wrap onto as many lines as they need
+ * instead of scrolling sideways — a single scrolling line clipped the last chip at the
+ * screen edge, which read as broken. The stats line keeps comments as the one tappable,
+ * leading affordance (it opens the thread) and pushes views / forwards to the trailing
+ * edge as read-only metadata, the way Telegram seats them under a channel post.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ActionRow(
     views: Int,
@@ -956,56 +954,24 @@ private fun ActionRow(
     onPaidReactionOpenPost: () -> Unit = {},
 ) {
     val haptics = LocalHapticFeedback.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (views > 0) {
-            StatPill("visibility", formatViews(views))
-        }
-        // `commentCount == null` = channel has no linked discussion group (comments
-        // fundamentally disabled). `commentCount == 0` = group exists but no replies
-        // yet. Both read as "nothing to see" to the user, so we collapse them into
-        // one branch and only surface the pill when the count is meaningfully > 0 —
-        // mirrors the empty-state contract on CommentsScreen (no "0 replies" subtitle).
-        val safeCommentCount = commentCount ?: 0
-        val hasComments = safeCommentCount > 0
-        if (hasComments) {
-            if (views > 0) Spacer(Modifier.width(14.dp))
-            StatPill(
-                symbol = "chat_bubble",
-                text = formatViews(safeCommentCount),
-                onClick = onCommentsClick,
-            )
-        }
-        // Forward count — read-only, mirrors the stat Telegram shows on a channel
-        // post. Uses the `forward` arrow glyph, matching the "forwarded from" badge.
-        val hasForwards = forwardCount > 0
-        if (hasForwards) {
-            if (views > 0 || hasComments) Spacer(Modifier.width(14.dp))
-            StatPill(symbol = "forward", text = formatViews(forwardCount))
-        }
-        if (reactions.items.isNotEmpty()) {
-            // C1 — no VerticalSeparator before reactions. The hairline-outline reaction
-            // ghosts (Phase-1) read as their own cluster, so the divider was redundant
-            // chrome; a plain 14 dp gap separates the stats from the chips.
-            if (views > 0 || hasComments || hasForwards) {
-                Spacer(Modifier.width(14.dp))
-            }
-            // Paid (⭐) reactions can't be cast from Hortay — sending one needs the
-            // star-amount confirmation flow we don't host. Tap surfaces a snackbar
-            // explaining the situation, with an action button that opens *this
-            // specific* post in Telegram (via the per-post callback, routed
-            // through [PostActions.openInTelegram]). The chip is rendered at 0.6
-            // alpha to read as informational rather than interactive (see
-            // [ReactionChip.disabled]); the snackbar gate keeps a misclick from
-            // bouncing the user out of Hortay before they can change their mind.
-            val res = LocalContext.current.resources
-            val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
-            val openTelegramLabel = res.getString(R.string.action_open_telegram)
-            val paidExplainer = res.getString(R.string.reactions_paid_explainer)
+    if (reactions.items.isNotEmpty()) {
+        // Paid (⭐) reactions can't be cast from Hortay — sending one needs the
+        // star-amount confirmation flow we don't host. Tap surfaces a snackbar
+        // explaining the situation, with an action button that opens *this
+        // specific* post in Telegram (via the per-post callback, routed
+        // through [PostActions.openInTelegram]). The chip is rendered at 0.6
+        // alpha to read as informational rather than interactive (see
+        // [ReactionChip.disabled]); the snackbar gate keeps a misclick from
+        // bouncing the user out of Hortay before they can change their mind.
+        val res = LocalContext.current.resources
+        val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
+        val openTelegramLabel = res.getString(R.string.action_open_telegram)
+        val paidExplainer = res.getString(R.string.reactions_paid_explainer)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             // Key each chip by its reaction-bucket identity, NOT by position. TDLib ranks
             // reaction buckets by frequency and re-orders them on every
             // UpdateMessageInteractionInfo; a positional (unkeyed) loop would then reuse a
@@ -1013,9 +979,8 @@ private fun ActionRow(
             // underlying Coil AsyncImage keeps painting A's already-decoded bitmap until B
             // decodes — so two different reactions momentarily render the SAME custom emoji.
             // A stable key moves composition state with the bucket instead of reusing by slot.
-            reactions.items.forEachIndexed { idx, item ->
+            reactions.items.forEach { item ->
                 key(item.kind.stableKey) {
-                    if (idx > 0) Spacer(Modifier.width(6.dp))
                     val isPaid = item.kind is ReactionKind.Paid
                     val tapHandler: () -> Unit = if (isPaid) {
                         {
@@ -1044,6 +1009,37 @@ private fun ActionRow(
                     ReactionChip(item, onClick = tapHandler, disabled = isPaid)
                 }
             }
+        }
+    }
+    // `commentCount == null` = channel has no linked discussion group (comments
+    // fundamentally disabled). `commentCount == 0` = group exists but no replies
+    // yet. Both read as "nothing to see" to the user, so we collapse them into
+    // one branch and only surface the pill when the count is meaningfully > 0 —
+    // mirrors the empty-state contract on CommentsScreen (no "0 replies" subtitle).
+    val safeCommentCount = commentCount ?: 0
+    val hasComments = safeCommentCount > 0
+    if (!hasComments && views <= 0 && forwardCount <= 0) return
+    if (reactions.items.isNotEmpty()) Spacer(Modifier.height(8.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (hasComments) {
+            StatPill(
+                symbol = "chat_bubble",
+                text = formatViews(safeCommentCount),
+                onClick = onCommentsClick,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        // Forward count — read-only, mirrors the stat Telegram shows on a channel
+        // post. Uses the `forward` arrow glyph, matching the "forwarded from" badge.
+        if (forwardCount > 0) {
+            StatPill(symbol = "forward", text = formatViews(forwardCount))
+        }
+        if (views > 0) {
+            if (forwardCount > 0) Spacer(Modifier.width(12.dp))
+            StatPill("visibility", formatViews(views))
         }
     }
 }
@@ -1099,13 +1095,13 @@ internal fun ReactionChip(
     )
     val container by animateColorAsState(
         targetValue = if (item.isChosen) MaterialTheme.colorScheme.primaryContainer
-        else Color.Transparent,
+        else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f),
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "reaction-bg",
     )
     val borderColor by animateColorAsState(
-        targetValue = if (item.isChosen) Color.Transparent
-        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+        targetValue = if (item.isChosen) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+        else Color.Transparent,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "reaction-border",
     )
@@ -1141,17 +1137,17 @@ internal fun ReactionChip(
             .then(
                 if (disabled) Modifier.alpha(0.6f) else Modifier,
             )
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         when (val k = item.kind) {
             is ReactionKind.Emoji -> Text(
                 text = k.text,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleSmall,
             )
             is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
                 customEmojiId = k.customEmojiId,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(18.dp),
                 tintColor = tintForCustom,
                 contentDescription = null,
             )
@@ -1159,10 +1155,10 @@ internal fun ReactionChip(
             // separator needed because the count is already the star total.
             is ReactionKind.Paid -> Text(
                 text = "⭐",
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleSmall,
             )
         }
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(5.dp))
         // M3 — mini digit-roll on count changes: the new value slides in vertically
         // (up when the count grows, down when it shrinks) while the old slides out and
         // fades, Telegram's counter idiom. C2 tabular figures keep the width fixed so

@@ -319,8 +319,16 @@
     <string name="channels_feed_menu">Chaînes du fil</string>
     <string name="channels_hide_all">Tout masquer du fil</string>
     <string name="channels_show_all">Tout afficher dans le fil</string>
-    <string name="channels_hide_all_confirm">Toutes les chaînes seront masquées du fil. Touchez ensuite l’œil à côté de celles à garder.</string>
+    <string name="channels_hide_all_confirm">Toutes les chaînes seront masquées du fil. Balaie ensuite celles à garder pour les faire revenir.</string>
     <string name="channels_show_all_confirm">Les chaînes masquées réapparaîtront dans le fil.</string>
+    <string name="channels_search_hint">Rechercher des chaînes</string>
+    <string name="channels_swipe_hint">Balaie une chaîne sur le côté pour la masquer du fil.</string>
+    <string name="channels_hidden_label">Masquée du fil</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d publication non lue</item>
+        <item quantity="many">%d publications non lues</item>
+        <item quantity="other">%d publications non lues</item>
+    </plurals>
     <string name="channels_empty_title">Aucune chaîne pour l\'instant</string>
     <string name="channels_empty_helper">Abonne-toi à des chaînes dans Telegram et elles apparaîtront ici</string>
 

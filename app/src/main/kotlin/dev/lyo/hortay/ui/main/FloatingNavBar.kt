@@ -2,88 +2,81 @@ package dev.lyo.hortay.ui.main
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.blur.hazeBlur
 import dev.lyo.hortay.ui.icons.Symbol
-import dev.lyo.hortay.ui.theme.rememberPressedSelectedCornerRadius
+import dev.lyo.hortay.ui.theme.LocalGlassBackdrop
+import dev.lyo.hortay.ui.theme.rememberGlassStyle
+
+private val BarShape = RoundedCornerShape(percent = 50)
+private val IndicatorShape = RoundedCornerShape(percent = 50)
 
 /**
- * MD3 Expressive floating navigation bar.
+ * Floating frosted-glass navigation bar: a pill that blurs the feed scrolling under it
+ * ([LocalGlassBackdrop]), with an icon and a label per destination.
  *
- * Outer container is M3 1.5's `HorizontalFloatingToolbar` — Google's documented
- * description: *"displays navigation and key actions in a Row"*. The same
- * primitive that powers contextual bottom action bars is also the canonical
- * floating container for 3–5 navigation destinations; the variation lives in
- * what you pass into the `content` slot. By delegating the surface to the
- * toolbar primitive we inherit the M3E container shape, default tonal /
- * shadow elevations, content padding, and (free) `FloatingToolbarScrollBehavior`
- * hook for future auto-hide-on-scroll behaviour — without having to maintain
- * a custom Surface + padding + shadow recipe.
- *
- * Per-tab affordance stays bespoke because the design tokens here are not
- * Material defaults: each tab is a stadium with the canonical three-state
- * corner-radius morph (rest 14 dp → pressed 6 dp → selected 24 dp), matching
- * the folder filter chips and the reaction chips. One "selectable affordance"
- * vocabulary across the app. The filled-vs-outline icon swap rides the same
- * `fastEffectsSpec()` spring as the colour transitions so the three motion
- * channels (corner spatial / colour effects / icon-swap effects) land together.
+ * Labels are always shown — icon-only tabs made users guess what "people" or the bookmark
+ * meant, and Material's own navigation-bar guidance keeps labels on for 3–5 destinations.
+ * The selected tab gets a filled icon on a tonal indicator pill and a bolder label: three
+ * cues that land together on the same effects spring.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun FloatingNavBar(
     selected: NavTab,
     onSelect: (NavTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    HorizontalFloatingToolbar(
-        expanded = true,
+    val backdrop = LocalGlassBackdrop.current
+    val glass = rememberGlassStyle()
+    val fallback = MaterialTheme.colorScheme.surfaceContainer
+    val hairline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        // Tight content padding: each NavTabButton already supplies its own
-        // vertical breathing room (10 dp) plus min-height 48 dp for a comfortable
-        // touch target, so the toolbar's default padding would only inflate the
-        // bar. Horizontal 8 dp matches the previous custom Surface inset.
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-        content = {
-            // `HorizontalFloatingToolbar`'s content Row is framework-owned — we can't
-            // reach it to attach `selectableGroup()`, so the tabs get their own nested
-            // Row carrying that semantics grouping (TalkBack announces "N of M" within
-            // a selectable group). `fillMaxWidth()` on the sole child reproduces the
-            // even weighted split the toolbar's own Row gave each tab directly.
-            Row(modifier = Modifier.fillMaxWidth().selectableGroup()) {
-                NavTab.entries.forEach { tab ->
-                    NavTabButton(
-                        tab = tab,
-                        selected = tab == selected,
-                        onClick = { onSelect(tab) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        },
-    )
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .shadow(elevation = 10.dp, shape = BarShape, clip = false)
+            .clip(BarShape)
+            .then(
+                if (backdrop != null) Modifier.hazeBlur(input = HazeInput.Sources(backdrop), style = glass)
+                else Modifier.background(fallback),
+            )
+            .border(width = 0.5.dp, color = hairline, shape = BarShape)
+            .padding(horizontal = 6.dp, vertical = 6.dp)
+            .selectableGroup(),
+    ) {
+        NavTab.entries.forEach { tab ->
+            NavTabButton(
+                tab = tab,
+                selected = tab == selected,
+                onClick = { onSelect(tab) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
 }
 
 @Composable
@@ -95,85 +88,77 @@ private fun NavTabButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val haptics = LocalHapticFeedback.current
-    // Three-state corner-radius morph — canonical M3 Expressive vocabulary.
-    // 14 dp rest → 6 dp pressed (squish) → 24 dp selected (pill).
-    val cornerRadius by rememberPressedSelectedCornerRadius(
-        interactionSource = interactionSource,
-        selected = selected,
-        rest = 14.dp,
-        pressed = 6.dp,
-        selectedRadius = 24.dp,
-        label = "nav-corner",
-    )
-    // Spatial vs effects channels: corner radius is spatial (spring), colour is
-    // effects (faster crossfade) — separating the two physics is what makes M3
-    // Expressive transitions feel deliberate vs Material 2 tween-soup.
-    val container by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer
-        else Color.Transparent,
+    val indicator by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
-        label = "nav-bg",
+        label = "nav-indicator",
     )
     val content by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+        targetValue = if (selected) MaterialTheme.colorScheme.onSurface
         else MaterialTheme.colorScheme.onSurfaceVariant,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "nav-fg",
     )
-    val shape = RoundedCornerShape(cornerRadius)
-    // Accessible name lives on the container (not the inner Symbol) so TalkBack
-    // reads it together with the `selectable` role/state announced below —
-    // "<label>, tab, selected" in one merged node instead of an unnamed tab
-    // plus a separately-announced icon.
-    val label = stringResource(tab.labelRes)
-    Box(
+    val iconTint by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "nav-icon",
+    )
+    Column(
         modifier = modifier
-            .padding(horizontal = 4.dp)
-            .heightIn(min = 48.dp)
-            .clip(shape)
-            .background(container, shape)
+            .clip(RoundedCornerShape(20.dp))
             .selectable(
                 selected = selected,
                 interactionSource = interactionSource,
-                indication = LocalIndication.current,
+                indication = ripple(bounded = true),
                 role = Role.Tab,
                 onClick = {
                     // Discrete destination switch (or home re-tap → scroll-to-top) —
-                    // one ContextClick per deliberate tab press. Fires before the
+                    // one ContextClick per deliberate tab press, fired before the
                     // callback so the tick lands with the press, not after navigation.
                     haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                     onClick()
                 },
             )
-            .semantics { contentDescription = label }
-            .padding(vertical = 10.dp),
-        contentAlignment = Alignment.Center,
+            .heightIn(min = 52.dp)
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        // Filled variant on the selected tab — canonical M3 Expressive cue: the
-        // active destination is heavier than its peers, mirroring how the
-        // corner-radius morph and tonal container also intensify together.
-        // `filled` falls back to the outline when no `_filled` drawable is
-        // bundled (see Symbol.kt).
-        //
-        // Crossfade wrapping prevents the "blink" when the user taps a tab: the
-        // outline and filled drawables are different vector resources, so without
-        // a crossfade the Icon swaps painters in one frame while the corner +
-        // colour are still animating — out-of-sync motion read as a glitch.
-        // `Crossfade` rides the same `fastEffectsSpec` as the colour animations,
-        // so all three (corner spatial, colour effects, icon-swap effects) land
-        // together.
-        Crossfade(
-            targetState = selected,
-            animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
-            label = "nav-icon-fill",
-        ) { isFilled ->
-            Symbol(
-                name = tab.symbol,
-                contentDescription = null,
-                tint = content,
-                size = 24.dp,
-                filled = isFilled,
-            )
+        Box(
+            modifier = Modifier
+                .clip(IndicatorShape)
+                .background(indicator, IndicatorShape)
+                .padding(horizontal = 16.dp, vertical = 3.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            // The outline and filled drawables are different vectors; the crossfade keeps
+            // the swap in step with the indicator's colour instead of blinking in one frame.
+            Crossfade(
+                targetState = selected,
+                animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                label = "nav-icon-fill",
+            ) { isFilled ->
+                Symbol(
+                    name = tab.symbol,
+                    contentDescription = null,
+                    tint = iconTint,
+                    size = 22.dp,
+                    filled = isFilled,
+                )
+            }
         }
+        Spacer(Modifier.height(2.dp))
+        // The visible label doubles as the tab's accessible name — TalkBack merges it with
+        // the `selectable` role into "<label>, tab, selected".
+        Text(
+            text = stringResource(tab.labelRes),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = content,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

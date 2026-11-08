@@ -325,8 +325,17 @@
     <string name="channels_feed_menu">Kanały w feedzie</string>
     <string name="channels_hide_all">Ukryj wszystkie w feedzie</string>
     <string name="channels_show_all">Pokaż wszystkie w feedzie</string>
-    <string name="channels_hide_all_confirm">Wszystkie kanały znikną z feedu. Potem dotknij oka przy tych, które chcesz zostawić.</string>
+    <string name="channels_hide_all_confirm">Wszystkie kanały zostaną ukryte w aktualnościach. Potem przesuń w bok te, które chcesz zostawić, aby je przywrócić.</string>
     <string name="channels_show_all_confirm">Ukryte kanały znów pojawią się w feedzie.</string>
+    <string name="channels_search_hint">Szukaj kanałów</string>
+    <string name="channels_swipe_hint">Przesuń kanał w bok, aby ukryć go w aktualnościach.</string>
+    <string name="channels_hidden_label">Ukryty w aktualnościach</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d nieprzeczytany post</item>
+        <item quantity="few">%d nieprzeczytane posty</item>
+        <item quantity="many">%d nieprzeczytanych postów</item>
+        <item quantity="other">%d nieprzeczytanego posta</item>
+    </plurals>
     <string name="channels_empty_title">Brak kanałów</string>
     <string name="channels_empty_helper">Zasubskrybuj kanały w Telegramie, a pojawią się tutaj</string>
 

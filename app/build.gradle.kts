@@ -400,6 +400,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.coil.compose)
+    implementation(libs.haze)
+    implementation(libs.haze.blur)
     implementation(libs.coil.network.okhttp)
     implementation(libs.coil.gif)
     implementation(libs.coil.video)

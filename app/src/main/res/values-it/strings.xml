@@ -319,8 +319,15 @@
     <string name="channels_feed_menu">Canali nel feed</string>
     <string name="channels_hide_all">Nascondi tutti dal feed</string>
     <string name="channels_show_all">Mostra tutti nel feed</string>
-    <string name="channels_hide_all_confirm">Tutti i canali verranno nascosti dal feed. Poi tocca l’occhio accanto a quelli che vuoi tenere.</string>
+    <string name="channels_hide_all_confirm">Tutti i canali verranno nascosti dal feed. Poi scorri di lato quelli che vuoi tenere per riportarli.</string>
     <string name="channels_show_all_confirm">I canali nascosti torneranno nel feed.</string>
+    <string name="channels_search_hint">Cerca canali</string>
+    <string name="channels_swipe_hint">Scorri un canale di lato per nasconderlo dal feed.</string>
+    <string name="channels_hidden_label">Nascosto dal feed</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d post non letto</item>
+        <item quantity="other">%d post non letti</item>
+    </plurals>
     <string name="channels_empty_title">Nessun canale ancora</string>
     <string name="channels_empty_helper">Iscriviti ai canali su Telegram e appariranno qui</string>
 

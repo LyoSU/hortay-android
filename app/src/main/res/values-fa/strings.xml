@@ -309,8 +309,15 @@
     <string name="channels_feed_menu">کانال‌های فید</string>
     <string name="channels_hide_all">پنهان کردن همه از فید</string>
     <string name="channels_show_all">نمایش همه در فید</string>
-    <string name="channels_hide_all_confirm">همه کانال‌ها از فید پنهان می‌شوند. سپس روی آیکون چشم کنار کانال‌هایی که می‌خواهید بمانند بزنید.</string>
+    <string name="channels_hide_all_confirm">همهٔ کانال‌ها از فید پنهان می‌شوند. سپس کانال‌هایی را که می‌خواهید نگه دارید به کنار بکشید تا برگردند.</string>
     <string name="channels_show_all_confirm">کانال‌هایی که پنهان کرده‌اید دوباره در فید نمایش داده می‌شوند.</string>
+    <string name="channels_search_hint">جستجوی کانال‌ها</string>
+    <string name="channels_swipe_hint">برای پنهان کردن کانال از فید، آن را به کنار بکشید.</string>
+    <string name="channels_hidden_label">پنهان از فید</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d پست خوانده‌نشده</item>
+        <item quantity="other">%d پست خوانده‌نشده</item>
+    </plurals>
     <string name="channels_empty_title">هنوز کانالی وجود ندارد</string>
     <string name="channels_empty_helper">در Telegram مشترک کانال‌ها شوید تا اینجا نمایش داده شوند</string>
 

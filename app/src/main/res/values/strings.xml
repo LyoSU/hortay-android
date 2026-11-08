@@ -312,8 +312,15 @@
     <string name="channels_feed_menu">Feed channels</string>
     <string name="channels_hide_all">Hide all from feed</string>
     <string name="channels_show_all">Show all in feed</string>
-    <string name="channels_hide_all_confirm">All channels will be hidden from the feed. Then tap the eye next to the channels you want to keep.</string>
+    <string name="channels_hide_all_confirm">All channels will be hidden from the feed. Then swipe the ones you want to keep to bring them back.</string>
     <string name="channels_show_all_confirm">Channels you hid will appear in the feed again.</string>
+    <string name="channels_search_hint">Search channels</string>
+    <string name="channels_swipe_hint">Swipe a channel sideways to hide it from the feed.</string>
+    <string name="channels_hidden_label">Hidden from feed</string>
+    <plurals name="channels_unread_count">
+        <item quantity="one">%d unread post</item>
+        <item quantity="other">%d unread posts</item>
+    </plurals>
     <string name="channels_empty_title">No channels yet</string>
     <string name="channels_empty_helper">Subscribe to channels in Telegram and they\'ll show up here</string>
 
