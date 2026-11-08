@@ -519,10 +519,12 @@ fun CommentsScreen(
                         }
                     }
                 ) {
+                    // One compact row: the reply count IS the title ("36 comments"), falling
+                    // back to "Post" with no replies. The medium two-line bar spent a fifth of
+                    // the screen on chrome above the post being discussed.
                     HortayTopBar(
-                        title = stringResource(R.string.comments_title),
-                        subtitle = subtitleText,
-                        size = HortayTopBarSize.Medium,
+                        title = subtitleText ?: stringResource(R.string.comments_title),
+                        size = HortayTopBarSize.Compact,
                         navigationIcon = {
                             IconButton(onClick = onDismiss) {
                                 Symbol(name = "arrow_back", contentDescription = stringResource(R.string.action_back))
