@@ -7,7 +7,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
@@ -79,51 +78,51 @@ class ChatFoldersRepository(
         // TDLib emits an UpdateChatFolders shortly after auth, then again whenever the user
         // creates / renames / reorders folders in any client. Keep our state mirror in sync;
         // evict the per-folder cache (ids may have moved) and re-resolve every folder so the
-        // [fullFolders] map matches the new [folders] list.
+        // [fullFolders] map matches the new [folders] list. One collector for the three
+        // update types, so a folder reset and the membership flips after it stay in
+        // TDLib's order.
         td.updates
-            .filterIsInstance<TdApi.UpdateChatFolders>()
-            .onEach { upd ->
-                val list = upd.chatFolders.orEmpty().toList()
-                _folders.value = list
-                fullFoldersCache.clear()
-                _fullFolders.value = emptyMap()
-                _folderChatIds.value = emptyMap()
-                scope.launch { resolveAll(list) }
-            }
-            .launchIn(scope)
-
-        // Live membership flips: TDLib fires Update{Added,Removed}ToList both as part
-        // of the LoadChats drain that the warm-up triggers AND for runtime changes
-        // (user pins/excludes a chat in any client). Update incrementally rather than
-        // evicting the whole entry — an eviction landing after the warm-up wrote
-        // `(id → set)` would silently re-null the cache and keep an empty folder
-        // chip visible until the user tapped it. CAS via [MutableStateFlow.update]
-        // serialises concurrent writes from this collector and the warm-up. Updates
-        // for folders that haven't been warmed up yet are ignored — the warm-up's
-        // `GetChats` snapshot is the source of truth for initial population.
-        td.updates
-            .filterIsInstance<TdApi.UpdateChatAddedToList>()
             .onEach { update ->
-                val folderId = (update.chatList as? TdApi.ChatListFolder)?.chatFolderId ?: return@onEach
-                _folderChatIds.update { current ->
-                    val existing = current[folderId] ?: return@update current
-                    if (update.chatId in existing) current
-                    else current + (folderId to (existing + update.chatId))
+                when (update) {
+                    is TdApi.UpdateChatFolders -> onChatFolders(update)
+                    is TdApi.UpdateChatAddedToList -> onFolderMembership(update.chatList, update.chatId, added = true)
+                    is TdApi.UpdateChatRemovedFromList -> onFolderMembership(update.chatList, update.chatId, added = false)
+                    else -> Unit
                 }
             }
             .launchIn(scope)
+    }
 
-        td.updates
-            .filterIsInstance<TdApi.UpdateChatRemovedFromList>()
-            .onEach { update ->
-                val folderId = (update.chatList as? TdApi.ChatListFolder)?.chatFolderId ?: return@onEach
-                _folderChatIds.update { current ->
-                    val existing = current[folderId] ?: return@update current
-                    if (update.chatId !in existing) current
-                    else current + (folderId to (existing - update.chatId))
-                }
+    private fun onChatFolders(update: TdApi.UpdateChatFolders) {
+        val list = update.chatFolders.orEmpty().toList()
+        _folders.value = list
+        fullFoldersCache.clear()
+        _fullFolders.value = emptyMap()
+        _folderChatIds.value = emptyMap()
+        scope.launch { resolveAll(list) }
+    }
+
+    /**
+     * Live membership flips: TDLib fires Update{Added,Removed}ToList both as part
+     * of the LoadChats drain that the warm-up triggers AND for runtime changes
+     * (user pins/excludes a chat in any client). Update incrementally rather than
+     * evicting the whole entry — an eviction landing after the warm-up wrote
+     * `(id → set)` would silently re-null the cache and keep an empty folder
+     * chip visible until the user tapped it. CAS via [MutableStateFlow.update]
+     * serialises concurrent writes from this collector and the warm-up. Updates
+     * for folders that haven't been warmed up yet are ignored — the warm-up's
+     * `GetChats` snapshot is the source of truth for initial population.
+     */
+    private fun onFolderMembership(chatList: TdApi.ChatList, chatId: Long, added: Boolean) {
+        val folderId = (chatList as? TdApi.ChatListFolder)?.chatFolderId ?: return
+        _folderChatIds.update { current ->
+            val existing = current[folderId] ?: return@update current
+            when {
+                added && chatId !in existing -> current + (folderId to (existing + chatId))
+                !added && chatId in existing -> current + (folderId to (existing - chatId))
+                else -> current
             }
-            .launchIn(scope)
+        }
     }
 
     private suspend fun resolveAll(list: List<TdApi.ChatFolderInfo>) {

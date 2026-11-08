@@ -76,14 +76,6 @@ object MediaShareActions {
     }
 
     /**
-     * True when [Result] of a save/copy is meaningful for the given item — i.e.
-     * the file is actually local. Callers gate their button enabled state on
-     * this so the affordance does not appear on a Failed / Downloading slot.
-     */
-    fun isPersistable(localPath: String?): Boolean =
-        !localPath.isNullOrBlank() && File(localPath).run { exists() && length() > 0L }
-
-    /**
      * Save the bytes at [localPath] into the public gallery. [item] decides
      * the MediaStore collection (Images vs Video) and the display name
      * extension. Runs on the calling thread — call from a coroutine on

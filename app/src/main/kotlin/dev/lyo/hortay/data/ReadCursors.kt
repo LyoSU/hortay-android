@@ -81,13 +81,6 @@ fun TimelinePost.isUnreadIn(cursors: ReadCursors): Boolean {
 }
 
 /**
- * Returns the index of the first unread post in [posts] (iteration order), or
- * `-1` if every post is read (or [posts] is empty).
- */
-fun firstUnreadIndex(posts: List<TimelinePost>, cursors: ReadCursors): Int =
-    posts.indexOfFirst { it.isUnreadIn(cursors) }
-
-/**
  * Cold-start scroll target. Returns the index of the **oldest unread post**
  * in [posts], or `-1` when nothing qualifies (caught up, empty feed, or
  * cursors not yet loaded).
@@ -96,8 +89,7 @@ fun firstUnreadIndex(posts: List<TimelinePost>, cursors: ReadCursors): Int =
  * owned by [PostsRepository] / [WebFeedSource]. On that layout, the resume
  * boundary is the LAST entry in the unread block — the oldest unread post
  * sits at the highest index among all unread posts. Both [FeedOrder] values
- * produce the same list order, so the result is **identical regardless of
- * [order]**.  The parameter is retained for API / test compatibility.
+ * produce the same list order, so the feed order plays no part here.
  *
  * Fallback. Callers map `-1` to index 0 (newest, top of the descending list)
  * for the "you're caught up" landing.
@@ -112,7 +104,6 @@ fun firstUnreadIndex(posts: List<TimelinePost>, cursors: ReadCursors): Int =
  * where the user opened a specific chat intentionally.
  */
 fun continueReadingIndex(
-    @Suppress("UNUSED_PARAMETER") order: FeedOrder,
     posts: List<TimelinePost>,
     cursors: ReadCursors,
     minUnreadDate: Long = 0L,

@@ -20,6 +20,9 @@
 - The edit-history sheet of a post no longer flickers empty while it's open.
 - Signing out during the first feed fill-in no longer leaves the next account with a sparse feed.
 
+### Architecture
+- The feed, folder tabs and translation cache now each handle Telegram's updates in one ordered stream instead of one listener per update type.
+
 ### Build
 - Toolchain and dependencies updated: AGP 9.4, Gradle 9.7, Kotlin 2.4.10, Compose BOM 2026.09 with Material 3 1.5.0-alpha29, Media3 1.11, Coil 3.5, OkHttp 5.5, JUnit 6.1.3 and refreshed CI actions.
 

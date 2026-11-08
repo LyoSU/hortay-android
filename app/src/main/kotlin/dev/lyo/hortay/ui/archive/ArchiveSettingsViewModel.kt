@@ -101,8 +101,6 @@ class ArchiveSettingsViewModel(
      */
     suspend fun exportTo(out: java.io.OutputStream): Int = repo.exportTo(out)
 
-    suspend fun peekStorageBytes(): Long = repo.storageBytes()
-
     private companion object {
         const val SETTINGS_REFRESH_DEBOUNCE_MS = 500L
         const val STORAGE_BYTES_DEBOUNCE_MS = 2000L

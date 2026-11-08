@@ -63,7 +63,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
@@ -549,143 +548,15 @@ class PostsRepository(
     val newArrivals: SharedFlow<TimelinePost> = _newArrivals.asSharedFlow()
 
     init {
-        // Live feed: any new channel post arrives via UpdateNewMessage and is folded in.
-        td.updates.filterIsInstance<TdApi.UpdateNewMessage>()
-            .onEach { update -> handleNewMessage(update.message) }
-            .launchIn(scope)
-
-        // Server-side counter sync: views, reactions, comment counts.
-        td.updates.filterIsInstance<TdApi.UpdateMessageInteractionInfo>()
-            .onEach { update -> handleInteractionInfo(update) }
-            .launchIn(scope)
-
-        // Edits surface as a new editDate; we just stamp it onto the post.
-        td.updates.filterIsInstance<TdApi.UpdateMessageEdited>()
-            .onEach { update -> handleEdited(update) }
-            .launchIn(scope)
-
-        // Mods can delete posts; drop them from the timeline immediately.
-        td.updates.filterIsInstance<TdApi.UpdateDeleteMessages>()
-            .onEach { update -> handleDeleted(update) }
-            .launchIn(scope)
-
-        // Channel admins edit the body of a post — swap the rendered content in place.
-        td.updates.filterIsInstance<TdApi.UpdateMessageContent>()
-            .onEach { update -> handleContentChanged(update) }
-            .launchIn(scope)
-
-        // Pin / unpin badge changes on a channel post.
-        td.updates.filterIsInstance<TdApi.UpdateMessageIsPinned>()
-            .onEach { update -> handleIsPinnedChanged(update) }
-            .launchIn(scope)
-
-        // Channel renamed → all visible posts of that chat update their senderName.
-        td.updates.filterIsInstance<TdApi.UpdateChatTitle>()
-            .onEach { update -> handleChatTitle(update) }
-            .launchIn(scope)
-
-        // Channel avatar changed → all visible posts of that chat refresh avatar.
-        td.updates.filterIsInstance<TdApi.UpdateChatPhoto>()
-            .onEach { update -> handleChatPhoto(update) }
-            .launchIn(scope)
-
-        // UpdateUser / UpdateSupergroup for author and handle resolution are mirrored by
-        // [dev.lyo.hortay.data.ChatRegistry], which the shared MessageMapper reads.
-
-        // Single entry-point for chat metadata. We deliberately DO NOT issue
-        // GetChatHistory here:
-        //   - On startup TDLib re-emits the entire chat list as UpdateNewChat; auto-
-        //     loading each one 429-rate-limits the server.
-        //   - Many of those chats are private / archived / DM — every one is a
-        //     guaranteed [400] Can't access the chat warning.
-        //
-        // Three things happen on every UpdateNewChat:
-        //   1. Cache the chat POJO and seed the read cursor (when TDLib has a signal).
-        //   2. Hydrate `_mainChatIds` / `_archivedChatIds` from `chat.positions`
-        //      (TDLib may emit positions as part of UpdateNewChat directly when the
-        //      chat is read from `useChatInfoDatabase`; for first-auth they fill in
-        //      later via UpdateChatAddedToList, which our listener also handles).
-        //   3. Ingest `chat.lastMessage` directly — no harvest, no 2 s wait. If a
-        //      racing UpdateChatLastMessage stashed its payload in
-        //      `pendingLastMessages` before the chat was registered, prefer it
-        //      (freshest known message wins).
-        td.updates.filterIsInstance<TdApi.UpdateNewChat>()
-            .onEach { update -> handleNewChat(update.chat) }
-            .launchIn(scope)
-
-        // Canonical read-state stream from TDLib. Fires whenever the user reads in
-        // ANY client (official Telegram-Android included), so an UnreadStrip on a
-        // card the user has just read in TG-Android animates out within ~1 frame
-        // of the server ack landing here. monotonic-only update — TDLib has been
-        // observed to emit redundant resets with smaller ids during chat repair
-        // flows; clamping to monoMax(...) keeps the cursor from rewinding under us.
-        td.updates.filterIsInstance<TdApi.UpdateChatReadInbox>()
-            .onEach { update -> advanceReadCursor(update.chatId, update.lastReadInboxMessageId) }
-            .launchIn(scope)
-
-        // UpdateChatLastMessage fires when TDLib (a) discovers a fresh lastMessage for
-        // a previously-known chat (edit, delete cascade, or a new post on a chat we
-        // haven't OpenChat'd) and (b) initial sync of late-arriving last-message data
-        // for a chat whose UpdateNewChat carried `lastMessage = null`.
-        //
-        // If the chat isn't cached yet, BUFFER the payload in [pendingLastMessages]
-        // rather than dropping it. The matching UpdateNewChat will arrive shortly
-        // and [handleNewChat] flushes the buffer through ingest. This closes the
-        // race that previously caused permanent misses on cold-start (the harvest
-        // is gone — there's no later catch-up sweep).
-        //
-        // Why we DON'T fall back to `td.send(GetChat)` here: a cold-start storm
-        // can drive UpdateChatLastMessage × N before any UpdateNewChat lands. A
-        // per-update GetChat fan-out would re-introduce the FLOOD_WAIT-class
-        // regression the lastMessage-harvest rework was specifically built to
-        // avoid (ARCHITECTURE.md "Load-bearing" — "Cold-start contract").
-        td.updates.filterIsInstance<TdApi.UpdateChatLastMessage>()
+        // One collector for every TDLib update this repository handles, dispatched in
+        // [onUpdate]. Separate `filterIsInstance` collectors per type woke ~14
+        // coroutines for each update in the cold-start burst and let updates of
+        // different types run out of order (an UpdateDeleteMessages could be applied
+        // before the UpdateNewMessage it follows). A single collector keeps TDLib's
+        // order and resumes one coroutine per update.
+        td.updates
             .onEach { update ->
-                val msg = update.lastMessage ?: return@onEach
-                if (registry.cachedChat(update.chatId) == null) {
-                    pendingLastMessages[update.chatId] = msg
-                    return@onEach
-                }
-                // Live sessions route through [handleNewMessage] so an album member
-                // joins the same debounce buffer as its UpdateNewMessage siblings —
-                // TDLib echoes the newest member here for every album, and the
-                // previous direct ingest fired an immediate networked surround
-                // coalesce in parallel with the debounce flush: a duplicate
-                // GetChatHistory per album, plus a transient partial card whenever
-                // that coalesce was served from a not-yet-complete local history.
-                // One flush now handles all members (the buffer dedupes by id).
-                //
-                // During the cold-start drain keep the direct ingest: a debounced
-                // flush would land AFTER [_initialSyncDone] flips and take the
-                // NETWORKED coalesce path for every album lastMessage in the storm
-                // — the GetChatHistory × N fan-out the cold-start contract forbids.
-                // The direct call stays on the offline (onlyLocal) path instead.
-                if (_initialSyncDone.value) handleNewMessage(msg)
-                else ingest(update.chatId, listOf(msg))
-            }
-            .launchIn(scope)
-
-        // Keep [archivedChatIds] live: TDLib fires UpdateChatAddedToList /
-        // UpdateChatRemovedFromList whenever the user archives/unarchives a channel in
-        // ANY client. Without these the "Усі" tab leaks a freshly-archived channel until
-        // the next pull-to-refresh.
-        td.updates.filterIsInstance<TdApi.UpdateChatAddedToList>()
-            .onEach { update ->
-                when (update.chatList) {
-                    is TdApi.ChatListArchive -> _archivedChatIds.update { it + update.chatId }
-                    is TdApi.ChatListMain -> _mainChatIds.update { it + update.chatId }
-                    else -> {}
-                }
-            }
-            .launchIn(scope)
-
-        td.updates.filterIsInstance<TdApi.UpdateChatRemovedFromList>()
-            .onEach { update ->
-                when (update.chatList) {
-                    is TdApi.ChatListArchive -> _archivedChatIds.update { it - update.chatId }
-                    is TdApi.ChatListMain -> _mainChatIds.update { it - update.chatId }
-                    else -> {}
-                }
+                runCatching { onUpdate(update) }.warnUnlessCancelled(TAG, update.javaClass.simpleName)
             }
             .launchIn(scope)
 
@@ -1478,6 +1349,123 @@ class PostsRepository(
             // stream we depend on for live reactions / views / replies).
             forceRead = !open,
         )
+    }
+
+    /**
+     * Routes one TDLib update to its handler. Runs on the single update collector in
+     * `init`, so updates are handled in the order TDLib emitted them; a handler that
+     * suspends (only [handleNewChat] and the cold-start [ingest] below) holds back the
+     * next update until it returns.
+     */
+    private suspend fun onUpdate(update: TdApi.Update) {
+        when (update) {
+            // Live feed: any new channel post arrives via UpdateNewMessage and is folded in.
+            is TdApi.UpdateNewMessage -> handleNewMessage(update.message)
+            // Server-side counter sync: views, reactions, comment counts.
+            is TdApi.UpdateMessageInteractionInfo -> handleInteractionInfo(update)
+            // Edits surface as a new editDate; we just stamp it onto the post.
+            is TdApi.UpdateMessageEdited -> handleEdited(update)
+            // Mods can delete posts; drop them from the timeline immediately.
+            is TdApi.UpdateDeleteMessages -> handleDeleted(update)
+            // Channel admins edit the body of a post — swap the rendered content in place.
+            is TdApi.UpdateMessageContent -> handleContentChanged(update)
+            // Pin / unpin badge changes on a channel post.
+            is TdApi.UpdateMessageIsPinned -> handleIsPinnedChanged(update)
+            // Channel renamed → all visible posts of that chat update their senderName.
+            is TdApi.UpdateChatTitle -> handleChatTitle(update)
+            // Channel avatar changed → all visible posts of that chat refresh avatar.
+            is TdApi.UpdateChatPhoto -> handleChatPhoto(update)
+
+            // UpdateUser / UpdateSupergroup for author and handle resolution are mirrored by
+            // [dev.lyo.hortay.data.ChatRegistry], which the shared MessageMapper reads.
+
+            // Single entry-point for chat metadata. We deliberately DO NOT issue
+            // GetChatHistory here:
+            //   - On startup TDLib re-emits the entire chat list as UpdateNewChat; auto-
+            //     loading each one 429-rate-limits the server.
+            //   - Many of those chats are private / archived / DM — every one is a
+            //     guaranteed [400] Can't access the chat warning.
+            //
+            // Three things happen on every UpdateNewChat:
+            //   1. Cache the chat POJO and seed the read cursor (when TDLib has a signal).
+            //   2. Hydrate `_mainChatIds` / `_archivedChatIds` from `chat.positions`
+            //      (TDLib may emit positions as part of UpdateNewChat directly when the
+            //      chat is read from `useChatInfoDatabase`; for first-auth they fill in
+            //      later via UpdateChatAddedToList, which our listener also handles).
+            //   3. Ingest `chat.lastMessage` directly — no harvest, no 2 s wait. If a
+            //      racing UpdateChatLastMessage stashed its payload in
+            //      `pendingLastMessages` before the chat was registered, prefer it
+            //      (freshest known message wins).
+            is TdApi.UpdateNewChat -> handleNewChat(update.chat)
+
+            // Canonical read-state stream from TDLib. Fires whenever the user reads in
+            // ANY client (official Telegram-Android included), so an UnreadStrip on a
+            // card the user has just read in TG-Android animates out within ~1 frame
+            // of the server ack landing here. monotonic-only update — TDLib has been
+            // observed to emit redundant resets with smaller ids during chat repair
+            // flows; clamping to monoMax(...) keeps the cursor from rewinding under us.
+            is TdApi.UpdateChatReadInbox -> advanceReadCursor(update.chatId, update.lastReadInboxMessageId)
+
+            is TdApi.UpdateChatLastMessage -> handleChatLastMessage(update)
+
+            // Keep [archivedChatIds] live: TDLib fires UpdateChatAddedToList /
+            // UpdateChatRemovedFromList whenever the user archives/unarchives a channel in
+            // ANY client. Without these the "Усі" tab leaks a freshly-archived channel until
+            // the next pull-to-refresh.
+            is TdApi.UpdateChatAddedToList -> when (update.chatList) {
+                is TdApi.ChatListArchive -> _archivedChatIds.update { it + update.chatId }
+                is TdApi.ChatListMain -> _mainChatIds.update { it + update.chatId }
+                else -> Unit
+            }
+            is TdApi.UpdateChatRemovedFromList -> when (update.chatList) {
+                is TdApi.ChatListArchive -> _archivedChatIds.update { it - update.chatId }
+                is TdApi.ChatListMain -> _mainChatIds.update { it - update.chatId }
+                else -> Unit
+            }
+            else -> Unit
+        }
+    }
+
+    /**
+     * UpdateChatLastMessage fires when TDLib (a) discovers a fresh lastMessage for
+     * a previously-known chat (edit, delete cascade, or a new post on a chat we
+     * haven't OpenChat'd) and (b) initial sync of late-arriving last-message data
+     * for a chat whose UpdateNewChat carried `lastMessage = null`.
+     *
+     * If the chat isn't cached yet, BUFFER the payload in [pendingLastMessages]
+     * rather than dropping it. The matching UpdateNewChat will arrive shortly
+     * and [handleNewChat] flushes the buffer through ingest. This closes the
+     * race that previously caused permanent misses on cold-start (the harvest
+     * is gone — there's no later catch-up sweep).
+     *
+     * Why we DON'T fall back to `td.send(GetChat)` here: a cold-start storm
+     * can drive UpdateChatLastMessage × N before any UpdateNewChat lands. A
+     * per-update GetChat fan-out would re-introduce the FLOOD_WAIT-class
+     * regression the lastMessage-harvest rework was specifically built to
+     * avoid (ARCHITECTURE.md "Load-bearing" — "Cold-start contract").
+     */
+    private suspend fun handleChatLastMessage(update: TdApi.UpdateChatLastMessage) {
+        val msg = update.lastMessage ?: return
+        if (registry.cachedChat(update.chatId) == null) {
+            pendingLastMessages[update.chatId] = msg
+            return
+        }
+        // Live sessions route through [handleNewMessage] so an album member
+        // joins the same debounce buffer as its UpdateNewMessage siblings —
+        // TDLib echoes the newest member here for every album, and the
+        // previous direct ingest fired an immediate networked surround
+        // coalesce in parallel with the debounce flush: a duplicate
+        // GetChatHistory per album, plus a transient partial card whenever
+        // that coalesce was served from a not-yet-complete local history.
+        // One flush now handles all members (the buffer dedupes by id).
+        //
+        // During the cold-start drain keep the direct ingest: a debounced
+        // flush would land AFTER [_initialSyncDone] flips and take the
+        // NETWORKED coalesce path for every album lastMessage in the storm
+        // — the GetChatHistory × N fan-out the cold-start contract forbids.
+        // The direct call stays on the offline (onlyLocal) path instead.
+        if (_initialSyncDone.value) handleNewMessage(msg)
+        else ingest(update.chatId, listOf(msg))
     }
 
     /**
