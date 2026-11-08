@@ -4,18 +4,28 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.data.media.WebmFrameCache
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 /** Max decoded frame side (px), aspect-preserving. Bounds per-sticker memory in [WebmFrameCache]. */
 private const val MAX_DECODE_SIDE = 320
+
+/** Re-decode attempts after an on-screen eviction, per composition of one sticker. */
+private const val MAX_REDECODES = 3
+
+/** Linear backoff step between eviction-driven re-decodes. */
+private const val REDECODE_BACKOFF_MS = 250L
 
 /** Draws an animated VP9+alpha WebM via the shared decode cache + clock. No SurfaceView, no
  *  ExoPlayer; the current frame is a plain ImageBitmap drawn with native alpha (srcOver).
@@ -48,12 +58,26 @@ fun WebmAlphaImage(
             (widthPx * s).roundToInt().coerceAtLeast(1) to (heightPx * s).roundToInt().coerceAtLeast(1)
         }
     }
-    val decoded by remember(key, decW, decH, path) {
+    // Bumped when the cache evicts our frames while we're still composed: the evicted flow is
+    // pruned and nulled, so without a re-observe the sticker would stay blank until it scrolled
+    // off and back. Capped + backed off so two oversized on-screen loops that evict each other
+    // can't spin a decode loop forever.
+    var generation by remember(key, decW, decH, path) { mutableIntStateOf(0) }
+    var sawFrame by remember(key, decW, decH, path) { mutableStateOf(false) }
+    val decoded by remember(key, decW, decH, path, generation) {
         cache.observe(WebmFrameCache.Key(key, decW, decH), path)
     }.collectAsStateWithLifecycle()
 
     val latestOnFirstFrame by rememberUpdatedState(onFirstFrame)
-    LaunchedEffect(decoded != null) { if (decoded != null) latestOnFirstFrame() }
+    LaunchedEffect(decoded != null) {
+        if (decoded != null) {
+            sawFrame = true
+            latestOnFirstFrame()
+        } else if (sawFrame && generation < MAX_REDECODES) {
+            delay(REDECODE_BACKOFF_MS * (generation + 1))
+            generation++
+        }
+    }
     val base = remember(decoded, animate) { clock.nowMs }
     val d = decoded ?: return
     val idx = if (animate) d.frameAt(clock.nowMs - base) else 0

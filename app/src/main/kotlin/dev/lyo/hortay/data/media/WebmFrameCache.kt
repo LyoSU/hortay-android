@@ -21,7 +21,8 @@ import kotlinx.coroutines.launch
  *  cheaper than a coroutine Mutex.
  *
  *  Eviction trade-off: dropping an entry nulls its flow even if a composable is still observing it,
- *  so a sticker evicted while on-screen goes blank until recomposition re-observes (and re-decodes).
+ *  so a sticker evicted while on-screen goes blank until its observer re-observes (and re-decodes) —
+ *  [dev.lyo.hortay.ui.media.WebmAlphaImage] does that when its flow drops back to null.
  *  That's the price of actually releasing the bitmap bytes — keeping the flow would pin the decoded
  *  frames the counter already considers freed. With (w,h) keying and the 24 MB budget this only
  *  bites under genuine memory pressure. */
