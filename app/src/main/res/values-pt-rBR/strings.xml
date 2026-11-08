@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
 
     <!-- Tela de autenticação -->
     <string name="auth_phone_label">Número de telefone</string>

@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
+    <!-- Brand name: not translated, and kept out of every values-<lang> mirror so the
+         beta source set's override applies on every device language. -->
+    <string name="app_name" translatable="false">Hortay</string>
 
     <!-- Auth screen -->
     <string name="auth_phone_label">Phone number</string>

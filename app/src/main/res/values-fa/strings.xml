@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay</string>
 
     <!-- صفحه ورود -->
     <string name="auth_phone_label">شماره تلفن</string>

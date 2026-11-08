@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Warm amber launcher + splash gradient for the beta, so it can't be mistaken
+         for the periwinkle Play build on the home screen. These colours are used only
+         by the launcher background and the splash screen. -->
+    <color name="brand_gradient_top">#FFFFD58A</color>
+    <color name="brand_gradient_mid">#FFF59A3C</color>
+    <color name="brand_gradient_bot">#FFC2410C</color>
+</resources>

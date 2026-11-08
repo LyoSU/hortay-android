@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Hortay β</string>
+    <!-- Overrides main's app_name on every locale (main keeps it out of values-<lang>),
+         so the beta reads as its own app on the launcher next to the Play build. -->
+    <string name="app_name" translatable="false">Hortay Beta</string>
 </resources>
