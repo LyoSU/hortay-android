@@ -1,6 +1,6 @@
 [versions]
 agp = "9.4.1"
-kotlin = "2.4.10"
+kotlin = "2.4.21"
 composeBom = "2026.09.00"
 # material3 explicitly pinned to the Expressive alpha (released 2026-05-06).
 # The April BOM ships material3 1.4.0 stable, which lacks MaterialShapes,
@@ -32,14 +32,14 @@ browser = "1.10.0"
 # ViewModelStore for Nav3). All lifecycle-* artifacts share this version.
 lifecycle = "2.11.0"
 coroutines = "1.11.0"
-serialization = "1.11.0"
+serialization = "1.12.0"
 # java-diff-utils — text-diff for the post-archive edit-history snapshots.
 diffUtils = "4.17"
 datastore = "1.2.1"
 coil = "3.5.0"
 splashscreen = "1.2.0"
 media3 = "1.11.1"
-immutable = "0.5.1"
+immutable = "0.5.2"
 leakcanary = "2.14"
 lottie = "6.7.1"
 # jlatexmath-android — pure-Java port of jLaTeXMath rendering LaTeX to android.graphics.Canvas
