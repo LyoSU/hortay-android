@@ -318,8 +318,11 @@ class MessageMapper(
             runCatching { td.send(TdApi.GetMessage(effectiveReplyChatId, reply.messageId)) }
                 .getOrNull()
         } else null
-        val author = refMsg?.let { resolveSender(it.senderId).name }
-            ?: if (effectiveReplyChatId != 0L) fetchChat(effectiveReplyChatId).name else ""
+        val parentChat = if (effectiveReplyChatId != 0L) fetchChat(effectiveReplyChatId) else null
+        val author = refMsg?.let { resolveSender(it.senderId).name } ?: parentChat?.name.orEmpty()
+        val otherChannelAvatar = parentChat
+            ?.takeIf { effectiveReplyChatId != chatId }
+            ?.let { ChannelAvatarRef(thumb = it.avatarThumb, fileId = it.avatarFileId) }
         val effectiveContent: TdApi.MessageContent? = refMsg?.content ?: reply.content
         val (thumb, kind) = extractReplyMedia(effectiveContent)
         val fallback = extractTextOrCaption(effectiveContent)
@@ -338,6 +341,7 @@ class MessageMapper(
             replyToMessageId = reply.messageId,
             mediaThumb = thumb,
             mediaKind = kind,
+            otherChannelAvatar = otherChannelAvatar,
         )
     }
 

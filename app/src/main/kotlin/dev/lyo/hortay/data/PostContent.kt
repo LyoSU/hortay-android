@@ -775,6 +775,19 @@ data class ReplyPreview(
     val mediaThumb: TdMedia? = null,
     /** Coarse parent media kind used to pick an icon when there's no thumbnail. */
     val mediaKind: ReplyMediaKind = ReplyMediaKind.None,
+    /**
+     * Set only when the parent lives in ANOTHER channel: its avatar, so the quote card can
+     * say "this is someone else's post" at a glance instead of passing for a same-channel
+     * reply. Null for same-chat replies.
+     */
+    val otherChannelAvatar: ChannelAvatarRef? = null,
+)
+
+/** Avatar ladder of a channel (minithumbnail → small photo file) for compact surfaces. */
+@Immutable
+data class ChannelAvatarRef(
+    val thumb: ByteArray?,
+    val fileId: Int?,
 )
 
 /**

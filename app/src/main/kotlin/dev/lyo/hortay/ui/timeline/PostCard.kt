@@ -973,14 +973,30 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
                         bottom = 8.dp,
                     ),
             ) {
-                Text(
-                    text = reply.authorName,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = accent,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // A reply to ANOTHER channel's post carries that channel's avatar, so
+                    // it reads as a cross-post (tapping it leaves this channel) rather
+                    // than as one more message of the same thread.
+                    reply.otherChannelAvatar?.let { avatar ->
+                        TdAvatar(
+                            name = reply.authorName,
+                            thumb = avatar.thumb,
+                            fileId = avatar.fileId,
+                            size = 16.dp,
+                            textStyle = MaterialTheme.typography.labelSmall,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = reply.authorName,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = accent,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
                 // Resolve a body line. Priority:
                 //   1. The actual excerpt (quote text, or first line of the parent's text).
                 //   2. A localized kind label ("Фото", "Голосове" …) when the parent is media-only.
@@ -1036,7 +1052,8 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
         // flips the arrow direction in RTL automatically (declared in sym_reply.xml).
         if (reply.mediaThumb == null) {
             Symbol(
-                name = "reply",
+                // Another channel's post: an "opens elsewhere" chevron instead of the reply arrow.
+                name = if (reply.otherChannelAvatar != null) "chevron_right" else "reply",
                 tint = accent.copy(alpha = 0.55f),
                 size = 14.dp,
                 modifier = Modifier
