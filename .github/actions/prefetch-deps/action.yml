@@ -1,24 +1,40 @@
 name: Pre-resolve Gradle dependencies
 description: >
-  Resolve every :app configuration (and with it the plugin classpath and the
-  :libtdlib / :libwebm project dependencies) before the main Gradle step, retrying
-  up to three times with backoff. A transient Maven Central / Google Maven hiccup
+  Resolve the :app configuration the job actually builds (and with it the plugin
+  classpath and the :libtdlib / :libwebm project dependencies) before the main
+  Gradle step, retrying up to three times with backoff. Resolving every
+  configuration also pulled instrumented-test and baseline-profile artifacts no job
+  uses. A transient Maven Central / Google Maven hiccup
   then costs a retry instead of failing a long build at the first artifact
   download. Idempotent: resolution only fills the Gradle cache, so a re-run (or the
   later step resolving the same graph) is a cache hit.
+
+inputs:
+  configuration:
+    description: The :app configuration to resolve (e.g. releaseUnitTestRuntimeClasspath).
+    required: false
+    default: releaseRuntimeClasspath
 
 runs:
   using: composite
   steps:
     - name: Resolve dependencies (3 attempts, backoff)
       shell: bash
+      env:
+        CONFIGURATION: ${{ inputs.configuration }}
       run: |
         set -uo pipefail
+        # Allowlist: a configuration name is a plain identifier.
+        if ! [[ "$CONFIGURATION" =~ ^[A-Za-z0-9]+$ ]]; then
+          echo "::error::Invalid configuration name"; exit 1
+        fi
         log="$RUNNER_TEMP/prefetch-deps.log"
         for attempt in 1 2 3; do
           # `dependencies` exits 0 even when an artifact can't be fetched — it marks
           # the node FAILED in the report instead — so check the output as well.
-          if ./gradlew :app:dependencies --no-daemon > "$log" 2>&1 && ! grep -q "FAILED" "$log"; then
+          # No --no-daemon: the main Gradle step reuses this warm daemon instead of
+          # paying JVM start-up and configuration a second time.
+          if ./gradlew :app:dependencies --configuration "$CONFIGURATION" > "$log" 2>&1 && ! grep -q "FAILED" "$log"; then
             echo "Dependencies resolved (attempt $attempt)."
             exit 0
           fi
