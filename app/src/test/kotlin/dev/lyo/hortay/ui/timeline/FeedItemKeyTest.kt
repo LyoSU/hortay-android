@@ -13,7 +13,7 @@ class FeedItemKeyTest {
         //
         // Cold-start harvests `Chat.lastMessage`, which for an album-tailed channel
         // is typically the HIGHEST member id of that album (last sibling sent).
-        // If `coalesceAlbumFragments`' surround fetch fails on cold-start (FLOOD_WAIT
+        // If `AlbumCoalescer.coalesce`' surround fetch fails on cold-start (FLOOD_WAIT
         // / transient network), the feed renders a 1-fragment card with
         // `post.id = lastMessage.id` and `mediaAlbumId = X`.
         //
