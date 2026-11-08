@@ -2132,7 +2132,7 @@ fun TimelineScreen(
                 currentRevisionPost.id.toString(),
             )
         }
-        val revisions by revisionsFlow.collectAsState(initial = persistentListOf())
+        val revisions by revisionsFlow.collectAsStateWithLifecycle(initialValue = persistentListOf())
         PostRevisionSheet(
             revisions = revisions,
             onDismiss = { revisionsForPost = null },

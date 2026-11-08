@@ -25,7 +25,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.archive.ArchiveScope
 import dev.lyo.hortay.data.archive.PostSnapshot
@@ -54,8 +54,8 @@ fun ArchiveScreen(
     onOpenInTelegram: (PostSnapshot) -> Unit = {},
     mediaStore: dev.lyo.hortay.data.archive.ArchivedMediaStore? = null,
 ) {
-    val snapshots by viewModel.snapshots.collectAsState()
-    val filter by viewModel.filter.collectAsState()
+    val snapshots by viewModel.snapshots.collectAsStateWithLifecycle()
+    val filter by viewModel.filter.collectAsStateWithLifecycle()
     var openSnapshot by remember { mutableStateOf<PostSnapshot?>(null) }
     var queryText by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -173,7 +173,7 @@ fun ArchiveScreen(
     val current = openSnapshot
     if (current != null) {
         val revisionsFlow = remember(current) { viewModel.observeRevisionsFor(current) }
-        val revisions by revisionsFlow.collectAsState(initial = persistentListOf())
+        val revisions by revisionsFlow.collectAsStateWithLifecycle(initialValue = persistentListOf())
         PostRevisionSheet(
             revisions = revisions,
             onDismiss = { openSnapshot = null },
