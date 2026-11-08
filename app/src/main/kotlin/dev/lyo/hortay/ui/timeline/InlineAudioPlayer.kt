@@ -25,14 +25,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.AudioPlaybackSession
 import dev.lyo.hortay.ui.media.LocalAudioPlaybackSession
+import dev.lyo.hortay.ui.media.LocalMediaCache
+import dev.lyo.hortay.ui.media.LocalMediaPassive
 
 /**
  * App-wide inline audio / voice-note player row, shared by the regular feed's `AudioBlock` /
@@ -74,6 +79,23 @@ internal fun InlineAudioPlayerRow(
         )
         return
     }
+    // Tombstone (deleted post): playback would `ensure` (download) a file TDLib can no longer
+    // fetch. Offer the player only when the file is already on disk — that path is local —
+    // and otherwise degrade to the informational row. Observe-only: no ensure/resync here.
+    if (LocalMediaPassive.current) {
+        val cache = LocalMediaCache.current
+        val cached by remember(fileId) { cache.observe(fileId) }.collectAsStateWithLifecycle()
+        if (cached !is MediaState.Ready) {
+            NonPlayableFileRow(
+                symbol = symbol,
+                primary = title,
+                secondary = if (isVoice) formatDuration(durationSec) else performer.orEmpty(),
+                onClick = onOpenInSource,
+                shape = shape,
+            )
+            return
+        }
+    }
 
     val session = LocalAudioPlaybackSession.current
     val playback by session.state.collectAsStateWithLifecycle()
@@ -109,7 +131,8 @@ internal fun InlineAudioPlayerRow(
                     onClickLabel = buttonCd,
                     role = Role.Button,
                     onClick = { session.toggle(fileId, durationSec) },
-                ),
+                )
+                .semantics { contentDescription = buttonCd },
             contentAlignment = Alignment.Center,
         ) {
             when (phase) {
