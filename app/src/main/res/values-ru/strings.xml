@@ -106,7 +106,6 @@
     <string name="auth_resend_sending">Отправляем…</string>
     <string name="auth_resend_countdown">Ещё раз через %1$d:%2$02d</string>
     <string name="auth_resend_via">Отправить код снова (%1$s)</string>
-    <string name="auth_resend_again">Отправить снова</string>
 
     <!-- Country picker -->
     <string name="country_picker_title">Выберите страну</string>
@@ -138,6 +137,7 @@
     <string name="auth_err_phone_occupied">На этом номере уже есть аккаунт. Войдите в него, а не регистрируйтесь</string>
     <string name="auth_err_code_invalid">Неверный код. Проверьте и попробуйте снова</string>
     <string name="auth_err_code_expired">Код устарел. Запросите новый</string>
+    <string name="auth_err_code_cant_resend">Telegram не может отправить код другим способом. Откройте Telegram на устройстве, где вы уже вошли, или измените номер</string>
     <string name="auth_err_password_invalid">Неверный пароль. Попробуйте снова</string>
     <string name="auth_err_password_too_fresh">Пароль только что изменили. Telegram попросит немного подождать</string>
     <string name="auth_err_password_recovery_na">Восстановление пароля здесь недоступно. Сбросьте 2FA в официальном Telegram</string>

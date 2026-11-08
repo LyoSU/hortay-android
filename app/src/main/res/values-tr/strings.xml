@@ -106,7 +106,6 @@
     <string name="auth_resend_sending">Gönderiliyor…</string>
     <string name="auth_resend_countdown">%1$d:%2$02d sonra tekrar dene</string>
     <string name="auth_resend_via">Kodu tekrar gönder (%1$s)</string>
-    <string name="auth_resend_again">Yeniden gönder</string>
 
     <!-- Ülke seçici -->
     <string name="country_picker_title">Ülke seç</string>
@@ -138,6 +137,7 @@
     <string name="auth_err_phone_occupied">Bu numara zaten bir hesaba kayıtlı. Kayıt yerine giriş yap</string>
     <string name="auth_err_code_invalid">Yanlış kod. Kontrol edip tekrar dene</string>
     <string name="auth_err_code_expired">Kodun süresi doldu. Yeni bir tane iste</string>
+    <string name="auth_err_code_cant_resend">Telegram kodu başka bir yolla gönderemiyor. Zaten oturum açtığın bir cihazda Telegram\'ı aç veya numarayı değiştir</string>
     <string name="auth_err_password_invalid">Yanlış şifre. Tekrar dene</string>
     <string name="auth_err_password_too_fresh">Şifre az önce değiştirildi. Telegram biraz beklenmesini isteyecek</string>
     <string name="auth_err_password_recovery_na">Şifre kurtarma burada kullanılamıyor. 2FA\'yı resmi Telegram\'dan sıfırla</string>

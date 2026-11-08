@@ -104,7 +104,6 @@
     <string name="auth_resend_sending">Wysyłanie…</string>
     <string name="auth_resend_countdown">Spróbuj ponownie za %1$d:%2$02d</string>
     <string name="auth_resend_via">Wyślij kod ponownie (%1$s)</string>
-    <string name="auth_resend_again">Wyślij ponownie</string>
 
     <!-- Wybór kraju -->
     <string name="country_picker_title">Wybierz kraj</string>
@@ -136,6 +135,7 @@
     <string name="auth_err_phone_occupied">Ten numer ma już konto. Zaloguj się zamiast rejestrować</string>
     <string name="auth_err_code_invalid">Błędny kod. Sprawdź i spróbuj ponownie</string>
     <string name="auth_err_code_expired">Kod wygasł. Poproś o nowy</string>
+    <string name="auth_err_code_cant_resend">Telegram nie może wysłać kodu w inny sposób. Otwórz Telegram na urządzeniu, na którym jesteś już zalogowany, lub zmień numer</string>
     <string name="auth_err_password_invalid">Błędne hasło. Spróbuj ponownie</string>
     <string name="auth_err_password_too_fresh">Hasło zostało właśnie zmienione. Telegram poprosi o chwilę przerwy</string>
     <string name="auth_err_password_recovery_na">Odzyskiwanie hasła jest tu niedostępne. Zresetuj 2FA w oficjalnym Telegramie</string>

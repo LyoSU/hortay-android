@@ -104,7 +104,6 @@
     <string name="auth_resend_sending">Mengirim…</string>
     <string name="auth_resend_countdown">Coba lagi dalam %1$d:%2$02d</string>
     <string name="auth_resend_via">Kirim ulang kode (%1$s)</string>
-    <string name="auth_resend_again">Kirim ulang</string>
 
     <!-- Pemilih negara -->
     <string name="country_picker_title">Pilih negara</string>
@@ -136,6 +135,7 @@
     <string name="auth_err_phone_occupied">Nomor ini sudah memiliki akun. Masuk alih-alih mendaftar</string>
     <string name="auth_err_code_invalid">Kode salah. Periksa dan coba lagi</string>
     <string name="auth_err_code_expired">Kode kadaluarsa. Minta kode baru</string>
+    <string name="auth_err_code_cant_resend">Telegram tidak dapat mengirim kode dengan cara lain. Buka Telegram di perangkat tempat kamu sudah masuk, atau ganti nomor</string>
     <string name="auth_err_password_invalid">Kata sandi salah. Coba lagi</string>
     <string name="auth_err_password_too_fresh">Kata sandi baru saja diganti. Telegram akan meminta kamu menunggu sebentar</string>
     <string name="auth_err_password_recovery_na">Pemulihan kata sandi tidak tersedia di sini. Reset 2FA di Telegram resmi</string>

@@ -104,7 +104,6 @@
     <string name="auth_resend_sending">جارٍ الإرسال…</string>
     <string name="auth_resend_countdown">أعد المحاولة بعد %1$d:%2$02d</string>
     <string name="auth_resend_via">إعادة إرسال الرمز (%1$s)</string>
-    <string name="auth_resend_again">إعادة الإرسال</string>
 
     <!-- منتقي البلد -->
     <string name="country_picker_title">اختر البلد</string>
@@ -136,6 +135,7 @@
     <string name="auth_err_phone_occupied">يوجد حساب بهذا الرقم. سجّل الدخول بدلاً من التسجيل</string>
     <string name="auth_err_code_invalid">رمز خاطئ. تحقق وأعد المحاولة</string>
     <string name="auth_err_code_expired">انتهت صلاحية الرمز. اطلب رمزاً جديداً</string>
+    <string name="auth_err_code_cant_resend">لا يمكن لتيليجرام إرسال الرمز بطريقة أخرى. افتح تيليجرام على جهاز سجّلت الدخول فيه مسبقاً أو غيّر الرقم</string>
     <string name="auth_err_password_invalid">كلمة مرور خاطئة. أعد المحاولة</string>
     <string name="auth_err_password_too_fresh">تم تغيير كلمة المرور للتو. سيطلب Telegram الانتظار قليلاً</string>
     <string name="auth_err_password_recovery_na">استرداد كلمة المرور غير متاح هنا. أعد ضبط التحقق بخطوتين من Telegram الرسمي</string>

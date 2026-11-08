@@ -35,6 +35,11 @@ internal fun friendlyAuthErrorMessage(res: StringResolver, throwable: Throwable)
         raw == "PHONE_CODE_INVALID" || raw == "PHONE_CODE_EMPTY" ->
             res.getString(R.string.auth_err_code_invalid)
         raw == "PHONE_CODE_EXPIRED" -> res.getString(R.string.auth_err_code_expired)
+        // ResendAuthenticationCode with no next_type. Third-party apps only ever get the
+        // in-app TelegramMessage channel (tdlib/td#2310), so this is the common case, and
+        // TDLib answers with prose rather than a SCREAMING_SNAKE code. The UI hides the
+        // resend button when there's no next channel; this covers a stale stage racing it.
+        raw == RESEND_IMPOSSIBLE_MESSAGE -> res.getString(R.string.auth_err_code_cant_resend)
         raw == "PASSWORD_HASH_INVALID" -> res.getString(R.string.auth_err_password_invalid)
         raw == "PASSWORD_TOO_FRESH" -> res.getString(R.string.auth_err_password_too_fresh)
         raw == "PASSWORD_RECOVERY_NA" -> res.getString(R.string.auth_err_password_recovery_na)
@@ -49,6 +54,9 @@ internal fun friendlyAuthErrorMessage(res: StringResolver, throwable: Throwable)
         else -> res.getString(R.string.auth_err_step_failed, raw)
     }
 }
+
+/** TDLib's `SendCodeHelper::resend_code` error when the code has no `next_type`. */
+internal const val RESEND_IMPOSSIBLE_MESSAGE = "Authentication code can't be resent"
 
 /** TdException stores `[code] message` — strip the bracketed prefix to get the raw token. */
 private fun extractCode(full: String): String {

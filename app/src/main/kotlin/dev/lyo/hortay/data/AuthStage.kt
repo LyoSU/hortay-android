@@ -16,7 +16,8 @@ sealed interface AuthStage {
      *     ("повідомленням у Telegram", "пропущеним дзвінком на +380…"). UI never has to
      *     switch on TDLib's [org.drinkless.tdlib.TdApi.AuthenticationCodeType] sum type.
      *   - [nextChannelLabel] — what the next attempt will use; null when TDLib has no
-     *     fallback. Drives the "Надіслати ще раз через SMS" button copy.
+     *     fallback. Drives the resend button copy, and hides the button when null —
+     *     TDLib rejects `ResendAuthenticationCode` without a next channel.
      *   - [resendAvailableInSec] — server-mandated resend cooldown. UI ticks this down
      *     to 0 before enabling the resend button so users can't spam into FLOOD_WAIT.
      *   - [isNumeric] — false for the rare SmsWord / SmsPhrase channels, where the user

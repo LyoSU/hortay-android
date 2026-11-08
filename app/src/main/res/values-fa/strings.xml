@@ -104,7 +104,6 @@
     <string name="auth_resend_sending">در حال ارسال…</string>
     <string name="auth_resend_countdown">دوباره تا %1$d:%2$02d</string>
     <string name="auth_resend_via">ارسال مجدد کد (%1$s)</string>
-    <string name="auth_resend_again">ارسال مجدد</string>
 
     <!-- انتخاب کشور -->
     <string name="country_picker_title">انتخاب کشور</string>
@@ -136,6 +135,7 @@
     <string name="auth_err_phone_occupied">این شماره قبلاً حساب دارد. به جای ثبت‌نام وارد شوید</string>
     <string name="auth_err_code_invalid">کد اشتباه است. بررسی کنید و دوباره امتحان کنید</string>
     <string name="auth_err_code_expired">کد منقضی شد. یک کد جدید درخواست کنید</string>
+    <string name="auth_err_code_cant_resend">تلگرام نمی‌تواند کد را از راه دیگری بفرستد. تلگرام را در دستگاهی که قبلاً وارد آن شده‌اید باز کنید یا شماره را تغییر دهید</string>
     <string name="auth_err_password_invalid">رمز اشتباه است. دوباره امتحان کنید</string>
     <string name="auth_err_password_too_fresh">رمز تازه تغییر کرده. Telegram از شما می‌خواهد کمی صبر کنید</string>
     <string name="auth_err_password_recovery_na">بازیابی رمز اینجا در دسترس نیست. ۲FA را در Telegram رسمی بازنشانی کنید</string>
