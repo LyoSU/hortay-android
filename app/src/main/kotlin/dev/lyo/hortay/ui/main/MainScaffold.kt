@@ -340,6 +340,9 @@ fun MainScaffold(graph: AppGraph) {
     val snapScroll by graph.settingsStore.snapScroll.collectAsStateWithLifecycle(
         initialValue = false,
     )
+    val archiveInAllFeed by graph.settingsStore.archiveInAllFeed.collectAsStateWithLifecycle(
+        initialValue = false,
+    )
     val inlineVideoAutoplay by graph.settingsStore.inlineVideoAutoplay.collectAsStateWithLifecycle(
         initialValue = true,
     )
@@ -488,6 +491,7 @@ fun MainScaffold(graph: AppGraph) {
                                         padding = homePadding,
                                         feedOrder = feedOrder,
                                         snapScroll = snapScroll,
+                                        archiveInAllFeed = archiveInAllFeed,
                                         homeTapTrigger = homeTapTrigger,
                                         coveredByOverlay = hasOverlay,
                                         scope = scope,

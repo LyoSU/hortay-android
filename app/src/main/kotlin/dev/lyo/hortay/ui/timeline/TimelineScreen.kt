@@ -214,6 +214,11 @@ fun TimelineScreen(
      */
     snapScroll: Boolean = false,
     /**
+     * [dev.lyo.hortay.data.SettingsStore.archiveInAllFeed]: when true the "All" scope
+     * also shows archived channels. The Archive tab and folder tabs are unaffected.
+     */
+    archiveInAllFeed: Boolean = false,
+    /**
      * True while a channel/comments nav overlay covers this feed. The feed stays
      * mounted so Back is instant and scroll state is retained, but viewport-driven
      * background effects must pause: under an overlay the user is not actually
@@ -400,9 +405,11 @@ fun TimelineScreen(
     // SAME frame, no LaunchedEffect-scrolled second-frame flash. We key
     // on the folder `id` only (not the title) so a TDLib `UpdateChatFolders`
     // emit with a translated name doesn't invalidate the scene by mistake.
-    val scopeKey = remember(scope_filter) {
+    // The archive-in-All toggle changes what "all" contains, so it re-keys the scene
+    // like a scope swap instead of splicing archived posts into a latched list.
+    val scopeKey = remember(scope_filter, archiveInAllFeed) {
         when (val s = scope_filter) {
-            FilterScope.All -> "all"
+            FilterScope.All -> if (archiveInAllFeed) "all+archive" else "all"
             FilterScope.Archive -> "archive"
             is FilterScope.Folder -> "folder:${s.id}"
         }
@@ -426,11 +433,14 @@ fun TimelineScreen(
     // Scope predicate shared by the visible feed and the "X нових постів" pill — so the
     // pill can't surface pending posts the user can't actually see (e.g. archived chats
     // while the user is in "Усі", or out-of-folder channels while a folder is active).
-    val scopePredicate = remember(scope_filter, archivedChatIds, folderChatIdsForScope) {
+    //
+    // Saved (showOnlyBookmarked) has no folder bar, so it is pinned to "All" — without
+    // the bypass a bookmark from an archived channel could never be seen anywhere.
+    val scopePredicate = remember(scope_filter, archivedChatIds, folderChatIdsForScope, archiveInAllFeed, showOnlyBookmarked) {
         { p: TimelinePost ->
             val isArchived = p.chatId in archivedChatIds
             when (scope_filter) {
-                FilterScope.All -> !isArchived
+                FilterScope.All -> showOnlyBookmarked || archiveInAllFeed || !isArchived
                 FilterScope.Archive -> isArchived
                 is FilterScope.Folder -> folderChatIdsForScope?.contains(p.chatId) == true
             }

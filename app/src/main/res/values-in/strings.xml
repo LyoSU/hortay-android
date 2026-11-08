@@ -327,6 +327,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed diurutkan ulang — terbaru di bawah, seperti obrolan</string>
     <string name="settings_snap_scroll_title">Snap scroll</string>
     <string name="settings_snap_scroll_subtitle">Setiap kiriman terkunci saat kamu flinging — nuansa TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Arsip di “Semua”</string>
+    <string name="settings_archive_in_all_subtitle">Tampilkan juga postingan dari kanal yang diarsipkan di feed “Semua”</string>
     <string name="settings_inline_autoplay_title">Putar otomatis video di feed</string>
     <string name="settings_inline_autoplay_subtitle">Video pendek yang sudah di cache diputar tanpa suara saat digulir. Ketuk untuk membuka layar penuh dengan suara.</string>
     <string name="settings_section_privacy">Privasi</string>

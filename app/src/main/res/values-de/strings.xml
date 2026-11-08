@@ -337,6 +337,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed neu sortiert — Neuestes unten wie im Chat</string>
     <string name="settings_snap_scroll_title">Snap-Scroll</string>
     <string name="settings_snap_scroll_subtitle">Jeder Beitrag rastet beim Wischen ein — wie TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Archiv in „Alle“</string>
+    <string name="settings_archive_in_all_subtitle">Beiträge aus archivierten Kanälen auch im Feed „Alle“ zeigen</string>
     <string name="settings_inline_autoplay_title">Videos im Feed automatisch abspielen</string>
     <string name="settings_inline_autoplay_subtitle">Kurze Videos im Cache spielen beim Scrollen stumm ab. Tippen zum Vollbild mit Ton.</string>
     <string name="settings_section_privacy">Datenschutz</string>

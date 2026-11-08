@@ -335,6 +335,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">فید مرتب شد — جدیدترین پایین، مثل چت</string>
     <string name="settings_snap_scroll_title">اسکرول جهشی</string>
     <string name="settings_snap_scroll_subtitle">با هر فلیک، پست سر جایش قفل می‌شود — حس TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">آرشیو در «همه»</string>
+    <string name="settings_archive_in_all_subtitle">پست‌های کانال‌های آرشیوشده را در فید «همه» هم نشان بده</string>
     <string name="settings_inline_autoplay_title">پخش خودکار ویدیو در فید</string>
     <string name="settings_inline_autoplay_subtitle">ویدیوهای کوتاه موجود در کش هنگام اسکرول بی‌صدا پخش می‌شوند. برای باز کردن با صدا در تمام‌صفحه ضربه بزنید.</string>
     <string name="settings_section_privacy">حریم خصوصی</string>

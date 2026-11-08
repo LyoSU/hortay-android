@@ -351,6 +351,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed posortowany — najnowsze na dole, jak w czacie</string>
     <string name="settings_snap_scroll_title">Przewijanie z przeskakiwaniem</string>
     <string name="settings_snap_scroll_subtitle">Każdy wpis zatrzymuje się w miejscu po szybkim przewinięciu — efekt TikToka / Reels</string>
+    <string name="settings_archive_in_all_title">Archiwum we „Wszystkie”</string>
+    <string name="settings_archive_in_all_subtitle">Pokazuj posty z zarchiwizowanych kanałów także w kanale „Wszystkie”</string>
     <string name="settings_inline_autoplay_title">Autoodtwarzanie filmów w feedzie</string>
     <string name="settings_inline_autoplay_subtitle">Krótkie filmy z cache odtwarzają się bez dźwięku podczas przewijania. Dotknij, żeby otworzyć pełny ekran z dźwiękiem.</string>
     <string name="settings_section_privacy">Prywatność</string>

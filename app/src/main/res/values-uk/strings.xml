@@ -348,6 +348,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Стрічку переупорядковано — нові внизу, як у чаті</string>
     <string name="settings_snap_scroll_title">Покрокове гортання</string>
     <string name="settings_snap_scroll_subtitle">Кожен пост зупиняється на місці після швидкого гортання</string>
+    <string name="settings_archive_in_all_title">Архів у «Усі»</string>
+    <string name="settings_archive_in_all_subtitle">Показувати пости з архівованих каналів і в стрічці «Усі»</string>
     <string name="settings_inline_autoplay_title">Автозапуск відео у стрічці</string>
     <string name="settings_inline_autoplay_subtitle">Короткі відео, які вже в кеші, без звуку відтворюються під час прокручування. Натисни, щоб відкрити на весь екран зі звуком.</string>
     <string name="settings_section_privacy">Приватність</string>

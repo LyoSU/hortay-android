@@ -335,6 +335,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed reordered — newest at the bottom, like a chat</string>
     <string name="settings_snap_scroll_title">Snap scroll</string>
     <string name="settings_snap_scroll_subtitle">Each post clicks into place when you fling — TikTok/Reels feel</string>
+    <string name="settings_archive_in_all_title">Archive in “All”</string>
+    <string name="settings_archive_in_all_subtitle">Show posts from archived channels in the “All” feed too</string>
     <string name="settings_inline_autoplay_title">Autoplay videos in feed</string>
     <string name="settings_inline_autoplay_subtitle">Short videos already in cache play silently as you scroll. Tap to open full-screen with sound.</string>
     <string name="settings_section_privacy">Privacy</string>

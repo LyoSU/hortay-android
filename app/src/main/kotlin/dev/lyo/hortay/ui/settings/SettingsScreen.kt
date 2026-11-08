@@ -341,6 +341,7 @@ private fun SettingsMain(
             val currentFeedOrder by settings.feedOrder.collectAsStateWithLifecycle(FeedOrder.OldestUnreadFirst)
             val currentSnapScroll by settings.snapScroll.collectAsStateWithLifecycle(false)
             val currentInlineAutoplay by settings.inlineVideoAutoplay.collectAsStateWithLifecycle(true)
+            val currentArchiveInAll by settings.archiveInAllFeed.collectAsStateWithLifecycle(false)
             SectionLabel(stringResource(R.string.settings_section_feed))
             val feedOrderToNewestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_newest)
             val feedOrderToOldestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_oldest)
@@ -367,6 +368,14 @@ private fun SettingsMain(
                 enabled = currentInlineAutoplay,
                 onToggle = { next -> if (next != currentInlineAutoplay) scope.launch { settings.setInlineVideoAutoplay(next) } },
             )
+            // Archive is a TDLib-only concept — guest mode has no chat lists, and
+            // [channelActions] is the TDLib-mode marker (null in guest mode).
+            if (channelActions != null) {
+                ArchiveInAllFeedRow(
+                    enabled = currentArchiveInAll,
+                    onToggle = { next -> if (next != currentArchiveInAll) scope.launch { settings.setArchiveInAllFeed(next) } },
+                )
+            }
             if (ignoredChannels != null) {
                 val hidden by ignoredChannels.ignored.collectAsStateWithLifecycle(initialValue = persistentSetOf())
                 SettingsRow(

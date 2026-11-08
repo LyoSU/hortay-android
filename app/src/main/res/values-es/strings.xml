@@ -345,6 +345,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Inicio reordenado — las nuevas abajo, como un chat</string>
     <string name="settings_snap_scroll_title">Desplazamiento ajustado</string>
     <string name="settings_snap_scroll_subtitle">Cada publicación encaja en su lugar al deslizar — sensación TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Archivo en «Todo»</string>
+    <string name="settings_archive_in_all_subtitle">Mostrar también las publicaciones de los canales archivados en «Todo»</string>
     <string name="settings_inline_autoplay_title">Reproducir videos automáticamente</string>
     <string name="settings_inline_autoplay_subtitle">Los videos cortos ya en caché se reproducen sin sonido mientras desplazas. Toca para abrir en pantalla completa con sonido.</string>
     <string name="settings_section_privacy">Privacidad</string>

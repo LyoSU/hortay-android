@@ -345,6 +345,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Fil réorganisé — les plus récents en bas, comme un chat</string>
     <string name="settings_snap_scroll_title">Défilement par clic</string>
     <string name="settings_snap_scroll_subtitle">Chaque publication se verrouille à sa place quand tu fais défiler vite — effet TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Archive dans « Toutes »</string>
+    <string name="settings_archive_in_all_subtitle">Afficher aussi les publications des chaînes archivées dans « Toutes »</string>
     <string name="settings_inline_autoplay_title">Lecture auto des vidéos dans le fil</string>
     <string name="settings_inline_autoplay_subtitle">Les courtes vidéos déjà en cache sont lues silencieusement pendant le défilement. Appuie pour ouvrir en plein écran avec le son.</string>
     <string name="settings_section_privacy">Confidentialité</string>

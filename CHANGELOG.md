@@ -4,7 +4,11 @@
 
 ## [Unreleased]
 
+### Added
+- Settings → Feed can now show archived channels in the “All” feed too, so channels you archive to tidy Telegram still reach your main feed.
+
 ### Fixed
+- Saved posts from archived channels now show up in the Saved tab.
 - The sign-in screen no longer offers to resend the login code when Telegram has no other way to deliver it, which only ever failed with an unclear error.
 - Photo albums in the feed keep filling in after a stretch without connection, instead of staying incomplete until the app restarts.
 - Opening a channel for the first time now loads its recent history instead of sometimes showing a single post.

@@ -345,6 +345,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed reordenado — mais recentes no rodapé, como um chat</string>
     <string name="settings_snap_scroll_title">Rolagem por encaixe</string>
     <string name="settings_snap_scroll_subtitle">Cada publicação encaixa no lugar ao dar um gesto rápido — estilo TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Arquivo em “Todos”</string>
+    <string name="settings_archive_in_all_subtitle">Mostrar também as publicações dos canais arquivados no feed “Todos”</string>
     <string name="settings_inline_autoplay_title">Reprodução automática de vídeos no feed</string>
     <string name="settings_inline_autoplay_subtitle">Vídeos curtos já em cache são reproduzidos sem som ao rolar. Toque para abrir em tela cheia com som.</string>
     <string name="settings_section_privacy">Privacidade</string>

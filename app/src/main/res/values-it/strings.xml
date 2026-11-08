@@ -345,6 +345,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed riordinato — i più recenti in fondo, come in una chat</string>
     <string name="settings_snap_scroll_title">Scorrimento a scatto</string>
     <string name="settings_snap_scroll_subtitle">Ogni post si posiziona esattamente quando scorri — effetto TikTok/Reels</string>
+    <string name="settings_archive_in_all_title">Archivio in «Tutti»</string>
+    <string name="settings_archive_in_all_subtitle">Mostra anche i post dei canali archiviati nel feed «Tutti»</string>
     <string name="settings_inline_autoplay_title">Riproduci automaticamente i video nel feed</string>
     <string name="settings_inline_autoplay_subtitle">I video brevi già in cache si riproducono in silenzio mentre scorri. Tocca per aprirli a schermo intero con audio.</string>
     <string name="settings_section_privacy">Privacy</string>

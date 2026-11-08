@@ -353,6 +353,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Лента изменена — новые снизу, как в чате</string>
     <string name="settings_snap_scroll_title">Пролистывание с фиксацией</string>
     <string name="settings_snap_scroll_subtitle">Каждый пост встаёт на место после быстрого свайпа — как в TikTok</string>
+    <string name="settings_archive_in_all_title">Архив во «Все»</string>
+    <string name="settings_archive_in_all_subtitle">Показывать посты из архивированных каналов и в ленте «Все»</string>
     <string name="settings_inline_autoplay_title">Автовоспроизведение видео в ленте</string>
     <string name="settings_inline_autoplay_subtitle">Короткие видео из кеша воспроизводятся без звука при прокрутке. Нажмите, чтобы открыть на весь экран со звуком.</string>
     <string name="settings_section_privacy">Конфиденциальность</string>

@@ -98,6 +98,24 @@ class SettingsStore(context: Context) {
     }
 
     /**
+     * Whether the "All" feed tab also shows posts from archived channels. Telegram's
+     * archive is a chat-list housekeeping tool — users park busy news channels there to
+     * keep their inbox clean, yet still want to READ them in one feed (issue #54). Off
+     * keeps the Telegram split ("All" = main list, archive in its own tab); on merges
+     * the archive into "All". The Archive tab stays either way. Folder tabs are
+     * unaffected — TDLib resolves their membership, archive rules included.
+     *
+     * Default false — matches the shipped behaviour and Telegram's own split.
+     */
+    val archiveInAllFeed: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[KEY_ARCHIVE_IN_ALL_FEED] ?: false
+    }
+
+    suspend fun setArchiveInAllFeed(enabled: Boolean) {
+        dataStore.edit { it[KEY_ARCHIVE_IN_ALL_FEED] = enabled }
+    }
+
+    /**
      * Silent inline autoplay of short videos in the feed. Only videos already on
      * disk (TDLib mode: [MediaState.Ready], i.e. fetched by the user's configured
      * [AutoDownloadStore] policy) auto-play; non-cached posts keep the static
@@ -172,6 +190,7 @@ class SettingsStore(context: Context) {
         val KEY_FEED_ORDER = stringPreferencesKey("feed_order")
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val KEY_SNAP_SCROLL = booleanPreferencesKey("snap_scroll")
+        val KEY_ARCHIVE_IN_ALL_FEED = booleanPreferencesKey("archive_in_all_feed")
         val KEY_INLINE_VIDEO_AUTOPLAY = booleanPreferencesKey("inline_video_autoplay")
         val KEY_HIDE_ONLINE_STATUS = booleanPreferencesKey("hide_online_status")
     }
