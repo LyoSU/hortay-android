@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
@@ -62,6 +64,18 @@ class ProxyRepository(
     private var rawProxies: List<TdApi.AddedProxy> = emptyList()
     private val health = ConcurrentHashMap<Int, ProxyHealth>()
 
+    /**
+     * What the failover watchdog is guarding: the enabled proxy id plus a generation bumped on
+     * every enable. The watchdog keys on `(connection, watchKey)` rather than on [connection]
+     * alone because [ConnectionStatus] is a deduplicating [StateFlow]: a cold start begins in
+     * Connecting BEFORE [refresh] has loaded the pool (the watchdog saw no active proxy and
+     * never armed), and a switch to a second dead proxy leaves the status at Connecting (no
+     * re-emission, so the new proxy was never re-checked). A changed key re-arms the timer.
+     */
+    private data class WatchKey(val activeId: Int?, val generation: Int)
+
+    private val watchKey = MutableStateFlow(WatchKey(activeId = null, generation = 0))
+
     /** Proxies tried-and-stalled in the current failover cycle. Reset on a healthy connection. */
     private val failedThisCycle: MutableSet<Int> = java.util.Collections.synchronizedSet(mutableSetOf())
 
@@ -72,11 +86,23 @@ class ProxyRepository(
 
     // ── Pool reads ──────────────────────────────────────────────────────────────────────────
 
-    suspend fun refresh() {
+    /**
+     * Reload the pool from TDLib. [rearmWatchdog] (set after an enable) bumps the [WatchKey]
+     * generation so the watchdog restarts its stall timer even when the active id is unchanged.
+     * The key update is the LAST statement on purpose: when called from inside the watchdog's
+     * `collectLatest` block, the key change cancels that block, so nothing may suspend after it.
+     */
+    suspend fun refresh(rearmWatchdog: Boolean = false) {
         val result = runCatching { sender.send(TdApi.GetProxies()) }
-            .getOrElse { it.rethrowIfCancellation(); return }
-        rawProxies = result.proxies?.toList().orEmpty()
-        rebuild()
+            .getOrElse { it.rethrowIfCancellation(); null }
+        if (result != null) {
+            rawProxies = result.proxies?.toList().orEmpty()
+            rebuild()
+        }
+        val activeId = rawProxies.firstOrNull { it.isEnabled }?.id
+        watchKey.update {
+            WatchKey(activeId = activeId, generation = if (rearmWatchdog) it.generation + 1 else it.generation)
+        }
     }
 
     private fun rebuild() {
@@ -143,7 +169,9 @@ class ProxyRepository(
     private suspend fun sendEnable(id: Int) {
         runCatching { sender.send(TdApi.EnableProxy(id)) }
             .onFailure { it.rethrowIfCancellation() }
-        refresh()
+        // Re-arm the watchdog even when the id is unchanged (RetryCycle re-enables the pool
+        // head, which may be the proxy that just stalled) — see [WatchKey].
+        refresh(rearmWatchdog = true)
     }
 
     // ── Reachability probes ─────────────────────────────────────────────────────────────────
@@ -186,10 +214,12 @@ class ProxyRepository(
     /**
      * Reactive half of failover. `collectLatest` cancels the pending stall timer the instant the
      * connection state changes, so a proxy that reaches Ready inside the window is never failed.
+     * It also restarts the timer whenever [watchKey] changes — the pool finished loading, or a
+     * proxy was (re-)enabled — so every proxy gets its own stall window (see [WatchKey]).
      */
     private suspend fun runFailoverWatchdog() {
-        connection.collectLatest { status ->
-            val activeId = rawProxies.firstOrNull { it.isEnabled }?.id ?: return@collectLatest
+        combine(connection, watchKey) { status, key -> status to key }.collectLatest { (status, key) ->
+            val activeId = key.activeId ?: return@collectLatest
             when (status) {
                 ConnectionStatus.Ready -> {
                     failedThisCycle.clear()
