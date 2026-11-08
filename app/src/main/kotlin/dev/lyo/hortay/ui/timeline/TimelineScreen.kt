@@ -883,14 +883,14 @@ fun TimelineScreen(
     val headerVisibleChatIds = remember(posts) {
         posts.asSequence().map { it.chatId }.toSet()
     }
-    val headerTabs = remember(foldersList, fullFoldersMap, folderChatIdsMap, headerVisibleChatIds, folders) {
+    val headerTabs = remember(foldersList, fullFoldersMap, folderChatIdsMap, headerVisibleChatIds, folders, archiveInAllFeed) {
         val repo = folders
         foldersList.mapNotNull { info ->
             val full = fullFoldersMap[info.id]
             val ids = folderChatIdsMap[info.id]
             val keep = when {
                 full == null || repo == null -> true
-                repo.isEquivalentToAll(full) -> false
+                repo.isEquivalentToAll(full, archiveInAllFeed) -> false
                 ids == null -> true
                 headerVisibleChatIds.isEmpty() -> true
                 else -> headerVisibleChatIds.any { it in ids }

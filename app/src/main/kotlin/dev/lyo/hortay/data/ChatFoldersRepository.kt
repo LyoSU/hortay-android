@@ -211,13 +211,19 @@ class ChatFoldersRepository(
      * channels, so other include* flags (groups/contacts/bots) don't change what the user
      * sees — a folder with `includeChannels=true` and no narrowing rules duplicates the
      * default tab and is hidden.
+     *
+     * Archive handling follows what "All" currently means. A Telegram folder includes
+     * archived chats unless `excludeArchived` is set, while "All" includes them only
+     * when [archiveInAllFeed] is on ([dev.lyo.hortay.data.SettingsStore.archiveInAllFeed]).
+     * So with the setting off, a folder WITHOUT `excludeArchived` is a superset of "All"
+     * and stays visible; with it on, the folder WITH `excludeArchived` is the narrower one.
      */
-    fun isEquivalentToAll(folder: TdApi.ChatFolder): Boolean {
+    fun isEquivalentToAll(folder: TdApi.ChatFolder, archiveInAllFeed: Boolean): Boolean {
         if (!folder.includeChannels) return false
         if ((folder.pinnedChatIds?.size ?: 0) > 0) return false
         if ((folder.includedChatIds?.size ?: 0) > 0) return false
         if ((folder.excludedChatIds?.size ?: 0) > 0) return false
-        if (folder.excludeArchived) return false
+        if (folder.excludeArchived == archiveInAllFeed) return false
         if (folder.excludeMuted) return false
         if (folder.excludeRead) return false
         return true

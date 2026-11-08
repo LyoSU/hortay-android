@@ -340,9 +340,7 @@ fun MainScaffold(graph: AppGraph) {
     val snapScroll by graph.settingsStore.snapScroll.collectAsStateWithLifecycle(
         initialValue = false,
     )
-    val archiveInAllFeed by graph.settingsStore.archiveInAllFeed.collectAsStateWithLifecycle(
-        initialValue = false,
-    )
+    val archiveInAllFeed by graph.archiveInAllFeedState.collectAsStateWithLifecycle()
     val inlineVideoAutoplay by graph.settingsStore.inlineVideoAutoplay.collectAsStateWithLifecycle(
         initialValue = true,
     )

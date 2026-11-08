@@ -137,7 +137,7 @@
     <string name="auth_err_phone_occupied">Ce numéro a déjà un compte. Connecte-toi plutôt qu\'inscrire</string>
     <string name="auth_err_code_invalid">Code incorrect. Vérifie et réessaie</string>
     <string name="auth_err_code_expired">Code expiré. Demandes-en un nouveau</string>
-    <string name="auth_err_code_cant_resend">Telegram ne peut pas envoyer le code autrement. Ouvre Telegram sur un appareil où tu es déjà connecté, ou change de numéro</string>
+    <string name="auth_err_code_cant_resend">Telegram ne peut pas envoyer le code autrement. Ouvre Telegram sur un appareil où ta session est déjà ouverte, ou change de numéro</string>
     <string name="auth_err_password_invalid">Mot de passe incorrect. Réessaie</string>
     <string name="auth_err_password_too_fresh">Le mot de passe vient d\'être modifié. Telegram va te demander d\'attendre un peu</string>
     <string name="auth_err_password_recovery_na">La récupération du mot de passe n\'est pas disponible ici. Réinitialise la 2FA dans l\'application Telegram officielle</string>

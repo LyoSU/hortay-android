@@ -337,7 +337,7 @@
     <string name="settings_feed_order_snackbar_to_oldest">Akış yeniden sıralandı — sohbet gibi, en yeni altta</string>
     <string name="settings_snap_scroll_title">Tutturmalı kaydırma</string>
     <string name="settings_snap_scroll_subtitle">Hızlı kaydırdığında her gönderi yerine kilitlenir — TikTok/Reels hissi</string>
-    <string name="settings_archive_in_all_title">“Tümü”nde arşiv</string>
+    <string name="settings_archive_in_all_title">Arşiv “Tümü” akışında</string>
     <string name="settings_archive_in_all_subtitle">Arşivlenmiş kanalların gönderilerini “Tümü” akışında da göster</string>
     <string name="settings_inline_autoplay_title">Akışta videoları otomatik oynat</string>
     <string name="settings_inline_autoplay_subtitle">Önbellekte bulunan kısa videolar kaydırırken sessiz oynar. Sesle tam ekranda açmak için tıkla.</string>

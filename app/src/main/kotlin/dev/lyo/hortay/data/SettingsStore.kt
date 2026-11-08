@@ -102,8 +102,10 @@ class SettingsStore(context: Context) {
      * archive is a chat-list housekeeping tool — users park busy news channels there to
      * keep their inbox clean, yet still want to READ them in one feed (issue #54). Off
      * keeps the Telegram split ("All" = main list, archive in its own tab); on merges
-     * the archive into "All". The Archive tab stays either way. Folder tabs are
-     * unaffected — TDLib resolves their membership, archive rules included.
+     * the archive into "All". The Archive tab stays either way. Folder membership is
+     * unaffected (TDLib resolves it, archive rules included); only the "this folder
+     * duplicates All" hiding rule follows the setting — see
+     * [ChatFoldersRepository.isEquivalentToAll].
      *
      * Default false — matches the shipped behaviour and Telegram's own split.
      */

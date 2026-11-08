@@ -368,7 +368,7 @@
     <string name="settings_snap_scroll_title">التمرير المتقطع</string>
     <string name="settings_snap_scroll_subtitle">كل منشور ينقر في مكانه عند التمرير السريع — تجربة TikTok/Reels</string>
     <string name="settings_archive_in_all_title">الأرشيف في «الكل»</string>
-    <string name="settings_archive_in_all_subtitle">اعرض منشورات القنوات المؤرشفة في موجز «الكل» أيضاً</string>
+    <string name="settings_archive_in_all_subtitle">يعرض منشورات القنوات المؤرشفة في موجز «الكل» أيضاً</string>
     <string name="settings_inline_autoplay_title">تشغيل الفيديوهات تلقائياً في الخلاصة</string>
     <string name="settings_inline_autoplay_subtitle">الفيديوهات القصيرة المخزنة مؤقتاً تُشغَّل بصمت أثناء التمرير. اضغط لفتحها بملء الشاشة مع الصوت.</string>
     <string name="settings_section_privacy">الخصوصية</string>

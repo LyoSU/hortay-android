@@ -135,7 +135,7 @@
     <string name="auth_err_phone_occupied">Ten numer ma już konto. Zaloguj się zamiast rejestrować</string>
     <string name="auth_err_code_invalid">Błędny kod. Sprawdź i spróbuj ponownie</string>
     <string name="auth_err_code_expired">Kod wygasł. Poproś o nowy</string>
-    <string name="auth_err_code_cant_resend">Telegram nie może wysłać kodu w inny sposób. Otwórz Telegram na urządzeniu, na którym jesteś już zalogowany, lub zmień numer</string>
+    <string name="auth_err_code_cant_resend">Telegram nie może wysłać kodu w inny sposób. Otwórz Telegram na urządzeniu, na którym masz aktywną sesję, lub zmień numer</string>
     <string name="auth_err_password_invalid">Błędne hasło. Spróbuj ponownie</string>
     <string name="auth_err_password_too_fresh">Hasło zostało właśnie zmienione. Telegram poprosi o chwilę przerwy</string>
     <string name="auth_err_password_recovery_na">Odzyskiwanie hasła jest tu niedostępne. Zresetuj 2FA w oficjalnym Telegramie</string>
@@ -351,8 +351,8 @@
     <string name="settings_feed_order_snackbar_to_oldest">Feed posortowany — najnowsze na dole, jak w czacie</string>
     <string name="settings_snap_scroll_title">Przewijanie z przeskakiwaniem</string>
     <string name="settings_snap_scroll_subtitle">Każdy wpis zatrzymuje się w miejscu po szybkim przewinięciu — efekt TikToka / Reels</string>
-    <string name="settings_archive_in_all_title">Archiwum we „Wszystkie”</string>
-    <string name="settings_archive_in_all_subtitle">Pokazuj posty z zarchiwizowanych kanałów także w kanale „Wszystkie”</string>
+    <string name="settings_archive_in_all_title">Archiwum w feedzie „Wszystkie”</string>
+    <string name="settings_archive_in_all_subtitle">Pokazuj posty z zarchiwizowanych kanałów także w feedzie „Wszystkie”</string>
     <string name="settings_inline_autoplay_title">Autoodtwarzanie filmów w feedzie</string>
     <string name="settings_inline_autoplay_subtitle">Krótkie filmy z cache odtwarzają się bez dźwięku podczas przewijania. Dotknij, żeby otworzyć pełny ekran z dźwiękiem.</string>
     <string name="settings_section_privacy">Prywatność</string>
