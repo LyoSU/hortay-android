@@ -67,11 +67,14 @@ class TdClient private constructor(
      * from leaking into account B if the user signs into a different
      * Telegram account afterward.
      *
-     * SharedFlow with extraBufferCapacity=1 + DROP_OLDEST: if a logout
-     * happens before any subscriber attaches (hypothetical, since AppGraph
-     * subscribes at construction), the most recent event is replayed once
-     * a subscriber connects. We emit via tryEmit from the auth-state
-     * handler so we don't suspend the JNI-driven dispatcher.
+     * SharedFlow with replay=0, extraBufferCapacity=1 + DROP_OLDEST, emitted via
+     * tryEmit from the auth-state handler so the JNI-driven dispatcher never
+     * suspends. The buffer only absorbs a slow EXISTING subscriber; with replay=0
+     * there is NO replay to late subscribers — an emission with nobody collecting
+     * is dropped. That is safe only because [AppGraph] binds
+     * [dev.lyo.hortay.data.AccountSession] to this flow during graph construction,
+     * before TDLib can reach a logout. A new consumer must subscribe at graph build
+     * too (or register through `AppGraph.session.onEnd`), never lazily.
      */
     private val _loggedOut = MutableSharedFlow<Unit>(
         extraBufferCapacity = 1,
