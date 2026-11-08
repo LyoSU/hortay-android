@@ -228,6 +228,7 @@
     <string name="post_open_telegram">Відкрити в Telegram</string>
     <string name="post_copied_toast">Скопійовано</string>
     <string name="post_show_more">Показати більше</string>
+    <string name="post_more_actions">Інші дії</string>
     <string name="post_show_less">Показати менше</string>
 
     <!-- Service / expired media -->

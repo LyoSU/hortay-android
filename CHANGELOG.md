@@ -17,6 +17,8 @@
 - "New posts" and "↓ N unread" now share one compact split button in the corner instead of two separate buttons over the text.
 - Feed order in Settings is a two-option switch that explains the selected option underneath.
 - The comments screen has a slim one-line header showing the number of comments.
+- Each post shows its time and author under the channel name and has a visible "⋯" button for its actions, which used to be reachable only by long-pressing.
+- Folder tabs above the feed are now plain labels with an underline under the selected one.
 
 ### Fixed
 - Tapping a paid ⭐ reaction on a comment no longer crashes the app.

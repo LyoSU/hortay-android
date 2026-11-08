@@ -49,11 +49,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
@@ -336,6 +333,22 @@ fun PostCard(
                     )
                 }
                 }
+                // Visible entry to the post's actions (react, save, share, open, copy…).
+                // Long-press still works, but a hidden gesture was the ONLY way in before,
+                // and most readers never found it.
+                if (actionsEnabled && !post.isDeleted) {
+                    IconButton(
+                        onClick = { sheetOpen = true },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Symbol(
+                            name = "more_horiz",
+                            contentDescription = stringResource(R.string.post_more_actions),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            size = 20.dp,
+                        )
+                    }
+                }
                 }
 
                 post.forwardOrigin?.let { origin ->
@@ -518,9 +531,15 @@ private fun avatarBg(name: String): Color {
 }
 
 /**
- * Single-line Threads-style header: title + optional signature merged into one AnnotatedString
- * so they ellipsis as a unit, then time (and optional edit marker) pinned right. Title weight=1
- * yields space to the trailing time block.
+ * Two-line header next to the avatar: the sender name (+ verification, + drill chevron) on
+ * top, and a quiet metadata line under it — time, author signature, edited / revisions /
+ * deleted / pinned marks. Stacking the metadata under the name (Threads / Bluesky idiom)
+ * keeps a long channel name from fighting the timestamp for one line, and frees the
+ * trailing edge for the "more" button.
+ *
+ * Only the name row drills into the sender ([onChannelClick]); the metadata line keeps its
+ * own affordances (the revisions chip) and is otherwise inert, so the empty gap after a
+ * short name never swallows taps meant for the card.
  */
 @Composable
 private fun HeaderRow(
@@ -536,102 +555,82 @@ private fun HeaderRow(
     revisionCount: Int = 0,
     onTapRevisions: () -> Unit = {},
 ) {
-    val titleColor = MaterialTheme.colorScheme.onSurface
-    val subColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val annotated = remember(senderName, authorSignature, titleColor, subColor) {
-        buildAnnotatedString {
-            withStyle(SpanStyle(color = titleColor, fontWeight = FontWeight.SemiBold)) {
-                append(senderName)
+    val metaColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+    Column {
+        Row(
+            modifier = Modifier
+                .clip(InlineChipCorner)
+                .clickable(role = Role.Button, onClick = onChannelClick),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = senderName,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            verification?.let {
+                Spacer(Modifier.width(4.dp))
+                VerificationBadge(it)
             }
-            authorSignature?.let {
-                withStyle(SpanStyle(color = subColor, fontWeight = FontWeight.Normal)) {
-                    append("  ·  $it")
-                }
+            if (showDrillChevron) {
+                Spacer(Modifier.width(2.dp))
+                Symbol(
+                    name = "chevron_right",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 14.dp,
+                )
             }
         }
-    }
-    Row(
-        modifier = Modifier,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Sender-name region — name+badge+chevron is the ONLY clickable surface that
-        // drills into the channel; the trailing region (pencil / chip / date) keeps its
-        // own click semantics. Two-layer layout is load-bearing: the outer `Box(weight(1f))`
-        // owns the full horizontal slot so the trailing date stays pinned to the right
-        // edge, while the inner `Row` sizes to its content and carries the clickable
-        // surface — taps on the empty gap between name end and trailing block fall
-        // through (they're inside the Box, outside the Row).
-        // History: a previous iteration put `weight(1f, fill = true)` directly on the
-        // clickable Row. That kept the date pinned right but the hit-target swallowed
-        // the empty gap, so users complained that "the whole header taps". Then
-        // `fill = false` shrank the hit-target but also collapsed the slot so the date
-        // un-pinned from the right edge. The Box wrapper resolves both.
-        Box(
-            modifier = Modifier.weight(1f),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Row(
-                modifier = Modifier
-                    .clip(InlineChipCorner)
-                    .clickable(role = Role.Button, onClick = onChannelClick),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TimestampText(date)
+            authorSignature?.let {
                 Text(
-                    text = annotated,
-                    style = MaterialTheme.typography.titleSmall,
+                    text = "  ·  $it",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = metaColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                verification?.let {
-                    Spacer(Modifier.width(4.dp))
-                    VerificationBadge(it)
+            }
+            // Pencil-icon-vs-chip resolution: when archive has captured revisions, the
+            // chip subsumes the pencil — tapping opens the revision sheet AND
+            // communicates "edited". When archive is off or this post was edited before
+            // the feature was enabled (editDate > 0 but no captured versions), we keep
+            // the original non-interactive pencil so the indicator never disappears for
+            // existing users.
+            when {
+                isDeleted -> {
+                    Spacer(Modifier.width(6.dp))
+                    DeletedBadge()
                 }
-                if (showDrillChevron) {
-                    Spacer(Modifier.width(2.dp))
+                revisionCount > 0 -> {
+                    Spacer(Modifier.width(6.dp))
+                    EditedChip(count = revisionCount, onClick = onTapRevisions)
+                }
+                editDate > 0L -> {
+                    Spacer(Modifier.width(6.dp))
                     Symbol(
-                        name = "chevron_right",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        size = 14.dp,
+                        name = "edit",
+                        contentDescription = stringResource(R.string.post_badge_edited),
+                        tint = metaColor,
+                        size = 12.dp,
                     )
                 }
             }
-        }
-        Spacer(Modifier.width(8.dp))
-        if (pinned) {
-            Symbol(
-                name = "push_pin",
-                contentDescription = stringResource(R.string.post_badge_pinned),
-                tint = MaterialTheme.colorScheme.primary,
-                size = 14.dp,
-            )
-            Spacer(Modifier.width(4.dp))
-        }
-        // Pencil-icon-vs-chip resolution: when archive has captured revisions, the
-        // chip subsumes the pencil — tapping opens the revision sheet AND
-        // communicates "edited". When archive is off or this post was edited before
-        // the feature was enabled (editDate > 0 but no captured versions), we keep
-        // the original non-interactive pencil so the indicator never disappears for
-        // existing users.
-        if (isDeleted) {
-            TimestampText(date)
-            Spacer(Modifier.width(4.dp))
-            DeletedBadge()
-        } else if (revisionCount > 0) {
-            EditedChip(count = revisionCount, onClick = onTapRevisions)
-            Spacer(Modifier.width(4.dp))
-            TimestampText(date)
-        } else {
-            if (editDate > 0L) {
+            if (pinned) {
+                Spacer(Modifier.width(6.dp))
                 Symbol(
-                    name = "edit",
-                    contentDescription = stringResource(R.string.post_badge_edited),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    size = 14.dp,
+                    name = "push_pin",
+                    contentDescription = stringResource(R.string.post_badge_pinned),
+                    tint = MaterialTheme.colorScheme.primary,
+                    size = 12.dp,
                 )
-                Spacer(Modifier.width(4.dp))
             }
-            TimestampText(date)
         }
     }
 }
