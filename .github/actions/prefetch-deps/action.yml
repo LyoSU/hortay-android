@@ -11,7 +11,7 @@ description: >
 
 inputs:
   configuration:
-    description: The :app configuration to resolve (e.g. releaseUnitTestRuntimeClasspath).
+    description: The :app configuration to resolve (e.g. releaseRuntimeClasspath).
     required: false
     default: releaseRuntimeClasspath
 
