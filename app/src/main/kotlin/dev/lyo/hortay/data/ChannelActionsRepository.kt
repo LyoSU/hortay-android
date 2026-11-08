@@ -224,12 +224,16 @@ class ChannelActionsRepository(
      * Join [chatId]. Returns whether TDLib accepted the join, so optimistic UI can roll
      * back; the failure itself is already surfaced through [userMessages].
      */
-    suspend fun joinChat(chatId: Long): Boolean =
-        runCatching { td.send(TdApi.JoinChat(chatId)) }
+    suspend fun joinChat(chatId: Long): Boolean {
+        // JoinChat answers with a ChatJoinResult: only Success means the user is now a
+        // member — RequestSent / Declined / a guard-bot approval leave them outside.
+        val joined = runCatching { td.send(TdApi.JoinChat(chatId)) }
             .warnUnlessCancelled(TAG, "joinChat")
             .onFailure { it.surfaceTo(userMessages, res, R.string.op_join_channel, connection.value) }
-            .onSuccess { onMembershipChanged(chatId, true) }
-            .isSuccess
+            .getOrNull() is TdApi.ChatJoinResultSuccess
+        if (joined) onMembershipChanged(chatId, true)
+        return joined
+    }
 
     /** Leave [chatId]. Same result contract as [joinChat]. */
     suspend fun leaveChat(chatId: Long): Boolean =

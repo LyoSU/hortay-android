@@ -25,9 +25,17 @@ class ChannelActionsMembershipTest {
 
     @Test
     fun `successful join reports true and notifies membership`() = runTest {
-        val td = FakeTdSender().apply { onAny("JoinChat") { TdApi.Ok() } }
+        // JoinChat answers with a ChatJoinResult, not Ok (TDLib 1.8.66 schema).
+        val td = FakeTdSender().apply { onAny("JoinChat") { TdApi.ChatJoinResultSuccess(7L) } }
         assertTrue(repo(td).joinChat(7L))
         assertEquals(listOf(7L to true), changes)
+    }
+
+    @Test
+    fun `a join that only sent a request is not reported as joined`() = runTest {
+        val td = FakeTdSender().apply { onAny("JoinChat") { TdApi.ChatJoinResultRequestSent() } }
+        assertFalse(repo(td).joinChat(7L))
+        assertTrue(changes.isEmpty())
     }
 
     @Test
