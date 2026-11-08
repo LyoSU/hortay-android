@@ -415,10 +415,6 @@
     <string name="size_mb_int">%1$d Mo</string>
 
     <!-- Tailles -->
-    <string name="size_bytes">%1$d o</string>
-    <string name="size_kb">%1$.1f Ko</string>
-    <string name="size_mb">%1$.1f Mo</string>
-    <string name="size_gb">%1$.2f Go</string>
     <string-array name="size_units">
         <item>o</item>
         <item>Ko</item>

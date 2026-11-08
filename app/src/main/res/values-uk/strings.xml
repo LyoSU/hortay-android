@@ -418,10 +418,6 @@
     <string name="size_mb_int">%1$d МБ</string>
 
     <!-- Sizes -->
-    <string name="size_bytes">%1$d Б</string>
-    <string name="size_kb">%1$.1f КБ</string>
-    <string name="size_mb">%1$.1f МБ</string>
-    <string name="size_gb">%1$.2f ГБ</string>
     <string-array name="size_units">
         <item>Б</item>
         <item>КБ</item>

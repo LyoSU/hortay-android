@@ -437,10 +437,6 @@
     <string name="size_mb_int">%1$d ميغابايت</string>
 
     <!-- الأحجام -->
-    <string name="size_bytes">%1$d بايت</string>
-    <string name="size_kb">%1$.1f كيلوبايت</string>
-    <string name="size_mb">%1$.1f ميغابايت</string>
-    <string name="size_gb">%1$.2f جيغابايت</string>
     <string-array name="size_units">
         <item>بايت</item>
         <item>كيلوبايت</item>

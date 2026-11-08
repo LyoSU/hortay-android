@@ -2,6 +2,8 @@
 
 package dev.lyo.hortay.ui.archive
 
+import androidx.compose.ui.res.stringArrayResource
+import dev.lyo.hortay.ui.components.formatByteSize
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -190,7 +192,7 @@ fun ArchiveSettingsScreen(
                     SettingsRow(
                         symbol = "storage",
                         title = stringResource(R.string.archive_storage_label),
-                        subtitle = formatBytes(bytes),
+                        subtitle = formatByteSize(bytes, stringArrayResource(R.array.size_units)),
                         index = 1,
                         count = 4,
                     )
@@ -414,11 +416,3 @@ private fun recordsLabel(n: Int): String =
     if (n == Int.MAX_VALUE) stringResource(R.string.archive_records_unlimited)
     else java.text.NumberFormat.getIntegerInstance().format(n)
 
-private fun formatBytes(bytes: Long): String {
-    val kb = bytes / 1024.0
-    return when {
-        bytes < 1024 -> "$bytes B"
-        kb < 1024 -> "%.1f KB".format(kb)
-        else -> "%.1f MB".format(kb / 1024.0)
-    }
-}

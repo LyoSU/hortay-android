@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.media
 
+import dev.lyo.hortay.ui.components.formatByteSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -165,7 +166,7 @@ private fun QualityRow(
             val units = stringArrayResource(R.array.size_units)
             val subtitle = buildString {
                 append("${quality.width}×${quality.height}")
-                if (quality.sizeBytes > 0) append("  ·  ${formatSize(quality.sizeBytes, units)}")
+                if (quality.sizeBytes > 0) append("  ·  ${formatByteSize(quality.sizeBytes, units)}")
             }
             Text(
                 text = subtitle,
@@ -176,17 +177,3 @@ private fun QualityRow(
     }
 }
 
-private fun formatSize(bytes: Long, units: Array<String>): String {
-    if (bytes <= 0) return ""
-    var size = bytes.toDouble()
-    var idx = 0
-    while (size >= 1024 && idx < units.lastIndex) {
-        size /= 1024
-        idx++
-    }
-    return if (size >= 100 || idx == 0 || size == size.toLong().toDouble()) {
-        "${size.toLong()} ${units[idx]}"
-    } else {
-        "%.1f %s".format(size, units[idx])
-    }
-}

@@ -201,17 +201,6 @@ internal fun formatDuration(seconds: Int): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
-internal fun formatFileSize(bytes: Long, units: Array<String>): String {
-    if (bytes <= 0) return "—"
-    var size = bytes.toDouble()
-    var idx = 0
-    while (size >= 1024 && idx < units.lastIndex) {
-        size /= 1024
-        idx++
-    }
-    val whole = size >= 100 || idx == 0 || size == size.toLong().toDouble()
-    return if (whole) "${size.toLong()} ${units[idx]}" else "%.1f %s".format(size, units[idx])
-}
 
 /**
  * Read-only probe into [dev.lyo.hortay.data.MediaCache] that answers "is the

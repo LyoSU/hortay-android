@@ -2,7 +2,7 @@
 
 package dev.lyo.hortay.ui.settings
 
-import android.content.res.Resources
+import dev.lyo.hortay.ui.components.formatByteSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,12 +47,12 @@ internal fun TrafficCard(network: NetworkUsage?, onReset: () -> Unit) {
                 left = StatHeroValue(
                     symbol = "arrow_downward",
                     label = stringResource(R.string.settings_traffic_downloaded),
-                    value = network?.rxBytes?.let { formatBytes(it, res) } ?: "—",
+                    value = network?.rxBytes?.let { formatByteSize(it, res.getStringArray(R.array.size_units)) } ?: "—",
                 ),
                 right = StatHeroValue(
                     symbol = "arrow_upward",
                     label = stringResource(R.string.settings_traffic_uploaded),
-                    value = network?.txBytes?.let { formatBytes(it, res) } ?: "—",
+                    value = network?.txBytes?.let { formatByteSize(it, res.getStringArray(R.array.size_units)) } ?: "—",
                 ),
             ),
         )
@@ -91,7 +91,7 @@ internal fun StorageCard(
         Row(verticalAlignment = Alignment.Top) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (storage == null) "—" else formatBytes(totalBytes, res),
+                    text = if (storage == null) "—" else formatByteSize(totalBytes, res.getStringArray(R.array.size_units)),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -246,12 +246,12 @@ private fun StorageLegend(filesBytes: Long, dbBytes: Long) {
         LegendDot(
             color = MaterialTheme.colorScheme.primary,
             label = stringResource(R.string.settings_storage_media),
-            value = formatBytes(filesBytes, res),
+            value = formatByteSize(filesBytes, res.getStringArray(R.array.size_units)),
         )
         LegendDot(
             color = MaterialTheme.colorScheme.tertiary,
             label = stringResource(R.string.settings_storage_db),
-            value = formatBytes(dbBytes, res),
+            value = formatByteSize(dbBytes, res.getStringArray(R.array.size_units)),
         )
     }
 }
@@ -281,12 +281,3 @@ private fun LegendDot(color: Color, label: String, value: String) {
     }
 }
 
-private fun formatBytes(b: Long, res: Resources): String {
-    if (b < 1024) return res.getString(R.string.size_bytes, b.toInt())
-    val kb = b / 1024.0
-    if (kb < 1024) return res.getString(R.string.size_kb, kb.toFloat())
-    val mb = kb / 1024.0
-    if (mb < 1024) return res.getString(R.string.size_mb, mb.toFloat())
-    val gb = mb / 1024.0
-    return res.getString(R.string.size_gb, gb.toFloat())
-}
