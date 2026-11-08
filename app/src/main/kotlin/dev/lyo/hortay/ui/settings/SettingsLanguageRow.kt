@@ -90,7 +90,12 @@ internal fun LanguageRow(index: Int, count: Int) {
     var showDialog by remember { mutableStateOf(false) }
     // Re-read on every dialog open so the row reflects an out-of-band change (e.g. the
     // user flipped the language via the system per-app picker on API 33+ and came back).
-    val activeTag = remember(showDialog) { LocaleStore.read(context) }
+    // Normalised onto a LANGUAGES tag (platform reports full BCP-47, e.g. `pt-BR`,
+    // possibly with a region the picker doesn't list) so the row and the radio
+    // selection agree with what's actually applied.
+    val activeTag = remember(showDialog) {
+        LocaleStore.matchOffered(LocaleStore.read(context), LANGUAGES.map { it.tag })
+    }
     val matchedRes = LANGUAGES.firstOrNull { it.tag == activeTag }?.labelRes
     val summary = if (matchedRes != null) {
         stringResource(matchedRes)
