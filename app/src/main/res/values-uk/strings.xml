@@ -870,4 +870,8 @@
     <string name="channels_filter_unread">Непрочитані</string>
     <string name="channels_filter_today">Сьогодні</string>
     <string name="channels_filter_hidden">Сховані</string>
+    <string name="op_summarize">зробити підсумок допису</string>
+    <string name="op_search_all">шукати у твоїх каналах</string>
+    <string name="post_summarize">Підсумок</string>
+    <string name="post_summary_title">Підсумок</string>
 </resources>

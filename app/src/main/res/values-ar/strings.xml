@@ -900,4 +900,8 @@
     <string name="channels_filter_unread">غير مقروءة</string>
     <string name="channels_filter_today">اليوم</string>
     <string name="channels_filter_hidden">مخفية</string>
+    <string name="op_summarize">تلخيص المنشور</string>
+    <string name="op_search_all">البحث في قنواتك</string>
+    <string name="post_summarize">تلخيص</string>
+    <string name="post_summary_title">الملخص</string>
 </resources>

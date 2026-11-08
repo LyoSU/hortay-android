@@ -852,4 +852,8 @@
     <string name="channels_filter_unread">No leídos</string>
     <string name="channels_filter_today">Hoy</string>
     <string name="channels_filter_hidden">Ocultos</string>
+    <string name="op_summarize">resumir la publicación</string>
+    <string name="op_search_all">buscar en tus canales</string>
+    <string name="post_summarize">Resumir</string>
+    <string name="post_summary_title">Resumen</string>
 </resources>

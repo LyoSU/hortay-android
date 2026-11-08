@@ -2,6 +2,8 @@
 
 package dev.lyo.hortay.ui.main
 
+import dev.lyo.hortay.ui.timeline.PostSummarizer
+import dev.lyo.hortay.ui.timeline.LocalPostSummarizer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -418,12 +420,19 @@ fun MainScaffold(graph: AppGraph) {
     // URL against the Telegram link resolver before falling back to the OS. One
     // interceptor wired here is cheaper than wrapping every Text call-site individually
     // and guarantees no path leaks straight to ACTION_VIEW.
+    // Summaries come back in the app's language (TDLib translates when the post differs).
+    val postSummarizer = remember(graph) {
+        PostSummarizer { post ->
+            graph.postsRepository.summarize(post.chatId, post.id, java.util.Locale.getDefault().language)
+        }
+    }
     LinkAwareScaffold(graph) {
         CompositionLocalProvider(
             LocalReadCursors provides cursorHolder,
             dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay provides inlineVideoAutoplay,
             LocalUserProfileOpener provides userProfileOpener,
             LocalUserMessageBus provides graph.userMessages,
+            LocalPostSummarizer provides postSummarizer,
         ) {
             Scaffold(
                 modifier = Modifier.fillMaxSize(),

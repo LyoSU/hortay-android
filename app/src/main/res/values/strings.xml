@@ -868,4 +868,8 @@
     <string name="channels_filter_unread">Unread</string>
     <string name="channels_filter_today">Today</string>
     <string name="channels_filter_hidden">Hidden</string>
+    <string name="op_summarize">summarize the post</string>
+    <string name="op_search_all">search your channels</string>
+    <string name="post_summarize">Summarize</string>
+    <string name="post_summary_title">Summary</string>
 </resources>

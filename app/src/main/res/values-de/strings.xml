@@ -832,4 +832,8 @@
     <string name="channels_filter_unread">Ungelesen</string>
     <string name="channels_filter_today">Heute</string>
     <string name="channels_filter_hidden">Ausgeblendet</string>
+    <string name="op_summarize">den Beitrag zusammenfassen</string>
+    <string name="op_search_all">in deinen Kanälen suchen</string>
+    <string name="post_summarize">Zusammenfassen</string>
+    <string name="post_summary_title">Zusammenfassung</string>
 </resources>

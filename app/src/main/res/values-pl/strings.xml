@@ -863,4 +863,8 @@
     <string name="channels_filter_unread">Nieprzeczytane</string>
     <string name="channels_filter_today">Dzisiaj</string>
     <string name="channels_filter_hidden">Ukryte</string>
+    <string name="op_summarize">podsumować post</string>
+    <string name="op_search_all">szukać w Twoich kanałach</string>
+    <string name="post_summarize">Podsumuj</string>
+    <string name="post_summary_title">Podsumowanie</string>
 </resources>

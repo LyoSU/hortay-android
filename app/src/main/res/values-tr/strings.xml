@@ -827,4 +827,8 @@
     <string name="channels_filter_unread">Okunmamış</string>
     <string name="channels_filter_today">Bugün</string>
     <string name="channels_filter_hidden">Gizli</string>
+    <string name="op_summarize">gönderiyi özetlemek</string>
+    <string name="op_search_all">kanallarında aramak</string>
+    <string name="post_summarize">Özetle</string>
+    <string name="post_summary_title">Özet</string>
 </resources>

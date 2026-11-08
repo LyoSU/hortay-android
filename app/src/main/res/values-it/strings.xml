@@ -849,4 +849,8 @@
     <string name="channels_filter_unread">Non letti</string>
     <string name="channels_filter_today">Oggi</string>
     <string name="channels_filter_hidden">Nascosti</string>
+    <string name="op_summarize">riassumere il post</string>
+    <string name="op_search_all">cercare nei tuoi canali</string>
+    <string name="post_summarize">Riassumi</string>
+    <string name="post_summary_title">Riassunto</string>
 </resources>

@@ -133,6 +133,11 @@ data class TimelinePost(
      * Rendered as a plate under the body. Null when the post has none, and in web mode.
      */
     val factCheck: String? = null,
+    /**
+     * Telegram can summarize this post (`Message.summary_language_code` is non-empty) —
+     * gates the "Summarize" action. Always false in web mode.
+     */
+    val canSummarize: Boolean = false,
 )
 
 /**

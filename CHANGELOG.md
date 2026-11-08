@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- Long posts that Telegram can summarize offer “Summarize” in their ⋯ menu, with the summary in your app language.
 - The Channels tab has quick filters — Unread, Today and Hidden — with a count on each.
 - A search button next to the logo searches posts across all your channels, including ones that never reached your feed — tap a result to open the channel at that post.
 - A channel's info card lists similar channels Telegram recommends — subscribe in one tap or tap one to open it.

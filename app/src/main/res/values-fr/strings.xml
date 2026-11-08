@@ -849,4 +849,8 @@
     <string name="channels_filter_unread">Non lues</string>
     <string name="channels_filter_today">Aujourd’hui</string>
     <string name="channels_filter_hidden">Masquées</string>
+    <string name="op_summarize">résumer la publication</string>
+    <string name="op_search_all">rechercher dans vos chaînes</string>
+    <string name="post_summarize">Résumer</string>
+    <string name="post_summary_title">Résumé</string>
 </resources>

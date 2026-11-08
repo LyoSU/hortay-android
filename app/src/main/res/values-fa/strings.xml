@@ -826,4 +826,8 @@
     <string name="channels_filter_unread">خوانده‌نشده</string>
     <string name="channels_filter_today">امروز</string>
     <string name="channels_filter_hidden">پنهان</string>
+    <string name="op_summarize">خلاصه‌کردن پست</string>
+    <string name="op_search_all">جست‌وجو در کانال‌هایت</string>
+    <string name="post_summarize">خلاصه</string>
+    <string name="post_summary_title">خلاصه</string>
 </resources>

@@ -107,6 +107,7 @@ Compose:
     # allowlist so a new one requires deliberate update to this file + ARCHITECTURE.md.
     # LocalNavBarCollapse: zero-alloc collapse-fraction hand-off feed -> nav bar.
     # LocalShowFullPost: lets ui.text reach the open-post action without ui.timeline dep.
+    # LocalPostSummarizer: signed-in-only summary source; null in guest mode hides the action.
     active: true
     allowedCompositionLocals:
       - LocalMediaCache
@@ -132,6 +133,9 @@ Compose:
       - LocalUserMessageBus
       - LocalWebmClock
       - LocalWebStaleMedia
+      - LocalFeedAnnotations
+      - LocalGlassBackdrop
+      - LocalPostSummarizer
   CompositionLocalNaming:
     active: true
   ContentEmitterReturningValues:

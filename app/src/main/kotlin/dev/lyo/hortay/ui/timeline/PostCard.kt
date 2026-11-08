@@ -119,6 +119,8 @@ fun PostCard(
     // Hosted at the card level (not inside the action sheet) so it survives the
     // action sheet dismissing when the user taps "Select text".
     var selectTextOpen by remember { mutableStateOf(false) }
+    var summaryOpen by remember { mutableStateOf(false) }
+    val summarizer = LocalPostSummarizer.current
 
     // Hand each section ONLY the primitive fields it actually paints. When TDLib emits
     // an UpdateMessageInteractionInfo and the post's `views` change, Compose passes a
@@ -470,11 +472,15 @@ fun PostCard(
             post = post,
             interactions = interactions,
             onSelectText = { selectTextOpen = true },
+            onSummarize = if (post.canSummarize && summarizer != null) ({ summaryOpen = true }) else null,
             onDismiss = { sheetOpen = false },
         )
     }
     if (selectTextOpen) {
         SelectTextSheet(post = post, onDismiss = { selectTextOpen = false })
+    }
+    if (summaryOpen && summarizer != null) {
+        PostSummarySheet(post = post, summarizer = summarizer, onDismiss = { summaryOpen = false })
     }
 }
 
@@ -1383,6 +1389,7 @@ private fun PostActionSheet(
     post: TimelinePost,
     interactions: PostInteractions,
     onSelectText: () -> Unit,
+    onSummarize: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1473,6 +1480,13 @@ private fun PostActionSheet(
                         },
                     )
                 }
+            }
+            if (onSummarize != null) {
+                SheetItem(
+                    symbol = "description",
+                    label = stringResource(R.string.post_summarize),
+                    onClick = { runAndDismiss { onSummarize() } },
+                )
             }
             if (interactions.canReport(post)) {
                 SheetItem(

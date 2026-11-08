@@ -132,6 +132,7 @@ class MessageMapper(
             // own post overflow menu.
             canReportChat = chat.canBeReported,
             factCheck = message.factCheck?.text?.text?.takeIf { it.isNotBlank() },
+            canSummarize = !message.summaryLanguageCode.isNullOrEmpty(),
         )
     }
 
