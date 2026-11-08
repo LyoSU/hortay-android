@@ -990,13 +990,31 @@ private fun CommentBubble(
                         .horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Paid (⭐) reactions are read-only, as in the feed: the tap explains
+                    // why instead of dispatching a toggle that TDLib can't accept.
+                    val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
+                    val paidExplainer = stringResource(R.string.reactions_paid_explainer)
                     // Key by reaction-bucket identity, not slot — see [ReactionChip] call
                     // site in PostCard for why a positional loop renders the wrong custom
                     // emoji when TDLib re-ranks the buckets mid-read.
                     message.reactions.items.forEachIndexed { idx, item ->
                         key(item.kind.stableKey) {
                             if (idx > 0) Spacer(Modifier.width(6.dp))
-                            ReactionChip(item, onClick = { onReactionTap(item) })
+                            val isPaid = item.kind is ReactionKind.Paid
+                            ReactionChip(
+                                item,
+                                onClick = if (isPaid) {
+                                    {
+                                        bus?.post(
+                                            text = paidExplainer,
+                                            severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
+                                        )
+                                    }
+                                } else {
+                                    { onReactionTap(item) }
+                                },
+                                disabled = isPaid,
+                            )
                         }
                     }
                 }

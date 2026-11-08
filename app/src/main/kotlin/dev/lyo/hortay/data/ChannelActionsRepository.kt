@@ -47,7 +47,8 @@ class ChannelActionsRepository(
         kind: ReactionKind,
         isChosen: Boolean,
     ): Boolean {
-        val type = kind.toTd()
+        // Paid reactions are read-only (see [toTd]) — report failure, never throw.
+        val type = kind.toTd() ?: return false
         val outcome = runCatching {
             if (isChosen) {
                 td.send(TdApi.RemoveMessageReaction(chatId, messageId, type))
@@ -154,16 +155,16 @@ class ChannelActionsRepository(
         return outcome.isSuccess
     }
 
-    private fun ReactionKind.toTd(): TdApi.ReactionType = when (this) {
+    private fun ReactionKind.toTd(): TdApi.ReactionType? = when (this) {
         is ReactionKind.Emoji -> TdApi.ReactionTypeEmoji(text)
         is ReactionKind.CustomEmoji -> TdApi.ReactionTypeCustomEmoji(customEmojiId)
         // Paid reactions require AddPendingPaidMessageReaction (a flow with
         // star-amount confirmation), not AddMessageReaction. We render incoming
         // paid counts but never send our own — passing the same constructor
-        // would crash on the server. The toggle call upstream is already
-        // gated, so reaching this branch in production would be a bug;
-        // surface it as an IllegalStateException for the crash reporter.
-        is ReactionKind.Paid -> error("Paid reactions are read-only in this client")
+        // would fail on the server. The UI gates paid chips as read-only; if one
+        // still reaches here, return null so the caller reports a no-op failure
+        // instead of crashing the app.
+        is ReactionKind.Paid -> null
     }
 
     // Inverse of [toTd] for the picker read path. Mirrors the forward mapping field-for-field:

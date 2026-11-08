@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.data.FeedOrder
+import dev.lyo.hortay.data.ReactionKind
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.nav.AppNavKey
@@ -93,6 +94,8 @@ internal fun RenderNavKey(
                 }
             },
             onReactionToggle = { chatId, messageId, snapshot, kind, wasChosen ->
+                // Paid (⭐) reactions are read-only in Hortay; never flip or dispatch them.
+                if (kind is ReactionKind.Paid) return@CommentsScreen
                 val isAnchor = chatId == key.anchor.chatId
                 val nowChosen = !wasChosen
                 if (isAnchor) {
