@@ -1743,8 +1743,10 @@ fun TimelineScreen(
                                     // the reducer ahead of live posts. The card renders
                                     // observe-only via [LocalMediaPassive]; skip it here too.
                                     if (post.isDeleted) continue
-                                    for (fileId in post.content.posterFileIds()) {
-                                        cache.ensure(fileId, DownloadPriority.Prefetch)
+                                    if (cache.allowsPosterPrefetch()) {
+                                        for (fileId in post.content.posterFileIds()) {
+                                            cache.ensure(fileId, DownloadPriority.Prefetch)
+                                        }
                                     }
                                     // Inline-playable media (short videos, GIF animations) get the
                                     // playback file pre-warmed too, but ONLY for the immediate next
@@ -1752,7 +1754,7 @@ fun TimelineScreen(
                                     // user may never reach (a 30 s autoplay video is already ~5 MB).
                                     // Posters stay cheap to prefetch farther, since they're tens of
                                     // KB; playback is the heavyweight step we cap tightly.
-                                    if (idx == firstVisible + 1) {
+                                    if (idx == firstVisible + 1 && cache.allowsPlaybackPrefetch()) {
                                         for (fileId in post.content.playbackFileIds()) {
                                             cache.ensure(fileId, DownloadPriority.Prefetch)
                                         }

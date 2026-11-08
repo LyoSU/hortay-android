@@ -348,6 +348,13 @@ class AppGraph(context: Context) {
         scope = appScope,
     ).also { it.bind() }
 
+    init {
+        // Scroll-ahead prefetch follows the same per-network policy as live arrivals.
+        mediaCache.prefetchPolicy = {
+            resolveActivePolicy(lifecycleBridge.networkType.value, autoDownloadStore.settings.value)
+        }
+    }
+
     val bookmarkStore: BookmarkStore = BookmarkStore(context)
 
     val statsRepository: StatsRepository = StatsRepository(tdClient, userMessages, res)

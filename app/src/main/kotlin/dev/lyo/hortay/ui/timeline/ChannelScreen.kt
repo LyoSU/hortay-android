@@ -911,10 +911,12 @@ fun ChannelScreen(
                             for (idx in (firstVisible + 1)..end) {
                                 val item = displayedList.getOrNull(idx) ?: continue
                                 for (post in item.posts()) {
-                                    for (fileId in post.content.posterFileIds()) {
-                                        cache.ensure(fileId, DownloadPriority.Prefetch)
+                                    if (cache.allowsPosterPrefetch()) {
+                                        for (fileId in post.content.posterFileIds()) {
+                                            cache.ensure(fileId, DownloadPriority.Prefetch)
+                                        }
                                     }
-                                    if (idx == firstVisible + 1) {
+                                    if (idx == firstVisible + 1 && cache.allowsPlaybackPrefetch()) {
                                         for (fileId in post.content.playbackFileIds()) {
                                             cache.ensure(fileId, DownloadPriority.Prefetch)
                                         }

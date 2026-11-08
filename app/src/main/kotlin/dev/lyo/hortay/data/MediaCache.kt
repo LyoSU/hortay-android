@@ -590,6 +590,22 @@ class MediaCache(
      * Also aborts any debounced cancel for the same fileId — a quick scroll past a card
      * and back must not tear the in-flight download down.
      */
+    /**
+     * The auto-download policy for the current network (null = offline), wired by
+     * `AppGraph`. Scroll-ahead prefetch asks [allowsPosterPrefetch] /
+     * [allowsPlaybackPrefetch] before speculating on files the user hasn't reached —
+     * otherwise "videos off on mobile" only governed live arrivals while scrolling
+     * still pulled every upcoming GIF and short clip.
+     */
+    @Volatile
+    var prefetchPolicy: () -> AutoDownloadPolicy? = { null }
+
+    /** Posters / photos of posts just ahead of the viewport. */
+    fun allowsPosterPrefetch(): Boolean = prefetchPolicy()?.photos == true
+
+    /** Whole playback files (short videos, GIFs, round videos) of the next post. */
+    fun allowsPlaybackPrefetch(): Boolean = prefetchPolicy()?.let { it.videos && it.animations } == true
+
     suspend fun ensure(fileId: Int, priority: DownloadPriority = DownloadPriority.VisibleMedia) {
         // Aborting first means a re-mount that beats the debounce window keeps the
         // in-flight download. Done before the hot-path guards because the cancel job
