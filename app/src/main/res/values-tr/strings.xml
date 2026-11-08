@@ -820,4 +820,6 @@
     <string name="media_desc_video">Video</string>
     <string name="media_desc_gif">GIF</string>
     <string name="media_desc_video_note">Görüntülü mesaj</string>
+    <string name="channel_jump_back">Okuduğun yere dön</string>
+    <string name="channel_jump_latest">En yeni gönderilere git</string>
 </resources>

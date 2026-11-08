@@ -819,4 +819,6 @@
     <string name="media_desc_video">ویدیو</string>
     <string name="media_desc_gif">GIF</string>
     <string name="media_desc_video_note">پیام ویدیویی</string>
+    <string name="channel_jump_back">بازگشت به جای قبلی</string>
+    <string name="channel_jump_latest">رفتن به تازه‌ترین پست‌ها</string>
 </resources>

@@ -856,4 +856,6 @@
     <string name="media_desc_video">Wideo</string>
     <string name="media_desc_gif">GIF</string>
     <string name="media_desc_video_note">Wiadomość wideo</string>
+    <string name="channel_jump_back">Wróć do miejsca czytania</string>
+    <string name="channel_jump_latest">Przejdź do najnowszych postów</string>
 </resources>

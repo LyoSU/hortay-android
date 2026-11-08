@@ -2,6 +2,20 @@
 
 package dev.lyo.hortay.ui.timeline
 
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedVisibility
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -358,6 +372,9 @@ fun ChannelScreen(
     // jump path — same-channel reply navigation from a [PostInteractions.onQuotedSourceClick]
     // tap. [rememberPendingScrollToMessage] resolves the target and clears it.
     var pendingScrollToMessage by remember(chatId) { mutableStateOf<Pair<Long, Long>?>(null) }
+    // Where the reader was before an in-channel jump (pinned bar, quote tap). Kept across
+    // consecutive jumps so stepping through several pins still returns to the first spot.
+    var returnPoint by remember(chatId) { mutableStateOf<Pair<Any, Int>?>(null) }
     // Which pin the bar shows, by message id (null = newest). Each tap jumps to it and
     // steps to the next older one (wrapping), so repeated taps walk the whole pinned
     // set. Identity, not a position: a pin added or removed mid-walk must not make the
@@ -593,6 +610,7 @@ fun ChannelScreen(
                     // to the host post's own chatId before it reaches the UI.
                     if (r.replyToChatId == chatId) {
                         // Same channel: queue an in-place scroll to the target message.
+                        if (returnPoint == null) returnPoint = listState.currentReturnPoint()
                         pendingScrollToMessage = chatId to r.replyToMessageId
                     } else {
                         // Different channel: drill in WITH the replied-to messageId
@@ -705,6 +723,7 @@ fun ChannelScreen(
                         position = shown + 1,
                         total = pinned.size,
                         onClick = {
+                            if (returnPoint == null) returnPoint = listState.currentReturnPoint()
                             pendingScrollToMessage = chatId to pinned[shown].messageId
                             pinnedCursorId = pinned[(shown + 1) % pinned.size].messageId
                         },
@@ -955,6 +974,33 @@ fun ChannelScreen(
                                 }
                             }
                         }
+                        // Way back after a jump, or to the newest posts once the reader is
+                        // a few posts away from them. Both targets sit on the newest side.
+                        val farFromNewest by remember(listState) {
+                            derivedStateOf { listState.firstVisibleItemIndex > JUMP_BUTTON_MIN_INDEX }
+                        }
+                        LaunchedEffect(listState) {
+                            snapshotFlow { listState.firstVisibleItemIndex == 0 }
+                                .filter { it }
+                                .collect { returnPoint = null }
+                        }
+                        ChannelJumpButton(
+                            visible = returnPoint != null || farFromNewest,
+                            isReturn = returnPoint != null,
+                            pointsDown = feedOrder.reverseLayout,
+                            onClick = {
+                                val target = returnPoint
+                                returnPoint = null
+                                scope.launch {
+                                    val idx = target?.let { (key, _) -> displayedList.indexOfFirst { it.key == key } } ?: -1
+                                    if (idx >= 0) listState.scrollToItem(idx, target?.second ?: 0)
+                                    else listState.scrollToItem(0)
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 16.dp, bottom = contentPadding.calculateBottomPadding() + 16.dp),
+                        )
                         // Cover the seeded-at-bottom mount until the boundary is
                         // repositioned (see [rememberBoundaryReveal]). Reuses the
                         // same SkeletonFeed the Resolving gate shows, so the
@@ -978,6 +1024,50 @@ fun ChannelScreen(
             onReport = onReportChannel,
             ignoredChannels = ignoredChannels,
         )
+    }
+}
+
+private const val JUMP_BUTTON_MIN_INDEX = 3
+
+private fun LazyListState.currentReturnPoint(): Pair<Any, Int>? =
+    layoutInfo.visibleItemsInfo.firstOrNull()?.let { it.key to firstVisibleItemScrollOffset }
+
+/**
+ * Round button in the channel's bottom corner: returns to the reading spot after a jump
+ * to a pinned or quoted post ([isReturn]), otherwise scrolls to the newest posts. Without
+ * it, a tap on the pinned bar left the reader deep in old history with no way back.
+ */
+@Composable
+private fun ChannelJumpButton(
+    visible: Boolean,
+    isReturn: Boolean,
+    pointsDown: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val label = stringResource(if (isReturn) R.string.channel_jump_back else R.string.channel_jump_latest)
+    AnimatedVisibility(
+        visible = visible,
+        enter = scaleIn(MaterialTheme.motionScheme.defaultSpatialSpec(), initialScale = 0.85f) +
+            fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
+        exit = scaleOut(MaterialTheme.motionScheme.defaultSpatialSpec(), targetScale = 0.85f) +
+            fadeOut(MaterialTheme.motionScheme.defaultEffectsSpec()),
+        modifier = modifier,
+    ) {
+        Surface(
+            onClick = onClick,
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            shadowElevation = 6.dp,
+            modifier = Modifier
+                .size(48.dp)
+                .semantics { contentDescription = label },
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Symbol(name = if (pointsDown) "arrow_downward" else "arrow_upward", size = 22.dp)
+            }
+        }
     }
 }
 
