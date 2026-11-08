@@ -332,6 +332,11 @@ private fun computeSpoilerSrcGrouping(formatted: FormattedText): SpoilerSrcGroup
         }
         .filter { it.start < it.end }
         .sortedBy { it.start }
+        // The substitution loop below only matches a range whose start equals the
+        // current src position; a range overlapping an earlier consumed one (start <
+        // src) was never matched or skipped, so it stalled rangeIdx and every LATER
+        // custom emoji in the text rendered as raw fallback characters.
+        .let { dropOverlappingRanges(it, start = { r -> r.start }, end = { r -> r.end }) }
 
     if (entries.isEmpty()) {
         return SpoilerSrcGrouping(emptyMap(), emptyMap())
@@ -375,6 +380,20 @@ private val QUOTE_TEXT_INDENT = 18.sp
 private val CODE_TEXT_INDENT = 14.sp
 
 private data class CustomEmojiRange(val start: Int, val end: Int, val emojiId: Long)
+
+/**
+ * Keep, from [sorted] (ascending by start), only ranges that begin at or after the end of
+ * the last kept one — the first of any overlapping group wins. Pure helper so the
+ * custom-emoji substitution pass can rely on "next range starts at or after src".
+ */
+internal fun <T> dropOverlappingRanges(sorted: List<T>, start: (T) -> Int, end: (T) -> Int): List<T> {
+    var lastEnd = Int.MIN_VALUE
+    return sorted.filter { r ->
+        val keep = start(r) >= lastEnd
+        if (keep) lastEnd = end(r)
+        keep
+    }
+}
 
 private fun buildFromFormatted(
     formatted: FormattedText,
