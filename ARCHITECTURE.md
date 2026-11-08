@@ -164,7 +164,7 @@ CHANGELOG.md is release notes for a user, not a PR description. Rationale lives 
 adb logcat -s TdClient MediaCache PostsRepository ChatPresence
 ```
 
-Toolchain: JDK 17, Gradle 9.4.1, AGP 9.2.0, Kotlin 2.3.10 (K2). Compose Compiler via `org.jetbrains.kotlin.plugin.compose`.
+Toolchain: JDK 17, Gradle 9.7.1, AGP 9.4.1, Kotlin 2.4.10 (K2) — `gradle/libs.versions.toml` and the wrapper are the source of truth. Compose Compiler via `org.jetbrains.kotlin.plugin.compose`.
 
 ### Verifying rules
 
