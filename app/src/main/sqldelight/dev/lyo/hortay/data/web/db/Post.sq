@@ -104,19 +104,6 @@ WHERE post.channel_username = :username
 ORDER BY post.published_at_ms DESC, post.seq DESC
 LIMIT :limit;
 
-selectBookmarked:
-SELECT post.*, channel.title AS channel_title, channel.avatar_url AS channel_avatar
-FROM post
-JOIN channel ON channel.username = post.channel_username
-WHERE post.is_bookmarked = 1
-ORDER BY post.published_at_ms DESC, post.seq DESC;
-
-selectById:
-SELECT post.*, channel.title AS channel_title, channel.avatar_url AS channel_avatar
-FROM post
-JOIN channel ON channel.username = post.channel_username
-WHERE post.id = :id;
-
 -- LIKE-based fallback while FTS5 is unavailable (see header). The :pattern
 -- parameter expects a glob-style pattern with leading/trailing %; caller
 -- assembles it (escape any user-supplied %  / _ as needed). Sort by recency

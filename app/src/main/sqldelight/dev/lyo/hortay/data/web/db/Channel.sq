@@ -36,9 +36,6 @@ SELECT * FROM channel ORDER BY title COLLATE NOCASE;
 selectAllSubscribed:
 SELECT * FROM channel WHERE is_subscribed = 1 ORDER BY title COLLATE NOCASE;
 
-selectByUsername:
-SELECT * FROM channel WHERE username = :username;
-
 selectStaleSubscribed:
 -- Channels overdue for a re-fetch. Driven by tiered polling (Phase 1.5).
 SELECT * FROM channel
