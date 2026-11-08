@@ -912,7 +912,11 @@ fun TimelineScreen(
     // highlighted). Fall back to All. Only when the folder still exists in [foldersList]:
     // a folder missing from the list entirely is the cold-start / not-yet-loaded case,
     // which [scope_filter] already renders as All without discarding the saved selection.
-    LaunchedEffect(selectedFolderId, headerTabs, foldersList) {
+    // Also only after the session's initial sync: mid cold start the slice is partial, so a
+    // folder whose channels haven't landed yet would look hidden and lose the selection.
+    val syncDone by vm.initialSyncDone.collectAsStateWithLifecycle()
+    LaunchedEffect(selectedFolderId, headerTabs, foldersList, syncDone) {
+        if (!syncDone) return@LaunchedEffect
         val selected = selectedFolderId ?: return@LaunchedEffect
         val exists = foldersList.any { it.id == selected }
         if (exists && headerTabs.none { it.id == selected }) selectedFolderId = null
