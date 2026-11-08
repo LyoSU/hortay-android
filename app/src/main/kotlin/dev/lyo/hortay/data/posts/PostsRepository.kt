@@ -870,6 +870,17 @@ class PostsRepository(
      * stall for no UX gain. Next sign-in (or next launch after this one, if
      * we never marked done) retries.
      *
+     * **Done only on evidence.** The flag is marked only when at least one
+     * channel's `GetChatHistory` succeeded, or when top-K is empty after a
+     * SUCCESSFUL chat-list drain ([_initialSyncDone]). An offline sign-in (drain
+     * failed → empty top-K) or a loop where every channel failed retries on the
+     * next Ready edge instead of silently giving up for this account.
+     *
+     * **Album coalesce stays offline.** Backfill ingest forces the local-only
+     * album path so a fragmented album at the window edge can't add unthrottled
+     * networked `GetChatHistory` calls on top of the budgeted loop; the Layer-2
+     * focus repair completes such albums when the card is read.
+     *
      * **One-shot per auth session.** Persisted via [coldStartBackfill]; reset
      * on TDLib `loggedOut` via the standard cleanup fan-out in
      * [dev.lyo.hortay.AppGraph]. Re-runs only on a fresh sign-in (different
@@ -914,10 +925,17 @@ class PostsRepository(
             // No subscribed channels — nothing to backfill but also nothing to
             // retry. Mark done so we don't re-walk the empty list on every
             // foreground transition; logout/login will reset the flag.
-            store.markDone()
+            // ONLY when the chat-list drain actually succeeded: an empty top-K
+            // after a failed drain (offline sign-in) means "unknown", not "none",
+            // and marking done there would lose the backfill for this account.
+            if (_initialSyncDone.value && sessionEpoch.get() == epoch) store.markDone()
             return
         }
 
+        // Set once any channel's GetChatHistory succeeds. A loop where every
+        // channel failed (offline, transient TDLib errors) must not mark the
+        // one-shot flag — it accomplished nothing and the next Ready edge retries.
+        var anyFetched = false
         for (chat in topK) {
             val res = runCatching {
                 td.send(
@@ -949,11 +967,16 @@ class PostsRepository(
             // TDLib hiccup) are non-fatal — log and move on. The next channel
             // in the top-K list is independent.
             err?.let { runCatching { Log.w(TAG, "Backfill GetChatHistory failed for chat=${chat.id}: ${it.message}") } }
+            if (res.isSuccess) anyFetched = true
+            // localAlbumsOnly: the backfill's GetChatHistory calls already spend the
+            // 30 req / 30 s budget at the throttle's edge. A networked album coalesce
+            // here would add unthrottled GetChatHistory calls on top of it; fragmented
+            // albums at the window edge are repaired by the Layer-2 focus repair instead.
             res.getOrNull()?.messages?.toList()?.takeIf { it.isNotEmpty() }
-                ?.let { messages -> ingest(chat.id, messages) }
+                ?.let { messages -> ingest(chat.id, messages, localAlbumsOnly = true) }
             delay(BACKFILL_THROTTLE_MS)
         }
-        if (sessionEpoch.get() == epoch) store.markDone()
+        if (anyFetched && sessionEpoch.get() == epoch) store.markDone()
     }
 
     /**
@@ -1642,7 +1665,14 @@ class PostsRepository(
         albumDebounce[key] = jobRef
     }
 
-    private suspend fun ingest(chatId: Long, messages: List<TdApi.Message>) {
+    private suspend fun ingest(
+        chatId: Long,
+        messages: List<TdApi.Message>,
+        // Force the offline album coalesce even after the initial sync. Set by
+        // [runFirstSignInBackfill], whose own GetChatHistory calls already sit at the
+        // server's rate budget.
+        localAlbumsOnly: Boolean = false,
+    ) {
         // Capture the session epoch before any suspend point. A logout→clear() that
         // lands while we're parked on the GetChat fallback / networked album coalesce
         // below bumps this; we re-check before writing so a resumed ingest can't
@@ -1677,7 +1707,7 @@ class PostsRepository(
         // Locally-cached siblings still merge; the rest are repaired by the
         // post-drain snapshot pass or an on-demand open. After the drain settles
         // a live arrival is one chat at a time, so networking is back on.
-        val full = albums.coalesce(chatId, messages, onlyLocal = !_initialSyncDone.value)
+        val full = albums.coalesce(chatId, messages, onlyLocal = localAlbumsOnly || !_initialSyncDone.value)
 
         val newPosts = full
             .filterNot { isRecentlyDeleted(it.chatId, it.id) }

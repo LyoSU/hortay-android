@@ -204,10 +204,13 @@ class PostsRepositoryBackfillTest {
 
     @Test
     fun `empty channel list marks done and issues zero RPCs`() = runTest {
-        // No UpdateNewChat — _mainChatIds stays empty. Backfill should
-        // short-circuit cleanly and mark done so we don't re-walk the empty
-        // list on every foreground transition.
+        // No UpdateNewChat — _mainChatIds stays empty after a SUCCESSFUL drain.
+        // Backfill should short-circuit cleanly and mark done so we don't re-walk
+        // the empty list on every foreground transition.
         val harness = PostsRepositoryTestHarness(this)
+        harness.td.onAny("LoadChats") { TdApi.Error(404, "Not Found") }
+        harness.repo.triggerInitialSync()
+        harness.advanceUntilIdle()
 
         harness.repo.runFirstSignInBackfill()
         harness.advanceUntilIdle()
@@ -215,6 +218,71 @@ class PostsRepositoryBackfillTest {
         assertEquals(0, harness.td.rpcCount("GetChatHistory"))
         assertTrue(harness.coldStartBackfill.done,
             "empty top-K must still mark done — nothing to retry")
+    }
+
+    @Test
+    fun `empty channel list after a failed drain leaves the flag unset`() = runTest {
+        // Offline sign-in: the chat-list drain never completed, so an empty top-K
+        // means "unknown", not "no channels". The next Ready edge must retry.
+        val harness = PostsRepositoryTestHarness(this)
+
+        harness.repo.runFirstSignInBackfill()
+        harness.advanceUntilIdle()
+
+        assertEquals(0, harness.td.rpcCount("GetChatHistory"))
+        assertFalse(harness.coldStartBackfill.done,
+            "empty top-K without a successful drain must not mark done")
+    }
+
+    @Test
+    fun `every channel failing with a non-flood error leaves the flag unset`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        repeat(2) { i ->
+            val chat = harness.fakeChannel(
+                id = -11_000L - i,
+                lastMessage = harness.fakeChannelMessage(-11_000L - i, 1100L + i),
+                mainListOrder = 100L - i,
+            )
+            harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        }
+        harness.advanceUntilIdle()
+
+        harness.td.onAny("GetChatHistory") { TdApi.Error(500, "Internal") }
+
+        harness.repo.runFirstSignInBackfill()
+        harness.advanceUntilIdle()
+
+        assertEquals(2, harness.td.rpcCount("GetChatHistory"),
+            "non-flood errors are per-chat — the loop visits every channel")
+        assertFalse(harness.coldStartBackfill.done,
+            "a loop that fetched nothing must not mark done")
+    }
+
+    @Test
+    fun `backfill ingest keeps album coalescing offline after the initial sync`() = runTest {
+        // After a successful drain, live ingest coalesces albums over the network. The
+        // backfill must not: its GetChatHistory calls already sit at the rate budget, so
+        // a fragmented album in a backfilled page resolves via GetMessageLocally only.
+        val harness = PostsRepositoryTestHarness(this)
+        val chatId = -12_000L
+        val chat = harness.fakeChannel(id = chatId, lastMessage = null, mainListOrder = 500L)
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.td.onAny("LoadChats") { TdApi.Error(404, "Not Found") }
+        harness.repo.triggerInitialSync()
+        harness.advanceUntilIdle()
+
+        val fragment = harness.fakeChannelMessage(chatId, 5L shl 20, mediaAlbumId = 77L)
+        harness.td.onAny("GetChatHistory") { TdApi.Messages(1, arrayOf(fragment)) }
+        harness.td.onAny("GetMessageLocally") { TdApi.Error(404, "Not Found") }
+
+        harness.repo.runFirstSignInBackfill()
+        harness.advanceUntilIdle()
+
+        assertEquals(1, harness.td.rpcCount("GetChatHistory"),
+            "only the backfill's own GetChatHistory may hit the network")
+        assertTrue(harness.td.rpcCount("GetMessageLocally") > 0,
+            "the album fragment must still try the offline sibling lookup")
+        assertTrue(harness.coldStartBackfill.done)
     }
 
     @Test
