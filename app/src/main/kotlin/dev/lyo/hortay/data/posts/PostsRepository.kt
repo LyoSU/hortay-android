@@ -548,6 +548,15 @@ class PostsRepository(
     )
     val newArrivals: SharedFlow<TimelinePost> = _newArrivals.asSharedFlow()
 
+    // Declared before `init`: the update collector launched there emits into it.
+    private val _pinnedChanged = MutableSharedFlow<Long>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+
+    /** Chat ids whose pinned set changed (`UpdateMessageIsPinned`); [pinnedMessages] re-reads. */
+    val pinnedChanged: SharedFlow<Long> = _pinnedChanged.asSharedFlow()
+
     init {
         // One collector for every TDLib update this repository handles, dispatched in
         // [onUpdate]. Separate `filterIsInstance` collectors per type woke ~14
@@ -572,6 +581,12 @@ class PostsRepository(
                 .drop(1) // Skip the initial value; only act on real transitions.
                 .filter { !it }
                 .collect { saveSnapshotNow() }
+        }
+
+        scope.launch {
+            for ((chatId, msg) in newChatIngests) {
+                runCatching { ingest(chatId, listOf(msg)) }.warnUnlessCancelled(TAG, "newChatIngest")
+            }
         }
 
         // Layer-2 album repair drain: single consumer, one dispatch per throttle window.
@@ -935,14 +950,6 @@ class PostsRepository(
         if (sessionEpoch.get() == epoch) store.markDone()
     }
 
-    private val _pinnedChanged = MutableSharedFlow<Long>(
-        extraBufferCapacity = 8,
-        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
-    )
-
-    /** Chat ids whose pinned set changed (`UpdateMessageIsPinned`); [pinnedMessages] re-reads. */
-    val pinnedChanged: SharedFlow<Long> = _pinnedChanged.asSharedFlow()
-
     /**
      * The channel's pinned messages, newest first, for the channel screen's pinned bar.
      * One `SearchChatMessages(filter = Pinned)` per channel open or pin change — an
@@ -950,14 +957,25 @@ class PostsRepository(
      * failure: a missing bar is better than an error for a secondary surface.
      */
     suspend fun pinnedMessages(chatId: Long): ImmutableList<PinnedPreview> {
-        val found = runCatching {
-            td.send(
-                TdApi.SearchChatMessages(
-                    chatId, null, "", null, 0L, 0, PINNED_FETCH_LIMIT, TdApi.SearchMessagesFilterPinned(),
-                ),
-            )
-        }.warnUnlessCancelled(TAG, "pinnedMessages($chatId)").getOrNull() ?: return persistentListOf()
-        return found.messages.orEmpty().map(mapper::toPinnedPreview).toPersistentList()
+        // TDLib may return fewer than `limit` per page, so follow next_from_message_id
+        // until it runs out (0) or the cap is reached — one page would undercount "N of M".
+        val collected = ArrayList<TdApi.Message>()
+        var from = 0L
+        var more = true
+        while (more && collected.size < PINNED_MAX) {
+            val page = runCatching {
+                td.send(
+                    TdApi.SearchChatMessages(
+                        chatId, null, "", null, from, 0, PINNED_FETCH_LIMIT, TdApi.SearchMessagesFilterPinned(),
+                    ),
+                )
+            }.warnUnlessCancelled(TAG, "pinnedMessages($chatId)").getOrNull()
+            val messages = page?.messages.orEmpty()
+            collected += messages
+            from = page?.nextFromMessageId ?: 0L
+            more = messages.isNotEmpty() && from != 0L
+        }
+        return collected.distinctBy { it.id }.take(PINNED_MAX).map(mapper::toPinnedPreview).toPersistentList()
     }
 
     /**
@@ -1517,13 +1535,19 @@ class PostsRepository(
      * Called from the [TdApi.UpdateNewChat] listener; suspending because [ingest]
      * may suspend on its own GetChat fallback or on the [_posts] CAS loop.
      */
-    private suspend fun handleNewChat(chat: TdApi.Chat) {
+    private fun handleNewChat(chat: TdApi.Chat) {
         registry.rememberChat(chat)
         seedReadCursor(chat)
         hydrateChatListMembership(chat)
         val msg = pendingLastMessages.remove(chat.id) ?: chat.lastMessage
-        if (msg != null && chat.isChannel()) ingest(chat.id, listOf(msg))
+        if (msg != null && chat.isChannel()) newChatIngests.trySend(chat.id to msg)
     }
+
+    // Ingest of an UpdateNewChat's lastMessage runs on its own single consumer, in TDLib
+    // order, instead of inline on the update collector: after the initial sync, ingest
+    // can coalesce an album over the network and wait out a FLOOD_WAIT, which inline
+    // would hold every other update type (new posts, deletes, edits) behind it.
+    private val newChatIngests = Channel<Pair<Long, TdApi.Message>>(Channel.UNLIMITED)
 
     /**
      * Monotonic advance of the local read cursor for [chatId] to [cursor]. The single
@@ -2405,6 +2429,13 @@ class PostsRepository(
     private val _mainChatIds = MutableStateFlow<Set<Long>>(emptySet())
 
     /**
+     * Every chat the account is subscribed to (Main + Archive membership), whether or not
+     * it has a post in [posts] yet — the scope of the Channels tab's "Hide all / Show all
+     * in feed" so a channel whose post hasn't landed is not left out.
+     */
+    fun subscribedChatIds(): Set<Long> = _mainChatIds.value + _archivedChatIds.value
+
+    /**
      * Wipe every piece of per-account in-memory state held by this repo.
      * Called from [AppGraph]'s logout handler in response to
      * [TdClient.loggedOut] so account A's cached posts / chat metadata /
@@ -2565,6 +2596,7 @@ class PostsRepository(
 
         /** Pinned messages fetched for the channel screen's pinned bar. */
         const val PINNED_FETCH_LIMIT = 20
+        const val PINNED_MAX = 50
         // Snapshot persistence: top-N posts saved on background. 50 covers a typical
         // first-screen view with comfortable scroll headroom; bigger payloads make the
         // DataStore write feel measurable on the way out without UX benefit because
