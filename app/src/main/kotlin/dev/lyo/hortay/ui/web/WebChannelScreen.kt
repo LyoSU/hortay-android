@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FeedOrder
+import dev.lyo.hortay.data.bookmarkKey
 import dev.lyo.hortay.data.isUnreadIn
 import dev.lyo.hortay.ui.timeline.alignedScrollOffset
 import dev.lyo.hortay.ui.timeline.reverseLayout
@@ -188,7 +189,7 @@ fun WebChannelScreen(
                 }
             },
             onBookmarkClick = { post -> scope.launch { bookmarks.toggle(post) } },
-            isBookmarked = { post -> bookmarkedKeys.contains("${post.chatId}:${post.id}") },
+            isBookmarked = { post -> post.bookmarkKey() in bookmarkedKeys },
             // Wire post-body tap through to the scaffold so it can show the
             // "коментарі недоступні" snackbar. Without this, tapping the body
             // is silently dead (the default no-op).
