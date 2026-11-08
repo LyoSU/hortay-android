@@ -556,6 +556,12 @@ class PostsRepository(
     )
     val newArrivals: SharedFlow<TimelinePost> = _newArrivals.asSharedFlow()
 
+    // Declared before `init`, which launches its consumer. Ingest of an UpdateNewChat's lastMessage runs on its own single consumer, in TDLib
+    // order, instead of inline on the update collector: after the initial sync, ingest
+    // can coalesce an album over the network and wait out a FLOOD_WAIT, which inline
+    // would hold every other update type (new posts, deletes, edits) behind it.
+    private val newChatIngests = Channel<Pair<Long, TdApi.Message>>(Channel.UNLIMITED)
+
     // Declared before `init`: the update collector launched there emits into it.
     private val _pinnedChanged = MutableSharedFlow<Long>(
         extraBufferCapacity = 8,
@@ -1586,11 +1592,6 @@ class PostsRepository(
         if (msg != null && chat.isChannel()) newChatIngests.trySend(chat.id to msg)
     }
 
-    // Ingest of an UpdateNewChat's lastMessage runs on its own single consumer, in TDLib
-    // order, instead of inline on the update collector: after the initial sync, ingest
-    // can coalesce an album over the network and wait out a FLOOD_WAIT, which inline
-    // would hold every other update type (new posts, deletes, edits) behind it.
-    private val newChatIngests = Channel<Pair<Long, TdApi.Message>>(Channel.UNLIMITED)
 
     /**
      * Monotonic advance of the local read cursor for [chatId] to [cursor]. The single
