@@ -46,7 +46,7 @@ Gradle wrapper закомічено — окремий `gradle wrapper` не п�
 
 ## Стек
 
-AGP 9.2.0 · Gradle 9.4.1 · Kotlin 2.3.10 (K2) · Compose BOM 2026.04.01 · Material 3 1.5.0-alpha19 · minSdk 26 / targetSdk 36 · TDLib запінено в `scripts/tdlib-version.txt` · Coroutines 1.10.1 · Coil 3.3.0 · Navigation 3 1.1.2 · SQLDelight 2.3 (тільки гостьовий режим) · DataStore 1.2.0
+AGP 9.5.1 · Gradle 9.8.2 · Kotlin 2.4.21 (K2) · Compose BOM 2026.09.00 · Material 3 1.5.0-rc01 · minSdk 26 / targetSdk 36 · TDLib запінено в `scripts/tdlib-version.txt` · Coroutines 1.11.0 · Coil 3.6.3 · Navigation 3 1.1.4 · SQLDelight 2.4.1 (тільки гостьовий режим) · DataStore 1.3.0
 
 ## Архітектура
 

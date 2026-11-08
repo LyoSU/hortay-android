@@ -81,12 +81,12 @@ Each `❌` carries a **Revisit:** clause — the concrete condition that would j
 
 - ❌ Hilt / Dagger / Koin. DI is manual (`AppGraph`). **Revisit:** > 1 active contributor, or `AppGraph` > 60 properties, or multi-module split lands.
 - ❌ Firebase / Crashlytics / Sentry / analytics / phone-home. INTERNET is for TDLib + anonymous `t.me/s/` only. **Revisit:** never — privacy-as-feature.
-- ❌ Room. SQLDelight 2.3 owns `web.db`; TDLib owns its own. **Revisit:** never (no shared scope).
+- ❌ Room. SQLDelight 2.4 owns `web.db`; TDLib owns its own. **Revisit:** never (no shared scope).
 - ❌ OkHttp / Retrofit / Ktor as a general HTTP client. Coil pulls `coil-network-okhttp` for images, OkHttp is declared directly only for the web-mode `t.me/s/` pipeline + custom-emoji JSON. **Revisit:** if a typed REST backend joins the stack (none planned).
 - ❌ FCM / push. TDLib `RegisterDevice` + `UpdateNotification`. **Revisit:** if TDLib push proves unreliable in field reports.
 - ❌ ViewBinding / Fragments. Compose-only, single-Activity. **Revisit:** never.
 - ✅ Navigation 3 (`androidx.navigation3` + `NavDisplay`). The revisit condition on the old hand-rolled `NavStack`/`NavEntry` rule fired — Nav3 shipped overlay/scene primitives that subsume it — so the stack was migrated (see the "Navigation 3 detail stack" load-bearing row). Typed `AppNavKey` keys, framework-owned predictive back + per-entry state/VM, one shared graph-scoped back stack. ❌ the older `androidx.navigation-compose` typed-routes API — Nav3's polymorphic-key model fits the overlay-heavy nav and process-death-reset contract that typed routes don't.
-- ✅ SQLDelight 2.3 for `web.db` only. TDLib mode runs without a DB.
+- ✅ SQLDelight 2.4 for `web.db` only. TDLib mode runs without a DB.
 
 ### TDLib usage
 
@@ -164,7 +164,7 @@ CHANGELOG.md is release notes for a user, not a PR description. Rationale lives 
 adb logcat -s TdClient MediaCache PostsRepository ChatPresence
 ```
 
-Toolchain: JDK 17, Gradle 9.7.1, AGP 9.4.1, Kotlin 2.4.10 (K2) — `gradle/libs.versions.toml` and the wrapper are the source of truth. Compose Compiler via `org.jetbrains.kotlin.plugin.compose`.
+Toolchain: JDK 17, Gradle 9.8.2, AGP 9.5.1, Kotlin 2.4.21 (K2) — `gradle/libs.versions.toml` and the wrapper are the source of truth. Compose Compiler via `org.jetbrains.kotlin.plugin.compose`.
 
 ### Verifying rules
 
