@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.media
 
+import androidx.media3.common.PlaybackException
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -211,6 +212,10 @@ fun TdVideoPlayer(
     // keyed on [exoPlayer] only, so a recomposition with a new lambda must not leave
     // the listener holding the stale one.
     val firstFrameCallback = rememberUpdatedState(onFirstFrameRendered)
+    // Error recovery reads the latest binding / source; the listener below outlives them.
+    val latestBinding = rememberUpdatedState(binding)
+    val latestRemoteUrl = rememberUpdatedState(if (isRemote) remoteUrl else null)
+    val onStaleMedia = LocalWebStaleMedia.current
 
     DisposableEffect(exoPlayer) {
         val lifecycleObserver = LifecycleEventObserver { _, event ->
@@ -245,6 +250,18 @@ fun TdVideoPlayer(
 
             override fun onRenderedFirstFrame() {
                 firstFrameCallback.value?.invoke()
+            }
+
+            // Without this a failed player sat silent on its poster forever. A local file
+            // that vanished (storage sweep, "Clear cache") is downloaded again; an expired
+            // guest-mode CDN link is reported so the post gets a fresh one.
+            override fun onPlayerError(error: PlaybackException) {
+                val remote = latestRemoteUrl.value
+                if (remote != null) {
+                    onStaleMedia?.invoke(remote)
+                } else if (error.errorCode in FILE_GONE_ERRORS) {
+                    latestBinding.value.invalidate(priority)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
@@ -368,3 +385,11 @@ fun TdVideoPlayer(
 // attentive — a longer freeze with no feedback reads worse than the same
 // wait while staring at a thumbnail.
 private const val REBUFFER_OVERLAY_GRACE_MS = 400L
+
+/** Player errors that mean the downloaded file is gone or unreadable, not a decoder problem. */
+private val FILE_GONE_ERRORS = setOf(
+    PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+    PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+    PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+    PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+)
