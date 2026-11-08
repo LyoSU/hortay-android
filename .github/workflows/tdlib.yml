@@ -89,7 +89,7 @@ jobs:
       # computes, so the follow-up ci/release/beta runs on the merged bump hit it
       # instead of each rebuilding TDLib.
       - name: Warm the CI cache
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: |
             libtdlib/src/main/java/org/drinkless/tdlib/TdApi.java
