@@ -88,29 +88,6 @@ fun firstUnreadIndex(posts: List<TimelinePost>, cursors: ReadCursors): Int =
     posts.indexOfFirst { it.isUnreadIn(cursors) }
 
 /**
- * Returns [posts] unchanged for both [FeedOrder] values. This is a no-op shim.
- *
- * **Why it's an identity:** the repository layer ([PostsRepository] /
- * [WebFeedSource]) owns the single canonical sort: **descending by date,
- * tie-broken descending by id** (newest = index 0). All callers now rely on
- * that invariant.  [FeedOrder] controls only the `reverseLayout` boolean
- * passed to [androidx.compose.foundation.lazy.LazyColumn] — it does NOT
- * re-sort the list.
- *
- * The function is kept (rather than deleted) so call sites don't all need
- * touching in the same commit.  It accepts `this` by receiver and returns
- * `this` — no copy, no allocation, no recomposition churn from identity
- * change.
- *
- * **Deterministic tie-break lives in the repository.** The previous
- * `OldestUnreadFirst` branch ran `thenBy { it.id }` here to prevent
- * same-date posts from swapping between refreshes.  That guarantee is now
- * upheld by `PostsRepository`'s `sortedByDescending` + secondary key, which
- * is the single authoritative sort location.
- */
-fun List<TimelinePost>.orderedFor(@Suppress("UNUSED_PARAMETER") order: FeedOrder): List<TimelinePost> = this
-
-/**
  * Cold-start scroll target. Returns the index of the **oldest unread post**
  * in [posts], or `-1` when nothing qualifies (caught up, empty feed, or
  * cursors not yet loaded).

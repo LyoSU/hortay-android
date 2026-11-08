@@ -3,7 +3,6 @@ package dev.lyo.hortay.data
 import kotlinx.collections.immutable.persistentMapOf
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -82,45 +81,6 @@ class ReadCursorsTest {
     @Test
     fun `firstUnreadIndex returns -1 on empty input`() {
         assertEquals(-1, firstUnreadIndex(emptyList(), EmptyReadCursors))
-    }
-
-    @Test
-    fun `Newest order is a no-op on already-descending input`() {
-        val newestFirst = listOf(
-            post(id = 70L, date = 700L), // unread, newest
-            post(id = 60L, date = 600L), // unread
-            post(id = 40L, date = 400L), // read
-            post(id = 30L, date = 300L), // read, oldest
-        )
-        val ordered = newestFirst.orderedFor(FeedOrder.Newest)
-        assertEquals(listOf(70L, 60L, 40L, 30L), ordered.map { it.id })
-    }
-
-    @Test
-    fun `OldestUnreadFirst is identity — sort is owned by the repository`() {
-        // Since PostsRepository always emits newest-first (descending), orderedFor
-        // is a no-op shim for both orders. FeedOrder controls reverseLayout only.
-        // Tie-break determinism lives in the repository's descending sort.
-        val newestFirst = listOf(
-            post(id = 70L, date = 700L),
-            post(id = 60L, date = 600L),
-            post(id = 40L, date = 400L),
-            post(id = 30L, date = 300L),
-        )
-        val ordered = newestFirst.orderedFor(FeedOrder.OldestUnreadFirst)
-        assertEquals(listOf(70L, 60L, 40L, 30L), ordered.map { it.id })
-    }
-
-    @Test
-    fun `orderedFor preserves input reference identity for both orders`() {
-        // Both branches must return `this` — no copy, no re-sort.
-        val posts = listOf(
-            post(id = 10L, date = 500L),
-            post(id = 11L, date = 500L),
-            post(id = 12L, date = 500L),
-        )
-        assertSame(posts, posts.orderedFor(FeedOrder.Newest))
-        assertSame(posts, posts.orderedFor(FeedOrder.OldestUnreadFirst))
     }
 
     @Test

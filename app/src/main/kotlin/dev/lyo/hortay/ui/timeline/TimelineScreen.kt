@@ -50,7 +50,6 @@ import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChannelDirectory
 import dev.lyo.hortay.data.ChatFoldersRepository
 import dev.lyo.hortay.data.isUnreadAt
-import dev.lyo.hortay.data.orderedFor
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.TranslationsStore
@@ -478,9 +477,9 @@ fun TimelineScreen(
     // through the same value via [homeScrollIndex] / [buildTimelineUiState].
     val recencyCutoffMs = remember { System.currentTimeMillis() - BOUNDARY_RECENCY_WINDOW_MS }
 
-    val visiblePosts = remember(filteredPosts, feedOrder) {
-        filteredPosts.orderedFor(feedOrder)
-    }
+    // Repository order (newest first) is final for both FeedOrder values — FeedOrder
+    // only flips `reverseLayout`; see [dev.lyo.hortay.data.FeedOrder].
+    val visiblePosts = filteredPosts
 
     // Cold-start "cursors usable for the boundary picker" signal. Source of
     // truth is [TimelineViewModel.coldStartCursorsSettled] — an Activity-scoped

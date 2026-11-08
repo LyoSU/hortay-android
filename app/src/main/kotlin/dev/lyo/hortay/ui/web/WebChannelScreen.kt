@@ -34,7 +34,6 @@ import kotlinx.coroutines.launch
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.isUnreadIn
-import dev.lyo.hortay.data.orderedFor
 import dev.lyo.hortay.ui.timeline.alignedScrollOffset
 import dev.lyo.hortay.ui.timeline.reverseLayout
 import dev.lyo.hortay.data.web.WebPostAdapter
@@ -113,11 +112,9 @@ fun WebChannelScreen(
     val channelInfo = remember(channels, username) {
         channels.firstOrNull { it.info.username.equals(username, ignoreCase = true) }?.info
     }
-    // Already filtered at the SQL layer to channel_username = :username; just
-    // apply the user's feed order on top.
-    val orderedPosts = remember(perChannelPosts, feedOrder) {
-        perChannelPosts.orderedFor(feedOrder)
-    }
+    // Already filtered at the SQL layer to channel_username = :username and sorted
+    // newest-first; FeedOrder only flips `reverseLayout`.
+    val orderedPosts = perChannelPosts
 
     val listState = rememberLazyListState()
 
