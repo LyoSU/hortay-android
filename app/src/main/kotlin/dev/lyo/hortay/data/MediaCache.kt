@@ -38,9 +38,10 @@ enum class DownloadPriority(val tdValue: Int) {
     /**
      * Card whose centre is closest to the viewport centre — i.e. what the user is
      * most likely staring at right now. Sits one tier above plain [VisibleMedia]
-     * so on a tight TDLib pool (mobile/roaming, ~4 active slots per
-     * [tdlib/td#786](https://github.com/tdlib/td/issues/786)) the dominant card
-     * always grabs a slot first regardless of LIFO ordering inside lane 16. On
+     * so on a tight TDLib download pool (mobile/roaming, where fewer files download
+     * concurrently) the dominant card always grabs a slot first regardless of the
+     * LIFO order TDLib applies to same-priority requests inside lane 16
+     * ([tdlib/td#786](https://github.com/tdlib/td/issues/786)). On
      * Wi-Fi the pool is wide enough that the priority gap is invisible — same
      * file lands on both, the gap is just defence in depth.
      */

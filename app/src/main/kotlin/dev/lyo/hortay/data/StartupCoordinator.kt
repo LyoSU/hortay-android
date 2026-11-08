@@ -25,11 +25,12 @@ import kotlinx.coroutines.withTimeoutOrNull
  *   • TDLib's own initial sync on the first [AuthStage.Ready] still produces
  *     a burst of `UpdateNewChat × every chat`, `UpdateUser × every contact`,
  *     `UpdateSupergroup × every channel`, plus the auth-side `getMe`, push-
- *     token register, notification-settings sync. Per tdlib/td#786 the
- *     active-slot pool is small (~4 mobile, ~10 Wi-Fi) and per tdlib/td#3019
- *     the RPC queue is per-client and serialised — even with our own fan-out
- *     gone, layering speculative `DownloadFile` + `GetMessageThread` on top
- *     of TDLib's own sync chatter still races for the same slots.
+ *     token register, notification-settings sync. TDLib's concurrent
+ *     download slots are limited (how many depends on network type), and
+ *     server requests share the account's rate limits (Levin, tdlib/td#743) —
+ *     even with our own fan-out gone, layering speculative `DownloadFile` +
+ *     `GetMessageThread` on top of TDLib's own sync chatter still competes
+ *     for the same slots and budget.
  *   • The `lastMessage` harvest itself fans out [PostsRepository] `ingest`
  *     calls, some of which probe album siblings via `GetMessage`. Bounded
  *     at concurrency 4, but live during the same window.

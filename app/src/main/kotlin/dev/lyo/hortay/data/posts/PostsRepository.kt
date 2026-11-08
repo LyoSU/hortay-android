@@ -85,8 +85,9 @@ import java.util.concurrent.atomic.AtomicLong
  * Our listeners catch those, route messages through [ingest], and populate
  * `_mainChatIds` / `_archivedChatIds` along the way. No `GetChats` round-trip,
  * no per-channel `chat.lastMessage` harvest pass, no 2 s "wait for the chat
- * cache" timeout — Levin's canonical pattern (tdlib/td#3019: updates are the source of
- * truth; LoadChats is what makes them flow).
+ * cache" timeout — the pattern td_api.tl prescribes: `loadChats` "loaded chats and
+ * their positions in the chat list will be sent through updates", while `getChats` is
+ * "for informational purposes only. Use loadChats and updates processing instead".
  *
  * On-demand paths (untouched by [triggerInitialSync]):
  *   • [loadChannelHistory] — when the user opens a single-channel filter.
@@ -240,8 +241,8 @@ class PostsRepository(
 
     // Album coalescing: TDLib emits one UpdateNewMessage per album member with no
     // "album complete" signal — confirmed upstream by tdlib/td#1482 (closed 2021
-    // with "use a timeout") and reiterated in tdlib/td#2523 (closed 2023 with the
-    // same verdict). The wire-level gap is permanent, so we treat album reassembly
+    // with "use a timeout"); td_api.tl's `media_album_id` only groups members and
+    // carries no member count. The wire-level gap is permanent, so we treat album reassembly
     // as a layered defence with three independent rescue paths, each addressing a
     // different timing window:
     //
@@ -701,8 +702,9 @@ class PostsRepository(
      * ingest writes `_posts` on the first `UpdateNewChat` (immediate), while this restore
      * has to await a `GetMessage` batch before its first write, so the stub almost always
      * won that race — the bail then discarded the snapshot and the feed collapsed to one
-     * post per channel after every restart (tdlib/td#3019 keeps the cold-start stream at
-     * one post per channel by design; the snapshot is the only thing carrying deep history
+     * post per channel after every restart (the cold-start contract keeps the stream at one
+     * post per channel by design — `UpdateNewChat` carries only `chat.lastMessage` and
+     * per-channel history fan-out is off-limits, see the class KDoc; the snapshot is the only thing carrying deep history
      * across warm restarts once the one-shot [runFirstSignInBackfill] is done).
      *
      * Album completeness is still owned by the Layer-1 local rehydration in
@@ -812,8 +814,9 @@ class PostsRepository(
      *
      * What it deliberately doesn't do:
      *   - No `GetChats` call. The set is built incrementally from the
-     *     listener stream, which is the canonical TDLib pattern (Levin in
-     *     tdlib/td#3019: updates are the source of truth).
+     *     listener stream, which is the canonical TDLib pattern (td_api.tl:
+     *     `getChats` is "for informational purposes only. Use loadChats and
+     *     updates processing instead to maintain chat lists").
      *   - No 2 s wait for the chat cache to fill. Updates either arrived
      *     synchronously during the LoadChats drain (warm cache) or will
      *     arrive on the wire (first-auth) — in both cases our listeners

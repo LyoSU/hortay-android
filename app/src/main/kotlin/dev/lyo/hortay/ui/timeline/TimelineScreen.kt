@@ -1081,9 +1081,9 @@ fun TimelineScreen(
     // Warm the discussion-thread cache for posts that linger in the viewport.
     // Extracted to [rememberCommentsPrefetch] — shared with [ChannelScreen]. Cold
     // GetMessageThread is ~1.5–2 s per channel; after a single fetch TDLib answers
-    // from local cache (~200 ms). Cap of [COMMENTS_PREFETCH_LIMIT] keeps the TDLib
-    // RPC pipe clear (per Levin tdlib/td#3019 the pipe is a single per-client
-    // queue), and the [StartupCoordinator] gate keeps us silent during the post-auth
+    // from local cache (~200 ms). Cap of [COMMENTS_PREFETCH_LIMIT] bounds the
+    // speculative RPC volume so it can't crowd out user-driven requests (which share
+    // the account's server-side rate limits), and the [StartupCoordinator] gate keeps us silent during the post-auth
     // storm. commentCount > 0 (not just != null) skips the typical "0 replies
     // forever" case that would otherwise burn 2 wasted RPCs per post on the
     // dominant share of first-launch volume.
