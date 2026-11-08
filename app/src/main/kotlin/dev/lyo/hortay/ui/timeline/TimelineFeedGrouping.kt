@@ -144,7 +144,7 @@ internal fun PostContent.playbackFileIds(): List<Int> = buildList {
  *
  * **Album anchor flip** invariant on [key]: album cards key on `(chatId, mediaAlbumId)`,
  * NOT on `post.id`. When the cold-start harvest ingests `Chat.lastMessage` and the
- * surround-fetch in `coalesceAlbumFragments` fails (FLOOD_WAIT, transient network,
+ * surround-fetch in `AlbumCoalescer.coalesce` fails (FLOOD_WAIT, transient network,
  * message aged out of the local store), the feed renders a 1-fragment card whose
  * `post.id` is `chat.lastMessage.id` — typically the *highest* album member id (TDLib
  * stamps `lastMessage` as the most recent message id, and album members are sent

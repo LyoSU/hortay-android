@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test
  * own tile and groups only at render time — so a late member there merely
  * shifts position, while here it replaces the whole card.
  *
- *  - **Bug 1** (filter size==1): [PostsRepository.coalesceAlbumFragments] only
+ *  - **Bug 1** (filter size==1): [dev.lyo.hortay.data.posts.AlbumCoalescer.coalesce] only
  *    fetched surround context when the batch carried a single fragment of an
  *    album. A 2-9-member partial fell through unaffected, and the merged card
  *    landed with the partial item count. Tested via [coalesce dispatches
@@ -241,7 +241,7 @@ class AlbumCoalesceTest {
             harness.fakePhotoAlbumMessage(chatId, id * stride, date = baseDate, mediaAlbumId = albumId)
         }
         // Mocks registered BEFORE UpdateNewChat — handleNewChat ingest
-        // fires immediately and triggers coalesceAlbumFragments.
+        // fires immediately and triggers AlbumCoalescer.coalesce.
         harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
         // Cold-start ingest recovers siblings via the per-message local index.
         harness.td.onAny("GetMessageLocally") { req ->

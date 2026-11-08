@@ -28,7 +28,7 @@ import kotlinx.collections.immutable.toPersistentList
  *
  *  1. **Partial-album downgrade.** [raw] is the per-message expansion of an
  *     album: 5 [TimelinePost]s with [TimelinePost.mediaAlbumId] set, each
- *     carrying a 1-item album content. [PostsRepository]'s `coalesceAlbumFragments`
+ *     carrying a 1-item album content. `AlbumCoalescer.coalesce`
  *     normally plugs members lost to the GetChatHistory window edge, but its
  *     surround fetch can come up short — TDLib FLOOD_WAIT, transient network
  *     blip, or members aged out of the local store. The naive merge ("drop any
@@ -75,7 +75,7 @@ internal fun foldRawIntoCurrent(
     if (partialAlbumKeys.isNotEmpty()) {
         // Surface this — partial coverage is the symptom of an album that's
         // either aging out of the channel's window or hitting transient
-        // FLOOD_WAIT in coalesceAlbumFragments. Either way the existing merged
+        // FLOOD_WAIT in AlbumCoalescer.coalesce. Either way the existing merged
         // anchor is the more reliable rendering and we skip the raw fragment;
         // the next refresh that catches the album whole will overwrite cleanly.
         // runCatching keeps the helper unit-testable on the JVM where the

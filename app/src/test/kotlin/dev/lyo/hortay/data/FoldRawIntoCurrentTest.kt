@@ -35,7 +35,7 @@ class FoldRawIntoCurrentTest {
 
         // Simulate a refresh that returns only 1 of the 5 album members
         // (older siblings clipped past GetChatHistory(30)'s window edge,
-        // coalesceAlbumFragments' surround fetch came up short).
+        // AlbumCoalescer.coalesce' surround fetch came up short).
         val partialRaw = listOf(rawAlbumMember(chatId, albumId, id = 14L))
 
         val result = foldRawIntoCurrent(persistentListOf(merged), partialRaw)
