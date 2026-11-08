@@ -295,6 +295,9 @@
     <string name="comments_disabled_title">Kommentare deaktiviert</string>
     <string name="comments_disabled_body">Dieser Kanal hat keine verknüpfte Diskussionsgruppe</string>
     <string name="comments_unavailable">Diskussion nicht verfügbar</string>
+    <string name="comments_load_failed_title">Kommentare konnten nicht geladen werden</string>
+    <string name="comments_load_failed_body">Prüfe deine Verbindung und versuche es erneut</string>
+    <string name="comments_retry">Erneut versuchen</string>
 
     <!-- Kanäle -->
     <string name="channels_title">Kanäle</string>

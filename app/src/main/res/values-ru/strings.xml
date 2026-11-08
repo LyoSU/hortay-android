@@ -311,6 +311,9 @@
     <string name="comments_disabled_title">Комментарии отключены</string>
     <string name="comments_disabled_body">У этого канала нет привязанной группы для обсуждений</string>
     <string name="comments_unavailable">Обсуждение недоступно</string>
+    <string name="comments_load_failed_title">Не удалось загрузить комментарии</string>
+    <string name="comments_load_failed_body">Проверьте подключение и попробуйте ещё раз</string>
+    <string name="comments_retry">Повторить</string>
 
     <!-- Channels -->
     <string name="channels_title">Каналы</string>

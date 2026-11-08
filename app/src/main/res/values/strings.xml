@@ -296,6 +296,9 @@
     <string name="comments_disabled_title">Comments are off</string>
     <string name="comments_disabled_body">This channel doesn\'t have a linked discussion group</string>
     <string name="comments_unavailable">Discussion unavailable</string>
+    <string name="comments_load_failed_title">Couldn\'t load comments</string>
+    <string name="comments_load_failed_body">Check your connection and try again</string>
+    <string name="comments_retry">Try again</string>
 
     <!-- Channels -->
     <string name="channels_title">Channels</string>

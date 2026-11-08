@@ -293,6 +293,9 @@
     <string name="comments_disabled_title">نظرات غیرفعال است</string>
     <string name="comments_disabled_body">این کانال گروه بحث متصل ندارد</string>
     <string name="comments_unavailable">بحث در دسترس نیست</string>
+    <string name="comments_load_failed_title">بارگیری نظرات ممکن نشد</string>
+    <string name="comments_load_failed_body">اتصال خود را بررسی کنید و دوباره امتحان کنید</string>
+    <string name="comments_retry">تلاش دوباره</string>
 
     <!-- کانال‌ها -->
     <string name="channels_title">کانال‌ها</string>

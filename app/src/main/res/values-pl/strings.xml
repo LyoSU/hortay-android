@@ -309,6 +309,9 @@
     <string name="comments_disabled_title">Komentarze są wyłączone</string>
     <string name="comments_disabled_body">Ten kanał nie ma podłączonej grupy dyskusyjnej</string>
     <string name="comments_unavailable">Dyskusja niedostępna</string>
+    <string name="comments_load_failed_title">Nie udało się wczytać komentarzy</string>
+    <string name="comments_load_failed_body">Sprawdź połączenie i spróbuj ponownie</string>
+    <string name="comments_retry">Spróbuj ponownie</string>
 
     <!-- Kanały -->
     <string name="channels_title">Kanały</string>

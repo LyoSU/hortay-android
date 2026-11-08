@@ -284,7 +284,10 @@ fun CommentsScreen(
     // viewport-dwell ack effect dormant for the same reason (no thread to ack
     // against).
     val threadDisabled = disabledOverride != null || repo == null
-    val state by remember(post.chatId, candidateIds, threadDisabled, repo) {
+    // Bumped by the LoadFailed retry button: re-keys the subscription so observeThread
+    // hands back a fresh stream (the failed one evicted itself from the repo cache).
+    var threadRetryNonce by remember { mutableIntStateOf(0) }
+    val state by remember(post.chatId, candidateIds, threadDisabled, repo, threadRetryNonce) {
         if (threadDisabled || repo == null) {
             kotlinx.coroutines.flow.flowOf(CommentsRepository.ThreadState.Loading)
         } else {
@@ -765,6 +768,15 @@ fun CommentsScreen(
                         symbol = "chat_bubble",
                         title = stringResource(R.string.comments_disabled_title),
                         body = stringResource(R.string.comments_disabled_body),
+                    )
+                }
+                CommentsRepository.ThreadState.LoadFailed -> item(key = "load-failed") {
+                    CommentsEmptyState(
+                        symbol = "cloud_off",
+                        title = stringResource(R.string.comments_load_failed_title),
+                        body = stringResource(R.string.comments_load_failed_body),
+                        actionLabel = stringResource(R.string.comments_retry),
+                        onAction = { threadRetryNonce++ },
                     )
                 }
             }

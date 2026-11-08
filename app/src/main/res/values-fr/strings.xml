@@ -303,6 +303,9 @@
     <string name="comments_disabled_title">Commentaires désactivés</string>
     <string name="comments_disabled_body">Cette chaîne n\'a pas de groupe de discussion associé</string>
     <string name="comments_unavailable">Discussion indisponible</string>
+    <string name="comments_load_failed_title">Impossible de charger les commentaires</string>
+    <string name="comments_load_failed_body">Vérifie ta connexion et réessaie</string>
+    <string name="comments_retry">Réessayer</string>
 
     <!-- Chaînes -->
     <string name="channels_title">Chaînes</string>

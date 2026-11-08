@@ -295,6 +295,9 @@
     <string name="comments_disabled_title">Yorumlar kapalı</string>
     <string name="comments_disabled_body">Bu kanalın bağlı bir tartışma grubu yok</string>
     <string name="comments_unavailable">Tartışma kullanılamıyor</string>
+    <string name="comments_load_failed_title">Yorumlar yüklenemedi</string>
+    <string name="comments_load_failed_body">Bağlantını kontrol edip tekrar dene</string>
+    <string name="comments_retry">Tekrar dene</string>
 
     <!-- Kanallar -->
     <string name="channels_title">Kanallar</string>

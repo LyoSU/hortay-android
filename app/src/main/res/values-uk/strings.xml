@@ -306,6 +306,9 @@
     <string name="comments_disabled_title">Коментарі вимкнено</string>
     <string name="comments_disabled_body">Автор каналу не підключив групу для обговорень</string>
     <string name="comments_unavailable">Обговорення недоступне</string>
+    <string name="comments_load_failed_title">Не вдалося завантажити коментарі</string>
+    <string name="comments_load_failed_body">Перевір зʼєднання й спробуй ще раз</string>
+    <string name="comments_retry">Спробувати ще раз</string>
 
     <!-- Channels -->
     <string name="channels_title">Канали</string>

@@ -325,6 +325,9 @@
     <string name="comments_disabled_title">التعليقات مغلقة</string>
     <string name="comments_disabled_body">هذه القناة لا تمتلك مجموعة نقاش مرتبطة</string>
     <string name="comments_unavailable">النقاش غير متاح</string>
+    <string name="comments_load_failed_title">تعذّر تحميل التعليقات</string>
+    <string name="comments_load_failed_body">تحقّق من اتصالك وحاول مرة أخرى</string>
+    <string name="comments_retry">إعادة المحاولة</string>
 
     <!-- القنوات -->
     <string name="channels_title">القنوات</string>

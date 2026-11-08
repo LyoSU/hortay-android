@@ -4,6 +4,11 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -63,6 +68,13 @@ class CommentsRepository(
         data object Loading : ThreadState
         data class Ready(val rows: ImmutableList<ThreadRow>, val threadChatId: Long) : ThreadState
         data class Error(val message: String) : ThreadState
+        /**
+         * The thread exists but its history couldn't be fetched (network / rate limit) even
+         * after retries. Distinct from [Error] (no discussion thread at all) so the screen can
+         * offer a retry instead of claiming comments are off. The stream is evicted from the
+         * cache when this is emitted, so the next [observeThread] call bootstraps afresh.
+         */
+        data object LoadFailed : ThreadState
     }
 
     private data class ResolvedAnchor(val threadChatId: Long, val rootId: Long)
@@ -247,7 +259,7 @@ class CommentsRepository(
         val key = chatId to anchorKey
         return synchronized(streams) {
             streams.getOrPut(key) {
-                threadFlow(chatId, candidateMessageIds, limit)
+                threadFlow(chatId, candidateMessageIds, limit, streamKey = key)
                     .shareIn(scope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), replay = 1)
             }
         }
@@ -257,6 +269,7 @@ class CommentsRepository(
         chatId: Long,
         candidateMessageIds: List<Long>,
         limit: Int,
+        streamKey: Pair<Long, Long>,
     ): Flow<ThreadState> = flow {
         val anchor = ensureAnchor(chatId, candidateMessageIds) ?: run {
             emit(ThreadState.Error(unavailableMsg))
@@ -295,93 +308,153 @@ class CommentsRepository(
             // message in page N. The set tracks ids we've already added (rootId pre-seeded
             // because the channel-post mirror is filtered out everywhere) so the boundary
             // and any other coincidental repeats fold into one entry.
-            val live = mutableListOf<TdApi.Message>()
-            val seenIds = HashSet<Long>().apply { add(anchor.rootId) }
-            // mediaAlbumId of the root mirror's album when the channel post itself is an
-            // album. TDLib mirrors a channel-post album into the linked discussion
-            // supergroup as N messages with the same mediaAlbumId, all sharing
-            // topicId=MessageTopicThread(rootId). The single-id seenIds.add(anchor.rootId)
-            // above only excludes ONE of those N; the remaining (N-1) used to leak into
-            // the thread as phantom "comments" (especially visible on photo-album posts).
-            // We capture this album id the first time a batch contains the rootId mirror,
-            // then exclude all its siblings from `live` for the rest of the session.
-            // Stored in an outer-scope `var` (captured by the `collect` lambda below)
-            // so live UpdateNewMessage redelivery during a reconnect is also filtered.
-            var rootAlbumId = 0L
-            var fromId = 0L
-            while (live.size < limit) {
-                val batch = runCatching {
-                    td.send(TdApi.GetMessageThreadHistory(anchor.threadChatId, anchor.rootId, fromId, 0, BATCH_SIZE))
-                }.warnUnlessCancelled(TAG, "threadHistory(${anchor.threadChatId})").getOrNull() ?: break
-                val msgs = batch.messages.orEmpty()
-                if (msgs.isEmpty()) break
-                // Capture rootAlbumId lazily — once a batch contains the root mirror
-                // with a non-zero mediaAlbumId, every sibling in this page (and every
-                // sibling re-delivered later) is filtered. Scanning the whole batch
-                // first is required because GetMessageThreadHistory walks id-desc and
-                // the root mirror is the LOWEST member of its own album; siblings
-                // (higher ids) appear earlier in the batch iteration order.
-                if (rootAlbumId == 0L) {
-                    msgs.firstOrNull { it.id == anchor.rootId }
-                        ?.takeIf { it.mediaAlbumId != 0L }
-                        ?.let { rootAlbumId = it.mediaAlbumId }
+            coroutineScope {
+                // Subscribe to TDLib updates BEFORE the bootstrap fetch. `td.updates` is a hot
+                // SharedFlow with no replay: a comment / reaction / edit landing while the
+                // history pages are in flight used to be dropped, because the collector only
+                // attached after the bootstrap emit. `onSubscription` + await guarantees the
+                // subscription is registered before the first GetMessageThreadHistory; the
+                // UNLIMITED channel holds the window's events (pre-filtered to the thread chat,
+                // so it stays small and never backpressures TdClient's drain) until the
+                // single mutator below replays them over the bootstrapped `live` list —
+                // seenIds dedups any message that also arrived in a history page.
+                val subscribed = CompletableDeferred<Unit>()
+                val tdlibEvents = Channel<ThreadEvent>(Channel.UNLIMITED)
+                val pump = launch {
+                    td.updates
+                        .onSubscription { subscribed.complete(Unit) }
+                        .collect { upd ->
+                            if (upd.threadUpdateChatId() == anchor.threadChatId) {
+                                tdlibEvents.send(ThreadEvent.Tdlib(upd))
+                            }
+                        }
                 }
-                var appended = 0
-                for (m in msgs) {
-                    if (rootAlbumId != 0L && m.mediaAlbumId == rootAlbumId) {
-                        // Root mirror or one of its album siblings. Track in seenIds so
-                        // a later UpdateNewMessage re-deliver during a reconnect stays a
-                        // silent no-op.
-                        seenIds.add(m.id)
-                        continue
-                    }
-                    if (seenIds.add(m.id)) { live += m; appended++ }
-                }
-                fromId = msgs.last().id
-                // No new messages in this page (only the boundary repeat) → end of thread.
-                if (appended == 0) break
-            }
-            // Single Ready after the full bootstrap. Covers both the populated case and
-            // the empty-thread case (nothing was added), so the overlay leaves Loading
-            // exactly once with the full chronological set.
-            emit(buildReady(live, anchor))
+                subscribed.await()
 
-            // Single-collector update fan-in. The previous implementation had four
-            // launchIn'd collectors all racing on the shared `live` mutable list — a plain
-            // bug that just happened not to trip in practice. With one collect we mutate
-            // from one coroutine: no Mutex, no surprises.
-            //
-            // .buffer() decouples this collector from the global TD update bus. buildReady
-            // calls buildTree → mapper.toThreadComment, which is suspending and may issue
-            // GetUser/GetChat for unseen authors. Without buffering, slow mapper calls on
-            // a busy thread would backpressure TdClient's drain coroutine and stall every
-            // other subscriber (PostsRepository, MediaCache, ChatFoldersRepository). The
-            // capacity is generous because realistic comment-update bursts are tiny (a
-            // handful of UpdateMessageInteractionInfo per second) and even an off-by-one
-            // accidental flood is bounded.
-            // Two event streams feed a single mutator coroutine:
-            //   • TDLib updates (server-driven new messages, interaction info,
-            //     content edits, deletes) — write into `live`.
-            //   • Optimistic-override invalidations from [applyOptimisticReaction] —
-            //     `live` is unchanged but the override map has a new entry, so we
-            //     just need to re-emit so [buildTree] picks the override up.
-            // Filtering invalidations by threadChatId scopes each flow to its own
-            // thread so a different overlay's tap doesn't ripple here.
-            val tdlibEvents: Flow<ThreadEvent> = td.updates.map { ThreadEvent.Tdlib(it) }
-            val invalidationEvents: Flow<ThreadEvent> = invalidations
-                .filter { it.first == anchor.threadChatId }
-                .map { ThreadEvent.OptimisticInvalidate }
-            val events: Flow<ThreadEvent> = merge(tdlibEvents, invalidationEvents)
-            events
-                .buffer(capacity = UPDATE_BUFFER_CAPACITY)
-                .collect { ev ->
-                    val changed = when (ev) {
-                        is ThreadEvent.Tdlib -> applyUpdate(ev.update, anchor, rootAlbumId, live, seenIds)
-                        ThreadEvent.OptimisticInvalidate -> true
+                val live = mutableListOf<TdApi.Message>()
+                val seenIds = HashSet<Long>().apply { add(anchor.rootId) }
+                // mediaAlbumId of the root mirror's album when the channel post itself is an
+                // album. TDLib mirrors a channel-post album into the linked discussion
+                // supergroup as N messages with the same mediaAlbumId, all sharing
+                // topicId=MessageTopicThread(rootId). The single-id seenIds.add(anchor.rootId)
+                // above only excludes ONE of those N; the remaining (N-1) used to leak into
+                // the thread as phantom "comments" (especially visible on photo-album posts).
+                // We capture this album id the first time a batch contains the rootId mirror,
+                // then exclude all its siblings from `live` for the rest of the session.
+                // Stored in an outer-scope `var` (captured by the `collect` lambda below)
+                // so live UpdateNewMessage redelivery during a reconnect is also filtered.
+                var rootAlbumId = 0L
+                var fromId = 0L
+                while (live.size < limit) {
+                    val batch = fetchHistoryPage(anchor, fromId)
+                    if (batch == null) {
+                        // Every attempt failed. With nothing loaded, an empty Ready would read as
+                        // "no comments yet" and stick in the shared replay cache for the stream's
+                        // lifetime — surface LoadFailed instead and evict the stream so a retry /
+                        // re-open bootstraps afresh. With some pages loaded, show what we have.
+                        if (live.isEmpty()) {
+                            synchronized(streams) { streams.remove(streamKey) }
+                            pump.cancel()
+                            emit(ThreadState.LoadFailed)
+                            return@coroutineScope
+                        }
+                        break
                     }
-                    if (changed) emit(buildReady(live, anchor))
+                    val msgs = batch.messages.orEmpty()
+                    if (msgs.isEmpty()) break
+                    // Capture rootAlbumId lazily — once a batch contains the root mirror
+                    // with a non-zero mediaAlbumId, every sibling in this page (and every
+                    // sibling re-delivered later) is filtered. Scanning the whole batch
+                    // first is required because GetMessageThreadHistory walks id-desc and
+                    // the root mirror is the LOWEST member of its own album; siblings
+                    // (higher ids) appear earlier in the batch iteration order.
+                    if (rootAlbumId == 0L) {
+                        msgs.firstOrNull { it.id == anchor.rootId }
+                            ?.takeIf { it.mediaAlbumId != 0L }
+                            ?.let { rootAlbumId = it.mediaAlbumId }
+                    }
+                    var appended = 0
+                    for (m in msgs) {
+                        if (rootAlbumId != 0L && m.mediaAlbumId == rootAlbumId) {
+                            // Root mirror or one of its album siblings. Track in seenIds so
+                            // a later UpdateNewMessage re-deliver during a reconnect stays a
+                            // silent no-op.
+                            seenIds.add(m.id)
+                            continue
+                        }
+                        if (seenIds.add(m.id)) { live += m; appended++ }
+                    }
+                    fromId = msgs.last().id
+                    // No new messages in this page (only the boundary repeat) → end of thread.
+                    if (appended == 0) break
                 }
+                // Single Ready after the full bootstrap. Covers both the populated case and
+                // the empty-thread case (nothing was added), so the overlay leaves Loading
+                // exactly once with the full chronological set.
+                emit(buildReady(live, anchor))
+
+                // Single-collector update fan-in. The previous implementation had four
+                // launchIn'd collectors all racing on the shared `live` mutable list — a plain
+                // bug that just happened not to trip in practice. With one collect we mutate
+                // from one coroutine: no Mutex, no surprises.
+                //
+                // .buffer() decouples this collector from the global TD update bus. buildReady
+                // calls buildTree → mapper.toThreadComment, which is suspending and may issue
+                // GetUser/GetChat for unseen authors. Without buffering, slow mapper calls on
+                // a busy thread would backpressure TdClient's drain coroutine and stall every
+                // other subscriber (PostsRepository, MediaCache, ChatFoldersRepository). The
+                // capacity is generous because realistic comment-update bursts are tiny (a
+                // handful of UpdateMessageInteractionInfo per second) and even an off-by-one
+                // accidental flood is bounded.
+                // Two event streams feed a single mutator coroutine:
+                //   • TDLib updates (server-driven new messages, interaction info,
+                //     content edits, deletes) — write into `live`.
+                //   • Optimistic-override invalidations from [applyOptimisticReaction] —
+                //     `live` is unchanged but the override map has a new entry, so we
+                //     just need to re-emit so [buildTree] picks the override up.
+                // Filtering invalidations by threadChatId scopes each flow to its own
+                // thread so a different overlay's tap doesn't ripple here.
+                val invalidationEvents: Flow<ThreadEvent> = invalidations
+                    .filter { it.first == anchor.threadChatId }
+                    .map { ThreadEvent.OptimisticInvalidate }
+                val events: Flow<ThreadEvent> = merge(tdlibEvents.consumeAsFlow(), invalidationEvents)
+                events
+                    .buffer(capacity = UPDATE_BUFFER_CAPACITY)
+                    .collect { ev ->
+                        val changed = when (ev) {
+                            is ThreadEvent.Tdlib -> applyUpdate(ev.update, anchor, rootAlbumId, live, seenIds)
+                            ThreadEvent.OptimisticInvalidate -> true
+                        }
+                        if (changed) emit(buildReady(live, anchor))
+                    }
+            }
         }
+    }
+
+    /**
+     * One GetMessageThreadHistory page, retried up to [HISTORY_FETCH_ATTEMPTS] times with a
+     * short linear backoff. Returns null only when every attempt failed. FLOOD_WAIT is gated
+     * centrally in TdClient, so a retry never hammers a rate-limited server.
+     */
+    private suspend fun fetchHistoryPage(anchor: ResolvedAnchor, fromId: Long): TdApi.Messages? {
+        repeat(HISTORY_FETCH_ATTEMPTS) { attempt ->
+            if (attempt > 0) delay(HISTORY_RETRY_BACKOFF_MS * attempt)
+            val page = runCatching {
+                td.send(TdApi.GetMessageThreadHistory(anchor.threadChatId, anchor.rootId, fromId, 0, BATCH_SIZE))
+            }.warnUnlessCancelled(TAG, "threadHistory(${anchor.threadChatId}, attempt=$attempt)").getOrNull()
+            if (page != null) return page
+        }
+        return null
+    }
+
+    /** Chat id of the update kinds [applyUpdate] consumes; null for every other update. */
+    private fun TdApi.Update.threadUpdateChatId(): Long? = when (this) {
+        is TdApi.UpdateNewMessage -> message.chatId
+        is TdApi.UpdateMessageInteractionInfo -> chatId
+        is TdApi.UpdateMessageContent -> chatId
+        is TdApi.UpdateMessageEdited -> chatId
+        is TdApi.UpdateDeleteMessages -> chatId
+        else -> null
     }
 
     private suspend fun ensureAnchor(
@@ -884,5 +957,8 @@ class CommentsRepository(
         // legitimate flood that fills 256 slots already means user-visible jank in the
         // tree render, which the buffer can't mask anyway.
         const val UPDATE_BUFFER_CAPACITY = 256
+        // Bootstrap history page retries before the thread surfaces LoadFailed.
+        const val HISTORY_FETCH_ATTEMPTS = 3
+        const val HISTORY_RETRY_BACKOFF_MS = 750L
     }
 }

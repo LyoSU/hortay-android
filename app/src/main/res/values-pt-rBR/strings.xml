@@ -303,6 +303,9 @@
     <string name="comments_disabled_title">Comentários desativados</string>
     <string name="comments_disabled_body">Este canal não tem um grupo de discussão vinculado</string>
     <string name="comments_unavailable">Discussão indisponível</string>
+    <string name="comments_load_failed_title">Não foi possível carregar os comentários</string>
+    <string name="comments_load_failed_body">Verifique sua conexão e tente de novo</string>
+    <string name="comments_retry">Tentar de novo</string>
 
     <!-- Canais -->
     <string name="channels_title">Canais</string>

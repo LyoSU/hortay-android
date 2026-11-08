@@ -285,6 +285,9 @@
     <string name="comments_disabled_title">Komentar dinonaktifkan</string>
     <string name="comments_disabled_body">Kanal ini tidak memiliki grup diskusi yang terhubung</string>
     <string name="comments_unavailable">Diskusi tidak tersedia</string>
+    <string name="comments_load_failed_title">Tidak dapat memuat komentar</string>
+    <string name="comments_load_failed_body">Periksa koneksi Anda dan coba lagi</string>
+    <string name="comments_retry">Coba lagi</string>
 
     <!-- Kanal -->
     <string name="channels_title">Kanal</string>

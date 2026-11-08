@@ -1,5 +1,6 @@
 package dev.lyo.hortay.data
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -344,6 +345,90 @@ class CommentsRepositoryTest {
         assertEquals(0, albumRow.depth, "merged album sits at depth 0")
         assertEquals(1, replyRow.depth,
             "reply must be reparented to canonical anchor (100), not collapse to depth 0")
+    }
+
+    @Test
+    fun `an update arriving while the bootstrap history is in flight is not lost`() = runTest {
+        val chatId = 123L
+        val threadChatId = 9999L
+        val rootId = 7L
+        val testScope = TestScope(StandardTestDispatcher(testScheduler))
+        val historyGate = CompletableDeferred<Unit>()
+        var historyCalls = 0
+        val td = FakeTdSender().apply {
+            onNext { _ ->
+                TdApi.MessageThreadInfo().apply {
+                    this.chatId = threadChatId
+                    this.messageThreadId = rootId
+                }
+            }
+            onAny("OpenChat") { _ -> TdApi.Ok() }
+            onAny("CloseChat") { _ -> TdApi.Ok() }
+            onAnySuspending("GetMessageThreadHistory") { _ ->
+                historyCalls++
+                if (historyCalls == 1) {
+                    historyGate.await()
+                    TdApi.Messages().apply {
+                        messages = arrayOf(message(id = 100L, threadChatId, fromUserId = 11L, topicRoot = rootId))
+                        totalCount = 1
+                    }
+                } else {
+                    TdApi.Messages().apply { messages = emptyArray(); totalCount = 0 }
+                }
+            }
+        }
+        val repo = CommentsRepository(td, fakeMapper(td), testScope, FakeStrings)
+
+        val collected = mutableListOf<CommentsRepository.ThreadState>()
+        val job = testScope.launch {
+            repo.observeThread(chatId, listOf(rootId)).collect { collected += it }
+        }
+        advanceUntilIdle()
+        assertEquals(1, historyCalls, "bootstrap must be parked on the first history page")
+
+        // A new comment lands while the first history page is still in flight.
+        td.emitUpdate(TdApi.UpdateNewMessage(message(id = 201L, threadChatId, fromUserId = 22L, topicRoot = rootId)))
+        historyGate.complete(Unit)
+        advanceUntilIdle()
+
+        val final = collected.last() as CommentsRepository.ThreadState.Ready
+        val visibleIds = final.rows.map { it.message.id }.toSet()
+        assertTrue(100L in visibleIds, "bootstrapped comment must appear")
+        assertTrue(201L in visibleIds, "comment delivered during the bootstrap window must appear")
+
+        job.cancel()
+    }
+
+    @Test
+    fun `a failed history bootstrap surfaces LoadFailed instead of an empty thread`() = runTest {
+        val chatId = 123L
+        val threadChatId = 9999L
+        val rootId = 7L
+        val testScope = TestScope(StandardTestDispatcher(testScheduler))
+        val td = FakeTdSender().apply {
+            onNext { _ ->
+                TdApi.MessageThreadInfo().apply {
+                    this.chatId = threadChatId
+                    this.messageThreadId = rootId
+                }
+            }
+            onAny("OpenChat") { _ -> TdApi.Ok() }
+            onAny("CloseChat") { _ -> TdApi.Ok() }
+            onAny("GetMessageThreadHistory") { _ -> TdApi.Error(500, "INTERNAL") }
+        }
+        val repo = CommentsRepository(td, fakeMapper(td), testScope, FakeStrings)
+
+        val collected = mutableListOf<CommentsRepository.ThreadState>()
+        val job = testScope.launch {
+            repo.observeThread(chatId, listOf(rootId)).collect { collected += it }
+        }
+        advanceUntilIdle()
+
+        assertTrue(collected.none { it is CommentsRepository.ThreadState.Ready }, "no empty Ready on failure")
+        assertEquals(CommentsRepository.ThreadState.LoadFailed, collected.last())
+        assertTrue(td.rpcCount("GetMessageThreadHistory") > 1, "the page fetch is retried before giving up")
+
+        job.cancel()
     }
 
     private fun fakeMapper(td: TdSender): MessageMapper = MessageMapper(td, FakeStrings)
