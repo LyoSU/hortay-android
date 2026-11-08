@@ -768,9 +768,14 @@ class TdClient private constructor(
         const val SEND_TIMEOUT_CODE = 0
 
         /**
-         * TDLib requests documented as offline ("this is an offline method") — answered
-         * from TDLib's local state without a server round-trip, so they can't earn or
-         * be affected by a FLOOD_WAIT and must not wait on the global gate.
+         * Requests that must not wait on the global FLOOD_WAIT gate:
+         *  - documented offline methods ("this is an offline method"), answered from
+         *    TDLib's local state without a server round-trip;
+         *  - file transfer control ([TdApi.DownloadFile], [TdApi.CancelDownloadFile]) and
+         *    [TdApi.GetStorageStatisticsFast]: they only queue or inspect local work, and
+         *    TDLib paces the transfers itself on the file DCs. Gating them froze every new
+         *    download, the cancel button and the stall watchdog for the whole length of an
+         *    account-level FLOOD_WAIT (up to minutes) earned by an unrelated history call.
          */
         internal fun isOfflineRequest(query: TdApi.Function<*>): Boolean = when (query) {
             is TdApi.GetChat,
@@ -780,6 +785,9 @@ class TdClient private constructor(
             is TdApi.GetMessageLocally,
             is TdApi.GetFile,
             is TdApi.GetOption,
+            is TdApi.DownloadFile,
+            is TdApi.CancelDownloadFile,
+            is TdApi.GetStorageStatisticsFast,
             -> true
             else -> false
         }
