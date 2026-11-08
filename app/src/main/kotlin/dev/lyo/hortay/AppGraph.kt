@@ -324,7 +324,7 @@ class AppGraph(context: Context) {
         td = tdClient,
         authStage = tdClient.authStage,
         scope = appScope,
-    )
+    ).also { store -> session.onEnd("autoDownloadStore") { store.clear() } }
 
     /**
      * Background service that prefetches photos / videos / animations for posts that

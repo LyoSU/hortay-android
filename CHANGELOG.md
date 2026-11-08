@@ -32,6 +32,7 @@
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
 
 ### Fixed
+- Signing in no longer overwrites the auto-download settings you set in other Telegram apps, and signing out no longer carries them over to the next account.
 - Media that failed to load while offline retries on its own once the connection is back, and a voice message or audio track whose download fails no longer stays stuck loading.
 - Cancelling a photo or video download shows a download button to start it again instead of a spinner that never finishes.
 - A video whose file was cleared from the cache downloads again instead of staying stuck on its preview, and expired guest-mode videos fetch a fresh link.
