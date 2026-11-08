@@ -34,6 +34,24 @@
 - Live updates keep arriving while the app catches up on a newly loaded channel during a rate limit.
 - The pinned-message bar counts every pin, and pins changed while a channel opens show up right away.
 - Small photos no longer show a confusing "0 B / 41 KB" counter while loading.
+- Posts you only scroll past, or that are half on screen when you leave the app, are no longer marked as read.
+- Live reactions and view counts follow the post you're actually reading even when new posts arrive above it.
+- A cold start in "Newest at the bottom" lands on the right unread post more reliably.
+- Hiding every channel in the selected folder no longer leaves an empty feed under an invisible tab.
+- A failed subscribe or unsubscribe no longer shows as done, and Discover shows the right Subscribe state after you join or leave.
+- Channel suggestions load the full list once you're back online instead of keeping the offline set until restart.
+- Pull-to-refresh inside a channel now actually refreshes, and double-tapping a channel no longer opens it twice.
+- Links to deleted posts open the channel and say the post is gone instead of leaving the app, and t.me/s/ links open the right channel.
+- Custom emoji after an overlapping one in a post no longer show as plain characters.
+- Signing out clears any pending link prompt, and links with unsafe schemes no longer show a confirmation that does nothing.
+- Turning the post archive off, or excluding a channel, no longer leaves copied media files piling up on disk.
+- The post archive no longer loses the original version of older posts that are edited or deleted later.
+- Archive search now finds text containing %, _ or \.
+- Settings shows Portuguese (Brazil) as the selected language on Android 13 and newer.
+- Automatic proxy switching works right after launch and keeps checking each proxy it switches to.
+- Clearing the media cache now tells you when it fails.
+- In guest mode, refreshes no longer re-download every channel on each sweep, an unsubscribe during a refresh sticks, channels with capital letters no longer show up twice, and search ignores letter case in Cyrillic and other non-Latin text.
+- Channels moved from guest mode to your account during an interrupted move are no longer offered again.
 - Saved posts from archived channels now show up in the Saved tab.
 - The sign-in screen no longer offers to resend the login code when Telegram has no other way to deliver it, which only ever failed with an unclear error.
 - Photo albums in the feed keep filling in after a stretch without connection, instead of staying incomplete until the app restarts.
