@@ -21,6 +21,7 @@
 - Feed order in Settings is a two-option switch that explains the selected option underneath.
 - The comments screen has a slim one-line header showing the number of comments.
 - Each post shows its time and author under the channel name and has a visible "⋯" button for its actions, which used to be reachable only by long-pressing.
+- Swipeable photo albums in the feed show a clear “1 / 5” counter in the corner instead of dark dots that blended into the photos.
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
 
 ### Fixed

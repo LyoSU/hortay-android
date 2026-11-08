@@ -18,8 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.theme.tabularFigures
 import dev.lyo.hortay.ui.util.rememberReducedMotion
 
 /**
@@ -53,6 +55,25 @@ internal fun MediaPositionPill(current: Int, count: Int, modifier: Modifier = Mo
     }
 }
 
+/**
+ * "1 / 5" counter chip for the feed's [AlbumRow], pinned to the strip's top-right corner.
+ * A centred dot pill sat on the seam between two peeking photos and read as part of the
+ * image; a plain number in a corner says "there is more to swipe" at a glance.
+ */
+@Composable
+internal fun MediaCounterChip(current: Int, count: Int, modifier: Modifier = Modifier) {
+    Text(
+        text = stringResource(R.string.rich_slideshow_counter, current + 1, count),
+        style = MaterialTheme.typography.labelMedium.tabularFigures(),
+        fontWeight = FontWeight.SemiBold,
+        color = Color.White,
+        modifier = modifier
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.6f))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
 /** Beyond this item count the dot row is replaced by a compact "n / total" counter. */
 internal const val MEDIA_PILL_DOT_LIMIT = 6
 
@@ -71,14 +92,14 @@ private fun MediaPositionDots(count: Int, selected: Int) {
                 animationSpec = if (reducedMotion) snap() else MaterialTheme.motionScheme.fastSpatialSpec(),
                 label = "media-position-dot",
             )
-            // On-scrim palette: accent for the selected item, dimmed white for the rest — the
-            // pill's dark scrim guarantees contrast over any underlying photo.
+            // On-scrim palette: solid white for the selected item, dimmed white for the rest.
+            // The accent read as near-black on the dark scrim and the dots blended together.
             Box(
                 modifier = Modifier
                     .size(width = width, height = DOT_SIZE)
                     .clip(CircleShape)
                     .background(
-                        if (active) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.55f),
+                        if (active) Color.White else Color.White.copy(alpha = 0.45f),
                     ),
             )
         }

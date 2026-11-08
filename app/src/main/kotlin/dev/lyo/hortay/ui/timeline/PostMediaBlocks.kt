@@ -396,14 +396,14 @@ internal fun AlbumRow(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
                 }
             }
         }
-        // Position pill (shared with the rich slideshow), driven by the centred item — a live
+        // "n / total" in the top-right corner, driven by the centred item — a live
         // "how much is left to scroll" cue for the snapping strip.
-        MediaPositionPill(
+        MediaCounterChip(
             current = activeIndex,
             count = items.size,
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 8.dp),
+                .align(Alignment.TopEnd)
+                .padding(top = 8.dp, end = 8.dp),
         )
     }
 }
