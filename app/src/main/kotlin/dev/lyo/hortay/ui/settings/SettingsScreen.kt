@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -66,6 +67,7 @@ import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.data.resolveEmojiStatusId
 import dev.lyo.hortay.ui.components.PremiumStatusBadge
 import dev.lyo.hortay.ui.media.TdAvatar
+import dev.lyo.hortay.ui.theme.HortaySpacing
 import dev.lyo.hortay.ui.theme.profileCoverBrush
 import dev.lyo.hortay.ui.theme.profileOnCoverColor
 import org.drinkless.tdlib.TdApi
@@ -317,6 +319,9 @@ private fun SettingsMain(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
+        // Outer column scrolls across the FULL width (so a drag in a tablet's side margin still
+        // scrolls); the inner column carries the content, capped at [SETTINGS_WIDTH_CAP] and
+        // centred — the same reading-width cap the feed applies. On phones the cap never binds.
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -325,156 +330,189 @@ private fun SettingsMain(
                 // the fold. The state is hoisted (param) so it isn't reset on a sub-screen return.
                 .verticalScroll(scrollState)
                 .padding(
-                    start = 16.dp,
-                    end = 16.dp,
+                    start = HortaySpacing.lg,
+                    end = HortaySpacing.lg,
                     top = padding.calculateTopPadding(),
-                    bottom = contentPadding.calculateBottomPadding() + 16.dp,
+                    bottom = contentPadding.calculateBottomPadding() + HortaySpacing.lg,
                 ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // ---- Hero block: TG-style profile card -----------------------------------
-            // Anchors the screen the same way Telegram's own Settings → Profile does:
-            // the user sees who they're signed in as before any settings rows. Skipped
-            // in guest mode (no [TdApi.User] to render) and during the cold-start
-            // window between AuthStage.Ready and the first GetMe — both surface as
-            // [me] == null, which collapses to "no hero, start directly with the
-            // section grouping" instead of stubbing fake data.
-            if (me != null) {
-                ProfileHero(me)
-                Spacer(Modifier.height(4.dp))
-            }
+            Column(
+                modifier = Modifier
+                    .widthIn(max = SETTINGS_WIDTH_CAP)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(HortaySpacing.md),
+            ) {
+                // ---- Hero block: TG-style profile card -----------------------------------
+                // Anchors the screen the same way Telegram's own Settings → Profile does:
+                // the user sees who they're signed in as before any settings rows. Skipped
+                // in guest mode (no [TdApi.User] to render) and during the cold-start
+                // window between AuthStage.Ready and the first GetMe — both surface as
+                // [me] == null, which collapses to "no hero, start directly with the
+                // section grouping" instead of stubbing fake data.
+                if (me != null) {
+                    ProfileHero(me)
+                    Spacer(Modifier.height(HortaySpacing.xs))
+                }
 
-            // ---- Appearance (inline quick toggle) ---------------------------------
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val currentDynamicColor by settings.dynamicColor.collectAsStateWithLifecycle(false)
+                // Pre-warmed by SettingsStore (same StateFlow MainActivity themes the window from),
+                // so the segmented controls open on the persisted choice instead of flicking.
+                val appearance by settings.appearanceState.collectAsStateWithLifecycle()
+
+                // ---- Appearance -------------------------------------------------------
                 SectionLabel(stringResource(R.string.settings_section_appearance))
-                DynamicColorRow(
-                    enabled = currentDynamicColor,
-                    onToggle = { next -> if (next != currentDynamicColor) scope.launch { settings.setDynamicColor(next) } },
+                ThemeModeRows(
+                    current = appearance.themeMode,
+                    onSelect = { mode -> if (mode != appearance.themeMode) scope.launch { settings.setThemeMode(mode) } },
                 )
-            }
-
-            // ---- Feed (inline quick toggles) --------------------------------------
-            val currentFeedOrder by settings.feedOrder.collectAsStateWithLifecycle(FeedOrder.OldestUnreadFirst)
-            val currentSnapScroll by settings.snapScroll.collectAsStateWithLifecycle(false)
-            val currentInlineAutoplay by settings.inlineVideoAutoplay.collectAsStateWithLifecycle(true)
-            SectionLabel(stringResource(R.string.settings_section_feed))
-            val feedOrderToNewestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_newest)
-            val feedOrderToOldestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_oldest)
-            FeedOrderRows(
-                current = currentFeedOrder,
-                onSelect = { order ->
-                    if (order != currentFeedOrder) {
-                        scope.launch { settings.setFeedOrder(order) }
-                        userMessages?.post(
-                            text = when (order) {
-                                FeedOrder.Newest -> feedOrderToNewestSnackbar
-                                FeedOrder.OldestUnreadFirst -> feedOrderToOldestSnackbar
-                            },
-                            severity = UserMessageBus.Severity.Info,
-                        )
-                    }
-                },
-            )
-            SnapScrollRow(
-                enabled = currentSnapScroll,
-                onToggle = { next -> if (next != currentSnapScroll) scope.launch { settings.setSnapScroll(next) } },
-            )
-            InlineAutoplayRow(
-                enabled = currentInlineAutoplay,
-                onToggle = { next -> if (next != currentInlineAutoplay) scope.launch { settings.setInlineVideoAutoplay(next) } },
-            )
-            if (archiveInAllFeedState != null) {
-                val currentArchiveInAll by archiveInAllFeedState.collectAsStateWithLifecycle()
-                ArchiveInAllFeedRow(
-                    enabled = currentArchiveInAll,
-                    onToggle = { next -> if (next != currentArchiveInAll) scope.launch { settings.setArchiveInAllFeed(next) } },
-                )
-            }
-            if (groupFeedState != null) {
-                val currentGroupFeed by groupFeedState.collectAsStateWithLifecycle()
-                GroupFeedRow(
-                    enabled = currentGroupFeed,
-                    onToggle = { next -> if (next != currentGroupFeed) scope.launch { settings.setGroupFeed(next) } },
-                )
-            }
-            if (ignoredChannels != null) {
-                val hidden by ignoredChannels.ignored.collectAsStateWithLifecycle(initialValue = persistentSetOf())
-                SettingsRow(
-                    symbol = "visibility_off",
-                    title = stringResource(R.string.settings_hidden_channels_title),
-                    subtitle = if (hidden.isEmpty()) {
-                        stringResource(R.string.settings_hidden_channels_subtitle_empty)
-                    } else {
-                        pluralStringResource(R.plurals.settings_hidden_channels_count, hidden.size, hidden.size)
-                    },
-                    chevron = true,
-                    onClick = onOpenHiddenChannels,
-                )
-            }
-
-            // ---- Categories (drill into sub-screens) ------------------------------
-            Spacer(Modifier.height(8.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
-                // Index/count computed so the grouped card rounds correctly across the
-                // mode-conditional rows. Data&storage is always present (TDLib stats OR
-                // guest clear-cache); Archive only in TDLib mode.
-                val total = 3 + if (onNavigateToArchiveSettings != null) 1 else 0
-                var i = 0
-                SettingsRow(
-                    symbol = "storage",
-                    title = stringResource(R.string.settings_category_data_title),
-                    subtitle = stringResource(R.string.settings_category_data_subtitle),
-                    chevron = true, index = i++, count = total,
-                    onClick = onOpenDataStorage,
-                )
-                if (onNavigateToArchiveSettings != null) {
-                    // "history", not "delete_sweep": the archive row is about keeping
-                    // edit/delete history, and a trash glyph read as "wipe my data" —
-                    // the opposite of what the tap does.
-                    SettingsRow(
-                        symbol = "history",
-                        title = stringResource(R.string.settings_archive_title),
-                        subtitle = stringResource(R.string.archive_master_subtitle),
-                        chevron = true, index = i++, count = total,
-                        onClick = onNavigateToArchiveSettings,
+                // Hidden under a pinned Light theme — pure black only ever applies to a dark scheme.
+                if (appearance.themeMode.canBeDark) {
+                    PureBlackRow(
+                        enabled = appearance.pureBlack,
+                        onToggle = { next -> if (next != appearance.pureBlack) scope.launch { settings.setPureBlack(next) } },
                     )
                 }
-                SettingsRow(
-                    symbol = "shield",
-                    title = stringResource(R.string.settings_section_privacy),
-                    subtitle = stringResource(R.string.settings_category_privacy_subtitle),
-                    chevron = true, index = i++, count = total,
-                    onClick = onOpenPrivacy,
-                )
-                SettingsRow(
-                    symbol = "info",
-                    title = stringResource(R.string.settings_section_about),
-                    subtitle = stringResource(R.string.settings_category_about_subtitle),
-                    chevron = true, index = i++, count = total,
-                    onClick = onOpenAbout,
-                )
-            }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val currentDynamicColor by settings.dynamicColor.collectAsStateWithLifecycle(false)
+                    DynamicColorRow(
+                        enabled = currentDynamicColor,
+                        onToggle = { next -> if (next != currentDynamicColor) scope.launch { settings.setDynamicColor(next) } },
+                    )
+                }
+                LanguageRow(index = 0, count = 1)
 
-            // ---- Account ----------------------------------------------------------
-            Spacer(Modifier.height(8.dp))
-            SectionLabel(stringResource(R.string.settings_section_account))
-            if (onLogout != null) {
-                SettingsRow(
-                    symbol = "logout",
-                    title = stringResource(R.string.settings_logout_title),
-                    subtitle = stringResource(R.string.settings_logout_subtitle),
-                    tint = MaterialTheme.colorScheme.error,
-                    onClick = { confirmLogout = true },
+                // ---- Reading ----------------------------------------------------------
+                val currentSnapScroll by settings.snapScroll.collectAsStateWithLifecycle(false)
+                val currentInlineAutoplay by settings.inlineVideoAutoplay.collectAsStateWithLifecycle(true)
+                Spacer(Modifier.height(HortaySpacing.xs))
+                SectionLabel(stringResource(R.string.settings_section_reading))
+                TextSizeRows(
+                    current = appearance.textSize,
+                    onSelect = { size -> if (size != appearance.textSize) scope.launch { settings.setTextSize(size) } },
                 )
-            }
-            if (onSignIn != null) {
-                SettingsRow(
-                    symbol = "login",
-                    title = stringResource(R.string.web_settings_signin),
-                    subtitle = stringResource(R.string.web_settings_signin_helper),
-                    onClick = onSignIn,
+                SnapScrollRow(
+                    enabled = currentSnapScroll,
+                    onToggle = { next -> if (next != currentSnapScroll) scope.launch { settings.setSnapScroll(next) } },
                 )
+                InlineAutoplayRow(
+                    enabled = currentInlineAutoplay,
+                    onToggle = { next -> if (next != currentInlineAutoplay) scope.launch { settings.setInlineVideoAutoplay(next) } },
+                )
+
+                // ---- Feed -------------------------------------------------------------
+                val currentFeedOrder by settings.feedOrder.collectAsStateWithLifecycle(FeedOrder.OldestUnreadFirst)
+                Spacer(Modifier.height(HortaySpacing.xs))
+                SectionLabel(stringResource(R.string.settings_section_feed))
+                val feedOrderToNewestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_newest)
+                val feedOrderToOldestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_oldest)
+                FeedOrderRows(
+                    current = currentFeedOrder,
+                    onSelect = { order ->
+                        if (order != currentFeedOrder) {
+                            scope.launch { settings.setFeedOrder(order) }
+                            userMessages?.post(
+                                text = when (order) {
+                                    FeedOrder.Newest -> feedOrderToNewestSnackbar
+                                    FeedOrder.OldestUnreadFirst -> feedOrderToOldestSnackbar
+                                },
+                                severity = UserMessageBus.Severity.Info,
+                            )
+                        }
+                    },
+                )
+                if (groupFeedState != null) {
+                    val currentGroupFeed by groupFeedState.collectAsStateWithLifecycle()
+                    GroupFeedRow(
+                        enabled = currentGroupFeed,
+                        onToggle = { next -> if (next != currentGroupFeed) scope.launch { settings.setGroupFeed(next) } },
+                    )
+                }
+                if (archiveInAllFeedState != null) {
+                    val currentArchiveInAll by archiveInAllFeedState.collectAsStateWithLifecycle()
+                    ArchiveInAllFeedRow(
+                        enabled = currentArchiveInAll,
+                        onToggle = { next -> if (next != currentArchiveInAll) scope.launch { settings.setArchiveInAllFeed(next) } },
+                    )
+                }
+                if (ignoredChannels != null) {
+                    val hidden by ignoredChannels.ignored.collectAsStateWithLifecycle(initialValue = persistentSetOf())
+                    SettingsRow(
+                        symbol = "visibility_off",
+                        title = stringResource(R.string.settings_hidden_channels_title),
+                        subtitle = if (hidden.isEmpty()) {
+                            stringResource(R.string.settings_hidden_channels_subtitle_empty)
+                        } else {
+                            pluralStringResource(R.plurals.settings_hidden_channels_count, hidden.size, hidden.size)
+                        },
+                        chevron = true,
+                        onClick = onOpenHiddenChannels,
+                    )
+                }
+
+                // ---- Categories (drill into sub-screens) ------------------------------
+                // Data & storage → (post archive) → Privacy → About.
+                Spacer(Modifier.height(HortaySpacing.sm))
+                Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+                    // Index/count computed so the grouped card rounds correctly across the
+                    // mode-conditional rows. Data&storage is always present (TDLib stats OR
+                    // guest clear-cache); Archive only in TDLib mode.
+                    val total = 3 + if (onNavigateToArchiveSettings != null) 1 else 0
+                    var i = 0
+                    SettingsRow(
+                        symbol = "storage",
+                        title = stringResource(R.string.settings_category_data_title),
+                        subtitle = stringResource(R.string.settings_category_data_subtitle),
+                        chevron = true, index = i++, count = total,
+                        onClick = onOpenDataStorage,
+                    )
+                    if (onNavigateToArchiveSettings != null) {
+                        // "history", not "delete_sweep": the archive row is about keeping
+                        // edit/delete history, and a trash glyph read as "wipe my data" —
+                        // the opposite of what the tap does.
+                        SettingsRow(
+                            symbol = "history",
+                            title = stringResource(R.string.settings_archive_title),
+                            subtitle = stringResource(R.string.archive_master_subtitle),
+                            chevron = true, index = i++, count = total,
+                            onClick = onNavigateToArchiveSettings,
+                        )
+                    }
+                    SettingsRow(
+                        symbol = "shield",
+                        title = stringResource(R.string.settings_section_privacy),
+                        subtitle = stringResource(R.string.settings_category_privacy_subtitle),
+                        chevron = true, index = i++, count = total,
+                        onClick = onOpenPrivacy,
+                    )
+                    SettingsRow(
+                        symbol = "info",
+                        title = stringResource(R.string.settings_section_about),
+                        subtitle = stringResource(R.string.settings_category_about_summary),
+                        chevron = true, index = i++, count = total,
+                        onClick = onOpenAbout,
+                    )
+                }
+
+                // ---- Account ----------------------------------------------------------
+                Spacer(Modifier.height(HortaySpacing.sm))
+                SectionLabel(stringResource(R.string.settings_section_account))
+                if (onLogout != null) {
+                    SettingsRow(
+                        symbol = "logout",
+                        title = stringResource(R.string.settings_logout_title),
+                        subtitle = stringResource(R.string.settings_logout_subtitle),
+                        tint = MaterialTheme.colorScheme.error,
+                        onClick = { confirmLogout = true },
+                    )
+                }
+                if (onSignIn != null) {
+                    SettingsRow(
+                        symbol = "login",
+                        title = stringResource(R.string.web_settings_signin),
+                        subtitle = stringResource(R.string.web_settings_signin_helper),
+                        onClick = onSignIn,
+                    )
+                }
             }
         }
     }
@@ -506,6 +544,13 @@ private fun SettingsMain(
         )
     }
 }
+
+/**
+ * Max width of the Settings content column on tablets / desktop windows — the same 640 dp
+ * reading-width cap the feed uses (`READING_WIDTH_CAP` in `ui/timeline/TimelineFeedColumn.kt`),
+ * mirrored here so Settings doesn't reach into the timeline package. Never binds on phones.
+ */
+private val SETTINGS_WIDTH_CAP = 640.dp
 
 // ---- Profile hero ------------------------------------------------------------
 

@@ -18,6 +18,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -35,6 +36,7 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.AudioPlaybackSession
+import dev.lyo.hortay.ui.media.AudioSpeedChip
 import dev.lyo.hortay.ui.media.LocalAudioPlaybackSession
 import dev.lyo.hortay.ui.media.LocalMediaCache
 import dev.lyo.hortay.ui.media.LocalMediaPassive
@@ -49,6 +51,9 @@ import dev.lyo.hortay.ui.media.LocalMediaPassive
  * Playback is owned by the single-active-source [AudioPlaybackSession] (via
  * [LocalAudioPlaybackSession]), so it survives scrolling the row off-screen and starting this
  * track stops whatever else was playing — the same session across regular and rich surfaces.
+ * While composed, the row registers with the session ([AudioPlaybackSession.attachRow]) so the
+ * app-level mini-player stays hidden as long as the track's own controls are on screen. The
+ * loaded track also shows a playback-speed chip (1× → 1.5× → 2×), shared with the mini-player.
  *
  * [onOpenInSource], when non-null, adds a trailing "open in Telegram" affordance (the regular
  * feed keeps its escape hatch; rich blocks pass null). A [fileId] of null — a rare hydration
@@ -98,6 +103,10 @@ internal fun InlineAudioPlayerRow(
     }
 
     val session = LocalAudioPlaybackSession.current
+    DisposableEffect(session, fileId) {
+        session.attachRow(fileId)
+        onDispose { session.detachRow(fileId) }
+    }
     val playback by session.state.collectAsStateWithLifecycle()
     val active = playback?.key == fileId
     val phase = if (active) playback?.phase else null
@@ -130,7 +139,13 @@ internal fun InlineAudioPlayerRow(
                 .clickable(
                     onClickLabel = buttonCd,
                     role = Role.Button,
-                    onClick = { session.toggle(fileId, durationSec) },
+                    onClick = {
+                        session.toggle(
+                            fileId,
+                            durationSec,
+                            AudioPlaybackSession.TrackInfo(title = title, performer = performer, isVoice = isVoice),
+                        )
+                    },
                 )
                 .semantics { contentDescription = buttonCd },
             contentAlignment = Alignment.Center,
@@ -203,6 +218,10 @@ internal fun InlineAudioPlayerRow(
                     )
                 }
             }
+        }
+        if (active) {
+            Spacer(Modifier.width(4.dp))
+            AudioSpeedChip()
         }
         if (onOpenInSource != null) {
             val openCd = stringResource(R.string.content_open_in_telegram)

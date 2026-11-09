@@ -4,14 +4,14 @@
     <!-- Auth screen -->
     <string name="auth_phone_label">Номер телефона</string>
     <string name="auth_phone_helper">Введите номер с кодом страны. Telegram отправит код подтверждения</string>
-    <string name="auth_password_label">Пароль 2FA</string>
+    <string name="auth_password_label">Пароль двухэтапной аутентификации</string>
     <string name="auth_password_hint">Подсказка: %1$s</string>
-    <string name="auth_password_helper">Это пароль, который вы установили в официальном Telegram для двухфакторной аутентификации</string>
+    <string name="auth_password_helper">Пароль из раздела «Двухэтапная аутентификация» в официальном Telegram</string>
     <string name="auth_password_forgot">Забыл пароль</string>
     <string name="auth_password_recovery_sent">Код для сброса отправлен на %1$s. Введите его, чтобы войти без пароля</string>
     <string name="auth_password_recovery_code_label">Код из письма</string>
     <string name="auth_password_recovery_back">Ввести пароль</string>
-    <string name="auth_password_recovery_unavailable">К аккаунту не привязана почта для восстановления. Сбросить 2FA можно только в официальном Telegram на другом устройстве</string>
+    <string name="auth_password_recovery_unavailable">К аккаунту не привязана почта для восстановления. Сбросить двухэтапную аутентификацию можно только в официальном Telegram на другом устройстве</string>
     <string name="auth_send_code">Отправить код</string>
     <string name="auth_continue">Продолжить</string>
     <string name="auth_continue_without_login">Читать публичные каналы без входа</string>
@@ -32,7 +32,7 @@
     <string name="web_empty_saved">Пока ничего не сохранено</string>
     <string name="web_welcome_title">Без входа</string>
     <string name="web_welcome_body">Добавьте несколько публичных каналов и читайте их без входа в Telegram</string>
-    <string name="web_refresh_error">Ошибка обновления: %1$s</string>
+    <string name="web_refresh_error">Не удалось обновить. Проверьте соединение и попробуйте снова. (%1$s)</string>
     <string name="web_unsubscribe_title">Отписаться?</string>
     <string name="web_unsubscribe_body">Канал @%1$s исчезнет из ленты. Сохранённые посты останутся</string>
     <string name="web_unsubscribe_confirm">Отписаться</string>
@@ -45,8 +45,8 @@
     <string name="media_open_in_telegram">Открыть в Telegram</string>
     <string name="web_status_not_found">канал не найден</string>
     <string name="web_status_private">приватный канал</string>
-    <string name="web_status_rate_limited">Telegram попросил подождать</string>
-    <string name="web_status_error">не удалось обновить</string>
+    <string name="web_status_rate_limited">Telegram просит притормозить</string>
+    <string name="web_status_error">Не удалось обновить</string>
     <string name="web_status_parse_failure">формат страницы изменился</string>
     <string name="web_status_loading">обновляется…</string>
     <string name="web_retry_for">Повторить для %1$s</string>
@@ -60,7 +60,7 @@
     <string name="web_settings_clear_cache_confirm_body">Локально кешированные посты и изображения будут удалены. Подписки и сохранённые посты останутся. Контент снова загрузится с t.me</string>
     <string name="web_settings_clear_cache_confirm_action">Очистить</string>
     <string name="web_settings_clear_cache_cancel">Отмена</string>
-    <string name="web_comments_unavailable">Комментарии недоступны в гостевом режиме. Войдите, чтобы читать ответы</string>
+    <string name="web_comments_unavailable">Комментарии недоступны в гостевом режиме. Войдите, чтобы читать их</string>
     <string name="web_comments_unavailable_title">Комментарии недоступны</string>
     <string name="web_settings_privacy_title">Что видит Telegram в этом режиме</string>
     <string name="web_settings_privacy_body">Ваш IP и User-Agent десктопного браузера. Без куки, аккаунта и личных данных</string>
@@ -76,8 +76,8 @@
     <string name="web_add_not_found">Канал @%1$s не найден</string>
     <string name="web_add_private">Канал приватный. Публичные посты недоступны</string>
     <string name="web_add_parse_failure">Не удалось обработать ответ Telegram</string>
-    <string name="web_add_rate_limited">Превышен лимит. Попробуйте через %1$d с</string>
-    <string name="web_add_network_error">Ошибка сети: %1$s</string>
+    <string name="web_add_rate_limited">Telegram просит притормозить. Попробуйте через %1$d с</string>
+    <string name="web_add_network_error">Не удалось связаться с Telegram. Проверьте соединение и попробуйте снова. (%1$s)</string>
     <!-- %1$s — предварительно отформатированная строка с t.me ("1.5K", "262K", "12 345"),
          не Int. Число не парсится, поэтому <plurals> по количеству здесь неприменим.
          Если в будущем сюда передадут Int, переведите тот вызов на новый ресурс-plurals —
@@ -91,12 +91,12 @@
     <string name="auth_retry">Начать заново</string>
     <string name="auth_open_telegram_hint">Откройте официальный Telegram, сделайте нужное и вернитесь</string>
     <string name="auth_title_wait_code">Введите код</string>
-    <string name="auth_title_wait_password">Пароль 2FA</string>
-    <string name="auth_title_error">Требуется действие</string>
+    <string name="auth_title_wait_password">Введите пароль</string>
+    <string name="auth_title_error">Завершите шаг в Telegram</string>
     <string name="auth_subtitle_wait_code">Код отправлен. Проверьте: %1$s</string>
     <string name="auth_code_hint_telegram">Сторонние приложения не получают код по SMS. Он приходит в Telegram на другом устройстве, где вы уже вошли.</string>
-    <string name="auth_subtitle_password_no_hint">Аккаунт защищён двухфакторной аутентификацией</string>
-    <string name="auth_subtitle_password_with_hint">Аккаунт защищён двухфакторной аутентификацией. Введите пароль 2FA</string>
+    <string name="auth_subtitle_password_no_hint">Аккаунт защищён двухэтапной аутентификацией</string>
+    <string name="auth_subtitle_password_with_hint">Аккаунт защищён двухэтапной аутентификацией. Введите пароль</string>
     <string name="auth_subtitle_default">Читайте Telegram-каналы как ленту — без чатов и уведомлений</string>
     <string name="auth_country_label">Страна</string>
     <string name="auth_country_loading">Загружаем…</string>
@@ -139,12 +139,12 @@
     <string name="auth_err_code_cant_resend">Telegram не может отправить код другим способом. Откройте Telegram на устройстве, где вы уже вошли, или измените номер</string>
     <string name="auth_err_password_invalid">Неверный пароль. Попробуйте снова</string>
     <string name="auth_err_password_too_fresh">Пароль только что изменили. Telegram попросит немного подождать</string>
-    <string name="auth_err_password_recovery_na">Восстановление пароля здесь недоступно. Сбросьте 2FA в официальном Telegram</string>
-    <string name="auth_err_session_password_needed">Требуется пароль 2FA</string>
+    <string name="auth_err_password_recovery_na">Восстановление пароля здесь недоступно. Сбросьте двухэтапную аутентификацию в официальном Telegram</string>
+    <string name="auth_err_session_password_needed">Требуется пароль двухэтапной аутентификации</string>
     <string name="auth_err_app_misconfigured">Ошибка конфигурации. Перезапустите Hortay или проверьте обновления</string>
     <string name="auth_err_token_invalid">Данные не совпадают. Начните вход заново</string>
     <string name="auth_err_generic">Что-то пошло не так. Попробуйте снова</string>
-    <string name="auth_err_step_failed">Не удалось выполнить шаг (%1$s). Попробуйте снова</string>
+    <string name="auth_err_step_failed">Не удалось выполнить шаг. Попробуйте снова. (%1$s)</string>
     <string name="auth_err_email_required">Подтвердите электронную почту в официальном Telegram и вернитесь</string>
     <string name="auth_err_phone_unregistered">На этом номере ещё нет аккаунта. Создайте его в официальном Telegram</string>
     <string name="auth_err_other_device">Подтвердите вход в Telegram на другом устройстве</string>
@@ -173,10 +173,10 @@
     <string name="connection_connecting">Подключаемся…</string>
     <string name="connection_updating">Обновляем…</string>
     <plurals name="connection_flood_wait">
-        <item quantity="one">Telegram ограничивает запросы (%d с)</item>
-        <item quantity="few">Telegram ограничивает запросы (%d с)</item>
-        <item quantity="many">Telegram ограничивает запросы (%d с)</item>
-        <item quantity="other">Telegram ограничивает запросы (%d с)</item>
+        <item quantity="one">Telegram просит притормозить (%d с)</item>
+        <item quantity="few">Telegram просит притормозить (%d с)</item>
+        <item quantity="many">Telegram просит притормозить (%d с)</item>
+        <item quantity="other">Telegram просит притормозить (%d с)</item>
     </plurals>
 
     <!-- Navigation -->
@@ -190,7 +190,7 @@
     <string name="timeline_empty">Здесь тихо. Подпишитесь на каналы в Telegram, и они появятся в ленте</string>
     <string name="timeline_empty_default_helper">Подпишитесь на каналы в Telegram, и они появятся в ленте</string>
     <string name="timeline_empty_saved_title">Ничего не сохранено</string>
-    <string name="timeline_empty_saved_helper">Нажмите ⋯ у поста и выберите «Сохранить пост», чтобы вернуться к нему позже</string>
+    <string name="timeline_empty_saved_helper">Нажмите на закладку под постом, чтобы вернуться к нему позже</string>
     <string name="timeline_empty_default_title">Здесь тихо</string>
     <string name="timeline_empty_caught_up_title">Всё прочитано</string>
     <string name="timeline_empty_caught_up_helper">Вы прочитали все посты в ленте. Потяните вниз, чтобы проверить новые.</string>
@@ -308,7 +308,7 @@
         <item quantity="other">%d комментариев</item>
     </plurals>
     <string name="comments_empty_title">Комментариев пока нет</string>
-    <string name="comments_empty_body">Новые ответы появятся здесь по мере поступления</string>
+    <string name="comments_empty_body">Новые комментарии появятся здесь по мере поступления</string>
     <string name="comments_disabled_title">Комментарии отключены</string>
     <string name="comments_disabled_body">У этого канала нет привязанной группы для обсуждений</string>
     <string name="comments_unavailable">Обсуждение недоступно</string>
@@ -332,9 +332,9 @@
     <string name="channels_hide_all">Скрыть все из ленты</string>
     <string name="channels_show_all">Показать все в ленте</string>
     <string name="channels_hide_all_confirm">Все каналы будут скрыты из ленты. Затем смахни в сторону те, которые хочешь оставить, чтобы вернуть их.</string>
-    <string name="channels_show_all_confirm">Скрытые каналы снова появятся в ленте.</string>
+    <string name="channels_show_all_confirm">Скрытые каналы снова появятся в ленте</string>
     <string name="channels_search_hint">Поиск каналов</string>
-    <string name="channels_swipe_hint">Смахни канал в сторону, чтобы скрыть его из ленты.</string>
+    <string name="channels_swipe_hint">Смахни канал в сторону, чтобы скрыть его из ленты</string>
     <string name="channels_hidden_label">Скрыт из ленты</string>
     <plurals name="channels_unread_count">
         <item quantity="one">%d непрочитанный пост</item>
@@ -404,7 +404,7 @@
     <string name="settings_language_summary_system">Системный</string>
     <string name="settings_language_dialog_title">Язык приложения</string>
     <string name="settings_logout_title">Выйти из аккаунта</string>
-    <string name="settings_logout_subtitle">Выход сбросит сессию Telegram, кеш останется</string>
+    <string name="settings_logout_subtitle">Придётся войти снова. Загруженные медиа останутся на устройстве</string>
     <string name="settings_version">Версия</string>
     <string name="settings_logout_dialog_title">Выйти из Telegram?</string>
     <string name="settings_logout_dialog_text">Потребуется снова ввести номер и код подтверждения</string>
@@ -417,7 +417,7 @@
     <string name="settings_storage_used_by">занимает Hortay на этом устройстве</string>
     <string name="settings_storage_clearing">Очищаем…</string>
     <string name="settings_storage_clear">Очистить кеш медиа</string>
-    <string name="settings_storage_clear_helper">Удаляет кешированные фото, видео и файлы. База сообщений и сессия остаются — их сбрасывает только выход из аккаунта</string>
+    <string name="settings_storage_clear_helper">Удаляет загруженные фото, видео и файлы, чтобы освободить место. При необходимости они загрузятся снова. Лента и вход в аккаунт остаются — их сбрасывает только выход</string>
     <string name="settings_storage_clear_failed">Не удалось очистить кеш медиа. Попробуйте ещё раз</string>
     <string name="settings_storage_media">Медиа</string>
     <string name="settings_storage_db">База данных</string>
@@ -492,8 +492,8 @@
 
     <!-- Generic / TD errors -->
     <string name="error_generic">Что-то пошло не так</string>
-    <string name="err_flood_with_time">Telegram ограничивает запросы. Попробуйте через %1$s</string>
-    <string name="err_flood_generic">Telegram ограничивает запросы. Попробуйте позже</string>
+    <string name="err_flood_with_time">Telegram просит притормозить. Попробуйте через %1$s</string>
+    <string name="err_flood_generic">Telegram просит притормозить. Попробуйте позже</string>
     <string name="err_unauthorized">Сессия сброшена. Войдите снова</string>
     <string name="err_forbidden">Нельзя %1$s: действие запрещено</string>
     <string name="err_not_found">Не найдено: %1$s</string>
@@ -565,10 +565,10 @@
     <!-- Тосты после сохранения / копирования / отправки в полноэкранном просмотре. -->
     <string name="media_saved_photo">Фото сохранено в галерею</string>
     <string name="media_saved_video">Видео сохранено в галерею</string>
-    <string name="media_save_failed">Не удалось сохранить: %1$s</string>
+    <string name="media_save_failed">Не удалось сохранить (%1$s)</string>
     <string name="media_copied">Изображение скопировано</string>
-    <string name="media_copy_failed">Не удалось скопировать: %1$s</string>
-    <string name="media_share_failed">Не удалось поделиться: %1$s</string>
+    <string name="media_copy_failed">Не удалось скопировать (%1$s)</string>
+    <string name="media_share_failed">Не удалось поделиться (%1$s)</string>
     <!-- Inline-значки рядом с постом. -->
     <string name="post_badge_edited">Изменено</string>
     <string name="post_badge_pinned">Закреплено</string>
@@ -735,12 +735,12 @@
     <string name="archive_max_records_label">Максимум записей</string>
     <string name="archive_onboarding_cancel">Отмена</string>
     <string name="archive_onboarding_enable">Включить</string>
-    <string name="archive_onboarding_logout">Автоматически очищается при выходе из аккаунта.</string>
+    <string name="archive_onboarding_logout">Автоматически очищается при выходе из аккаунта</string>
     <string name="archive_onboarding_title">Сохранять редактирования и удаления?</string>
     <string name="archive_onboarding_what">Hortay сохраняет текст и метаданные медиа, когда канал редактирует или удаляет пост. Сами фото и видео не скачиваются — только небольшие миниатюры.</string>
     <string name="archive_onboarding_where">Хранится локально на этом устройстве. Никуда не отправляется.</string>
     <string name="archive_open_browser">Открыть архив</string>
-    <string name="archive_purged">Запись удалена.</string>
+    <string name="archive_purged">Запись удалена</string>
     <string name="archive_records_unlimited">Без ограничений</string>
     <string name="archive_retention_days">%d дней</string>
     <string name="archive_retention_label">Срок хранения</string>
@@ -770,8 +770,8 @@
         <item quantity="many">ред. ×%d</item>
         <item quantity="other">ред. ×%d</item>
     </plurals>
-    <string name="revision_baseline_caveat">Оригинал не зафиксирован — показано содержимое после самого раннего редактирования, которое увидел Hortay.</string>
-    <string name="revision_empty">Версий ещё нет.</string>
+    <string name="revision_baseline_caveat">Оригинал не зафиксирован — показано содержимое после самого раннего редактирования, которое увидел Hortay</string>
+    <string name="revision_empty">Версий ещё нет</string>
     <string name="revision_go_to_current">К текущей</string>
     <string name="revision_media_audio_caption">Аудио · %1$d с</string>
     <string name="revision_media_document">Документ</string>
@@ -871,4 +871,30 @@
     <string name="post_summarize">Кратко</string>
     <string name="post_summary_title">Краткое содержание</string>
     <string name="media_download">загрузить</string>
+    <string name="onboarding_got_it">Понятно</string>
+    <string name="onboarding_feed_order_title">Как вам удобнее читать?</string>
+    <string name="onboarding_feed_order_newest_desc">Как в ленте новостей</string>
+    <string name="onboarding_feed_order_oldest_desc">Как в чате — чтение продолжается с того места, где вы остановились</string>
+    <string name="onboarding_feed_order_confirm">Продолжить</string>
+    <string name="onboarding_feed_order_footer">Это можно изменить позже: %1$s → %2$s.</string>
+    <string name="settings_section_reading">Чтение</string>
+    <string name="settings_theme_mode_system">Системная</string>
+    <string name="settings_theme_mode_light">Светлая</string>
+    <string name="settings_theme_mode_dark">Тёмная</string>
+    <string name="settings_theme_mode_system_subtitle">Следует светлому или тёмному режиму устройства</string>
+    <string name="settings_theme_mode_light_subtitle">Всегда светлая, независимо от настроек устройства</string>
+    <string name="settings_theme_mode_dark_subtitle">Всегда тёмная, независимо от настроек устройства</string>
+    <string name="settings_pure_black_title">Чисто чёрная</string>
+    <string name="settings_pure_black_subtitle">Чёрный фон в тёмной теме — бережнее к OLED-экранам</string>
+    <string name="settings_text_size_title">Размер текста</string>
+    <string name="settings_text_size_small">Мелкий</string>
+    <string name="settings_text_size_default">Стандартный</string>
+    <string name="settings_text_size_large">Крупный</string>
+    <string name="settings_text_size_extra_large">Очень крупный</string>
+    <string name="settings_text_size_glyph">А</string>
+    <string name="settings_text_size_sample">Такого размера будут посты в ленте, каналах и комментариях.</string>
+    <string name="settings_category_about_summary">Автор, исходный код, версия</string>
+    <string name="audio_speed_value">%1$s×</string>
+    <string name="audio_speed_cd">Скорость воспроизведения %1$s</string>
+    <string name="audio_mini_close">Остановить воспроизведение</string>
 </resources>

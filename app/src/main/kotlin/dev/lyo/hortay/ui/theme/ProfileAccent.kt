@@ -1,6 +1,5 @@
 package dev.lyo.hortay.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -36,7 +35,7 @@ private const val COVER_SURFACE_BLEND = 0.27f
 @Composable
 private fun coverColors(accentId: Int): Pair<Color, Color> {
     val resolver = LocalProfileAccent.current
-    val dark = isSystemInDarkTheme()
+    val dark = LocalHortayDarkTheme.current
     val surface = MaterialTheme.colorScheme.surface
     val argb = resolver.backgroundArgb(accentId, dark)
     val (rawTop, rawBottom) = when {

@@ -32,7 +32,7 @@
     <string name="web_empty_saved">لا يوجد شيء محفوظ بعد</string>
     <string name="web_welcome_title">بدون تسجيل دخول</string>
     <string name="web_welcome_body">أضف بعض القنوات العامة واقرأها دون تسجيل الدخول إلى Telegram</string>
-    <string name="web_refresh_error">فشل التحديث: %1$s</string>
+    <string name="web_refresh_error">تعذّر التحديث. تحقّق من اتصالك وحاول مرة أخرى. (%1$s)</string>
     <string name="web_unsubscribe_title">إلغاء الاشتراك؟</string>
     <string name="web_unsubscribe_body">ستغادر قناة @%1$s خلاصتك. تبقى المنشورات المُضافة إلى المحفوظات</string>
     <string name="web_unsubscribe_confirm">إلغاء الاشتراك</string>
@@ -45,7 +45,7 @@
     <string name="media_open_in_telegram">فتح في Telegram</string>
     <string name="web_status_not_found">القناة غير موجودة</string>
     <string name="web_status_private">قناة خاصة</string>
-    <string name="web_status_rate_limited">طلب Telegram الانتظار</string>
+    <string name="web_status_rate_limited">طلب Telegram منّا التمهّل</string>
     <string name="web_status_error">تعذّر التحديث</string>
     <string name="web_status_parse_failure">تغيّر تنسيق الصفحة</string>
     <string name="web_status_loading">يتم التحديث…</string>
@@ -60,7 +60,7 @@
     <string name="web_settings_clear_cache_confirm_body">ستُحذف منشورات القنوات والصور المخزنة محلياً. تبقى الاشتراكات والمنشورات المحفوظة. سيُعاد تحميل المحتوى من t.me</string>
     <string name="web_settings_clear_cache_confirm_action">مسح</string>
     <string name="web_settings_clear_cache_cancel">إلغاء</string>
-    <string name="web_comments_unavailable">التعليقات غير متاحة في وضع الضيف. سجّل الدخول لقراءة الردود</string>
+    <string name="web_comments_unavailable">التعليقات غير متاحة في وضع الضيف. سجّل الدخول لقراءتها</string>
     <string name="web_comments_unavailable_title">التعليقات غير متاحة</string>
     <string name="web_settings_privacy_title">ما يراه Telegram في هذا الوضع</string>
     <string name="web_settings_privacy_body">عنوان IP الخاص بك وUser-Agent متصفح سطح المكتب. بدون ملفات تعريف ارتباط، ولا حساب، ولا بيانات شخصية</string>
@@ -76,8 +76,8 @@
     <string name="web_add_not_found">القناة @%1$s غير موجودة</string>
     <string name="web_add_private">القناة خاصة. المنشورات العامة غير متاحة</string>
     <string name="web_add_parse_failure">تعذّر تحليل رد Telegram</string>
-    <string name="web_add_rate_limited">تم تجاوز حد الطلبات. أعد المحاولة بعد %1$d ث</string>
-    <string name="web_add_network_error">خطأ في الشبكة: %1$s</string>
+    <string name="web_add_rate_limited">طلب Telegram منّا التمهّل. أعد المحاولة بعد %1$d ث</string>
+    <string name="web_add_network_error">تعذّر الاتصال بـ Telegram. تحقّق من اتصالك وحاول مرة أخرى. (%1$s)</string>
     <!-- %1$s سلسلة منسّقة مسبقاً من t.me ("1.5K"، "262K"، "12 345")،
          وليست Int. لا نحلّل العدد، لذا لا يمكن استخدام <plurals> هنا. -->
     <string name="web_subscribers">المشتركون: %1$s</string>
@@ -89,12 +89,12 @@
     <string name="auth_retry">البدء من جديد</string>
     <string name="auth_open_telegram_hint">افتح Telegram الرسمي، أتمّ ما هو مطلوب، ثم عُد</string>
     <string name="auth_title_wait_code">أدخل الرمز</string>
-    <string name="auth_title_wait_password">كلمة مرور التحقق بخطوتين</string>
-    <string name="auth_title_error">إجراء مطلوب</string>
+    <string name="auth_title_wait_password">أدخل كلمة المرور</string>
+    <string name="auth_title_error">أكمل هذه الخطوة في Telegram</string>
     <string name="auth_subtitle_wait_code">أُرسل الرمز. تحقق من: %1$s</string>
     <string name="auth_code_hint_telegram">لا تتلقى التطبيقات الخارجية الرمز عبر الرسائل القصيرة. يصل الرمز إلى Telegram على جهاز آخر سجّلت الدخول فيه.</string>
     <string name="auth_subtitle_password_no_hint">الحساب محمي بالتحقق بخطوتين</string>
-    <string name="auth_subtitle_password_with_hint">الحساب محمي بالتحقق بخطوتين. أدخل كلمة مرور التحقق بخطوتين</string>
+    <string name="auth_subtitle_password_with_hint">الحساب محمي بالتحقق بخطوتين. أدخل كلمة المرور</string>
     <string name="auth_subtitle_default">اقرأ قنوات Telegram كخلاصة — بدون دردشات أو إشعارات</string>
     <string name="auth_country_label">البلد</string>
     <string name="auth_country_loading">جارٍ التحميل…</string>
@@ -142,7 +142,7 @@
     <string name="auth_err_app_misconfigured">خطأ في ضبط التطبيق. أعد تشغيل Hortay أو تحقق من التحديثات</string>
     <string name="auth_err_token_invalid">بيانات الاعتماد غير متطابقة. أعد بدء تسجيل الدخول</string>
     <string name="auth_err_generic">حدث خطأ ما. أعد المحاولة</string>
-    <string name="auth_err_step_failed">تعذّر إتمام الخطوة (%1$s). أعد المحاولة</string>
+    <string name="auth_err_step_failed">تعذّر إتمام الخطوة. أعد المحاولة. (%1$s)</string>
     <string name="auth_err_email_required">أكّد البريد الإلكتروني في Telegram الرسمي، ثم عُد</string>
     <string name="auth_err_phone_unregistered">لا يوجد حساب Telegram بهذا الرقم بعد. أنشئ حساباً في التطبيق الرسمي</string>
     <string name="auth_err_other_device">أكّد تسجيل الدخول عبر Telegram على جهاز آخر</string>
@@ -175,12 +175,12 @@
     <string name="connection_connecting">جارٍ الاتصال…</string>
     <string name="connection_updating">جارٍ التحديث…</string>
     <plurals name="connection_flood_wait">
-        <item quantity="zero">Telegram يقيّد الطلبات (%d ث)</item>
-        <item quantity="one">Telegram يقيّد الطلبات (%d ث)</item>
-        <item quantity="two">Telegram يقيّد الطلبات (%d ث)</item>
-        <item quantity="few">Telegram يقيّد الطلبات (%d ث)</item>
-        <item quantity="many">Telegram يقيّد الطلبات (%d ث)</item>
-        <item quantity="other">Telegram يقيّد الطلبات (%d ث)</item>
+        <item quantity="zero">طلب Telegram منّا التمهّل (%d ث)</item>
+        <item quantity="one">طلب Telegram منّا التمهّل (%d ث)</item>
+        <item quantity="two">طلب Telegram منّا التمهّل (%d ث)</item>
+        <item quantity="few">طلب Telegram منّا التمهّل (%d ث)</item>
+        <item quantity="many">طلب Telegram منّا التمهّل (%d ث)</item>
+        <item quantity="other">طلب Telegram منّا التمهّل (%d ث)</item>
     </plurals>
 
     <!-- التنقل -->
@@ -194,7 +194,7 @@
     <string name="timeline_empty">هدوء تام هنا. اشترك في قنوات على Telegram وستظهر في الخلاصة</string>
     <string name="timeline_empty_default_helper">اشترك في قنوات على Telegram وستظهر في الخلاصة</string>
     <string name="timeline_empty_saved_title">لا يوجد شيء محفوظ بعد</string>
-    <string name="timeline_empty_saved_helper">اضغط ⋯ على منشور واختر «حفظ المنشور» للرجوع إليه لاحقاً</string>
+    <string name="timeline_empty_saved_helper">اضغط على الإشارة المرجعية أسفل المنشور للرجوع إليه لاحقاً</string>
     <string name="timeline_empty_default_title">هدوء تام هنا</string>
     <string name="timeline_empty_caught_up_title">قرأت كل شيء</string>
     <string name="timeline_empty_caught_up_helper">لقد قرأت جميع المنشورات في خلاصتك. اسحب للتحديث لمزيد من المستجدات.</string>
@@ -322,7 +322,7 @@
         <item quantity="other">%d تعليق</item>
     </plurals>
     <string name="comments_empty_title">لا تعليقات بعد</string>
-    <string name="comments_empty_body">ستظهر الردود الجديدة هنا فور وصولها</string>
+    <string name="comments_empty_body">ستظهر التعليقات الجديدة هنا فور وصولها</string>
     <string name="comments_disabled_title">التعليقات مغلقة</string>
     <string name="comments_disabled_body">هذه القناة لا تمتلك مجموعة نقاش مرتبطة</string>
     <string name="comments_unavailable">النقاش غير متاح</string>
@@ -346,9 +346,9 @@
     <string name="channels_hide_all">إخفاء الكل من الموجز</string>
     <string name="channels_show_all">إظهار الكل في الموجز</string>
     <string name="channels_hide_all_confirm">ستُخفى جميع القنوات من الموجز. ثم اسحب جانبًا القنوات التي تريد إبقاءها لإعادتها.</string>
-    <string name="channels_show_all_confirm">ستظهر القنوات التي أخفيتها في الموجز مجددًا.</string>
+    <string name="channels_show_all_confirm">ستظهر القنوات التي أخفيتها في الموجز مجددًا</string>
     <string name="channels_search_hint">البحث في القنوات</string>
-    <string name="channels_swipe_hint">اسحب القناة جانبًا لإخفائها من الموجز.</string>
+    <string name="channels_swipe_hint">اسحب القناة جانبًا لإخفائها من الموجز</string>
     <string name="channels_hidden_label">مخفية من الموجز</string>
     <plurals name="channels_unread_count">
         <item quantity="zero">لا منشورات غير مقروءة</item>
@@ -422,7 +422,7 @@
     <string name="settings_language_summary_system">افتراضي النظام</string>
     <string name="settings_language_dialog_title">لغة التطبيق</string>
     <string name="settings_logout_title">تسجيل الخروج</string>
-    <string name="settings_logout_subtitle">تُعاد ضبط جلسة Telegram، وتبقى ذاكرة التخزين المؤقت</string>
+    <string name="settings_logout_subtitle">ستحتاج إلى تسجيل الدخول مجدداً. تبقى الوسائط التي نزّلتها على الجهاز</string>
     <string name="settings_version">الإصدار</string>
     <string name="settings_logout_dialog_title">تسجيل الخروج من Telegram؟</string>
     <string name="settings_logout_dialog_text">ستحتاج إلى إدخال رقمك ورمز التأكيد مجدداً</string>
@@ -435,7 +435,7 @@
     <string name="settings_storage_used_by">يستخدمها Hortay على هذا الجهاز</string>
     <string name="settings_storage_clearing">جارٍ المسح…</string>
     <string name="settings_storage_clear">مسح ذاكرة الوسائط المؤقتة</string>
-    <string name="settings_storage_clear_helper">يزيل الصور والفيديوهات والملفات المخزنة مؤقتاً. تبقى قاعدة بيانات الرسائل والجلسة، ولا تُمسح إلا بتسجيل الخروج</string>
+    <string name="settings_storage_clear_helper">يحذف الصور والفيديوهات والملفات المنزَّلة لتحرير مساحة؛ وتُنزَّل مجدداً عند الحاجة. يبقى الموجز وتسجيل الدخول، ولا يُمسحان إلا بتسجيل الخروج</string>
     <string name="settings_storage_clear_failed">تعذّر مسح ذاكرة الوسائط المؤقتة. حاول مرة أخرى</string>
     <string name="settings_storage_media">الوسائط</string>
     <string name="settings_storage_db">قاعدة البيانات</string>
@@ -510,8 +510,8 @@
 
     <!-- أخطاء عامة / TDLib -->
     <string name="error_generic">حدث خطأ ما</string>
-    <string name="err_flood_with_time">Telegram يقيّد الطلبات. أعد المحاولة بعد %1$s</string>
-    <string name="err_flood_generic">Telegram يقيّد الطلبات. أعد المحاولة لاحقاً</string>
+    <string name="err_flood_with_time">طلب Telegram منّا التمهّل. أعد المحاولة بعد %1$s</string>
+    <string name="err_flood_generic">طلب Telegram منّا التمهّل. أعد المحاولة لاحقاً</string>
     <string name="err_unauthorized">تمت إعادة ضبط الجلسة. سجّل الدخول مجدداً</string>
     <string name="err_forbidden">تعذّر %1$s: الإجراء محظور</string>
     <string name="err_not_found">غير موجود: %1$s</string>
@@ -584,10 +584,10 @@
     <!-- إشعارات تظهر بعد الحفظ / النسخ / المشاركة في العارض بملء الشاشة. -->
     <string name="media_saved_photo">تم حفظ الصورة في المعرض</string>
     <string name="media_saved_video">تم حفظ الفيديو في المعرض</string>
-    <string name="media_save_failed">تعذّر الحفظ: %1$s</string>
+    <string name="media_save_failed">تعذّر الحفظ (%1$s)</string>
     <string name="media_copied">تم نسخ الصورة</string>
-    <string name="media_copy_failed">تعذّر النسخ: %1$s</string>
-    <string name="media_share_failed">تعذّرت المشاركة: %1$s</string>
+    <string name="media_copy_failed">تعذّر النسخ (%1$s)</string>
+    <string name="media_share_failed">تعذّرت المشاركة (%1$s)</string>
     <!-- شارات الحالة المضمّنة بجانب المنشور. -->
     <string name="post_badge_edited">تم التعديل</string>
     <string name="post_badge_pinned">مثبّت</string>
@@ -763,12 +763,12 @@
     <string name="archive_max_records_label">الحد الأقصى للسجلات</string>
     <string name="archive_onboarding_cancel">إلغاء</string>
     <string name="archive_onboarding_enable">تفعيل</string>
-    <string name="archive_onboarding_logout">يُمسح تلقائياً عند تسجيل الخروج.</string>
+    <string name="archive_onboarding_logout">يُمسح تلقائياً عند تسجيل الخروج</string>
     <string name="archive_onboarding_title">حفظ التعديلات والمحذوفات؟</string>
     <string name="archive_onboarding_what">يحفظ Hortay النص وبيانات الوسائط حين تُعدّل قناة منشوراً أو تحذفه. الصور والفيديوهات نفسها لا تُنزَّل — فقط مصغّرات صغيرة.</string>
     <string name="archive_onboarding_where">مخزَّن محلياً على هذا الجهاز. لا يُرفع أبداً.</string>
     <string name="archive_open_browser">فتح الأرشيف</string>
-    <string name="archive_purged">تم حذف اللقطة.</string>
+    <string name="archive_purged">تم حذف اللقطة</string>
     <string name="archive_records_unlimited">بلا حدود</string>
     <string name="archive_retention_days">%d أيام</string>
     <string name="archive_retention_label">مدة الاحتفاظ</string>
@@ -802,8 +802,8 @@
         <item quantity="many">معدَّل ×%d</item>
         <item quantity="other">معدَّل ×%d</item>
     </plurals>
-    <string name="revision_baseline_caveat">لم تُلتقط النسخة الأصلية — يعرض هذا المحتوى بعد أقدم تعديل رصده Hortay.</string>
-    <string name="revision_empty">لا توجد مراجعات مخزَّنة.</string>
+    <string name="revision_baseline_caveat">لم تُلتقط النسخة الأصلية — يعرض هذا المحتوى بعد أقدم تعديل رصده Hortay</string>
+    <string name="revision_empty">لا توجد مراجعات مخزَّنة</string>
     <string name="revision_go_to_current">الانتقال إلى الحالية</string>
     <string name="revision_media_audio_caption">صوت · %1$d ث</string>
     <string name="revision_media_document">مستند</string>
@@ -905,4 +905,30 @@
     <string name="post_summarize">تلخيص</string>
     <string name="post_summary_title">الملخص</string>
     <string name="media_download">تنزيل</string>
+    <string name="onboarding_got_it">فهمت</string>
+    <string name="onboarding_feed_order_title">كيف تحب أن تقرأ؟</string>
+    <string name="onboarding_feed_order_newest_desc">مثل موجز الأخبار</string>
+    <string name="onboarding_feed_order_oldest_desc">مثل المحادثة — تتابع من حيث توقفت</string>
+    <string name="onboarding_feed_order_confirm">متابعة</string>
+    <string name="onboarding_feed_order_footer">يمكنك تغيير ذلك لاحقًا في %1$s ← %2$s.</string>
+    <string name="settings_section_reading">القراءة</string>
+    <string name="settings_theme_mode_system">النظام</string>
+    <string name="settings_theme_mode_light">فاتح</string>
+    <string name="settings_theme_mode_dark">داكن</string>
+    <string name="settings_theme_mode_system_subtitle">يتبع الوضع الفاتح أو الداكن للجهاز</string>
+    <string name="settings_theme_mode_light_subtitle">فاتح دائمًا، مهما كان إعداد الجهاز</string>
+    <string name="settings_theme_mode_dark_subtitle">داكن دائمًا، مهما كان إعداد الجهاز</string>
+    <string name="settings_pure_black_title">أسود خالص</string>
+    <string name="settings_pure_black_subtitle">خلفية سوداء في المظهر الداكن — أفضل لشاشات OLED</string>
+    <string name="settings_text_size_title">حجم النص</string>
+    <string name="settings_text_size_small">صغير</string>
+    <string name="settings_text_size_default">افتراضي</string>
+    <string name="settings_text_size_large">كبير</string>
+    <string name="settings_text_size_extra_large">كبير جدًا</string>
+    <string name="settings_text_size_glyph">أ</string>
+    <string name="settings_text_size_sample">ستظهر المنشورات في الخلاصة والقنوات والتعليقات بهذا الحجم.</string>
+    <string name="settings_category_about_summary">المؤلف، الشيفرة المصدرية، الإصدار</string>
+    <string name="audio_speed_value">%1$s×</string>
+    <string name="audio_speed_cd">سرعة التشغيل %1$s</string>
+    <string name="audio_mini_close">إيقاف التشغيل</string>
 </resources>

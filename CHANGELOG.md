@@ -17,6 +17,13 @@
 - Channels now show their pinned messages in a bar under the header — tap it to jump to the pinned post, tap again to step through older pins.
 - The Channels tab can hide every channel from the feed or show them all again in one step, so keeping only a few channels in a long list no longer takes a tap per channel.
 - Settings → Feed can now show archived channels in the “All” feed too, so channels you archive to tidy Telegram still reach your main feed.
+- A bookmark button under every post saves it to the Saved tab in one tap, next to a Share button.
+- Settings → Appearance lets you pick a System, Light or Dark theme, with a Pure black option for dark mode.
+- Settings → Reading lets you choose the text size of posts, comments and articles in four steps, with a live preview.
+- Voice messages and audio tracks have a speed button that switches between 1×, 1.5× and 2×.
+- When you scroll away from a playing voice message or audio track, a mini-player above the navigation bar lets you pause, change speed or stop it.
+- The first time you open the app, it asks whether you want to read newest-first or like a chat.
+- The Channels tab shows a one-time tip about the sideways swipe, and a hidden channel has a visible button to show it again.
 
 ### Changed
 - A reply to another channel's post shows that channel's avatar and an arrow, so it no longer passes for a reply within the same channel.
@@ -30,6 +37,11 @@
 - Each post shows its time and author under the channel name and has a visible "⋯" button for its actions, which used to be reachable only by long-pressing.
 - Swipeable photo albums in the feed show their position dots under the photos instead of in a dark pill that blended into them.
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
+- Settings are grouped into Appearance, Reading and Feed, and the app language moved into Appearance.
+- Replies in a comments thread are linked to the comment they answer by a thin line, and new comments slide into place instead of jumping.
+- Reaction chips are easier to tap without hitting a neighbouring one.
+- On tablets and wide windows, the bottom navigation bar, Channels and Settings keep a comfortable width instead of stretching across the screen.
+- Error messages say what happened in plain words first, Telegram's rate limit is described the same way everywhere, and sign-in uses Telegram's own "two-step verification" wording.
 
 ### Fixed
 - Signing in no longer overwrites the auto-download settings you set in other Telegram apps, and signing out no longer carries them over to the next account.
@@ -104,13 +116,13 @@
 - Videos whose file names contain #, % or ? now play.
 - Screen readers announce reactions as buttons with their selected state, say a channel's name once per avatar, and mention that long-pressing a post or comment opens more actions.
 - The Subscribe button in Discover no longer clips its label at large font sizes.
-- The empty Saved tab explains saving through the ⋯ menu.
 - Saved posts in guest mode stay in the Saved tab after they get old, after you unsubscribe from their channel and after clearing the cache.
 - In guest mode, expired photos on older posts reload instead of staying broken.
 - Unsubscribing from a channel in guest mode takes effect immediately and is no longer lost if the app closes.
 - A guest-mode channel whose page can no longer be read shows a load error instead of silently stopping updates, and posts keep their original time.
 - Signed-in users no longer download guest-mode channel pages on every launch.
 - The post archive no longer records guest-mode posts as edited when only their image links change, no longer stops loading over one unreadable entry, and skips copying very large files.
+- Voice messages, audio tracks and videos with sound now pause other apps' music, pause for calls and stop when you unplug your headphones.
 
 ### Performance
 - Idle video players are released when the app goes to the background.

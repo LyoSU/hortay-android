@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import dev.lyo.hortay.ui.timeline.READING_WIDTH_CAP
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -124,9 +126,13 @@ fun WebChannelsScreen(
             return@Scaffold
         }
 
+        Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = READING_WIDTH_CAP)
+                .fillMaxSize(),
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
@@ -150,6 +156,7 @@ fun WebChannelsScreen(
                     onUnsubscribeClick = { pendingUnsubscribe = entry },
                 )
             }
+        }
         }
     }
 

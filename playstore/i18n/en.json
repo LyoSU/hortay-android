@@ -10,11 +10,11 @@
   },
   "formats": {
     "title": "Posts as\nwritten.",
-    "subtitle": "Quotes, infographics, reactions — never clipped"
+    "subtitle": "Quotes, infographics, reactions — shown as written"
   },
   "comments": {
     "title": "Discussions,\nnot avalanches.",
-    "subtitle": "Threaded replies instead of endless scroll"
+    "subtitle": "Threaded comments instead of endless scroll"
   },
   "feature": {
     "title": "Channels as a feed.",

@@ -1,7 +1,7 @@
 ==============================================================================
 RELEASE NAME  (internal, max 50 chars — users do not see this)
 ==============================================================================
-0.8.0 (586) — post archive, +11 languages
+0.13.0 — search, summaries, series folding
 
 ==============================================================================
 WHAT'S NEW  (release notes — Play Console multi-language format)
@@ -15,21 +15,19 @@ Each language max 500 chars. Plain text only — no HTML / Markdown.
 ------------------------------------------------------------------------------
 
 <en-US>
-Post archive: see when channel posts are edited or deleted, with photos and video saved at capture time. Off by default — enable in Settings → Post archive.
-
-11 new languages: Russian, Spanish, German, French, Italian, Portuguese (BR), Polish, Turkish, Indonesian, Persian and Arabic.
-
-First sign-in no longer leaves the feed with one post per channel — top channels open pre-filled with real scroll headroom.
-
-Plus dozens of fixes to feed order, reactions, replies, quotes and the photo viewer.
+New: search every channel you follow from the search button, even ones that never reached your feed.
+Posts now use the full screen width, with a frosted-glass bottom bar.
+Channels tab: Unread, Today and Hidden filters, and hide or show all channels in one step.
+Busy channels fold into one card, and reposts show only once.
+Summarize long posts, jump to pinned messages, and discover similar channels.
+Plus many fixes to media downloads, albums and rate limits.
 </en-US>
 
 <uk-UA>
-Архів постів: бачте, коли пости в каналах редагують або видаляють, зі знімками фото й відео. Вимкнено за замовчуванням — у Налаштуваннях → Архів постів.
-
-11 нових мов: російська, іспанська, німецька, французька, італійська, португальська (BR), польська, турецька, індонезійська, перська й арабська.
-
-Перший вхід більше не лишає по одному посту на канал — топові канали одразу мають реальний скрол.
-
-Плюс десятки виправлень стрічки, реакцій, відповідей, цитат і перегляду фото.
+Нове: шукайте пости в усіх своїх каналах — навіть у тих, що не потрапили до стрічки.
+Пости тепер на всю ширину екрана, а нижня панель — як матове скло.
+Вкладка «Канали»: фільтри «Непрочитані», «Сьогодні» й «Сховані» а всі канали можна сховати чи показати одним дотиком.
+Серії постів одного каналу згортаються в одну картку, а репости показуються раз.
+Підсумки довгих постів, закріплені повідомлення й схожі канали.
+Плюс багато виправлень завантаження медіа, альбомів і лімітів Telegram.
 </uk-UA>

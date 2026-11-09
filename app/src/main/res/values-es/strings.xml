@@ -4,14 +4,14 @@
     <!-- Auth screen -->
     <string name="auth_phone_label">Número de teléfono</string>
     <string name="auth_phone_helper">Número con código de país. Telegram enviará un código de confirmación</string>
-    <string name="auth_password_label">Contraseña 2FA</string>
+    <string name="auth_password_label">Contraseña de verificación en dos pasos</string>
     <string name="auth_password_hint">Pista: %1$s</string>
     <string name="auth_password_helper">La misma que configuraste en Telegram oficial en Verificación en dos pasos</string>
     <string name="auth_password_forgot">Olvidé la contraseña</string>
     <string name="auth_password_recovery_sent">Código de restablecimiento enviado a %1$s. Ingrésalo para entrar sin contraseña</string>
     <string name="auth_password_recovery_code_label">Código de correo</string>
     <string name="auth_password_recovery_back">Ingresar contraseña</string>
-    <string name="auth_password_recovery_unavailable">No hay correo de recuperación configurado. El 2FA solo puede restablecerse desde Telegram oficial en otro dispositivo</string>
+    <string name="auth_password_recovery_unavailable">No hay correo de recuperación configurado. La verificación en dos pasos solo puede restablecerse desde Telegram oficial en otro dispositivo</string>
     <string name="auth_send_code">Enviar código</string>
     <string name="auth_continue">Continuar</string>
     <string name="auth_continue_without_login">Sin cuenta: leer canales públicos</string>
@@ -32,7 +32,7 @@
     <string name="web_empty_saved">Nada guardado aún</string>
     <string name="web_welcome_title">Sin cuenta</string>
     <string name="web_welcome_body">Añade algunos canales públicos y léelos sin iniciar sesión en Telegram</string>
-    <string name="web_refresh_error">Error al actualizar: %1$s</string>
+    <string name="web_refresh_error">No se pudo actualizar. Revisa tu conexión e inténtalo de nuevo. (%1$s)</string>
     <string name="web_unsubscribe_title">¿Cancelar suscripción?</string>
     <string name="web_unsubscribe_body">El canal @%1$s desaparecerá de tu inicio. Las publicaciones guardadas permanecen en Guardado</string>
     <string name="web_unsubscribe_confirm">Cancelar suscripción</string>
@@ -45,8 +45,8 @@
     <string name="media_open_in_telegram">Abrir en Telegram</string>
     <string name="web_status_not_found">canal no encontrado</string>
     <string name="web_status_private">canal privado</string>
-    <string name="web_status_rate_limited">Telegram pidió esperar</string>
-    <string name="web_status_error">no se pudo actualizar</string>
+    <string name="web_status_rate_limited">Telegram nos pidió ir más despacio</string>
+    <string name="web_status_error">No se pudo actualizar</string>
     <string name="web_status_parse_failure">el formato de la página cambió</string>
     <string name="web_status_loading">actualizando…</string>
     <string name="web_retry_for">Reintentar para %1$s</string>
@@ -60,7 +60,7 @@
     <string name="web_settings_clear_cache_confirm_body">Se eliminarán las publicaciones e imágenes en caché local. Las suscripciones y publicaciones guardadas se conservan. El contenido visible se recargará desde t.me</string>
     <string name="web_settings_clear_cache_confirm_action">Limpiar</string>
     <string name="web_settings_clear_cache_cancel">Cancelar</string>
-    <string name="web_comments_unavailable">Los comentarios no están disponibles en modo invitado. Inicia sesión para leer respuestas</string>
+    <string name="web_comments_unavailable">Los comentarios no están disponibles en modo invitado. Inicia sesión para leerlos</string>
     <string name="web_comments_unavailable_title">Comentarios no disponibles</string>
     <string name="web_settings_privacy_title">Qué ve Telegram en este modo</string>
     <string name="web_settings_privacy_body">Tu IP y un User-Agent de navegador de escritorio. Sin cookies, sin cuenta, nada personal tuyo</string>
@@ -76,8 +76,8 @@
     <string name="web_add_not_found">Canal @%1$s no encontrado</string>
     <string name="web_add_private">El canal es privado. Las publicaciones públicas no están disponibles</string>
     <string name="web_add_parse_failure">No se pudo procesar la respuesta de Telegram</string>
-    <string name="web_add_rate_limited">Límite alcanzado. Inténtalo en %1$d s</string>
-    <string name="web_add_network_error">Error de red: %1$s</string>
+    <string name="web_add_rate_limited">Telegram nos pidió ir más despacio. Inténtalo en %1$d s</string>
+    <string name="web_add_network_error">No se pudo conectar con Telegram. Revisa tu conexión e inténtalo de nuevo. (%1$s)</string>
     <!-- %1$s es una cadena con formato previo de t.me (p. ej. "1.5K", "262K", "12 345"),
          no un Int. No se parsea el número, por lo que no puede usarse <plurals>
          con cantidad. Si en el futuro algún punto de llamada pasa un Int, migrar
@@ -91,12 +91,12 @@
     <string name="auth_retry">Empezar de nuevo</string>
     <string name="auth_open_telegram_hint">Abre Telegram oficial, haz lo necesario y vuelve aquí</string>
     <string name="auth_title_wait_code">Ingresa el código</string>
-    <string name="auth_title_wait_password">Contraseña 2FA</string>
-    <string name="auth_title_error">Acción requerida</string>
+    <string name="auth_title_wait_password">Ingresa tu contraseña</string>
+    <string name="auth_title_error">Completa este paso en Telegram</string>
     <string name="auth_subtitle_wait_code">Código enviado. Revisa: %1$s</string>
     <string name="auth_code_hint_telegram">Las apps de terceros no reciben el código por SMS. Llega a Telegram en otro dispositivo donde ya tienes la sesión iniciada.</string>
     <string name="auth_subtitle_password_no_hint">La cuenta está protegida con verificación en dos pasos</string>
-    <string name="auth_subtitle_password_with_hint">La cuenta está protegida con verificación en dos pasos. Ingresa tu contraseña 2FA</string>
+    <string name="auth_subtitle_password_with_hint">La cuenta está protegida con verificación en dos pasos. Ingresa tu contraseña</string>
     <string name="auth_subtitle_default">Lee canales de Telegram como un feed — sin chats ni notificaciones</string>
     <string name="auth_country_label">País</string>
     <string name="auth_country_loading">Cargando…</string>
@@ -139,12 +139,12 @@
     <string name="auth_err_code_cant_resend">Telegram no puede enviar el código de otra forma. Abre Telegram en un dispositivo donde ya hayas iniciado sesión o cambia el número</string>
     <string name="auth_err_password_invalid">Contraseña incorrecta. Inténtalo de nuevo</string>
     <string name="auth_err_password_too_fresh">La contraseña acaba de cambiarse. Telegram te pedirá esperar un momento</string>
-    <string name="auth_err_password_recovery_na">La recuperación de contraseña no está disponible aquí. Restablece el 2FA desde Telegram oficial</string>
-    <string name="auth_err_session_password_needed">Se requiere contraseña 2FA</string>
+    <string name="auth_err_password_recovery_na">La recuperación de contraseña no está disponible aquí. Restablece la verificación en dos pasos desde Telegram oficial</string>
+    <string name="auth_err_session_password_needed">Se requiere la contraseña de verificación en dos pasos</string>
     <string name="auth_err_app_misconfigured">Error de configuración de la app. Reinicia Hortay o busca actualizaciones</string>
     <string name="auth_err_token_invalid">Las credenciales no coinciden. Reinicia el inicio de sesión</string>
     <string name="auth_err_generic">Algo salió mal. Inténtalo de nuevo</string>
-    <string name="auth_err_step_failed">No se pudo completar el paso (%1$s). Inténtalo de nuevo</string>
+    <string name="auth_err_step_failed">No se pudo completar el paso. Inténtalo de nuevo. (%1$s)</string>
     <string name="auth_err_email_required">Confirma el correo en Telegram oficial y luego vuelve aquí</string>
     <string name="auth_err_phone_unregistered">No hay cuenta de Telegram en este número. Créala en la app oficial</string>
     <string name="auth_err_other_device">Confirma el inicio de sesión en Telegram desde otro dispositivo</string>
@@ -171,9 +171,9 @@
     <string name="connection_connecting">Conectando…</string>
     <string name="connection_updating">Actualizando…</string>
     <plurals name="connection_flood_wait">
-        <item quantity="one">Telegram está limitando solicitudes (%d s)</item>
-        <item quantity="other">Telegram está limitando solicitudes (%d s)</item>
-        <item quantity="many">Telegram está limitando solicitudes (%d s)</item>
+        <item quantity="one">Telegram nos pidió ir más despacio (%d s)</item>
+        <item quantity="other">Telegram nos pidió ir más despacio (%d s)</item>
+        <item quantity="many">Telegram nos pidió ir más despacio (%d s)</item>
     </plurals>
 
     <!-- Navigation -->
@@ -187,7 +187,7 @@
     <string name="timeline_empty">Aquí está tranquilo. Suscríbete a canales en Telegram y aparecerán en el inicio</string>
     <string name="timeline_empty_default_helper">Suscríbete a canales en Telegram y aparecerán en el inicio</string>
     <string name="timeline_empty_saved_title">Nada guardado aún</string>
-    <string name="timeline_empty_saved_helper">Toca ⋯ en una publicación y elige «Guardar publicación» para verla después</string>
+    <string name="timeline_empty_saved_helper">Toca el marcador debajo de una publicación para verla después</string>
     <string name="timeline_empty_default_title">Aquí está tranquilo</string>
     <string name="timeline_empty_caught_up_title">Todo leído</string>
     <string name="timeline_empty_caught_up_helper">Has leído todas las publicaciones del inicio. Desliza hacia abajo para ver novedades.</string>
@@ -300,7 +300,7 @@
         <item quantity="many">%d comentarios</item>
     </plurals>
     <string name="comments_empty_title">Sin comentarios aún</string>
-    <string name="comments_empty_body">Las nuevas respuestas aparecerán aquí cuando lleguen</string>
+    <string name="comments_empty_body">Los nuevos comentarios aparecerán aquí cuando lleguen</string>
     <string name="comments_disabled_title">Comentarios desactivados</string>
     <string name="comments_disabled_body">Este canal no tiene un grupo de discusión vinculado</string>
     <string name="comments_unavailable">Discusión no disponible</string>
@@ -324,9 +324,9 @@
     <string name="channels_hide_all">Ocultar todos del feed</string>
     <string name="channels_show_all">Mostrar todos en el feed</string>
     <string name="channels_hide_all_confirm">Todos los canales se ocultarán del feed. Luego desliza los que quieras conservar para recuperarlos.</string>
-    <string name="channels_show_all_confirm">Los canales que ocultaste volverán a aparecer en el feed.</string>
+    <string name="channels_show_all_confirm">Los canales que ocultaste volverán a aparecer en el feed</string>
     <string name="channels_search_hint">Buscar canales</string>
-    <string name="channels_swipe_hint">Desliza un canal hacia un lado para ocultarlo del feed.</string>
+    <string name="channels_swipe_hint">Desliza un canal hacia un lado para ocultarlo del feed</string>
     <string name="channels_hidden_label">Oculto del feed</string>
     <plurals name="channels_unread_count">
         <item quantity="one">%d publicación sin leer</item>
@@ -392,7 +392,7 @@
     <string name="settings_language_summary_system">Predeterminado del sistema</string>
     <string name="settings_language_dialog_title">Idioma de la app</string>
     <string name="settings_logout_title">Cerrar sesión</string>
-    <string name="settings_logout_subtitle">Se restablece la sesión de Telegram; el caché se mantiene</string>
+    <string name="settings_logout_subtitle">Tendrás que iniciar sesión de nuevo. Los archivos descargados se quedan en el dispositivo</string>
     <string name="settings_version">Versión</string>
     <string name="settings_logout_dialog_title">¿Cerrar sesión de Telegram?</string>
     <string name="settings_logout_dialog_text">Tendrás que ingresar tu número y código de confirmación de nuevo</string>
@@ -405,7 +405,7 @@
     <string name="settings_storage_used_by">usado por Hortay en este dispositivo</string>
     <string name="settings_storage_clearing">Limpiando…</string>
     <string name="settings_storage_clear">Limpiar caché de medios</string>
-    <string name="settings_storage_clear_helper">Elimina fotos, videos y archivos en caché. La base de datos de mensajes y la sesión se conservan; solo se borran al cerrar sesión</string>
+    <string name="settings_storage_clear_helper">Elimina las fotos, videos y archivos descargados para liberar espacio; se vuelven a descargar cuando los necesites. El feed y tu sesión se conservan; solo se borran al cerrar sesión</string>
     <string name="settings_storage_clear_failed">No se pudo limpiar la caché de medios. Inténtalo de nuevo</string>
     <string name="settings_storage_media">Medios</string>
     <string name="settings_storage_db">Base de datos</string>
@@ -480,8 +480,8 @@
 
     <!-- Generic / TD errors -->
     <string name="error_generic">Algo salió mal</string>
-    <string name="err_flood_with_time">Telegram está limitando solicitudes. Inténtalo en %1$s</string>
-    <string name="err_flood_generic">Telegram está limitando solicitudes. Inténtalo más tarde</string>
+    <string name="err_flood_with_time">Telegram nos pidió ir más despacio. Inténtalo en %1$s</string>
+    <string name="err_flood_generic">Telegram nos pidió ir más despacio. Inténtalo más tarde</string>
     <string name="err_unauthorized">Sesión restablecida. Inicia sesión de nuevo</string>
     <string name="err_forbidden">No se puede %1$s: acción no permitida</string>
     <string name="err_not_found">No encontrado: %1$s</string>
@@ -557,10 +557,10 @@
     <!-- Toast banners shown by the fullscreen viewer after a Save / Copy / Share action. -->
     <string name="media_saved_photo">Foto guardada en la galería</string>
     <string name="media_saved_video">Video guardado en la galería</string>
-    <string name="media_save_failed">No se pudo guardar: %1$s</string>
+    <string name="media_save_failed">No se pudo guardar (%1$s)</string>
     <string name="media_copied">Imagen copiada</string>
-    <string name="media_copy_failed">No se pudo copiar: %1$s</string>
-    <string name="media_share_failed">No se pudo compartir: %1$s</string>
+    <string name="media_copy_failed">No se pudo copiar (%1$s)</string>
+    <string name="media_share_failed">No se pudo compartir (%1$s)</string>
     <!-- Inline status badges next to a post. -->
     <string name="post_badge_edited">Editado</string>
     <string name="post_badge_pinned">Fijado</string>
@@ -725,12 +725,12 @@
     <string name="archive_max_records_label">Máximo de registros</string>
     <string name="archive_onboarding_cancel">Cancelar</string>
     <string name="archive_onboarding_enable">Activar</string>
-    <string name="archive_onboarding_logout">Se borra automáticamente al cerrar sesión.</string>
+    <string name="archive_onboarding_logout">Se borra automáticamente al cerrar sesión</string>
     <string name="archive_onboarding_title">¿Guardar ediciones y eliminaciones?</string>
     <string name="archive_onboarding_what">Hortay guarda el texto y los metadatos de medios cuando un canal edita o elimina una publicación. Las fotos y videos no se descargan — solo miniaturas pequeñas.</string>
     <string name="archive_onboarding_where">Almacenado solo en este dispositivo. Nunca se sube a ningún servidor.</string>
     <string name="archive_open_browser">Abrir archivo</string>
-    <string name="archive_purged">Instantánea eliminada.</string>
+    <string name="archive_purged">Instantánea eliminada</string>
     <string name="archive_records_unlimited">Sin límite</string>
     <string name="archive_retention_days">%d días</string>
     <string name="archive_retention_label">Retención</string>
@@ -758,8 +758,8 @@
         <item quantity="other">editada ×%d</item>
         <item quantity="many">editada ×%d</item>
     </plurals>
-    <string name="revision_baseline_caveat">El original no fue capturado — se muestra el contenido tras la primera edición que Hortay observó.</string>
-    <string name="revision_empty">No hay revisiones guardadas.</string>
+    <string name="revision_baseline_caveat">El original no fue capturado — se muestra el contenido tras la primera edición que Hortay observó</string>
+    <string name="revision_empty">No hay revisiones guardadas</string>
     <string name="revision_go_to_current">Ir a la versión actual</string>
     <string name="revision_media_audio_caption">Audio · %1$ds</string>
     <string name="revision_media_document">Documento</string>
@@ -857,4 +857,30 @@
     <string name="post_summarize">Resumir</string>
     <string name="post_summary_title">Resumen</string>
     <string name="media_download">descargar</string>
+    <string name="onboarding_got_it">Entendido</string>
+    <string name="onboarding_feed_order_title">¿Cómo prefieres leer?</string>
+    <string name="onboarding_feed_order_newest_desc">Como un feed de noticias</string>
+    <string name="onboarding_feed_order_oldest_desc">Como un chat: continúas donde lo dejaste</string>
+    <string name="onboarding_feed_order_confirm">Continuar</string>
+    <string name="onboarding_feed_order_footer">Puedes cambiarlo más tarde en %1$s → %2$s.</string>
+    <string name="settings_section_reading">Lectura</string>
+    <string name="settings_theme_mode_system">Sistema</string>
+    <string name="settings_theme_mode_light">Claro</string>
+    <string name="settings_theme_mode_dark">Oscuro</string>
+    <string name="settings_theme_mode_system_subtitle">Sigue el modo claro u oscuro del dispositivo</string>
+    <string name="settings_theme_mode_light_subtitle">Siempre claro, sin importar el ajuste del dispositivo</string>
+    <string name="settings_theme_mode_dark_subtitle">Siempre oscuro, sin importar el ajuste del dispositivo</string>
+    <string name="settings_pure_black_title">Negro puro</string>
+    <string name="settings_pure_black_subtitle">Fondo negro en el tema oscuro, ideal para pantallas OLED</string>
+    <string name="settings_text_size_title">Tamaño del texto</string>
+    <string name="settings_text_size_small">Pequeño</string>
+    <string name="settings_text_size_default">Predeterminado</string>
+    <string name="settings_text_size_large">Grande</string>
+    <string name="settings_text_size_extra_large">Muy grande</string>
+    <string name="settings_text_size_glyph">A</string>
+    <string name="settings_text_size_sample">Así se leerán las publicaciones en Inicio, los canales y los comentarios.</string>
+    <string name="settings_category_about_summary">Autor, código fuente, versión</string>
+    <string name="audio_speed_value">%1$s×</string>
+    <string name="audio_speed_cd">Velocidad de reproducción %1$s</string>
+    <string name="audio_mini_close">Detener la reproducción</string>
 </resources>

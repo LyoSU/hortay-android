@@ -4,14 +4,14 @@
     <!-- صفحه ورود -->
     <string name="auth_phone_label">شماره تلفن</string>
     <string name="auth_phone_helper">شماره را با کد کشور وارد کنید. Telegram یک کد تأیید ارسال می‌کند</string>
-    <string name="auth_password_label">رمز عبور ۲FA</string>
+    <string name="auth_password_label">رمز عبور تأیید دو مرحله‌ای</string>
     <string name="auth_password_hint">راهنما: %1$s</string>
     <string name="auth_password_helper">همان رمزی که در Telegram رسمی برای تأیید دو مرحله‌ای تنظیم کرده‌اید</string>
     <string name="auth_password_forgot">رمز را فراموش کردم</string>
     <string name="auth_password_recovery_sent">کد بازیابی به %1$s ارسال شد. آن را وارد کنید تا بدون رمز وارد شوید</string>
     <string name="auth_password_recovery_code_label">کد ایمیل</string>
     <string name="auth_password_recovery_back">وارد کردن رمز عبور</string>
-    <string name="auth_password_recovery_unavailable">ایمیل بازیابی تنظیم نشده. ۲FA فقط از Telegram رسمی روی دستگاه دیگری قابل بازنشانی است</string>
+    <string name="auth_password_recovery_unavailable">ایمیل بازیابی تنظیم نشده. تأیید دو مرحله‌ای فقط از Telegram رسمی روی دستگاه دیگری قابل بازنشانی است</string>
     <string name="auth_send_code">ارسال کد</string>
     <string name="auth_continue">ادامه</string>
     <string name="auth_continue_without_login">بدون ورود: خواندن کانال‌های عمومی</string>
@@ -32,7 +32,7 @@
     <string name="web_empty_saved">هنوز چیزی ذخیره نشده</string>
     <string name="web_welcome_title">بدون ورود</string>
     <string name="web_welcome_body">چند کانال عمومی اضافه کنید و بدون ورود به Telegram آن‌ها را بخوانید</string>
-    <string name="web_refresh_error">به‌روزرسانی ناموفق: %1$s</string>
+    <string name="web_refresh_error">به‌روزرسانی انجام نشد. اتصال را بررسی کنید و دوباره امتحان کنید. (%1$s)</string>
     <string name="web_unsubscribe_title">لغو اشتراک؟</string>
     <string name="web_unsubscribe_body">کانال @%1$s از فید شما حذف می‌شود. پست‌های نشانک‌گذاری‌شده در ذخیره‌شده‌ها باقی می‌مانند</string>
     <string name="web_unsubscribe_confirm">لغو اشتراک</string>
@@ -45,7 +45,7 @@
     <string name="media_open_in_telegram">باز کردن در Telegram</string>
     <string name="web_status_not_found">کانال یافت نشد</string>
     <string name="web_status_private">کانال خصوصی</string>
-    <string name="web_status_rate_limited">Telegram درخواست انتظار داد</string>
+    <string name="web_status_rate_limited">Telegram خواسته است سرعت را کم کنیم</string>
     <string name="web_status_error">به‌روزرسانی انجام نشد</string>
     <string name="web_status_parse_failure">فرمت صفحه تغییر کرده</string>
     <string name="web_status_loading">در حال به‌روزرسانی…</string>
@@ -60,7 +60,7 @@
     <string name="web_settings_clear_cache_confirm_body">پست‌ها و تصاویر کش‌شده محلی حذف می‌شوند. اشتراک‌ها و پست‌های ذخیره‌شده نگه داشته می‌شوند. محتوا دوباره از t.me بارگذاری می‌شود</string>
     <string name="web_settings_clear_cache_confirm_action">پاک کردن</string>
     <string name="web_settings_clear_cache_cancel">انصراف</string>
-    <string name="web_comments_unavailable">نظرات در حالت مهمان در دسترس نیستند. برای خواندن پاسخ‌ها وارد شوید</string>
+    <string name="web_comments_unavailable">نظرات در حالت مهمان در دسترس نیستند. برای خواندن آن‌ها وارد شوید</string>
     <string name="web_comments_unavailable_title">نظرات در دسترس نیست</string>
     <string name="web_settings_privacy_title">Telegram در این حالت چه می‌بیند</string>
     <string name="web_settings_privacy_body">آدرس IP شما و یک User-Agent مرورگر دسکتاپ. بدون کوکی، بدون حساب، هیچ اطلاعات شخصی</string>
@@ -76,8 +76,8 @@
     <string name="web_add_not_found">کانال @%1$s یافت نشد</string>
     <string name="web_add_private">کانال خصوصی است. پست‌های عمومی در دسترس نیستند</string>
     <string name="web_add_parse_failure">پاسخ Telegram قابل پردازش نبود</string>
-    <string name="web_add_rate_limited">محدودیت نرخ. %1$d ثانیه دیگر دوباره امتحان کنید</string>
-    <string name="web_add_network_error">خطای شبکه: %1$s</string>
+    <string name="web_add_rate_limited">Telegram خواسته است سرعت را کم کنیم. %1$d ثانیه دیگر دوباره امتحان کنید</string>
+    <string name="web_add_network_error">اتصال به Telegram برقرار نشد. اتصال را بررسی کنید و دوباره امتحان کنید. (%1$s)</string>
     <!-- %1$s یک رشته از پیش فرمت‌شده از t.me است (مثلاً "1.5K"، "262K"، "12 345")،
          نه Int. عدد را تجزیه نمی‌کنیم، بنابراین نمی‌توان از <plurals> استفاده کرد. -->
     <string name="web_subscribers">مشترکان: %1$s</string>
@@ -89,12 +89,12 @@
     <string name="auth_retry">شروع مجدد</string>
     <string name="auth_open_telegram_hint">Telegram رسمی را باز کنید، کار لازم را انجام دهید، سپس برگردید</string>
     <string name="auth_title_wait_code">کد را وارد کنید</string>
-    <string name="auth_title_wait_password">رمز عبور ۲FA</string>
-    <string name="auth_title_error">اقدام لازم است</string>
+    <string name="auth_title_wait_password">رمز عبور را وارد کنید</string>
+    <string name="auth_title_error">این مرحله را در Telegram کامل کنید</string>
     <string name="auth_subtitle_wait_code">کد ارسال شد. بررسی کنید: %1$s</string>
     <string name="auth_code_hint_telegram">برنامه‌های شخص ثالث کد را با پیامک دریافت نمی‌کنند. کد در تلگرام روی دستگاه دیگری که در آن وارد شده‌اید می‌آید.</string>
     <string name="auth_subtitle_password_no_hint">حساب با تأیید دو مرحله‌ای محافظت می‌شود</string>
-    <string name="auth_subtitle_password_with_hint">حساب با تأیید دو مرحله‌ای محافظت می‌شود. رمز ۲FA را وارد کنید</string>
+    <string name="auth_subtitle_password_with_hint">حساب با تأیید دو مرحله‌ای محافظت می‌شود. رمز عبور را وارد کنید</string>
     <string name="auth_subtitle_default">کانال‌های Telegram را به‌صورت فید بخوانید — بدون چت و اعلان</string>
     <string name="auth_country_label">کشور</string>
     <string name="auth_country_loading">در حال بارگذاری…</string>
@@ -137,12 +137,12 @@
     <string name="auth_err_code_cant_resend">تلگرام نمی‌تواند کد را از راه دیگری بفرستد. تلگرام را در دستگاهی که قبلاً وارد آن شده‌اید باز کنید یا شماره را تغییر دهید</string>
     <string name="auth_err_password_invalid">رمز اشتباه است. دوباره امتحان کنید</string>
     <string name="auth_err_password_too_fresh">رمز تازه تغییر کرده. Telegram از شما می‌خواهد کمی صبر کنید</string>
-    <string name="auth_err_password_recovery_na">بازیابی رمز اینجا در دسترس نیست. ۲FA را در Telegram رسمی بازنشانی کنید</string>
-    <string name="auth_err_session_password_needed">رمز عبور ۲FA لازم است</string>
+    <string name="auth_err_password_recovery_na">بازیابی رمز اینجا در دسترس نیست. تأیید دو مرحله‌ای را در Telegram رسمی بازنشانی کنید</string>
+    <string name="auth_err_session_password_needed">رمز عبور تأیید دو مرحله‌ای لازم است</string>
     <string name="auth_err_app_misconfigured">خطای پیکربندی برنامه. Hortay را راه‌اندازی مجدد کنید یا به‌روزرسانی‌ها را بررسی کنید</string>
     <string name="auth_err_token_invalid">اطلاعات مطابقت ندارد. ورود را دوباره شروع کنید</string>
     <string name="auth_err_generic">مشکلی پیش آمد. دوباره امتحان کنید</string>
-    <string name="auth_err_step_failed">مرحله انجام نشد (%1$s). دوباره امتحان کنید</string>
+    <string name="auth_err_step_failed">مرحله انجام نشد. دوباره امتحان کنید. (%1$s)</string>
     <string name="auth_err_email_required">ایمیل را در Telegram رسمی تأیید کنید، سپس برگردید</string>
     <string name="auth_err_phone_unregistered">هنوز حساب Telegram روی این شماره ساخته نشده. در برنامه رسمی بسازید</string>
     <string name="auth_err_other_device">ورود را از Telegram روی دستگاه دیگری تأیید کنید</string>
@@ -167,8 +167,8 @@
     <string name="connection_connecting">در حال اتصال…</string>
     <string name="connection_updating">در حال به‌روزرسانی…</string>
     <plurals name="connection_flood_wait">
-        <item quantity="one">Telegram درخواست‌ها را محدود کرده (%d ث)</item>
-        <item quantity="other">Telegram درخواست‌ها را محدود کرده (%d ث)</item>
+        <item quantity="one">Telegram خواسته است سرعت را کم کنیم (%d ث)</item>
+        <item quantity="other">Telegram خواسته است سرعت را کم کنیم (%d ث)</item>
     </plurals>
 
     <!-- ناوبری -->
@@ -182,7 +182,7 @@
     <string name="timeline_empty">اینجا ساکت است. در Telegram مشترک کانال‌ها شوید تا در فید نمایش داده شوند</string>
     <string name="timeline_empty_default_helper">در Telegram مشترک کانال‌ها شوید تا در فید نمایش داده شوند</string>
     <string name="timeline_empty_saved_title">هنوز چیزی ذخیره نشده</string>
-    <string name="timeline_empty_saved_helper">روی ⋯ کنار پست بزنید و «ذخیره پست» را انتخاب کنید تا بعداً سراغش بروید</string>
+    <string name="timeline_empty_saved_helper">روی نشانک زیر پست بزنید تا بعداً سراغش بروید</string>
     <string name="timeline_empty_default_title">اینجا ساکت است</string>
     <string name="timeline_empty_caught_up_title">همه چیز را خواندید</string>
     <string name="timeline_empty_caught_up_helper">همه پست‌های فید را خواندید. برای دریافت جدیدها بکشید و رها کنید.</string>
@@ -290,7 +290,7 @@
         <item quantity="other">%d نظر</item>
     </plurals>
     <string name="comments_empty_title">هنوز نظری وجود ندارد</string>
-    <string name="comments_empty_body">پاسخ‌های جدید به محض رسیدن اینجا نمایش داده می‌شوند</string>
+    <string name="comments_empty_body">نظرهای جدید به محض رسیدن اینجا نمایش داده می‌شوند</string>
     <string name="comments_disabled_title">نظرات غیرفعال است</string>
     <string name="comments_disabled_body">این کانال گروه بحث متصل ندارد</string>
     <string name="comments_unavailable">بحث در دسترس نیست</string>
@@ -314,9 +314,9 @@
     <string name="channels_hide_all">پنهان کردن همه از فید</string>
     <string name="channels_show_all">نمایش همه در فید</string>
     <string name="channels_hide_all_confirm">همهٔ کانال‌ها از فید پنهان می‌شوند. سپس کانال‌هایی را که می‌خواهید نگه دارید به کنار بکشید تا برگردند.</string>
-    <string name="channels_show_all_confirm">کانال‌هایی که پنهان کرده‌اید دوباره در فید نمایش داده می‌شوند.</string>
+    <string name="channels_show_all_confirm">کانال‌هایی که پنهان کرده‌اید دوباره در فید نمایش داده می‌شوند</string>
     <string name="channels_search_hint">جستجوی کانال‌ها</string>
-    <string name="channels_swipe_hint">برای پنهان کردن کانال از فید، آن را به کنار بکشید.</string>
+    <string name="channels_swipe_hint">برای پنهان کردن کانال از فید، آن را به کنار بکشید</string>
     <string name="channels_hidden_label">پنهان از فید</string>
     <plurals name="channels_unread_count">
         <item quantity="one">%d پست خوانده‌نشده</item>
@@ -382,7 +382,7 @@
     <string name="settings_language_summary_system">پیش‌فرض سیستم</string>
     <string name="settings_language_dialog_title">زبان برنامه</string>
     <string name="settings_logout_title">خروج از حساب</string>
-    <string name="settings_logout_subtitle">نشست Telegram بازنشانی می‌شود، کش باقی می‌ماند</string>
+    <string name="settings_logout_subtitle">باید دوباره وارد شوید. رسانه‌های دانلودشده روی دستگاه می‌مانند</string>
     <string name="settings_version">نسخه</string>
     <string name="settings_logout_dialog_title">از Telegram خارج شوید؟</string>
     <string name="settings_logout_dialog_text">باید دوباره شماره و کد تأیید را وارد کنید</string>
@@ -395,7 +395,7 @@
     <string name="settings_storage_used_by">توسط Hortay در این دستگاه استفاده شده</string>
     <string name="settings_storage_clearing">در حال پاک کردن…</string>
     <string name="settings_storage_clear">پاک کردن کش رسانه</string>
-    <string name="settings_storage_clear_helper">عکس‌ها، ویدیوها و فایل‌های کش‌شده را حذف می‌کند. پایگاه پیام‌ها و نشست باقی می‌مانند؛ فقط با خروج پاک می‌شوند</string>
+    <string name="settings_storage_clear_helper">عکس‌ها، ویدیوها و فایل‌های دانلودشده را برای آزاد کردن فضا حذف می‌کند؛ در صورت نیاز دوباره دانلود می‌شوند. فید و ورود شما حفظ می‌شود؛ فقط با خروج پاک می‌شوند</string>
     <string name="settings_storage_clear_failed">پاک کردن کش رسانه انجام نشد. دوباره امتحان کنید</string>
     <string name="settings_storage_media">رسانه</string>
     <string name="settings_storage_db">پایگاه داده</string>
@@ -470,8 +470,8 @@
 
     <!-- خطاهای عمومی / TDLib -->
     <string name="error_generic">مشکلی پیش آمد</string>
-    <string name="err_flood_with_time">Telegram درخواست‌ها را محدود کرده. %1$s دیگر دوباره امتحان کنید</string>
-    <string name="err_flood_generic">Telegram درخواست‌ها را محدود کرده. بعداً دوباره امتحان کنید</string>
+    <string name="err_flood_with_time">Telegram خواسته است سرعت را کم کنیم. %1$s دیگر دوباره امتحان کنید</string>
+    <string name="err_flood_generic">Telegram خواسته است سرعت را کم کنیم. بعداً دوباره امتحان کنید</string>
     <string name="err_unauthorized">نشست بازنشانی شد. دوباره وارد شوید</string>
     <string name="err_forbidden">نمی‌توان %1$s: عمل ممنوع است</string>
     <string name="err_not_found">یافت نشد: %1$s</string>
@@ -540,10 +540,10 @@
     <!-- توست‌ها پس از ذخیره / کپی / اشتراک‌گذاری در نمایشگر تمام‌صفحه -->
     <string name="media_saved_photo">عکس در گالری ذخیره شد</string>
     <string name="media_saved_video">ویدیو در گالری ذخیره شد</string>
-    <string name="media_save_failed">ذخیره نشد: %1$s</string>
+    <string name="media_save_failed">ذخیره نشد (%1$s)</string>
     <string name="media_copied">تصویر کپی شد</string>
-    <string name="media_copy_failed">کپی نشد: %1$s</string>
-    <string name="media_share_failed">اشتراک‌گذاری نشد: %1$s</string>
+    <string name="media_copy_failed">کپی نشد (%1$s)</string>
+    <string name="media_share_failed">اشتراک‌گذاری نشد (%1$s)</string>
     <!-- نشان‌های وضعیت کنار پست -->
     <string name="post_badge_edited">ویرایش‌شده</string>
     <string name="post_badge_pinned">پین‌شده</string>
@@ -701,12 +701,12 @@
     <string name="archive_max_records_label">حداکثر رکورد</string>
     <string name="archive_onboarding_cancel">انصراف</string>
     <string name="archive_onboarding_enable">فعال</string>
-    <string name="archive_onboarding_logout">با خروج از حساب به‌طور خودکار پاک می‌شود.</string>
+    <string name="archive_onboarding_logout">با خروج از حساب به‌طور خودکار پاک می‌شود</string>
     <string name="archive_onboarding_title">ویرایش‌ها و حذف‌ها ذخیره شوند؟</string>
     <string name="archive_onboarding_what">Hortay متن و متادیتای رسانه را هنگام ویرایش یا حذف پست توسط کانال ذخیره می‌کند. عکس‌ها و ویدیوها دانلود نمی‌شوند — فقط تصاویر کوچک.</string>
     <string name="archive_onboarding_where">فقط روی این دستگاه ذخیره می‌شود. هرگز آپلود نمی‌شود.</string>
     <string name="archive_open_browser">باز کردن آرشیو</string>
-    <string name="archive_purged">نسخه حذف شد.</string>
+    <string name="archive_purged">نسخه حذف شد</string>
     <string name="archive_records_unlimited">بدون محدودیت</string>
     <string name="archive_retention_days">%d روز</string>
     <string name="archive_retention_label">نگهداری</string>
@@ -732,8 +732,8 @@
         <item quantity="one">ویرایش‌شده ×%d</item>
         <item quantity="other">ویرایش‌شده ×%d</item>
     </plurals>
-    <string name="revision_baseline_caveat">نسخه‌ی اصلی ثبت نشده — این محتوا پس از اولین ویرایشی است که Hortay دیده.</string>
-    <string name="revision_empty">هیچ ویرایشی ذخیره نشده.</string>
+    <string name="revision_baseline_caveat">نسخه‌ی اصلی ثبت نشده — این محتوا پس از اولین ویرایشی است که Hortay دیده</string>
+    <string name="revision_empty">هیچ ویرایشی ذخیره نشده</string>
     <string name="revision_go_to_current">رفتن به نسخه‌ی فعلی</string>
     <string name="revision_media_audio_caption">صدا · %1$d ث</string>
     <string name="revision_media_document">سند</string>
@@ -831,4 +831,30 @@
     <string name="post_summarize">خلاصه</string>
     <string name="post_summary_title">خلاصه</string>
     <string name="media_download">دانلود</string>
+    <string name="onboarding_got_it">متوجه شدم</string>
+    <string name="onboarding_feed_order_title">دوست داری چطور بخوانی؟</string>
+    <string name="onboarding_feed_order_newest_desc">مثل فید خبری</string>
+    <string name="onboarding_feed_order_oldest_desc">مثل چت — از همان جایی که ماندی ادامه می‌دهی</string>
+    <string name="onboarding_feed_order_confirm">ادامه</string>
+    <string name="onboarding_feed_order_footer">می‌توانی بعداً آن را در %1$s ← %2$s تغییر دهی.</string>
+    <string name="settings_section_reading">مطالعه</string>
+    <string name="settings_theme_mode_system">سیستم</string>
+    <string name="settings_theme_mode_light">روشن</string>
+    <string name="settings_theme_mode_dark">تیره</string>
+    <string name="settings_theme_mode_system_subtitle">از حالت روشن یا تیرهٔ دستگاه پیروی می‌کند</string>
+    <string name="settings_theme_mode_light_subtitle">همیشه روشن، صرف‌نظر از تنظیم دستگاه</string>
+    <string name="settings_theme_mode_dark_subtitle">همیشه تیره، صرف‌نظر از تنظیم دستگاه</string>
+    <string name="settings_pure_black_title">مشکی خالص</string>
+    <string name="settings_pure_black_subtitle">پس‌زمینهٔ مشکی در پوستهٔ تیره — مناسب نمایشگرهای OLED</string>
+    <string name="settings_text_size_title">اندازهٔ متن</string>
+    <string name="settings_text_size_small">کوچک</string>
+    <string name="settings_text_size_default">پیش‌فرض</string>
+    <string name="settings_text_size_large">بزرگ</string>
+    <string name="settings_text_size_extra_large">خیلی بزرگ</string>
+    <string name="settings_text_size_glyph">آ</string>
+    <string name="settings_text_size_sample">پست‌ها در فید، کانال‌ها و نظرها با این اندازه نمایش داده می‌شوند.</string>
+    <string name="settings_category_about_summary">نویسنده، کد منبع، نسخه</string>
+    <string name="audio_speed_value">%1$s×</string>
+    <string name="audio_speed_cd">سرعت پخش %1$s</string>
+    <string name="audio_mini_close">توقف پخش</string>
 </resources>

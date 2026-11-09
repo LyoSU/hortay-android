@@ -13,8 +13,9 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -97,6 +98,27 @@ private val DarkScheme: ColorScheme = darkColorScheme(
 val LocalHortayStatusColors = staticCompositionLocalOf { LightStatusColors }
 
 /**
+ * The EFFECTIVE dark flag [HortayTheme] renders with — the user's theme mode resolved against
+ * the system. Use this instead of `isSystemInDarkTheme()` anywhere below the theme, otherwise a
+ * pinned Light/Dark choice disagrees with the system and the two halves of the UI diverge.
+ * Defaults to `false` (light) for previews / call sites outside [HortayTheme].
+ */
+val LocalHortayDarkTheme = staticCompositionLocalOf { false }
+
+/**
+ * Pure-black variant of a dark [ColorScheme] for OLED screens: the canvas (`background`,
+ * `surface`, `surfaceContainerLowest`) goes to #000000 while the rest of the container ladder
+ * (`surfaceContainerLow` … `Highest`) keeps its tones, so cards, sheets and bars still separate
+ * from the canvas by elevation. Pure function of the input scheme — applied on top of both the
+ * brand dark scheme and the wallpaper-derived dynamic one.
+ */
+internal fun ColorScheme.withPureBlack(): ColorScheme = copy(
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceContainerLowest = Color.Black,
+)
+
+/**
  * Hortay's Material 3 Expressive theme entry point.
  *
  * Layers, in order of how they shape what the user sees:
@@ -115,17 +137,25 @@ val LocalHortayStatusColors = staticCompositionLocalOf { LightStatusColors }
  *      transitions, faster damping on scroll-anchored chrome — Google's recommended
  *      default for consumer-facing apps as of M3 Expressive (I/O 2025).
  *
- * Status-bar icon contrast follows the system theme so the chrome reads correctly
- * regardless of which scheme renders below.
+ * [darkTheme] is the EFFECTIVE flag — `MainActivity` resolves it from the user's
+ * [dev.lyo.hortay.data.ThemeMode] (only `System` consults `isSystemInDarkTheme()`). Everything
+ * below the theme that needs "am I dark?" reads [LocalHortayDarkTheme], never
+ * `isSystemInDarkTheme()`, so a pinned Light/Dark choice is honoured app-wide. Status- and
+ * navigation-bar icon contrast follow the same effective flag.
+ *
+ * [pureBlack] swaps the dark scheme's canvas to #000000 (see [withPureBlack]); ignored in light.
+ * [readingScale] is provided as [LocalReadingScale] for post bodies and rich articles only.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HortayTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+    pureBlack: Boolean = false,
+    readingScale: Float = 1f,
     content: @Composable () -> Unit,
 ) {
-    val scheme = when {
+    val baseScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val ctx = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
@@ -133,18 +163,33 @@ fun HortayTheme(
         darkTheme -> DarkScheme
         else -> LightScheme
     }
+    val scheme = if (darkTheme && pureBlack) baseScheme.withPureBlack() else baseScheme
 
+    // Keyed on the system flag too (not only [darkTheme]): MainActivity.onConfigurationChanged
+    // re-runs enableEdgeToEdge on a system night-mode flip, which resets the bar icons to the
+    // SYSTEM theme. With a pinned mode [darkTheme] doesn't change, so without this key the
+    // effect would not re-run and the icons would keep the system's contrast, not the app's.
+    val systemDark = isSystemInDarkTheme()
     val view = LocalView.current
     if (!view.isInEditMode) {
-        SideEffect {
+        DisposableEffect(darkTheme, systemDark) {
             val window = (view.context as Activity).window
-            WindowCompat.getInsetsController(window, view)
-                .isAppearanceLightStatusBars = !darkTheme
+            val controller = WindowCompat.getInsetsController(window, view)
+            controller.isAppearanceLightStatusBars = !darkTheme
+            // API 29+ only: there enableEdgeToEdge leaves the navigation bar transparent, so the
+            // icon tint must follow the app. Below 29 it paints a scrim chosen by the SYSTEM
+            // theme, and flipping the icons against that scrim would make them unreadable.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                controller.isAppearanceLightNavigationBars = !darkTheme
+            }
+            onDispose { }
         }
     }
 
     CompositionLocalProvider(
         LocalHortayStatusColors provides if (darkTheme) DarkStatusColors else LightStatusColors,
+        LocalHortayDarkTheme provides darkTheme,
+        LocalReadingScale provides readingScale,
     ) {
         MaterialExpressiveTheme(
             colorScheme = scheme,

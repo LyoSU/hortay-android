@@ -1,7 +1,6 @@
 package dev.lyo.hortay.ui.theme
 
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -32,6 +31,6 @@ val MediaFrameWidth: Dp = 0.5.dp
  */
 @Composable
 fun Modifier.mediaFrame(shape: Shape, width: Dp = MediaFrameWidth): Modifier {
-    val alpha = if (isSystemInDarkTheme()) 0.6f else 0.5f
+    val alpha = if (LocalHortayDarkTheme.current) 0.6f else 0.5f
     return this.border(width, MaterialTheme.colorScheme.outlineVariant.copy(alpha = alpha), shape)
 }

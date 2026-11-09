@@ -4,14 +4,14 @@
     <!-- Layar autentikasi -->
     <string name="auth_phone_label">Nomor telepon</string>
     <string name="auth_phone_helper">Nomor beserta kode negara. Telegram akan mengirim kode konfirmasi</string>
-    <string name="auth_password_label">Kata sandi 2FA</string>
+    <string name="auth_password_label">Kata sandi verifikasi dua langkah</string>
     <string name="auth_password_hint">Petunjuk: %1$s</string>
-    <string name="auth_password_helper">Kata sandi yang kamu buat di Telegram resmi untuk Autentikasi Dua Faktor</string>
+    <string name="auth_password_helper">Kata sandi yang kamu buat di Telegram resmi untuk Verifikasi Dua Langkah</string>
     <string name="auth_password_forgot">Lupa kata sandi</string>
     <string name="auth_password_recovery_sent">Kode reset dikirim ke %1$s. Masukkan untuk masuk tanpa kata sandi</string>
     <string name="auth_password_recovery_code_label">Kode email</string>
     <string name="auth_password_recovery_back">Masukkan kata sandi</string>
-    <string name="auth_password_recovery_unavailable">Tidak ada email pemulihan yang terdaftar. 2FA hanya bisa direset dari Telegram resmi di perangkat lain</string>
+    <string name="auth_password_recovery_unavailable">Tidak ada email pemulihan yang terdaftar. Verifikasi dua langkah hanya bisa direset dari Telegram resmi di perangkat lain</string>
     <string name="auth_send_code">Kirim kode</string>
     <string name="auth_continue">Lanjutkan</string>
     <string name="auth_continue_without_login">Tanpa masuk: baca kanal publik</string>
@@ -32,7 +32,7 @@
     <string name="web_empty_saved">Belum ada yang tersimpan</string>
     <string name="web_welcome_title">Tanpa masuk</string>
     <string name="web_welcome_body">Tambah beberapa kanal publik dan baca tanpa masuk ke Telegram</string>
-    <string name="web_refresh_error">Gagal memperbarui: %1$s</string>
+    <string name="web_refresh_error">Gagal memperbarui. Periksa koneksimu lalu coba lagi. (%1$s)</string>
     <string name="web_unsubscribe_title">Berhenti berlangganan?</string>
     <string name="web_unsubscribe_body">Kanal @%1$s akan hilang dari feed-mu. Kiriman yang disimpan tetap ada di Tersimpan</string>
     <string name="web_unsubscribe_confirm">Berhenti berlangganan</string>
@@ -45,8 +45,8 @@
     <string name="media_open_in_telegram">Buka di Telegram</string>
     <string name="web_status_not_found">kanal tidak ditemukan</string>
     <string name="web_status_private">kanal privat</string>
-    <string name="web_status_rate_limited">Telegram meminta menunggu</string>
-    <string name="web_status_error">gagal memperbarui</string>
+    <string name="web_status_rate_limited">Telegram meminta kita melambat</string>
+    <string name="web_status_error">Gagal memperbarui</string>
     <string name="web_status_parse_failure">format halaman berubah</string>
     <string name="web_status_loading">memperbarui…</string>
     <string name="web_retry_for">Coba lagi untuk %1$s</string>
@@ -60,7 +60,7 @@
     <string name="web_settings_clear_cache_confirm_body">Menghapus kiriman kanal dan gambar yang di-cache secara lokal. Langganan dan kiriman tersimpan tetap ada. Konten akan dimuat ulang dari t.me</string>
     <string name="web_settings_clear_cache_confirm_action">Hapus</string>
     <string name="web_settings_clear_cache_cancel">Batal</string>
-    <string name="web_comments_unavailable">Komentar tidak tersedia di mode tamu. Masuk untuk membaca balasan</string>
+    <string name="web_comments_unavailable">Komentar tidak tersedia di mode tamu. Masuk untuk membacanya</string>
     <string name="web_comments_unavailable_title">Komentar tidak tersedia</string>
     <string name="web_settings_privacy_title">Apa yang dilihat Telegram di mode ini</string>
     <string name="web_settings_privacy_body">IP dan User-Agent browser desktop. Tanpa cookie, tanpa akun, tanpa data pribadimu</string>
@@ -76,8 +76,8 @@
     <string name="web_add_not_found">Kanal @%1$s tidak ditemukan</string>
     <string name="web_add_private">Kanal privat. Kiriman publik tidak tersedia</string>
     <string name="web_add_parse_failure">Gagal mengurai respons Telegram</string>
-    <string name="web_add_rate_limited">Batas permintaan tercapai. Coba lagi dalam %1$d dtk</string>
-    <string name="web_add_network_error">Kesalahan jaringan: %1$s</string>
+    <string name="web_add_rate_limited">Telegram meminta kita melambat. Coba lagi dalam %1$d dtk</string>
+    <string name="web_add_network_error">Tidak bisa terhubung ke Telegram. Periksa koneksimu lalu coba lagi. (%1$s)</string>
     <!-- %1$s adalah string yang sudah diformat dari t.me (mis. "1.5K", "262K", "12 345"),
          bukan Int. Kita tidak mem-parse jumlahnya, jadi <plurals> tidak bisa dipakai di sini. -->
     <string name="web_subscribers">Pelanggan: %1$s</string>
@@ -89,12 +89,12 @@
     <string name="auth_retry">Mulai ulang</string>
     <string name="auth_open_telegram_hint">Buka Telegram resmi, lakukan yang diperlukan, lalu kembali</string>
     <string name="auth_title_wait_code">Masukkan kode</string>
-    <string name="auth_title_wait_password">Kata sandi 2FA</string>
-    <string name="auth_title_error">Tindakan diperlukan</string>
+    <string name="auth_title_wait_password">Masukkan kata sandi</string>
+    <string name="auth_title_error">Selesaikan langkah ini di Telegram</string>
     <string name="auth_subtitle_wait_code">Kode terkirim. Periksa: %1$s</string>
     <string name="auth_code_hint_telegram">Aplikasi pihak ketiga tidak menerima kode lewat SMS. Kode dikirim ke Telegram di perangkat lain tempat kamu sudah masuk.</string>
-    <string name="auth_subtitle_password_no_hint">Akun dilindungi dengan autentikasi dua faktor</string>
-    <string name="auth_subtitle_password_with_hint">Akun dilindungi dengan autentikasi dua faktor. Masukkan kata sandi 2FA-mu</string>
+    <string name="auth_subtitle_password_no_hint">Akun dilindungi dengan verifikasi dua langkah</string>
+    <string name="auth_subtitle_password_with_hint">Akun dilindungi dengan verifikasi dua langkah. Masukkan kata sandimu</string>
     <string name="auth_subtitle_default">Baca kanal Telegram sebagai feed — tanpa obrolan atau notifikasi</string>
     <string name="auth_country_label">Negara</string>
     <string name="auth_country_loading">Memuat…</string>
@@ -137,12 +137,12 @@
     <string name="auth_err_code_cant_resend">Telegram tidak dapat mengirim kode dengan cara lain. Buka Telegram di perangkat tempat kamu sudah masuk, atau ganti nomor</string>
     <string name="auth_err_password_invalid">Kata sandi salah. Coba lagi</string>
     <string name="auth_err_password_too_fresh">Kata sandi baru saja diganti. Telegram akan meminta kamu menunggu sebentar</string>
-    <string name="auth_err_password_recovery_na">Pemulihan kata sandi tidak tersedia di sini. Reset 2FA di Telegram resmi</string>
-    <string name="auth_err_session_password_needed">Kata sandi 2FA diperlukan</string>
+    <string name="auth_err_password_recovery_na">Pemulihan kata sandi tidak tersedia di sini. Reset verifikasi dua langkah di Telegram resmi</string>
+    <string name="auth_err_session_password_needed">Kata sandi verifikasi dua langkah diperlukan</string>
     <string name="auth_err_app_misconfigured">Kesalahan konfigurasi aplikasi. Coba restart Hortay atau periksa pembaruan</string>
     <string name="auth_err_token_invalid">Kredensial tidak cocok. Mulai ulang proses masuk</string>
     <string name="auth_err_generic">Terjadi kesalahan. Coba lagi</string>
-    <string name="auth_err_step_failed">Langkah gagal diselesaikan (%1$s). Coba lagi</string>
+    <string name="auth_err_step_failed">Langkah gagal diselesaikan. Coba lagi. (%1$s)</string>
     <string name="auth_err_email_required">Konfirmasi email di Telegram resmi, lalu kembali</string>
     <string name="auth_err_phone_unregistered">Nomor ini belum memiliki akun Telegram. Buat akun di aplikasi resmi</string>
     <string name="auth_err_other_device">Konfirmasi masuk via Telegram di perangkat lain</string>
@@ -165,7 +165,7 @@
     <string name="connection_connecting">Menghubungkan…</string>
     <string name="connection_updating">Memperbarui…</string>
     <plurals name="connection_flood_wait">
-        <item quantity="other">Telegram membatasi permintaan (%d dtk)</item>
+        <item quantity="other">Telegram meminta kita melambat (%d dtk)</item>
     </plurals>
 
     <!-- Navigasi -->
@@ -179,7 +179,7 @@
     <string name="timeline_empty">Sepi di sini. Ikuti kanal di Telegram dan mereka akan muncul di feed</string>
     <string name="timeline_empty_default_helper">Ikuti kanal di Telegram dan mereka akan muncul di feed</string>
     <string name="timeline_empty_saved_title">Belum ada yang tersimpan</string>
-    <string name="timeline_empty_saved_helper">Ketuk ⋯ pada kiriman lalu pilih “Simpan kiriman” untuk membacanya nanti</string>
+    <string name="timeline_empty_saved_helper">Ketuk penanda di bawah kiriman untuk membacanya nanti</string>
     <string name="timeline_empty_default_title">Sepi di sini</string>
     <string name="timeline_empty_caught_up_title">Semua sudah dibaca</string>
     <string name="timeline_empty_caught_up_helper">Kamu sudah membaca semua kiriman di feed-mu. Tarik untuk memuat yang baru.</string>
@@ -282,7 +282,7 @@
         <item quantity="other">%d komentar</item>
     </plurals>
     <string name="comments_empty_title">Belum ada komentar</string>
-    <string name="comments_empty_body">Balasan baru akan muncul di sini saat tiba</string>
+    <string name="comments_empty_body">Komentar baru akan muncul di sini saat tiba</string>
     <string name="comments_disabled_title">Komentar dinonaktifkan</string>
     <string name="comments_disabled_body">Kanal ini tidak memiliki grup diskusi yang terhubung</string>
     <string name="comments_unavailable">Diskusi tidak tersedia</string>
@@ -306,9 +306,9 @@
     <string name="channels_hide_all">Sembunyikan semua dari feed</string>
     <string name="channels_show_all">Tampilkan semua di feed</string>
     <string name="channels_hide_all_confirm">Semua saluran akan disembunyikan dari feed. Lalu geser saluran yang ingin dipertahankan untuk mengembalikannya.</string>
-    <string name="channels_show_all_confirm">Saluran yang disembunyikan akan muncul lagi di feed.</string>
+    <string name="channels_show_all_confirm">Saluran yang disembunyikan akan muncul lagi di feed</string>
     <string name="channels_search_hint">Cari saluran</string>
-    <string name="channels_swipe_hint">Geser saluran ke samping untuk menyembunyikannya dari feed.</string>
+    <string name="channels_swipe_hint">Geser saluran ke samping untuk menyembunyikannya dari feed</string>
     <string name="channels_hidden_label">Disembunyikan dari feed</string>
     <plurals name="channels_unread_count">
         <item quantity="other">%d postingan belum dibaca</item>
@@ -372,7 +372,7 @@
     <string name="settings_language_summary_system">Default sistem</string>
     <string name="settings_language_dialog_title">Bahasa aplikasi</string>
     <string name="settings_logout_title">Keluar</string>
-    <string name="settings_logout_subtitle">Sesi Telegram direset, cache tetap ada</string>
+    <string name="settings_logout_subtitle">Kamu harus masuk lagi. Media yang diunduh tetap ada di perangkat</string>
     <string name="settings_version">Versi</string>
     <string name="settings_logout_dialog_title">Keluar dari Telegram?</string>
     <string name="settings_logout_dialog_text">Kamu perlu memasukkan nomor dan kode konfirmasi lagi</string>
@@ -385,7 +385,7 @@
     <string name="settings_storage_used_by">digunakan Hortay di perangkat ini</string>
     <string name="settings_storage_clearing">Menghapus…</string>
     <string name="settings_storage_clear">Hapus cache media</string>
-    <string name="settings_storage_clear_helper">Menghapus foto, video, dan file yang di-cache. Database pesan dan sesi tetap ada, hanya dihapus saat keluar</string>
+    <string name="settings_storage_clear_helper">Menghapus foto, video, dan file yang diunduh untuk mengosongkan ruang; akan diunduh lagi saat dibutuhkan. Feed dan sesi masuk tetap ada, hanya dihapus saat keluar</string>
     <string name="settings_storage_clear_failed">Gagal menghapus cache media. Coba lagi</string>
     <string name="settings_storage_media">Media</string>
     <string name="settings_storage_db">Database</string>
@@ -460,8 +460,8 @@
 
     <!-- Kesalahan generik / TD -->
     <string name="error_generic">Terjadi kesalahan</string>
-    <string name="err_flood_with_time">Telegram membatasi permintaan. Coba lagi dalam %1$s</string>
-    <string name="err_flood_generic">Telegram membatasi permintaan. Coba lagi nanti</string>
+    <string name="err_flood_with_time">Telegram meminta kita melambat. Coba lagi dalam %1$s</string>
+    <string name="err_flood_generic">Telegram meminta kita melambat. Coba lagi nanti</string>
     <string name="err_unauthorized">Sesi direset. Masuk kembali</string>
     <string name="err_forbidden">Tidak bisa %1$s: tindakan dilarang</string>
     <string name="err_not_found">Tidak ditemukan: %1$s</string>
@@ -532,10 +532,10 @@
     <!-- Toast setelah aksi Simpan / Salin / Bagikan di penampil layar penuh. -->
     <string name="media_saved_photo">Foto disimpan ke galeri</string>
     <string name="media_saved_video">Video disimpan ke galeri</string>
-    <string name="media_save_failed">Gagal menyimpan: %1$s</string>
+    <string name="media_save_failed">Gagal menyimpan (%1$s)</string>
     <string name="media_copied">Gambar disalin</string>
-    <string name="media_copy_failed">Gagal menyalin: %1$s</string>
-    <string name="media_share_failed">Gagal membagikan: %1$s</string>
+    <string name="media_copy_failed">Gagal menyalin (%1$s)</string>
+    <string name="media_share_failed">Gagal membagikan (%1$s)</string>
     <!-- Label status inline di samping kiriman. -->
     <string name="post_badge_edited">Diedit</string>
     <string name="post_badge_pinned">Disematkan</string>
@@ -689,12 +689,12 @@
     <string name="archive_max_records_label">Maks. rekaman</string>
     <string name="archive_onboarding_cancel">Batal</string>
     <string name="archive_onboarding_enable">Aktifkan</string>
-    <string name="archive_onboarding_logout">Dihapus otomatis saat kamu keluar.</string>
+    <string name="archive_onboarding_logout">Dihapus otomatis saat kamu keluar</string>
     <string name="archive_onboarding_title">Simpan pengeditan dan penghapusan?</string>
     <string name="archive_onboarding_what">Hortay menyimpan teks dan metadata media saat kanal mengedit atau menghapus kiriman. Foto dan video tidak diunduh — hanya thumbnail kecil.</string>
     <string name="archive_onboarding_where">Tersimpan lokal di perangkat ini. Tidak pernah diunggah.</string>
     <string name="archive_open_browser">Buka arsip</string>
-    <string name="archive_purged">Salinan dihapus.</string>
+    <string name="archive_purged">Salinan dihapus</string>
     <string name="archive_records_unlimited">Tanpa batas</string>
     <string name="archive_retention_days">%d hari</string>
     <string name="archive_retention_label">Retensi</string>
@@ -718,8 +718,8 @@
     <plurals name="post_edited_chip_count">
         <item quantity="other">diedit ×%d</item>
     </plurals>
-    <string name="revision_baseline_caveat">Asli tidak direkam — ini menampilkan konten setelah pengeditan paling awal yang Hortay lihat.</string>
-    <string name="revision_empty">Belum ada revisi tersimpan.</string>
+    <string name="revision_baseline_caveat">Asli tidak direkam — ini menampilkan konten setelah pengeditan paling awal yang Hortay lihat</string>
+    <string name="revision_empty">Belum ada revisi tersimpan</string>
     <string name="revision_go_to_current">Ke versi saat ini</string>
     <string name="revision_media_audio_caption">Audio · %1$d dtk</string>
     <string name="revision_media_document">Dokumen</string>
@@ -816,4 +816,30 @@
     <string name="post_summarize">Ringkas</string>
     <string name="post_summary_title">Ringkasan</string>
     <string name="media_download">unduh</string>
+    <string name="onboarding_got_it">Mengerti</string>
+    <string name="onboarding_feed_order_title">Bagaimana kamu ingin membaca?</string>
+    <string name="onboarding_feed_order_newest_desc">Seperti feed berita</string>
+    <string name="onboarding_feed_order_oldest_desc">Seperti obrolan — kamu melanjutkan dari tempat terakhir berhenti</string>
+    <string name="onboarding_feed_order_confirm">Lanjutkan</string>
+    <string name="onboarding_feed_order_footer">Kamu bisa mengubahnya nanti di %1$s → %2$s.</string>
+    <string name="settings_section_reading">Membaca</string>
+    <string name="settings_theme_mode_system">Sistem</string>
+    <string name="settings_theme_mode_light">Terang</string>
+    <string name="settings_theme_mode_dark">Gelap</string>
+    <string name="settings_theme_mode_system_subtitle">Mengikuti mode terang atau gelap perangkat</string>
+    <string name="settings_theme_mode_light_subtitle">Selalu terang, apa pun pengaturan perangkat</string>
+    <string name="settings_theme_mode_dark_subtitle">Selalu gelap, apa pun pengaturan perangkat</string>
+    <string name="settings_pure_black_title">Hitam pekat</string>
+    <string name="settings_pure_black_subtitle">Latar hitam di tema gelap — lebih nyaman untuk layar OLED</string>
+    <string name="settings_text_size_title">Ukuran teks</string>
+    <string name="settings_text_size_small">Kecil</string>
+    <string name="settings_text_size_default">Default</string>
+    <string name="settings_text_size_large">Besar</string>
+    <string name="settings_text_size_extra_large">Sangat besar</string>
+    <string name="settings_text_size_glyph">A</string>
+    <string name="settings_text_size_sample">Kiriman di feed, kanal, dan komentar akan tampil dengan ukuran ini.</string>
+    <string name="settings_category_about_summary">Penulis, kode sumber, versi</string>
+    <string name="audio_speed_value">%1$s×</string>
+    <string name="audio_speed_cd">Kecepatan pemutaran %1$s</string>
+    <string name="audio_mini_close">Hentikan pemutaran</string>
 </resources>

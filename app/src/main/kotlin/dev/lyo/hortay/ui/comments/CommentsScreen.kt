@@ -12,7 +12,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import android.content.ClipData
@@ -26,11 +26,15 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
@@ -39,7 +43,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.ui.theme.HortayAlpha
+import dev.lyo.hortay.ui.theme.HortaySpacing
 import dev.lyo.hortay.ui.theme.mediaFrame
 import dev.lyo.hortay.ui.components.PremiumStatusBadge
 import dev.lyo.hortay.ui.theme.HortayExpressive
@@ -297,6 +305,15 @@ fun CommentsScreen(
             repo.observeThread(post.chatId, candidateIds)
         }
     }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
+    // Connector-rail slices per comment row, derived once per thread emission from the
+    // visual (indent-capped) depths — see [threadRails] and [CommentNode]. The list body
+    // reads [threadState] (this same snapshot), never `state` directly, so the rails and
+    // the rows they index always come from one emission.
+    val threadState = state
+    val readyRows = (threadState as? CommentsRepository.ThreadState.Ready)?.rows
+    val threadRailSegments = remember(readyRows) {
+        readyRows?.let { rows -> threadRails(rows.map { it.depth.coerceAtMost(MAX_VISUAL_DEPTH) }) }.orEmpty()
+    }
 
     val viewer = LocalMediaViewer.current
     val context = LocalContext.current
@@ -709,7 +726,7 @@ fun CommentsScreen(
                 }
                 return@LazyColumn
             }
-            when (val s = state) {
+            when (val s = threadState) {
                 CommentsRepository.ThreadState.Loading -> if (showLoadingOverlay) {
                     item(key = "loading") {
                         Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -726,7 +743,7 @@ fun CommentsScreen(
                         )
                     }
                 } else {
-                    items(items = s.rows, key = { it.message.id }) { row ->
+                    itemsIndexed(items = s.rows, key = { _, row -> row.message.id }) { index, row ->
                         // [s.threadChatId] is the linked discussion supergroup — the
                         // chat reactions live in for every comment. Captured fresh
                         // per `Ready` emission so a re-resolved anchor (rare, but
@@ -735,6 +752,19 @@ fun CommentsScreen(
                         var pickerOpen by remember(row.message.id) { mutableStateOf(false) }
                         CommentNode(
                             row = row,
+                            rails = threadRailSegments.getOrNull(index) ?: RailSegments.None,
+                            // Inserted / removed / reordered comments fade and glide instead of
+                            // teleporting. Comment rows only: the pinned post item stays
+                            // unanimated because the hero-open scroll and the restored-scroll
+                            // gate position the list against it. (The main feed retired
+                            // animateItem for good — see TimelineFeedColumn — but a thread
+                            // has no arrivals pill or anchored smart-scroll for placement
+                            // springs to fight.)
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>(),
+                                placementSpec = MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>(),
+                                fadeOutSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>(),
+                            ),
                             onQuoteClick = { reply ->
                                 // Jump to the quoted comment, or to the post above the thread
                                 // when the quote is from it, and light up the quoted words.
@@ -858,7 +888,7 @@ private fun CommentsEmptyState(
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(HortaySpacing.sm))
         Text(
             text = body,
             style = MaterialTheme.typography.bodyLarge,
@@ -886,35 +916,48 @@ private fun CommentsEmptyState(
  * quote-card on the bubble still carries the precise relation), the layout just stops
  * staircasing off the right edge on a phone.
  *
- * **No connector lines.** A curved per-row connector ("parent avatar → child row") was
- * tried and removed: a row only knows its own depth, so the line started at the CHILD
+ * **Connector rails — history.** A curved per-row connector ("parent avatar → child row")
+ * was tried and removed: a row only knew its own depth, so the line started at the CHILD
  * row's top edge — visually disconnected from the parent's avatar (a gap the height of
  * the parent's text), and broken between consecutive siblings. On device it read as
- * stray marks, not threading. Indent + avatar stepping + the reply quote-card carry the
- * relation; a real Threads-style rail needs parent-owns-children layout knowledge —
- * don't reintroduce the per-row approximation.
+ * stray marks, not threading. A real Threads-style rail needs parent-owns-children
+ * knowledge — don't reintroduce a per-row approximation that guesses it.
+ *
+ * **Connector rails — current.** That knowledge now comes from the whole thread:
+ * [threadRails] walks the depth-first row list once and hands each row its [rails] — the
+ * exact slices of every rail that cross it. The PARENT row draws its own rail from its
+ * avatar's bottom centre down to its bottom edge; every row in between draws the full-height
+ * slice; the reply draws the elbow from its top edge into its avatar. Rows sit edge to edge
+ * in the list (no item spacing), so the slices meet into one unbroken line from the parent
+ * avatar to each reply avatar, siblings included. Drawn in the row's own draw pass
+ * ([drawWithCache] behind the content) — no extra layout nodes — at [RAIL_STROKE_DP] in
+ * `outlineVariant`, and mirrored for RTL.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CommentNode(
     row: ThreadRow,
+    rails: RailSegments,
     onQuoteClick: (ReplyPreview) -> Unit,
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
     onReactionTap: (ReactionItem) -> Unit,
     onLongPress: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val visualDepth = row.depth.coerceAtMost(MAX_VISUAL_DEPTH)
     val avatarSize = if (row.depth >= 1) REPLY_AVATAR_DP.dp else TOP_AVATAR_DP.dp
     val indent = (visualDepth * INDENT_STEP_DP).dp
     val haptics = LocalHapticFeedback.current
+    val railColor = MaterialTheme.colorScheme.outlineVariant
 
     // Long-press surface lives on the OUTER full-width row, BEFORE the horizontal
     // padding — the press highlight paints edge-to-edge like a list item instead of
     // a bare rectangle hugging the bubble's text. Inner tap targets (avatar, author
     // name, reaction chips, media) still win over this surface.
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .drawThreadRails(rails, visualDepth, railColor)
             .combinedClickable(
                 // No tap action on a comment — long-press opens the reaction picker.
                 onClick = {},
@@ -987,7 +1030,7 @@ private fun CommentBubble(
                     .clickable(onClick = userTap)
             } else Modifier,
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(HortaySpacing.md))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -1005,14 +1048,14 @@ private fun CommentBubble(
                         },
                 )
                 if (message.isSenderPremium || message.senderEmojiStatusId != null) {
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(HortaySpacing.xs))
                     PremiumStatusBadge(
                         isPremium = message.isSenderPremium,
                         emojiStatusId = message.senderEmojiStatusId,
                         size = 14.dp,
                     )
                 }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(HortaySpacing.sm))
                 if (message.editDate > 0L) {
                     Symbol(
                         name = "edit",
@@ -1020,7 +1063,7 @@ private fun CommentBubble(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         size = 13.dp,
                     )
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(HortaySpacing.xs))
                 }
                 Text(
                     text = formatRelative(message.date),
@@ -1035,11 +1078,11 @@ private fun CommentBubble(
             // parent comment via the thread indentation. Surfacing a quote card for those
             // would just duplicate context the layout already conveys.
             message.reply?.takeIf { it.isQuote }?.let {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(HortaySpacing.sm))
                 ReplyBlock(it, onClick = { onQuoteClick(it) })
             }
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(HortaySpacing.sm))
             CompositionLocalProvider(
                 LocalQuoteHighlight provides QuoteHighlights.forPost(message.chatId, message.albumMessageIds + message.id),
             ) {
@@ -1053,7 +1096,9 @@ private fun CommentBubble(
             }
 
             if (message.reactions.items.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
+                // xxs, not sm: each chip now reserves a taller touch box than it draws
+                // (see [ReactionChip]), and that slack already supplies the visible gap.
+                Spacer(Modifier.height(HortaySpacing.xxs))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1069,7 +1114,7 @@ private fun CommentBubble(
                     // emoji when TDLib re-ranks the buckets mid-read.
                     message.reactions.items.forEachIndexed { idx, item ->
                         key(item.kind.stableKey) {
-                            if (idx > 0) Spacer(Modifier.width(6.dp))
+                            if (idx > 0) Spacer(Modifier.width(HortaySpacing.sm))
                             val isPaid = item.kind is ReactionKind.Paid
                             ReactionChip(
                                 item,
@@ -1158,7 +1203,7 @@ private fun CommentReactionSheet(
                     if (available.isNotEmpty()) {
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = HortayAlpha.HAIRLINE),
                         )
                     }
                     Row(
@@ -1244,7 +1289,7 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit) {
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     size = 12.dp,
                                 )
-                                Spacer(Modifier.width(4.dp))
+                                Spacer(Modifier.width(HortaySpacing.xs))
                             }
                         }
                         // A hand-picked quote is the point of the card: give it room
@@ -1283,7 +1328,7 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit) {
         if (reply.mediaThumb == null) {
             Symbol(
                 name = if (reply.isQuote) "format_quote" else "reply",
-                tint = accent.copy(alpha = 0.55f),
+                tint = accent.copy(alpha = HortayAlpha.FAINT),
                 size = 12.dp,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -1296,7 +1341,67 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit) {
 // Label/symbol mapping + relative timestamps are shared with the feed via
 // dev.lyo.hortay.ui.timeline — see ReplyKindResources.kt and TimeFormat.kt.
 
-// E1/E2 thread layout geometry — see [CommentNode] for why there is no connector line.
+/** Avatar diameter at a visual depth: 36 dp top-level, 28 dp for any reply (E2). */
+private fun avatarDpAt(visualDepth: Int): Int = if (visualDepth >= 1) REPLY_AVATAR_DP else TOP_AVATAR_DP
+
+/** Row-relative x (dp) of the rail at [column]: the centre of that depth's avatar. */
+private fun railColumnDp(column: Int): Float =
+    ROW_HORIZONTAL_DP + column * INDENT_STEP_DP + avatarDpAt(column) / 2f
+
+/**
+ * Paints this comment row's slices of the thread's connector rails (see [CommentNode] and
+ * [threadRails]) behind the row's content. Geometry mirrors the row's own layout constants,
+ * so a rail sits exactly under the avatar centre of its column. RTL mirrors every x.
+ */
+private fun Modifier.drawThreadRails(rails: RailSegments, visualDepth: Int, color: Color): Modifier =
+    if (rails.isEmpty) {
+        this
+    } else {
+        drawWithCache {
+            val rtl = layoutDirection == LayoutDirection.Rtl
+            fun x(dpX: Float): Float = dpX.dp.toPx().let { if (rtl) size.width - it else it }
+            val stroke = RAIL_STROKE_DP.dp.toPx()
+            val avatarTop = BUBBLE_VERTICAL_DP.dp.toPx()
+            val avatarPx = avatarDpAt(visualDepth).dp.toPx()
+            val centreY = avatarTop + avatarPx / 2f
+            val avatarBottom = avatarTop + avatarPx
+            val elbow = if (rails.elbowColumn >= 0) {
+                val columnDp = railColumnDp(rails.elbowColumn)
+                val avatarStartDp = (ROW_HORIZONTAL_DP + visualDepth * INDENT_STEP_DP).toFloat()
+                val radiusDp = RAIL_ELBOW_RADIUS_DP.coerceAtMost(avatarStartDp - columnDp).coerceAtLeast(0f)
+                Path().apply {
+                    moveTo(x(columnDp), 0f)
+                    lineTo(x(columnDp), centreY - radiusDp.dp.toPx())
+                    quadraticTo(x(columnDp), centreY, x(columnDp + radiusDp), centreY)
+                    lineTo(x(avatarStartDp), centreY)
+                }
+            } else {
+                null
+            }
+            val elbowStyle = Stroke(width = stroke, cap = StrokeCap.Round)
+            onDrawBehind {
+                for (column in 0 until MAX_VISUAL_DEPTH + 1) {
+                    if (rails.passesThrough(column)) {
+                        val cx = x(railColumnDp(column))
+                        drawLine(color, Offset(cx, 0f), Offset(cx, size.height), stroke)
+                    }
+                }
+                if (elbow != null) {
+                    drawPath(elbow, color, style = elbowStyle)
+                    if (rails.elbowContinues) {
+                        val cx = x(railColumnDp(rails.elbowColumn))
+                        drawLine(color, Offset(cx, centreY), Offset(cx, size.height), stroke)
+                    }
+                }
+                if (rails.startsOwnRail) {
+                    val cx = x(railColumnDp(visualDepth))
+                    drawLine(color, Offset(cx, avatarBottom), Offset(cx, size.height), stroke)
+                }
+            }
+        }
+    }
+
+// E1/E2 thread layout geometry — the connector rails above derive their x from these too.
 /** Lead/trail padding of every comment row. */
 private const val ROW_HORIZONTAL_DP = 16
 /** Horizontal indent added per visual depth level (capped at [MAX_VISUAL_DEPTH]). */
@@ -1309,6 +1414,10 @@ private const val TOP_AVATAR_DP = 36
 private const val REPLY_AVATAR_DP = 28
 /** Vertical padding on the comment bubble row. */
 private const val BUBBLE_VERTICAL_DP = 10
+/** Connector-rail line width. */
+private const val RAIL_STROKE_DP = 1.5f
+/** Corner radius where a rail's elbow turns into the reply avatar. */
+private const val RAIL_ELBOW_RADIUS_DP = 6f
 
 /** Height of the B3 top fade-edge mask under the comments header. */
 private const val TOP_FADE_DP = 20

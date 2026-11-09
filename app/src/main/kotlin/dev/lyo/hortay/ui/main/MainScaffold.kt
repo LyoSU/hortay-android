@@ -46,6 +46,10 @@ import dev.lyo.hortay.data.PublicHandleResult
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.report.ReportTarget
+import dev.lyo.hortay.ui.media.AudioMiniPlayer
+import dev.lyo.hortay.ui.media.AudioMiniPlayerClearance
+import dev.lyo.hortay.ui.media.audioMiniPlayerWanted
+import dev.lyo.hortay.ui.theme.HortaySpacing
 import dev.lyo.hortay.ui.timeline.LocalReadCursors
 import dev.lyo.hortay.ui.users.LocalUserProfileOpener
 import dev.lyo.hortay.ui.users.UserProfileOpener
@@ -339,7 +343,16 @@ fun MainScaffold(graph: AppGraph) {
     // the bottom edge (ChannelScreen reads contentPadding.bottom for its list clearance). The
     // tab scaffold under HomeKey owns the FloatingNavBar inset itself; details only need to clear
     // the system navigation bar. CommentsScreen / ArchiveScreen are full Scaffolds and ignore it.
-    val detailContentPadding = WindowInsets.navigationBars.asPaddingValues()
+    //
+    // Audio mini-player: while it shows (a track is loaded, its row is off screen) it floats
+    // above the nav bar on Home and above the system bar inset on details. Details get its
+    // height added to this bottom inset so lists and corner buttons clear it; on Home it is
+    // part of the bottomBar slot, so the tab content's padding already includes it.
+    val audioMiniWanted = audioMiniPlayerWanted()
+    val detailContentPadding = (
+        if (audioMiniWanted) WindowInsets.navigationBars.add(WindowInsets(bottom = AudioMiniPlayerClearance))
+        else WindowInsets.navigationBars
+        ).asPaddingValues()
 
     // Predictive back for the detail stack is owned by NavDisplay now (it animates the leaving
     // entry and reveals the one below during the gesture — what the hand-rolled top-2 renderer
@@ -452,7 +465,10 @@ fun MainScaffold(graph: AppGraph) {
                         modifier = Modifier
                             .navigationBarsPadding()
                             .imePadding()
-                            .padding(bottom = if (hasOverlay) 0.dp else FLOATING_NAV_BAR_CLEARANCE),
+                            .padding(
+                                bottom = (if (hasOverlay) 0.dp else FLOATING_NAV_BAR_CLEARANCE) +
+                                    (if (audioMiniWanted) AudioMiniPlayerClearance else 0.dp),
+                            ),
                     ) { data ->
                         Snackbar(snackbarData = data)
                     }
@@ -517,21 +533,37 @@ fun MainScaffold(graph: AppGraph) {
                                 Scaffold(
                                     modifier = Modifier.fillMaxSize(),
                                     bottomBar = {
-                                        FloatingNavBar(
-                                            selected = selectedTab,
-                                            onSelect = { tab ->
-                                                // Re-tapping the active Feed pill bumps
-                                                // homeTapTrigger (scroll-to-top, or refresh if
-                                                // already there); otherwise switch tab.
-                                                val reselectingActiveFeed =
-                                                    tab == NavTab.Feed && tab == selectedTab
-                                                if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
-                                                selectedTab = tab
-                                            },
+                                        // The audio mini-player stacks above the nav bar in the
+                                        // same slot, so the tab content's bottom padding (and the
+                                        // feed's floating split button, which sits on it) clears
+                                        // both, and both slide away together on scroll.
+                                        Column(
                                             modifier = Modifier.graphicsLayer {
                                                 translationY = navBarCollapse.floatValue * (size.height + 24.dp.toPx())
                                             },
-                                        )
+                                        ) {
+                                            AudioMiniPlayer(
+                                                visible = audioMiniWanted && !hasOverlay,
+                                                stripModifier = Modifier
+                                                    .windowInsetsPadding(
+                                                        WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal),
+                                                    )
+                                                    .padding(horizontal = HortaySpacing.lg)
+                                                    .padding(top = HortaySpacing.sm),
+                                            )
+                                            FloatingNavBar(
+                                                selected = selectedTab,
+                                                onSelect = { tab ->
+                                                    // Re-tapping the active Feed pill bumps
+                                                    // homeTapTrigger (scroll-to-top, or refresh if
+                                                    // already there); otherwise switch tab.
+                                                    val reselectingActiveFeed =
+                                                        tab == NavTab.Feed && tab == selectedTab
+                                                    if (reselectingActiveFeed) homeTapTrigger = System.nanoTime()
+                                                    selectedTab = tab
+                                                },
+                                            )
+                                        }
                                     },
                                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                                 ) { homePadding ->
@@ -600,6 +632,17 @@ fun MainScaffold(graph: AppGraph) {
                             entry<WebChannelKey> { LaunchedEffect(Unit) { popNav() } }
                         },
                         modifier = Modifier.fillMaxSize(),
+                    )
+
+                    // Detail screens: the mini-player floats above the system bar inset;
+                    // [detailContentPadding] already reserves its height.
+                    AudioMiniPlayer(
+                        visible = audioMiniWanted && hasOverlay,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        stripModifier = Modifier
+                            .navigationBarsPadding()
+                            .padding(horizontal = HortaySpacing.lg)
+                            .padding(bottom = HortaySpacing.sm),
                     )
 
                     ConnectionBanner(

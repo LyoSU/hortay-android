@@ -37,6 +37,7 @@ import dev.lyo.hortay.data.nav.AppNavKey
 import dev.lyo.hortay.data.warnUnlessCancelled
 import dev.lyo.hortay.data.nav.HomeKey
 import dev.lyo.hortay.data.posts.PostsRepository
+import dev.lyo.hortay.data.OnboardingStore
 import dev.lyo.hortay.data.SettingsStore
 import dev.lyo.hortay.data.StartupCoordinator
 import dev.lyo.hortay.data.StatsRepository
@@ -118,6 +119,9 @@ class AppGraph(context: Context) {
     // throttling (the cleanup needs a persisted "last run at" timestamp to skip on
     // every cold start).
     val settingsStore: SettingsStore = SettingsStore(context)
+
+    /** Device-level one-shot feature-discovery flags. See [OnboardingStore]. */
+    val onboardingStore: OnboardingStore = OnboardingStore(context)
 
     /**
      * [SettingsStore.archiveInAllFeed], pre-warmed. It is part of the feed's scene key, so

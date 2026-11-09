@@ -7,6 +7,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
@@ -77,7 +78,15 @@ class MainActivity : ComponentActivity() {
             // the actual dynamic-colour call behind SDK >= S, so `true` on pre-12 devices
             // safely falls through to the brand scheme.
             val dynamicColor by graph.dynamicColorState.collectAsStateWithLifecycle()
-            HortayTheme(dynamicColor = dynamicColor) {
+            // Theme mode / pure black / reading text size — pre-warmed by SettingsStore for the
+            // same first-frame reason. Only ThemeMode.System consults the platform night mode.
+            val appearance by graph.settingsStore.appearanceState.collectAsStateWithLifecycle()
+            HortayTheme(
+                darkTheme = appearance.themeMode.isDark(systemDark = isSystemInDarkTheme()),
+                dynamicColor = dynamicColor,
+                pureBlack = appearance.pureBlack,
+                readingScale = appearance.textSize.scale,
+            ) {
                 val webmClock = remember { WebmAnimationClock() }
                 CompositionLocalProvider(
                     LocalMediaCache provides graph.mediaCache,

@@ -30,7 +30,7 @@ import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 
-/** About sub-screen: author attribution + source link, app language, version. */
+/** About sub-screen: author attribution + source link, version. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AboutScreen(
@@ -99,15 +99,12 @@ internal fun AboutScreen(
             }
             Spacer(Modifier.height(8.dp))
             SectionLabel(stringResource(R.string.settings_section_about))
-            Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
-                LanguageRow(index = 0, count = 2)
-                SettingsRow(
-                    symbol = "info",
-                    title = stringResource(R.string.settings_version),
-                    subtitle = "${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
-                    index = 1, count = 2,
-                )
-            }
+            // App language moved to the settings root's Appearance section; the version stays here.
+            SettingsRow(
+                symbol = "info",
+                title = stringResource(R.string.settings_version),
+                subtitle = "${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}",
+            )
         }
     }
 }
