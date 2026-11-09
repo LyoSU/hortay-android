@@ -73,6 +73,7 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import dev.lyo.hortay.ui.media.CustomEmojiAnimator
 import dev.lyo.hortay.ui.media.ExoPlayerPool
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -95,7 +96,18 @@ class AppGraph(context: Context) {
 
     private val res = context.resources.toStringResolver()
 
-    val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /**
+     * The [CoroutineExceptionHandler] is a last-resort net: a fire-and-forget launch whose body
+     * throws (an SQLite "disk full" during archive capture, a mapper NPE on an unexpected TDLib
+     * payload) would otherwise reach the thread's uncaught-exception handler and kill the
+     * process. Logged and dropped instead — one bad update must not take the app down. Call
+     * sites still wrap their own bodies; this only catches what slips past them.
+     * [AccountSession.scope] inherits this context, so session work is covered too.
+     */
+    val appScope: CoroutineScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default +
+            CoroutineExceptionHandler { _, e -> android.util.Log.e(TAG, "uncaught in appScope", e) },
+    )
 
     // Process-wide user-message bus. Repositories post errors here; MainScaffold
     // collects and renders Snackbars regardless of which screen is in front. See

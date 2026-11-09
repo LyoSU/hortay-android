@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -142,6 +143,22 @@ class TdLifecycleBridge(
             .distinctUntilChanged()
             .onEach { active ->
                 if (active) goOnline() else goOffline()
+            }
+            .launchIn(scope)
+
+        // Network type on EVERY foreground edge, independent of the presence combine above.
+        // [pushNetworkType] skips TDLib while backgrounded, and [goOnline] only runs when the
+        // presence boolean flips to true — which never happens with invisible reading on or
+        // before auth is Ready. So: network drops in foreground (None pushed) → app goes to
+        // background → network returns (callback reclassifies but does not push) → app
+        // resumes → nothing re-sent, and TDLib stays parked in "Waiting for network" for
+        // the rest of the session. Re-sending the current type on resume closes that gap;
+        // a redundant send when the type is unchanged is a no-op for TDLib.
+        foreground
+            .filter { it }
+            .onEach {
+                runCatching { td.send(TdApi.SetNetworkType(currentNetworkType())) }
+                    .warnUnlessCancelled(TAG, "networkType-foreground")
             }
             .launchIn(scope)
     }

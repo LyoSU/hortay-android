@@ -53,4 +53,23 @@ class PostsRepositoryUpdateChatLastMessageTest {
         assertEquals(1, harness.repo.posts.value.size,
             "second UpdateChatLastMessage with the same id must be de-duped by ingest")
     }
+
+    @Test
+    fun `UpdateChatLastMessage after a title change still ingests instead of parking forever`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chat = harness.fakeChannel(id = -1003L, title = "Before", lastMessage = null)
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+
+        // A rename evicts the cached POJO; UpdateNewChat will never fire again for this chat.
+        harness.td.emitUpdate(TdApi.UpdateChatTitle(chat.id, "After"))
+        harness.advanceUntilIdle()
+
+        val msg = harness.fakeChannelMessage(chatId = chat.id, messageId = 99L, date = 1_700_000_000)
+        harness.td.emitUpdate(TdApi.UpdateChatLastMessage(chat.id, msg, emptyArray()))
+        harness.advanceUntilIdle()
+
+        assertEquals(listOf(99L), harness.repo.posts.value.map { it.id },
+            "a known-but-evicted chat's last message must reach the feed via the offline GetChat")
+    }
 }

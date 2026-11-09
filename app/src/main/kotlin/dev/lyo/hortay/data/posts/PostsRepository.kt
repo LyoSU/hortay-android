@@ -33,6 +33,7 @@ import dev.lyo.hortay.data.archive.PendingEditBuffer
 import dev.lyo.hortay.data.archive.TdlibContentMetaExtractor
 import dev.lyo.hortay.data.archive.TombstoneRecord
 import dev.lyo.hortay.data.surfaceTo
+import dev.lyo.hortay.data.suspendRunCatching
 import dev.lyo.hortay.data.warnUnlessCancelled
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
@@ -219,6 +220,46 @@ class PostsRepository(
      * needed.
      */
     private val pendingLastMessages = ConcurrentHashMap<Long, TdApi.Message>()
+
+    /**
+     * Freshest known `ChatListMain` order per chat — the ranking [runFirstSignInBackfill]
+     * picks its top-K by. The chat POJO cached at UpdateNewChat is NOT a usable source:
+     * at first auth its `positions` are usually empty and later moves arrive only as
+     * `UpdateChatPosition` / `UpdateChatLastMessage.positions`, which never touch the
+     * cached object — so sorting on it gave an arbitrary top-K. Fed from all three
+     * updates; an order of 0 means "not in Main" and is stored as such. Session state:
+     * wiped in [clear].
+     */
+    private val mainListOrder = ConcurrentHashMap<Long, Long>()
+
+    /**
+     * Newest known last-message date (unix seconds) per chat, from UpdateNewChat and
+     * UpdateChatLastMessage. The backfill's fallback rank when [mainListOrder] has no
+     * non-zero order for a chat yet. Session state: wiped in [clear].
+     */
+    private val lastMessageDateSec = ConcurrentHashMap<Long, Int>()
+
+    private fun recordMainOrder(chatId: Long, positions: Array<TdApi.ChatPosition>?) {
+        val main = positions?.firstOrNull { it.list is TdApi.ChatListMain } ?: return
+        mainListOrder[chatId] = main.order
+    }
+
+    private fun recordLastMessageDate(chatId: Long, message: TdApi.Message?) {
+        val date = message?.date ?: return
+        lastMessageDateSec.merge(chatId, date) { a, b -> maxOf(a, b) }
+    }
+
+    /**
+     * Backfill rank for [chatId]: the live `ChatListMain` order, else the last-message
+     * date shifted into the order's high 32 bits. TDLib derives an unpinned chat's order
+     * from its last message date in exactly those bits, so the fallback ranks comparably
+     * against chats whose real order is known.
+     */
+    private fun backfillRank(chatId: Long): Long {
+        val order = mainListOrder[chatId] ?: 0L
+        if (order != 0L) return order
+        return (lastMessageDateSec[chatId] ?: 0).toLong() shl 32
+    }
 
     /**
      * Flips to `true` when [triggerInitialSync]'s [TdApi.LoadChats] drain
@@ -421,18 +462,20 @@ class PostsRepository(
             }
             // Drop cached ghosts for messages that are no longer tombstoned (un-deleted is
             // impossible, but a chat un-subscribe / archive purge can retract one).
-            ghostCache.keys.retainAll(tombstones.mapTo(HashSet(tombstones.size)) { it.primaryMessageId })
+            ghostCache.keys.retainAll(tombstones.mapTo(HashSet(tombstones.size)) { it.chatId to it.primaryMessageId })
             // Merge ghosts: skip any tombstone whose primary message id is already
             // present (live post is the source of truth — TDLib hasn't yet propagated
             // the delete OR the chat lacks the message). Apply chat-list gating to
             // ghosts too: archive may hold snapshots from a chat the user later
             // unsubscribed from; we don't surface them.
-            val livePresence = HashSet<Long>(filtered.size).apply {
-                filtered.forEach { add(it.id) }
+            // Keyed by (chatId, id): channel message ids are per-channel, so an id-only set
+            // hid a tombstone in channel A whenever any live post in channel B shared its id.
+            val livePresence = HashSet<Pair<Long, Long>>(filtered.size).apply {
+                filtered.forEach { add(it.chatId to it.id) }
             }
             val ghosts = tombstones.asSequence()
                 .filter { t ->
-                    t.primaryMessageId !in livePresence &&
+                    (t.chatId to t.primaryMessageId) !in livePresence &&
                         (mainIds.isEmpty() && archivedIds.isEmpty() ||
                             t.chatId in mainIds || t.chatId in archivedIds) &&
                         t.chatId !in ignored
@@ -446,7 +489,8 @@ class PostsRepository(
     }
 
     /**
-     * Reference-stable ghost memo, keyed by [TombstoneRecord.primaryMessageId]. The
+     * Reference-stable ghost memo, keyed by `(chatId, primaryMessageId)` — message ids are
+     * per-channel, so an id-only key made two channels' tombstones evict each other. The
      * [subscribedPosts] combine re-runs on every `_posts` emission — and `_posts` re-emits
      * roughly once per second during scroll as `updateMessageInteractionInfo` heartbeats
      * land on the open chat. Without memoisation each heartbeat called [buildTombstoneGhost]
@@ -465,11 +509,12 @@ class PostsRepository(
      * so the plain [HashMap] needs no synchronisation. Pruned to the live tombstone set on
      * each pass and cleared when no tombstones remain.
      */
-    private val ghostCache = HashMap<Long, Pair<TombstoneRecord, TimelinePost>>()
+    private val ghostCache = HashMap<Pair<Long, Long>, Pair<TombstoneRecord, TimelinePost>>()
 
     private fun reuseGhost(t: TombstoneRecord): TimelinePost {
-        ghostCache[t.primaryMessageId]?.let { (rec, ghost) -> if (rec === t) return ghost }
-        return buildTombstoneGhost(t).also { ghostCache[t.primaryMessageId] = t to it }
+        val key = t.chatId to t.primaryMessageId
+        ghostCache[key]?.let { (rec, ghost) -> if (rec === t) return ghost }
+        return buildTombstoneGhost(t).also { ghostCache[key] = t to it }
     }
 
     /**
@@ -923,12 +968,13 @@ class PostsRepository(
         // version we captured at sync-completion is a reasonable approximation
         // of "the user's top channels" and the live update stream picks up
         // post-snapshot deltas anyway.
+        // Ranked by [backfillRank] (live order from UpdateChatPosition & co., with a
+        // last-message-date fallback) — NOT the cached POJO's `positions`, which are
+        // usually empty at first auth and never updated in place.
         val topK = _mainChatIds.value.asSequence()
             .mapNotNull { registry.cachedChat(it) }
             .filter { it.isChannel() }
-            .sortedByDescending { chat ->
-                chat.positions?.firstOrNull { it.list is TdApi.ChatListMain }?.order ?: 0L
-            }
+            .sortedByDescending { chat -> backfillRank(chat.id) }
             .take(BACKFILL_TOP_K)
             .toList()
         if (topK.isEmpty()) {
@@ -1023,8 +1069,12 @@ class PostsRepository(
      * authoritative. Always pair with [closeChat] when focus moves away. Internally a
      * thin proxy to [ChatPresence] so all OpenChat/CloseChat traffic in the app flows
      * through one place.
+     *
+     * Returns `false` when the OpenChat failed (refcount already rolled back): the caller
+     * must then SKIP its paired [closeChat], which would otherwise release a reference
+     * another holder owns. See [ChatPresence.openChat].
      */
-    suspend fun openChat(chatId: Long) = ChatPresence.openChat(td, chatId)
+    suspend fun openChat(chatId: Long): Boolean = ChatPresence.openChat(td, chatId)
 
     /**
      * Loads up to [limit] additional history entries for [chatId] and folds them into the
@@ -1555,6 +1605,13 @@ class PostsRepository(
 
             is TdApi.UpdateChatLastMessage -> handleChatLastMessage(update)
 
+            // Live Main-list order for the first-sign-in backfill ranking (see
+            // [mainListOrder]). Membership itself stays on UpdateChatAddedToList below.
+            is TdApi.UpdateChatPosition -> {
+                val pos = update.position
+                if (pos != null && pos.list is TdApi.ChatListMain) mainListOrder[update.chatId] = pos.order
+            }
+
             // Keep [archivedChatIds] live: TDLib fires UpdateChatAddedToList /
             // UpdateChatRemovedFromList whenever the user archives/unarchives a channel in
             // ANY client. Without these the "Усі" tab leaks a freshly-archived channel until
@@ -1579,7 +1636,13 @@ class PostsRepository(
      * haven't OpenChat'd) and (b) initial sync of late-arriving last-message data
      * for a chat whose UpdateNewChat carried `lastMessage = null`.
      *
-     * If the chat isn't cached yet, BUFFER the payload in [pendingLastMessages]
+     * The gate is [ChatRegistry.isKnownChat], not "is the POJO cached": title / photo
+     * updates evict the cached chat ([handleChatTitle]), and UpdateNewChat never fires
+     * again for a known chat — gating on the cache parked such a chat's next last-message
+     * forever (post missing, entry leaked). A known-but-evicted chat proceeds; [ingest]
+     * re-reads it through the offline GetChat in [ChatRegistry.chat].
+     *
+     * If the chat isn't known yet, BUFFER the payload in [pendingLastMessages]
      * rather than dropping it. The matching UpdateNewChat will arrive shortly
      * and [handleNewChat] flushes the buffer through ingest. This closes the
      * race that previously caused permanent misses on cold-start (the harvest
@@ -1592,8 +1655,10 @@ class PostsRepository(
      * avoid (ARCHITECTURE.md "Load-bearing" — "Cold-start contract").
      */
     private suspend fun handleChatLastMessage(update: TdApi.UpdateChatLastMessage) {
+        recordMainOrder(update.chatId, update.positions)
+        recordLastMessageDate(update.chatId, update.lastMessage)
         val msg = update.lastMessage ?: return
-        if (registry.cachedChat(update.chatId) == null) {
+        if (!registry.isKnownChat(update.chatId)) {
             pendingLastMessages[update.chatId] = msg
             return
         }
@@ -1642,6 +1707,8 @@ class PostsRepository(
         registry.rememberChat(chat)
         seedReadCursor(chat)
         hydrateChatListMembership(chat)
+        recordMainOrder(chat.id, chat.positions)
+        recordLastMessageDate(chat.id, chat.lastMessage)
         val msg = pendingLastMessages.remove(chat.id) ?: chat.lastMessage
         if (msg != null && chat.isChannel()) newChatIngests.trySend(chat.id to msg)
     }
@@ -1698,7 +1765,12 @@ class PostsRepository(
 
     private fun handleNewMessage(message: TdApi.Message) {
         if (message.mediaAlbumId == 0L) {
-            scope.launch { ingest(message.chatId, listOf(message)) }
+            // Guarded: a mapper throw on one unexpected payload drops that post, not the
+            // process (fire-and-forget launch on the app scope).
+            scope.launch {
+                suspendRunCatching { ingest(message.chatId, listOf(message)) }
+                    .warnUnlessCancelled(TAG, "ingest(${message.chatId},${message.id})")
+            }
             return
         }
         // Album member: stash in the per-album buffer and (re)arm a short debounce.
@@ -1726,7 +1798,8 @@ class PostsRepository(
             delay(ALBUM_DEBOUNCE_MS)
             albumDebounce.remove(key, jobRef)
             val batch = albumBuffers.remove(key) ?: return@launch
-            ingest(key.first, batch)
+            suspendRunCatching { ingest(key.first, batch) }
+                .warnUnlessCancelled(TAG, "albumFlush(${key.first},${key.second})")
         }
         albumDebounce[key] = jobRef
     }
@@ -1845,7 +1918,10 @@ class PostsRepository(
             val addedIds = addedForEmit.mapTo(HashSet()) { it.chatId to it.id }
             for (raw in full) {
                 if ((raw.chatId to raw.id) !in addedIds) continue
-                scope.launch { captureBaselineSnapshot(raw, chat) }
+                scope.launch {
+                    suspendRunCatching { captureBaselineSnapshot(raw, chat) }
+                        .warnUnlessCancelled(TAG, "captureBaselineSnapshot(${chat.id},${raw.id})")
+                }
             }
         }
     }
@@ -1964,7 +2040,8 @@ class PostsRepository(
             scope.launch {
                 delay(INTERACTION_INFO_COALESCE_MS)
                 val drained = interactionInfo.drain()
-                _posts.update { current -> applyInteractionInfo(current, drained) }
+                suspendRunCatching { _posts.update { current -> applyInteractionInfo(current, drained) } }
+                    .warnUnlessCancelled(TAG, "interactionInfoFlush")
             }
         }
     }
@@ -2020,44 +2097,56 @@ class PostsRepository(
         // GetMessage fallback and — crucially — the media copy below, whose refcount
         // bump only a written VERSION row would ever release.
         if (!archiveRepository.capturesEditsFor(ChatRef.tdlib(update.chatId))) return
+        // Body guarded: an SQLite failure (disk full) in the media copy or the VERSION write
+        // drops this one capture instead of crashing the process from a fire-and-forget launch.
         scope.launch {
-            val content: TdApi.MessageContent = buffered
-                ?: runCatching { td.send(TdApi.GetMessage(update.chatId, update.messageId)) }
-                    .warnUnlessCancelled(TAG, "getMessage(archive,${update.chatId},${update.messageId})")
-                    .getOrNull()?.content
-                ?: return@launch
-            // Tier 2 media copy: while TDLib still has the file locally, snapshot
-            // the bytes into archive storage. The resulting SHA is folded into
-            // mediaRef so the revision sheet can render the media even after the
-            // original message is deleted or TDLib evicts the file from cache.
-            val mediaSha = archiveMediaStore?.let { store ->
-                MediaFileFromContent.extract(content)?.let { store.copyIfAvailable(it) }
-            }
-            val baseMeta = TdlibContentMetaExtractor.extract(content)
-            val meta = if (mediaSha != null && baseMeta.mediaRef != null) {
-                baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
-            } else baseMeta
-            archiveRepository.captureTdlibEdit(
+            suspendRunCatching { captureEdit(update, buffered, livePost) }
+                .warnUnlessCancelled(TAG, "captureEdit(${update.chatId},${update.messageId})")
+        }
+    }
+
+    private suspend fun captureEdit(
+        update: TdApi.UpdateMessageEdited,
+        buffered: TdApi.MessageContent?,
+        livePost: TimelinePost?,
+    ) {
+        val repo = archiveRepository ?: return
+        val content: TdApi.MessageContent = buffered
+            ?: runCatching { td.send(TdApi.GetMessage(update.chatId, update.messageId)) }
+                .warnUnlessCancelled(TAG, "getMessage(archive,${update.chatId},${update.messageId})")
+                .getOrNull()?.content
+            ?: return
+        // Tier 2 media copy: while TDLib still has the file locally, snapshot
+        // the bytes into archive storage. The resulting SHA is folded into
+        // mediaRef so the revision sheet can render the media even after the
+        // original message is deleted or TDLib evicts the file from cache.
+        val mediaSha = archiveMediaStore?.let { store ->
+            MediaFileFromContent.extract(content)?.let { store.copyIfAvailable(it) }
+        }
+        val baseMeta = TdlibContentMetaExtractor.extract(content)
+        val meta = if (mediaSha != null && baseMeta.mediaRef != null) {
+            baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
+        } else baseMeta
+        repo.captureTdlibEdit(
+            chat = ChatRef.tdlib(update.chatId),
+            messageKey = update.messageId.toString(),
+            albumKey = livePost?.mediaAlbumId?.takeIf { it != 0L }?.toString(),
+            editedAtMs = update.editDate.toLong() * 1000L,
+            meta = meta,
+            isComment = false,
+        )
+        // upsertChannel only when we have live metadata. Channels seen
+        // earlier in the session already have rows in ArchivedChannel from
+        // their baseline captures; missing this upsert on a catch-up edit
+        // just leaves stale (but valid) channel metadata.
+        if (livePost != null) {
+            repo.upsertChannel(
                 chat = ChatRef.tdlib(update.chatId),
-                messageKey = update.messageId.toString(),
-                albumKey = livePost?.mediaAlbumId?.takeIf { it != 0L }?.toString(),
-                editedAtMs = update.editDate.toLong() * 1000L,
-                meta = meta,
-                isComment = false,
+                title = livePost.senderName,
+                handle = livePost.senderHandle,
+                photoMinithumb = livePost.avatarThumb,
+                isVerified = livePost.verification != null,
             )
-            // upsertChannel only when we have live metadata. Channels seen
-            // earlier in the session already have rows in ArchivedChannel from
-            // their baseline captures; missing this upsert on a catch-up edit
-            // just leaves stale (but valid) channel metadata.
-            if (livePost != null) {
-                archiveRepository.upsertChannel(
-                    chat = ChatRef.tdlib(update.chatId),
-                    title = livePost.senderName,
-                    handle = livePost.senderHandle,
-                    photoMinithumb = livePost.avatarThumb,
-                    isVerified = livePost.verification != null,
-                )
-            }
         }
     }
 
@@ -2096,23 +2185,27 @@ class PostsRepository(
                 delay(ALBUM_DELETE_DEBOUNCE_MS)
                 chatDeletionTimers.remove(update.chatId, deletionJobRef)
                 val drained = pendingChatDeletions.remove(update.chatId) ?: return@launch
-                archiveRepository.captureTdlibDeleteSmart(
-                    chat = ChatRef.tdlib(update.chatId),
-                    messageKeys = drained.map { msgId -> msgId.toString() },
-                    isComment = false,
-                )
-                // Best-effort channel metadata from any feed-resident sample
-                // for this chat — channels that have a baseline already have
-                // an ArchivedChannel row anyway, so a miss here is fine.
-                _posts.value.firstOrNull { it.chatId == update.chatId }?.let { sample ->
-                    archiveRepository.upsertChannel(
+                // Guarded like the edit capture: an archive write failure must not
+                // crash the process from this fire-and-forget launch.
+                suspendRunCatching {
+                    archiveRepository.captureTdlibDeleteSmart(
                         chat = ChatRef.tdlib(update.chatId),
-                        title = sample.senderName,
-                        handle = sample.senderHandle,
-                        photoMinithumb = sample.avatarThumb,
-                        isVerified = sample.verification != null,
+                        messageKeys = drained.map { msgId -> msgId.toString() },
+                        isComment = false,
                     )
-                }
+                    // Best-effort channel metadata from any feed-resident sample
+                    // for this chat — channels that have a baseline already have
+                    // an ArchivedChannel row anyway, so a miss here is fine.
+                    _posts.value.firstOrNull { it.chatId == update.chatId }?.let { sample ->
+                        archiveRepository.upsertChannel(
+                            chat = ChatRef.tdlib(update.chatId),
+                            title = sample.senderName,
+                            handle = sample.senderHandle,
+                            photoMinithumb = sample.avatarThumb,
+                            isVerified = sample.verification != null,
+                        )
+                    }
+                }.warnUnlessCancelled(TAG, "captureDelete(${update.chatId})")
             }
             chatDeletionTimers[update.chatId] = deletionJobRef
         }
@@ -2564,6 +2657,8 @@ class PostsRepository(
             _archivedChatIds.value = emptySet()
             _mainChatIds.value = emptySet()
             pendingLastMessages.clear()
+            mainListOrder.clear()
+            lastMessageDateSec.clear()
             richFullFetchInFlight.clear()
             _richFullFetch.value = persistentMapOf()
             pendingArchiveEdits.clear()
@@ -2600,22 +2695,33 @@ class PostsRepository(
      * unstamped (ingest stays on the offline `onlyLocal` album-coalesce path — the safe
      * default).
      *
-     * Bounded by [MAX_LOAD_CHATS_PAGES] — 10 pages × 200 hint = up to 2000 chats per list,
-     * which is well past the realistic ceiling and protects against a TDLib bug ever
-     * returning success indefinitely (that case exits normally: latch is null after the
-     * trailing success).
+     * Successful pages and failed attempts are budgeted SEPARATELY. A shared 10-iteration
+     * budget stopped large accounts short: td_api.tl says the number of chats a LoadChats
+     * call loads "can be smaller than the specified limit", so 10 successful pages could
+     * end well before the list does and the tail channels never reached the feed. The
+     * 404 is the only completion signal; [MAX_LOAD_CHATS_PAGES] successful pages is just
+     * a safety bound against a TDLib bug returning success indefinitely (that case exits
+     * normally: the latch is null after the trailing success). [MAX_LOAD_CHATS_FAILURES]
+     * keeps the offline case as short as before. One LoadChats per page — never a
+     * per-chat request.
      */
     private suspend fun drainChatList(list: TdApi.ChatList) {
         var lastError: Throwable? = null
-        repeat(MAX_LOAD_CHATS_PAGES) { attempt ->
+        var pages = 0
+        var failures = 0
+        while (pages < MAX_LOAD_CHATS_PAGES && failures < MAX_LOAD_CHATS_FAILURES) {
             val err = runCatching { td.send(TdApi.LoadChats(list, CHAT_LIST_HINT)) }.exceptionOrNull()
             when {
-                err == null -> lastError = null // a page loaded — progress; keep draining
+                err == null -> { // a page loaded — progress; keep draining
+                    lastError = null
+                    pages++
+                }
                 err is CancellationException -> throw err
                 err is TdClient.TdException && err.code == 404 -> return // fully drained
                 else -> {
                     lastError = err
-                    if (attempt < MAX_LOAD_CHATS_PAGES - 1) delay(DRAIN_RETRY_DELAY_MS)
+                    failures++
+                    if (failures < MAX_LOAD_CHATS_FAILURES) delay(DRAIN_RETRY_DELAY_MS)
                 }
             }
         }
@@ -2627,10 +2733,14 @@ class PostsRepository(
     private companion object {
         const val TAG = "PostsRepository"
         const val CHAT_LIST_HINT = 200
-        const val MAX_LOAD_CHATS_PAGES = 10
+        // Safety bound on SUCCESSFUL pages per list in [drainChatList]; the 404 is the
+        // real terminator. Generous because a page may load far fewer than the hint.
+        const val MAX_LOAD_CHATS_PAGES = 100
+        // Failed LoadChats attempts per list before [drainChatList] surfaces the error.
+        const val MAX_LOAD_CHATS_FAILURES = 10
         // Pause between failed LoadChats retries in [drainChatList]. Short enough that
         // an online-blip recovers within the bounded loop, long enough that an offline
-        // drain doesn't spin all 10 iterations back-to-back before surfacing the error.
+        // drain doesn't spin all 10 failures back-to-back before surfacing the error.
         const val DRAIN_RETRY_DELAY_MS = 300L
         // Mirrors the FeedSource.refreshIfStale window: skip the round-trip
         // when last successful refresh was within the last minute. 60s tracks

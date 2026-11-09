@@ -92,6 +92,41 @@ class PostsRepositoryBackfillTest {
     }
 
     @Test
+    fun `backfill ranks by the live UpdateChatPosition order, not the cached chat POJO`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        // Seeded with identical stale orders (as at first auth); the real ranking then
+        // arrives only through UpdateChatPosition, which never touches the cached POJO.
+        val liveOrders = listOf(10L, 400L, 200L)
+        liveOrders.indices.forEach { i ->
+            val chatId = -6100L - i
+            harness.td.emitUpdate(TdApi.UpdateNewChat(harness.fakeChannel(
+                id = chatId,
+                lastMessage = harness.fakeChannelMessage(chatId, 610L + i),
+                mainListOrder = 1L,
+            )))
+        }
+        harness.advanceUntilIdle()
+        liveOrders.forEachIndexed { i, order ->
+            harness.td.emitUpdate(TdApi.UpdateChatPosition(-6100L - i, TdApi.ChatPosition().apply {
+                list = TdApi.ChatListMain()
+                this.order = order
+            }))
+        }
+        harness.advanceUntilIdle()
+
+        val seenInOrder = mutableListOf<Long>()
+        harness.td.onAny("GetChatHistory") { req ->
+            seenInOrder.add((req as TdApi.GetChatHistory).chatId)
+            TdApi.Messages(0, emptyArray())
+        }
+        harness.repo.runFirstSignInBackfill()
+        harness.advanceUntilIdle()
+
+        assertEquals(listOf(-6101L, -6102L, -6100L), seenInOrder,
+            "backfill must follow the freshest UpdateChatPosition order")
+    }
+
+    @Test
     fun `backfill requests POSTS_PER_CHAT messages starting from latest`() = runTest {
         val harness = PostsRepositoryTestHarness(this)
         val chat = harness.fakeChannel(

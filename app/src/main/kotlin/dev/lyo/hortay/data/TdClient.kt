@@ -6,6 +6,7 @@ import android.util.Log
 import dev.lyo.hortay.BuildConfig
 import dev.lyo.hortay.R
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,7 +43,12 @@ class TdClient private constructor(
     private val strings: StringResolver = context.resources.toStringResolver()
 
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // Logging handler: a throwing fire-and-forget launch here must not crash the process
+    // (same last-resort net as AppGraph.appScope).
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default +
+            CoroutineExceptionHandler { _, e -> Log.e(TAG, "uncaught in TdClient scope", e) },
+    )
 
     private val _authStage = MutableStateFlow<AuthStage>(AuthStage.Loading)
     val authStage: StateFlow<AuthStage> = _authStage.asStateFlow()
@@ -775,7 +781,14 @@ class TdClient private constructor(
          *    [TdApi.GetStorageStatisticsFast]: they only queue or inspect local work, and
          *    TDLib paces the transfers itself on the file DCs. Gating them froze every new
          *    download, the cancel button and the stall watchdog for the whole length of an
-         *    account-level FLOOD_WAIT (up to minutes) earned by an unrelated history call.
+         *    account-level FLOOD_WAIT (up to minutes) earned by an unrelated history call;
+         *  - client-state control that must never queue behind a flood wait: [TdApi.LogOut],
+         *    [TdApi.SetTdlibParameters], [TdApi.SetOption], [TdApi.SetNetworkType],
+         *    [TdApi.OpenChat] / [TdApi.CloseChat] (local presence bookkeeping), and the proxy
+         *    calls. Gating them made "Sign out" and proxy switching silently hang for the
+         *    whole wait — and a proxy switch is often exactly what clears the network
+         *    condition. None of them is a content RPC that counts toward the flood bucket.
+         *    [TdApi.GetMessage] is deliberately NOT here: it can fall through to the server.
          */
         internal fun isOfflineRequest(query: TdApi.Function<*>): Boolean = when (query) {
             is TdApi.GetChat,
@@ -788,6 +801,18 @@ class TdClient private constructor(
             is TdApi.DownloadFile,
             is TdApi.CancelDownloadFile,
             is TdApi.GetStorageStatisticsFast,
+            is TdApi.LogOut,
+            is TdApi.SetTdlibParameters,
+            is TdApi.SetOption,
+            is TdApi.SetNetworkType,
+            is TdApi.OpenChat,
+            is TdApi.CloseChat,
+            is TdApi.GetProxies,
+            is TdApi.AddProxy,
+            is TdApi.EnableProxy,
+            is TdApi.DisableProxy,
+            is TdApi.RemoveProxy,
+            is TdApi.PingProxy,
             -> true
             else -> false
         }

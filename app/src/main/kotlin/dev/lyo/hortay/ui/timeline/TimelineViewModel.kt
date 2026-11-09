@@ -244,21 +244,7 @@ class TimelineViewModel(
         // bootstrap fires on the first non-empty emission". PTR keeps the
         // `refreshing=true` guard so the bootstrap doesn't run on a transient
         // mid-PTR snapshot.
-        viewModelScope.launch {
-            combine(livePosts, refreshing) { posts, isRefreshing ->
-                posts.takeIf { it.isNotEmpty() && !isRefreshing }
-            }
-                .filterNotNull()
-                .first()
-                .let { stable ->
-                    if (!bootstrapped.value) {
-                        seenHighWater.value = stable
-                            .groupBy { it.chatId }
-                            .mapValues { (_, ps) -> ps.maxOf { it.date } }
-                        bootstrapped.value = true
-                    }
-                }
-        }
+        launchBootstrap()
         // Auto-seed brand-new channels: after bootstrap, any chatId entering livePosts
         // that's not yet in the high-water map gets its current max date stamped in.
         // Drives the "user opens a fresh channel filter → loadChannelHistory back-fills 80
@@ -267,6 +253,9 @@ class TimelineViewModel(
         viewModelScope.launch {
             bootstrapped.first { it }
             livePosts.collect { live ->
+                // Re-armed after a session end (see [resetSessionState]): the bootstrap
+                // re-seeds the whole map, so seeding here first would be overwritten anyway.
+                if (!bootstrapped.value) return@collect
                 val knownChats = seenHighWater.value.keys
                 val unseenChats = HashSet<Long>()
                 for (p in live) {
@@ -300,6 +289,53 @@ class TimelineViewModel(
         // deeper history both survive regardless of which lands first. Offline
         // path: snapshot paints the empty feed within ~100 ms of construction.
         viewModelScope.launch { repo.restoreFromSnapshot() }
+        // Session end: this ViewModel outlives the signed-in account, so every
+        // session-derived field above would otherwise carry account A's high-water
+        // marks, latched cursor flag and scroll anchors into account B's feed (B's posts
+        // all classified against A's marks; B landing on A's anchor keys). The feed
+        // source's [FeedSource.initialSyncDone] goes true → false only when its session
+        // state is wiped on logout, so that edge is the reset signal. Guest mode's
+        // source never flips it, which is correct — it has no account session.
+        viewModelScope.launch {
+            var wasDone = repo.initialSyncDone.value
+            repo.initialSyncDone.collect { done ->
+                if (wasDone && !done) resetSessionState()
+                wasDone = done
+            }
+        }
+    }
+
+    private fun launchBootstrap() {
+        viewModelScope.launch {
+            combine(livePosts, refreshing) { posts, isRefreshing ->
+                posts.takeIf { it.isNotEmpty() && !isRefreshing }
+            }
+                .filterNotNull()
+                .first()
+                .let { stable ->
+                    if (!bootstrapped.value) {
+                        seenHighWater.value = stable
+                            .groupBy { it.chatId }
+                            .mapValues { (_, ps) -> ps.maxOf { it.date } }
+                        bootstrapped.value = true
+                    }
+                }
+        }
+    }
+
+    /**
+     * Wipe every session-derived field and re-arm the bootstrap, as if the ViewModel
+     * were freshly constructed for the next account. Runs on the main thread
+     * ([viewModelScope]), the same thread that writes [pinnedScrollSeedKeys] and
+     * [feedScrollAnchors] from composition.
+     */
+    private fun resetSessionState() {
+        bootstrapped.value = false
+        seenHighWater.value = emptyMap()
+        _coldStartCursorsSettled.value = false
+        pinnedScrollSeedKeys.clear()
+        feedScrollAnchors.clear()
+        launchBootstrap()
     }
 
     /** Pull-to-refresh — always fires regardless of staleness. Reveals pending afterwards. */

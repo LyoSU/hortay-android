@@ -686,30 +686,34 @@ class CommentsRepository(
                         val archive = archiveRepository
                         if (archive != null) {
                             val buffered = pendingCommentEdits.commitOnEdited(upd.chatId, upd.messageId)
+                            // Guarded: an archive write failure (disk full) must drop this
+                            // capture, not crash the process from a fire-and-forget launch.
                             scope.launch {
-                                val content: TdApi.MessageContent = buffered
-                                    ?: runCatching {
-                                        td.send(TdApi.GetMessage(upd.chatId, upd.messageId))
-                                    }.getOrNull()?.content ?: return@launch
-                                val mediaSha = archiveMediaStore?.let { store ->
-                                    dev.lyo.hortay.data.archive.MediaFileFromContent.extract(content)
-                                        ?.let { store.copyIfAvailable(it) }
-                                }
-                                val baseMeta = dev.lyo.hortay.data.archive.TdlibContentMetaExtractor.extract(content)
-                                val meta = if (mediaSha != null && baseMeta.mediaRef != null) {
-                                    baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
-                                } else baseMeta
-                                archive.captureTdlibEdit(
-                                    chat = dev.lyo.hortay.data.archive.ChatRef.tdlib(upd.chatId),
-                                    messageKey = upd.messageId.toString(),
-                                    albumKey = null,
-                                    editedAtMs = upd.editDate.toLong() * 1000L,
-                                    meta = meta,
-                                    isComment = true,
-                                )
-                                // upsertChannel intentionally skipped here — discussion-group
-                                // metadata is the channel anchor's, not the comment author's;
-                                // it gets populated by PostsRepository on the anchor's flow.
+                                suspendRunCatching {
+                                    val content: TdApi.MessageContent = buffered
+                                        ?: suspendRunCatching {
+                                            td.send(TdApi.GetMessage(upd.chatId, upd.messageId))
+                                        }.getOrNull()?.content ?: return@launch
+                                    val mediaSha = archiveMediaStore?.let { store ->
+                                        dev.lyo.hortay.data.archive.MediaFileFromContent.extract(content)
+                                            ?.let { store.copyIfAvailable(it) }
+                                    }
+                                    val baseMeta = dev.lyo.hortay.data.archive.TdlibContentMetaExtractor.extract(content)
+                                    val meta = if (mediaSha != null && baseMeta.mediaRef != null) {
+                                        baseMeta.copy(mediaRef = baseMeta.mediaRef.copy(localArchiveSha = mediaSha))
+                                    } else baseMeta
+                                    archive.captureTdlibEdit(
+                                        chat = dev.lyo.hortay.data.archive.ChatRef.tdlib(upd.chatId),
+                                        messageKey = upd.messageId.toString(),
+                                        albumKey = null,
+                                        editedAtMs = upd.editDate.toLong() * 1000L,
+                                        meta = meta,
+                                        isComment = true,
+                                    )
+                                    // upsertChannel intentionally skipped here — discussion-group
+                                    // metadata is the channel anchor's, not the comment author's;
+                                    // it gets populated by PostsRepository on the anchor's flow.
+                                }.warnUnlessCancelled(TAG, "captureCommentEdit(${upd.chatId},${upd.messageId})")
                             }
                         }
                         true
@@ -725,12 +729,14 @@ class CommentsRepository(
                     val keys = upd.messageIds.map { it.toString() }
                     if (keys.isNotEmpty()) {
                         scope.launch {
-                            archiveRepository.captureTdlibDelete(
-                                chat = dev.lyo.hortay.data.archive.ChatRef.tdlib(upd.chatId),
-                                messageKeys = keys,
-                                albumKey = null, // comments don't use album debounce
-                                isComment = true,
-                            )
+                            suspendRunCatching {
+                                archiveRepository.captureTdlibDelete(
+                                    chat = dev.lyo.hortay.data.archive.ChatRef.tdlib(upd.chatId),
+                                    messageKeys = keys,
+                                    albumKey = null, // comments don't use album debounce
+                                    isComment = true,
+                                )
+                            }.warnUnlessCancelled(TAG, "captureCommentDelete(${upd.chatId})")
                         }
                     }
                 }
