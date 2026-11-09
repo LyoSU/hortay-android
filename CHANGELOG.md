@@ -17,6 +17,13 @@
 - Channels now show their pinned messages in a bar under the header — tap it to jump to the pinned post, tap again to step through older pins.
 - The Channels tab can hide every channel from the feed or show them all again in one step, so keeping only a few channels in a long list no longer takes a tap per channel.
 - Settings → Feed can now show archived channels in the “All” feed too, so channels you archive to tidy Telegram still reach your main feed.
+- A bookmark button under every post saves it to the Saved tab in one tap, next to a Share button.
+- Settings → Appearance lets you pick a System, Light or Dark theme, with a Pure black option for dark mode.
+- Settings → Reading lets you choose the text size of posts, comments and articles in four steps, with a live preview.
+- Voice messages and audio tracks have a speed button that switches between 1×, 1.5× and 2×.
+- When you scroll away from a playing voice message or audio track, a mini-player above the navigation bar lets you pause, change speed or stop it.
+- The first time you open the app, it asks whether you want to read newest-first or like a chat.
+- The Channels tab shows a one-time tip about the sideways swipe, and a hidden channel has a visible button to show it again.
 
 ### Changed
 - A reply to another channel's post shows that channel's avatar and an arrow, so it no longer passes for a reply within the same channel.
@@ -30,6 +37,11 @@
 - Each post shows its time and author under the channel name and has a visible "⋯" button for its actions, which used to be reachable only by long-pressing.
 - Swipeable photo albums in the feed show their position dots under the photos instead of in a dark pill that blended into them.
 - Folder tabs above the feed are now plain labels with an underline under the selected one.
+- Settings are grouped into Appearance, Reading and Feed, and the app language moved into Appearance.
+- Replies in a comments thread are linked to the comment they answer by a thin line, and new comments slide into place instead of jumping.
+- Reaction chips are easier to tap without hitting a neighbouring one.
+- On tablets and wide windows, the bottom navigation bar, Channels and Settings keep a comfortable width instead of stretching across the screen.
+- Error messages say what happened in plain words first, Telegram's rate limit is described the same way everywhere, and sign-in uses Telegram's own "two-step verification" wording.
 
 ### Fixed
 - Signing in no longer overwrites the auto-download settings you set in other Telegram apps, and signing out no longer carries them over to the next account.
@@ -85,9 +97,37 @@
 - The phone number and login code you typed survive rotating the screen or switching the theme.
 - The edit-history sheet of a post no longer flickers empty while it's open.
 - Signing out during the first feed fill-in no longer leaves the next account with a sparse feed.
+- Rotating the phone no longer closes the fullscreen video, jumps back to the Feed tab or closes open sheets.
+- Opening a t.me or tg:// link while Hortay is running reuses the open app instead of stacking a second copy, and the link is no longer replayed after rotating or returning from Recents.
+- Telegram links Hortay can't open no longer relaunch the app in a loop when no Telegram app is installed.
+- Messages with actions such as Retry or Open Telegram now sit above the system navigation bar, the keyboard and the bottom tab bar.
+- Tapping a channel and then quickly opening comments no longer pushes the channel on top of the comments.
+- A storage error while saving the post archive, or an unusual post from Telegram, no longer crashes the app.
+- A corrupted settings file no longer crashes the app on every launch — the affected settings reset to their defaults.
+- Signing out and switching proxies no longer hang while Telegram temporarily rate-limits the app.
+- The app no longer stays stuck on "Waiting for network" when the connection returned while it was in the background.
+- New posts from a channel that just changed its name or photo no longer go missing from the feed.
+- A deleted post kept by the archive no longer disappears from the feed because another channel has a post with the same number.
+- Accounts with very many channels now get every channel in the feed, and the first fill-in after signing in picks the channels you actually read most.
+- After signing out and into another account, the feed no longer reuses the previous account's "new posts" state and scroll positions.
+- View counts read "1K" instead of "1.0K" and no longer switch to a comma or native digits in some languages.
+- In right-to-left languages the login code and phone number no longer appear reversed, Arabic and Persian digits are accepted there, and the unread strip, forward icon and expand arrows point the right way.
+- Subscriber counts in a channel's info card follow your app language.
+- Videos whose file names contain #, % or ? now play.
+- Screen readers announce reactions as buttons with their selected state, say a channel's name once per avatar, and mention that long-pressing a post or comment opens more actions.
+- The Subscribe button in Discover no longer clips its label at large font sizes.
+- Saved posts in guest mode stay in the Saved tab after they get old, after you unsubscribe from their channel and after clearing the cache.
+- In guest mode, expired photos on older posts reload instead of staying broken.
+- Unsubscribing from a channel in guest mode takes effect immediately and is no longer lost if the app closes.
+- A guest-mode channel whose page can no longer be read shows a load error instead of silently stopping updates, and posts keep their original time.
+- Signed-in users no longer download guest-mode channel pages on every launch.
+- The post archive no longer records guest-mode posts as edited when only their image links change, no longer stops loading over one unreadable entry, and skips copying very large files.
+- Voice messages, audio tracks and videos with sound now pause other apps' music, pause for calls and stop when you unplug your headphones.
 
 ### Performance
 - Idle video players are released when the app goes to the background.
+- The app no longer redraws every frame while idle — animated stickers and the pull-to-refresh indicator animate only when they are on screen and active.
+- Guest mode does less work on launch and when opening "Add channel".
 
 ### Architecture
 - The feed, folder tabs and translation cache now each handle Telegram's updates in one ordered stream instead of one listener per update type.
@@ -96,6 +136,8 @@
 - CI resolves only the dependencies each job builds and reuses one Gradle process per job, so check runs start building sooner.
 - Toolchain and dependencies updated: AGP 9.5, Gradle 9.8, Kotlin 2.4.21, Compose BOM 2026.09 with Material 3 1.5.0-rc01, Media3 1.11, Coil 3.6, OkHttp 5.5, SQLDelight 2.4, DataStore 1.3, JUnit 6.1.3 and refreshed CI actions.
 - CI retries dependency downloads before building, so a brief Maven or Gradle outage no longer fails the build.
+- Beta builds run only for commits pushed to the main branch, and releases must come from main, pass the unit tests and pass a 16 KB page-size check.
+- App downloads no longer carry translations for languages the app doesn't ship.
 
 ## [0.12.0] — 2026-07-16
 

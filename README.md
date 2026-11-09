@@ -4,7 +4,7 @@
 
 A Twitter-style reader for Telegram channels. Read your subscribed channels as one chronological feed instead of a chat list.
 
-No Firebase, no Crashlytics, no analytics, no third-party push. INTERNET permission is used only for Telegram itself, anonymous `t.me/s/` previews in guest mode, and a read-only fetch of the public [suggested-channels list](suggestions.json) from this repo (no user data ever leaves the device).
+No Firebase, no Crashlytics, no analytics, no third-party push. INTERNET permission is used only for Telegram itself, anonymous `t.me/s/` previews in guest mode, and a read-only fetch of the public [suggested-channels list](suggestions.json) served from this repo through the jsDelivr CDN (`cdn.jsdelivr.net`; no user data is sent, though the CDN sees the request's IP address).
 
 <p align="center">
   <a href="https://play.google.com/store/apps/details?id=dev.lyo.hortay">
@@ -65,7 +65,7 @@ AGP 9.5.1 · Gradle 9.8.2 · Kotlin 2.4.21 (K2) · Compose BOM 2026.09.00 · Mat
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for module layout, load-bearing decisions, and TDLib usage rules.
 
-Short version: single-Activity, Compose-only, three modules — `:app`, `:libtdlib` (vendored TDLib JNI), `:baselineprofile`. Manual DI through `AppGraph`. No Hilt, no Retrofit, no Firebase.
+Short version: single-Activity, Compose-only, four modules — `:app`, `:libtdlib` (vendored TDLib JNI), `:libwebm` (vendored minimal ffmpeg WebM decoder), `:baselineprofile`. Manual DI through `AppGraph`. No Hilt, no Retrofit, no Firebase.
 
 ## Contributing
 

@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -86,6 +88,11 @@ fun FloatingNavBar(
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 10.dp)
+            // Tablets / desktop windows: a centred pill capped at a phone-like width instead
+            // of a full-width bar. Phones sit below the cap, so their layout is unchanged.
+            .wrapContentWidth(Alignment.CenterHorizontally)
+            .widthIn(max = BAR_MAX_WIDTH)
+            .fillMaxWidth()
             .shadow(elevation = 10.dp, shape = BarShape, clip = false)
             .clip(BarShape)
             .then(
@@ -199,6 +206,9 @@ private fun NavTabButton(
         )
     }
 }
+
+/** Widest the pill gets; shared visually with the audio mini-player above it. */
+private val BAR_MAX_WIDTH = 480.dp
 
 /** Gap between the bar's edge and the sliding capsule. */
 private val BAR_INSET = 5.dp

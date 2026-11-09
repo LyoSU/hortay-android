@@ -1,8 +1,10 @@
 package dev.lyo.hortay.data
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -54,4 +56,7 @@ class ColdStartBackfillStoreImpl(context: Context) : ColdStartBackfillStore {
     }
 }
 
-private val Context.coldStartBackfillDataStore by preferencesDataStore(name = "cold_start_backfill")
+private val Context.coldStartBackfillDataStore by preferencesDataStore(
+    name = "cold_start_backfill",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)

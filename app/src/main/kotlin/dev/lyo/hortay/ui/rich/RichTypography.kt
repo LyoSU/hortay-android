@@ -1,5 +1,7 @@
 package dev.lyo.hortay.ui.rich
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -9,6 +11,8 @@ import androidx.compose.ui.unit.sp
 import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.ui.theme.BodyFontFamily
 import dev.lyo.hortay.ui.theme.DisplayFontFamily
+import dev.lyo.hortay.ui.theme.LocalReadingScale
+import dev.lyo.hortay.ui.theme.scaledForReading
 
 /**
  * A dedicated, theme-stable type scale for the rich-message reader — deliberately NOT an alias
@@ -20,20 +24,33 @@ import dev.lyo.hortay.ui.theme.DisplayFontFamily
  * Families reuse the app's bundled variable fonts ([DisplayFontFamily] = Plus Jakarta Sans for
  * headings, [BodyFontFamily] = Inter for body / footers); only the sizes, weights and
  * line-heights are pinned here. Colours are NOT baked in — every renderer copies the palette
- * colour from the theme at the call site, so the scale stays theme-independent (usable from
- * unit tests and previews without a `MaterialTheme`).
+ * colour from the theme at the call site, so the scale stays theme-independent.
+ *
+ * Reading text size: the article's READING styles — [paragraph] and the heading ladder
+ * [h1]…[h6] — follow the user's Settings → Reading size through [LocalReadingScale] (font size
+ * and line height together, so the ladder keeps its proportions). They are therefore
+ * composable getters; outside a theme the local defaults to `1f` and they equal the pinned
+ * base styles below. [footer] and [code] are chrome / fixed-measure styles and stay unscaled.
  */
 internal object RichTypography {
+    private val baseH1 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, lineHeight = 34.sp, letterSpacing = (-0.3).sp)
+    private val baseH2 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 24.sp, lineHeight = 30.sp, letterSpacing = (-0.2).sp)
+    private val baseH3 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 26.sp)
+    private val baseH4 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 24.sp)
+    private val baseH5 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 22.sp)
+    private val baseH6 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp)
+    private val baseParagraph = TextStyle(fontFamily = BodyFontFamily, fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = 0.sp)
+
     /** `pageBlockSectionHeading` size 1 — the document title. */
-    val h1 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, lineHeight = 34.sp, letterSpacing = (-0.3).sp)
-    val h2 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 24.sp, lineHeight = 30.sp, letterSpacing = (-0.2).sp)
-    val h3 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, lineHeight = 26.sp)
-    val h4 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 24.sp)
-    val h5 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 22.sp)
-    val h6 = TextStyle(fontFamily = DisplayFontFamily, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp)
+    val h1: TextStyle @Composable @ReadOnlyComposable get() = baseH1.scaledForReading(LocalReadingScale.current)
+    val h2: TextStyle @Composable @ReadOnlyComposable get() = baseH2.scaledForReading(LocalReadingScale.current)
+    val h3: TextStyle @Composable @ReadOnlyComposable get() = baseH3.scaledForReading(LocalReadingScale.current)
+    val h4: TextStyle @Composable @ReadOnlyComposable get() = baseH4.scaledForReading(LocalReadingScale.current)
+    val h5: TextStyle @Composable @ReadOnlyComposable get() = baseH5.scaledForReading(LocalReadingScale.current)
+    val h6: TextStyle @Composable @ReadOnlyComposable get() = baseH6.scaledForReading(LocalReadingScale.current)
 
     /** Body paragraph — the reading measure. */
-    val paragraph = TextStyle(fontFamily = BodyFontFamily, fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = 0.sp)
+    val paragraph: TextStyle @Composable @ReadOnlyComposable get() = baseParagraph.scaledForReading(LocalReadingScale.current)
 
     /** Footer / caption-credit — muted, small. Colour applied by the renderer. */
     val footer = TextStyle(fontFamily = BodyFontFamily, fontWeight = FontWeight.Normal, fontSize = 13.sp, lineHeight = 18.sp)
@@ -44,8 +61,10 @@ internal object RichTypography {
 
 /**
  * Type style for a `pageBlockSectionHeading` of TDLib [size] (1 = largest .. 6 = smallest),
- * clamped to the [RichTypography] heading ladder.
+ * clamped to the [RichTypography] heading ladder (reading-size scaled).
  */
+@Composable
+@ReadOnlyComposable
 internal fun richHeadingStyle(size: Int): TextStyle = when (size.coerceIn(1, 6)) {
     1 -> RichTypography.h1
     2 -> RichTypography.h2

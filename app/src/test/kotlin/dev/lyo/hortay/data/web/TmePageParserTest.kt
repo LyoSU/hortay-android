@@ -296,6 +296,52 @@ class TmePageParserTest {
         assertEquals("durov/7", page.posts.single().id)
     }
 
+    @Test
+    fun `post wrappers present but no post parses is a parse failure`() {
+        // Simulates Telegram renaming the post id attribute: every wrapper is still
+        // there, but no `.tgme_widget_message[data-post]` matches any more. Must not
+        // degrade into an "ok" page with zero posts.
+        val broken = loadFixture("durov-real.html").replace("data-post=", "data-msg-id=")
+        assertNull(TmePageParser.parse(broken, "durov"))
+    }
+
+    @Test
+    fun `post markup present under renamed wrappers is a parse failure`() {
+        // Wrapper class renamed: the wrapper selector finds nothing, yet the page
+        // still carries `data-post` ids — a selector regression, not an empty channel.
+        val broken = loadFixture("durov-real.html")
+            .replace("tgme_widget_message_wrap", "tgme_widget_msg_container")
+        assertNull(TmePageParser.parse(broken, "durov"))
+    }
+
+    @Test
+    fun `channel page without any post markup still parses as empty`() {
+        val html = """
+            <html><body>
+              <div class="tgme_channel_info">
+                <div class="tgme_channel_info_header">
+                  <div class="tgme_channel_info_header_title"><span>Quiet</span></div>
+                </div>
+              </div>
+            </body></html>
+        """.trimIndent()
+        val page = TmePageParser.parse(html, "quiet")
+        assertNotNull(page)
+        assertTrue(page!!.posts.isEmpty())
+    }
+
+    @Test
+    fun `broken date selector yields empty publishedAt rather than failing the page`() {
+        // The repository then keeps the stored timestamp of already-known posts
+        // (see WebRepositoryMaintenanceTest) instead of re-dating them to fetch time.
+        val broken = loadFixture("durov-real.html")
+            .replace("tgme_widget_message_date", "tgme_widget_message_when")
+        val page = TmePageParser.parse(broken, "durov")
+        assertNotNull(page)
+        assertTrue(page!!.posts.isNotEmpty())
+        assertTrue(page.posts.all { it.publishedAt.isEmpty() })
+    }
+
     private fun loadFixture(name: String): String {
         val resource = javaClass.classLoader!!.getResourceAsStream("tme-samples/$name")
             ?: error("Missing fixture: tme-samples/$name")

@@ -5,10 +5,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
 import dev.lyo.hortay.data.DeepLink
+import dev.lyo.hortay.data.FeedOrder
+import dev.lyo.hortay.ui.onboarding.FeedOrderOnboardingSheet
 import dev.lyo.hortay.ui.text.ExternalLinkConfirmDialog
 import dev.lyo.hortay.ui.text.LocalHashtagTap
 import dev.lyo.hortay.ui.text.LocalLinkConfirm
@@ -42,12 +45,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun LinkAwareScaffold(graph: AppGraph, content: @Composable () -> Unit) {
     val systemUriHandler = LocalUriHandler.current
-    val hortayUriHandler = remember(graph, systemUriHandler) {
+    val appContext = LocalContext.current.applicationContext
+    val hortayUriHandler = remember(graph, systemUriHandler, appContext) {
         HortayUriHandler(
             delegate = systemUriHandler,
             resolver = graph.linkResolver,
             router = graph.deepLinkRouter,
             scope = graph.appScope,
+            context = appContext,
         )
     }
     // Confirmation callback for masked-link spans (TDLib `Style.TextUrl`). Suspending
@@ -111,5 +116,31 @@ fun LinkAwareScaffold(graph: AppGraph, content: @Composable () -> Unit) {
                 onDismiss = { graph.linkDialogs.dismissMaskedLink() },
             )
         }
+        FeedOrderOnboardingHost(graph)
     }
+}
+
+/**
+ * Hosts the one-time feed-order question. This composable lives inside [LinkAwareScaffold],
+ * which only wraps the two post-auth scaffolds, so it never shows over the sign-in screen.
+ * Any dismissal marks the flag, so the question is never asked twice.
+ */
+@Composable
+private fun FeedOrderOnboardingHost(graph: AppGraph) {
+    // Default true while the flag loads so the sheet never flashes for users who answered.
+    val chosen by graph.onboardingStore.feedOrderChosen.collectAsStateWithLifecycle(initialValue = true)
+    if (chosen) return
+    val current by graph.settingsStore.feedOrder.collectAsStateWithLifecycle(
+        initialValue = FeedOrder.OldestUnreadFirst,
+    )
+    FeedOrderOnboardingSheet(
+        current = current,
+        onConfirm = { order ->
+            graph.appScope.launch {
+                graph.settingsStore.setFeedOrder(order)
+                graph.onboardingStore.setFeedOrderChosen()
+            }
+        },
+        onDismiss = { graph.appScope.launch { graph.onboardingStore.setFeedOrderChosen() } },
+    )
 }

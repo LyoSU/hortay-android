@@ -8,6 +8,9 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
+import dev.lyo.hortay.ui.timeline.READING_WIDTH_CAP
+import dev.lyo.hortay.ui.theme.HortaySpacing
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -130,6 +133,10 @@ fun ChannelsScreen(
         initialValue = persistentSetOf(),
     )
     val scope = rememberCoroutineScope()
+    // Default true while loading so the hint never flashes for users who already dismissed it.
+    val swipeHintSeen by graph.onboardingStore.channelsSwipeHintSeen.collectAsStateWithLifecycle(
+        initialValue = true,
+    )
     val cursors = LocalReadCursors.current
     // One pass decides which filter each channel falls under; the chips show the counts.
     // derivedStateOf: read cursors live in a snapshot map, so the Unread bucket follows reading.
@@ -263,6 +270,7 @@ fun ChannelsScreen(
                 onFindChannels = { addSheetOpen = true },
             )
         } else {
+            Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
                 contentPadding = PaddingValues(
@@ -275,7 +283,10 @@ fun ChannelsScreen(
                     bottom = contentPadding.calculateBottomPadding() + FAB_CLEARANCE,
                 ),
                 verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .widthIn(max = READING_WIDTH_CAP)
+                    .fillMaxSize(),
             ) {
                 item(key = "search", contentType = "search") {
                     Column(Modifier.padding(bottom = 10.dp)) {
@@ -291,14 +302,12 @@ fun ChannelsScreen(
                             onSelect = { filter = it },
                             modifier = Modifier.padding(top = 10.dp),
                         )
-                        // Teach the swipe once it matters: shown until the user has hidden
-                        // anything, after which they evidently know the gesture.
-                        if (hiddenChatIds.isEmpty() && query.isBlank() && activeFilter == ChannelsFilter.All) {
-                            Text(
-                                text = stringResource(R.string.channels_swipe_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 8.dp, top = 8.dp),
+                        // Teach the swipe once: a dismissible hint until the user has either
+                        // closed it or used the gesture.
+                        if (!swipeHintSeen && query.isBlank() && activeFilter == ChannelsFilter.All) {
+                            SwipeHintRow(
+                                onDismiss = { scope.launch { graph.onboardingStore.setChannelsSwipeHintSeen() } },
+                                modifier = Modifier.padding(top = HortaySpacing.md),
                             )
                         }
                     }
@@ -310,7 +319,13 @@ fun ChannelsScreen(
                     val isUnread = ch.lastPostId > 0L && ch.lastPostId.isUnreadAgainst(cursors[ch.chatId])
                     val onClick = remember(ch.chatId) { { onChannelClick(ch.chatId) } }
                     val onHideToggle = remember(ch.chatId) {
-                        { scope.launch { graph.ignoredChannels.toggle(ch.chatId) }; Unit }
+                        {
+                            scope.launch {
+                                graph.ignoredChannels.toggle(ch.chatId)
+                                graph.onboardingStore.setChannelsSwipeHintSeen()
+                            }
+                            Unit
+                        }
                     }
                     ChannelRow(
                         channel = ch,
@@ -324,6 +339,7 @@ fun ChannelsScreen(
                         modifier = Modifier.animateItem(),
                     )
                 }
+            }
             }
         }
     }
@@ -514,6 +530,19 @@ private fun ChannelRow(
                 }
             },
             trailingContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // A hidden channel gets a visible way back besides the swipe; visible
+                    // rows deliberately carry no eye button (swipe + TalkBack action only).
+                    if (isHidden) {
+                        IconButton(onClick = onHideToggle) {
+                            Symbol(
+                                name = "visibility_off",
+                                contentDescription = toggleLabel,
+                                tint = MaterialTheme.colorScheme.primary,
+                                size = 22.dp,
+                            )
+                        }
+                    }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = formatRelative(channel.lastPostDate),
@@ -527,6 +556,7 @@ private fun ChannelRow(
                         isUnread -> UnreadDot()
                         else -> Spacer(Modifier.height(20.dp))
                     }
+                }
                 }
             },
             content = {
@@ -626,6 +656,32 @@ private fun EmptyChannels(
         val context = LocalContext.current
         TextButton(onClick = { openTelegramApp(context) }) {
             Text(stringResource(R.string.empty_action_open_telegram))
+        }
+    }
+}
+
+/** One-time inline explainer for the swipe-to-hide gesture, with a "Got it" dismiss. */
+@Composable
+private fun SwipeHintRow(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    OutlinedCard(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(start = HortaySpacing.lg, top = HortaySpacing.xs, bottom = HortaySpacing.xs, end = HortaySpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Symbol(
+                name = "swap_horiz",
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 22.dp,
+            )
+            Spacer(Modifier.width(HortaySpacing.md))
+            Text(
+                text = stringResource(R.string.channels_swipe_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.onboarding_got_it)) }
         }
     }
 }

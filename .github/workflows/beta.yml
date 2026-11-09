@@ -4,8 +4,9 @@
 #
 # Gated on CI success via workflow_run: testers never get a build that failed the
 # detekt/test/lint gate, and CI has already warmed the TDLib cache so this doesn't
-# rebuild it. Uses the real signing secrets — workflow_run on main never runs for a
-# fork PR, so secrets stay out of untrusted reach.
+# rebuild it. Uses the real signing secrets, so the job `if:` requires that the CI run
+# was a `push` event from THIS repository: `branches: [main]` only matches the head
+# branch NAME, which a fork PR from a branch called `main` would also satisfy.
 name: Beta
 
 on:
@@ -23,8 +24,11 @@ permissions:
 
 jobs:
   beta:
-    # Only after a green CI run.
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Only after a green CI run triggered by a push to this repo (never a fork PR).
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -88,12 +92,17 @@ jobs:
           echo "code=$code" >> "$GITHUB_OUTPUT"
           ls -la "$out"
 
+      - name: Verify 16 KB page-size alignment
+        uses: ./.github/actions/verify-16kb
+        with:
+          apk-dir: app/build/outputs/apk/beta
+
       - name: Publish rolling beta pre-release
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT_DIR: ${{ steps.apk.outputs.dir }}
           CODE: ${{ steps.apk.outputs.code }}
-          SHA: ${{ github.sha }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           # Rolling "beta" release: drop the previous one (and its tag) so a single

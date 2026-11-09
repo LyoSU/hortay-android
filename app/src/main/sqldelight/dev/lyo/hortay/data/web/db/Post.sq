@@ -187,9 +187,32 @@ SELECT id, text_plain FROM post;
 updateSearchText:
 UPDATE post SET text_plain = :textPlain WHERE id = :id;
 
+-- published_at_iso / published_at_ms ride along so a re-ingest whose date
+-- selector failed (empty / unparseable ISO) keeps the stored valid timestamp
+-- instead of overwriting it with the fetch-time fallback.
 selectFingerprint:
-SELECT text_html, views, fetched_at_ms FROM post
+SELECT text_html, views, fetched_at_ms, published_at_iso, published_at_ms FROM post
 WHERE channel_username = :channelUsername AND seq = :seq;
+
+-- Saved tab source: every bookmarked post, with no subscription filter and no
+-- LIMIT — a saved post must outlive both the feed's newest-N window and an
+-- unsubscribe. Served by the partial post_bookmark_idx. Same projection as
+-- selectFeed so the shared row mapper applies.
+selectBookmarked:
+SELECT post.*, channel.title AS channel_title, channel.avatar_url AS channel_avatar
+FROM post
+JOIN channel ON channel.username = post.channel_username
+WHERE post.is_bookmarked = 1
+ORDER BY post.published_at_ms DESC, post.seq DESC;
+
+-- Ids currently flagged, for the BookmarkStore → is_bookmarked mirror diff.
+selectBookmarkedIds:
+SELECT id FROM post WHERE is_bookmarked = 1;
+
+-- Whether a channel already has stored posts. A fetched page with zero posts for
+-- such a channel is treated as a parse failure, not an "ok" empty channel.
+countByChannel:
+SELECT COUNT(*) FROM post WHERE channel_username = :username;
 
 markRead:
 UPDATE post SET is_read = 1 WHERE id = :id;

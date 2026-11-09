@@ -1,7 +1,9 @@
 package dev.lyo.hortay.data
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -35,6 +37,9 @@ class BookmarkStore(context: Context) {
     }
 }
 
-private val Context.bookmarkDataStore by preferencesDataStore(name = "bookmarks")
+private val Context.bookmarkDataStore by preferencesDataStore(
+    name = "bookmarks",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 fun TimelinePost.bookmarkKey(): String = "$chatId/$id"

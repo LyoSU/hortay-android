@@ -215,8 +215,10 @@ fun AddChannelSheet(
     }
 
     // Live hydration: avatar / real title / subscriber count via t.me/s, eager but
-    // throttled to a handful of concurrent fetches. OkHttp's disk cache makes a
-    // re-open cheap. Keyed by lowercase username.
+    // throttled to a handful of concurrent fetches. Keyed by lowercase username.
+    // useCache = true lets OkHttp's disk cache serve / revalidate the page, so a
+    // re-open costs conditional GETs instead of 10-22 full page downloads; the
+    // user-typed lookup below stays FORCE_NETWORK.
     val hydrated = remember { mutableStateMapOf<String, ChannelCardData>() }
     LaunchedEffect(visibleGroups) {
         val names = visibleGroups.flatMap { it.channels }.map { it.username }.distinct()
@@ -226,7 +228,7 @@ fun AddChannelSheet(
                 if (hydrated.containsKey(u.lowercase())) return@forEach
                 launch {
                     gate.withPermit {
-                        val info = when (val r = client.lookupChannel(u)) {
+                        val info = when (val r = client.lookupChannel(u, useCache = true)) {
                             is LookupResult.Found -> r.channel
                             is LookupResult.Empty -> r.channel
                             else -> null

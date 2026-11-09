@@ -28,11 +28,18 @@ import java.util.concurrent.ConcurrentHashMap
  * stays parked forever). Title / photo changes evict rather than mutate: [TdApi.Chat] is
  * an unsynchronised POJO read by concurrent workers, and the next [chat] call re-reads a
  * fresh object from TDLib's local store.
+ *
+ * Because of that eviction, "is the chat cached?" is NOT "has `UpdateNewChat` landed?".
+ * The race gate asks [isKnownChat] instead: a chat id stays known from its first
+ * [rememberChat] until [clear], surviving [forgetChat]. Gating on [cachedChat] parked every
+ * last-message of a renamed / re-photographed channel forever — `UpdateNewChat` never
+ * fires again for a known chat, so nothing flushed the park.
  */
 class ChatRegistry(private val td: TdSender) {
     private val users = ConcurrentHashMap<Long, TdApi.User>()
     private val supergroups = ConcurrentHashMap<Long, TdApi.Supergroup>()
     private val chats = ConcurrentHashMap<Long, TdApi.Chat>()
+    private val knownChatIds: MutableSet<Long> = ConcurrentHashMap.newKeySet()
 
     /**
      * Collect user/supergroup updates. Call once at graph build; [clear] is registered
@@ -81,7 +88,11 @@ class ChatRegistry(private val td: TdSender) {
 
     fun rememberChat(chat: TdApi.Chat) {
         chats[chat.id] = chat
+        knownChatIds += chat.id
     }
+
+    /** True once [rememberChat] ran for [chatId] this session; [forgetChat] keeps it known. */
+    fun isKnownChat(chatId: Long): Boolean = chatId in knownChatIds
 
     fun forgetChat(chatId: Long) {
         chats.remove(chatId)
@@ -91,5 +102,6 @@ class ChatRegistry(private val td: TdSender) {
         users.clear()
         supergroups.clear()
         chats.clear()
+        knownChatIds.clear()
     }
 }

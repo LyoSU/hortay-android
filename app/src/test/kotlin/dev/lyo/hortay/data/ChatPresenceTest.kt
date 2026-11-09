@@ -71,8 +71,28 @@ class ChatPresenceTest {
         val td = FakeTdSender()
         td.onAny("OpenChat") { TdApi.Error(400, "CHAT_INVALID") }
 
-        ChatPresence.openChat(td, 3L)
+        assertFalse(ChatPresence.openChat(td, 3L), "a failed open reports false")
 
         assertFalse(ChatPresence.isOpen(3L))
+    }
+
+    @Test
+    fun `a failed open reports false and its paired close leaves another holder's reference alone`() = runTest {
+        ChatPresence.clear()
+        val td = FakeTdSender()
+        td.onAny("CloseChat") { TdApi.Ok() }
+
+        // B's bounded open fails at 0→1; while B's block runs, holder A opens for real.
+        td.onNext { TdApi.Error(400, "CHAT_INVALID") }
+        td.onNext { TdApi.Ok() }
+        ChatPresence.withOpenChat(td, 4L) {
+            assertTrue(ChatPresence.openChat(td, 4L))
+        }
+
+        // B's exit must not have released A's reference.
+        assertTrue(ChatPresence.isOpen(4L))
+        assertEquals(0, td.rpcCount("CloseChat"))
+        ChatPresence.closeChat(td, 4L)
+        assertFalse(ChatPresence.isOpen(4L))
     }
 }

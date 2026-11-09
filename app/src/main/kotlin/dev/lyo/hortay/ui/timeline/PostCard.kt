@@ -17,6 +17,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -49,12 +50,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ChannelContext
@@ -81,7 +85,9 @@ import dev.lyo.hortay.ui.text.parseHashtagWithScope
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.lyo.hortay.ui.archive.components.DeletedBadge
 import dev.lyo.hortay.ui.archive.components.EditedChip
+import dev.lyo.hortay.ui.theme.HortayAlpha
 import dev.lyo.hortay.ui.theme.HortayExpressive
+import dev.lyo.hortay.ui.theme.HortaySpacing
 import dev.lyo.hortay.ui.theme.InlineChipCorner
 import dev.lyo.hortay.ui.theme.MorphShape
 import dev.lyo.hortay.ui.theme.asComposeShape
@@ -218,7 +224,7 @@ fun PostCard(
             // Only deleted posts dim. `.then(...)` instead of `.alpha(if … 1f)` so a live
             // post never installs an offscreen compositing layer it doesn't need — the
             // common case stays layer-free.
-            .then(if (post.isDeleted) Modifier.alpha(0.55f) else Modifier)
+            .then(if (post.isDeleted) Modifier.alpha(HortayAlpha.FAINT) else Modifier)
             // Press-scale layer is installed ONLY while pressed (pressScale < 1f); a
             // resting card stays compositing-layer-free.
             .then(
@@ -241,7 +247,10 @@ fun PostCard(
                 val verticalOffset = verticalInset + (fullHeight - visibleHeight) / 2f
                 drawRoundRect(
                     color = unreadStripColor,
-                    topLeft = Offset(0f, verticalOffset),
+                    topLeft = Offset(
+                        if (layoutDirection == LayoutDirection.Rtl) size.width - stripWidth else 0f,
+                        verticalOffset,
+                    ),
                     size = Size(stripWidth, visibleHeight),
                     cornerRadius = CornerRadius(cornerRadius, cornerRadius),
                     alpha = unreadAlpha,
@@ -259,6 +268,7 @@ fun PostCard(
                     indication = LocalIndication.current,
                     enabled = clickable || actionsEnabled,
                     onClick = { if (clickable) interactions.onPostClick(post) },
+                    onLongClickLabel = if (actionsEnabled) stringResource(R.string.post_more_actions) else null,
                     onLongClick = if (actionsEnabled) ({ sheetOpen = true }) else null,
                 )
                 .padding(horizontal = CARD_H_PADDING, vertical = 14.dp),
@@ -303,7 +313,7 @@ fun PostCard(
                 Column(modifier = Modifier.fillMaxWidth()) {
                 annotation?.forwardedBy?.takeIf { it.isNotEmpty() }?.let { forwarders ->
                     ForwardedByRow(forwarders)
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(HortaySpacing.sm))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                 Avatar(
@@ -338,7 +348,7 @@ fun PostCard(
                 // where admins post under their own identity). Tap behaves the same as the
                 // avatar/header — switches the feed filter to the host channel.
                 post.channelContext?.let { ctx ->
-                    Spacer(Modifier.height(2.dp))
+                    Spacer(Modifier.height(HortaySpacing.xxs))
                     InChannelChip(
                         ctx = ctx,
                         onClick = { interactions.onChannelClick(post) },
@@ -380,7 +390,7 @@ fun PostCard(
                 }
 
                 post.reply?.let {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(HortaySpacing.sm))
                     ReplyBlock(
                         it,
                         onClick = {
@@ -391,11 +401,11 @@ fun PostCard(
                     )
                 }
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(HortaySpacing.sm))
                 val translation = interactions.translationFor(post)
                 if (translation != null) {
                     TranslationChip(onDismiss = { interactions.onClearTranslationClick(post) })
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(HortaySpacing.sm))
                 }
                 // Capture (post → onPollVote(post, …)) once so PollBlock keeps its
                 // [PollVoting] handler stable across recompositions (Immutable holder, no
@@ -450,14 +460,29 @@ fun PostCard(
                     Spacer(Modifier.height(10.dp))
                     SeriesMoreButton(count = seriesHidden, latest = annotation?.seriesLatest, onClick = onExpandSeries)
                 }
-                if (!post.isDeleted && (post.views > 0 || post.forwardCount > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty())) {
-                    Spacer(Modifier.height(10.dp))
+                // Save / Share ride the action row whenever the card offers actions at all —
+                // the same gate as the "⋯" sheet, which keeps both as well.
+                val showPostActions = actionsEnabled && !post.isDeleted
+                if (!post.isDeleted && (showPostActions || post.views > 0 || post.forwardCount > 0 || (post.commentCount ?: 0) > 0 || post.reactions.items.isNotEmpty())) {
+                    // xxs, not the old 10 dp: the row's 48 dp touch targets (and the reaction
+                    // chips' touch boxes) carry their own invisible slack above the glyphs,
+                    // which now supplies the visible gap under the body.
+                    Spacer(Modifier.height(HortaySpacing.xxs))
+                    // Read in composition: the screen's isBookmarked reads its bookmark
+                    // snapshot state, so a save/unsave anywhere repaints this icon.
+                    val isSaved = showPostActions && interactions.isBookmarked(post)
                     ActionRow(
                         views = post.views,
                         forwardCount = post.forwardCount,
                         commentCount = post.commentCount,
                         reactions = post.reactions,
-                        onCommentsClick = { interactions.onPostClick(post) },
+                        // The comments anchor (clickable = false) is already the thread, so its
+                        // count stays a read-only stat there.
+                        onCommentsClick = if (clickable) ({ interactions.onPostClick(post) }) else null,
+                        showPostActions = showPostActions,
+                        isSaved = isSaved,
+                        onSaveClick = { interactions.onBookmarkClick(post) },
+                        onShareClick = { interactions.onShareClick(post) },
                         onReactionTap = { item -> interactions.onReactionToggle(post, item) },
                         // Paid (⭐) reactions can't be cast from Hortay — the snackbar action
                         // route opens THIS SPECIFIC post in Telegram (not the client root),
@@ -696,7 +721,7 @@ private fun HeaderRow(
     revisionCount: Int = 0,
     onTapRevisions: () -> Unit = {},
 ) {
-    val metaColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+    val metaColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = HortayAlpha.QUIET)
     Column {
         Row(
             modifier = Modifier
@@ -787,7 +812,7 @@ private fun TimestampText(date: Long) {
     Text(
         text = formatRelative(date),
         style = MaterialTheme.typography.labelSmall.tabularFigures(),
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = HortayAlpha.QUIET),
     )
 }
 
@@ -1073,7 +1098,7 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
             Symbol(
                 // Another channel's post: an "opens elsewhere" chevron instead of the reply arrow.
                 name = if (reply.otherChannelAvatar != null) "chevron_right" else "reply",
-                tint = accent.copy(alpha = 0.55f),
+                tint = accent.copy(alpha = HortayAlpha.FAINT),
                 size = 14.dp,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -1087,11 +1112,26 @@ private fun ReplyBlock(reply: ReplyPreview, onClick: () -> Unit = {}) {
 // share one source of truth — keeps icons and wording in lockstep across surfaces.
 
 /**
- * Reactions, then a quiet stats line. Reactions wrap onto as many lines as they need
+ * Reactions, then the action line. Reactions wrap onto as many lines as they need
  * instead of scrolling sideways — a single scrolling line clipped the last chip at the
- * screen edge, which read as broken. The stats line keeps comments as the one tappable,
- * leading affordance (it opens the thread) and pushes views / forwards to the trailing
- * edge as read-only metadata, the way Telegram seats them under a channel post.
+ * screen edge, which read as broken.
+ *
+ * The action line reads, leading to trailing: comments (tappable, opens the thread) ·
+ * forwards · views (both read-only metadata, never clickable) · flexible gap · Save · Share.
+ * Save used to live only inside the "⋯" sheet even though the app has a whole Saved tab;
+ * one tap on the bookmark now keeps a post, and the sheet keeps Save / Share as well.
+ *
+ * Height budget: Save, Share and the comments pill each reserve a 48 dp touch target
+ * ([minimumInteractiveComponentSize]), which is taller than the old ~28 dp stats line. The
+ * slack above the glyphs replaces the spacer that used to sit over this row, and the row
+ * reports [ACTION_ROW_BOTTOM_OVERHANG] less height than it lays out so the slack under
+ * the glyphs overlaps the card's own bottom padding instead of stacking on it — the card
+ * grows by a few dp, not by the full touch-target delta.
+ *
+ * Glyph sizes: the count-carrying stats keep the C1 14 dp glyph (larger stat glyphs
+ * outweighed their counts and lifted the row to the body's visual level), while the
+ * icon-only Save / Share use [ACTION_ICON_SIZE] — with no count beside them a 14 dp glyph
+ * stops reading as a button.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1100,7 +1140,13 @@ private fun ActionRow(
     forwardCount: Int,
     commentCount: Int?,
     reactions: dev.lyo.hortay.data.Reactions,
-    onCommentsClick: () -> Unit,
+    /** Null renders the comment count as a read-only stat (the comments anchor itself). */
+    onCommentsClick: (() -> Unit)?,
+    /** Whether Save / Share render at all — the same gate as the "⋯" action sheet. */
+    showPostActions: Boolean = false,
+    isSaved: Boolean = false,
+    onSaveClick: () -> Unit = {},
+    onShareClick: () -> Unit = {},
     onReactionTap: (ReactionItem) -> Unit = {},
     /**
      * Invoked when the user taps the snackbar action button for a paid (⭐)
@@ -1116,18 +1162,20 @@ private fun ActionRow(
         // star-amount confirmation flow we don't host. Tap surfaces a snackbar
         // explaining the situation, with an action button that opens *this
         // specific* post in Telegram (via the per-post callback, routed
-        // through [PostActions.openInTelegram]). The chip is rendered at 0.6
-        // alpha to read as informational rather than interactive (see
+        // through [PostActions.openInTelegram]). The chip is rendered at the
+        // [HortayAlpha.FAINT] alpha to read as informational rather than interactive (see
         // [ReactionChip.disabled]); the snackbar gate keeps a misclick from
         // bouncing the user out of Hortay before they can change their mind.
         val res = LocalContext.current.resources
         val bus = dev.lyo.hortay.ui.main.LocalUserMessageBus.current
         val openTelegramLabel = res.getString(R.string.action_open_telegram)
         val paidExplainer = res.getString(R.string.reactions_paid_explainer)
+        // Rows of chips stack with NO extra gap: every chip reserves a
+        // [REACTION_TOUCH_MIN_HEIGHT] touch box around its drawn pill (see [ReactionChip]),
+        // and that slack is the visible gap between chip rows.
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(HortaySpacing.sm),
         ) {
             // Key each chip by its reaction-bucket identity, NOT by position. TDLib ranks
             // reaction buckets by frequency and re-orders them on every
@@ -1175,10 +1223,12 @@ private fun ActionRow(
     // mirrors the empty-state contract on CommentsScreen (no "0 replies" subtitle).
     val safeCommentCount = commentCount ?: 0
     val hasComments = safeCommentCount > 0
-    if (!hasComments && views <= 0 && forwardCount <= 0) return
-    if (reactions.items.isNotEmpty()) Spacer(Modifier.height(8.dp))
+    if (!hasComments && views <= 0 && forwardCount <= 0 && !showPostActions) return
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .trimBottom(ACTION_ROW_BOTTOM_OVERHANG),
+        horizontalArrangement = Arrangement.spacedBy(HortaySpacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (hasComments) {
@@ -1188,18 +1238,98 @@ private fun ActionRow(
                 onClick = onCommentsClick,
             )
         }
-        Spacer(Modifier.weight(1f))
         // Forward count — read-only, mirrors the stat Telegram shows on a channel
         // post. Uses the `forward` arrow glyph, matching the "forwarded from" badge.
         if (forwardCount > 0) {
             StatPill(symbol = "forward", text = formatViews(forwardCount))
         }
         if (views > 0) {
-            if (forwardCount > 0) Spacer(Modifier.width(12.dp))
-            StatPill("visibility", formatViews(views))
+            StatPill(symbol = "visibility", text = formatViews(views))
+        }
+        if (showPostActions) {
+            Spacer(Modifier.weight(1f))
+            val saveTint by animateColorAsState(
+                targetValue = if (isSaved) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+                label = "post-save-tint",
+            )
+            PostActionIcon(
+                symbol = "bookmark",
+                filled = isSaved,
+                tint = saveTint,
+                contentDescription = stringResource(if (isSaved) R.string.post_unsave else R.string.post_save),
+                onClick = {
+                    // Same toggle haptic as the sheet's Save and the reaction chips.
+                    haptics.performHapticFeedback(
+                        if (isSaved) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+                    )
+                    onSaveClick()
+                },
+            )
+            PostActionIcon(
+                symbol = "share",
+                contentDescription = stringResource(R.string.post_share),
+                onClick = onShareClick,
+            )
         }
     }
 }
+
+/**
+ * Lays the content out at full height but reports [trim] less, so the bottom [trim] of it
+ * (invisible touch-target slack) overlaps whatever padding follows instead of adding to the
+ * card height. Placement is unchanged; nothing is clipped.
+ */
+private fun Modifier.trimBottom(trim: Dp): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val trimPx = trim.roundToPx().coerceIn(0, placeable.height)
+    layout(placeable.width, placeable.height - trimPx) {
+        placeable.placeRelative(0, 0)
+    }
+}
+
+/** Icon-only action (Save / Share) on the post's action line: 48 dp touch, small glyph. */
+@Composable
+private fun PostActionIcon(
+    symbol: String,
+    contentDescription: String,
+    onClick: () -> Unit,
+    filled: Boolean = false,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Box(
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .size(ACTION_ICON_CONTAINER)
+            .clip(CircleShape)
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Symbol(
+            name = symbol,
+            contentDescription = contentDescription,
+            tint = tint,
+            size = ACTION_ICON_SIZE,
+            filled = filled,
+        )
+    }
+}
+
+/** Glyph size of the icon-only Save / Share actions. */
+private val ACTION_ICON_SIZE = 20.dp
+
+/** Visual (ripple) container of Save / Share; the touch target is 48 dp regardless. */
+private val ACTION_ICON_CONTAINER = 40.dp
+
+/**
+ * Touch-target slack under the action line's glyphs that overlaps the card's bottom
+ * padding instead of growing the card (see [ActionRow] and [trimBottom]).
+ */
+private val ACTION_ROW_BOTTOM_OVERHANG = 6.dp
+
+/** Minimum touch height of a reaction chip; the drawn pill stays its own (smaller) size. */
+private val REACTION_TOUCH_MIN_HEIGHT = 40.dp
 
 /**
  * Reaction chip — industry-canonical "pill stadium with emoji + count" structure.
@@ -1252,12 +1382,12 @@ internal fun ReactionChip(
     )
     val container by animateColorAsState(
         targetValue = if (item.isChosen) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f),
+        else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = HortayAlpha.FAINT),
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "reaction-bg",
     )
     val borderColor by animateColorAsState(
-        targetValue = if (item.isChosen) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+        targetValue = if (item.isChosen) MaterialTheme.colorScheme.primary.copy(alpha = HortayAlpha.QUIET)
         else Color.Transparent,
         animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
         label = "reaction-border",
@@ -1279,77 +1409,93 @@ internal fun ReactionChip(
     // particles flew outside the chip bounds by design and read as a rendering glitch
     // ("a stray piece of the digit above the button"), not celebration. Choose
     // feedback is the ghost→fill morph + haptic; don't reintroduce unclipped overlays.
-    Row(
-        modifier = Modifier
-            .clip(shape)
-            .background(container, shape)
-            .border(1.dp, borderColor, shape)
-            .let {
-                if (onClick != null) it.clickable(
+    //
+    // Touch box vs drawn pill: the pill draws ~30 dp tall, too small a target in a wrapped
+    // row of neighbours. The clickable sits on an outer box at least
+    // [REACTION_TOUCH_MIN_HEIGHT] tall with the pill centred inside; the press ripple is
+    // re-attached to the pill itself via [indication] on the SAME interactionSource, so the
+    // ripple and the corner morph still trace the pill, not the invisible touch box.
+    val pillIndication = LocalIndication.current
+    Box(
+        modifier = if (onClick != null) {
+            Modifier
+                .heightIn(min = REACTION_TOUCH_MIN_HEIGHT)
+                .semantics { selected = item.isChosen }
+                .clickable(
                     interactionSource = interactionSource,
-                    indication = LocalIndication.current,
+                    indication = null,
+                    role = Role.Button,
                     onClick = onClick,
-                ) else it
-            }
-            .then(
-                if (disabled) Modifier.alpha(0.6f) else Modifier,
-            )
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
+                )
+        } else Modifier,
+        contentAlignment = Alignment.Center,
     ) {
-        when (val k = item.kind) {
-            is ReactionKind.Emoji -> Text(
-                text = k.text.withEmojiPresentation(),
-                style = MaterialTheme.typography.titleSmall,
-            )
-            is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
-                customEmojiId = k.customEmojiId,
-                modifier = Modifier.size(18.dp),
-                tintColor = tintForCustom,
-                contentDescription = null,
-            )
-            // Paid star reaction — Telegram renders a small ⭐ pill, no count
-            // separator needed because the count is already the star total.
-            is ReactionKind.Paid -> Text(
-                text = "⭐",
-                style = MaterialTheme.typography.titleSmall,
-            )
-        }
-        Spacer(Modifier.width(5.dp))
-        // M3 — mini digit-roll on count changes: the new value slides in vertically
-        // (up when the count grows, down when it shrinks) while the old slides out and
-        // fades, Telegram's counter idiom. C2 tabular figures keep the width fixed so
-        // the roll never reflows neighbours. Under reduced motion the roll collapses
-        // to a plain crossfade. `clipToBounds` confines the sliding digits to the
-        // counter's own box — the spatial spring overshoots by design, and without
-        // the clip the outgoing digit peeked past the chip edge for a frame.
-        // Specs are read in @Composable scope and captured by the transitionSpec
-        // lambda (which is NOT composable, so it can't read MaterialTheme itself).
-        val reducedMotion = rememberReducedMotion()
-        val countStyle = MaterialTheme.typography.labelMedium.tabularFigures()
-        val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-        val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>()
-        AnimatedContent(
-            targetState = item.count,
-            modifier = Modifier.clipToBounds(),
-            transitionSpec = {
-                if (reducedMotion) {
-                    fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec)
-                } else {
-                    val up = targetState > initialState
-                    (slideInVertically(spatialSpec) { h -> if (up) h else -h } + fadeIn(fadeSpec))
-                        .togetherWith(
-                            slideOutVertically(spatialSpec) { h -> if (up) -h else h } + fadeOut(fadeSpec),
-                        )
-                }
-            },
-            label = "reaction-count-roll",
-        ) { count ->
-            Text(
-                text = formatViews(count),
-                style = countStyle,
-                color = countColor,
-            )
+        Row(
+            modifier = Modifier
+                .clip(shape)
+                .background(container, shape)
+                .border(1.dp, borderColor, shape)
+                .then(if (onClick != null) Modifier.indication(interactionSource, pillIndication) else Modifier)
+                .then(
+                    if (disabled) Modifier.alpha(HortayAlpha.FAINT) else Modifier,
+                )
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            when (val k = item.kind) {
+                is ReactionKind.Emoji -> Text(
+                    text = k.text.withEmojiPresentation(),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
+                    customEmojiId = k.customEmojiId,
+                    modifier = Modifier.size(18.dp),
+                    tintColor = tintForCustom,
+                    contentDescription = null,
+                )
+                // Paid star reaction — Telegram renders a small ⭐ pill, no count
+                // separator needed because the count is already the star total.
+                is ReactionKind.Paid -> Text(
+                    text = "⭐",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+            Spacer(Modifier.width(5.dp))
+            // M3 — mini digit-roll on count changes: the new value slides in vertically
+            // (up when the count grows, down when it shrinks) while the old slides out and
+            // fades, Telegram's counter idiom. C2 tabular figures keep the width fixed so
+            // the roll never reflows neighbours. Under reduced motion the roll collapses
+            // to a plain crossfade. `clipToBounds` confines the sliding digits to the
+            // counter's own box — the spatial spring overshoots by design, and without
+            // the clip the outgoing digit peeked past the chip edge for a frame.
+            // Specs are read in @Composable scope and captured by the transitionSpec
+            // lambda (which is NOT composable, so it can't read MaterialTheme itself).
+            val reducedMotion = rememberReducedMotion()
+            val countStyle = MaterialTheme.typography.labelMedium.tabularFigures()
+            val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+            val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>()
+            AnimatedContent(
+                targetState = item.count,
+                modifier = Modifier.clipToBounds(),
+                transitionSpec = {
+                    if (reducedMotion) {
+                        fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec)
+                    } else {
+                        val up = targetState > initialState
+                        (slideInVertically(spatialSpec) { h -> if (up) h else -h } + fadeIn(fadeSpec))
+                            .togetherWith(
+                                slideOutVertically(spatialSpec) { h -> if (up) -h else h } + fadeOut(fadeSpec),
+                            )
+                    }
+                },
+                label = "reaction-count-roll",
+            ) { count ->
+                Text(
+                    text = formatViews(count),
+                    style = countStyle,
+                    color = countColor,
+                )
+            }
         }
     }
 }
@@ -1368,11 +1514,14 @@ private fun StatPill(
     val tappableShape = HortayExpressive.Pill.asComposeShape()
     Row(
         modifier = if (onClick != null) {
+            // 48 dp touch target around the visual pill (the M3 IconButton recipe:
+            // minimum size first, then shape + clickable on the smaller drawn area).
             Modifier
+                .minimumInteractiveComponentSize()
                 .clip(tappableShape)
                 .clickable(role = Role.Button, onClick = onClick)
-                .padding(horizontal = 10.dp, vertical = 6.dp)
-        } else Modifier.padding(vertical = 6.dp),
+                .padding(horizontal = HortaySpacing.sm, vertical = HortaySpacing.xs)
+        } else Modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Symbol(
@@ -1385,7 +1534,7 @@ private fun StatPill(
             // below the body — Threads / Telegram keep stat glyphs in this band.
             size = 14.dp,
         )
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(HortaySpacing.xs))
         Text(
             text = text,
             // C2 — tabular figures so a view-count tick (views ↑) never reflows the
@@ -1445,7 +1594,7 @@ private fun PostActionSheet(
                 )
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = HortayAlpha.HAIRLINE),
                 )
             }
             // Primary actions live in an Expressive ButtonGroup; Comments only when the
@@ -1676,10 +1825,16 @@ private fun SheetItem(
     }
 }
 
-private fun formatViews(count: Int): String = when {
-    count < 1_000 -> count.toString()
-    count < 1_000_000 -> "%.1fK".format(count / 1_000.0).trimEnd('0').trimEnd('.')
-    else -> "%.1fM".format(count / 1_000_000.0).trimEnd('0').trimEnd('.')
+internal fun formatViews(count: Int): String {
+    fun compact(value: Double, suffix: String): String {
+        val text = String.format(java.util.Locale.ROOT, "%.1f", value)
+        return (if (text.endsWith(".0")) text.dropLast(2) else text) + suffix
+    }
+    return when {
+        count < 1_000 -> count.toString()
+        count < 1_000_000 -> compact(count / 1_000.0, "K")
+        else -> compact(count / 1_000_000.0, "M")
+    }
 }
 
 

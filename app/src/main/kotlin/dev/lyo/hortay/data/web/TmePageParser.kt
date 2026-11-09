@@ -27,12 +27,21 @@ object TmePageParser {
 
     /**
      * Parse a full t.me/s/<username> HTML page. Returns null when the page is clearly not
-     * a channel preview (404 page, /privatechannel redirect, login wall).
+     * a channel preview (404 page, /privatechannel redirect, login wall), and when the
+     * page carries post markup but no post could be parsed (selector regression).
      */
     fun parse(html: String, username: String): WebChannelPage? {
         val doc = Jsoup.parse(html)
         val channel = parseChannelInfo(doc, username) ?: return null
         val posts = parsePosts(doc)
+        // Silent-degradation guard: the page clearly carries post markup (message
+        // wrappers, or any element with a `data-post` id) yet not a single post
+        // survived parsing. That is a selector regression on Telegram's side, not
+        // an empty channel — report it as a parse failure instead of an "ok" fetch
+        // with zero posts, which would hide the breakage behind a healthy status.
+        if (posts.isEmpty() && (findPostWrappers(doc).isNotEmpty() || doc.selectFirst("[data-post]") != null)) {
+            return null
+        }
         // Cursor is the seq id of the OLDEST post; caller paginates with `?before=<seq>`.
         val olderCursor = posts.minByOrNull { it.seq }?.seq?.toString()
         return WebChannelPage(
@@ -102,13 +111,15 @@ object TmePageParser {
         )
     }
 
+    // The pagination "load more" placeholder is itself wrapped in
+    // `.tgme_widget_message_wrap.tgme_widget_message_centered` — exclude it so we
+    // don't surface it as a post with no data.
+    private fun findPostWrappers(doc: Document) = doc.select(
+        ".tgme_widget_message_wrap:not(:has(.tgme_widget_message_centered))"
+    )
+
     private fun parsePosts(doc: Document): List<WebPost> {
-        // The pagination "load more" placeholder is itself wrapped in
-        // `.tgme_widget_message_wrap.tgme_widget_message_centered` — exclude it so we
-        // don't surface it as a post with no data.
-        val wrappers = doc.select(
-            ".tgme_widget_message_wrap:not(:has(.tgme_widget_message_centered))"
-        )
+        val wrappers = findPostWrappers(doc)
         if (wrappers.isEmpty()) return emptyList()
         return wrappers.mapNotNull { wrapper ->
             runCatching { parseSinglePost(wrapper) }.getOrNull()

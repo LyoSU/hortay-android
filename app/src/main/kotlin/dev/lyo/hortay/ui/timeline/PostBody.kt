@@ -37,6 +37,7 @@ import dev.lyo.hortay.ui.text.LinkAwareText
 import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.text.RenderableText
 import dev.lyo.hortay.ui.text.RichText
+import dev.lyo.hortay.ui.theme.ProvideReadingTypography
 
 /**
  * Render the body of a post. [onMediaClick] fires with the resolved media list and the
@@ -96,50 +97,58 @@ fun PostBody(
     // renders stay non-selectable and the action sheet offers an explicit "Select text"
     // entry that re-renders this body with `selectable = true` in a sheet of its own,
     // where no long-press competes.
+    //
+    // ProvideReadingTypography scales `bodyLarge` — the style the text body, media captions and
+    // the rich feed preview's clamp resolve — by the user's reading text size (Settings →
+    // Reading), so only reading text grows; chips, counters and labels inside the blocks keep
+    // their stock styles. Read here, not threaded through PostCard, so PostCard's parameter
+    // list (and skippability) is untouched; a no-op at the default size.
     val body: @Composable () -> Unit = {
-        Column {
-            when (content) {
-                is PostContent.Text -> TextBlock(content, textLimit, translation)
-                is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick, captionLimit, translation)
-                is PostContent.Video -> VideoBlock(content, onMediaClick, captionLimit, translation)
-                is PostContent.Animation -> AnimationBlock(content, onMediaClick, captionLimit, translation)
-                is PostContent.Document -> DocumentBlock(content, captionLimit, translation, onOpenInSource)
-                is PostContent.Audio -> AudioBlock(content, onOpenInSource)
-                is PostContent.VoiceNote -> VoiceNoteBlock(content, onOpenInSource)
-                is PostContent.VideoNote -> VideoNoteBlock(content, onOpenInSource)
-                is PostContent.Sticker -> StickerBlock(content)
-                is PostContent.Poll -> PollBlock(content, pollVoting, onOpenInSource)
-                is PostContent.Location -> LocationBlock(content)
-                is PostContent.Contact -> ContactBlock(content)
-                is PostContent.Dice -> DiceBlock(content)
-                is PostContent.AnimatedEmoji -> AnimatedEmojiBlock(content)
-                is PostContent.Checklist -> ChecklistBlock(content, captionLimit)
-                is PostContent.ExpiredMedia -> ExpiredMediaBlock(content)
-                is PostContent.Service -> ServiceBlock(content)
-                is PostContent.PaidMedia -> PaidMediaBlock(content, onMediaClick, captionLimit, translation, onOpenInSource)
-                is PostContent.OpenInSource -> OpenInSourceBlock(content, onOpenInSource)
-                // Rich (instant-view-style) message: headings, lists, tables, media blocks.
-                // Detail surfaces render the whole document; feed / channel clamp it to the
-                // same post-wide height a Text post uses ([ClampedContent] with the same
-                // `textLimit`), so a rich post reads as one unit with exactly one
-                // "Показати більше". A partial document (isFull == false) renders its
-                // truncated prefix here; the detail-mount trigger fetches the rest and the
-                // repository swaps in the full content reactively (see
-                // PostsRepository.ensureFullRichMessage).
-                is PostContent.RichMessage ->
-                    if (expanded) {
-                        RichMessageBody(content.document, mode = RichMessageMode.Reading)
-                    } else {
-                        // Clamp budget stays the feed body style so a rich post collapses to the
-                        // same height as a text post; the fade + single "Read full post" affordance
-                        // live in RichFeedPreview.
-                        RichFeedPreview(
-                            document = content.document,
-                            maxLines = textLimit,
-                            clampStyle = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                is PostContent.Unsupported -> UnsupportedBlock(content)
+        ProvideReadingTypography {
+            Column {
+                when (content) {
+                    is PostContent.Text -> TextBlock(content, textLimit, translation)
+                    is PostContent.PhotoAlbum -> AlbumBlock(content, onMediaClick, captionLimit, translation)
+                    is PostContent.Video -> VideoBlock(content, onMediaClick, captionLimit, translation)
+                    is PostContent.Animation -> AnimationBlock(content, onMediaClick, captionLimit, translation)
+                    is PostContent.Document -> DocumentBlock(content, captionLimit, translation, onOpenInSource)
+                    is PostContent.Audio -> AudioBlock(content, onOpenInSource)
+                    is PostContent.VoiceNote -> VoiceNoteBlock(content, onOpenInSource)
+                    is PostContent.VideoNote -> VideoNoteBlock(content, onOpenInSource)
+                    is PostContent.Sticker -> StickerBlock(content)
+                    is PostContent.Poll -> PollBlock(content, pollVoting, onOpenInSource)
+                    is PostContent.Location -> LocationBlock(content)
+                    is PostContent.Contact -> ContactBlock(content)
+                    is PostContent.Dice -> DiceBlock(content)
+                    is PostContent.AnimatedEmoji -> AnimatedEmojiBlock(content)
+                    is PostContent.Checklist -> ChecklistBlock(content, captionLimit)
+                    is PostContent.ExpiredMedia -> ExpiredMediaBlock(content)
+                    is PostContent.Service -> ServiceBlock(content)
+                    is PostContent.PaidMedia -> PaidMediaBlock(content, onMediaClick, captionLimit, translation, onOpenInSource)
+                    is PostContent.OpenInSource -> OpenInSourceBlock(content, onOpenInSource)
+                    // Rich (instant-view-style) message: headings, lists, tables, media blocks.
+                    // Detail surfaces render the whole document; feed / channel clamp it to the
+                    // same post-wide height a Text post uses ([ClampedContent] with the same
+                    // `textLimit`), so a rich post reads as one unit with exactly one
+                    // "Показати більше". A partial document (isFull == false) renders its
+                    // truncated prefix here; the detail-mount trigger fetches the rest and the
+                    // repository swaps in the full content reactively (see
+                    // PostsRepository.ensureFullRichMessage).
+                    is PostContent.RichMessage ->
+                        if (expanded) {
+                            RichMessageBody(content.document, mode = RichMessageMode.Reading)
+                        } else {
+                            // Clamp budget stays the feed body style so a rich post collapses to the
+                            // same height as a text post; the fade + single "Read full post" affordance
+                            // live in RichFeedPreview.
+                            RichFeedPreview(
+                                document = content.document,
+                                maxLines = textLimit,
+                                clampStyle = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                    is PostContent.Unsupported -> UnsupportedBlock(content)
+                }
             }
         }
     }

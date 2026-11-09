@@ -52,6 +52,8 @@ class ArchivedMediaStore(
      *  - the file has no local copy (`local.path` empty);
      *  - the download isn't complete (would copy a partial / corrupt file);
      *  - source file is missing on disk (TDLib path lies, very rare);
+     *  - the file is larger than [MAX_ARCHIVED_FILE_BYTES] (the revision then
+     *    shows the inline preview only);
      *  - I/O failure during read.
      *
      * Idempotent: a second call for the same bytes only bumps refcount.
@@ -61,7 +63,7 @@ class ArchivedMediaStore(
         val path = file.local.path
         if (path.isNullOrEmpty() || !file.local.isDownloadingCompleted) return@withContext null
         val src = File(path)
-        if (!src.exists()) return@withContext null
+        if (!src.exists() || src.length() > MAX_ARCHIVED_FILE_BYTES) return@withContext null
 
         val sha = sha256OfFile(src) ?: return@withContext null
         mutex.withLock {
@@ -143,5 +145,14 @@ class ArchivedMediaStore(
 
     companion object {
         private const val BUFFER_SIZE = 8 * 1024
+
+        /**
+         * Per-file cap for archived media copies. Any fully-downloaded file is a
+         * candidate, including multi-GB videos and documents; hashing and
+         * duplicating those would burn minutes of IO and fill app storage for a
+         * feature that mostly needs a revision preview. Larger files are skipped
+         * and the revision falls back to the inline preview.
+         */
+        private const val MAX_ARCHIVED_FILE_BYTES = 64L * 1024 * 1024
     }
 }

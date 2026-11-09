@@ -2,7 +2,9 @@ package dev.lyo.hortay.ui.media
 
 import android.content.Context
 import android.os.Handler
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -25,9 +27,20 @@ import java.util.ArrayDeque
  * lifetime of every player, even at volume=0. Muted callers: timeline autoplay,
  * round-video notes, and guest-mode (URL) WebM stickers. TDLib-mode WebM stickers
  * and custom emoji moved to the ffmpeg alpha path ([WebmAlphaImage]) and no longer
- * consume ExoPlayer instances. Only the fullscreen video viewer needs audio.
+ * consume ExoPlayer instances. Audio-capable callers: the inline audio / voice session,
+ * the fullscreen video viewer and an unmuted round-video note.
  * Pool reuse only happens between callers of the same mute regime — handing an
  * audio-capable instance to a sticker would re-arm AudioMix even though we don't need it.
+ *
+ * **Audio focus lives on the audible sub-pool only.** Audio-capable instances (inline
+ * audio / voice session, fullscreen video, unmuted round video) are built with media
+ * [AudioAttributes] and `handleAudioFocus = true` plus becoming-noisy handling, so they
+ * pause other apps' music, duck or pause for calls, and stop when headphones are
+ * unplugged. Muted instances keep the default attributes WITHOUT focus handling — a
+ * silent autoplay clip must never interrupt the user's music. Because reuse never
+ * crosses regimes, the attributes can't leak from an audible use into a muted one;
+ * [release] still restores the audible default so a per-track override (the session
+ * tags voice notes as speech) doesn't carry into the next audible caller.
  *
  * Threading: ExoPlayer must be touched from the application looper (main thread).
  * All compose call sites already are, so no extra locking is needed beyond the
@@ -68,12 +81,15 @@ class ExoPlayerPool(
      * `media3-effect` dependency *and* re-introduce a defensive clear here.
      */
     @Synchronized
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     fun release(player: ExoPlayer, muted: Boolean) {
         player.stop()
         player.clearMediaItems()
         player.playWhenReady = false
         player.repeatMode = Player.REPEAT_MODE_OFF
         player.volume = 1f
+        player.playbackParameters = PlaybackParameters.DEFAULT
+        if (!muted) player.setAudioAttributes(AUDIBLE_ATTRIBUTES, /* handleAudioFocus = */ true)
         val pool = if (muted) mutedAvailable else audioAvailable
         if (pool.size < maxSize) {
             pool.offerLast(player)
@@ -107,6 +123,11 @@ class ExoPlayerPool(
         val builder = ExoPlayer.Builder(context).apply {
             if (muted) {
                 setRenderersFactory(VideoOnlyRenderersFactory(context))
+            } else {
+                // Audible only: request audio focus while playing and pause on headphone
+                // unplug. Muted players keep the no-focus default (see class KDoc).
+                setAudioAttributes(AUDIBLE_ATTRIBUTES, /* handleAudioFocus = */ true)
+                setHandleAudioBecomingNoisy(true)
             }
             // WAKE_MODE_NONE: we never want playback to continue while the screen is
             // off. Compose disposal already pauses on ON_PAUSE, but disabling the
@@ -123,6 +144,12 @@ class ExoPlayerPool(
         // enough that off-viewport players never get to render a frame anyway, so
         // building+tearing-down on overflow is cheaper than holding more idle instances.
         const val DEFAULT_MAX_SIZE = 3
+
+        /** Default for audible players; the audio session re-tags voice notes as speech. */
+        val AUDIBLE_ATTRIBUTES: AudioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
     }
 }
 

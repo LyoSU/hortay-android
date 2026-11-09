@@ -7,7 +7,9 @@ import dev.lyo.hortay.data.TimelinePost
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toPersistentList
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -107,6 +109,9 @@ class WebFeedSource(
     // over a session is a non-issue in practice.
     private val staleRefetchCooldown = ConcurrentHashMap<String, Long>()
     private val staleUrlCooldown = ConcurrentHashMap<String, Long>()
+    // (username, top seq) → launch time; guarded by synchronized(itself). See
+    // [claimOlderPageRefetch].
+    private val staleOlderPageCooldown = HashMap<Pair<String, Long>, Long>()
 
     // Last-known DataStore subscription set, used for delta computation in
     // [handleSubscriptionsChanged]. We deliberately diff against THIS rather
@@ -130,7 +135,16 @@ class WebFeedSource(
      */
     override val posts: StateFlow<PersistentList<TimelinePost>> =
         combine(
-            repository.observeFeed(),
+            // Bookmarked posts are merged in so the Saved tab (which renders this
+            // same source, filtered to bookmark keys) keeps every saved post even
+            // after it ages out of the feed's newest-N window or its channel is
+            // unsubscribed. The Saved tab must share this source rather than get
+            // its own: TimelineViewModel is keyed by FeedSource class, and a
+            // separate VM would classify a freshly bookmarked recent post as
+            // "pending new" and hide it.
+            combine(repository.observeFeed(), repository.observeBookmarked()) { feed, saved ->
+                mergeSaved(feed, saved)
+            },
             // Read-side filter for hidden channels. The merged guest feed is
             // capped at 1000 rows so the additional `filter` is trivial; the
             // alternative — pushing exclusion into the SQL `selectFeed` query —
@@ -176,6 +190,27 @@ class WebFeedSource(
     @Volatile
     private var lastSuccessfulRefreshAtMs: Long = 0L
 
+    /**
+     * Set once [syncBookmarks] has mirrored the bookmark set into
+     * `post.is_bookmarked` in this process. [maybeVacuum] waits for it: vacuum
+     * keeps only flagged rows, so running it before the first mirror (e.g. the
+     * first launch after upgrading) would delete saved posts outright.
+     */
+    @Volatile
+    private var bookmarksSynced = false
+
+    /**
+     * Mirror the cross-mode bookmark key set into web.db (see
+     * [WebRepository.syncBookmarks]). Driven by the guest scaffold, which
+     * collects [dev.lyo.hortay.data.BookmarkStore.bookmarks] — every toggle site
+     * (feed, Saved, channel, search, post detail) writes that one store, so one
+     * collector covers them all, and its first emission is the backfill.
+     */
+    suspend fun syncBookmarks(keys: Set<String>) {
+        repository.syncBookmarks(keys)
+        bookmarksSynced = true
+    }
+
     /** Wall-clock of the last [WebRepository.vacuum]; process-local, so the first good sweep of a launch runs it. */
     @Volatile
     private var lastVacuumAtMs: Long = 0L
@@ -188,6 +223,21 @@ class WebFeedSource(
     // shouldn't pay the radio cost of a full sweep every 5 minutes.
     private val _consecutiveNoOpSweeps = MutableStateFlow(0)
     val consecutiveNoOpSweeps: StateFlow<Int> = _consecutiveNoOpSweeps.asStateFlow()
+
+    /**
+     * Guest-mode activity signal, attached by [WebFeedScheduler.bind] (the one
+     * place that already knows foreground + auth + guest flag). Gates the
+     * self-initiated first-emit sweep in [handleSubscriptionsChanged]: a
+     * signed-in user with leftover guest subscriptions in DataStore must not hit
+     * t.me on every cold start. Null (not yet attached) reads as "inactive" —
+     * the scheduler's own first iteration covers the sweep once it binds.
+     */
+    @Volatile
+    private var autoRefreshGate: Flow<Boolean>? = null
+
+    internal fun attachAutoRefreshGate(gate: Flow<Boolean>) {
+        autoRefreshGate = gate
+    }
 
     init {
         // Mirror DataStore subscription set into the channel table on every change.
@@ -204,46 +254,77 @@ class WebFeedSource(
         scope.launch { repository.clearStaleLoading() }
     }
 
-    private suspend fun handleSubscriptionsChanged(latest: Set<String>) = subscriptionsMutex.withLock {
-        // Diff against the LAST DataStore value we saw, not against the channel
-        // table — see field doc on [lastKnownSubscriptionsSet]. First emit is
-        // a special case: previous=null means "we have nothing to compare
-        // against yet"; treat it as a no-op delta but still pick up first-run
-        // refresh when the DataStore has subs from a previous process.
-        val previous = lastKnownSubscriptionsSet
-        lastKnownSubscriptionsSet = latest
-        if (previous == null) {
-            // First emit on this process. Reconcile direction is one-way:
-            // the channel table may have entries that pre-date this process
-            // (legitimately subscribed but DataStore was empty pre-fix), so
-            // we DON'T remove them here. We only ADD anything in DataStore
-            // not yet in the table — typical case is a no-op (add path also
-            // writes the table directly), but covers the cold-start where a
-            // previous process wrote DataStore without writing the table.
-            val currentDb = repository.subscribedUsernames().toSet()
-            val toAdd = latest - currentDb
-            for (username in toAdd) {
+    private suspend fun handleSubscriptionsChanged(latest: Set<String>) {
+        // The DB diff is applied under [subscriptionsMutex]; the network refresh it
+        // may call for is launched AFTER the lock is released. Awaiting a
+        // 200-channel sweep inline used to hold the mutex (and stall this
+        // collector) for the whole sweep, so an unsubscribe tapped meanwhile only
+        // reached the channel table after the sweep — or never, if the process
+        // died first.
+        val refresh: Boolean? = subscriptionsMutex.withLock {
+            // Diff against the LAST DataStore value we saw, not against the channel
+            // table — see field doc on [lastKnownSubscriptionsSet]. First emit is
+            // a special case: previous=null means "we have nothing to compare
+            // against yet", so the table is reconciled against DataStore instead.
+            val previous = lastKnownSubscriptionsSet
+            lastKnownSubscriptionsSet = latest
+            if (previous == null) {
+                // First emit on this process: two-way reconcile. DataStore is the
+                // source of truth for intent — every subscribe path writes it
+                // ([subscribeAndRefresh]), every unsubscribe path removes from it
+                // ([unsubscribe], the migration coordinator). A row subscribed in
+                // the table but absent from DataStore is an unsubscribe whose table
+                // write was lost (process death between the two writes); a name in
+                // DataStore missing from the table is the mirror-image add.
+                val currentDb = repository.subscribedUsernames().toSet()
+                for (username in latest - currentDb) {
+                    repository.subscribe(username)
+                }
+                for (username in currentDb - latest) {
+                    repository.unsubscribe(username)
+                }
+                // Populate a stale empty feed if we have any subs — non-forced, and
+                // only while guest mode is actually active (see [autoRefreshGate]).
+                return@withLock if (latest.isNotEmpty() && lastSuccessfulRefreshAtMs == 0L) false else null
+            }
+            val added = latest - previous
+            val removed = previous - latest
+            for (username in added) {
                 repository.subscribe(username)
             }
-            // Populate stale empty feed if we have any subs.
-            if (latest.isNotEmpty() && lastSuccessfulRefreshAtMs == 0L) {
-                doRefresh(force = false)
+            for (username in removed) {
+                repository.unsubscribe(username)
             }
-            return@withLock
+            if (added.isNotEmpty()) true else null
         }
-        val added = latest - previous
-        val removed = previous - latest
-        if (added.isEmpty() && removed.isEmpty()) return@withLock
+        when (refresh) {
+            true -> scope.launch { doRefresh(force = true) }
+            false -> scope.launch {
+                if (autoRefreshGate?.first() == true) doRefresh(force = false)
+            }
+            null -> Unit
+        }
+    }
 
-        for (username in added) {
-            repository.subscribe(username)
+    /**
+     * Unsubscribe path for the Channels tab. Mirrors [subscribeAndRefresh]: the
+     * channel table flips immediately (feed JOIN drops the channel's posts within
+     * one emit) instead of waiting for the DataStore round-trip, and
+     * [lastKnownSubscriptionsSet] is pre-updated so the imminent DataStore emit is
+     * a no-op delta.
+     */
+    suspend fun unsubscribe(username: String) = withContext(NonCancellable) {
+        // NonCancellable: called from a composition scope; leaving the screen
+        // between the table write and the DataStore write must not split them.
+        val normalized = username.lowercase()
+        repository.unsubscribe(normalized)
+        subscriptionsMutex.withLock {
+            val previous = lastKnownSubscriptionsSet
+            if (previous != null) {
+                lastKnownSubscriptionsSet = previous - normalized
+            }
         }
-        for (username in removed) {
-            repository.unsubscribe(username)
-        }
-        if (added.isNotEmpty()) {
-            doRefresh(force = true)
-        }
+        subscriptions.remove(normalized)
     }
 
     /**
@@ -349,17 +430,38 @@ class WebFeedSource(
      * `fetched_at_ms`) and forces a fresh channel fetch that re-ingests rotated CDN
      * URLs. Coalesced per channel via [staleRefetchCooldown]: a viewport full of one
      * channel's expired images fires ONE re-fetch, not one per card — the channel's
-     * post tokens rotate together, so the channel is the right dedup key. Returns
-     * null (no work) when the cooldown is still active.
+     * post tokens rotate together, so the channel is the right dedup key. A post
+     * older than the channel's newest page is repaired from its own `?before=`
+     * page instead, under a per-page cooldown ([claimOlderPageRefetch]). Returns
+     * null only for a malformed id; the launched job itself does nothing while the
+     * relevant cooldown is active.
      */
     fun refetchForStalePost(postId: String): Job? {
         val username = postId.substringBefore('/')
         if (username.isBlank()) return null
-        val now = System.currentTimeMillis()
-        val previous = staleRefetchCooldown[username]
-        if (previous != null && now - previous < STALE_REFETCH_COOLDOWN_MS) return null
-        staleRefetchCooldown[username] = now
+        val seq = postId.substringAfterLast('/').toLongOrNull()
         return scope.launch {
+            // A post older than the channel's newest page is NOT on page 1, so
+            // re-downloading page 1 would never deliver its fresh URL — the image
+            // stayed broken and re-triggered this path every cooldown. Fetch the
+            // page that actually holds it (`?before=<seq+1>`) instead.
+            val newestPageFloor = repository.newestPageFloorSeq(username)
+            if (seq != null && newestPageFloor != null && seq < newestPageFloor) {
+                if (!claimOlderPageRefetch(username, seq)) return@launch
+                repository.markMediaStale(postId)
+                refetchOlderPage(username, seq)
+                return@launch
+            }
+            val now = System.currentTimeMillis()
+            val previous = staleRefetchCooldown[username]
+            if (previous != null && now - previous < STALE_REFETCH_COOLDOWN_MS) return@launch
+            // Atomic claim: concurrent reports for one channel race here, only one wins.
+            val claimed = if (previous == null) {
+                staleRefetchCooldown.putIfAbsent(username, now) == null
+            } else {
+                staleRefetchCooldown.replace(username, previous, now)
+            }
+            if (!claimed) return@launch
             repository.markMediaStale(postId)
             // forceMediaRefresh so the WHOLE channel's rotated URLs are re-ingested,
             // not just the one post markMediaStale flagged — its siblings' images are
@@ -370,6 +472,45 @@ class WebFeedSource(
                 fetchedAtMs = System.currentTimeMillis(),
                 forceMediaRefresh = true,
             )
+        }
+    }
+
+    /**
+     * Cooldown for older-page refetches. One `?before=<seq+1>` page holds up to
+     * [OLDER_PAGE_SPAN] posts at or below `seq`, so a claim covers that seq range:
+     * a viewport of expired images from the same older page fires one fetch, while
+     * an expired post on a different older page still gets its own.
+     */
+    private fun claimOlderPageRefetch(username: String, seq: Long): Boolean = synchronized(staleOlderPageCooldown) {
+        val now = System.currentTimeMillis()
+        staleOlderPageCooldown.entries.removeAll { now - it.value >= STALE_REFETCH_COOLDOWN_MS }
+        val covered = staleOlderPageCooldown.keys.any { (user, top) ->
+            user == username && seq <= top && seq > top - OLDER_PAGE_SPAN
+        }
+        if (covered) return false
+        staleOlderPageCooldown[username to seq] = now
+        true
+    }
+
+    /**
+     * Re-fetch the older page holding [seq] and rewrite only the posts already
+     * stored (see [WebRepository.refreshExistingPosts]). Status handling is
+     * deliberately silent: the channel's row describes its newest page, and a
+     * failed media repair must not paint an error chip over a healthy channel.
+     */
+    private suspend fun refetchOlderPage(username: String, seq: Long) {
+        try {
+            val result = fetchSemaphore.withPermit {
+                client.fetchChannelPage(username, before = (seq + 1).toString(), useCache = false)
+            }
+            if (result is FetchResult.Page) {
+                repository.refreshExistingPosts(result.page.posts, System.currentTimeMillis())
+            } else {
+                Log.w(TAG, "older-page media refetch for $username before ${seq + 1}: $result")
+            }
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            Log.w(TAG, "older-page media refetch failed: ${t.message}")
         }
     }
 
@@ -418,6 +559,18 @@ class WebFeedSource(
             }
             when (result) {
                 is FetchResult.Page -> {
+                    // A page with zero posts for a channel we already hold posts for
+                    // is a degraded parse (selectors silently stopped matching), not
+                    // a channel that deleted its history — surface it as such instead
+                    // of stamping "ok" over a feed that has stopped updating.
+                    if (result.page.posts.isEmpty() && repository.hasPosts(username)) {
+                        repository.markFetchStatus(
+                            username = username,
+                            status = ChannelFetchStatus.ParseFailure,
+                            error = "parse failed",
+                        )
+                        return FetchOutcome.NoOp
+                    }
                     captureArchiveDiff(username, result.page.posts, fetchedAtMs)
                     repository.ingestPage(
                         page = result.page,
@@ -503,11 +656,14 @@ class WebFeedSource(
      * must never fail the refresh that triggered it.
      */
     private suspend fun maybeVacuum() {
+        if (!bookmarksSynced) return
         val now = System.currentTimeMillis()
         if (now - lastVacuumAtMs < VACUUM_INTERVAL_MS) return
         lastVacuumAtMs = now
         try {
-            repository.vacuum()
+            val foldDone = subscriptions.isSearchTextFoldDone()
+            repository.vacuum(foldSearchText = !foldDone)
+            if (!foldDone) subscriptions.markSearchTextFoldDone()
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) throw t
             Log.w(TAG, "vacuum failed: ${t.message}")
@@ -539,10 +695,14 @@ class WebFeedSource(
         fetchedAtMs: Long,
     ) {
         val archive = archiveRepository ?: return
+        val chat = dev.lyo.hortay.data.archive.ChatRef.web(username)
+        // Bail out before decoding the channel's stored history: with the archive
+        // off (the default) or this channel excluded, the decode is pure waste on
+        // every sweep. captureWebVersion re-checks the same settings at write time.
+        if (!archive.capturesEditsFor(chat)) return
         val previousById = repository.readWebPostsForChannel(username)
         if (previousById.isEmpty()) return
 
-        val chat = dev.lyo.hortay.data.archive.ChatRef.web(username)
         for (fresh in freshPosts) {
             val previous = previousById[fresh.id] ?: continue
             if (webPostDiff.detectChange(previous, fresh) != null) {
@@ -661,6 +821,25 @@ class WebFeedSource(
          * Pure function: extracted from [doRefresh] so the bucket logic
          * is testable without spinning up an HTTP / SQLite stack.
          */
+        /**
+         * Union of the feed window and the bookmarked rows. The common case — every
+         * saved post is already inside the feed window — returns [feed] untouched;
+         * otherwise the extra saved posts are appended and the list re-sorted in
+         * the feed's own order (date DESC, then seq DESC). Pure for testability.
+         */
+        internal fun mergeSaved(
+            feed: PersistentList<TimelinePost>,
+            saved: PersistentList<TimelinePost>,
+        ): PersistentList<TimelinePost> {
+            if (saved.isEmpty()) return feed
+            val inFeed = feed.mapTo(HashSet(feed.size)) { it.chatId to it.id }
+            val extra = saved.filter { (it.chatId to it.id) !in inFeed }
+            if (extra.isEmpty()) return feed
+            return (feed + extra)
+                .sortedWith(compareByDescending<TimelinePost> { it.date }.thenByDescending { it.id })
+                .toPersistentList()
+        }
+
         internal fun nextNoOpStreak(outcomes: List<FetchOutcome>, current: Int): Int = when {
             outcomes.any { it == FetchOutcome.Fresh } -> 0
             outcomes.any { it == FetchOutcome.Transient } -> current
@@ -699,6 +878,12 @@ class WebFeedSource(
          * balances "recover promptly" against "don't re-fetch on every scroll".
          */
         const val STALE_REFETCH_COOLDOWN_MS = 3 * 60 * 1000L // 3 minutes
+
+        /**
+         * Posts per t.me/s/ page. Seq gaps (deleted posts) only make a real page
+         * span MORE seqs, so treating a page as covering this many is conservative.
+         */
+        private const val OLDER_PAGE_SPAN = 20L
 
     }
 }

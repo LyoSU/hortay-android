@@ -272,8 +272,12 @@ class ChannelViewModel(
         // awaitCancellation → closeChat); commit d2e3509 extracted the
         // screen but dropped the open/close pair. This block restores it.
         viewModelScope.launch {
-            repo.openChat(chatId)
+            // Close only a reference we actually hold: a failed OpenChat already rolled its
+            // refcount back, and an unconditional close would release the reference another
+            // holder (the feed focus tracker, a comments overlay) owns on this chat.
+            var opened = false
             try {
+                opened = repo.openChat(chatId)
                 // Cold-load: transition Loading → Loaded atomically once
                 // [loadChannelHistory] returns. The slice is read from
                 // [repo.posts.value] inside the finally block, so by the
@@ -358,7 +362,7 @@ class ChannelViewModel(
                 // cancelled.
                 awaitCancellation()
             } finally {
-                withContext(NonCancellable) { repo.closeChat(chatId) }
+                if (opened) withContext(NonCancellable) { repo.closeChat(chatId) }
             }
         }
 

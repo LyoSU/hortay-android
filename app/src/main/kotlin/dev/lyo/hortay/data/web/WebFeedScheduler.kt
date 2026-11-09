@@ -79,9 +79,13 @@ class WebFeedScheduler(
     fun bind() {
         if (bound) return
         bound = true
-        combine(foreground, authStage, isGuest) { fg, auth, guest ->
+        val active = combine(foreground, authStage, isGuest) { fg, auth, guest ->
             fg && auth !is AuthStage.Ready && guest
         }
+        // Same gate for the feed source's own first-emit sweep, so a signed-in
+        // user with leftover guest subscriptions never hits t.me on cold start.
+        feedSource.attachAutoRefreshGate(active)
+        active
             .distinctUntilChanged()
             .onEach { active ->
                 if (active) startTier2() else stopTier2()

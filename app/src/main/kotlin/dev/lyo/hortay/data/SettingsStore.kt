@@ -1,14 +1,24 @@
 package dev.lyo.hortay.data
 
 import android.content.Context
+import androidx.compose.runtime.Immutable
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 
 /**
  * How the merged feed is ordered. The post data is ALWAYS sorted descending
@@ -30,6 +40,67 @@ import kotlinx.coroutines.flow.map
  * fallback applies only when the DataStore key is unset.
  */
 enum class FeedOrder { Newest, OldestUnreadFirst }
+
+/**
+ * Light / dark choice for the whole app. [System] follows the platform night mode
+ * (`isSystemInDarkTheme()`); [Light] and [Dark] pin the scheme regardless of it.
+ * Persisted by [name]; an unknown or missing stored value falls back to [System].
+ */
+enum class ThemeMode {
+    System, Light, Dark;
+
+    /** Effective dark flag: only [System] consults the platform's [systemDark]. */
+    fun isDark(systemDark: Boolean): Boolean = when (this) {
+        System -> systemDark
+        Light -> false
+        Dark -> true
+    }
+
+    /** Whether this mode can ever render dark — gates the "Pure black" switch in Settings. */
+    val canBeDark: Boolean get() = this != Light
+
+    companion object {
+        fun fromStored(value: String?): ThemeMode =
+            entries.firstOrNull { it.name == value } ?: System
+    }
+}
+
+/**
+ * Reading text size — scales ONLY reading text (post bodies in the feed, channels and
+ * comments, and rich-article paragraphs / headings), never chrome, labels or counters.
+ * The factors live here and nowhere else: [scale] multiplies both font size and line
+ * height, so the line rhythm stays proportional at every step. Steps are deliberately
+ * coarse — four named sizes read as a choice, a slider reads as fiddling — and bounded:
+ * Small (15 sp body → ~13.8 sp) still reads comfortably, Extra large (→ ~18.75 sp) keeps a
+ * typical post inside one screen. Rich-article headings scale with their paragraphs, so
+ * the article's heading ladder keeps its proportions at every step.
+ *
+ * Applied through `LocalReadingScale` (`ui/theme/ReadingScale.kt`), on top of the
+ * system font scale, which keeps working as before for everything else.
+ * Persisted by [name]; an unknown or missing stored value falls back to [Default].
+ */
+enum class ReadingTextSize(val scale: Float) {
+    Small(0.92f),
+    Default(1.0f),
+    Large(1.12f),
+    ExtraLarge(1.25f);
+
+    companion object {
+        fun fromStored(value: String?): ReadingTextSize =
+            entries.firstOrNull { it.name == value } ?: Default
+    }
+}
+
+/**
+ * The appearance preferences the window theme is built from, read as one value so the
+ * theme recomposes once per change instead of once per key.
+ */
+@Immutable
+data class AppearancePrefs(
+    val themeMode: ThemeMode = ThemeMode.System,
+    val pureBlack: Boolean = false,
+    val textSize: ReadingTextSize = ReadingTextSize.Default,
+)
 
 /**
  * User preferences persisted across launches: feed order, scroll and playback toggles, etc.
@@ -66,6 +137,46 @@ class SettingsStore(context: Context) {
 
     suspend fun setDynamicColor(enabled: Boolean) {
         dataStore.edit { it[KEY_DYNAMIC_COLOR] = enabled }
+    }
+
+    /**
+     * Theme mode, pure-black dark surfaces and reading text size as one value.
+     * Defaults: [ThemeMode.System], pure black off, [ReadingTextSize.Default] — so a user
+     * who never opens these settings sees exactly the previous behaviour.
+     */
+    val appearance: Flow<AppearancePrefs> = dataStore.data.map { prefs ->
+        AppearancePrefs(
+            themeMode = ThemeMode.fromStored(prefs[KEY_THEME_MODE]),
+            pureBlack = prefs[KEY_PURE_BLACK] ?: false,
+            textSize = ReadingTextSize.fromStored(prefs[KEY_TEXT_SCALE]),
+        )
+    }.distinctUntilChanged()
+
+    /**
+     * [appearance], pre-warmed from construction (the store is built in
+     * `HortayApp.onCreate`, long before the first frame). `MainActivity` themes the whole
+     * window from it; a lazily started collector with a guessed `initialValue` would paint
+     * the first frame light for a user who pinned Dark, then flip. Same reasoning as
+     * `AppGraph.dynamicColorState`; kept here so the store owns its own warm-up. The scope
+     * lives as long as the process-singleton store and only ever runs this one collector.
+     */
+    val appearanceState: StateFlow<AppearancePrefs> = appearance.stateIn(
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        SharingStarted.Eagerly,
+        AppearancePrefs(),
+    )
+
+    suspend fun setThemeMode(mode: ThemeMode) {
+        dataStore.edit { it[KEY_THEME_MODE] = mode.name }
+    }
+
+    /** Pure-black (#000000) background and surfaces in the dark scheme, for OLED screens. */
+    suspend fun setPureBlack(enabled: Boolean) {
+        dataStore.edit { it[KEY_PURE_BLACK] = enabled }
+    }
+
+    suspend fun setTextSize(size: ReadingTextSize) {
+        dataStore.edit { it[KEY_TEXT_SCALE] = size.name }
     }
 
     /**
@@ -199,7 +310,13 @@ class SettingsStore(context: Context) {
         val KEY_GROUP_FEED = booleanPreferencesKey("group_feed")
         val KEY_INLINE_VIDEO_AUTOPLAY = booleanPreferencesKey("inline_video_autoplay")
         val KEY_HIDE_ONLINE_STATUS = booleanPreferencesKey("hide_online_status")
+        val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        val KEY_PURE_BLACK = booleanPreferencesKey("pure_black")
+        val KEY_TEXT_SCALE = stringPreferencesKey("text_scale")
     }
 }
 
-private val Context.settingsDataStore by preferencesDataStore(name = "settings")
+private val Context.settingsDataStore by preferencesDataStore(
+    name = "settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)

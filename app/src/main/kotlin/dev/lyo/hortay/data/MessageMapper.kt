@@ -204,7 +204,7 @@ class MessageMapper(
         return if (registry != null) {
             registry.supergroup(supergroupId)
         } else {
-            runCatching { td.send(TdApi.GetSupergroup(supergroupId)) }.getOrNull()
+            suspendRunCatching { td.send(TdApi.GetSupergroup(supergroupId)) }.getOrNull()
         }
     }
 
@@ -217,7 +217,7 @@ class MessageMapper(
     private suspend fun fetchUser(userId: Long): ResolvedSender {
         val u = (
             if (registry != null) registry.user(userId)
-            else runCatching { td.send(TdApi.GetUser(userId)) }.getOrNull()
+            else suspendRunCatching { td.send(TdApi.GetUser(userId)) }.getOrNull()
             ) ?: return ResolvedSender(defaultUserName, null, null, null)
         val username = u.usernames?.activeUsernames?.firstOrNull()
         val name = listOfNotNull(
@@ -240,7 +240,7 @@ class MessageMapper(
         val c = if (registry != null) {
             registry.chat(chatId)
         } else {
-            runCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
+            suspendRunCatching { td.send(TdApi.GetChat(chatId)) }.getOrNull()
         } ?: return ResolvedSender(defaultChannelName, null, null, null)
         return ResolvedSender(
             name = c.title.orEmpty().ifBlank { defaultChannelName },
@@ -316,7 +316,7 @@ class MessageMapper(
         //     is already in the message DB.
         val needsFetch = reply.content == null && effectiveReplyChatId != 0L && reply.messageId != 0L
         val refMsg = if (needsFetch) {
-            runCatching { td.send(TdApi.GetMessage(effectiveReplyChatId, reply.messageId)) }
+            suspendRunCatching { td.send(TdApi.GetMessage(effectiveReplyChatId, reply.messageId)) }
                 .getOrNull()
         } else null
         val parentChat = if (effectiveReplyChatId != 0L) fetchChat(effectiveReplyChatId) else null

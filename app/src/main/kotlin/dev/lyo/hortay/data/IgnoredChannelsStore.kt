@@ -1,7 +1,9 @@
 package dev.lyo.hortay.data
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.collections.immutable.ImmutableSet
@@ -111,4 +113,7 @@ class IgnoredChannelsStore(context: Context) {
     }
 }
 
-private val Context.ignoredChannelsDataStore by preferencesDataStore(name = "ignored_channels")
+private val Context.ignoredChannelsDataStore by preferencesDataStore(
+    name = "ignored_channels",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)

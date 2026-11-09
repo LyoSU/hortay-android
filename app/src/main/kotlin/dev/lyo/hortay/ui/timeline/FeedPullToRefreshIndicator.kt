@@ -82,26 +82,33 @@ fun FeedPullToRefreshIndicator(
         }
     }
 
-    // Continuous spin / morph while refreshing.
-    val infinite = rememberInfiniteTransition(label = "ptr-infinite")
-    val spin by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1100, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "ptr-spin",
-    )
-    val morphCycle by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = MORPH_STEPS.toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1100 * MORPH_STEPS, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "ptr-morph",
-    )
+    // Continuous spin / morph. The infinite transition exists only while refreshing, so an idle
+    // indicator schedules no per-frame animation work.
+    var spin = 0f
+    var morphCycle = 0f
+    if (isRefreshing) {
+        val infinite = rememberInfiniteTransition(label = "ptr-infinite")
+        val spinValue by infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1100, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "ptr-spin",
+        )
+        val morphValue by infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = MORPH_STEPS.toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1100 * MORPH_STEPS, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "ptr-morph",
+        )
+        spin = spinValue
+        morphCycle = morphValue
+    }
 
     val fraction = state.distanceFraction.coerceIn(0f, 1.5f)
     // Shape discipline: while DRAGGING the disc stays a regular circle — scale,

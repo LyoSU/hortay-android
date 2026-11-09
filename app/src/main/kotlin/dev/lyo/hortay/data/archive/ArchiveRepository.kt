@@ -403,7 +403,7 @@ class ArchiveRepository(
             .selectRevisions(chat.kind.name, chat.key, messageKey)
             .asFlow()
             .mapToList(Dispatchers.IO)
-            .map { rows -> rows.map(::toDomain).toPersistentList() }
+            .map { rows -> rows.mapNotNull(::toDomain).toPersistentList() }
 
     fun observe(filter: ArchiveFilter): Flow<ImmutableList<PostSnapshot>> =
         db.postSnapshotQueries.selectAllForFilter(
@@ -413,7 +413,7 @@ class ArchiveRepository(
             // Escaped so a literal %, _ or \ in the query isn't a LIKE wildcard.
             query = filter.query?.let { "%${escapeSqlLike(it)}%" },
         ).asFlow().mapToList(Dispatchers.IO)
-            .map { rows -> rows.map(::toDomain).toPersistentList() }
+            .map { rows -> rows.mapNotNull(::toDomain).toPersistentList() }
 
     fun observeChannelIndex(): Flow<ImmutableList<ArchivedChannelEntry>> =
         db.archivedChannelQueries.countByChannel()
@@ -695,17 +695,21 @@ class ArchiveRepository(
             }
         }.getOrElse { unsupportedContent() }
 
-    private fun toDomain(row: dev.lyo.hortay.data.archive.db.PostSnapshot): PostSnapshot {
+    private fun toDomain(row: dev.lyo.hortay.data.archive.db.PostSnapshot): PostSnapshot? {
         val content = decodeContent(row)
         val deletedKeys = row.deleted_msg_keys?.let {
-            Json.decodeFromString(ListSerializer(String.serializer()), it)
+            runCatching { Json.decodeFromString(ListSerializer(String.serializer()), it) }
+                .getOrNull()
         } ?: emptyList()
+        val sourceKind = runCatching { SourceKind.valueOf(row.source_kind) }.getOrNull()
+            ?: return null
+        val kind = runCatching { SnapshotKind.valueOf(row.kind) }.getOrNull() ?: return null
         return PostSnapshot(
             id = row.id,
-            chat = ChatRef(SourceKind.valueOf(row.source_kind), row.source_key),
+            chat = ChatRef(sourceKind, row.source_key),
             messageKey = row.message_key,
             albumKey = row.album_key,
-            kind = SnapshotKind.valueOf(row.kind),
+            kind = kind,
             seenAtMs = row.seen_at_ms,
             editedAtMs = row.edited_at_ms,
             content = content,

@@ -18,14 +18,27 @@ No chat clutter, no "suggested" posts, no ads.
 
 ✦ A familiar social feed
 Posts, photos, and reactions in one feed — without digging through hundreds
-of chat messages.
+of chat messages. Put the newest on top, or at the bottom like a chat.
+
+✦ Find anything
+Search posts across all your channels, even ones that never reached your feed.
+Quick filters in the Channels tab — Unread, Today, Hidden — and a one-step way
+to hide or show every channel.
+
+✦ Less repetition
+A channel's burst of posts folds under its first one, and a post forwarded by
+several of your channels shows up once. Turn it off in Settings if you prefer.
 
 ✦ Posts as written
-Quotes, infographics, custom emojis, animated stickers — never clipped,
-no "show more" after the third sentence.
+Quotes, infographics, custom emojis, animated stickers, tables and formulas —
+shown the way the author wrote them. Pinned messages stay one tap away, and
+long posts can be summarized when Telegram offers a summary.
+
+✦ Discover more
+See similar channels Telegram recommends and subscribe in one tap.
 
 ✦ Discussions without the flood
-Comments open as reply threads, not as an endless group chat.
+Comments open as threads, not as an endless group chat.
 
 ✦ Keeps storage under control
 A "Storage and traffic" panel shows real numbers: how much was downloaded
@@ -35,8 +48,12 @@ and how much space the cache takes. Clear it in one tap.
 Starts quickly, even with hundreds of channels.
 
 ✦ Privacy by default
-No analytics, no Firebase, no ad SDKs. Internet is used only to connect to
-Telegram. Open source.
+No analytics, no Firebase, no ad SDKs. Internet is used only to talk to
+Telegram, plus a public list of suggested channels. Open source, in 13
+languages.
+
+✦ No account? No problem
+Guest mode reads public channels without signing in.
 
 Hortay uses Telegram's official library (TDLib). Sign-in goes through the
 same Telegram API used by the official client: you log in with your phone

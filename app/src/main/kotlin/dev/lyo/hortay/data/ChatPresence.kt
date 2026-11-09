@@ -84,18 +84,25 @@ internal object ChatPresence {
 
     private fun transitionLock(chatId: Long): Mutex = transitionLocks.computeIfAbsent(chatId) { Mutex() }
 
-    suspend fun openChat(td: TdSender, chatId: Long): Unit = transitionLock(chatId).withLock {
+    /**
+     * Returns `true` when this call holds a reference the caller must release with
+     * [closeChat], `false` when the OpenChat failed and the refcount was rolled back.
+     * A caller that ignores `false` and still runs its paired [closeChat] would
+     * decrement a reference ANOTHER holder owns (e.g. the feed focus tracker on the same
+     * channel) — closing the chat under it. Pair the close on the returned value.
+     */
+    suspend fun openChat(td: TdSender, chatId: Long): Boolean = transitionLock(chatId).withLock {
         openChatLocked(td, chatId)
     }
 
-    private suspend fun openChatLocked(td: TdSender, chatId: Long) {
+    private suspend fun openChatLocked(td: TdSender, chatId: Long): Boolean {
         val shouldSend = refMutex.withLock {
             val next = (refCounts[chatId] ?: 0) + 1
             refCounts[chatId] = next
             next == 1
         }
-        if (!shouldSend) return
-        val err = runCatching { td.send(TdApi.OpenChat(chatId)) }.exceptionOrNull() ?: return
+        if (!shouldSend) return true
+        val err = runCatching { td.send(TdApi.OpenChat(chatId)) }.exceptionOrNull() ?: return true
         // Send failed: the refcount we bumped above claims the chat is open, but
         // TDLib never opened it. Left as-is, subsequent [openChat] calls short-
         // circuit (next != 1 → no RPC), [isOpen] returns true so [viewMessages]
@@ -121,6 +128,7 @@ internal object ChatPresence {
         }
         if (err is CancellationException) throw err
         Log.w(TAG, "openChat($chatId) failed", err)
+        return false
     }
 
     /**
@@ -170,11 +178,13 @@ internal object ChatPresence {
         chatId: Long,
         block: () -> T,
     ): T {
-        openChat(td, chatId)
+        // Close only what we actually hold: a failed open already rolled its refcount
+        // back, so an unconditional close would release another holder's reference.
+        val opened = openChat(td, chatId)
         try {
             return block()
         } finally {
-            withContext(NonCancellable) { closeChat(td, chatId) }
+            if (opened) withContext(NonCancellable) { closeChat(td, chatId) }
         }
     }
 
@@ -210,8 +220,8 @@ internal object ChatPresence {
         val opened = ArrayList<Long>(chatIds.size)
         try {
             for (id in chatIds.distinct()) {
-                openChat(td, id)
-                opened.add(id)
+                // A failed open rolled its own refcount back — not ours to close.
+                if (openChat(td, id)) opened.add(id)
             }
             return block()
         } finally {

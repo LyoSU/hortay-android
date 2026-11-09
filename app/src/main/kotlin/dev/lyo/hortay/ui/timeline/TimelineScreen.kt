@@ -1278,8 +1278,8 @@ fun TimelineScreen(
                             // for the whole session.
                             if (focusChat != opened) {
                                 opened?.let { prev -> tdlibRepo.closeChat(prev) }
-                                tdlibRepo.openChat(focusChat)
-                                opened = focusChat
+                                // A failed open holds no reference; never pair a close with it.
+                                opened = if (tdlibRepo.openChat(focusChat)) focusChat else null
                             }
                             // Re-ack ONLY a post the read-ack dwell has already accepted
                             // (60 % visible, list idle, lifecycle RESUMED — see

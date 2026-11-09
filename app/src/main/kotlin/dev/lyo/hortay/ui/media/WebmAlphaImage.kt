@@ -2,6 +2,7 @@ package dev.lyo.hortay.ui.media
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -78,19 +79,29 @@ fun WebmAlphaImage(
             generation++
         }
     }
-    val base = remember(decoded, animate) { clock.nowMs }
+    // Only an animating sticker keeps the shared clock ticking; a static frame-0 paint needs none.
+    DisposableEffect(clock, animate) {
+        if (animate) clock.acquire()
+        onDispose { if (animate) clock.release() }
+    }
     val d = decoded ?: return
-    val idx = if (animate) d.frameAt(clock.nowMs - base) else 0
-    if (idx !in d.frames.indices) return
-    val frame = d.frames[idx]
+    val paint = remember { Paint() }
+    // Elapsed-time origin for this loop, captured on the first draw. A plain holder (not state) so
+    // the per-frame clock read below happens in the draw phase only and never recomposes.
+    val origin = remember(d, animate) { longArrayOf(-1L) }
 
     Canvas(modifier) {
+        val now = if (animate) clock.nowMs else 0L
+        if (origin[0] < 0L) origin[0] = now
+        val idx = if (animate) d.frameAt(now - origin[0]) else 0
+        if (idx !in d.frames.indices) return@Canvas
+        val frame = d.frames[idx]
         drawIntoCanvas { c ->
             val sx = size.width / frame.width
             val sy = size.height / frame.height
             c.save()
             c.scale(sx, sy)
-            c.drawImage(frame, Offset.Zero, Paint())
+            c.drawImage(frame, Offset.Zero, paint)
             c.restore()
         }
     }

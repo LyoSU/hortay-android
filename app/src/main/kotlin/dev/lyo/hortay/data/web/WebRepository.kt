@@ -291,7 +291,28 @@ class WebRepository(
         }
     }
 
-    private fun ingestPost(post: WebPost, fetchedAtMs: Long, forceMediaRefresh: Boolean) {
+    /**
+     * Media-refresh ingest for a `?before=` page fetched by the stale-media path.
+     * Only rows that already exist are rewritten (with the fingerprint guard
+     * bypassed so the rotated CDN URLs land): the refetch exists to repair an
+     * expired post, not to back-fill older history into the feed. The channel row
+     * is deliberately left alone — its validators and `older_cursor` describe the
+     * channel's NEWEST page, and the stale-media path relies on that cursor.
+     */
+    suspend fun refreshExistingPosts(posts: List<WebPost>, fetchedAtMs: Long) = withContext(ioDispatcher) {
+        db.transaction {
+            for (post in posts) {
+                ingestPost(post, fetchedAtMs, forceMediaRefresh = true, onlyExisting = true)
+            }
+        }
+    }
+
+    private fun ingestPost(
+        post: WebPost,
+        fetchedAtMs: Long,
+        forceMediaRefresh: Boolean,
+        onlyExisting: Boolean = false,
+    ) {
         val channelUsername = post.id.substringBefore('/')
         // Fingerprint guard: most posts are unchanged between sweeps. Skip the
         // four JSON serialises + UPDATE when text_html + views match the
@@ -308,6 +329,7 @@ class WebRepository(
         // up rotated URLs) bypasses it unconditionally, and markMediaStale →
         // fetched_at_ms = 0 forces the upsert on the next sweep.
         val existing = postQueries.selectFingerprint(channelUsername, post.seq).executeAsOneOrNull()
+        if (onlyExisting && existing == null) return
         // Fingerprint escape hatches. Without them a plateaued post (text + views
         // unchanged between sweeps) would keep its stale media JSON forever, so the
         // next Coil load would 401/403 again and re-trigger markMediaStale — a tight
@@ -329,20 +351,38 @@ class WebRepository(
         // Lowercased here (Unicode-aware) because SQLite's LOWER() only folds ASCII —
         // text_plain is a search-only column, see searchPlain in Post.sq.
         val plainText = WebTextRenderer.toPlainText(post.textHtml).lowercase()
-        // Fall back to fetchedAtMs (the wallclock at the moment the page was
-        // received) instead of 0L on parse failure. The feed is sorted
-        // `published_at_ms DESC`; a single malformed ISO timestamp would otherwise
-        // pin the post at epoch 1970 forever, surfacing as a phantom "ancient
-        // post" stuck at the bottom of the channel and skewing the merged-feed
-        // ordering. Using fetchedAt keeps the post in roughly-correct chronology
-        // (within minutes of its real publish time) instead of decades off.
-        val publishedMs = parseIsoToMillis(post.publishedAt) ?: fetchedAtMs
+        // Timestamp resolution when the page's `time[datetime]` is missing or
+        // malformed (a selector regression yields an empty string for EVERY post):
+        //   • the row already exists → keep its stored timestamp. Overwriting it
+        //     with the fetch-time fallback re-dated every already-known post to
+        //     "now" on each re-ingest, reshuffling the whole feed.
+        //   • a new row → fall back to fetchedAtMs (the wallclock at the moment
+        //     the page was received) instead of 0L, so the post isn't pinned at
+        //     epoch 1970 as a phantom "ancient post". The ISO string is synthesised
+        //     from the same instant because the UI derives the card date from it.
+        val parsedMs = parseIsoToMillis(post.publishedAt)
+        val publishedIso: String
+        val publishedMs: Long
+        when {
+            parsedMs != null -> {
+                publishedIso = post.publishedAt
+                publishedMs = parsedMs
+            }
+            existing != null -> {
+                publishedIso = existing.published_at_iso
+                publishedMs = existing.published_at_ms
+            }
+            else -> {
+                publishedIso = isoFromMillis(fetchedAtMs)
+                publishedMs = fetchedAtMs
+            }
+        }
 
         postQueries.upsertInsert(
             channelUsername = channelUsername,
             seq = post.seq,
             id = post.id,
-            publishedAtIso = post.publishedAt,
+            publishedAtIso = publishedIso,
             publishedAtMs = publishedMs,
             textHtml = post.textHtml,
             textPlain = plainText,
@@ -356,7 +396,7 @@ class WebRepository(
         postQueries.upsertUpdate(
             channelUsername = channelUsername,
             seq = post.seq,
-            publishedAtIso = post.publishedAt,
+            publishedAtIso = publishedIso,
             publishedAtMs = publishedMs,
             textHtml = post.textHtml,
             textPlain = plainText,
@@ -425,6 +465,59 @@ class WebRepository(
         postQueries.setBookmark(bookmarked, postId)
     }
 
+    /**
+     * Mirror the cross-mode [dev.lyo.hortay.data.BookmarkStore] key set
+     * (`"<chatId>/<seq>"`, see [dev.lyo.hortay.data.bookmarkKey]) into
+     * `post.is_bookmarked`. Guest chat ids are the synthetic
+     * [WebPostAdapter.stableChatId] of the channel handle, so they are mapped
+     * back through every known channel row; keys that don't resolve (TDLib-mode
+     * bookmarks) are ignored. Idempotent full diff — doubles as the one-time
+     * backfill for bookmarks made before the flag was written. Rows that don't
+     * exist yet are simply not flagged (the UPDATE matches nothing).
+     *
+     * The flag is load-bearing: vacuum and "Clear cache" keep bookmarked rows,
+     * and [observeBookmarked] feeds the Saved tab from it.
+     */
+    suspend fun syncBookmarks(keys: Set<String>) = withContext(ioDispatcher) {
+        val usernameByChatId = channelQueries.selectAllUsernames().executeAsList()
+            .associateBy { WebPostAdapter.stableChatId(it) }
+        val target = keys.mapNotNullTo(HashSet()) { key ->
+            val chatId = key.substringBefore('/').toLongOrNull()
+            val seq = key.substringAfter('/').toLongOrNull()
+            val username = chatId?.let { usernameByChatId[it] }
+            if (username != null && seq != null) "$username/$seq" else null
+        }
+        db.transaction {
+            val current = postQueries.selectBookmarkedIds().executeAsList().toHashSet()
+            for (id in target) {
+                if (id !in current) postQueries.setBookmark(true, id)
+            }
+            for (id in current) {
+                if (id !in target) postQueries.setBookmark(false, id)
+            }
+        }
+    }
+
+    /** Every bookmarked post, regardless of subscription or feed window — the Saved tab source. */
+    fun observeBookmarked(): Flow<PersistentList<TimelinePost>> =
+        postQueries
+            .selectBookmarked(mapper = ::rowToTimelinePost)
+            .asFlow()
+            .mapToList(ioDispatcher)
+            .map { it.toPersistentList() }
+            .distinctUntilChanged()
+            .flowOn(ioDispatcher)
+
+    /** True when [username] already has stored posts. */
+    suspend fun hasPosts(username: String): Boolean = withContext(ioDispatcher) {
+        postQueries.countByChannel(username).executeAsOne() > 0L
+    }
+
+    /** Smallest seq on the channel's newest fetched page, or null when unknown. */
+    suspend fun newestPageFloorSeq(username: String): Long? = withContext(ioDispatcher) {
+        channelQueries.selectOlderCursor(username).executeAsOneOrNull()?.older_cursor?.toLongOrNull()
+    }
+
     suspend fun markRead(postId: String) = withContext(ioDispatcher) {
         postQueries.markRead(postId)
     }
@@ -488,15 +581,24 @@ class WebRepository(
      *    bound DB growth;
      *  - rewrites any `text_plain` not yet stored lowercased (rows ingested before
      *    ingest folded case — and unchanged since, so the fingerprint guard never
-     *    re-wrote them), so non-ASCII search matches them too. After the first
-     *    pass this is a read-only scan.
+     *    re-wrote them), so non-ASCII search matches them too. Runs only while
+     *    [foldSearchText] is true — the caller passes false once a pass has
+     *    completed, so it is a one-shot migration rather than a per-launch scan.
      */
-    suspend fun vacuum(keepPerChannel: Long = DEFAULT_KEEP_PER_CHANNEL) = withContext(ioDispatcher) {
+    suspend fun vacuum(
+        keepPerChannel: Long = DEFAULT_KEEP_PER_CHANNEL,
+        foldSearchText: Boolean = true,
+    ) = withContext(ioDispatcher) {
         db.transaction {
             postQueries.deleteOldPerChannel(keepPerChannel)
-            for (row in postQueries.selectSearchText().executeAsList()) {
-                val folded = row.text_plain.lowercase()
-                if (folded != row.text_plain) postQueries.updateSearchText(folded, row.id)
+            // One-shot legacy backfill: the caller ([WebFeedSource.maybeVacuum])
+            // persists a done flag after the first successful pass, so steady-state
+            // launches skip this full-table read entirely.
+            if (foldSearchText) {
+                for (row in postQueries.selectSearchText().executeAsList()) {
+                    val folded = row.text_plain.lowercase()
+                    if (folded != row.text_plain) postQueries.updateSearchText(folded, row.id)
+                }
             }
         }
     }
@@ -561,6 +663,7 @@ class WebRepository(
     //   `_published_at_ms` — sort key, evaluated at the SQL layer
     //   `_text_plain` — search-index column, never displayed
     //   `_is_read` / `_is_bookmarked` — UI state lives in BookmarkStore / DataStore
+    //     (is_bookmarked mirrors it for retention + the Saved query, see syncBookmarks)
     //   `_fetched_at_ms` — staleness gate, evaluated at the SQL layer
     private fun rowToTimelinePost(
         channel_username: String,
@@ -656,6 +759,9 @@ class WebRepository(
     private fun decodeForward(jsonStr: String): WebForwardSource? = runCatching {
         json.decodeFromString(WebForwardSource.serializer(), jsonStr)
     }.getOrNull()
+
+    private fun isoFromMillis(ms: Long): String =
+        java.time.Instant.ofEpochMilli(ms).atOffset(java.time.ZoneOffset.UTC).toString()
 
     private fun parseIsoToMillis(iso: String): Long? = runCatching {
         // ISO-8601 with offset, e.g. "2026-04-12T18:43:00+00:00". java.time can do

@@ -93,6 +93,26 @@ class PostsRepositoryRefreshTest {
     }
 
     @Test
+    fun `refresh keeps draining past ten short pages until the 404`() = runTest {
+        // LoadChats may load fewer chats than the hint per call, so a large account can
+        // need many successful pages. The drain must continue until TDLib's 404, not
+        // stop after a fixed handful of pages.
+        val harness = PostsRepositoryTestHarness(this)
+        val mainCalls = java.util.concurrent.atomic.AtomicInteger(0)
+        harness.td.onAny("LoadChats") { fn ->
+            val req = fn as TdApi.LoadChats
+            if (req.chatList is TdApi.ChatListMain && mainCalls.incrementAndGet() <= 25) TdApi.Ok()
+            else TdApi.Error(404, "no more")
+        }
+
+        harness.repo.refresh()
+        harness.advanceUntilIdle()
+
+        assertEquals(26, mainCalls.get(), "25 successful Main pages, then the terminating 404")
+        assertTrue(harness.repo.initialSyncDone.value)
+    }
+
+    @Test
     fun `refresh drains both ChatListMain and ChatListArchive`() = runTest {
         // Post-2026-05 update-pipeline rework: archived channels reach the
         // Archive tab via the same UpdateChatAddedToList listener that feeds

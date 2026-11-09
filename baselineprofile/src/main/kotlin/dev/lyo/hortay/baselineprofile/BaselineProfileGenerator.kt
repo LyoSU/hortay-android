@@ -24,13 +24,11 @@ import org.junit.runner.RunWith
  * **Run this manually** when you want to refresh the profile:
  *
  * ```
- * ./gradlew :baselineprofile:pixel6Api33BenchmarkAndroidTest \
- *     -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile
+ * ./gradlew :app:generateBaselineProfile
  * ```
  *
- * or simply `./gradlew :app:generateBaselineProfile` which orchestrates this for
- * the connected device. The resulting profile lands in
- * `app/src/release/generated/baselineProfiles/baseline-prof.txt` and should be
+ * which orchestrates the benchmark run on the connected device. The resulting
+ * profile lands in `app/src/main/generated/baselineProfiles/` and should be
  * checked into version control.
  */
 @RunWith(AndroidJUnit4::class)

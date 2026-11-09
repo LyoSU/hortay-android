@@ -1,13 +1,18 @@
 package dev.lyo.hortay.data.web
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.collections.immutable.ImmutableSet
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toPersistentSet
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
@@ -34,8 +39,24 @@ class SubscriptionsStore(context: Context) {
 
     private val dataStore = context.applicationContext.subscriptionsDataStore
 
+    // distinctUntilChanged: the same DataStore file also holds the web-db
+    // maintenance flag below, whose write must not re-emit an unchanged set.
     val subscriptions: Flow<ImmutableSet<String>> = dataStore.data.map { prefs ->
         prefs[KEY_SUBSCRIPTIONS]?.toPersistentSet() ?: persistentSetOf()
+    }.distinctUntilChanged()
+
+    /**
+     * One-shot flag for web.db's search-text case-fold backfill
+     * ([WebRepository.vacuum]). Lives here because this is the guest pipeline's
+     * DataStore that [WebFeedSource] already holds; the flag is a property of the
+     * same guest web.db the subscriptions mirror into. Persisted so the
+     * full-table backfill scan runs once per install, not on every launch.
+     */
+    suspend fun isSearchTextFoldDone(): Boolean =
+        dataStore.data.first()[KEY_SEARCH_TEXT_FOLDED] ?: false
+
+    suspend fun markSearchTextFoldDone() {
+        dataStore.edit { prefs -> prefs[KEY_SEARCH_TEXT_FOLDED] = true }
     }
 
     suspend fun add(username: String) {
@@ -70,7 +91,11 @@ class SubscriptionsStore(context: Context) {
 
     private companion object {
         val KEY_SUBSCRIPTIONS = stringSetPreferencesKey("anon_subscriptions")
+        val KEY_SEARCH_TEXT_FOLDED = booleanPreferencesKey("web_search_text_folded")
     }
 }
 
-private val Context.subscriptionsDataStore by preferencesDataStore(name = "anon_subscriptions")
+private val Context.subscriptionsDataStore by preferencesDataStore(
+    name = "anon_subscriptions",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)

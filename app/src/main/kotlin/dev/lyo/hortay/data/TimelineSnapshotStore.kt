@@ -1,7 +1,9 @@
 package dev.lyo.hortay.data
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
@@ -79,4 +81,7 @@ class DataStoreTimelineSnapshotStore(context: Context) : TimelineSnapshotStore {
     }
 }
 
-private val Context.snapshotDataStore by preferencesDataStore(name = "timeline_snapshot")
+private val Context.snapshotDataStore by preferencesDataStore(
+    name = "timeline_snapshot",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
