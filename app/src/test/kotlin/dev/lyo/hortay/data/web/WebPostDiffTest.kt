@@ -12,6 +12,8 @@ class WebPostDiffTest {
     private fun samplePost(
         text: String = "hello",
         mediaUrls: List<String> = emptyList(),
+        kind: WebMedia.Kind = WebMedia.Kind.Photo,
+        preview: WebPreview? = null,
     ) = WebPost(
         id = "demo/1",
         seq = 1L,
@@ -19,14 +21,14 @@ class WebPostDiffTest {
         textHtml = text,
         media = mediaUrls.map { url ->
             WebMedia(
-                kind = WebMedia.Kind.Photo,
+                kind = kind,
                 url = url,
                 aspectRatio = null,
                 durationSec = null,
                 thumbnailUrl = null,
             )
         }.toPersistentList(),
-        webPreview = null,
+        webPreview = preview,
         forwardedFrom = null,
         views = null,
         reactions = persistentListOf(),
@@ -47,9 +49,47 @@ class WebPostDiffTest {
     }
 
     @Test
-    fun mediaFilenameChange_detected() {
-        val old = samplePost(mediaUrls = listOf("https://cdn.tg/p/abc.jpg?token=A"))
-        val new = samplePost(mediaUrls = listOf("https://cdn.tg/p/xyz.jpg?token=A"))
+    fun pathTokenRotation_isNotTreatedAsEdit() {
+        // Photo / avatar CDN URLs carry the signed token in the PATH, so even the
+        // filename differs between two fetches of the same, unedited post.
+        val old = samplePost(mediaUrls = listOf("https://cdn4.telesco.pe/file/AbC123tokenA.jpg"))
+        val new = samplePost(mediaUrls = listOf("https://cdn4.telesco.pe/file/XyZ789tokenB.jpg"))
+        assertNull(diff.detectChange(old, new))
+    }
+
+    @Test
+    fun previewImageRotation_isNotTreatedAsEdit() {
+        fun preview(image: String) = WebPreview(
+            url = "https://example.com/article",
+            siteName = "Example",
+            title = "Title",
+            description = "Description",
+            imageUrl = image,
+        )
+        val old = samplePost(preview = preview("https://cdn4.telesco.pe/file/tokenA.jpg"))
+        val new = samplePost(preview = preview("https://cdn4.telesco.pe/file/tokenB.jpg"))
+        assertNull(diff.detectChange(old, new))
+    }
+
+    @Test
+    fun previewTitleChange_detected() {
+        val base = WebPreview("https://example.com/a", "Example", "Before", null, null)
+        val old = samplePost(preview = base)
+        val new = samplePost(preview = base.copy(title = "After"))
+        assertEquals(WebPostDiff.Change.EDITED, diff.detectChange(old, new))
+    }
+
+    @Test
+    fun mediaKindChange_detected() {
+        val old = samplePost(mediaUrls = listOf("https://cdn.tg/p/abc.jpg"), kind = WebMedia.Kind.Photo)
+        val new = samplePost(mediaUrls = listOf("https://cdn.tg/p/abc.mp4"), kind = WebMedia.Kind.Video)
+        assertEquals(WebPostDiff.Change.EDITED, diff.detectChange(old, new))
+    }
+
+    @Test
+    fun mediaCountChange_detected() {
+        val old = samplePost(mediaUrls = listOf("https://cdn.tg/p/a.jpg"))
+        val new = samplePost(mediaUrls = listOf("https://cdn.tg/p/a.jpg", "https://cdn.tg/p/b.jpg"))
         assertEquals(WebPostDiff.Change.EDITED, diff.detectChange(old, new))
     }
 

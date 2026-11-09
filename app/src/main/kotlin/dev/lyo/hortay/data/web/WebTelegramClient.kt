@@ -80,6 +80,19 @@ class WebTelegramClient(
         username: String,
         before: String? = null,
         useCache: Boolean = true,
+    ): FetchResult = fetchChannelPage(username, before, useCache, reportNotModified = true)
+
+    /**
+     * @param reportNotModified when false, a 304 revalidation still parses the
+     *   cached body OkHttp serves instead of short-circuiting to
+     *   [FetchResult.NotModified] — for callers that need the page content
+     *   itself rather than a "changed since last time?" signal.
+     */
+    private suspend fun fetchChannelPage(
+        username: String,
+        before: String?,
+        useCache: Boolean,
+        reportNotModified: Boolean,
     ): FetchResult {
         awaitGate()
 
@@ -116,7 +129,7 @@ class WebTelegramClient(
                 // happen in handleResponse — keep them off the caller's dispatcher,
                 // which is Main for pull-to-refresh and the Add-channel lookups.
                 withContext(Dispatchers.IO) {
-                    response.use { handleResponse(it, username) }
+                    response.use { handleResponse(it, username, reportNotModified) }
                 }
             },
             onFailure = { error ->
@@ -137,10 +150,12 @@ class WebTelegramClient(
      * the user gets a clear RateLimited result and can retry instead of
      * staring at a "Validating…" spinner that looks like the app died.
      */
-    suspend fun lookupChannel(username: String): LookupResult {
+    suspend fun lookupChannel(username: String, useCache: Boolean = false): LookupResult {
         val result = try {
             kotlinx.coroutines.withTimeout(LOOKUP_TIMEOUT_MS) {
-                fetchChannelPage(username, useCache = false)
+                // reportNotModified = false: a lookup wants the channel card, so a
+                // cache revalidation (useCache = true) must still yield a parsed page.
+                fetchChannelPage(username, before = null, useCache = useCache, reportNotModified = false)
             }
         } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
             // The most common cause is the rate-limit gate: surface that
@@ -167,9 +182,9 @@ class WebTelegramClient(
             is FetchResult.RateLimited -> LookupResult.RateLimited(result.retryAfterMs)
             is FetchResult.NetworkError -> LookupResult.NetworkError(result.cause)
             FetchResult.NotModified -> {
-                // lookupChannel always uses useCache=false (FORCE_NETWORK), so OkHttp
-                // can't return a 304 here — the only way to land in this branch would
-                // be a server-side bug. Treat as NotFound for safety.
+                // Unreachable: lookups fetch with reportNotModified = false, so a 304
+                // revalidation is parsed from the cached body instead. Treat as
+                // NotFound for safety.
                 LookupResult.NotFound
             }
             is FetchResult.ParseFailure -> LookupResult.ParseFailure
@@ -179,6 +194,7 @@ class WebTelegramClient(
     private suspend fun handleResponse(
         response: Response,
         username: String,
+        reportNotModified: Boolean,
     ): FetchResult {
         // OkHttp's Cache transparently serves a cached body on 304 — the visible
         // response.code is 200 even when the wire returned 304. Inspecting
@@ -186,7 +202,7 @@ class WebTelegramClient(
         // re-parsing 100KB of HTML it already has. Only meaningful when the
         // request was allowed to use cache; FORCE_NETWORK requests will always
         // see networkResponse with the actual wire code.
-        if (response.networkResponse?.code == 304) {
+        if (reportNotModified && response.networkResponse?.code == 304) {
             return FetchResult.NotModified
         }
         when (response.code) {

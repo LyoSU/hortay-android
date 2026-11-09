@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.MaterialTheme
@@ -73,6 +75,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import dev.lyo.hortay.data.TimelinePost
 import kotlinx.coroutines.launch
 import java.util.Locale
+
+/** Snackbar lift above the floating tab bar; mirrors MainScaffold's clearance. */
+private val FLOATING_NAV_BAR_CLEARANCE = 76.dp
 
 /**
  * Top-level container for guest (anonymous) reading mode. Uses the SAME
@@ -197,7 +202,23 @@ fun WebModeScaffold(graph: AppGraph) {
                         )
                     }
                     is DeepLink.External -> {
-                        runCatching { systemUriHandler.openUri(link.originalUrl) }
+                        // Hortay registers for tg:// and t.me itself, so a plain ACTION_VIEW
+                        // with no Telegram client installed relaunches Hortay on the very link
+                        // it just declined, in a loop. Target a foreign handler only; with
+                        // none, say the link needs Telegram.
+                        val opened = runCatching {
+                            dev.lyo.hortay.ui.main.openUriOutsideHortay(
+                                context,
+                                systemUriHandler,
+                                link.originalUrl,
+                            )
+                        }.getOrDefault(false)
+                        if (!opened) {
+                            graph.userMessages.post(
+                                text = context.resources.getString(R.string.link_unsupported_other),
+                                severity = dev.lyo.hortay.data.UserMessageBus.Severity.Info,
+                            )
+                        }
                     }
                     is DeepLink.HashtagSearch -> {
                         // Mirrors MainScaffold: scoped snackbar when a channel scope
@@ -218,6 +239,22 @@ fun WebModeScaffold(graph: AppGraph) {
             } catch (t: Throwable) {
                 if (t is kotlin.coroutines.cancellation.CancellationException) throw t
                 android.util.Log.w("WebModeScaffold", "deep-link dispatch failed for $link", t)
+            }
+        }
+    }
+
+    // Mirror the cross-mode bookmark set into web.db's is_bookmarked flag. Every guest
+    // toggle site (feed, Saved, channel, search, post detail) writes the one
+    // BookmarkStore, so collecting it here covers them all; the first emission is the
+    // idempotent backfill for bookmarks made before the flag was written. The flag
+    // keeps saved posts out of vacuum / "Clear cache" and feeds the Saved tab.
+    LaunchedEffect(graph) {
+        graph.bookmarkStore.bookmarks.collect { keys ->
+            try {
+                graph.webFeedSource.syncBookmarks(keys)
+            } catch (t: Throwable) {
+                if (t is kotlin.coroutines.cancellation.CancellationException) throw t
+                android.util.Log.w("WebModeScaffold", "bookmark sync failed", t)
             }
         }
     }
@@ -337,7 +374,16 @@ fun WebModeScaffold(graph: AppGraph) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             snackbarHost = {
-                SnackbarHost(snackbarHostState) { data -> Snackbar(snackbarData = data) }
+                // Scaffold's own insets are zeroed, so clear the system nav bar / IME here,
+                // and lift above the floating tab bar while Home (no detail pushed) shows it.
+                // Same contract as MainScaffold.
+                SnackbarHost(
+                    snackbarHostState,
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .imePadding()
+                        .padding(bottom = if (hasOverlay) 0.dp else FLOATING_NAV_BAR_CLEARANCE),
+                ) { data -> Snackbar(snackbarData = data) }
             },
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
         ) { scaffoldPadding ->

@@ -36,6 +36,17 @@ SELECT * FROM channel ORDER BY title COLLATE NOCASE;
 selectAllSubscribed:
 SELECT * FROM channel WHERE is_subscribed = 1 ORDER BY title COLLATE NOCASE;
 
+-- Every known channel handle (subscribed or not), for mapping the guest
+-- bookmark keys' synthetic chat ids back to usernames.
+selectAllUsernames:
+SELECT username FROM channel;
+
+-- older_cursor = smallest seq on the channel's newest page (only the latest-page
+-- ingest writes it). The stale-media path compares a post's seq against it to
+-- decide whether the post sits on page 1 or needs a `?before=` fetch.
+selectOlderCursor:
+SELECT username, older_cursor FROM channel WHERE username = :username;
+
 selectStaleSubscribed:
 -- Channels overdue for a re-fetch. Driven by tiered polling (Phase 1.5).
 SELECT * FROM channel

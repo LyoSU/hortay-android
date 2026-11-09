@@ -162,7 +162,7 @@ fun WebChannelsScreen(
                 TextButton(onClick = {
                     val u = entry.info.username
                     pendingUnsubscribe = null
-                    scope.launch { graph.webSubscriptions.remove(u) }
+                    scope.launch { graph.webFeedSource.unsubscribe(u) }
                 }) {
                     Text(
                         stringResource(R.string.web_unsubscribe_confirm),
