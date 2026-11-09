@@ -6,8 +6,10 @@
 package dev.lyo.hortay.data.report
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -36,4 +38,7 @@ class ReportExplainerStore(context: Context) {
     }
 }
 
-private val Context.reportExplainerDataStore by preferencesDataStore(name = "report_explainer")
+private val Context.reportExplainerDataStore by preferencesDataStore(
+    name = "report_explainer",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)

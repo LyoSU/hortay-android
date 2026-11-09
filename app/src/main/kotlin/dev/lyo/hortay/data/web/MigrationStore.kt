@@ -1,8 +1,10 @@
 package dev.lyo.hortay.data.web
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -71,4 +73,7 @@ class MigrationStore(context: Context) {
     }
 }
 
-private val Context.migrationDataStore by preferencesDataStore(name = "guest_migration")
+private val Context.migrationDataStore by preferencesDataStore(
+    name = "guest_migration",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)

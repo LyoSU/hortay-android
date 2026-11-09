@@ -1,8 +1,10 @@
 package dev.lyo.hortay.data.web
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -47,4 +49,7 @@ class GuestModeStore(context: Context) {
     }
 }
 
-private val Context.guestModeDataStore by preferencesDataStore(name = "guest_mode")
+private val Context.guestModeDataStore by preferencesDataStore(
+    name = "guest_mode",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)

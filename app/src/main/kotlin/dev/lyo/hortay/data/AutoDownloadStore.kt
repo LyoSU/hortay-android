@@ -1,7 +1,9 @@
 package dev.lyo.hortay.data
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
@@ -357,4 +359,7 @@ private fun TdApi.AutoDownloadSettings.toAutoDownloadPolicy(
 // only knob the user sees, while still passing a well-formed value to TDLib.
 private const val MAX_PHOTO_BYTES: Int = 10 * 1024 * 1024
 
-private val Context.autoDownloadDataStore by preferencesDataStore(name = "auto_download")
+private val Context.autoDownloadDataStore by preferencesDataStore(
+    name = "auto_download",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)

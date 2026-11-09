@@ -1,8 +1,10 @@
 package dev.lyo.hortay.data.archive
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -68,4 +70,7 @@ class ArchiveSettingsStore(private val context: Context) {
     }
 }
 
-private val Context.archiveSettingsDataStore by preferencesDataStore(name = "archive_settings")
+private val Context.archiveSettingsDataStore by preferencesDataStore(
+    name = "archive_settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)

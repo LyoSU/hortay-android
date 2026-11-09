@@ -1,7 +1,9 @@
 package dev.lyo.hortay.data.web
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.collections.immutable.ImmutableSet
@@ -73,4 +75,7 @@ class SubscriptionsStore(context: Context) {
     }
 }
 
-private val Context.subscriptionsDataStore by preferencesDataStore(name = "anon_subscriptions")
+private val Context.subscriptionsDataStore by preferencesDataStore(
+    name = "anon_subscriptions",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
