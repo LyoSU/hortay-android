@@ -18,7 +18,6 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.icons.Symbol
 
 /** Fetches Telegram's summary of a post; returns null when it couldn't be made. */
@@ -62,7 +62,7 @@ internal fun PostSummarySheet(
     summarizer: PostSummarizer,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     val state by produceState<SummaryState>(SummaryState.Loading, post.chatId, post.id) {
         value = summarizer.summarize(post)?.let { SummaryState.Ready(it) } ?: SummaryState.Failed
     }

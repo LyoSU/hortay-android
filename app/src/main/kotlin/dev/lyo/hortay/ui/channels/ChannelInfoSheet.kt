@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.channels
 
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.ImmutableList
@@ -27,7 +28,6 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -92,7 +92,7 @@ fun ChannelInfoSheet(
     /** Opens a similar channel; the sheet dismisses itself first. */
     onOpenChannel: ((Long) -> Unit)? = null,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     val scope = rememberCoroutineScope()
     var info by remember(chatId) { mutableStateOf<ChannelInfo?>(null) }
 
@@ -278,7 +278,7 @@ private fun ActionRow(
                 Symbol(name = symbol, tint = tint, size = 20.dp)
             }
         },
-        headlineContent = {
+        content = {
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyLarge,

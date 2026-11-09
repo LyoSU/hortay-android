@@ -31,7 +31,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -40,7 +39,6 @@ import androidx.compose.ui.semantics.CollectionInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collectionInfo
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -49,6 +47,7 @@ import androidx.compose.ui.window.DialogProperties
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.rich.RichBlock
 import dev.lyo.hortay.data.rich.RichPlainText
+import dev.lyo.hortay.ui.components.copyPlainText
 import dev.lyo.hortay.ui.icons.Symbol
 
 /**
@@ -126,7 +125,7 @@ private fun RichTableViewerDialog(
         var contentSize by remember { mutableStateOf(IntSize.Zero) }
         var headerHeightPx by remember(table) { mutableIntStateOf(0) }
 
-        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val transformState = rememberTransformableState { _, zoomChange, panChange, _ ->
             scale = (scale * zoomChange).coerceIn(VIEWER_MIN_ZOOM, VIEWER_MAX_ZOOM)
             offset = clampTableOffset(offset + panChange, scale, contentSize, containerSize)
         }
@@ -204,7 +203,6 @@ private fun RichTableViewerDialog(
 @Composable
 private fun RichTableViewerBar(table: RichBlock.Table, onClose: () -> Unit) {
     val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
     val copiedMsg = stringResource(R.string.post_copied_toast)
     Row(
         modifier = Modifier
@@ -219,7 +217,7 @@ private fun RichTableViewerBar(table: RichBlock.Table, onClose: () -> Unit) {
         Spacer(modifier = Modifier.weight(1f))
         IconButton(
             onClick = {
-                clipboard.setText(AnnotatedString(tableToTsv(table)))
+                context.copyPlainText("table", tableToTsv(table))
                 Toast.makeText(context, copiedMsg, Toast.LENGTH_SHORT).show()
             },
         ) {

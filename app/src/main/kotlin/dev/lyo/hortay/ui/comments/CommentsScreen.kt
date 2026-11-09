@@ -3,6 +3,7 @@
 package dev.lyo.hortay.ui.comments
 
 import androidx.compose.runtime.CompositionLocalProvider
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.text.LocalQuoteHighlight
 import dev.lyo.hortay.ui.text.QuoteHighlights
 import androidx.compose.animation.animateColorAsState
@@ -1154,7 +1155,7 @@ private fun CommentReactionSheet(
     onPick: (kind: ReactionKind, alreadyChosen: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current

@@ -31,7 +31,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,6 +52,7 @@ import dev.lyo.hortay.R
 import dev.lyo.hortay.data.report.ReportExplainerStore
 import dev.lyo.hortay.data.report.ReportRepository
 import dev.lyo.hortay.data.report.ReportState
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -136,7 +136,7 @@ fun ReportFlowSheet(
         },
     )
 
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     val state by vm.state.collectAsState()
 
     // Auto-dismiss on Success — flag the dismiss as a successful completion so the

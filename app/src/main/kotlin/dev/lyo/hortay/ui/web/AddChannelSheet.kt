@@ -22,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -52,6 +51,7 @@ import dev.lyo.hortay.data.web.WebFeedSource
 import dev.lyo.hortay.data.web.WebRepository
 import dev.lyo.hortay.data.web.WebTelegramClient
 import dev.lyo.hortay.data.web.parseUsernameFromInput
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.discover.DiscoverSearchField
 import dev.lyo.hortay.ui.discover.discoverSuggestions
 import kotlinx.collections.immutable.toImmutableList
@@ -101,7 +101,7 @@ fun AddChannelSheet(
     // fall back to clipboard auto-paste; a value suppresses clipboard sniffing.
     prefilledUsername: String? = null,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
     val ctx = androidx.compose.ui.platform.LocalContext.current

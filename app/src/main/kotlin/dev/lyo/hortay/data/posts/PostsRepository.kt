@@ -1600,7 +1600,7 @@ class PostsRepository(
             // flows; clamping to monoMax(...) keeps the cursor from rewinding under us.
             is TdApi.UpdateChatReadInbox -> {
                 advanceReadCursor(update.chatId, update.lastReadInboxMessageId)
-                _chatUnreadCounts.update { it.put(update.chatId, update.unreadCount) }
+                _chatUnreadCounts.update { it.putting(update.chatId, update.unreadCount) }
             }
 
             is TdApi.UpdateChatLastMessage -> handleChatLastMessage(update)
@@ -1732,12 +1732,12 @@ class PostsRepository(
         if (cursor <= 0L) return
         _chatReadCursors.update { current ->
             val existing = current[chatId] ?: 0L
-            if (cursor <= existing) current else current.put(chatId, cursor)
+            if (cursor <= existing) current else current.putting(chatId, cursor)
         }
     }
 
     private fun seedReadCursor(chat: TdApi.Chat) {
-        _chatUnreadCounts.update { it.put(chat.id, chat.unreadCount) }
+        _chatUnreadCounts.update { it.putting(chat.id, chat.unreadCount) }
         val cursor = chat.lastReadInboxMessageId
         val hasReadState = cursor > 0L || chat.unreadCount > 0
         if (!hasReadState) return
@@ -1747,7 +1747,7 @@ class PostsRepository(
             // UpdateChatReadInbox must NOT roll the cursor backwards, else
             // already-read posts re-appear as unread.
             if (existing != null && cursor <= existing) current
-            else current.put(chat.id, cursor)
+            else current.putting(chat.id, cursor)
         }
     }
 
@@ -2464,7 +2464,7 @@ class PostsRepository(
         _posts.update { current ->
             val idx = current.indexOfFirst { it.chatId == chatId && it.id == messageId }
             if (idx == -1) current
-            else { hit = true; current.set(idx, transform(current[idx])) }
+            else { hit = true; current.replacingAt(idx, transform(current[idx])) }
         }
         return hit
     }
@@ -2487,7 +2487,7 @@ class PostsRepository(
                     (post.id == messageId || messageId in post.albumMessageIds)
             }
             if (idx == -1) current
-            else { hit = true; current.set(idx, transform(current[idx])) }
+            else { hit = true; current.replacingAt(idx, transform(current[idx])) }
         }
         return hit
     }
@@ -2526,20 +2526,20 @@ class PostsRepository(
         val epoch = sessionEpoch.get()
         try {
             // Fetching (overwrites any prior Failed so a retry clears the error affordance).
-            _richFullFetch.update { it.put(key, RichFullFetchStatus.Fetching) }
+            _richFullFetch.update { it.putting(key, RichFullFetchStatus.Fetching) }
             val full = runCatching { td.send(TdApi.GetFullRichMessage(chatId, messageId)) }
                 .warnUnlessCancelled(TAG, "getFullRichMessage($chatId,$messageId)")
                 .getOrNull()
             if (full == null) {
                 // Surface the failure so the detail surface can offer a retry; the in-flight key
                 // clears in `finally`, so the retry re-attempts.
-                _richFullFetch.update { it.put(key, RichFullFetchStatus.Failed) }
+                _richFullFetch.update { it.putting(key, RichFullFetchStatus.Failed) }
                 return
             }
             // A logout may have landed while we were parked on the send — don't re-inject
             // account A's content into the freshly-wiped feed (mirrors the ingest epoch guard).
             if (sessionEpoch.get() != epoch) {
-                _richFullFetch.update { it.remove(key) }
+                _richFullFetch.update { it.removing(key) }
                 return
             }
             val document = full.toRichDocument()
@@ -2562,7 +2562,7 @@ class PostsRepository(
                 }
             }
             // Success: drop the status entry — the upgraded content reaches the UI via `posts`.
-            _richFullFetch.update { it.remove(key) }
+            _richFullFetch.update { it.removing(key) }
         } finally {
             richFullFetchInFlight.remove(key)
         }

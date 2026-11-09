@@ -35,7 +35,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -44,7 +43,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Constraints
@@ -52,6 +50,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.components.copyPlainText
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.util.rememberReducedMotion
 import kotlinx.coroutines.delay
@@ -227,7 +226,6 @@ private fun CodeLanguagePill(language: String) {
  */
 @Composable
 private fun CodeCopyButton(rawText: String) {
-    val clipboard = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
     val copiedMsg = stringResource(R.string.post_copied_toast)
@@ -246,7 +244,7 @@ private fun CodeCopyButton(rawText: String) {
             .size(36.dp)
             .clip(CircleShape)
             .clickable(role = Role.Button, onClickLabel = copyDesc) {
-                clipboard.setText(AnnotatedString(rawText))
+                context.copyPlainText("code", rawText)
                 haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                 Toast.makeText(context, copiedMsg, Toast.LENGTH_SHORT).show()
                 copied = true

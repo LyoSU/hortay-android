@@ -554,7 +554,7 @@ class WebRepository(
             .map { rows ->
                 if (rows.isEmpty()) persistentMapOf()
                 else rows.fold(persistentMapOf<Long, Long>()) { acc, row ->
-                    acc.put(WebPostAdapter.stableChatId(row.username), row.last_seen_post_seq)
+                    acc.putting(WebPostAdapter.stableChatId(row.username), row.last_seen_post_seq)
                 }
             }
             .distinctUntilChanged()
