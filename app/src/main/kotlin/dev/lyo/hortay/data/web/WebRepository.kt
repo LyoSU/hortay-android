@@ -481,12 +481,11 @@ class WebRepository(
     suspend fun syncBookmarks(keys: Set<String>) = withContext(ioDispatcher) {
         val usernameByChatId = channelQueries.selectAllUsernames().executeAsList()
             .associateBy { WebPostAdapter.stableChatId(it) }
-        val target = HashSet<String>()
-        for (key in keys) {
-            val chatId = key.substringBefore('/').toLongOrNull() ?: continue
-            val seq = key.substringAfter('/').toLongOrNull() ?: continue
-            val username = usernameByChatId[chatId] ?: continue
-            target += "$username/$seq"
+        val target = keys.mapNotNullTo(HashSet()) { key ->
+            val chatId = key.substringBefore('/').toLongOrNull()
+            val seq = key.substringAfter('/').toLongOrNull()
+            val username = chatId?.let { usernameByChatId[it] }
+            if (username != null && seq != null) "$username/$seq" else null
         }
         db.transaction {
             val current = postQueries.selectBookmarkedIds().executeAsList().toHashSet()
