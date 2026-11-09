@@ -85,9 +85,37 @@
 - The phone number and login code you typed survive rotating the screen or switching the theme.
 - The edit-history sheet of a post no longer flickers empty while it's open.
 - Signing out during the first feed fill-in no longer leaves the next account with a sparse feed.
+- Rotating the phone no longer closes the fullscreen video, jumps back to the Feed tab or closes open sheets.
+- Opening a t.me or tg:// link while Hortay is running reuses the open app instead of stacking a second copy, and the link is no longer replayed after rotating or returning from Recents.
+- Telegram links Hortay can't open no longer relaunch the app in a loop when no Telegram app is installed.
+- Messages with actions such as Retry or Open Telegram now sit above the system navigation bar, the keyboard and the bottom tab bar.
+- Tapping a channel and then quickly opening comments no longer pushes the channel on top of the comments.
+- A storage error while saving the post archive, or an unusual post from Telegram, no longer crashes the app.
+- A corrupted settings file no longer crashes the app on every launch — the affected settings reset to their defaults.
+- Signing out and switching proxies no longer hang while Telegram temporarily rate-limits the app.
+- The app no longer stays stuck on "Waiting for network" when the connection returned while it was in the background.
+- New posts from a channel that just changed its name or photo no longer go missing from the feed.
+- A deleted post kept by the archive no longer disappears from the feed because another channel has a post with the same number.
+- Accounts with very many channels now get every channel in the feed, and the first fill-in after signing in picks the channels you actually read most.
+- After signing out and into another account, the feed no longer reuses the previous account's "new posts" state and scroll positions.
+- View counts read "1K" instead of "1.0K" and no longer switch to a comma or native digits in some languages.
+- In right-to-left languages the login code and phone number no longer appear reversed, Arabic and Persian digits are accepted there, and the unread strip, forward icon and expand arrows point the right way.
+- Subscriber counts in a channel's info card follow your app language.
+- Videos whose file names contain #, % or ? now play.
+- Screen readers announce reactions as buttons with their selected state, say a channel's name once per avatar, and mention that long-pressing a post or comment opens more actions.
+- The Subscribe button in Discover no longer clips its label at large font sizes.
+- The empty Saved tab explains saving through the ⋯ menu.
+- Saved posts in guest mode stay in the Saved tab after they get old, after you unsubscribe from their channel and after clearing the cache.
+- In guest mode, expired photos on older posts reload instead of staying broken.
+- Unsubscribing from a channel in guest mode takes effect immediately and is no longer lost if the app closes.
+- A guest-mode channel whose page can no longer be read shows a load error instead of silently stopping updates, and posts keep their original time.
+- Signed-in users no longer download guest-mode channel pages on every launch.
+- The post archive no longer records guest-mode posts as edited when only their image links change, no longer stops loading over one unreadable entry, and skips copying very large files.
 
 ### Performance
 - Idle video players are released when the app goes to the background.
+- The app no longer redraws every frame while idle — animated stickers and the pull-to-refresh indicator animate only when they are on screen and active.
+- Guest mode does less work on launch and when opening "Add channel".
 
 ### Architecture
 - The feed, folder tabs and translation cache now each handle Telegram's updates in one ordered stream instead of one listener per update type.
@@ -96,6 +124,8 @@
 - CI resolves only the dependencies each job builds and reuses one Gradle process per job, so check runs start building sooner.
 - Toolchain and dependencies updated: AGP 9.5, Gradle 9.8, Kotlin 2.4.21, Compose BOM 2026.09 with Material 3 1.5.0-rc01, Media3 1.11, Coil 3.6, OkHttp 5.5, SQLDelight 2.4, DataStore 1.3, JUnit 6.1.3 and refreshed CI actions.
 - CI retries dependency downloads before building, so a brief Maven or Gradle outage no longer fails the build.
+- Beta builds run only for commits pushed to the main branch, and releases must come from main, pass the unit tests and pass a 16 KB page-size check.
+- App downloads no longer carry translations for languages the app doesn't ship.
 
 ## [0.12.0] — 2026-07-16
 
