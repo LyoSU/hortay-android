@@ -2,8 +2,8 @@
 agp = "9.5.1"
 kotlin = "2.4.21"
 composeBom = "2026.09.00"
-# material3 explicitly pinned to the Expressive alpha (released 2026-05-06).
-# The April BOM ships material3 1.4.0 stable, which lacks MaterialShapes,
+# material3 explicitly pinned to the 1.5.0 Expressive line (currently rc01).
+# The BOM-supplied material3 1.4.0 stable lacks MaterialShapes,
 # LoadingIndicator, FloatingToolbar, ButtonGroup, FlexibleTopAppBar and the
 # expressive motion scheme — i.e. the entire surface this app's design refresh
 # is built on. We override the BOM-supplied version explicitly (Google's
@@ -16,9 +16,9 @@ composeMaterial3 = "1.5.0-rc01"
 # theme module reference Morph / RoundedPolygon directly without depending on
 # material3's internal export surface.
 graphicsShapes = "1.1.0"
-# androidx.navigation3 — modern back-stack-as-state navigation (stable 1.1.2, May 2026).
+# androidx.navigation3 — modern back-stack-as-state navigation (stable 1.1.x line, currently 1.1.4).
 # Not managed by the Compose BOM (separate group), so it coexists with the pinned
-# material3 alpha. Shared-element / container-transform comes from compose-animation
+# pinned material3 1.5.x. Shared-element / container-transform comes from compose-animation
 # (BOM-managed) via SharedTransitionLayout; nav3 supplies NavDisplay + entry-scoping.
 navigation3 = "1.1.4"
 coreKtx = "1.19.1"
@@ -28,7 +28,7 @@ activityCompose = "1.13.0"
 # minSdk to 23 (we're 26) and added Auth Tab / ephemeral-tab APIs; the basic
 # CustomTabsIntent launchUrl path this app uses is unchanged from 1.8.
 browser = "1.10.0"
-# lifecycle 2.10.0 — aligned with lifecycle-viewmodel-navigation3 (entry-scoped
+# lifecycle 2.11.0 — aligned with lifecycle-viewmodel-navigation3 (entry-scoped
 # ViewModelStore for Nav3). All lifecycle-* artifacts share this version.
 lifecycle = "2.11.0"
 coroutines = "1.11.0"
@@ -64,7 +64,7 @@ benchmark = "1.5.0"
 profileinstaller = "1.4.1"
 uiautomator = "2.4.1"
 androidxTestExt = "1.3.0"
-# detekt 1.23.7 — last 1.23.x release on the 1.x line, K2 not officially supported
+# detekt 1.23.8 — last 1.23.x release on the 1.x line, K2 not officially supported
 # by detekt's embedded compiler yet (tracked in detekt/detekt#6198) but the engine
 # still parses Kotlin 2.x sources via the bundled K1 frontend with a small number
 # of known false-negatives on context receivers / multidollar strings — acceptable
@@ -72,7 +72,7 @@ androidxTestExt = "1.3.0"
 detekt = "1.23.8"
 # nlopez/compose-rules — community Compose-specific lint rules (Modifier ordering,
 # stable params, lambda parameter naming/position, content-emitter return values,
-# etc.). 0.4.22 is the latest 0.4.x release; tracks detekt 1.23.x.
+# etc.). 0.6.8 is the pinned release; tracks detekt 1.23.x.
 detektRulesCompose = "0.6.8"
 
 [libraries]

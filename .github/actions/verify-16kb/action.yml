@@ -1,0 +1,51 @@
+name: Verify 16 KB page-size alignment
+description: >
+  Google Play requires native code to support 16 KB memory pages. Fails the job if the
+  built APK is not 16 KB zip-aligned (zipalign -c -P 16) or if any arm64-v8a .so has a
+  LOAD segment aligned below 0x4000. Needs the Android SDK build-tools (setup-android)
+  and binutils/llvm readelf (present on ubuntu-latest).
+
+inputs:
+  apk-dir:
+    description: Directory searched for the built (signed) APK.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check zip + ELF alignment
+      shell: bash
+      env:
+        APK_DIR: ${{ inputs.apk-dir }}
+      run: |
+        set -euo pipefail
+        apk=$(find "$APK_DIR" -name '*.apk' ! -name '*unsigned*' | head -n1)
+        [ -n "$apk" ] || { echo "::error::no APK found under $APK_DIR"; exit 1; }
+
+        sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+        zipalign=$(ls -d "$sdk"/build-tools/*/zipalign 2>/dev/null | sort -V | tail -n1 || true)
+        [ -n "$zipalign" ] || { echo "::error::zipalign not found in $sdk/build-tools"; exit 1; }
+        echo "Using $zipalign on $apk"
+        "$zipalign" -c -P 16 -v 4 "$apk" > "$RUNNER_TEMP/zipalign.log" 2>&1 \
+          || { tail -n 20 "$RUNNER_TEMP/zipalign.log"; echo "::error::$apk is not 16 KB zip-aligned"; exit 1; }
+
+        readelf=$(command -v llvm-readelf || command -v readelf || true)
+        if [ -z "$readelf" ]; then
+          ndk_readelf=$(ls "$sdk"/ndk/*/toolchains/llvm/prebuilt/*/bin/llvm-readelf 2>/dev/null | tail -n1 || true)
+          readelf="$ndk_readelf"
+        fi
+        [ -n "$readelf" ] || { echo "::error::no readelf available"; exit 1; }
+
+        work=$(mktemp -d)
+        unzip -q "$apk" 'lib/arm64-v8a/*.so' -d "$work" || { echo "::error::no lib/arm64-v8a/*.so in $apk"; exit 1; }
+        bad=0
+        for so in "$work"/lib/arm64-v8a/*.so; do
+          while read -r align; do
+            if [ "$((align))" -lt $((0x4000)) ]; then
+              echo "::error::$(basename "$so") has a LOAD segment aligned to $align (< 0x4000)"
+              bad=1
+            fi
+          done < <("$readelf" -lW "$so" | awk '$1=="LOAD"{print $NF}')
+        done
+        [ "$bad" -eq 0 ] || exit 1
+        echo "16 KB alignment OK: $(ls "$work"/lib/arm64-v8a | wc -l) native libs checked."

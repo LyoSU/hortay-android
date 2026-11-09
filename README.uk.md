@@ -2,7 +2,7 @@
 
 Twitter-подібна читалка Telegram-каналів. Підписки відкриваються однією хронологічною стрічкою, а не списком чатів.
 
-Без Firebase, Crashlytics, аналітики, сторонніх push-сервісів. Дозвіл INTERNET використовується тільки для Telegram, анонімних `t.me/s/` прев'ю в гостьовому режимі та для read-only завантаження публічного [списку рекомендованих каналів](suggestions.json) із цього репозиторію (жодні дані користувача не залишають пристрій).
+Без Firebase, Crashlytics, аналітики, сторонніх push-сервісів. Дозвіл INTERNET використовується тільки для Telegram, анонімних `t.me/s/` прев'ю в гостьовому режимі та для read-only завантаження публічного [списку рекомендованих каналів](suggestions.json) з цього репозиторію через CDN jsDelivr (`cdn.jsdelivr.net`; дані користувача не надсилаються, але CDN бачить IP-адресу запиту).
 
 <p align="center">
   <a href="https://play.google.com/store/apps/details?id=dev.lyo.hortay">
@@ -52,7 +52,7 @@ AGP 9.5.1 · Gradle 9.8.2 · Kotlin 2.4.21 (K2) · Compose BOM 2026.09.00 · Mat
 
 Розклад модулів, load-bearing рішення і правила роботи з TDLib — у [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Коротко: single-Activity, тільки Compose, три модулі — `:app`, `:libtdlib` (vendored TDLib JNI), `:baselineprofile`. Manual DI через `AppGraph`. Без Hilt, без Retrofit, без Firebase.
+Коротко: single-Activity, тільки Compose, чотири модулі — `:app`, `:libtdlib` (vendored TDLib JNI), `:libwebm` (vendored мінімальний ffmpeg-декодер WebM), `:baselineprofile`. Manual DI через `AppGraph`. Без Hilt, без Retrofit, без Firebase.
 
 ## Контрибуції
 

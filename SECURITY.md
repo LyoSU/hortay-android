@@ -14,8 +14,9 @@ Do not file public issues for security reports.
 In scope:
 
 - The app itself (`:app` and the `:libtdlib` integration).
+- `:libwebm` — the vendored minimal ffmpeg/libvpx WebM decoder that parses untrusted media (report bugs in upstream ffmpeg/libvpx upstream, but misuse or build-config issues here are in scope).
 - The `t.me/s/` HTML parser in guest mode (untrusted input).
-- The remote suggested-channels JSON parser (`suggestions.json`, fetched read-only from GitHub).
+- The remote suggested-channels JSON parser (`suggestions.json`, fetched read-only from this repo via the jsDelivr CDN, `cdn.jsdelivr.net`).
 - Local data persistence (DataStore, the `web.db` SQLDelight database).
 
 Out of scope:

@@ -38,7 +38,7 @@ gradle.taskGraph.whenReady {
         throw GradleException(
             "Release/Beta packaging requires keystore.properties at the project root.\n" +
                 "Expected keys: storeFile, storePassword, keyAlias, keyPassword.\n" +
-                "See app/build.gradle.kts:17 and ARCHITECTURE.md (Setup-delta) for details."
+                "See the keystoreProps block at the top of app/build.gradle.kts and ARCHITECTURE.md (Setup delta) for details."
         )
     }
     val packagingTask = allTasks.firstOrNull { task ->
@@ -79,8 +79,8 @@ val gitCommitCount: Int by lazy {
 
 android {
     namespace = "dev.lyo.hortay"
-    // compileSdk = 37 is forced by Compose UI 1.12.0-alpha02 (transitive dep of
-    // material3 1.5.0-alpha19, which we pin explicitly for M3 Expressive). targetSdk
+    // compileSdk = 37 is forced by the Compose UI line pulled in transitively by
+    // material3 1.5.0-rc01 (pinned in libs.versions.toml for M3 Expressive). targetSdk
     // stays at 36 — runtime behaviour we tested + Play certified — bumping just the
     // compile-time API surface is the canonical Google-recommended way to opt into a
     // new compose track without flipping app behaviour at runtime.
@@ -101,7 +101,7 @@ android {
         // the single source of truth for a published version; local builds keep the
         // literal below.
         versionName = (project.findProperty("hortayVersionName") as? String)
-            ?.takeIf { it.isNotBlank() } ?: "0.11.0"
+            ?.takeIf { it.isNotBlank() } ?: "0.12.0"
 
         buildConfigField("int", "TELEGRAM_API_ID", telegramApiId)
         buildConfigField("String", "TELEGRAM_API_HASH", "\"$telegramApiHash\"")
@@ -218,6 +218,17 @@ android {
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",
             "/META-INF/DEPENDENCIES",
+        )
+    }
+
+    // Keep only the locales the app ships (must mirror res/xml/locales_config.xml and
+    // the values-<lang> dirs). The language bundle split is disabled below, so without
+    // this every dependency's ~80 locales would be packaged into the base APK.
+    // "in" is the legacy resource qualifier for Indonesian (locales_config says "id");
+    // both are listed so the filter matches whichever form AGP/aapt2 normalises to.
+    androidResources {
+        localeFilters += listOf(
+            "en", "uk", "ru", "es", "de", "fr", "it", "pt-rBR", "pl", "tr", "in", "id", "fa", "ar",
         )
     }
 

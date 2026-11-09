@@ -36,6 +36,16 @@ jobs:
         with:
           fetch-depth: 0 # versionCode = git rev-list --count HEAD
 
+      - name: Require release commit on origin/main
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          sha=$(git rev-parse HEAD)
+          if ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "::error::Commit $sha is not an ancestor of origin/main — releases must be cut from main."
+            exit 1
+          fi
+
       - name: Resolve version + tag
         id: ver
         env:
@@ -63,11 +73,18 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
         run: |
           set -euo pipefail
-          tag="${{ steps.ver.outputs.tag }}"
-          if git rev-parse "$tag" >/dev/null 2>&1; then
-            echo "Tag $tag already exists — reusing."
+          tag="$TAG"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            tag_sha=$(git rev-parse "refs/tags/$tag^{commit}")
+            head_sha=$(git rev-parse HEAD)
+            if [ "$tag_sha" != "$head_sha" ]; then
+              echo "::error::Tag $tag already exists at $tag_sha but this run builds $head_sha — refusing to attach a different commit's artifacts. Dispatch from the tagged commit or pick a new version."
+              exit 1
+            fi
+            echo "Tag $tag already exists at the commit being built — reusing."
           else
             git tag "$tag"
             git push origin "$tag"
@@ -110,6 +127,9 @@ jobs:
         with:
           configuration: releaseRuntimeClasspath
 
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
       - name: Build signed AAB + APK
         run: >
           ./gradlew :app:bundleRelease :app:assembleRelease
@@ -135,6 +155,11 @@ jobs:
           [ -n "$mapping" ] && cp "$mapping" "$out/mapping-$VERSION.txt" || true
           echo "dir=$out" >> "$GITHUB_OUTPUT"
           ls -la "$out"
+
+      - name: Verify 16 KB page-size alignment
+        uses: ./.github/actions/verify-16kb
+        with:
+          apk-dir: app/build/outputs/apk/release
 
       - name: Publish GitHub Release
         env:

@@ -22,10 +22,11 @@ Modules, load-bearing decisions, hard rules, and conventions. Pair with [README.
 
 Single-process, single-Activity. `MainActivity` routes: `auth.Ready → MainScaffold` → `isGuest → WebModeScaffold` → else `AuthScreen`. Subscriptions (DataStore `SubscriptionsStore`) survive both transitions.
 
-## Architecture (3 modules)
+## Architecture (4 modules)
 
 - **`:app`** — Compose UI, `AppGraph` (manual DI), repositories, ViewModels. JVM 17.
 - **`:libtdlib`** — Vendored TDLib JNI (`org.drinkless.tdlib.{Client,TdApi}.java`) + `jniLibs`. Don't hand-edit the `.java` files — `scripts/update-tdlib.sh` will clobber them.
+- **`:libwebm`** — Vendored minimal ffmpeg/libvpx WebM (VP9+alpha) software decoder (`libhortaywebm.so`), built by `scripts/build-ffmpeg.sh`. Parses untrusted media.
 - **`:baselineprofile`** — Macrobenchmark, AOT cold-start profile.
 
 DI built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(application as HortayApp).graph`. Heavy singletons (`MediaCache`, `CustomEmoji`, `ExoPlayerPool`, `ReadCursors`) injected via CompositionLocal in `MainActivity`.
@@ -52,7 +53,7 @@ DI built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(applicatio
 | Web-mode media TTL | `data/web/Post.sq` + `WebFeedSource.DEFAULT_MEDIA_TTL_MS` + `refetchForStaleMediaUrl` | t.me/s/ CDN URLs live 1–4 h. Two refresh paths: reactive (Coil load error 401/403/410 → `LocalWebStaleMedia` → `refetchForStaleMediaUrl`, per-URL dedup + per-channel cooldown) and proactive (TTL sweep sets `forceMediaRefresh`, which bypasses the ingest fingerprint guard — deliberately NOT set on a plain pull-to-refresh). |
 | Guest-mode routing | `MainActivity.kt` | `auth.Ready → MainScaffold` → `isGuest → WebModeScaffold` → `AuthScreen`. |
 | StartupCoordinator | `data/StartupCoordinator.kt` | `Booting → Active` gates speculative work. |
-| Navigation 3 detail stack | `ui/main/MainScaffold.kt`, `ui/web/WebModeScaffold.kt`, `data/nav/NavKeys.kt`, `AppGraph.kt` (`backStack`) | Both scaffolds drive one `NavDisplay` over a graph-scoped `SnapshotStateList<AppNavKey>` shared across modes. `HomeKey` renders the tab scaffold; detail keys push on top. Predictive back, per-entry saveable state + `ViewModelStore` are framework-owned (entry decorators). Forward/pop ride `fastSpatialSpec`; `predictivePopTransitionSpec` stays BARE so the gesture is seekable. Each `entryProvider` carries self-healing no-op entries for the other mode's keys (shared stack can carry a foreign key across a mode flip; `NavDisplay` requires an entry for every key). NOT `@Serializable` / NOT restored across process death (cold launch → Feed top). See `data/nav/NavKeys.kt` KDoc. |
+| Navigation 3 detail stack | `ui/main/MainScaffold.kt`, `ui/web/WebModeScaffold.kt`, `data/nav/NavKeys.kt`, `AppGraph.kt` (`backStack`) | Both scaffolds drive one `NavDisplay` over a graph-scoped `SnapshotStateList<AppNavKey>` shared across modes. `HomeKey` renders the tab scaffold; detail keys push on top. Predictive back, per-entry saveable state + `ViewModelStore` are framework-owned (entry decorators). All three transition specs (forward, pop, predictive pop) are left BARE — plain `slideInHorizontally`/`slideOutHorizontally` with no explicit `animationSpec`, the canonical Nav3 config. A `fastSpatialSpec` spring made the predictive-back seek jerk at the start of the drag (non-linear response near 0 when scrubbed by finger progress); don't add a spec back to "settle faster" (see the KDoc in `MainScaffold.kt`). Each `entryProvider` carries self-healing no-op entries for the other mode's keys (shared stack can carry a foreign key across a mode flip; `NavDisplay` requires an entry for every key). NOT `@Serializable` / NOT restored across process death (cold launch → Feed top). See `data/nav/NavKeys.kt` KDoc. |
 | ReadCursors / OldestUnreadFirst | `data/ReadCursors.kt`, `ui/timeline/LocalReadCursors.kt` | `PersistentMap` + CompositionLocal; snapshot frozen at refresh boundaries. |
 | Tap-navigation contract | `data/TapNavigation.kt`, `ui/main/MainScaffold.kt` (`pushChannel`, `CHANNEL_PUSH_PREFETCH_TIMEOUT_MS`) | **Channels:** push AWAITS `loadChannelHistory` up to 400 ms, then mounts `ChannelKey` (warm/cache opens stay instant via cooldown short-circuit). **Comments:** still fire-and-forget. Destination-side `SCREEN_MOUNT_GRACE_MS` (120 ms × `ValueAnimator.getDurationScale()`) suppresses skeleton flicker as a backstop. The channel exception exists because the cold-start `UpdateNewChat → handleNewChat` ingest seeds the slice with exactly one post per channel (the `chat.lastMessage` snapshot); in OldestUnreadFirst those 79 older posts hydrating into the slice read as a "stretching" jump that the destination-side gate alone couldn't hide. NOTE: the reverse feed now renders via `reverseLayout` over always-descending data (see `data/SettingsStore.kt` `FeedOrder` KDoc + `ui/timeline/ReverseFeedLayout.kt`), so older posts hydrate at the high-index/top edge away from the anchored bottom — the 400 ms await is retained pending a separate evaluation of whether it's still needed. |
 | Interaction-stream contract | `data/posts/PostsRepository.kt:viewMessages` + `data/ChatPresence.kt:isOpen` + `ui/timeline/TimelineScreen.kt` (focus tracker) | TDLib streams `updateMessageInteractionInfo` only for OPEN chats (td_api.tl `openChat`: "in supergroups and channels all updates are received only for opened chats"). Merged feed obeys "usually one chat opened" (tdlib/td#2695) by OpenChat-ing the **dominant-visible** post's chat — NOT `firstVisibleItem`, which on full-width cards is often the partially-clipped neighbour. `viewMessages` picks `force_read` from `ChatPresence.isOpen(chat)`: `false` when open (canonical "user is actively reading"), `true` when closed (closed-chat read-state workaround). The focus tracker must **re-ack the focused post's ids via viewMessages AFTER OpenChat**, in the same `NonCancellable` block — read-ack dwell (500 ms) fires before focus dwell (600 ms), so without the re-ack the focused post's only viewMessages call would have happened with the chat still closed and `force_read=true`. The re-ack (and the Layer-2 album repair) runs for **every** focused post — only the OpenChat/CloseChat swap is gated on a chat transition — but the re-ack only re-sends ids the read-ack dwell already accepted (60 % visible + idle + RESUMED): the focus tracker has none of those gates, so it must never be the first thing that marks a post read; a former `focusChat == opened` early-return starved both for consecutive cards of one channel. ChannelScreen doesn't need the re-ack because `ChannelViewModel.init` opens the chat before any viewMessages. |
@@ -80,13 +81,13 @@ DI built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(applicatio
 Each `❌` carries a **Revisit:** clause — the concrete condition that would justify reopening the decision. Without that condition, the answer is no.
 
 - ❌ Hilt / Dagger / Koin. DI is manual (`AppGraph`). **Revisit:** > 1 active contributor, or `AppGraph` > 60 properties, or multi-module split lands.
-- ❌ Firebase / Crashlytics / Sentry / analytics / phone-home. INTERNET is for TDLib + anonymous `t.me/s/` only. **Revisit:** never — privacy-as-feature.
+- ❌ Firebase / Crashlytics / Sentry / analytics / phone-home. INTERNET is for TDLib, anonymous `t.me/s/`, and the read-only public suggested-channels list (fetched via the jsDelivr CDN, `cdn.jsdelivr.net`, which mirrors this repo's `suggestions.json`; no user data is sent). **Revisit:** never — privacy-as-feature.
 - ❌ Room. SQLDelight 2.4 owns `web.db`; TDLib owns its own. **Revisit:** never (no shared scope).
 - ❌ OkHttp / Retrofit / Ktor as a general HTTP client. Coil pulls `coil-network-okhttp` for images, OkHttp is declared directly only for the web-mode `t.me/s/` pipeline + custom-emoji JSON. **Revisit:** if a typed REST backend joins the stack (none planned).
 - ❌ FCM / push. TDLib `RegisterDevice` + `UpdateNotification`. **Revisit:** if TDLib push proves unreliable in field reports.
 - ❌ ViewBinding / Fragments. Compose-only, single-Activity. **Revisit:** never.
 - ✅ Navigation 3 (`androidx.navigation3` + `NavDisplay`). The revisit condition on the old hand-rolled `NavStack`/`NavEntry` rule fired — Nav3 shipped overlay/scene primitives that subsume it — so the stack was migrated (see the "Navigation 3 detail stack" load-bearing row). Typed `AppNavKey` keys, framework-owned predictive back + per-entry state/VM, one shared graph-scoped back stack. ❌ the older `androidx.navigation-compose` typed-routes API — Nav3's polymorphic-key model fits the overlay-heavy nav and process-death-reset contract that typed routes don't.
-- ✅ SQLDelight 2.4 for `web.db` only. TDLib mode runs without a DB.
+- ✅ SQLDelight 2.4 for local app-owned databases only: `web.db` (guest mode) and the opt-in post-archive `ArchiveDatabase`. TDLib owns its own storage; no other app DB.
 
 ### TDLib usage
 
@@ -125,7 +126,7 @@ Each `❌` carries a **Revisit:** clause — the concrete condition that would j
 
 - ❌ `enableV1Signing = true` — AGP 9 + R8 zip layout breaks JarInputStream v1.
 - ❌ `x86_64` in release `abiFilters` — +24 MB libtdjni.so for zero users.
-- ❌ Bumping `versionCode` by hand. It's auto-derived from `git rev-list --count HEAD` (`app/build.gradle.kts:158-185`).
+- ❌ Bumping `versionCode` by hand. It's auto-derived from `git rev-list --count HEAD` (the `androidComponents.onVariants` versionCode block in `app/build.gradle.kts`).
 - ❌ `bundleRelease` without a fresh commit — same versionCode → Play returns 409. Workflow: commit → bundle.
 
 ### Workspace
@@ -158,7 +159,7 @@ CHANGELOG.md is release notes for a user, not a PR description. Rationale lives 
 ./gradlew :app:assembleRelease           # release APK (needs keystore.properties)
 ./gradlew :app:assembleBeta              # beta, applicationId.beta, versionCode = git commit count
 ./gradlew test                           # JUnit 5 unit tests
-./gradlew :app:lintRelease               # R8 + lint vital — pre-commit gate
+./gradlew :app:lintRelease               # lint (release variant, incl. MissingTranslation) — pre-commit gate; does not run R8
 ./gradlew :app:generateBaselineProfile   # AOT profile (~3–5 min on device)
 ./scripts/update-tdlib.sh [SHA]          # Bump TDLib (Docker, ~10–15 min)
 adb logcat -s TdClient MediaCache PostsRepository ChatPresence
@@ -175,13 +176,13 @@ Toolchain: JDK 17, Gradle 9.8.2, AGP 9.5.1, Kotlin 2.4.21 (K2) — `gradle/libs.
 
 ## Setup delta on top of README
 
-- `keystore.properties` at the repo root (gitignored) supplies `storeFile`, `storePassword`, `keyAlias`, `keyPassword`. AGP enables release signing only when this file exists (`app/build.gradle.kts:59-70`).
+- `keystore.properties` at the repo root (gitignored) supplies `storeFile`, `storePassword`, `keyAlias`, `keyPassword`. AGP enables release signing only when this file exists (the `gradle.taskGraph.whenReady` signing check in `app/build.gradle.kts`).
 - Beta uses the same keystore + auto-versionCode from git.
 - `gradle.properties` carries `HORTAY_CHILD_SAFETY_POLICY_URL` / `HORTAY_PRIVACY_POLICY_URL` for CSAE compliance.
 
 ## Versioning
 
-- `versionCode` for release and beta is auto-derived from `git rev-list --count HEAD` (`app/build.gradle.kts:158-185`).
+- `versionCode` for release and beta is auto-derived from `git rev-list --count HEAD` (the `androidComponents.onVariants` versionCode block in `app/build.gradle.kts`).
 - `versionCode = 1` in `defaultConfig` is a sentinel for debug builds.
 - `versionName` is manual for local builds; CI overrides it from the release tag via `-PhortayVersionName=X.Y.Z` (`app/build.gradle.kts` defaultConfig). Beta auto-appends `-beta-<sha>`.
 - TDLib pin: `scripts/tdlib-version.txt` (auto-generated). Dedicated commit `chore(tdlib): bump to <sha>` per bump.
@@ -202,5 +203,6 @@ Load-bearing:
 - **TDLib artifacts are gitignored** (`libtdlib/.gitignore`: `*.so`, `TdApi.java`, `Client.java`). The only tracked TDLib state is `scripts/tdlib-version.txt`. Every CI job restores the libs from one `actions/cache` (composite `.github/actions/setup-tdlib`) keyed on the pin **plus the build recipe** (`update-tdlib.sh` + `tdlib-builder/**`, so a recipe change invalidates — not just a version bump), or builds them on a miss. `tdlib.yml` warms this one cache, so after a bump merges ci/release/beta all hit it.
 - **CI builds TDLib stripped (`KEEP_DEBUG=0`).** Under AGP 9.3 the two `:libtdlib` jniLibs srcDirs (`src/main/jniLibs` + `build/tdlib-unstripped`) each holding `libtdjni.so` trip `MergeSourceSetFolders` "Duplicate resources" — the old last-srcDir-wins override is gone. So the unstripped overlay is NOT staged in CI, and release AABs currently ship without rich `libtdjni.so` symbolication. **Re-enabling FULL symbols needs the overlay reworked to a single srcDir** (put the unstripped `.so` directly in `src/main/jniLibs`, let AGP strip for packaging + extract symbols) — not a second overlapping srcDir.
 - **Signing/creds in secrets** — `KEYSTORE_BASE64` (+ `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`) and `TELEGRAM_API_ID`/`TELEGRAM_API_HASH`, materialised into gitignored `keystore.properties` + `local.properties` by `.github/actions/setup-signing`. **Only** tag / push-to-main / dispatch workflows consume them — GitHub never exposes secrets to fork PRs.
+- **16 KB page-size gate** — release/beta run `.github/actions/verify-16kb` after the APK is built (`zipalign -c -P 16` + every arm64 `.so` LOAD segment aligned >= 0x4000); Play rejects non-16 KB-compatible native code. `beta.yml` additionally requires the triggering CI run to be a `push` from this repository, and `release.yml` requires the commit to be an ancestor of `origin/main`.
 - **Injection hardening** — every `workflow_dispatch` input is routed through `env:` and validated against a strict allowlist before touching a shell/awk command.
 - **`gh` for releases** — GitHub Releases are cut with the built-in `gh` CLI + `GITHUB_TOKEN`, not a third-party action (smaller supply-chain surface).
