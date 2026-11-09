@@ -2,6 +2,7 @@ package dev.lyo.hortay
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -58,9 +59,13 @@ class MainActivity : ComponentActivity() {
         // offline JNI call but still a coroutine boundary) — appScope.launch wins the
         // race in practice because the Channel buffers the resulting event regardless
         // of subscriber arrival ordering. Warm launches arrive via [onNewIntent] below.
-        intent?.data?.let { uri ->
-            graph.appScope.launch {
-                graph.linkResolver.resolve(uri)?.let { graph.deepLinkRouter.submit(it) }
+        // Only on a fresh launch: recreation (language switch, process-death restore,
+        // Recents) re-delivers the original intent and would replay the link.
+        if (savedInstanceState == null) {
+            intent?.data?.let { uri ->
+                graph.appScope.launch {
+                    graph.linkResolver.resolve(uri)?.let { graph.deepLinkRouter.submit(it) }
+                }
             }
         }
 
@@ -134,9 +139,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // uiMode is handled in-process (manifest configChanges), so the Activity is no longer
+    // recreated on a dark-mode flip. Compose recomposes the theme and Theme.kt re-seeds the
+    // status-bar icons; re-running enableEdgeToEdge refreshes the SystemBarStyle.auto
+    // navigation-bar icon contrast, which is otherwise only evaluated once in onCreate.
+    // locale / layoutDirection are deliberately NOT handled: the language picker relies on
+    // recreation so attachBaseContext re-wraps the resources.
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        enableEdgeToEdge()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // singleTop / re-entry path: a fresh tg:// or https://t.me URL arriving while the
+        setIntent(intent)
+        // singleTask / re-entry path: a fresh tg:// or https://t.me URL arriving while the
         // activity is already alive. The router's Channel.BUFFERED queue holds rapid-fire
         // links during a transition until MainScaffold's collector drains them in order.
         val graph = (application as HortayApp).graph

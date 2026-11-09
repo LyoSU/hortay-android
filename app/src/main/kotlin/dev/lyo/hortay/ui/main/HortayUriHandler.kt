@@ -1,6 +1,10 @@
 package dev.lyo.hortay.ui.main
 
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.compose.ui.platform.UriHandler
 import dev.lyo.hortay.data.DeepLink
 import dev.lyo.hortay.data.DeepLinkRouter
@@ -39,6 +43,10 @@ class HortayUriHandler(
     private val resolver: TelegramLinkResolver,
     private val router: DeepLinkRouter,
     private val scope: CoroutineScope,
+    /** When set, Telegram URLs the app can't open natively are handed to a foreign handler
+     *  only (see [openUriOutsideHortay]) instead of the platform [delegate], which would
+     *  resolve back to Hortay's own tg:// / t.me filters. */
+    private val context: Context? = null,
 ) : UriHandler {
     override fun openUri(uri: String) {
         val parsed = runCatching { Uri.parse(uri) }.getOrNull()
@@ -55,7 +63,9 @@ class HortayUriHandler(
             val link = resolver.resolve(parsed)
             when (link) {
                 null,
-                is DeepLink.External -> runCatching { delegate.openUri(uri) }
+                is DeepLink.External -> runCatching {
+                    if (context != null) openUriOutsideHortay(context, delegate, uri) else delegate.openUri(uri)
+                }
                 // HashtagSearch is a known Telegram-internal feature we render
                 // in-app; we don't punt `tg://search?query=...` URLs to the OS
                 // because ACTION_VIEW would feel external to a user who just
@@ -85,3 +95,35 @@ private val ALLOWED_LINK_SCHEMES = setOf("http", "https", "tg", "mailto", "tel")
  */
 internal fun isAllowedLinkScheme(scheme: String?): Boolean =
     scheme?.lowercase() in ALLOWED_LINK_SCHEMES
+
+/**
+ * Opens [url] via [delegate], except for Telegram URLs (`tg:` scheme or host `t.me`):
+ * Hortay itself registers for those, so the platform dispatch would relaunch the app on
+ * the very link it just declined, forever, whenever no Telegram client is installed (or
+ * Hortay was picked as "always"). For them, a handler outside this package is resolved
+ * and targeted explicitly.
+ *
+ * @return false only when [url] is a Telegram URL and no other app can open it.
+ */
+internal fun openUriOutsideHortay(context: Context, delegate: UriHandler, url: String): Boolean {
+    val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
+    val isTelegramUrl = uri.scheme.equals("tg", ignoreCase = true) ||
+        uri.host.equals("t.me", ignoreCase = true)
+    if (!isTelegramUrl) {
+        delegate.openUri(url)
+        return true
+    }
+    val probe = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
+    val pm = context.packageManager
+    val handlers = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        pm.queryIntentActivities(probe, PackageManager.ResolveInfoFlags.of(0L))
+    } else {
+        @Suppress("DEPRECATION")
+        pm.queryIntentActivities(probe, 0)
+    }
+    val foreign = handlers.firstOrNull { it.activityInfo.packageName != context.packageName }
+        ?: return false
+    probe.setClassName(foreign.activityInfo.packageName, foreign.activityInfo.name)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    return runCatching { context.startActivity(probe) }.isSuccess
+}

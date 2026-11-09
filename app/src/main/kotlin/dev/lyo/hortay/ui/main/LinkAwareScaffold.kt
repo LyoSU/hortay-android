@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.AppGraph
@@ -42,12 +43,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun LinkAwareScaffold(graph: AppGraph, content: @Composable () -> Unit) {
     val systemUriHandler = LocalUriHandler.current
-    val hortayUriHandler = remember(graph, systemUriHandler) {
+    val appContext = LocalContext.current.applicationContext
+    val hortayUriHandler = remember(graph, systemUriHandler, appContext) {
         HortayUriHandler(
             delegate = systemUriHandler,
             resolver = graph.linkResolver,
             router = graph.deepLinkRouter,
             scope = graph.appScope,
+            context = appContext,
         )
     }
     // Confirmation callback for masked-link spans (TDLib `Style.TextUrl`). Suspending

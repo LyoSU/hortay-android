@@ -66,6 +66,9 @@ import kotlinx.coroutines.launch
  */
 private const val CHANNEL_PUSH_PREFETCH_TIMEOUT_MS = 400L
 
+/** Approximate height of [FloatingNavBar] (excluding system insets) a snackbar must clear on Home. */
+private val FLOATING_NAV_BAR_CLEARANCE = 76.dp
+
 /**
  * 0..1 collapse fraction for the bottom nav-bar's hide-on-scroll, shared between the feed
  * (writer: [dev.lyo.hortay.ui.timeline.TimelineScreen], from its header scrollBehavior's
@@ -170,12 +173,17 @@ fun MainScaffold(graph: AppGraph) {
     val searchText = rememberTextFieldState()
     val pushChannel: (Long, Long?) -> Unit = { chatId, scrollTo ->
         if (channelPushesInFlight.add(chatId)) {
+            val topAtTap = graph.backStack.lastOrNull()
             scope.launch {
                 try {
                     kotlinx.coroutines.withTimeoutOrNull(CHANNEL_PUSH_PREFETCH_TIMEOUT_MS) {
                         graph.postsRepository.loadChannelHistory(chatId)
                     }
-                    graph.backStack.add(ChannelKey(chatId = chatId, scrollToMessageId = scrollTo))
+                    // The user may have navigated elsewhere during the await (e.g. the same
+                    // tap also opened comments); a late channel must not land on top of that.
+                    if (graph.backStack.lastOrNull() == topAtTap) {
+                        graph.backStack.add(ChannelKey(chatId = chatId, scrollToMessageId = scrollTo))
+                    }
                 } finally {
                     channelPushesInFlight.remove(chatId)
                 }
@@ -437,7 +445,15 @@ fun MainScaffold(graph: AppGraph) {
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
                 snackbarHost = {
-                    SnackbarHost(snackbarHostState) { data ->
+                    // Scaffold's own insets are zeroed, so clear the system nav bar / IME here,
+                    // and lift above the floating tab bar while Home (no detail pushed) shows it.
+                    SnackbarHost(
+                        snackbarHostState,
+                        modifier = Modifier
+                            .navigationBarsPadding()
+                            .imePadding()
+                            .padding(bottom = if (hasOverlay) 0.dp else FLOATING_NAV_BAR_CLEARANCE),
+                    ) { data ->
                         Snackbar(snackbarData = data)
                     }
                 },

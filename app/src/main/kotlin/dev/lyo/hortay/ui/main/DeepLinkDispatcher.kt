@@ -6,6 +6,7 @@ import android.content.res.Resources
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
@@ -62,8 +63,23 @@ internal fun DeepLinkDispatcher(
      *  `@username` mention shouldn't bounce out to the official Telegram client. */
     onOpenUser: (userId: Long) -> Unit,
 ) {
-    val systemUriHandler: UriHandler = LocalUriHandler.current
-    val res: Resources = LocalContext.current.resources
+    val platformUriHandler: UriHandler = LocalUriHandler.current
+    val context = LocalContext.current
+    val res: Resources = context.resources
+    // Telegram URLs we can't open natively must not round-trip into Hortay's own tg:// /
+    // t.me filters; see [openUriOutsideHortay]. With no foreign handler, say so.
+    val systemUriHandler: UriHandler = remember(context, platformUriHandler, userMessages) {
+        object : UriHandler {
+            override fun openUri(uri: String) {
+                if (!openUriOutsideHortay(context, platformUriHandler, uri)) {
+                    userMessages.post(
+                        context.resources.getString(R.string.link_unsupported_other),
+                        UserMessageBus.Severity.Info,
+                    )
+                }
+            }
+        }
+    }
     LaunchedEffect(router) {
         router.events.collect { link ->
             try {
