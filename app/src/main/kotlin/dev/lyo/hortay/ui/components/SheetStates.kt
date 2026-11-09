@@ -6,6 +6,7 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 
+@OptIn(ExperimentalMaterial3Api::class)
 private val ExpandedSheetValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
 
 /**
