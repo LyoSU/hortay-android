@@ -265,6 +265,17 @@ class CommentsRepository(
         }
     }
 
+    /**
+     * Drops the cached stream and any negative thread lookup for this post, so the next
+     * [observeThread] asks Telegram again. Used by the retry action when the post reports
+     * comments but the lookup said it has no thread.
+     */
+    fun forgetThread(chatId: Long, candidateMessageIds: List<Long>) {
+        val key = chatId to (candidateMessageIds.minOrNull() ?: return)
+        synchronized(streams) { streams.remove(key) }
+        resolvedAnchors.remove(key, AnchorResolution.NoThread)
+    }
+
     private fun threadFlow(
         chatId: Long,
         candidateMessageIds: List<Long>,
@@ -272,7 +283,16 @@ class CommentsRepository(
         streamKey: Pair<Long, Long>,
     ): Flow<ThreadState> = flow {
         val anchor = ensureAnchor(chatId, candidateMessageIds) ?: run {
-            emit(ThreadState.Error(unavailableMsg))
+            // Only a cached NoThread is an authoritative "this post has no discussion". Any
+            // other null is a lookup that could not complete (rate limit, timeout, offline):
+            // surfacing that as "comments are disabled" is false, and the shared replay cache
+            // would keep it for the stream's lifetime — evict and report LoadFailed instead.
+            if (resolvedAnchors[streamKey] is AnchorResolution.NoThread) {
+                emit(ThreadState.Error(unavailableMsg))
+            } else {
+                synchronized(streams) { streams.remove(streamKey) }
+                emit(ThreadState.LoadFailed)
+            }
             return@flow
         }
 
