@@ -190,7 +190,7 @@
     <string name="timeline_empty">Здесь тихо. Подпишитесь на каналы в Telegram, и они появятся в ленте</string>
     <string name="timeline_empty_default_helper">Подпишитесь на каналы в Telegram, и они появятся в ленте</string>
     <string name="timeline_empty_saved_title">Ничего не сохранено</string>
-    <string name="timeline_empty_saved_helper">Нажмите на закладку у поста, чтобы сохранить его на потом</string>
+    <string name="timeline_empty_saved_helper">Нажмите ⋯ у поста и выберите «Сохранить пост», чтобы вернуться к нему позже</string>
     <string name="timeline_empty_default_title">Здесь тихо</string>
     <string name="timeline_empty_caught_up_title">Всё прочитано</string>
     <string name="timeline_empty_caught_up_helper">Вы прочитали все посты в ленте. Потяните вниз, чтобы проверить новые.</string>
@@ -369,7 +369,7 @@
     <string name="settings_feed_order_snackbar_to_newest">Лента изменена — новые сверху</string>
     <string name="settings_feed_order_snackbar_to_oldest">Лента изменена — новые снизу, как в чате</string>
     <string name="settings_snap_scroll_title">Пролистывание с фиксацией</string>
-    <string name="settings_snap_scroll_subtitle">Каждый пост встаёт на место после быстрого свайпа — как в TikTok</string>
+    <string name="settings_snap_scroll_subtitle">Каждый свайп останавливается на следующем посте</string>
     <string name="settings_archive_in_all_title">Архив во «Все»</string>
     <string name="settings_archive_in_all_subtitle">Показывать посты из архивированных каналов и в ленте «Все»</string>
     <string name="settings_group_feed_title">Группировать репосты и серии</string>

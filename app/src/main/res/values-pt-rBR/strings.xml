@@ -187,7 +187,7 @@
     <string name="timeline_empty">Tudo quieto aqui. Inscreva-se em canais no Telegram e eles aparecerão no feed</string>
     <string name="timeline_empty_default_helper">Inscreva-se em canais no Telegram e eles aparecerão no feed</string>
     <string name="timeline_empty_saved_title">Nada salvo ainda</string>
-    <string name="timeline_empty_saved_helper">Toque no marcador ao lado de uma publicação para salvá-la para depois</string>
+    <string name="timeline_empty_saved_helper">Toque em ⋯ em uma publicação e escolha “Salvar publicação” para ver depois</string>
     <string name="timeline_empty_default_title">Tudo quieto aqui</string>
     <string name="timeline_empty_caught_up_title">Tudo em dia</string>
     <string name="timeline_empty_caught_up_helper">Você leu todas as publicações do feed. Puxe para atualizar e ver as novidades.</string>
@@ -360,7 +360,7 @@
     <string name="settings_feed_order_snackbar_to_newest">Feed reordenado — mais recentes no topo</string>
     <string name="settings_feed_order_snackbar_to_oldest">Feed reordenado — mais recentes no rodapé, como um chat</string>
     <string name="settings_snap_scroll_title">Rolagem por encaixe</string>
-    <string name="settings_snap_scroll_subtitle">Cada publicação encaixa no lugar ao dar um gesto rápido — estilo TikTok/Reels</string>
+    <string name="settings_snap_scroll_subtitle">Cada deslize para na próxima publicação</string>
     <string name="settings_archive_in_all_title">Arquivo em “Todos”</string>
     <string name="settings_archive_in_all_subtitle">Mostrar também as publicações dos canais arquivados no feed “Todos”</string>
     <string name="settings_group_feed_title">Agrupar encaminhamentos e séries</string>

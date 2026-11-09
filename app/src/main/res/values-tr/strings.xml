@@ -184,7 +184,7 @@
     <string name="timeline_empty">Burada henüz bir şey yok. Telegram\'da kanallara abone ol; akışında görünmeye başlasınlar</string>
     <string name="timeline_empty_default_helper">Telegram\'da kanallara abone ol; akışında görünmeye başlasınlar</string>
     <string name="timeline_empty_saved_title">Henüz kaydedilen yok</string>
-    <string name="timeline_empty_saved_helper">Sonra okumak için bir gönderiyi kaydetmek üzere yer imini tıkla</string>
+    <string name="timeline_empty_saved_helper">Bir gönderide ⋯ simgesine dokun ve sonra bakmak için “Gönderiyi kaydet”i seç</string>
     <string name="timeline_empty_default_title">Burada henüz bir şey yok</string>
     <string name="timeline_empty_caught_up_title">Her şeyi okudun</string>
     <string name="timeline_empty_caught_up_helper">Akışındaki tüm gönderileri okudun. Yeni gelenler için aşağı çek.</string>
@@ -351,7 +351,7 @@
     <string name="settings_feed_order_snackbar_to_newest">Akış yeniden sıralandı — en yeni üstte</string>
     <string name="settings_feed_order_snackbar_to_oldest">Akış yeniden sıralandı — sohbet gibi, en yeni altta</string>
     <string name="settings_snap_scroll_title">Tutturmalı kaydırma</string>
-    <string name="settings_snap_scroll_subtitle">Hızlı kaydırdığında her gönderi yerine kilitlenir — TikTok/Reels hissi</string>
+    <string name="settings_snap_scroll_subtitle">Her kaydırma bir sonraki gönderide durur</string>
     <string name="settings_archive_in_all_title">Arşiv “Tümü” akışında</string>
     <string name="settings_archive_in_all_subtitle">Arşivlenmiş kanalların gönderilerini “Tümü” akışında da göster</string>
     <string name="settings_group_feed_title">İletmeleri ve serileri grupla</string>

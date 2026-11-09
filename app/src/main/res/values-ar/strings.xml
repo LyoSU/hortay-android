@@ -194,7 +194,7 @@
     <string name="timeline_empty">هدوء تام هنا. اشترك في قنوات على Telegram وستظهر في الخلاصة</string>
     <string name="timeline_empty_default_helper">اشترك في قنوات على Telegram وستظهر في الخلاصة</string>
     <string name="timeline_empty_saved_title">لا يوجد شيء محفوظ بعد</string>
-    <string name="timeline_empty_saved_helper">اضغط على الإشارة المرجعية بجانب منشور لحفظه لاحقاً</string>
+    <string name="timeline_empty_saved_helper">اضغط ⋯ على منشور واختر «حفظ المنشور» للرجوع إليه لاحقاً</string>
     <string name="timeline_empty_default_title">هدوء تام هنا</string>
     <string name="timeline_empty_caught_up_title">قرأت كل شيء</string>
     <string name="timeline_empty_caught_up_helper">لقد قرأت جميع المنشورات في خلاصتك. اسحب للتحديث لمزيد من المستجدات.</string>
@@ -385,7 +385,7 @@
     <string name="settings_feed_order_snackbar_to_newest">تم إعادة ترتيب الخلاصة — الأحدث في الأعلى</string>
     <string name="settings_feed_order_snackbar_to_oldest">تم إعادة ترتيب الخلاصة — الأحدث في الأسفل كالدردشة</string>
     <string name="settings_snap_scroll_title">التمرير المتقطع</string>
-    <string name="settings_snap_scroll_subtitle">كل منشور ينقر في مكانه عند التمرير السريع — تجربة TikTok/Reels</string>
+    <string name="settings_snap_scroll_subtitle">كل تمريرة تتوقف عند المنشور التالي</string>
     <string name="settings_archive_in_all_title">الأرشيف في «الكل»</string>
     <string name="settings_archive_in_all_subtitle">يعرض منشورات القنوات المؤرشفة في موجز «الكل» أيضاً</string>
     <string name="settings_group_feed_title">تجميع إعادات التوجيه والسلاسل</string>

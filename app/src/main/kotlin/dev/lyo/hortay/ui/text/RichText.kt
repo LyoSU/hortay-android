@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -504,7 +506,11 @@ private fun BlockBox(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(bottom = 6.dp, end = 8.dp)
-                    .rotate(if (expanded) 270f else 90f),
+                    // The glyph auto-mirrors in RTL, so the quarter-turn flips sign to keep down = expand.
+                    .rotate(
+                        (if (expanded) 270f else 90f) *
+                            (if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f),
+                    ),
             )
         }
         EditorialQuoteFrame(

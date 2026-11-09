@@ -182,7 +182,7 @@
     <string name="timeline_empty">اینجا ساکت است. در Telegram مشترک کانال‌ها شوید تا در فید نمایش داده شوند</string>
     <string name="timeline_empty_default_helper">در Telegram مشترک کانال‌ها شوید تا در فید نمایش داده شوند</string>
     <string name="timeline_empty_saved_title">هنوز چیزی ذخیره نشده</string>
-    <string name="timeline_empty_saved_helper">روی نشانک کنار پست بزنید تا برای بعد ذخیره شود</string>
+    <string name="timeline_empty_saved_helper">روی ⋯ کنار پست بزنید و «ذخیره پست» را انتخاب کنید تا بعداً سراغش بروید</string>
     <string name="timeline_empty_default_title">اینجا ساکت است</string>
     <string name="timeline_empty_caught_up_title">همه چیز را خواندید</string>
     <string name="timeline_empty_caught_up_helper">همه پست‌های فید را خواندید. برای دریافت جدیدها بکشید و رها کنید.</string>
@@ -349,7 +349,7 @@
     <string name="settings_feed_order_snackbar_to_newest">فید مرتب شد — جدیدترین بالا</string>
     <string name="settings_feed_order_snackbar_to_oldest">فید مرتب شد — جدیدترین پایین، مثل چت</string>
     <string name="settings_snap_scroll_title">اسکرول جهشی</string>
-    <string name="settings_snap_scroll_subtitle">با هر فلیک، پست سر جایش قفل می‌شود — حس TikTok/Reels</string>
+    <string name="settings_snap_scroll_subtitle">هر کشیدن روی پست بعدی متوقف می‌شود</string>
     <string name="settings_archive_in_all_title">آرشیو در «همه»</string>
     <string name="settings_archive_in_all_subtitle">پست‌های کانال‌های آرشیوشده در فید «همه» هم نمایش داده شود</string>
     <string name="settings_group_feed_title">گروه‌بندی بازارسال‌ها و سری‌ها</string>

@@ -49,12 +49,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ChannelContext
@@ -241,7 +243,10 @@ fun PostCard(
                 val verticalOffset = verticalInset + (fullHeight - visibleHeight) / 2f
                 drawRoundRect(
                     color = unreadStripColor,
-                    topLeft = Offset(0f, verticalOffset),
+                    topLeft = Offset(
+                        if (layoutDirection == LayoutDirection.Rtl) size.width - stripWidth else 0f,
+                        verticalOffset,
+                    ),
                     size = Size(stripWidth, visibleHeight),
                     cornerRadius = CornerRadius(cornerRadius, cornerRadius),
                     alpha = unreadAlpha,
@@ -259,6 +264,7 @@ fun PostCard(
                     indication = LocalIndication.current,
                     enabled = clickable || actionsEnabled,
                     onClick = { if (clickable) interactions.onPostClick(post) },
+                    onLongClickLabel = if (actionsEnabled) stringResource(R.string.post_more_actions) else null,
                     onLongClick = if (actionsEnabled) ({ sheetOpen = true }) else null,
                 )
                 .padding(horizontal = CARD_H_PADDING, vertical = 14.dp),
@@ -1285,11 +1291,14 @@ internal fun ReactionChip(
             .background(container, shape)
             .border(1.dp, borderColor, shape)
             .let {
-                if (onClick != null) it.clickable(
-                    interactionSource = interactionSource,
-                    indication = LocalIndication.current,
-                    onClick = onClick,
-                ) else it
+                if (onClick != null) it
+                    .semantics { selected = item.isChosen }
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = LocalIndication.current,
+                        role = Role.Button,
+                        onClick = onClick,
+                    ) else it
             }
             .then(
                 if (disabled) Modifier.alpha(0.6f) else Modifier,
@@ -1676,10 +1685,16 @@ private fun SheetItem(
     }
 }
 
-private fun formatViews(count: Int): String = when {
-    count < 1_000 -> count.toString()
-    count < 1_000_000 -> "%.1fK".format(count / 1_000.0).trimEnd('0').trimEnd('.')
-    else -> "%.1fM".format(count / 1_000_000.0).trimEnd('0').trimEnd('.')
+internal fun formatViews(count: Int): String {
+    fun compact(value: Double, suffix: String): String {
+        val text = String.format(java.util.Locale.ROOT, "%.1f", value)
+        return (if (text.endsWith(".0")) text.dropLast(2) else text) + suffix
+    }
+    return when {
+        count < 1_000 -> count.toString()
+        count < 1_000_000 -> compact(count / 1_000.0, "K")
+        else -> compact(count / 1_000_000.0, "M")
+    }
 }
 
 

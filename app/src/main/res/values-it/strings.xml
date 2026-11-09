@@ -187,7 +187,7 @@
     <string name="timeline_empty">Niente qui per ora. Iscriviti ai canali su Telegram e appariranno nel feed</string>
     <string name="timeline_empty_default_helper">Iscriviti ai canali su Telegram e appariranno nel feed</string>
     <string name="timeline_empty_saved_title">Niente ancora salvato</string>
-    <string name="timeline_empty_saved_helper">Tocca il segnalibro accanto a un post per salvarlo per dopo</string>
+    <string name="timeline_empty_saved_helper">Tocca ⋯ su un post e scegli «Salva post» per ritrovarlo dopo</string>
     <string name="timeline_empty_default_title">Niente qui per ora</string>
     <string name="timeline_empty_caught_up_title">Sei in pari</string>
     <string name="timeline_empty_caught_up_helper">Hai letto tutti i post del tuo feed. Scorri verso il basso per aggiornare.</string>
@@ -359,7 +359,7 @@
     <string name="settings_feed_order_snackbar_to_newest">Feed riordinato — i più recenti in cima</string>
     <string name="settings_feed_order_snackbar_to_oldest">Feed riordinato — i più recenti in fondo, come in una chat</string>
     <string name="settings_snap_scroll_title">Scorrimento a scatto</string>
-    <string name="settings_snap_scroll_subtitle">Ogni post si posiziona esattamente quando scorri — effetto TikTok/Reels</string>
+    <string name="settings_snap_scroll_subtitle">Ogni scorrimento si ferma sul post successivo</string>
     <string name="settings_archive_in_all_title">Archivio in «Tutti»</string>
     <string name="settings_archive_in_all_subtitle">Mostra anche i post dei canali archiviati nel feed «Tutti»</string>
     <string name="settings_group_feed_title">Raggruppa inoltri e serie</string>

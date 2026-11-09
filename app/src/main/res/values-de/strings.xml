@@ -184,7 +184,7 @@
     <string name="timeline_empty">Hier ist es noch ruhig. Abonniere Kanäle in Telegram, damit sie im Feed erscheinen</string>
     <string name="timeline_empty_default_helper">Abonniere Kanäle in Telegram, damit sie im Feed erscheinen</string>
     <string name="timeline_empty_saved_title">Noch nichts gespeichert</string>
-    <string name="timeline_empty_saved_helper">Tippe auf das Lesezeichen neben einem Beitrag, um ihn zu speichern</string>
+    <string name="timeline_empty_saved_helper">Tippe bei einem Beitrag auf ⋯ und wähle „Beitrag speichern“, um ihn für später aufzuheben</string>
     <string name="timeline_empty_default_title">Hier ist es noch ruhig</string>
     <string name="timeline_empty_caught_up_title">Alles gelesen</string>
     <string name="timeline_empty_caught_up_helper">Du hast alle Beiträge in deinem Feed gelesen. Zum Aktualisieren nach unten ziehen.</string>
@@ -351,7 +351,7 @@
     <string name="settings_feed_order_snackbar_to_newest">Feed neu sortiert — Neuestes oben</string>
     <string name="settings_feed_order_snackbar_to_oldest">Feed neu sortiert — Neuestes unten wie im Chat</string>
     <string name="settings_snap_scroll_title">Snap-Scroll</string>
-    <string name="settings_snap_scroll_subtitle">Jeder Beitrag rastet beim Wischen ein — wie TikTok/Reels</string>
+    <string name="settings_snap_scroll_subtitle">Jede Wischgeste hält beim nächsten Beitrag an</string>
     <string name="settings_archive_in_all_title">Archiv in „Alle“</string>
     <string name="settings_archive_in_all_subtitle">Beiträge aus archivierten Kanälen auch im Feed „Alle“ zeigen</string>
     <string name="settings_group_feed_title">Weiterleitungen und Serien bündeln</string>

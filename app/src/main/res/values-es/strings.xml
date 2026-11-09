@@ -187,7 +187,7 @@
     <string name="timeline_empty">Aquí está tranquilo. Suscríbete a canales en Telegram y aparecerán en el inicio</string>
     <string name="timeline_empty_default_helper">Suscríbete a canales en Telegram y aparecerán en el inicio</string>
     <string name="timeline_empty_saved_title">Nada guardado aún</string>
-    <string name="timeline_empty_saved_helper">Toca el marcador junto a una publicación para guardarla después</string>
+    <string name="timeline_empty_saved_helper">Toca ⋯ en una publicación y elige «Guardar publicación» para verla después</string>
     <string name="timeline_empty_default_title">Aquí está tranquilo</string>
     <string name="timeline_empty_caught_up_title">Todo leído</string>
     <string name="timeline_empty_caught_up_helper">Has leído todas las publicaciones del inicio. Desliza hacia abajo para ver novedades.</string>
@@ -359,7 +359,7 @@
     <string name="settings_feed_order_snackbar_to_newest">Inicio reordenado — las nuevas arriba</string>
     <string name="settings_feed_order_snackbar_to_oldest">Inicio reordenado — las nuevas abajo, como un chat</string>
     <string name="settings_snap_scroll_title">Desplazamiento ajustado</string>
-    <string name="settings_snap_scroll_subtitle">Cada publicación encaja en su lugar al deslizar — sensación TikTok/Reels</string>
+    <string name="settings_snap_scroll_subtitle">Cada deslizamiento se detiene en la siguiente publicación</string>
     <string name="settings_archive_in_all_title">Archivo en «Todo»</string>
     <string name="settings_archive_in_all_subtitle">Mostrar también las publicaciones de los canales archivados en «Todo»</string>
     <string name="settings_group_feed_title">Agrupar reenvíos y series</string>

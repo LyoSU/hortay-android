@@ -918,6 +918,7 @@ private fun CommentNode(
             .combinedClickable(
                 // No tap action on a comment — long-press opens the reaction picker.
                 onClick = {},
+                onLongClickLabel = stringResource(R.string.post_more_actions),
                 onLongClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     onLongPress()

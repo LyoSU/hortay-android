@@ -48,6 +48,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import dev.lyo.hortay.ui.icons.Symbol
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -330,11 +333,11 @@ private fun PhoneForm(graph: AppGraph, errorMessage: String?) {
                 // Allow only `+` plus digits; keep `+` always at the head so the user
                 // can't accidentally erase it. Cap at 5 (E.164 country code max is 3,
                 // but Fragment-style services can quote longer prefixes; 5 is safe).
-                val digits = raw.filter(Char::isDigit).take(4)
+                val digits = raw.toAsciiDigits().take(4)
                 customDial = "+$digits"
             },
             value = phoneNational,
-            onValueChange = { phoneNational = it.filter(Char::isDigit).take(15) },
+            onValueChange = { phoneNational = it.toAsciiDigits().take(15) },
             isError = errorMessage != null,
         )
         AnimatedFieldError(text = errorMessage)
@@ -451,6 +454,8 @@ private fun PhoneNumberRow(
     isError: Boolean,
 ) {
     val isCustom = country?.isCustom == true
+    // Dial code then national number is a fixed left-to-right sequence in every locale.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -496,6 +501,7 @@ private fun PhoneNumberRow(
                 .weight(1f)
                 .semantics { contentType = ContentType.PhoneNumber },
         )
+    }
     }
 }
 
@@ -783,7 +789,7 @@ private fun PasswordForm(graph: AppGraph, stage: AuthStage.WaitPassword, errorMe
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = recoveryCode,
-                onValueChange = { recoveryCode = it.filter { c -> c.isDigit() }.take(8) },
+                onValueChange = { recoveryCode = it.toAsciiDigits().take(8) },
                 label = { Text(stringResource(R.string.auth_password_recovery_code_label)) },
                 singleLine = true,
                 isError = errorMessage != null,

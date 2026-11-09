@@ -187,7 +187,7 @@
     <string name="timeline_empty">Rien ici pour l\'instant. Abonne-toi à des chaînes dans Telegram et elles apparaîtront dans le fil</string>
     <string name="timeline_empty_default_helper">Abonne-toi à des chaînes dans Telegram et elles apparaîtront dans le fil</string>
     <string name="timeline_empty_saved_title">Rien d\'enregistré pour l\'instant</string>
-    <string name="timeline_empty_saved_helper">Appuie sur le signet à côté d\'une publication pour l\'enregistrer</string>
+    <string name="timeline_empty_saved_helper">Appuie sur ⋯ sur une publication et choisis « Enregistrer la publication » pour la retrouver plus tard</string>
     <string name="timeline_empty_default_title">Rien ici pour l\'instant</string>
     <string name="timeline_empty_caught_up_title">Tout lu</string>
     <string name="timeline_empty_caught_up_helper">Tu as lu toutes les publications de ton fil. Tire vers le bas pour actualiser.</string>
@@ -360,7 +360,7 @@
     <string name="settings_feed_order_snackbar_to_newest">Fil réorganisé — les plus récents en haut</string>
     <string name="settings_feed_order_snackbar_to_oldest">Fil réorganisé — les plus récents en bas, comme un chat</string>
     <string name="settings_snap_scroll_title">Défilement par clic</string>
-    <string name="settings_snap_scroll_subtitle">Chaque publication se verrouille à sa place quand tu fais défiler vite — effet TikTok/Reels</string>
+    <string name="settings_snap_scroll_subtitle">Chaque balayage s\'arrête sur la publication suivante</string>
     <string name="settings_archive_in_all_title">Archive dans « Toutes »</string>
     <string name="settings_archive_in_all_subtitle">Afficher aussi les publications des chaînes archivées dans « Toutes »</string>
     <string name="settings_group_feed_title">Regrouper partages et séries</string>

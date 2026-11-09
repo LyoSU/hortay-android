@@ -3,6 +3,9 @@
 package dev.lyo.hortay.ui.auth
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -74,6 +77,9 @@ fun OtpInput(
         }
     }
 
+    // The code is a left-to-right digit sequence in every locale; mirroring the cells in
+    // RTL (ar/fa) would read it reversed.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Box(modifier = modifier.fillMaxWidth()) {
         // Visible cells row sits underneath; the actual TextField is invisible (sized to
         // match) and stretches across the whole row so a tap anywhere brings the keyboard
@@ -98,7 +104,7 @@ fun OtpInput(
         BasicTextField(
             value = value,
             onValueChange = { raw ->
-                val sanitized = raw.filter(Char::isDigit).take(length)
+                val sanitized = raw.toAsciiDigits().take(length)
                 onValueChange(sanitized)
                 if (sanitized.length == length) onComplete(sanitized)
             },
@@ -120,6 +126,7 @@ fun OtpInput(
                 .onFocusChanged { hasFocus = it.isFocused }
                 .semantics { contentType = ContentType.SmsOtpCode },
         )
+    }
     }
 }
 
@@ -176,5 +183,13 @@ private fun OtpCell(
             else MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
         )
+    }
+}
+
+/** Keeps only digits from any script (Arabic-Indic, Persian, ...) and maps them to ASCII 0-9. */
+internal fun CharSequence.toAsciiDigits(): String = buildString {
+    for (c in this@toAsciiDigits) {
+        val d = Character.digit(c, 10)
+        if (d >= 0) append(('0' + d))
     }
 }

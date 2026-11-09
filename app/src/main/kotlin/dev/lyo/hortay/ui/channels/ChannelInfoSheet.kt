@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import dev.lyo.hortay.R
@@ -54,7 +55,6 @@ import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
-import java.util.Locale
 
 /**
  * Bottom sheet rendered when the user taps a channel header in filtered-feed mode. Pulls
@@ -331,5 +331,8 @@ private fun SimilarChannels(
 
 private const val SIMILAR_MAX = 6
 
+// Grouping follows the current UI locale (observable via LocalConfiguration, so a
+// per-app language switch re-renders) instead of a hardcoded one.
+@Composable
 private fun formatThousands(n: Int): String =
-    NumberFormat.getNumberInstance(Locale.forLanguageTag("uk")).format(n)
+    NumberFormat.getNumberInstance(LocalConfiguration.current.locales[0]).format(n)

@@ -48,6 +48,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -577,7 +579,10 @@ private fun RichDetails(block: RichBlock.Details, path: String, quoteDepth: Int 
             Symbol(
                 name = "chevron_right",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.rotate(chevron),
+                // The glyph auto-mirrors in RTL, so the quarter-turn must flip sign to keep pointing down.
+                modifier = Modifier.rotate(
+                    if (LocalLayoutDirection.current == LayoutDirection.Rtl) -chevron else chevron,
+                ),
             )
         }
         val sizeSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntSize>()

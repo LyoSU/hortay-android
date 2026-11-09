@@ -188,7 +188,7 @@
     <string name="timeline_empty">Tu cicho. Zasubskrybuj kanały w Telegramie, a pojawią się w feedzie</string>
     <string name="timeline_empty_default_helper">Zasubskrybuj kanały w Telegramie, a pojawią się w feedzie</string>
     <string name="timeline_empty_saved_title">Nic jeszcze nie zapisano</string>
-    <string name="timeline_empty_saved_helper">Dotknij zakładki przy wpisie, żeby go zapisać na później</string>
+    <string name="timeline_empty_saved_helper">Dotknij ⋯ przy wpisie i wybierz „Zapisz wpis”, żeby wrócić do niego później</string>
     <string name="timeline_empty_default_title">Tu cicho</string>
     <string name="timeline_empty_caught_up_title">Wszystko przeczytane</string>
     <string name="timeline_empty_caught_up_helper">Przeczytałeś wszystkie wpisy. Odśwież, żeby sprawdzić nowe.</string>
@@ -367,7 +367,7 @@
     <string name="settings_feed_order_snackbar_to_newest">Feed posortowany — najnowsze na górze</string>
     <string name="settings_feed_order_snackbar_to_oldest">Feed posortowany — najnowsze na dole, jak w czacie</string>
     <string name="settings_snap_scroll_title">Przewijanie z przeskakiwaniem</string>
-    <string name="settings_snap_scroll_subtitle">Każdy wpis zatrzymuje się w miejscu po szybkim przewinięciu — efekt TikToka / Reels</string>
+    <string name="settings_snap_scroll_subtitle">Każde przesunięcie zatrzymuje się na kolejnym wpisie</string>
     <string name="settings_archive_in_all_title">Archiwum w feedzie „Wszystkie”</string>
     <string name="settings_archive_in_all_subtitle">Pokazuj posty z zarchiwizowanych kanałów także w feedzie „Wszystkie”</string>
     <string name="settings_group_feed_title">Grupuj przekazania i serie</string>

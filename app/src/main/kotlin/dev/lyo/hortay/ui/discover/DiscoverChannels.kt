@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -303,12 +304,12 @@ private fun SubscribeButton(
         },
         enabled = enabled && resolvedState == SubscribeState.IDLE,
         shapes = ButtonDefaults.shapes(),
-        // Compact content padding so the 36 dp fixed height isn't over-constrained
+        // Compact content padding so the 36 dp minimum height isn't over-constrained
         // (the default 24×8 dp leaves no room for the label at this height).
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
         modifier = Modifier
             .widthIn(min = 96.dp)
-            .height(36.dp),
+            .heightIn(min = 36.dp),
     ) {
         Box(contentAlignment = Alignment.Center) {
             // Invisible sizing ghosts: the two widest states reserve the button's

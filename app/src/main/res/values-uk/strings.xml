@@ -188,7 +188,7 @@
     <string name="timeline_empty">Тут поки порожньо. Підпишись на канали в Telegram, і вони зʼявляться у стрічці</string>
     <string name="timeline_empty_default_helper">Підпишись на канали в Telegram, і вони зʼявляться у стрічці</string>
     <string name="timeline_empty_saved_title">Нічого не збережено</string>
-    <string name="timeline_empty_saved_helper">Натисни закладку біля поста, щоб зберегти його на потім</string>
+    <string name="timeline_empty_saved_helper">Натисни ⋯ біля поста й обери «Зберегти пост», щоб повернутися до нього пізніше</string>
     <string name="timeline_empty_default_title">Тут поки порожньо</string>
     <string name="timeline_empty_caught_up_title">Усе прочитано</string>
     <string name="timeline_empty_caught_up_helper">Усі пости у стрічці прочитано. Потягни вниз, щоб завантажити нові.</string>
@@ -364,7 +364,7 @@
     <string name="settings_feed_order_snackbar_to_newest">Стрічку переупорядковано — нові зверху</string>
     <string name="settings_feed_order_snackbar_to_oldest">Стрічку переупорядковано — нові внизу, як у чаті</string>
     <string name="settings_snap_scroll_title">Покрокове гортання</string>
-    <string name="settings_snap_scroll_subtitle">Кожен пост зупиняється на місці після швидкого гортання</string>
+    <string name="settings_snap_scroll_subtitle">Кожен свайп зупиняється на наступному пості</string>
     <string name="settings_archive_in_all_title">Архів у «Усі»</string>
     <string name="settings_archive_in_all_subtitle">Показувати пости з архівованих каналів і в стрічці «Усі»</string>
     <string name="settings_group_feed_title">Групувати репости й серії</string>

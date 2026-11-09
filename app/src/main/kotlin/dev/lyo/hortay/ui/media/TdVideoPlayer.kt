@@ -188,7 +188,7 @@ fun TdVideoPlayer(
             // readyPath is null for both "not Ready" and "Ready but path empty" (TDLib's
             // transient post-completion-rename snapshot) — the single null-check covers both.
             val path = readyPath ?: return@LaunchedEffect
-            "file://$path"
+            android.net.Uri.fromFile(java.io.File(path)).toString()
         }
         val resumeAt = exoPlayer.currentPosition.coerceAtLeast(0L)
         val wasPlaying = exoPlayer.playWhenReady

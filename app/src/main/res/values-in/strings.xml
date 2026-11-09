@@ -179,7 +179,7 @@
     <string name="timeline_empty">Sepi di sini. Ikuti kanal di Telegram dan mereka akan muncul di feed</string>
     <string name="timeline_empty_default_helper">Ikuti kanal di Telegram dan mereka akan muncul di feed</string>
     <string name="timeline_empty_saved_title">Belum ada yang tersimpan</string>
-    <string name="timeline_empty_saved_helper">Ketuk ikon bookmark di samping kiriman untuk menyimpannya</string>
+    <string name="timeline_empty_saved_helper">Ketuk ⋯ pada kiriman lalu pilih “Simpan kiriman” untuk membacanya nanti</string>
     <string name="timeline_empty_default_title">Sepi di sini</string>
     <string name="timeline_empty_caught_up_title">Semua sudah dibaca</string>
     <string name="timeline_empty_caught_up_helper">Kamu sudah membaca semua kiriman di feed-mu. Tarik untuk memuat yang baru.</string>
@@ -340,7 +340,7 @@
     <string name="settings_feed_order_snackbar_to_newest">Feed diurutkan ulang — terbaru di atas</string>
     <string name="settings_feed_order_snackbar_to_oldest">Feed diurutkan ulang — terbaru di bawah, seperti obrolan</string>
     <string name="settings_snap_scroll_title">Snap scroll</string>
-    <string name="settings_snap_scroll_subtitle">Setiap kiriman terkunci saat kamu flinging — nuansa TikTok/Reels</string>
+    <string name="settings_snap_scroll_subtitle">Setiap gesekan berhenti di kiriman berikutnya</string>
     <string name="settings_archive_in_all_title">Arsip di “Semua”</string>
     <string name="settings_archive_in_all_subtitle">Tampilkan juga postingan dari kanal yang diarsipkan di feed “Semua”</string>
     <string name="settings_group_feed_title">Kelompokkan teruskan dan seri</string>

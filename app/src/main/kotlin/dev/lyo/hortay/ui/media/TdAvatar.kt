@@ -12,6 +12,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -52,7 +54,10 @@ fun TdAvatar(
         modifier = modifier
             .size(size)
             .clip(CircleShape)
-            .background(background),
+            .background(background)
+            // The name is exposed once on the whole avatar; the letter and image layers are
+            // visual only.
+            .clearAndSetSemantics { contentDescription = name },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -62,12 +67,12 @@ fun TdAvatar(
             fontWeight = FontWeight.SemiBold,
         )
         if (thumb != null) {
-            MinithumbImage(bytes = thumb, contentDescription = name)
+            MinithumbImage(bytes = thumb, contentDescription = null)
         }
         if (fileId != null) {
             TdMediaImage(
                 media = TdMedia(fileId = fileId, width = 0, height = 0, minithumbBytes = null),
-                contentDescription = name,
+                contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 placeholderColor = null,
                 showProgress = false,
@@ -76,7 +81,7 @@ fun TdAvatar(
         } else if (remoteUrl != null) {
             AsyncImage(
                 model = remoteUrl,
-                contentDescription = name,
+                contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
             )
         }
