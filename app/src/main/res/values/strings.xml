@@ -31,7 +31,10 @@
     <string name="web_empty_channels_title">No channels yet</string>
     <string name="web_empty_channels_body">Add a public channel and its posts will start showing up in your feed</string>
     <string name="web_add_mentioned_title">Mentioned in your channels</string>
-    <string name="web_add_mentioned_count">Mentioned %1$d times in your subscriptions</string>
+    <plurals name="web_add_mentioned_count">
+        <item quantity="one">Mentioned %1$d time in your subscriptions</item>
+        <item quantity="other">Mentioned %1$d times in your subscriptions</item>
+    </plurals>
     <string name="web_empty_saved">Nothing saved yet</string>
     <string name="web_welcome_title">Without sign-in</string>
     <string name="web_welcome_body">Add a few public channels and read them without signing in to Telegram</string>
@@ -265,7 +268,6 @@
     <string name="content_open_in_telegram">Open in Telegram</string>
     <string name="poll_anonymous">Anonymous poll</string>
     <string name="poll_title">Poll</string>
-    <string name="poll_total_votes">%1$d votes</string>
     <!-- New MD3E poll card chips / actions -->
     <string name="poll_type_regular">Poll</string>
     <string name="poll_type_quiz">Quiz</string>
@@ -339,7 +341,6 @@
     <string name="settings_subtitle_auto_download_category_wifi">Over Wi-Fi</string>
     <string name="settings_subtitle_auto_download_category_mobile">On mobile data</string>
     <string name="settings_subtitle_auto_download_category_roaming">When roaming</string>
-    <string name="timeline_subtitle_feed">%1$d channels</string>
     <string name="timeline_subtitle_saved">Bookmarked posts</string>
     <string name="settings_section_feed">Feed</string>
     <string name="settings_section_appearance">Appearance</string>
@@ -380,7 +381,6 @@
     <string name="settings_category_data_title">Data and storage</string>
     <string name="settings_category_data_subtitle">Traffic, storage, auto-download</string>
     <string name="settings_category_privacy_subtitle">Invisible reading, policies</string>
-    <string name="settings_category_about_subtitle">Author, language, version</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_summary_system">System default</string>
     <!-- Native names shown as-is in every UI locale (Telegram convention). -->
@@ -747,7 +747,10 @@
     <string name="archive_capture_edits">Capture edits</string>
     <string name="archive_capture_deletes">Capture deletions</string>
     <string name="archive_retention_label">Retention</string>
-    <string name="archive_retention_days">%d days</string>
+    <plurals name="archive_retention_days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
     <string name="archive_retention_unlimited">No limit</string>
     <string name="archive_max_records_label">Max records</string>
     <string name="archive_records_unlimited">No limit</string>

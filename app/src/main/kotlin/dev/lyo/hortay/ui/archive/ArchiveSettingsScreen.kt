@@ -409,7 +409,7 @@ private fun DisableDialog(onKeep: () -> Unit, onDelete: () -> Unit, onCancel: ()
 @Composable
 private fun retentionLabel(days: Int): String =
     if (days == Int.MAX_VALUE) stringResource(R.string.archive_retention_unlimited)
-    else stringResource(R.string.archive_retention_days, days)
+    else pluralStringResource(R.plurals.archive_retention_days, days, days)
 
 @Composable
 private fun recordsLabel(n: Int): String =

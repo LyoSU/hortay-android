@@ -28,7 +28,9 @@
     <string name="web_empty_channels_title">Belum ada kanal</string>
     <string name="web_empty_channels_body">Tambah kanal publik dan kiriman-kirimanya akan muncul di feed-mu</string>
     <string name="web_add_mentioned_title">Disebut di kanal-kanalmu</string>
-    <string name="web_add_mentioned_count">Disebut %1$d kali di langgananmu</string>
+    <plurals name="web_add_mentioned_count">
+        <item quantity="other">Disebut %1$d kali di langgananmu</item>
+    </plurals>
     <string name="web_empty_saved">Belum ada yang tersimpan</string>
     <string name="web_welcome_title">Tanpa masuk</string>
     <string name="web_welcome_body">Tambah beberapa kanal publik dan baca tanpa masuk ke Telegram</string>
@@ -256,7 +258,6 @@
     <string name="content_open_in_telegram">Buka di Telegram</string>
     <string name="poll_anonymous">Jajak pendapat anonim</string>
     <string name="poll_title">Jajak pendapat</string>
-    <string name="poll_total_votes">%1$d suara</string>
     <!-- Chip / aksi kartu jajak pendapat MD3E baru -->
     <string name="poll_type_regular">Jajak pendapat</string>
     <string name="poll_type_quiz">Kuis</string>
@@ -327,7 +328,6 @@
     <string name="settings_subtitle_auto_download_category_wifi">Lewat Wi-Fi</string>
     <string name="settings_subtitle_auto_download_category_mobile">Lewat data seluler</string>
     <string name="settings_subtitle_auto_download_category_roaming">Saat roaming</string>
-    <string name="timeline_subtitle_feed">%1$d kanal</string>
     <string name="timeline_subtitle_saved">Kiriman yang disimpan</string>
     <string name="settings_section_feed">Feed</string>
     <string name="settings_section_appearance">Tampilan</string>
@@ -367,7 +367,6 @@
     <string name="settings_category_data_title">Data dan penyimpanan</string>
     <string name="settings_category_data_subtitle">Lalu lintas, penyimpanan, unduh otomatis</string>
     <string name="settings_category_privacy_subtitle">Membaca tanpa terlihat, kebijakan</string>
-    <string name="settings_category_about_subtitle">Penulis, bahasa, versi</string>
     <string name="settings_language">Bahasa</string>
     <string name="settings_language_summary_system">Default sistem</string>
     <string name="settings_language_dialog_title">Bahasa aplikasi</string>
@@ -696,7 +695,9 @@
     <string name="archive_open_browser">Buka arsip</string>
     <string name="archive_purged">Salinan dihapus</string>
     <string name="archive_records_unlimited">Tanpa batas</string>
-    <string name="archive_retention_days">%d hari</string>
+    <plurals name="archive_retention_days">
+        <item quantity="other">%d hari</item>
+    </plurals>
     <string name="archive_retention_label">Retensi</string>
     <string name="archive_retention_unlimited">Tanpa batas</string>
     <string name="archive_row_kind_deleted">Dihapus</string>

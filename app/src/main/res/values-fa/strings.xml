@@ -28,7 +28,10 @@
     <string name="web_empty_channels_title">هنوز کانالی ندارید</string>
     <string name="web_empty_channels_body">یک کانال عمومی اضافه کنید تا پست‌هایش در فید شما نمایش داده شود</string>
     <string name="web_add_mentioned_title">در کانال‌های شما ذکر شده</string>
-    <string name="web_add_mentioned_count">%1$d بار در اشتراک‌های شما ذکر شده</string>
+    <plurals name="web_add_mentioned_count">
+        <item quantity="one">%1$d بار در اشتراک‌های شما ذکر شده</item>
+        <item quantity="other">%1$d بار در اشتراک‌های شما ذکر شده</item>
+    </plurals>
     <string name="web_empty_saved">هنوز چیزی ذخیره نشده</string>
     <string name="web_welcome_title">بدون ورود</string>
     <string name="web_welcome_body">چند کانال عمومی اضافه کنید و بدون ورود به Telegram آن‌ها را بخوانید</string>
@@ -262,7 +265,6 @@
     <string name="content_open_in_telegram">باز کردن در Telegram</string>
     <string name="poll_anonymous">نظرسنجی ناشناس</string>
     <string name="poll_title">نظرسنجی</string>
-    <string name="poll_total_votes">%1$d رأی</string>
     <!-- تراشه‌ها / اقدامات کارت نظرسنجی MD3E جدید -->
     <string name="poll_type_regular">نظرسنجی</string>
     <string name="poll_type_quiz">آزمون</string>
@@ -336,7 +338,6 @@
     <string name="settings_subtitle_auto_download_category_wifi">از طریق Wi-Fi</string>
     <string name="settings_subtitle_auto_download_category_mobile">با داده موبایل</string>
     <string name="settings_subtitle_auto_download_category_roaming">در رومینگ</string>
-    <string name="timeline_subtitle_feed">%1$d کانال</string>
     <string name="timeline_subtitle_saved">پست‌های نشانک‌گذاری‌شده</string>
     <string name="settings_section_feed">فید</string>
     <string name="settings_section_appearance">ظاهر</string>
@@ -377,7 +378,6 @@
     <string name="settings_category_data_title">داده‌ها و فضای ذخیره‌سازی</string>
     <string name="settings_category_data_subtitle">ترافیک، فضای ذخیره‌سازی، دانلود خودکار</string>
     <string name="settings_category_privacy_subtitle">خواندن نامرئی، سیاست‌ها</string>
-    <string name="settings_category_about_subtitle">نویسنده، زبان، نسخه</string>
     <string name="settings_language">زبان</string>
     <string name="settings_language_summary_system">پیش‌فرض سیستم</string>
     <string name="settings_language_dialog_title">زبان برنامه</string>
@@ -708,7 +708,10 @@
     <string name="archive_open_browser">باز کردن آرشیو</string>
     <string name="archive_purged">نسخه حذف شد</string>
     <string name="archive_records_unlimited">بدون محدودیت</string>
-    <string name="archive_retention_days">%d روز</string>
+    <plurals name="archive_retention_days">
+        <item quantity="one">%d روز</item>
+        <item quantity="other">%d روز</item>
+    </plurals>
     <string name="archive_retention_label">نگهداری</string>
     <string name="archive_retention_unlimited">بدون محدودیت</string>
     <string name="archive_row_kind_deleted">حذف‌شده</string>

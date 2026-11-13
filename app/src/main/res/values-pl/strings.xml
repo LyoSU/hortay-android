@@ -28,7 +28,12 @@
     <string name="web_empty_channels_title">Brak kanałów</string>
     <string name="web_empty_channels_body">Dodaj publiczny kanał, a jego wpisy zaczną pojawiać się w Twoim kanale</string>
     <string name="web_add_mentioned_title">Wspomniane w Twoich kanałach</string>
-    <string name="web_add_mentioned_count">Wspomniano %1$d razy w Twoich subskrypcjach</string>
+    <plurals name="web_add_mentioned_count">
+        <item quantity="one">Wspomniano %1$d raz w Twoich subskrypcjach</item>
+        <item quantity="few">Wspomniano %1$d razy w Twoich subskrypcjach</item>
+        <item quantity="many">Wspomniano %1$d razy w Twoich subskrypcjach</item>
+        <item quantity="other">Wspomniano %1$d raza w Twoich subskrypcjach</item>
+    </plurals>
     <string name="web_empty_saved">Nic jeszcze nie zapisano</string>
     <string name="web_welcome_title">Bez logowania</string>
     <string name="web_welcome_body">Dodaj kilka publicznych kanałów i czytaj je bez logowania do Telegrama</string>
@@ -274,7 +279,6 @@
     <string name="content_open_in_telegram">Otwórz w Telegramie</string>
     <string name="poll_anonymous">Anonimowa ankieta</string>
     <string name="poll_title">Ankieta</string>
-    <string name="poll_total_votes">%1$d głosów</string>
     <!-- Nowe chipy/akcje ankiety MD3E -->
     <string name="poll_type_regular">Ankieta</string>
     <string name="poll_type_quiz">Quiz</string>
@@ -354,7 +358,6 @@
     <string name="settings_subtitle_auto_download_category_wifi">Przez Wi-Fi</string>
     <string name="settings_subtitle_auto_download_category_mobile">Przez dane mobilne</string>
     <string name="settings_subtitle_auto_download_category_roaming">W roamingu</string>
-    <string name="timeline_subtitle_feed">%1$d kanałów</string>
     <string name="timeline_subtitle_saved">Zapisane wpisy</string>
     <string name="settings_section_feed">Feed</string>
     <string name="settings_section_appearance">Wygląd</string>
@@ -397,7 +400,6 @@
     <string name="settings_category_data_title">Dane i pamięć</string>
     <string name="settings_category_data_subtitle">Transfer, pamięć, autopobieranie</string>
     <string name="settings_category_privacy_subtitle">Niewidoczne czytanie, zasady</string>
-    <string name="settings_category_about_subtitle">Autor, język, wersja</string>
     <string name="settings_language">Język</string>
     <string name="settings_language_summary_system">Domyślny systemowy</string>
     <string name="settings_language_dialog_title">Język aplikacji</string>
@@ -739,7 +741,12 @@
     <string name="archive_open_browser">Otwórz archiwum</string>
     <string name="archive_purged">Migawka usunięta</string>
     <string name="archive_records_unlimited">Bez limitu</string>
-    <string name="archive_retention_days">%d dni</string>
+    <plurals name="archive_retention_days">
+        <item quantity="one">%d dzień</item>
+        <item quantity="few">%d dni</item>
+        <item quantity="many">%d dni</item>
+        <item quantity="other">%d dnia</item>
+    </plurals>
     <string name="archive_retention_label">Czas przechowywania</string>
     <string name="archive_retention_unlimited">Bez limitu</string>
     <string name="archive_row_kind_deleted">Usunięto</string>

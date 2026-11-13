@@ -28,7 +28,12 @@
     <string name="web_empty_channels_title">Здесь пока пусто</string>
     <string name="web_empty_channels_body">Добавьте публичный канал, и его посты начнут появляться в ленте</string>
     <string name="web_add_mentioned_title">Упоминается в ваших каналах</string>
-    <string name="web_add_mentioned_count">Упомянут %1$d раз в ваших подписках</string>
+    <plurals name="web_add_mentioned_count">
+        <item quantity="one">Упомянут %1$d раз в ваших подписках</item>
+        <item quantity="few">Упомянут %1$d раза в ваших подписках</item>
+        <item quantity="many">Упомянут %1$d раз в ваших подписках</item>
+        <item quantity="other">Упомянут %1$d раза в ваших подписках</item>
+    </plurals>
     <string name="web_empty_saved">Пока ничего не сохранено</string>
     <string name="web_welcome_title">Без входа</string>
     <string name="web_welcome_body">Добавьте несколько публичных каналов и читайте их без входа в Telegram</string>
@@ -276,7 +281,6 @@
     <string name="content_open_in_telegram">Открыть в Telegram</string>
     <string name="poll_anonymous">Анонимный опрос</string>
     <string name="poll_title">Опрос</string>
-    <string name="poll_total_votes">%1$d голосов</string>
     <!-- New MD3E poll card chips / actions -->
     <string name="poll_type_regular">Опрос</string>
     <string name="poll_type_quiz">Викторина</string>
@@ -356,7 +360,6 @@
     <string name="settings_subtitle_auto_download_category_wifi">Через Wi-Fi</string>
     <string name="settings_subtitle_auto_download_category_mobile">По мобильным данным</string>
     <string name="settings_subtitle_auto_download_category_roaming">В роуминге</string>
-    <string name="timeline_subtitle_feed">%1$d каналов</string>
     <string name="timeline_subtitle_saved">Сохранённые посты</string>
     <string name="settings_section_feed">Лента</string>
     <string name="settings_section_appearance">Оформление</string>
@@ -399,7 +402,6 @@
     <string name="settings_category_data_title">Данные и хранилище</string>
     <string name="settings_category_data_subtitle">Трафик, хранилище, автозагрузка</string>
     <string name="settings_category_privacy_subtitle">Невидимое чтение, политики</string>
-    <string name="settings_category_about_subtitle">Автор, язык, версия</string>
     <string name="settings_language">Язык</string>
     <string name="settings_language_summary_system">Системный</string>
     <string name="settings_language_dialog_title">Язык приложения</string>
@@ -742,7 +744,12 @@
     <string name="archive_open_browser">Открыть архив</string>
     <string name="archive_purged">Запись удалена</string>
     <string name="archive_records_unlimited">Без ограничений</string>
-    <string name="archive_retention_days">%d дней</string>
+    <plurals name="archive_retention_days">
+        <item quantity="one">%d день</item>
+        <item quantity="few">%d дня</item>
+        <item quantity="many">%d дней</item>
+        <item quantity="other">%d дня</item>
+    </plurals>
     <string name="archive_retention_label">Срок хранения</string>
     <string name="archive_retention_unlimited">Без ограничений</string>
     <string name="archive_row_kind_deleted">Удалено</string>
