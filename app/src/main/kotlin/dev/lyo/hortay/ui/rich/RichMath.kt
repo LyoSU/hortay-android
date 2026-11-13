@@ -41,7 +41,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -62,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.components.copyPlainText
 import dev.lyo.hortay.ui.icons.Symbol
 import ru.noties.jlatexmath.JLatexMathDrawable
 
@@ -227,7 +227,6 @@ internal fun RichMathBlock(expression: String) {
 
     var enlarged by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
-    val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val copiedMsg = stringResource(R.string.post_copied_toast)
     val description = stringResource(R.string.rich_math_description).format(expression)
@@ -236,7 +235,7 @@ internal fun RichMathBlock(expression: String) {
 
     val copy = {
         haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-        clipboard.setText(AnnotatedString(expression))
+        context.copyPlainText("formula", expression)
         Toast.makeText(context, copiedMsg, Toast.LENGTH_SHORT).show()
     }
 
@@ -315,7 +314,7 @@ private fun RichMathViewerDialog(expression: String, onDismiss: () -> Unit) {
 
         var scale by remember { mutableFloatStateOf(1f) }
         var offset by remember { mutableStateOf(Offset.Zero) }
-        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val transformState = rememberTransformableState { _, zoomChange, panChange, _ ->
             scale = (scale * zoomChange).coerceIn(MATH_VIEWER_MIN_ZOOM, MATH_VIEWER_MAX_ZOOM)
             offset += panChange
         }
@@ -364,7 +363,6 @@ private fun RichMathViewerDialog(expression: String, onDismiss: () -> Unit) {
 @Composable
 private fun RichMathViewerBar(expression: String, onClose: () -> Unit) {
     val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
     val copiedMsg = stringResource(R.string.post_copied_toast)
     Row(
@@ -381,7 +379,7 @@ private fun RichMathViewerBar(expression: String, onClose: () -> Unit) {
         IconButton(
             onClick = {
                 haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                clipboard.setText(AnnotatedString(expression))
+                context.copyPlainText("formula", expression)
                 Toast.makeText(context, copiedMsg, Toast.LENGTH_SHORT).show()
             },
         ) {

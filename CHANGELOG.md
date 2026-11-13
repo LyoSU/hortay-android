@@ -123,6 +123,7 @@
 - Signed-in users no longer download guest-mode channel pages on every launch.
 - The post archive no longer records guest-mode posts as edited when only their image links change, no longer stops loading over one unreadable entry, and skips copying very large files.
 - Voice messages, audio tracks and videos with sound now pause other apps' music, pause for calls and stop when you unplug your headphones.
+- A post that has comments no longer says "Comments are disabled" when they simply failed to load — it offers Retry instead.
 
 ### Performance
 - Idle video players are released when the app goes to the background.

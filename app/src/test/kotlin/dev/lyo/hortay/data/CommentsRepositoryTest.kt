@@ -37,6 +37,32 @@ class CommentsRepositoryTest {
     }
 
     @Test
+    fun `a thread lookup that could not complete surfaces LoadFailed, not disabled comments`() = runTest {
+        val td = FakeTdSender().apply {
+            onAny("GetMessageThread") { _ -> TdApi.Error(429, "Too Many Requests: retry after 5") }
+        }
+        val repo = CommentsRepository(td, fakeMapper(td), TestScope(StandardTestDispatcher(testScheduler)), FakeStrings)
+
+        val state = repo.observeThread(chatId = 123L, candidateMessageIds = listOf(1L)).first()
+
+        assertEquals(CommentsRepository.ThreadState.LoadFailed, state)
+    }
+
+    @Test
+    fun `forgetThread drops a cached no-thread answer so the next open asks again`() = runTest {
+        val td = FakeTdSender().apply {
+            onAny("GetMessageThread") { _ -> TdApi.Error(400, "Message has no thread") }
+        }
+        val repo = CommentsRepository(td, fakeMapper(td), TestScope(StandardTestDispatcher(testScheduler)), FakeStrings)
+
+        assertTrue(repo.observeThread(123L, listOf(1L)).first() is CommentsRepository.ThreadState.Error)
+        repo.forgetThread(123L, listOf(1L))
+        assertTrue(repo.observeThread(123L, listOf(1L)).first() is CommentsRepository.ThreadState.Error)
+
+        assertEquals(2, td.rpcCount("GetMessageThread"))
+    }
+
+    @Test
     fun `ready state once anchor and history resolve`() = runTest {
         val chatId = 123L
         val anchor = 7L

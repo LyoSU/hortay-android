@@ -25,7 +25,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.data.Country
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.icons.Symbol
 
 /**
@@ -61,7 +61,7 @@ fun CountryPickerSheet(
     onPick: (Country) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     var query by remember { mutableStateOf("") }
 
     val filtered = remember(countries, query) {
@@ -183,7 +183,7 @@ private fun CountryRow(country: Country, onClick: () -> Unit) {
                 Text(text = country.flag, style = MaterialTheme.typography.titleLarge)
             }
         },
-        headlineContent = {
+        content = {
             Text(
                 text = country.name,
                 style = MaterialTheme.typography.bodyLarge,

@@ -17,7 +17,6 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -32,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.discover.DiscoverSearchField
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.ChannelActionsRepository
@@ -75,7 +75,7 @@ fun AddChannelTdSheet(
     locale: String,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     val scope = rememberCoroutineScope()
 
     var query by remember { mutableStateOf("") }

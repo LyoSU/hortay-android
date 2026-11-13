@@ -15,7 +15,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.VideoQualities
 import dev.lyo.hortay.data.VideoQuality
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
@@ -104,7 +104,7 @@ private fun VideoQualityPickerSheet(
     onPick: (VideoQuality) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,

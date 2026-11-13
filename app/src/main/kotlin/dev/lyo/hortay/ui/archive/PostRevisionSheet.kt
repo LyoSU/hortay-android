@@ -14,7 +14,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +31,7 @@ import dev.lyo.hortay.data.archive.diff.PostDiff
 import dev.lyo.hortay.ui.archive.components.DiffText
 import dev.lyo.hortay.ui.archive.components.RevisionMediaPreview
 import dev.lyo.hortay.ui.archive.components.RevisionTimeline
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toPersistentList
 
@@ -67,7 +67,7 @@ fun PostRevisionSheet(
     // skipPartiallyExpanded: open at full height so the action row at the bottom is
     // visible without the user having to drag the sheet up. Half-expanded was hiding
     // "Open in Telegram" below the visible viewport on tall revisions.
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         // verticalScroll(): without it long revisions (image + multi-paragraph

@@ -1,5 +1,6 @@
 package dev.lyo.hortay.ui.timeline
 
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.text.LocalQuoteHighlight
 import dev.lyo.hortay.ui.text.QuoteHighlights
 import androidx.compose.animation.AnimatedContent
@@ -1554,7 +1555,7 @@ private fun PostActionSheet(
     onSummarize: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val isBookmarked = interactions.isBookmarked(post)
@@ -1670,7 +1671,7 @@ private fun PostActionSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SelectTextSheet(post: TimelinePost, onDismiss: () -> Unit) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             SelectionContainer {

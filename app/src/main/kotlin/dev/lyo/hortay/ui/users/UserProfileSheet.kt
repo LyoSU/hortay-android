@@ -28,7 +28,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +54,7 @@ import dev.lyo.hortay.data.PresenceStatus
 import dev.lyo.hortay.data.SenderVerification
 import dev.lyo.hortay.data.UserProfile
 import dev.lyo.hortay.ui.components.PremiumStatusBadge
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.theme.profileCoverBrush
 import dev.lyo.hortay.ui.theme.profileOnCoverColor
 import dev.lyo.hortay.ui.icons.Symbol
@@ -108,7 +108,7 @@ fun UserProfileSheet(
     onDismiss: () -> Unit,
     onOpenChannel: (chatId: Long) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     var profile by remember(userId) { mutableStateOf<UserProfile?>(null) }
 
     LaunchedEffect(userId) {
@@ -377,7 +377,7 @@ private fun PersonalChannelRow(
                 textStyle = MaterialTheme.typography.titleSmall,
             )
         },
-        headlineContent = {
+        content = {
             Text(
                 text = channel.title,
                 style = MaterialTheme.typography.bodyLarge,
@@ -435,7 +435,7 @@ private fun MetaRow(symbol: String, label: String, value: String) {
                 )
             }
         },
-        headlineContent = {
+        content = {
             Text(text = label, style = MaterialTheme.typography.bodyMedium)
         },
         trailingContent = {

@@ -3,6 +3,7 @@
 package dev.lyo.hortay.ui.comments
 
 import androidx.compose.runtime.CompositionLocalProvider
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.text.LocalQuoteHighlight
 import dev.lyo.hortay.ui.text.QuoteHighlights
 import androidx.compose.animation.animateColorAsState
@@ -813,12 +814,30 @@ fun CommentsScreen(
                         }
                     }
                 }
-                is CommentsRepository.ThreadState.Error -> item(key = "disabled") {
-                    CommentsEmptyState(
-                        symbol = "chat_bubble",
-                        title = stringResource(R.string.comments_disabled_title),
-                        body = stringResource(R.string.comments_disabled_body),
-                    )
+                is CommentsRepository.ThreadState.Error -> if ((post.commentCount ?: 0) > 0) {
+                    // The post itself reports comments, so "the author hasn't linked a
+                    // discussion group" would be false — the thread lookup failed. Offer a
+                    // retry that discards the cached negative answer.
+                    item(key = "load-failed") {
+                        CommentsEmptyState(
+                            symbol = "cloud_off",
+                            title = stringResource(R.string.comments_load_failed_title),
+                            body = stringResource(R.string.comments_load_failed_body),
+                            actionLabel = stringResource(R.string.comments_retry),
+                            onAction = {
+                                repo?.forgetThread(post.chatId, candidateIds)
+                                threadRetryNonce++
+                            },
+                        )
+                    }
+                } else {
+                    item(key = "disabled") {
+                        CommentsEmptyState(
+                            symbol = "chat_bubble",
+                            title = stringResource(R.string.comments_disabled_title),
+                            body = stringResource(R.string.comments_disabled_body),
+                        )
+                    }
                 }
                 CommentsRepository.ThreadState.LoadFailed -> item(key = "load-failed") {
                     CommentsEmptyState(
@@ -1154,7 +1173,7 @@ private fun CommentReactionSheet(
     onPick: (kind: ReactionKind, alreadyChosen: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current

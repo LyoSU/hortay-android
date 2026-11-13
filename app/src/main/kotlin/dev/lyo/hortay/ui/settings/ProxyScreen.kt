@@ -42,7 +42,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -71,6 +70,7 @@ import dev.lyo.hortay.data.proxy.ProxyUi
 import dev.lyo.hortay.data.proxy.TestResult
 import dev.lyo.hortay.ui.components.HortayTopBar
 import dev.lyo.hortay.ui.components.HortayTopBarSize
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.theme.LocalHortayStatusColors
 import kotlinx.coroutines.launch
@@ -344,7 +344,7 @@ private fun AddProxySheet(
     onTest: suspend (ProxyDraft) -> TestResult,
     poolEmpty: Boolean,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberExpandedSheetState()
     val scope = rememberCoroutineScope()
 
     var link by remember { mutableStateOf("") }

@@ -14,6 +14,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import com.airbnb.lottie.LottieComposition
 import com.airbnb.lottie.LottieDrawable
+import com.airbnb.lottie.LottieFeatureFlag
 import kotlin.math.floor
 import kotlin.math.max
 import android.graphics.Canvas as AndroidCanvas
@@ -330,7 +331,7 @@ class CustomEmojiAnimator(
             // and warns on every animation that uses it. Enabling here removes the
             // warning and lets Lottie use its proper path-merge logic instead of
             // an expensive fallback that allocates per-frame.
-            enableMergePathsForKitKatAndAbove(true)
+            enableFeatureFlag(LottieFeatureFlag.MergePathsApi19, true)
         }
         return Entry(
             drawable = drawable,

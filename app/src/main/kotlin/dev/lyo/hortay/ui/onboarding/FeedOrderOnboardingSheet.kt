@@ -24,7 +24,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +38,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FeedOrder
+import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.theme.HortayAlpha
 import dev.lyo.hortay.ui.theme.HortaySpacing
@@ -62,7 +62,7 @@ fun FeedOrderOnboardingSheet(
     val selected = picked ?: current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberExpandedSheetState(),
     ) {
         Column(
             modifier = Modifier
