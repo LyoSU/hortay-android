@@ -11,6 +11,6 @@
     "preview": "npx serve -l 4173 ."
   },
   "devDependencies": {
-    "playwright": "^1.49.0"
+    "playwright": "^1.65.0"
   }
 }
