@@ -28,7 +28,14 @@
     <string name="web_empty_channels_title">لا توجد قنوات بعد</string>
     <string name="web_empty_channels_body">أضف قناة عامة وستظهر منشوراتها في خلاصتك</string>
     <string name="web_add_mentioned_title">مذكورة في قنواتك</string>
-    <string name="web_add_mentioned_count">ذُكرت %1$d مرة في اشتراكاتك</string>
+    <plurals name="web_add_mentioned_count">
+        <item quantity="zero">ذُكرت %1$d مرة في اشتراكاتك</item>
+        <item quantity="one">ذُكرت %1$d مرة في اشتراكاتك</item>
+        <item quantity="two">ذُكرت %1$d مرة في اشتراكاتك</item>
+        <item quantity="few">ذُكرت %1$d مرات في اشتراكاتك</item>
+        <item quantity="many">ذُكرت %1$d مرة في اشتراكاتك</item>
+        <item quantity="other">ذُكرت %1$d مرة في اشتراكاتك</item>
+    </plurals>
     <string name="web_empty_saved">لا يوجد شيء محفوظ بعد</string>
     <string name="web_welcome_title">بدون تسجيل دخول</string>
     <string name="web_welcome_body">أضف بعض القنوات العامة واقرأها دون تسجيل الدخول إلى Telegram</string>
@@ -286,7 +293,6 @@
     <string name="content_open_in_telegram">فتح في Telegram</string>
     <string name="poll_anonymous">استطلاع مجهول الهوية</string>
     <string name="poll_title">استطلاع</string>
-    <string name="poll_total_votes">%1$d صوت</string>
     <!-- شرائح وإجراءات بطاقة الاستطلاع الجديدة -->
     <string name="poll_type_regular">استطلاع</string>
     <string name="poll_type_quiz">اختبار</string>
@@ -372,7 +378,6 @@
     <string name="settings_subtitle_auto_download_category_wifi">عبر Wi-Fi</string>
     <string name="settings_subtitle_auto_download_category_mobile">على بيانات الجوال</string>
     <string name="settings_subtitle_auto_download_category_roaming">عند التجوال</string>
-    <string name="timeline_subtitle_feed">%1$d قناة</string>
     <string name="timeline_subtitle_saved">المنشورات المحفوظة</string>
     <string name="settings_section_feed">الخلاصة</string>
     <string name="settings_section_appearance">المظهر</string>
@@ -417,7 +422,6 @@
     <string name="settings_category_data_title">البيانات والتخزين</string>
     <string name="settings_category_data_subtitle">البيانات، التخزين، التنزيل التلقائي</string>
     <string name="settings_category_privacy_subtitle">القراءة الخفية، السياسات</string>
-    <string name="settings_category_about_subtitle">المؤلف، اللغة، الإصدار</string>
     <string name="settings_language">اللغة</string>
     <string name="settings_language_summary_system">افتراضي النظام</string>
     <string name="settings_language_dialog_title">لغة التطبيق</string>
@@ -770,7 +774,14 @@
     <string name="archive_open_browser">فتح الأرشيف</string>
     <string name="archive_purged">تم حذف اللقطة</string>
     <string name="archive_records_unlimited">بلا حدود</string>
-    <string name="archive_retention_days">%d أيام</string>
+    <plurals name="archive_retention_days">
+        <item quantity="zero">%d يوم</item>
+        <item quantity="one">%d يوم</item>
+        <item quantity="two">%d يوم</item>
+        <item quantity="few">%d أيام</item>
+        <item quantity="many">%d يومًا</item>
+        <item quantity="other">%d يوم</item>
+    </plurals>
     <string name="archive_retention_label">مدة الاحتفاظ</string>
     <string name="archive_retention_unlimited">بلا حدود</string>
     <string name="archive_row_kind_deleted">محذوف</string>

@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -465,7 +466,11 @@ private fun MentionedRow(suggestion: MentionedChannel, onTap: () -> Unit) {
         Column(modifier = Modifier.weight(1f)) {
             Text("@${suggestion.username}", style = MaterialTheme.typography.bodyMedium)
             Text(
-                text = stringResource(R.string.web_add_mentioned_count, suggestion.mentionCount),
+                text = pluralStringResource(
+                    R.plurals.web_add_mentioned_count,
+                    suggestion.mentionCount,
+                    suggestion.mentionCount,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

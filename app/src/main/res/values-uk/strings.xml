@@ -28,7 +28,12 @@
     <string name="web_empty_channels_title">Тут поки порожньо</string>
     <string name="web_empty_channels_body">Додай публічний канал, і його пости зʼявляться у стрічці</string>
     <string name="web_add_mentioned_title">Згадуються у твоїх каналах</string>
-    <string name="web_add_mentioned_count">Згадано %1$d разів у твоїх підписках</string>
+    <plurals name="web_add_mentioned_count">
+        <item quantity="one">Згадано %1$d раз у твоїх підписках</item>
+        <item quantity="few">Згадано %1$d рази у твоїх підписках</item>
+        <item quantity="many">Згадано %1$d разів у твоїх підписках</item>
+        <item quantity="other">Згадано %1$d раза у твоїх підписках</item>
+    </plurals>
     <string name="web_empty_saved">Поки нічого не збережено</string>
     <string name="web_welcome_title">Без входу</string>
     <string name="web_welcome_body">Додай кілька публічних каналів і читай їх без входу в Telegram</string>
@@ -272,7 +277,6 @@
     <string name="content_open_in_telegram">Відкрити в Telegram</string>
     <string name="poll_anonymous">Анонімне опитування</string>
     <string name="poll_title">Опитування</string>
-    <string name="poll_total_votes">%1$d голосів</string>
     <string name="poll_type_regular">Опитування</string>
     <string name="poll_type_quiz">Вікторина</string>
     <string name="poll_state_closed">Завершене опитування</string>
@@ -351,7 +355,6 @@
     <string name="settings_subtitle_auto_download_category_wifi">Через Wi-Fi</string>
     <string name="settings_subtitle_auto_download_category_mobile">Через мобільний інтернет</string>
     <string name="settings_subtitle_auto_download_category_roaming">У роумінгу</string>
-    <string name="timeline_subtitle_feed">%1$d каналів</string>
     <string name="timeline_subtitle_saved">Збережені пости</string>
     <string name="settings_section_feed">Стрічка</string>
     <string name="settings_section_appearance">Вигляд</string>
@@ -394,7 +397,6 @@
     <string name="settings_category_data_title">Дані та сховище</string>
     <string name="settings_category_data_subtitle">Трафік, сховище, автозавантаження</string>
     <string name="settings_category_privacy_subtitle">Невидиме читання, правила</string>
-    <string name="settings_category_about_subtitle">Автор, мова, версія</string>
     <string name="settings_language">Мова</string>
     <string name="settings_language_summary_system">Системна</string>
     <string name="settings_language_dialog_title">Мова застосунку</string>
@@ -748,7 +750,12 @@
     <string name="archive_capture_edits">Зберігати редагування</string>
     <string name="archive_capture_deletes">Зберігати видалення</string>
     <string name="archive_retention_label">Термін зберігання</string>
-    <string name="archive_retention_days">%d днів</string>
+    <plurals name="archive_retention_days">
+        <item quantity="one">%d день</item>
+        <item quantity="few">%d дні</item>
+        <item quantity="many">%d днів</item>
+        <item quantity="other">%d дня</item>
+    </plurals>
     <string name="archive_retention_unlimited">Без обмежень</string>
     <string name="archive_max_records_label">Максимум записів</string>
     <string name="archive_records_unlimited">Без обмежень</string>

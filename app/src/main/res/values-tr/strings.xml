@@ -28,7 +28,10 @@
     <string name="web_empty_channels_title">Henüz kanal yok</string>
     <string name="web_empty_channels_body">Herkese açık bir kanal ekle; gönderileri akışında görünmeye başlasın</string>
     <string name="web_add_mentioned_title">Kanallarında bahsedilen</string>
-    <string name="web_add_mentioned_count">Aboneliklerinde %1$d kez geçiyor</string>
+    <plurals name="web_add_mentioned_count">
+        <item quantity="one">Aboneliklerinde %1$d kez geçiyor</item>
+        <item quantity="other">Aboneliklerinde %1$d kez geçiyor</item>
+    </plurals>
     <string name="web_empty_saved">Henüz kaydedilen yok</string>
     <string name="web_welcome_title">Giriş yapmadan</string>
     <string name="web_welcome_body">Birkaç herkese açık kanal ekle ve Telegram\'a giriş yapmadan oku</string>
@@ -264,7 +267,6 @@
     <string name="content_open_in_telegram">Telegram\'da aç</string>
     <string name="poll_anonymous">Anonim anket</string>
     <string name="poll_title">Anket</string>
-    <string name="poll_total_votes">%1$d oy</string>
     <!-- Yeni MD3E anket kartı çipleri / eylemleri -->
     <string name="poll_type_regular">Anket</string>
     <string name="poll_type_quiz">Test</string>
@@ -338,7 +340,6 @@
     <string name="settings_subtitle_auto_download_category_wifi">Wi-Fi üzerinden</string>
     <string name="settings_subtitle_auto_download_category_mobile">Mobil veriyle</string>
     <string name="settings_subtitle_auto_download_category_roaming">Dolaşımda</string>
-    <string name="timeline_subtitle_feed">%1$d kanal</string>
     <string name="timeline_subtitle_saved">Yer imlerine alınan gönderiler</string>
     <string name="settings_section_feed">Akış</string>
     <string name="settings_section_appearance">Görünüm</string>
@@ -379,7 +380,6 @@
     <string name="settings_category_data_title">Veri ve depolama</string>
     <string name="settings_category_data_subtitle">Trafik, depolama, otomatik indirme</string>
     <string name="settings_category_privacy_subtitle">Görünmez okuma, ilkeler</string>
-    <string name="settings_category_about_subtitle">Yazar, dil, sürüm</string>
     <string name="settings_language">Dil</string>
     <string name="settings_language_summary_system">Sistem varsayılanı</string>
     <string name="settings_language_dialog_title">Uygulama dili</string>
@@ -709,7 +709,10 @@
     <string name="archive_open_browser">Arşivi aç</string>
     <string name="archive_purged">Anlık görüntü silindi</string>
     <string name="archive_records_unlimited">Sınırsız</string>
-    <string name="archive_retention_days">%d gün</string>
+    <plurals name="archive_retention_days">
+        <item quantity="one">%d gün</item>
+        <item quantity="other">%d gün</item>
+    </plurals>
     <string name="archive_retention_label">Saklama süresi</string>
     <string name="archive_retention_unlimited">Sınırsız</string>
     <string name="archive_row_kind_deleted">Silindi</string>

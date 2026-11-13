@@ -28,7 +28,10 @@
     <string name="web_empty_channels_title">Sin canales todavía</string>
     <string name="web_empty_channels_body">Añade un canal público y sus publicaciones aparecerán en tu inicio</string>
     <string name="web_add_mentioned_title">Mencionados en tus canales</string>
-    <string name="web_add_mentioned_count">Mencionado %1$d veces en tus suscripciones</string>
+    <plurals name="web_add_mentioned_count">
+        <item quantity="one">Mencionado %1$d vez en tus suscripciones</item>
+        <item quantity="other">Mencionado %1$d veces en tus suscripciones</item>
+    </plurals>
     <string name="web_empty_saved">Nada guardado aún</string>
     <string name="web_welcome_title">Sin cuenta</string>
     <string name="web_welcome_body">Añade algunos canales públicos y léelos sin iniciar sesión en Telegram</string>
@@ -270,7 +273,6 @@
     <string name="content_open_in_telegram">Abrir en Telegram</string>
     <string name="poll_anonymous">Encuesta anónima</string>
     <string name="poll_title">Encuesta</string>
-    <string name="poll_total_votes">%1$d votos</string>
     <!-- New MD3E poll card chips / actions -->
     <string name="poll_type_regular">Encuesta</string>
     <string name="poll_type_quiz">Quiz</string>
@@ -346,7 +348,6 @@
     <string name="settings_subtitle_auto_download_category_wifi">Por Wi-Fi</string>
     <string name="settings_subtitle_auto_download_category_mobile">Con datos móviles</string>
     <string name="settings_subtitle_auto_download_category_roaming">En roaming</string>
-    <string name="timeline_subtitle_feed">%1$d canales</string>
     <string name="timeline_subtitle_saved">Publicaciones guardadas</string>
     <string name="settings_section_feed">Inicio</string>
     <string name="settings_section_appearance">Apariencia</string>
@@ -387,7 +388,6 @@
     <string name="settings_category_data_title">Datos y almacenamiento</string>
     <string name="settings_category_data_subtitle">Tráfico, almacenamiento, descarga automática</string>
     <string name="settings_category_privacy_subtitle">Lectura invisible, políticas</string>
-    <string name="settings_category_about_subtitle">Autor, idioma, versión</string>
     <string name="settings_language">Idioma</string>
     <string name="settings_language_summary_system">Predeterminado del sistema</string>
     <string name="settings_language_dialog_title">Idioma de la app</string>
@@ -732,7 +732,10 @@
     <string name="archive_open_browser">Abrir archivo</string>
     <string name="archive_purged">Instantánea eliminada</string>
     <string name="archive_records_unlimited">Sin límite</string>
-    <string name="archive_retention_days">%d días</string>
+    <plurals name="archive_retention_days">
+        <item quantity="one">%d día</item>
+        <item quantity="other">%d días</item>
+    </plurals>
     <string name="archive_retention_label">Retención</string>
     <string name="archive_retention_unlimited">Sin límite</string>
     <string name="archive_row_kind_deleted">Eliminada</string>
