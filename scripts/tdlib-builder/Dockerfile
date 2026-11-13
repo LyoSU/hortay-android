@@ -17,7 +17,7 @@
 
 # -----------------------------------------------------------------------------
 ARG BUILD_PLATFORM=linux/amd64
-FROM --platform=${BUILD_PLATFORM} ubuntu:24.04 AS base
+FROM --platform=${BUILD_PLATFORM} ubuntu:26.04 AS base
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -yq \
         default-jdk g++ git gperf make perl php-cli unzip wget ca-certificates \
