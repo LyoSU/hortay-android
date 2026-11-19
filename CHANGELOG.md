@@ -25,6 +25,7 @@
 - The first time you open the app, it asks whether you want to read newest-first or like a chat.
 - The Channels tab shows a one-time tip about the sideways swipe, and a hidden channel has a visible button to show it again.
 - Reactions are drawn with Telegram's own emoji artwork, and Settings → Appearance can switch them back to your phone's emoji.
+- Picking a reaction plays Telegram's animation for it, and the reactions in the long-press menu animate in as it opens.
 
 ### Changed
 - A reply to another channel's post shows that channel's avatar and an arrow, so it no longer passes for a reply within the same channel.

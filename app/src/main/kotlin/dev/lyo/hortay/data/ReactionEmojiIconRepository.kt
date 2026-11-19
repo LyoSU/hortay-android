@@ -25,9 +25,14 @@ import java.util.concurrent.atomic.AtomicInteger
  * TDLib path: [TdApi.GetEmojiReaction] → [TdApi.EmojiReaction.staticIcon], a WEBP
  * [TdApi.Sticker]. Neither [TdApi.AvailableReaction] (just a `ReactionType`) nor
  * [TdApi.UpdateActiveEmojiReactions] (just emoji strings) carries the artwork, so the
- * per-emoji call is the only documented source. Only the static icon is used; the
- * animation stickers on [TdApi.EmojiReaction] are deliberately ignored — the feed draws
- * reactions still.
+ * per-emoji call is the only documented source. The same response also carries
+ * Telegram's one-shot reaction animations; three of them are kept from it (no extra call):
+ * `appearAnimation` (the picker strip plays it once as it opens), `centerAnimation` and
+ * `aroundAnimation` (played once when the user picks the reaction). Only TGS stickers are
+ * kept — they go through the app's existing Lottie pipeline; any other format counts as
+ * "no animation". The animation FILES are not downloaded here: [ReactionEmojiIcon] only
+ * holds their TDLib file ids, and the glyph fetches one through `MediaCache` at
+ * [DownloadPriority.Avatar] only when the picker opens or the user taps a reaction.
  *
  * Request budget:
  *   - **Lazy.** [request] is called from the reaction glyph composable only, so only
@@ -86,19 +91,18 @@ class ReactionEmojiIconRepository(
         if (!requested.add(emoji)) return
         val startEpoch = epoch.get()
         scope.launch(ioDispatcher) {
-            val media = sendLock.withLock {
+            val icon = sendLock.withLock {
                 if (epoch.get() != startEpoch) return@launch
                 suspendRunCatching { td.send(TdApi.GetEmojiReaction(emoji)) }
                     .warnUnlessCancelled(TAG, "GetEmojiReaction")
                     .getOrNull()
-                    ?.staticIcon
-                    ?.toReactionIconMedia()
+                    ?.toReactionEmojiIcon(emoji)
             }
             if (epoch.get() != startEpoch) return@launch
-            if (media == null) {
+            if (icon == null) {
                 missing.add(emoji)
             } else {
-                _icons.update { it.put(emoji, ReactionEmojiIcon(emoji, media)) }
+                _icons.update { it.put(emoji, icon) }
             }
         }
     }
@@ -120,18 +124,53 @@ class ReactionEmojiIconRepository(
     }
 }
 
-/** Telegram's static artwork for one standard reaction emoji. */
+/**
+ * Telegram's artwork for one standard reaction emoji: the static icon, plus the one-shot
+ * animations the reaction glyph plays (each null when TDLib sent none, or not as TGS).
+ * The animation entries are TDLib file ids only — nothing is downloaded until the glyph
+ * asks for one.
+ */
 @Immutable
 data class ReactionEmojiIcon(
     val emoji: String,
     val media: TdMedia,
+    /** Played once by each emoji of the long-press picker strip as it opens. */
+    val appearAnimation: TdMedia? = null,
+    /** Played once inside the chip's glyph box when the user picks the reaction. */
+    val centerAnimation: TdMedia? = null,
+    /** The burst played once around the glyph, together with [centerAnimation]. */
+    val aroundAnimation: TdMedia? = null,
 )
+
+/** Null when the static icon has no usable raster — the emoji then counts as missing. */
+internal fun TdApi.EmojiReaction.toReactionEmojiIcon(emoji: String): ReactionEmojiIcon? {
+    val media = staticIcon?.toReactionIconMedia() ?: return null
+    return ReactionEmojiIcon(
+        emoji = emoji,
+        media = media,
+        appearAnimation = appearAnimation.toReactionAnimationMedia(),
+        centerAnimation = centerAnimation.toReactionAnimationMedia(),
+        aroundAnimation = aroundAnimation.toReactionAnimationMedia(),
+    )
+}
+
+/**
+ * A reaction animation sticker as a playable TGS file, or null. Telegram ships these as
+ * TGS (gzipped Lottie), which the app's Lottie pipeline plays; a WEBM or WEBP variant, or
+ * a sticker without a file, is treated as "no animation" and the glyph stays still.
+ */
+internal fun TdApi.Sticker?.toReactionAnimationMedia(): TdMedia? {
+    val sticker = this ?: return null
+    if (sticker.format !is TdApi.StickerFormatTgs) return null
+    val file = sticker.sticker ?: return null
+    return TdMedia(fileId = file.id, width = sticker.width, height = sticker.height)
+}
 
 /**
  * The static image to draw for a reaction's `staticIcon` sticker. Telegram ships it as a
  * WEBP sticker; should it ever arrive as an animated format, its still raster thumbnail
  * is used instead, and with neither the emoji counts as having no artwork (text
- * fallback) — the feed never plays reaction animations.
+ * fallback). The animations live in separate fields of [ReactionEmojiIcon].
  */
 internal fun TdApi.Sticker.toReactionIconMedia(): TdMedia? {
     val file = sticker

@@ -75,6 +75,56 @@ class ReactionEmojiIconRepositoryTest {
     }
 
     @Test
+    fun `animations come from the same single response and only as TGS`() = runTest {
+        val f = Fixture(this)
+        f.td.onAny("GetEmojiReaction") {
+            emojiReaction(HEART, webpIcon(fileId = 1)).apply {
+                appearAnimation = tgsSticker(fileId = 2)
+                centerAnimation = tgsSticker(fileId = 3)
+                aroundAnimation = tgsSticker(fileId = 4)
+                // Not played by the reaction glyph — must not be fetched or kept.
+                selectAnimation = tgsSticker(fileId = 5)
+                effectAnimation = tgsSticker(fileId = 6)
+                activateAnimation = tgsSticker(fileId = 7)
+            }
+        }
+
+        repeat(3) { f.repo.request(HEART) }
+
+        assertEquals(1, f.td.rpcCount("GetEmojiReaction"), "animations must not cost extra calls")
+        assertEquals(1, f.td.rpcCounts.values.sum(), "no other TDLib request — animation files download lazily from the UI")
+        val icon = f.repo.get(HEART)
+        assertEquals(1, icon?.media?.fileId)
+        assertEquals(2, icon?.appearAnimation?.fileId)
+        assertEquals(3, icon?.centerAnimation?.fileId)
+        assertEquals(4, icon?.aroundAnimation?.fileId)
+        f.scope.cancel()
+    }
+
+    @Test
+    fun `missing or non-TGS animations leave the static icon usable`() = runTest {
+        val f = Fixture(this)
+        f.td.onAny("GetEmojiReaction") {
+            emojiReaction(FIRE, webpIcon(fileId = 8)).apply {
+                appearAnimation = webpIcon(fileId = 9)
+                centerAnimation = TdApi.Sticker(
+                    10L, 0L, 100, 100, "", TdApi.StickerFormatWebm(), TdApi.StickerFullTypeRegular(), null, file(10),
+                )
+                aroundAnimation = null
+            }
+        }
+
+        f.repo.request(FIRE)
+
+        val icon = f.repo.get(FIRE)
+        assertEquals(8, icon?.media?.fileId)
+        assertNull(icon?.appearAnimation)
+        assertNull(icon?.centerAnimation)
+        assertNull(icon?.aroundAnimation)
+        f.scope.cancel()
+    }
+
+    @Test
     fun `a failed lookup is cached and never retried in-session`() = runTest {
         val f = Fixture(this)
         f.td.onAny("GetEmojiReaction") { TdApi.Error(404, "Not Found") }
@@ -131,11 +181,17 @@ class ReactionEmojiIconRepositoryTest {
         val loggedOut = MutableSharedFlow<Unit>()
         session.bind(loggedOut)
 
-        f.td.onAny("GetEmojiReaction") { webpReaction(FIRE, fileId = 11) }
+        f.td.onAny("GetEmojiReaction") {
+            webpReaction(FIRE, fileId = 11).apply {
+                centerAnimation = tgsSticker(fileId = 12)
+                aroundAnimation = tgsSticker(fileId = 13)
+            }
+        }
         f.repo.request(FIRE)
         f.td.onAny("GetEmojiReaction") { TdApi.Error(404, "Not Found") }
         f.repo.request(THUMBS_UP)
         assertEquals(11, f.repo.get(FIRE)?.media?.fileId)
+        assertEquals(12, f.repo.get(FIRE)?.centerAnimation?.fileId)
         assertTrue(f.repo.isMissing(THUMBS_UP))
 
         // A lookup still waiting on TDLib when the account logs out.
@@ -148,6 +204,7 @@ class ReactionEmojiIconRepositoryTest {
 
         loggedOut.emit(Unit)
         assertTrue(f.repo.icons.value.isEmpty(), "account A's file ids must be wiped")
+        assertNull(f.repo.get(FIRE), "animation file ids are wiped with the icon that holds them")
         assertFalse(f.repo.isMissing(THUMBS_UP), "failure memo is per session")
 
         gate.complete(Unit)
@@ -166,6 +223,10 @@ class ReactionEmojiIconRepositoryTest {
 
     private fun webpIcon(fileId: Int) = TdApi.Sticker(
         fileId.toLong(), 0L, 100, 100, "", TdApi.StickerFormatWebp(), TdApi.StickerFullTypeRegular(), null, file(fileId),
+    )
+
+    private fun tgsSticker(fileId: Int) = TdApi.Sticker(
+        fileId.toLong(), 0L, 512, 512, "", TdApi.StickerFormatTgs(), TdApi.StickerFullTypeRegular(), null, file(fileId),
     )
 
     private fun webpReaction(emoji: String, fileId: Int) = emojiReaction(emoji, webpIcon(fileId))

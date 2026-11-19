@@ -92,7 +92,9 @@ import dev.lyo.hortay.ui.timeline.formatRelative
 import dev.lyo.hortay.ui.timeline.PostCard
 import dev.lyo.hortay.ui.timeline.PostInteractions
 import dev.lyo.hortay.ui.timeline.ReactionChip
+import dev.lyo.hortay.ui.timeline.ReactionEffectRequest
 import dev.lyo.hortay.ui.timeline.ReactionPickerStrip
+import dev.lyo.hortay.ui.timeline.rememberReactionEffectRequest
 import dev.lyo.hortay.ui.timeline.label
 import dev.lyo.hortay.ui.timeline.symbolName
 import kotlinx.coroutines.delay
@@ -760,8 +762,12 @@ fun CommentsScreen(
                         // possible if TDLib migrates the discussion group) routes
                         // subsequent taps to the new chat without a screen rebuild.
                         var pickerOpen by remember(row.message.id) { mutableStateOf(false) }
+                        // Picker → chip hand-off for the choose animation (see
+                        // [ReactionEffectRequest]); per item, so a recycled row starts clean.
+                        val reactionEffect = rememberReactionEffectRequest()
                         CommentNode(
                             row = row,
+                            effectRequest = reactionEffect,
                             rails = threadRailSegments.getOrNull(index) ?: RailSegments.None,
                             // Inserted / removed / reordered comments fade and glide instead of
                             // teleporting. Comment rows only: the pinned post item stays
@@ -813,6 +819,7 @@ fun CommentsScreen(
                                 commentText = row.message.content.captionPlain,
                                 fetchAvailableReactions = { fetchAvailableReactions(s.threadChatId, row.message.id) },
                                 onPick = { kind, alreadyChosen ->
+                                    if (!alreadyChosen) reactionEffect.request(kind)
                                     onReactionToggle(
                                         s.threadChatId,
                                         row.message.id,
@@ -992,6 +999,7 @@ private fun CommentNode(
     onReactionTap: (ReactionItem) -> Unit,
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier,
+    effectRequest: ReactionEffectRequest? = null,
 ) {
     val visualDepth = row.depth.coerceAtMost(MAX_VISUAL_DEPTH)
     val avatarSize = if (row.depth >= 1) REPLY_AVATAR_DP.dp else TOP_AVATAR_DP.dp
@@ -1028,6 +1036,7 @@ private fun CommentNode(
             onMediaClick = onMediaClick,
             onReactionTap = onReactionTap,
             modifier = Modifier.weight(1f),
+            effectRequest = effectRequest,
         )
     }
 }
@@ -1047,6 +1056,7 @@ private fun CommentBubble(
     onMediaClick: (List<AlbumItem>, Int) -> Unit,
     onReactionTap: (ReactionItem) -> Unit,
     modifier: Modifier = Modifier,
+    effectRequest: ReactionEffectRequest? = null,
 ) {
     val message = row.message
     val opener = dev.lyo.hortay.ui.users.LocalUserProfileOpener.current
@@ -1178,6 +1188,7 @@ private fun CommentBubble(
                                     { onReactionTap(item) }
                                 },
                                 disabled = isPaid,
+                                effectRequest = effectRequest,
                             )
                         }
                     }

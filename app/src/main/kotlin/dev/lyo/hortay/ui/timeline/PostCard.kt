@@ -31,8 +31,10 @@ import androidx.compose.material3.*
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -126,6 +128,9 @@ fun PostCard(
     onExpandSeries: () -> Unit = {},
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
+    // Picker → chip hand-off for the choose animation: the sheet dismisses as it toggles,
+    // so the chip in this card's action row plays it (see [ReactionEffectRequest]).
+    val reactionEffect = rememberReactionEffectRequest()
     // Hosted at the card level (not inside the action sheet) so it survives the
     // action sheet dismissing when the user taps "Select text".
     var selectTextOpen by remember { mutableStateOf(false) }
@@ -492,6 +497,7 @@ fun PostCard(
                         onSaveClick = { interactions.onBookmarkClick(post) },
                         onShareClick = { interactions.onShareClick(post) },
                         onReactionTap = { item -> interactions.onReactionToggle(post, item) },
+                        effectRequest = reactionEffect,
                         // Paid (⭐) reactions can't be cast from Hortay — the snackbar action
                         // route opens THIS SPECIFIC post in Telegram (not the client root),
                         // reusing [interactions.onOpenClick] which already minted the
@@ -517,6 +523,7 @@ fun PostCard(
         PostActionSheet(
             post = post,
             interactions = interactions,
+            effectRequest = reactionEffect,
             onSelectText = { selectTextOpen = true },
             onSummarize = if (post.canSummarize && summarizer != null) ({ summaryOpen = true }) else null,
             onDismiss = { sheetOpen = false },
@@ -1176,6 +1183,8 @@ private fun ActionRow(
      * so ActionRow stays ignorant of post identity.
      */
     onPaidReactionOpenPost: () -> Unit = {},
+    /** Picker → chip hand-off for the choose animation; see [ReactionEffectRequest]. */
+    effectRequest: ReactionEffectRequest? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     if (reactions.items.isNotEmpty()) {
@@ -1232,7 +1241,7 @@ private fun ActionRow(
                             onReactionTap(item)
                         }
                     }
-                    ReactionChip(item, onClick = tapHandler, disabled = isPaid)
+                    ReactionChip(item, onClick = tapHandler, disabled = isPaid, effectRequest = effectRequest)
                 }
             }
         }
@@ -1391,7 +1400,38 @@ internal fun ReactionChip(
      * + flat fill mark it as "secondary affordance" so users don't try to vote.
      */
     disabled: Boolean = false,
+    /**
+     * Picker → chip hand-off: when it names this chip's reaction and the reaction reads as
+     * chosen, the chip plays the choose animation once (see [ReactionEffectRequest]).
+     */
+    effectRequest: ReactionEffectRequest? = null,
 ) {
+    // Choose animation (Telegram's centre + around one-shot, see [ReactionEmojiGlyph]).
+    // Incremented ONLY by the user's own action — a tap that turns this reaction chosen,
+    // or a picker request for it — never by an incoming reaction update, which can flip
+    // `isChosen` (another device) but goes through neither path. Lives in `remember`, so
+    // a chip entering composition (scroll-back, recycled item, new bucket) starts at 0
+    // and plays nothing.
+    var chooseEffectTrigger by remember { mutableIntStateOf(0) }
+    val isUnicode = item.kind is ReactionKind.Emoji
+    if (effectRequest != null && isUnicode) {
+        val itemKey = item.kind.stableKey
+        val requested by remember(effectRequest, itemKey) {
+            derivedStateOf { effectRequest.key == itemKey }
+        }
+        LaunchedEffect(requested, item.isChosen) {
+            if (requested && item.isChosen) {
+                chooseEffectTrigger++
+                effectRequest.consume()
+            }
+        }
+    }
+    val chipClick: (() -> Unit)? = onClick?.let { click ->
+        {
+            if (isUnicode && !disabled && !item.isChosen) chooseEffectTrigger++
+            click()
+        }
+    }
     val interactionSource = remember { MutableInteractionSource() }
     val cornerRadius by rememberPressedSelectedCornerRadius(
         interactionSource = interactionSource,
@@ -1426,10 +1466,14 @@ internal fun ReactionChip(
         label = "reaction-tint",
     )
     val shape = RoundedCornerShape(cornerRadius)
-    // The N5 micro-burst (particle spray on choose) was tried here and removed: the
-    // particles flew outside the chip bounds by design and read as a rendering glitch
-    // ("a stray piece of the digit above the button"), not celebration. Choose
-    // feedback is the ghost→fill morph + haptic; don't reintroduce unclipped overlays.
+    // The N5 micro-burst (a generic particle spray on choose) was tried here and removed:
+    // the particles flew outside the chip bounds by design and read as a rendering glitch
+    // ("a stray piece of the digit above the button"), not celebration. What plays now is
+    // Telegram's own reaction artwork (centre + around animation, see [ReactionEmojiGlyph]),
+    // owner-requested to match the Telegram app: only on the user's own choose, only with
+    // the Telegram emoji style, never under reduced motion, centred on the glyph. That is
+    // why the pill no longer clips its content — the shape clip moved to the ripple layer,
+    // so the burst can draw past the pill. Don't add other unclipped overlays here.
     //
     // Touch box vs drawn pill: the pill draws ~30 dp tall, too small a target in a wrapped
     // row of neighbours. The clickable sits on an outer box at least
@@ -1438,7 +1482,7 @@ internal fun ReactionChip(
     // ripple and the corner morph still trace the pill, not the invisible touch box.
     val pillIndication = LocalIndication.current
     Box(
-        modifier = if (onClick != null) {
+        modifier = if (chipClick != null) {
             Modifier
                 .heightIn(min = REACTION_TOUCH_MIN_HEIGHT)
                 .semantics { selected = item.isChosen }
@@ -1446,75 +1490,89 @@ internal fun ReactionChip(
                     interactionSource = interactionSource,
                     indication = null,
                     role = Role.Button,
-                    onClick = onClick,
+                    onClick = chipClick,
                 )
         } else Modifier,
         contentAlignment = Alignment.Center,
     ) {
-        Row(
+        // The pill: shape-aware background + border, NO content clip (see the burst note
+        // above). The ripple keeps the pill shape through its own clipped layer, drawn
+        // after the content exactly as the old `clip + indication` chain drew it.
+        Box(
             modifier = Modifier
-                .clip(shape)
                 .background(container, shape)
-                .border(1.dp, borderColor, shape)
-                .then(if (onClick != null) Modifier.indication(interactionSource, pillIndication) else Modifier)
-                .then(
-                    if (disabled) Modifier.alpha(HortayAlpha.FAINT) else Modifier,
-                )
-                .padding(horizontal = 10.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .border(1.dp, borderColor, shape),
         ) {
-            when (val k = item.kind) {
-                is ReactionKind.Emoji -> ReactionEmojiGlyph(
-                    emoji = k.text,
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
-                    customEmojiId = k.customEmojiId,
-                    modifier = Modifier.size(18.dp),
-                    tintColor = tintForCustom,
-                    contentDescription = null,
-                )
-                // Paid star reaction — Telegram renders a small ⭐ pill, no count
-                // separator needed because the count is already the star total.
-                is ReactionKind.Paid -> Text(
-                    text = "⭐",
-                    style = MaterialTheme.typography.titleSmall,
-                )
+            Row(
+                modifier = Modifier
+                    .then(
+                        if (disabled) Modifier.alpha(HortayAlpha.FAINT) else Modifier,
+                    )
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                when (val k = item.kind) {
+                    is ReactionKind.Emoji -> ReactionEmojiGlyph(
+                        emoji = k.text,
+                        style = MaterialTheme.typography.titleSmall,
+                        chooseEffectTrigger = chooseEffectTrigger,
+                    )
+                    is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
+                        customEmojiId = k.customEmojiId,
+                        modifier = Modifier.size(18.dp),
+                        tintColor = tintForCustom,
+                        contentDescription = null,
+                    )
+                    // Paid star reaction — Telegram renders a small ⭐ pill, no count
+                    // separator needed because the count is already the star total.
+                    is ReactionKind.Paid -> Text(
+                        text = "⭐",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                }
+                Spacer(Modifier.width(5.dp))
+                // M3 — mini digit-roll on count changes: the new value slides in vertically
+                // (up when the count grows, down when it shrinks) while the old slides out and
+                // fades, Telegram's counter idiom. C2 tabular figures keep the width fixed so
+                // the roll never reflows neighbours. Under reduced motion the roll collapses
+                // to a plain crossfade. `clipToBounds` confines the sliding digits to the
+                // counter's own box — the spatial spring overshoots by design, and without
+                // the clip the outgoing digit peeked past the chip edge for a frame.
+                // Specs are read in @Composable scope and captured by the transitionSpec
+                // lambda (which is NOT composable, so it can't read MaterialTheme itself).
+                val reducedMotion = rememberReducedMotion()
+                val countStyle = MaterialTheme.typography.labelMedium.tabularFigures()
+                val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+                val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>()
+                AnimatedContent(
+                    targetState = item.count,
+                    modifier = Modifier.clipToBounds(),
+                    transitionSpec = {
+                        if (reducedMotion) {
+                            fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec)
+                        } else {
+                            val up = targetState > initialState
+                            (slideInVertically(spatialSpec) { h -> if (up) h else -h } + fadeIn(fadeSpec))
+                                .togetherWith(
+                                    slideOutVertically(spatialSpec) { h -> if (up) -h else h } + fadeOut(fadeSpec),
+                                )
+                        }
+                    },
+                    label = "reaction-count-roll",
+                ) { count ->
+                    Text(
+                        text = formatViews(count),
+                        style = countStyle,
+                        color = countColor,
+                    )
+                }
             }
-            Spacer(Modifier.width(5.dp))
-            // M3 — mini digit-roll on count changes: the new value slides in vertically
-            // (up when the count grows, down when it shrinks) while the old slides out and
-            // fades, Telegram's counter idiom. C2 tabular figures keep the width fixed so
-            // the roll never reflows neighbours. Under reduced motion the roll collapses
-            // to a plain crossfade. `clipToBounds` confines the sliding digits to the
-            // counter's own box — the spatial spring overshoots by design, and without
-            // the clip the outgoing digit peeked past the chip edge for a frame.
-            // Specs are read in @Composable scope and captured by the transitionSpec
-            // lambda (which is NOT composable, so it can't read MaterialTheme itself).
-            val reducedMotion = rememberReducedMotion()
-            val countStyle = MaterialTheme.typography.labelMedium.tabularFigures()
-            val fadeSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
-            val spatialSpec = MaterialTheme.motionScheme.fastSpatialSpec<IntOffset>()
-            AnimatedContent(
-                targetState = item.count,
-                modifier = Modifier.clipToBounds(),
-                transitionSpec = {
-                    if (reducedMotion) {
-                        fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec)
-                    } else {
-                        val up = targetState > initialState
-                        (slideInVertically(spatialSpec) { h -> if (up) h else -h } + fadeIn(fadeSpec))
-                            .togetherWith(
-                                slideOutVertically(spatialSpec) { h -> if (up) -h else h } + fadeOut(fadeSpec),
-                            )
-                    }
-                },
-                label = "reaction-count-roll",
-            ) { count ->
-                Text(
-                    text = formatViews(count),
-                    style = countStyle,
-                    color = countColor,
+            if (chipClick != null) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .clip(shape)
+                        .indication(interactionSource, pillIndication),
                 )
             }
         }
@@ -1571,6 +1629,7 @@ private fun StatPill(
 private fun PostActionSheet(
     post: TimelinePost,
     interactions: PostInteractions,
+    effectRequest: ReactionEffectRequest,
     onSelectText: () -> Unit,
     onSummarize: (() -> Unit)?,
     onDismiss: () -> Unit,
@@ -1608,6 +1667,9 @@ private fun PostActionSheet(
                         haptics.performHapticFeedback(
                             if (already) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
                         )
+                        // Choosing (not retracting) plays the choose animation on the
+                        // card's chip once the optimistic flip shows it as chosen.
+                        if (!already) effectRequest.request(kind)
                         runAndDismiss {
                             interactions.onReactionToggle(post, ReactionItem(kind, count = 0, isChosen = already))
                         }
@@ -1731,7 +1793,7 @@ internal fun ReactionPickerStrip(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        reactions.forEach { kind ->
+        reactions.forEachIndexed { index, kind ->
             val chosen = kind.stableKey in chosenKeys
             val background =
                 if (chosen) MaterialTheme.colorScheme.tertiaryContainer
@@ -1746,9 +1808,12 @@ internal fun ReactionPickerStrip(
                 contentAlignment = Alignment.Center,
             ) {
                 when (kind) {
+                    // Telegram's appear animation as the strip opens, for the leading
+                    // [PICKER_APPEAR_LIMIT] emoji only (see that constant).
                     is ReactionKind.Emoji -> ReactionEmojiGlyph(
                         emoji = kind.text,
                         style = MaterialTheme.typography.titleLarge,
+                        playAppear = index < PICKER_APPEAR_LIMIT,
                     )
                     is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
                         customEmojiId = kind.customEmojiId,
