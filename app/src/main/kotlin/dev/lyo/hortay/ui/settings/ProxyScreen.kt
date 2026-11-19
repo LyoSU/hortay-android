@@ -34,10 +34,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SegmentedListItem
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,6 +70,7 @@ import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.theme.LocalHortayStatusColors
+import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.launch
 
 /**
@@ -419,16 +417,11 @@ private fun AddProxySheet(
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             SectionLabel(stringResource(R.string.proxy_manual_label))
 
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                ProxyTypeOption.entries.forEachIndexed { i, option ->
-                    SegmentedButton(
-                        selected = type == option,
-                        onClick = { type = option; error = null; testResult = null },
-                        shape = SegmentedButtonDefaults.itemShape(i, ProxyTypeOption.entries.size),
-                        label = { Text(option.label) },
-                    )
-                }
-            }
+            SettingsSingleChoice(
+                options = PROXY_TYPE_CHOICES,
+                selected = type,
+                onSelect = { option -> type = option; error = null; testResult = null },
+            )
             OutlinedTextField(
                 value = server,
                 onValueChange = { server = it; error = null; testResult = null },
@@ -542,6 +535,11 @@ private enum class ProxyTypeOption(val label: String) {
     Http("HTTP"),
     Mtproto("MTProto"),
 }
+
+/** Protocol names are not translated, so the choice list is a constant. */
+private val PROXY_TYPE_CHOICES = ProxyTypeOption.entries
+    .map { SettingsChoice(it, it.label) }
+    .toPersistentList()
 
 private fun ProxyKind.protocolLabel(): String = when (this) {
     is ProxyKind.Socks5 -> "SOCKS5"

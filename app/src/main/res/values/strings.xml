@@ -894,6 +894,10 @@
     <string name="settings_theme_mode_system_subtitle">Follows the light or dark mode of your device</string>
     <string name="settings_theme_mode_light_subtitle">Always light, whatever your device uses</string>
     <string name="settings_theme_mode_dark_subtitle">Always dark, whatever your device uses</string>
+    <string name="settings_emoji_style_title">Reaction emoji</string>
+    <string name="settings_emoji_style_system">System</string>
+    <string name="settings_emoji_style_telegram">Telegram</string>
+    <string name="settings_emoji_style_subtitle">How emoji reactions under posts and comments look</string>
     <string name="settings_pure_black_title">Pure black</string>
     <string name="settings_pure_black_subtitle">True black background in the dark theme — easier on OLED screens</string>
     <string name="settings_text_size_title">Text size</string>

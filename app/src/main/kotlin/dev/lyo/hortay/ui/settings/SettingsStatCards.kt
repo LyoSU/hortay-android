@@ -239,6 +239,9 @@ private fun StorageBar(filesFraction: Float) {
 @Composable
 private fun StorageLegend(filesBytes: Long, dbBytes: Long) {
     val res = LocalContext.current.resources
+    // Each entry is capped at half the row (weight without fill), so at large font scale a long
+    // label wraps inside its half instead of pushing the other entry off the card. Entries that
+    // fit keep their natural width and the SpaceBetween placement.
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -247,18 +250,20 @@ private fun StorageLegend(filesBytes: Long, dbBytes: Long) {
             color = MaterialTheme.colorScheme.primary,
             label = stringResource(R.string.settings_storage_media),
             value = formatByteSize(filesBytes, res.getStringArray(R.array.size_units)),
+            modifier = Modifier.weight(1f, fill = false),
         )
         LegendDot(
             color = MaterialTheme.colorScheme.tertiary,
             label = stringResource(R.string.settings_storage_db),
             value = formatByteSize(dbBytes, res.getStringArray(R.array.size_units)),
+            modifier = Modifier.weight(1f, fill = false),
         )
     }
 }
 
 @Composable
-private fun LegendDot(color: Color, label: String, value: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun LegendDot(color: Color, label: String, value: String, modifier: Modifier = Modifier) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
                 .size(8.dp)

@@ -1464,8 +1464,8 @@ internal fun ReactionChip(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             when (val k = item.kind) {
-                is ReactionKind.Emoji -> Text(
-                    text = k.text.withEmojiPresentation(),
+                is ReactionKind.Emoji -> ReactionEmojiGlyph(
+                    emoji = k.text,
                     style = MaterialTheme.typography.titleSmall,
                 )
                 is ReactionKind.CustomEmoji -> CustomEmojiInlineView(
@@ -1746,8 +1746,8 @@ internal fun ReactionPickerStrip(
                 contentAlignment = Alignment.Center,
             ) {
                 when (kind) {
-                    is ReactionKind.Emoji -> Text(
-                        text = kind.text.withEmojiPresentation(),
+                    is ReactionKind.Emoji -> ReactionEmojiGlyph(
+                        emoji = kind.text,
                         style = MaterialTheme.typography.titleLarge,
                     )
                     is ReactionKind.CustomEmoji -> CustomEmojiInlineView(

@@ -108,6 +108,7 @@ Compose:
     # LocalNavBarCollapse: zero-alloc collapse-fraction hand-off feed -> nav bar.
     # LocalShowFullPost: lets ui.text reach the open-post action without ui.timeline dep.
     # LocalPostSummarizer: signed-in-only summary source; null in guest mode hides the action.
+    # LocalReactionEmojiIcons: Telegram reaction artwork resolver; null in guest mode / System emoji style.
     active: true
     allowedCompositionLocals:
       - LocalMediaCache
@@ -137,6 +138,7 @@ Compose:
       - LocalGlassBackdrop
       - LocalPostSummarizer
       - LocalQuoteHighlight
+      - LocalReactionEmojiIcons
   CompositionLocalNaming:
     active: true
   ContentEmitterReturningValues:

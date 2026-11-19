@@ -853,6 +853,10 @@
     <string name="settings_theme_mode_system_subtitle">Cihazın açık veya koyu moduna uyar</string>
     <string name="settings_theme_mode_light_subtitle">Cihaz ayarından bağımsız olarak hep açık</string>
     <string name="settings_theme_mode_dark_subtitle">Cihaz ayarından bağımsız olarak hep koyu</string>
+    <string name="settings_emoji_style_title">Tepki emojileri</string>
+    <string name="settings_emoji_style_system">Sistem</string>
+    <string name="settings_emoji_style_telegram">Telegram</string>
+    <string name="settings_emoji_style_subtitle">Gönderi ve yorumlardaki emoji tepkilerinin görünümü</string>
     <string name="settings_pure_black_title">Saf siyah</string>
     <string name="settings_pure_black_subtitle">Koyu temada siyah arka plan — OLED ekranlar için daha iyi</string>
     <string name="settings_text_size_title">Metin boyutu</string>

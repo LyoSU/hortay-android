@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.ui.icons.Symbol
 
@@ -97,5 +98,31 @@ internal fun SectionLabel(text: String) {
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
+    )
+}
+
+/**
+ * Title slot for a Settings [dev.lyo.hortay.ui.components.HortayTopBar] built through its slot
+ * overload. Same single-line treatment as the bar's own String title.
+ */
+@Composable
+internal fun SettingsTopBarTitle(text: String) {
+    Text(text = text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+}
+
+/**
+ * Subtitle slot for a Settings [dev.lyo.hortay.ui.components.HortayTopBar]. Unlike the bar's
+ * String subtitle (pinned to one line) it may wrap to a second line, so a long locale string at
+ * font scale 2.0 stays readable instead of ending in an ellipsis; the flexible large bar grows
+ * its expanded height to fit, and a subtitle that fits one line lays out exactly as before.
+ */
+@Composable
+internal fun SettingsTopBarSubtitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
     )
 }

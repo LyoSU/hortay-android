@@ -23,6 +23,8 @@ import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.CountryRepository
 import dev.lyo.hortay.data.CustomEmojiRepository
 import dev.lyo.hortay.data.DeepLinkRouter
+import dev.lyo.hortay.data.EmojiStyle
+import dev.lyo.hortay.data.ReactionEmojiIconRepository
 import dev.lyo.hortay.data.ColdStartBackfillStore
 import dev.lyo.hortay.data.ColdStartBackfillStoreImpl
 import dev.lyo.hortay.data.IgnoredChannelsStore
@@ -412,6 +414,24 @@ class AppGraph(context: Context) {
     // request stream is debounced 50ms so a screen-full of posts coalesces into a
     // single TDLib call.
     val customEmoji: CustomEmojiRepository = CustomEmojiRepository(tdClient, appScope)
+
+    /**
+     * [SettingsStore.emojiStyleState] (pre-warmed by the store): `MainActivity` reads it to
+     * decide whether reaction glyphs draw Telegram's artwork, and the resolver below gates
+     * its TDLib calls on it. DataStore has long emitted by the time the authenticated UI
+     * mounts (it waits for TDLib auth).
+     */
+    internal val emojiStyleState: StateFlow<EmojiStyle> get() = settingsStore.emojiStyleState
+
+    /**
+     * Telegram's static artwork for standard (unicode) reaction emoji, resolved lazily per
+     * emoji via `GetEmojiReaction` — see [ReactionEmojiIconRepository]. Session-scoped: its
+     * file ids belong to the signed-in account's TDLib database, so it is wiped on logout.
+     */
+    val reactionEmojiIcons: ReactionEmojiIconRepository =
+        ReactionEmojiIconRepository(tdClient, appScope, emojiStyleState).also { repo ->
+            session.onEnd("reactionEmojiIcons") { repo.clear() }
+        }
 
     /**
      * Process-wide frame driver for inline custom-emoji TGS playback. One

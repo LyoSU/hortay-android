@@ -8,6 +8,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -213,6 +214,7 @@ fun SettingsScreen(
                     // [channelActions] is the TDLib-mode marker (null in guest mode).
                     archiveInAllFeedState = archiveInAllFeedState.takeIf { channelActions != null },
                     groupFeedState = groupFeedState.takeIf { channelActions != null },
+                    emojiStyleAvailable = stats != null,
                 )
             }
             entry<SettingsNavKey.AutoDownload> {
@@ -300,6 +302,8 @@ private fun SettingsMain(
     archiveInAllFeedState: StateFlow<Boolean>? = null,
     /** Pre-warmed [SettingsStore.groupFeed]; null hides the row (guest mode). */
     groupFeedState: StateFlow<Boolean>? = null,
+    /** TDLib mode only — shows the reaction emoji style choice. */
+    emojiStyleAvailable: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -311,8 +315,8 @@ private fun SettingsMain(
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             HortayTopBar(
-                title = stringResource(R.string.settings_profile_title),
-                subtitle = stringResource(R.string.settings_subtitle_profile),
+                title = { SettingsTopBarTitle(stringResource(R.string.settings_profile_title)) },
+                subtitleSlot = { SettingsTopBarSubtitle(stringResource(R.string.settings_subtitle_profile)) },
                 size = HortayTopBarSize.Large,
                 scrollBehavior = scrollBehavior,
             )
@@ -365,8 +369,9 @@ private fun SettingsMain(
                     current = appearance.themeMode,
                     onSelect = { mode -> if (mode != appearance.themeMode) scope.launch { settings.setThemeMode(mode) } },
                 )
-                // Hidden under a pinned Light theme — pure black only ever applies to a dark scheme.
-                if (appearance.themeMode.canBeDark) {
+                // Shown only while the app is actually dark: under "System" on a light phone the
+                // switch changed nothing visible and read as a broken control.
+                if (appearance.themeMode.isDark(systemDark = isSystemInDarkTheme())) {
                     PureBlackRow(
                         enabled = appearance.pureBlack,
                         onToggle = { next -> if (next != appearance.pureBlack) scope.launch { settings.setPureBlack(next) } },
@@ -377,6 +382,15 @@ private fun SettingsMain(
                     DynamicColorRow(
                         enabled = currentDynamicColor,
                         onToggle = { next -> if (next != currentDynamicColor) scope.launch { settings.setDynamicColor(next) } },
+                    )
+                }
+                // TDLib mode only: guest mode has no session to resolve Telegram's reaction
+                // artwork from and always draws the system emoji font.
+                if (emojiStyleAvailable) {
+                    val emojiStyle by settings.emojiStyleState.collectAsStateWithLifecycle()
+                    EmojiStyleRows(
+                        current = emojiStyle,
+                        onSelect = { style -> if (style != emojiStyle) scope.launch { settings.setEmojiStyle(style) } },
                     )
                 }
                 LanguageRow(index = 0, count = 1)

@@ -902,6 +902,10 @@
     <string name="settings_theme_mode_system_subtitle">Перемикається разом зі світлим чи темним режимом пристрою</string>
     <string name="settings_theme_mode_light_subtitle">Завжди світла, незалежно від налаштувань пристрою</string>
     <string name="settings_theme_mode_dark_subtitle">Завжди темна, незалежно від налаштувань пристрою</string>
+    <string name="settings_emoji_style_title">Емодзі в реакціях</string>
+    <string name="settings_emoji_style_system">Системні</string>
+    <string name="settings_emoji_style_telegram">Як у Telegram</string>
+    <string name="settings_emoji_style_subtitle">Як виглядають емодзі-реакції під постами й коментарями</string>
     <string name="settings_pure_black_title">Чисто чорна</string>
     <string name="settings_pure_black_subtitle">Чорне тло в темній темі — приємніше для OLED-екранів</string>
     <string name="settings_text_size_title">Розмір тексту</string>

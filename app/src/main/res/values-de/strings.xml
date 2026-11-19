@@ -858,6 +858,10 @@
     <string name="settings_theme_mode_system_subtitle">Folgt dem hellen oder dunklen Modus des Geräts</string>
     <string name="settings_theme_mode_light_subtitle">Immer hell, unabhängig von der Geräteeinstellung</string>
     <string name="settings_theme_mode_dark_subtitle">Immer dunkel, unabhängig von der Geräteeinstellung</string>
+    <string name="settings_emoji_style_title">Reaktions-Emojis</string>
+    <string name="settings_emoji_style_system">System</string>
+    <string name="settings_emoji_style_telegram">Telegram</string>
+    <string name="settings_emoji_style_subtitle">Wie Emoji-Reaktionen unter Beiträgen und Kommentaren aussehen</string>
     <string name="settings_pure_black_title">Reines Schwarz</string>
     <string name="settings_pure_black_subtitle">Schwarzer Hintergrund im dunklen Design – schonender für OLED-Displays</string>
     <string name="settings_text_size_title">Textgröße</string>

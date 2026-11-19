@@ -834,6 +834,10 @@
     <string name="settings_theme_mode_system_subtitle">Mengikuti mode terang atau gelap perangkat</string>
     <string name="settings_theme_mode_light_subtitle">Selalu terang, apa pun pengaturan perangkat</string>
     <string name="settings_theme_mode_dark_subtitle">Selalu gelap, apa pun pengaturan perangkat</string>
+    <string name="settings_emoji_style_title">Emoji reaksi</string>
+    <string name="settings_emoji_style_system">Sistem</string>
+    <string name="settings_emoji_style_telegram">Telegram</string>
+    <string name="settings_emoji_style_subtitle">Tampilan reaksi emoji di bawah postingan dan komentar</string>
     <string name="settings_pure_black_title">Hitam pekat</string>
     <string name="settings_pure_black_subtitle">Latar hitam di tema gelap — lebih nyaman untuk layar OLED</string>
     <string name="settings_text_size_title">Ukuran teks</string>

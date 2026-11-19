@@ -852,6 +852,10 @@
     <string name="settings_theme_mode_system_subtitle">از حالت روشن یا تیرهٔ دستگاه پیروی می‌کند</string>
     <string name="settings_theme_mode_light_subtitle">همیشه روشن، صرف‌نظر از تنظیم دستگاه</string>
     <string name="settings_theme_mode_dark_subtitle">همیشه تیره، صرف‌نظر از تنظیم دستگاه</string>
+    <string name="settings_emoji_style_title">ایموجی واکنش‌ها</string>
+    <string name="settings_emoji_style_system">سیستم</string>
+    <string name="settings_emoji_style_telegram">Telegram</string>
+    <string name="settings_emoji_style_subtitle">ظاهر واکنش‌های ایموجی زیر پست‌ها و نظرها</string>
     <string name="settings_pure_black_title">مشکی خالص</string>
     <string name="settings_pure_black_subtitle">پس‌زمینهٔ مشکی در پوستهٔ تیره — مناسب نمایشگرهای OLED</string>
     <string name="settings_text_size_title">اندازهٔ متن</string>

@@ -29,13 +29,6 @@ class AppearancePrefsTest {
     }
 
     @Test
-    fun `pure black is offered only for modes that can render dark`() {
-        assertTrue(ThemeMode.System.canBeDark)
-        assertTrue(ThemeMode.Dark.canBeDark)
-        assertFalse(ThemeMode.Light.canBeDark)
-    }
-
-    @Test
     fun `text size round-trips and falls back to Default`() {
         ReadingTextSize.entries.forEach { assertEquals(it, ReadingTextSize.fromStored(it.name)) }
         assertEquals(ReadingTextSize.Default, ReadingTextSize.fromStored(null))

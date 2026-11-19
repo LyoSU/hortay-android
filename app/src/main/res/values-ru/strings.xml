@@ -898,6 +898,10 @@
     <string name="settings_theme_mode_system_subtitle">Следует светлому или тёмному режиму устройства</string>
     <string name="settings_theme_mode_light_subtitle">Всегда светлая, независимо от настроек устройства</string>
     <string name="settings_theme_mode_dark_subtitle">Всегда тёмная, независимо от настроек устройства</string>
+    <string name="settings_emoji_style_title">Эмодзи в реакциях</string>
+    <string name="settings_emoji_style_system">Системные</string>
+    <string name="settings_emoji_style_telegram">Как в Telegram</string>
+    <string name="settings_emoji_style_subtitle">Как выглядят эмодзи-реакции под постами и комментариями</string>
     <string name="settings_pure_black_title">Чисто чёрная</string>
     <string name="settings_pure_black_subtitle">Чёрный фон в тёмной теме — бережнее к OLED-экранам</string>
     <string name="settings_text_size_title">Размер текста</string>

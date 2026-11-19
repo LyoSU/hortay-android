@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.data.AuthStage
+import dev.lyo.hortay.data.EmojiStyle
 import dev.lyo.hortay.data.LocaleStore
 import dev.lyo.hortay.ui.auth.AuthScreen
 import dev.lyo.hortay.ui.main.MainScaffold
@@ -25,6 +26,7 @@ import dev.lyo.hortay.ui.media.LocalCustomEmoji
 import dev.lyo.hortay.ui.media.LocalCustomEmojiAnimator
 import dev.lyo.hortay.ui.media.LocalExoPlayerPool
 import dev.lyo.hortay.ui.media.LocalMediaCache
+import dev.lyo.hortay.ui.media.LocalReactionEmojiIcons
 import dev.lyo.hortay.ui.media.LocalAudioPlaybackSession
 import dev.lyo.hortay.ui.media.LocalStickerOutline
 import dev.lyo.hortay.ui.media.LocalWebHttpClient
@@ -121,7 +123,20 @@ class MainActivity : ComponentActivity() {
                         //   3. Otherwise → AuthScreen, where the user can either sign in
                         //      or flip the guest-mode flag.
                         when {
-                            auth == AuthStage.Ready -> MediaViewerHost { MainScaffold(graph = graph) }
+                            auth == AuthStage.Ready -> {
+                                // Telegram reaction artwork needs a TDLib session, so the resolver
+                                // is provided only here: guest mode and the auth screen see null
+                                // and draw reaction emoji with the system font. Under
+                                // EmojiStyle.System it is null too, so reaction glyphs issue no
+                                // TDLib call; flipping the setting recomposes only the glyphs.
+                                val emojiStyle by graph.emojiStyleState.collectAsStateWithLifecycle()
+                                CompositionLocalProvider(
+                                    LocalReactionEmojiIcons provides graph.reactionEmojiIcons
+                                        .takeIf { emojiStyle == EmojiStyle.Telegram },
+                                ) {
+                                    MediaViewerHost { MainScaffold(graph = graph) }
+                                }
+                            }
                             // Guest mode also needs MediaViewerHost: TimelineScreen reads
                             // LocalMediaViewer to open photo/video previews on tap, and
                             // PostCard's full media-rendering chain assumes the host is

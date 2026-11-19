@@ -72,7 +72,7 @@ DI built in `HortayApp.onCreate` as `graph: AppGraph`, accessed via `(applicatio
 | `:libwebm` / `libhortaywebm.so` / `dev.lyo.hortay.webm.WebmAlphaNative` | Vendored minimal-ffmpeg WebM(VP9+alpha) decoder. The JNI method name `Java_dev_lyo_hortay_webm_WebmAlphaNative_nativeDecode` and the `Raw` ctor signature must match the C in `libwebm/src/main/cpp`. Built by `scripts/build-ffmpeg.sh` (host NDK; libs gitignored). |
 | Release keystore (`storeFile` + `keyAlias` from `keystore.properties`) | Release signing identity. Losing it = losing the upgrade path for installed users. |
 | `HortayApp.graph` | Process-singleton DI root. |
-| `LocalMediaCache` / `LocalCustomEmoji` / `LocalExoPlayerPool` / `LocalReadCursors` / `LocalProfileAccent` / `LocalWebStaleMedia` | CompositionLocal heavy-singleton injection (`LocalWebStaleMedia` is the guest-mode stale-media reporter: null in TDLib mode, wired in `WebModeScaffold`). |
+| `LocalMediaCache` / `LocalCustomEmoji` / `LocalExoPlayerPool` / `LocalReadCursors` / `LocalProfileAccent` / `LocalWebStaleMedia` / `LocalReactionEmojiIcons` | CompositionLocal heavy-singleton injection (`LocalWebStaleMedia` is the guest-mode stale-media reporter: null in TDLib mode, wired in `WebModeScaffold`; `LocalReactionEmojiIcons` is the Telegram reaction-artwork resolver: provided by `MainActivity` around the authenticated UI only, null in guest mode and under `EmojiStyle.System`). |
 
 ## Hard rules
 

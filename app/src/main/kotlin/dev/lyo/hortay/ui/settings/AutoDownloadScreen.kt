@@ -189,8 +189,8 @@ private fun AutoDownloadListScreen(
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             HortayTopBar(
-                title = stringResource(R.string.autodownload_screen_title),
-                subtitle = stringResource(R.string.settings_subtitle_auto_download),
+                title = { SettingsTopBarTitle(stringResource(R.string.autodownload_screen_title)) },
+                subtitleSlot = { SettingsTopBarSubtitle(stringResource(R.string.settings_subtitle_auto_download)) },
                 size = HortayTopBarSize.Large,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -339,8 +339,8 @@ private fun AutoDownloadCategoryScreen(
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             HortayTopBar(
-                title = title,
-                subtitle = subtitle,
+                title = { SettingsTopBarTitle(title) },
+                subtitleSlot = { SettingsTopBarSubtitle(subtitle) },
                 size = HortayTopBarSize.Large,
                 navigationIcon = {
                     IconButton(onClick = onBack) {

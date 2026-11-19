@@ -18,6 +18,7 @@ import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -26,15 +27,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.EmojiStyle
 import dev.lyo.hortay.data.FeedOrder
 import dev.lyo.hortay.data.ReadingTextSize
 import dev.lyo.hortay.data.ThemeMode
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.theme.HortaySpacing
 import dev.lyo.hortay.ui.theme.scaledForReading
+import kotlinx.collections.immutable.persistentListOf
 
 /**
  * Feed-order preference as one card: a two-option segmented control with an icon per
@@ -48,37 +50,21 @@ internal fun FeedOrderRows(
     current: FeedOrder,
     onSelect: (FeedOrder) -> Unit,
 ) {
-    val options = listOf(
-        Triple(FeedOrder.OldestUnreadFirst, "arrow_upward", R.string.settings_feed_order_oldest_title),
-        Triple(FeedOrder.Newest, "arrow_downward", R.string.settings_feed_order_newest_title),
-    )
-    val haptics = LocalHapticFeedback.current
+    val oldestLabel = stringResource(R.string.settings_feed_order_oldest_title)
+    val newestLabel = stringResource(R.string.settings_feed_order_newest_title)
+    val options = remember(oldestLabel, newestLabel) {
+        persistentListOf(
+            SettingsChoice(FeedOrder.OldestUnreadFirst, oldestLabel, symbol = "arrow_upward"),
+            SettingsChoice(FeedOrder.Newest, newestLabel, symbol = "arrow_downward"),
+        )
+    }
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(12.dp)) {
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                options.forEachIndexed { i, (order, symbol, titleRes) ->
-                    SegmentedButton(
-                        selected = current == order,
-                        onClick = {
-                            if (current != order) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            onSelect(order)
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(i, options.size),
-                        icon = { Symbol(name = symbol, size = 18.dp) },
-                        label = {
-                            Text(
-                                text = stringResource(titleRes),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                    )
-                }
-            }
+            SettingsSingleChoice(options = options, selected = current, onSelect = onSelect)
             Text(
                 text = stringResource(
                     if (current == FeedOrder.Newest) R.string.settings_feed_order_newest_subtitle
@@ -398,37 +384,23 @@ internal fun ThemeModeRows(
     current: ThemeMode,
     onSelect: (ThemeMode) -> Unit,
 ) {
-    val options = listOf(
-        ThemeMode.System to R.string.settings_theme_mode_system,
-        ThemeMode.Light to R.string.settings_theme_mode_light,
-        ThemeMode.Dark to R.string.settings_theme_mode_dark,
-    )
-    val haptics = LocalHapticFeedback.current
+    val systemLabel = stringResource(R.string.settings_theme_mode_system)
+    val lightLabel = stringResource(R.string.settings_theme_mode_light)
+    val darkLabel = stringResource(R.string.settings_theme_mode_dark)
+    val options = remember(systemLabel, lightLabel, darkLabel) {
+        persistentListOf(
+            SettingsChoice(ThemeMode.System, systemLabel),
+            SettingsChoice(ThemeMode.Light, lightLabel),
+            SettingsChoice(ThemeMode.Dark, darkLabel),
+        )
+    }
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(HortaySpacing.md)) {
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                options.forEachIndexed { i, (mode, titleRes) ->
-                    SegmentedButton(
-                        selected = current == mode,
-                        onClick = {
-                            if (current != mode) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            onSelect(mode)
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(i, options.size),
-                        label = {
-                            Text(
-                                text = stringResource(titleRes),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                    )
-                }
-            }
+            SettingsSingleChoice(options = options, selected = current, onSelect = onSelect)
             Text(
                 text = stringResource(
                     when (current) {
@@ -446,9 +418,49 @@ internal fun ThemeModeRows(
 }
 
 /**
+ * Reaction emoji style ([EmojiStyle]) in the same card idiom as [ThemeModeRows]: a title, a
+ * System / Telegram segmented control, and a one-line explanation. TDLib mode only — guest mode
+ * has no session to resolve Telegram's artwork from, so the caller hides the card there.
+ */
+@Composable
+internal fun EmojiStyleRows(
+    current: EmojiStyle,
+    onSelect: (EmojiStyle) -> Unit,
+) {
+    val systemLabel = stringResource(R.string.settings_emoji_style_system)
+    val telegramLabel = stringResource(R.string.settings_emoji_style_telegram)
+    val options = remember(systemLabel, telegramLabel) {
+        persistentListOf(
+            SettingsChoice(EmojiStyle.System, systemLabel),
+            SettingsChoice(EmojiStyle.Telegram, telegramLabel),
+        )
+    }
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(HortaySpacing.md)) {
+            Text(
+                text = stringResource(R.string.settings_emoji_style_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = HortaySpacing.xs, end = HortaySpacing.xs, bottom = 10.dp),
+            )
+            SettingsSingleChoice(options = options, selected = current, onSelect = onSelect)
+            Text(
+                text = stringResource(R.string.settings_emoji_style_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = HortaySpacing.xs, end = HortaySpacing.xs, top = 10.dp),
+            )
+        }
+    }
+}
+
+/**
  * Pure-black dark theme ([dev.lyo.hortay.data.SettingsStore.setPureBlack]). The caller shows it
- * only while the theme mode can render dark — under a pinned Light theme it would be a dead
- * control. Same single-row card shape as the other toggles.
+ * only while the app is rendering dark — in a light theme it would be a dead control. Same single-row card shape as the other toggles.
  */
 @Composable
 internal fun PureBlackRow(
@@ -519,15 +531,19 @@ internal fun TextSizeRows(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Title takes the slack and wraps, so at large font scale the selected size's name
+                // keeps its own space at the end instead of being squeezed off the row.
                 Text(
                     text = stringResource(R.string.settings_text_size_title),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
                 )
                 Text(
                     text = stringResource(current.labelRes()),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = HortaySpacing.sm),
                 )
             }
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {

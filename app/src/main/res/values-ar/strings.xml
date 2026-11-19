@@ -938,6 +938,10 @@
     <string name="settings_theme_mode_system_subtitle">يتبع الوضع الفاتح أو الداكن للجهاز</string>
     <string name="settings_theme_mode_light_subtitle">فاتح دائمًا، مهما كان إعداد الجهاز</string>
     <string name="settings_theme_mode_dark_subtitle">داكن دائمًا، مهما كان إعداد الجهاز</string>
+    <string name="settings_emoji_style_title">رموز التفاعلات التعبيرية</string>
+    <string name="settings_emoji_style_system">النظام</string>
+    <string name="settings_emoji_style_telegram">Telegram</string>
+    <string name="settings_emoji_style_subtitle">مظهر التفاعلات بالرموز التعبيرية أسفل المنشورات والتعليقات</string>
     <string name="settings_pure_black_title">أسود خالص</string>
     <string name="settings_pure_black_subtitle">خلفية سوداء في المظهر الداكن — أفضل لشاشات OLED</string>
     <string name="settings_text_size_title">حجم النص</string>

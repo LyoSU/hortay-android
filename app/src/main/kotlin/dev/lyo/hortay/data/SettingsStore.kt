@@ -56,9 +56,6 @@ enum class ThemeMode {
         Dark -> true
     }
 
-    /** Whether this mode can ever render dark — gates the "Pure black" switch in Settings. */
-    val canBeDark: Boolean get() = this != Light
-
     companion object {
         fun fromStored(value: String?): ThemeMode =
             entries.firstOrNull { it.name == value } ?: System
@@ -88,6 +85,27 @@ enum class ReadingTextSize(val scale: Float) {
     companion object {
         fun fromStored(value: String?): ReadingTextSize =
             entries.firstOrNull { it.name == value } ?: Default
+    }
+}
+
+/**
+ * How standard (unicode) emoji reactions are drawn under posts and comments.
+ * [Telegram] draws Telegram's own reaction artwork (the static icon TDLib exposes via
+ * `GetEmojiReaction`), so reactions look the same on every vendor's phone; [System]
+ * draws the device's emoji font, exactly as before the setting existed, and issues no
+ * TDLib request at all. Guest mode always behaves as [System] — there is no TDLib
+ * session to resolve the artwork from. Persisted by [name]; an unknown or missing
+ * stored value falls back to [Telegram].
+ *
+ * Kept out of [AppearancePrefs] on purpose: the window theme recomposes on every
+ * [AppearancePrefs] change, and the emoji style only concerns reaction glyphs.
+ */
+enum class EmojiStyle {
+    System, Telegram;
+
+    companion object {
+        fun fromStored(value: String?): EmojiStyle =
+            entries.firstOrNull { it.name == value } ?: Telegram
     }
 }
 
@@ -177,6 +195,26 @@ class SettingsStore(context: Context) {
 
     suspend fun setTextSize(size: ReadingTextSize) {
         dataStore.edit { it[KEY_TEXT_SCALE] = size.name }
+    }
+
+    /** Reaction emoji artwork — see [EmojiStyle]. Default [EmojiStyle.Telegram]. */
+    val emojiStyle: Flow<EmojiStyle> = dataStore.data.map { prefs ->
+        EmojiStyle.fromStored(prefs[KEY_EMOJI_STYLE])
+    }.distinctUntilChanged()
+
+    /**
+     * [emojiStyle], pre-warmed from construction like [appearanceState]: the Settings
+     * segmented control opens on the persisted choice instead of flicking from the default,
+     * and the reaction-artwork resolver gates its TDLib calls on the current value.
+     */
+    val emojiStyleState: StateFlow<EmojiStyle> = emojiStyle.stateIn(
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        SharingStarted.Eagerly,
+        EmojiStyle.Telegram,
+    )
+
+    suspend fun setEmojiStyle(style: EmojiStyle) {
+        dataStore.edit { it[KEY_EMOJI_STYLE] = style.name }
     }
 
     /**
@@ -313,6 +351,7 @@ class SettingsStore(context: Context) {
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_PURE_BLACK = booleanPreferencesKey("pure_black")
         val KEY_TEXT_SCALE = stringPreferencesKey("text_scale")
+        val KEY_EMOJI_STYLE = stringPreferencesKey("emoji_style")
     }
 }
 
