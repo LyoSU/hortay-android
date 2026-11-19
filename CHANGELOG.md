@@ -125,6 +125,15 @@
 - Voice messages, audio tracks and videos with sound now pause other apps' music, pause for calls and stop when you unplug your headphones.
 - A post that has comments no longer says "Comments are disabled" when they simply failed to load — it offers Retry instead.
 - The archive retention period and a suggested channel's mention count now use the right word form for the number in every language.
+- Saving a photo or video to the gallery works on Android 9 and older.
+- A voice message or audio track that fails to play no longer leaves the player stuck.
+- Scrolling up in a channel no longer stops loading older posts after the first page.
+- A folder that fails to load no longer shows as empty until the app restarts.
+- Choosing an app language no longer stops the app from following dark mode and screen rotation.
+- Status and navigation bar icons stay readable after rotating the screen when the app theme differs from the system's.
+- Reopening the app from Recents no longer reopens the link it was first launched from.
+- Channel suggestions open right away when the suggestions server is unreachable.
+- With both Hortay and Hortay beta installed, an unsupported Telegram link no longer bounces between the two apps.
 
 ### Performance
 - Idle video players are released when the app goes to the background.
