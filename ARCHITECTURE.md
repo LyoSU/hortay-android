@@ -114,6 +114,9 @@ Each `❌` carries a **Revisit:** clause — the concrete condition that would j
 - ✅ Lambdas in `LazyColumn`/`LazyRow` items wrapped in `remember(...)` with stable keys. Inline `{ … }` capturing non-stable scope breaks skipping under scroll.
 - ✅ Read state: `ReadCursors` is the single source of truth, consumed via `LocalReadCursors`. Cursors are monotonic — clamp on every seed/update (`if (new > existing) put`) to survive logout/login races.
 - ✅ `rememberDeferredLoading` scales its grace by `ValueAnimator.getDurationScale()` via `effectiveSkeletonGrace` — reduced motion (system / developer options) collapses the grace to 0 and paints the skeleton on the first Loading frame.
+- ✅ Intensity budget. Every surface is `quiet` (feed body, list rows, recurring controls), `clear` (navigation, selected state, secondary actions) or `expressive` (one primary action, key transition or brand moment per screen). Shape morphs, `MaterialShapes` silhouettes and bouncy springs belong to `expressive` only — a screen where everything is expressive has no hierarchy.
+- ✅ Container budget. Inside a post card or sheet: at most one nested authored container per three content units, at most two levels deep (card → quote / code / poll / preview, never a third). Separate with spacing or a surface-role change before reaching for an outline; shadows only for elements that really float over content.
+- ✅ Visible UI changes are checked against: longest locale strings (de / uk / ru), an RTL locale (ar / fa), font scale 2.0, dark theme, dynamic and brand colour, IME open, edge-to-edge insets. Text-bearing controls use `heightIn(min = …)`, never a fixed `height(…)` — fixed heights clip at large font scale.
 
 ### i18n & a11y
 
