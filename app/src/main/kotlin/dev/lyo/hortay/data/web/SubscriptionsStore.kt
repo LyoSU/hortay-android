@@ -59,6 +59,36 @@ class SubscriptionsStore(context: Context) {
         dataStore.edit { prefs -> prefs[KEY_SEARCH_TEXT_FOLDED] = true }
     }
 
+    /**
+     * One-shot marker for the upgrade from builds whose first-emit reconcile was
+     * one-way (DataStore → channel table only). Those builds could leave channels
+     * subscribed in the table but absent from this set — legitimately: installs where
+     * this store was still empty while the table already held subscriptions, and fetch
+     * rows the old ingest marked subscribed. [WebFeedSource] adopts such table-only
+     * subscriptions into this set ONCE ([adoptLegacySubscriptions]); only after the
+     * marker is set does its first-emit reconcile go two-way (table-only = an
+     * unsubscribe whose table write was lost). Without the marker an upgrade would
+     * silently drop those channels — an empty legacy set dropped the whole list.
+     */
+    suspend fun isLegacyTableAdopted(): Boolean =
+        dataStore.data.first()[KEY_LEGACY_TABLE_ADOPTED] ?: false
+
+    /**
+     * Add [usernames] to the subscription set AND set the [isLegacyTableAdopted] marker
+     * in one DataStore edit, so a process death can't persist one without the other
+     * (re-running the adoption is idempotent; running two-way without it is not).
+     */
+    suspend fun adoptLegacySubscriptions(usernames: Collection<String>) {
+        val normalized = usernames.mapNotNull { normalize(it) }
+        dataStore.edit { prefs ->
+            if (normalized.isNotEmpty()) {
+                val current = prefs[KEY_SUBSCRIPTIONS] ?: emptySet()
+                prefs[KEY_SUBSCRIPTIONS] = current + normalized
+            }
+            prefs[KEY_LEGACY_TABLE_ADOPTED] = true
+        }
+    }
+
     suspend fun add(username: String) {
         val normalized = normalize(username) ?: return
         dataStore.edit { prefs ->
@@ -92,6 +122,7 @@ class SubscriptionsStore(context: Context) {
     private companion object {
         val KEY_SUBSCRIPTIONS = stringSetPreferencesKey("anon_subscriptions")
         val KEY_SEARCH_TEXT_FOLDED = booleanPreferencesKey("web_search_text_folded")
+        val KEY_LEGACY_TABLE_ADOPTED = booleanPreferencesKey("web_legacy_table_subscriptions_adopted")
     }
 }
 

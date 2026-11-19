@@ -3,7 +3,12 @@ package dev.lyo.hortay.data.discover
 import dev.lyo.hortay.data.warnUnlessCancelled
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -17,9 +22,16 @@ import java.io.File
  *
  * Resolution order, cheapest-first, on every [groups] call:
  *   1. in-memory catalog (kept once per process after the first successful network fetch),
- *   2. a fresh network fetch from GitHub via jsDelivr,
- *   3. the last network payload persisted to [cacheFile],
+ *   2. the last network payload persisted to [cacheFile] — served IMMEDIATELY, with a
+ *      network refresh launched in the background (its result lands in memory for the
+ *      next open),
+ *   3. with no disk cache, a fresh network fetch from GitHub via jsDelivr, awaited,
  *   4. the tiny [FALLBACK] compiled into the app.
+ *
+ * A failed fetch is remembered for [FAILURE_BACKOFF_MS]: a blackholed CDN otherwise made
+ * every open of the add-channel sheet wait out the full OkHttp connect + read timeouts
+ * (~20 s) under [loadMutex] before falling back. Inside the backoff window the network is
+ * skipped and the cache / fallback is served at once.
  *
  * The catalog is intentionally *remote* so the maintainer can add/retire channels
  * without an app release — public channels go dead or disable their `t.me/s`
@@ -36,6 +48,10 @@ class ChannelSuggestionsRepository(
     private val cacheFile: File,
     private val appVersionCode: Int,
     private val catalogUrl: String = DEFAULT_URL,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /** Owns the stale-while-revalidate refresh; process-lived like this repository. */
+    private val refreshScope: CoroutineScope = CoroutineScope(SupervisorJob() + ioDispatcher),
+    private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -50,6 +66,13 @@ class ChannelSuggestionsRepository(
     suspend fun groups(localeLang: String): ImmutableList<SuggestedGroup> =
         catalog().resolve(localeLang, appVersionCode).toImmutableList()
 
+    /** Wall-clock of the last failed network fetch; 0 = none. See [FAILURE_BACKOFF_MS]. */
+    @Volatile
+    private var lastFailureAtMs: Long = 0L
+
+    /** Single-flight guard for the background refresh. Guarded by [loadMutex]. */
+    private var refreshJob: Job? = null
+
     private suspend fun catalog(): SuggestionCatalog {
         memory?.let { return it }
         return loadMutex.withLock {
@@ -57,12 +80,42 @@ class ChannelSuggestionsRepository(
             // Memoise only a fresh network catalog. The disk cache and [FALLBACK] are
             // stand-ins for an offline first open; pinning either in [memory] froze the
             // stale / tiny list for the whole process, so going online later never
-            // fetched the real one. Not memoised, the next open retries the network.
-            fetchRemote()?.also { memory = it } ?: readCache() ?: FALLBACK
+            // fetched the real one. Not memoised, the next open retries the network
+            // (once [FAILURE_BACKOFF_MS] has passed since a failure).
+            val cached = readCache()
+            if (cached != null) {
+                // Stale-while-revalidate: the sheet paints from disk now; a fresh
+                // catalog fetched in the background serves every later open.
+                launchBackgroundRefreshLocked()
+                return@withLock cached
+            }
+            if (inFailureBackoff()) return@withLock FALLBACK
+            fetchAndRemember() ?: FALLBACK
         }
     }
 
-    private suspend fun fetchRemote(): SuggestionCatalog? = withContext(Dispatchers.IO) {
+    private fun inFailureBackoff(): Boolean {
+        val failedAt = lastFailureAtMs
+        return failedAt != 0L && nowMs() - failedAt < FAILURE_BACKOFF_MS
+    }
+
+    private fun launchBackgroundRefreshLocked() {
+        if (refreshJob?.isActive == true || inFailureBackoff()) return
+        refreshJob = refreshScope.launch { fetchAndRemember() }
+    }
+
+    private suspend fun fetchAndRemember(): SuggestionCatalog? {
+        val fresh = fetchRemote()
+        if (fresh != null) {
+            memory = fresh
+            lastFailureAtMs = 0L
+        } else {
+            lastFailureAtMs = nowMs()
+        }
+        return fresh
+    }
+
+    private suspend fun fetchRemote(): SuggestionCatalog? = withContext(ioDispatcher) {
         runCatching {
             val request = Request.Builder().url(catalogUrl).build()
             http.newCall(request).execute().use { response ->
@@ -76,7 +129,7 @@ class ChannelSuggestionsRepository(
         }.warnUnlessCancelled(TAG, "fetchRemote").getOrNull()
     }
 
-    private suspend fun readCache(): SuggestionCatalog? = withContext(Dispatchers.IO) {
+    private suspend fun readCache(): SuggestionCatalog? = withContext(ioDispatcher) {
         runCatching {
             if (!cacheFile.exists()) return@runCatching null
             json.decodeFromString<SuggestionCatalog>(cacheFile.readText())
@@ -85,6 +138,9 @@ class ChannelSuggestionsRepository(
 
     companion object {
         private const val TAG = "ChannelSuggestions"
+
+        /** How long a failed catalog fetch suppresses further network attempts. */
+        const val FAILURE_BACKOFF_MS = 5 * 60 * 1000L
         const val DEFAULT_URL =
             "https://cdn.jsdelivr.net/gh/LyoSU/hortay-android@main/suggestions.json"
 

@@ -123,20 +123,25 @@ class WebTelegramClient(
             }
             .build()
 
-        return runCatching { execute(request) }.fold(
-            onSuccess = { response ->
-                // Body read (30-136 KB), Jsoup parse and the OkHttp cache write all
-                // happen in handleResponse — keep them off the caller's dispatcher,
-                // which is Main for pull-to-refresh and the Add-channel lookups.
-                withContext(Dispatchers.IO) {
-                    response.use { handleResponse(it, username, reportNotModified) }
-                }
-            },
-            onFailure = { error ->
+        // The call, the body read (30-136 KB), the Jsoup parse and the OkHttp cache
+        // write all run inside ONE IO block — off the caller's dispatcher, which is
+        // Main for pull-to-refresh and the Add-channel lookups. One block, not a
+        // network hop followed by a second `withContext` for the body: `withContext`
+        // checks cancellation on entry AND on return, so a caller cancelled between
+        // the two hops dropped an already-delivered Response without closing it,
+        // leaking its pooled connection. Here the Response is handed straight from
+        // [execute] (which closes it itself if cancelled before delivery) to `use`
+        // with no suspension point in between.
+        return withContext(Dispatchers.IO) {
+            val response = runCatching { execute(request) }.getOrElse { error ->
+                // Cancellation is not a network error: a cancelled sweep / timed-out
+                // lookup must propagate (lookupChannel maps its own timeout).
+                if (error is kotlinx.coroutines.CancellationException) throw error
                 Log.w(TAG, "fetchChannelPage(${username}) failed: ${error.message}")
-                FetchResult.NetworkError(error)
-            },
-        )
+                return@withContext FetchResult.NetworkError(error)
+            }
+            response.use { handleResponse(it, username, reportNotModified) }
+        }
     }
 
     /**
@@ -289,7 +294,10 @@ class WebTelegramClient(
         gateUntilMs.updateAndGet { existing -> maxOf(existing, deadline) }
     }
 
-    private suspend fun execute(request: Request): Response = withContext(Dispatchers.IO) {
+    // Deliberately NOT wrapped in its own withContext: a dispatcher hop on return
+    // would re-check cancellation after the Response was delivered and drop it
+    // unclosed. Callers already run this on Dispatchers.IO.
+    private suspend fun execute(request: Request): Response =
         suspendCancellableCoroutine { cont ->
             val call = httpClient.newCall(request)
             cont.invokeOnCancellation { call.cancel() }
@@ -306,7 +314,6 @@ class WebTelegramClient(
                 }
             })
         }
-    }
 
     companion object {
         private const val TAG = "WebTelegram"

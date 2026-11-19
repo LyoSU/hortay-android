@@ -46,3 +46,12 @@ SELECT username, last_seen_post_seq FROM channel_read_cursor;
 
 deleteAll:
 DELETE FROM channel_read_cursor;
+
+-- Username case normalisation (WebRepository.normalizeUsernameCase): a mixed-case
+-- channel's cursor is folded (MAX, via markReadInsert / markReadUpdate) into the
+-- lowercase row, then dropped.
+selectByUsername:
+SELECT last_seen_post_seq FROM channel_read_cursor WHERE username = :username;
+
+deleteByUsername:
+DELETE FROM channel_read_cursor WHERE username = :username;

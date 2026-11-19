@@ -461,6 +461,80 @@ class WebRepository(
         channelQueries.unsubscribe(username)
     }
 
+    /**
+     * One-time, idempotent repair for data written before [TmePageParser] lowercased
+     * handles. Those builds keyed a fetched channel by the page header's display casing,
+     * so the table could hold a lowercase subscription row ("durov") next to a
+     * mixed-case fetch row ("Durov") owning the posts ("Durov/123"). After the parser
+     * fix every refetch lands under "durov/123" instead, so without this the old rows'
+     * is_read / is_bookmarked were stranded, the bookmark mirror ([syncBookmarks], which
+     * maps chat ids back through every username) could target a spelling that no
+     * longer receives updates, and "Clear cache" could delete the only flagged copy's
+     * live twin while keeping a dead one.
+     *
+     * For every mixed-case channel row, in ONE transaction:
+     *  - the lowercase row is created if missing (carrying the mixed row's subscription
+     *    flag); an existing lowercase row keeps its own flag — every subscribe /
+     *    unsubscribe path writes the lowercase spelling, so it is the user's intent;
+     *  - each post is re-keyed to the lowercase channel and id, or — when the lowercase
+     *    twin already exists — its read / bookmark flags are OR-ed into the twin (whose
+     *    content is the newer fetch) and the stale row dropped;
+     *  - the read cursor is folded in with MAX;
+     *  - the mixed-case row is deleted.
+     * Plain INSERT OR IGNORE / UPDATE / DELETE only (Android 8/9 SQLite < 3.24). No
+     * schema change, so no .sqm migration: the cheap `username != LOWER(username)` probe
+     * makes repeat runs a no-op, which is why it is safe to call on every launch.
+     *
+     * @return the number of mixed-case channel rows merged.
+     */
+    suspend fun normalizeUsernameCase(): Int = withContext(ioDispatcher) {
+        db.transactionWithResult {
+            val mixed = channelQueries.selectMixedCaseUsernames().executeAsList()
+            for (mixedName in mixed) {
+                val lower = mixedName.lowercase()
+                channelQueries.selectByUsername(mixedName).executeAsOneOrNull()?.let { row ->
+                    channelQueries.insertNormalized(
+                        username = lower,
+                        title = row.title,
+                        description = row.description,
+                        avatarUrl = row.avatar_url,
+                        subscribers = row.subscribers,
+                        isVerified = row.is_verified,
+                        isSubscribed = row.is_subscribed,
+                    )
+                }
+                val lowerState = postQueries.selectUserStateByChannel(lower).executeAsList()
+                    .associateBy { it.seq }
+                for (post in postQueries.selectUserStateByChannel(mixedName).executeAsList()) {
+                    val twin = lowerState[post.seq]
+                    if (twin == null) {
+                        postQueries.rekey(
+                            newChannelUsername = lower,
+                            newId = "$lower/${post.seq}",
+                            channelUsername = mixedName,
+                            seq = post.seq,
+                        )
+                    } else {
+                        postQueries.setUserState(
+                            isRead = twin.is_read || post.is_read,
+                            isBookmarked = twin.is_bookmarked || post.is_bookmarked,
+                            channelUsername = lower,
+                            seq = post.seq,
+                        )
+                        postQueries.deleteOne(channelUsername = mixedName, seq = post.seq)
+                    }
+                }
+                readCursorQueries.selectByUsername(mixedName).executeAsOneOrNull()?.let { cursor ->
+                    readCursorQueries.markReadInsert(lower, cursor)
+                    readCursorQueries.markReadUpdate(cursor, lower)
+                    readCursorQueries.deleteByUsername(mixedName)
+                }
+                channelQueries.deleteChannel(mixedName)
+            }
+            mixed.size
+        }
+    }
+
     suspend fun setBookmark(postId: String, bookmarked: Boolean) = withContext(ioDispatcher) {
         postQueries.setBookmark(bookmarked, postId)
     }

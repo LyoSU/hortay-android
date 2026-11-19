@@ -169,3 +169,20 @@ UPDATE channel SET
     fetch_error = NULL,
     fetch_retry_after_ms = NULL
 WHERE is_subscribed = 1;
+
+-- Username case normalisation (WebRepository.normalizeUsernameCase). Builds before
+-- the parser lowercased handles keyed a fetched channel by the page header's display
+-- casing ("Durov") next to the lowercase subscription row ("durov"). LOWER() folds
+-- ASCII only, which covers every legal Telegram username ([A-Za-z0-9_]).
+selectMixedCaseUsernames:
+SELECT username FROM channel WHERE username != LOWER(username);
+
+selectByUsername:
+SELECT * FROM channel WHERE username = :username;
+
+-- Creates the lowercase row for a mixed-case one that has no lowercase twin yet,
+-- carrying its subscription flag. Validators / cursor deliberately NOT copied: the
+-- next fetch of the lowercase row then starts from a full page.
+insertNormalized:
+INSERT OR IGNORE INTO channel(username, title, description, avatar_url, subscribers, is_verified, is_subscribed)
+VALUES (:username, :title, :description, :avatarUrl, :subscribers, :isVerified, :isSubscribed);

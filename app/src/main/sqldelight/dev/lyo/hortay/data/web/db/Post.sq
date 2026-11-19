@@ -309,3 +309,20 @@ SELECT id, seq, published_at_iso, text_html, media_json,
        web_preview_json, forwarded_from_json
 FROM post
 WHERE channel_username = :channelUsername;
+
+-- Username case normalisation (WebRepository.normalizeUsernameCase): re-key a
+-- mixed-case channel's posts onto the lowercase channel, OR-ing user state into a
+-- lowercase twin when the same post was already re-fetched under it.
+selectUserStateByChannel:
+SELECT seq, is_read, is_bookmarked FROM post WHERE channel_username = :channelUsername;
+
+setUserState:
+UPDATE post SET is_read = :isRead, is_bookmarked = :isBookmarked
+WHERE channel_username = :channelUsername AND seq = :seq;
+
+rekey:
+UPDATE post SET channel_username = :newChannelUsername, id = :newId
+WHERE channel_username = :channelUsername AND seq = :seq;
+
+deleteOne:
+DELETE FROM post WHERE channel_username = :channelUsername AND seq = :seq;

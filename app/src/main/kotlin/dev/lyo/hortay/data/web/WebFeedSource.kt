@@ -4,9 +4,14 @@ import android.util.Log
 import dev.lyo.hortay.data.FeedSource
 import dev.lyo.hortay.data.IgnoredChannelsStore
 import dev.lyo.hortay.data.TimelinePost
+import dev.lyo.hortay.data.bookmarkKey
+import dev.lyo.hortay.data.warnUnlessCancelled
+import kotlinx.collections.immutable.ImmutableSet
 import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentSet
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.toPersistentList
+import kotlinx.collections.immutable.toPersistentSet
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -22,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -132,19 +138,14 @@ class WebFeedSource(
      * Composable tree. Mapping happens inside the same Flow chain so the
      * StateFlow consumer sees one already-converted list per emit, not a raw
      * WebFeedEntry list that needs per-item adaptation downstream.
+     *
+     * One composition feeds both [posts] and [savedOnlyKeys] so the two never come
+     * from different DB snapshots.
      */
-    override val posts: StateFlow<PersistentList<TimelinePost>> =
+    private val composition: StateFlow<FeedComposition> =
         combine(
-            // Bookmarked posts are merged in so the Saved tab (which renders this
-            // same source, filtered to bookmark keys) keeps every saved post even
-            // after it ages out of the feed's newest-N window or its channel is
-            // unsubscribed. The Saved tab must share this source rather than get
-            // its own: TimelineViewModel is keyed by FeedSource class, and a
-            // separate VM would classify a freshly bookmarked recent post as
-            // "pending new" and hide it.
-            combine(repository.observeFeed(), repository.observeBookmarked()) { feed, saved ->
-                mergeSaved(feed, saved)
-            },
+            repository.observeFeed(),
+            repository.observeBookmarked(),
             // Read-side filter for hidden channels. The merged guest feed is
             // capped at 1000 rows so the additional `filter` is trivial; the
             // alternative — pushing exclusion into the SQL `selectFeed` query —
@@ -154,17 +155,39 @@ class WebFeedSource(
             // unchanged across TDLib + guest modes (see [IgnoredChannelsStore]
             // for the cross-mode chatId design).
             ignoredChannels?.ignored ?: flowOf(persistentSetOf()),
-        ) { feed, ignored ->
-            if (ignored.isEmpty()) feed
-            else feed.filter { it.chatId !in ignored }.toPersistentList()
-        }
+        ) { feed, saved, ignored -> composeFeed(feed, saved, ignored) }
             // WhileSubscribed(5s) instead of Eagerly so authenticated users
             // who never enter guest mode don't pay for the SQL query at
             // AppGraph construction time. 5s grace matches the rest of the
             // TDLib-mode SharedFlow / StateFlow lifecycle (CommentsRepository,
             // PostsRepository) so a brief tab-switch doesn't tear down and
             // re-establish the SQLDelight subscription.
+            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), FeedComposition.EMPTY)
+
+    /**
+     * Feed window ∪ bookmarked posts. Bookmarked posts are merged in so the Saved tab
+     * (which renders this same source, filtered to bookmark keys) keeps every saved
+     * post even after it ages out of the feed's newest-N window or its channel is
+     * unsubscribed. The Saved tab must share this source
+     * rather than get its own: TimelineViewModel is keyed by FeedSource class, and a
+     * separate VM would classify a freshly bookmarked recent post as "pending new"
+     * and hide it. The ordinary Feed route must therefore drop [savedOnlyKeys].
+     */
+    override val posts: StateFlow<PersistentList<TimelinePost>> =
+        composition.map { it.posts }
             .stateIn(scope, SharingStarted.WhileSubscribed(5_000), kotlinx.collections.immutable.persistentListOf())
+
+    /**
+     * [TimelinePost.bookmarkKey]s of the rows in [posts] that are there ONLY because
+     * they are bookmarked — outside the feed window or from an unsubscribed channel.
+     * The Saved route shows them; the Feed route must filter them out, or saved posts
+     * of unsubscribed channels would stay in the feed forever and saved posts older
+     * than the window would reappear at its tail. A hidden channel's posts are in
+     * neither list.
+     */
+    val savedOnlyKeys: StateFlow<ImmutableSet<String>> =
+        composition.map { it.savedOnlyKeys }
+            .stateIn(scope, SharingStarted.WhileSubscribed(5_000), persistentSetOf())
 
     /** All known channels, with subscription + fetch status for UI affordances. */
     val channels: StateFlow<PersistentList<ChannelEntry>> =
@@ -269,23 +292,47 @@ class WebFeedSource(
             val previous = lastKnownSubscriptionsSet
             lastKnownSubscriptionsSet = latest
             if (previous == null) {
-                // First emit on this process: two-way reconcile. DataStore is the
-                // source of truth for intent — every subscribe path writes it
-                // ([subscribeAndRefresh]), every unsubscribe path removes from it
-                // ([unsubscribe], the migration coordinator). A row subscribed in
-                // the table but absent from DataStore is an unsubscribe whose table
-                // write was lost (process death between the two writes); a name in
-                // DataStore missing from the table is the mirror-image add.
+                // Fold legacy mixed-case channel rows into their lowercase spelling
+                // first, so the reconcile below sees one row per channel.
+                runCatching { repository.normalizeUsernameCase() }
+                    .warnUnlessCancelled(TAG, "username case normalisation")
+                // First emit on this process. DataStore is the source of truth for
+                // intent — every subscribe path writes it ([subscribeAndRefresh]), every
+                // unsubscribe path removes from it ([unsubscribe], the migration
+                // coordinator). A name in DataStore missing from the table is an add
+                // whose table write was lost. A row subscribed in the table but absent
+                // from DataStore is, normally, an unsubscribe whose table write was lost
+                // (process death between the two writes) — but on the first run after
+                // upgrading from the one-way-reconcile builds it can be a legitimate
+                // subscription DataStore never held. Those are adopted into DataStore
+                // once ([SubscriptionsStore.isLegacyTableAdopted]); only after that does
+                // the reconcile go two-way. See [planFirstEmitReconcile].
                 val currentDb = repository.subscribedUsernames().toSet()
-                for (username in latest - currentDb) {
+                // Unreadable marker: stay one-way (never unsubscribe on a guess).
+                val legacyAdopted = runCatching { subscriptions.isLegacyTableAdopted() }
+                    .warnUnlessCancelled(TAG, "legacy-adoption marker read")
+                    .getOrDefault(false)
+                val plan = planFirstEmitReconcile(latest, currentDb, legacyAdopted)
+                for (username in plan.subscribe) {
                     repository.subscribe(username)
                 }
-                for (username in currentDb - latest) {
+                for (username in plan.unsubscribe) {
                     repository.unsubscribe(username)
+                }
+                var effective: Set<String> = latest
+                if (!legacyAdopted) {
+                    // On failure: retried next launch; the table keeps the rows meanwhile.
+                    runCatching { subscriptions.adoptLegacySubscriptions(plan.adopt) }
+                        .warnUnlessCancelled(TAG, "legacy subscription adoption")
+                        .onSuccess {
+                            effective = latest + plan.adopt
+                            // The adoption's own DataStore emission is then a no-op delta.
+                            lastKnownSubscriptionsSet = effective
+                        }
                 }
                 // Populate a stale empty feed if we have any subs — non-forced, and
                 // only while guest mode is actually active (see [autoRefreshGate]).
-                return@withLock if (latest.isNotEmpty() && lastSuccessfulRefreshAtMs == 0L) false else null
+                return@withLock if (effective.isNotEmpty() && lastSuccessfulRefreshAtMs == 0L) false else null
             }
             val added = latest - previous
             val removed = previous - latest
@@ -445,8 +492,7 @@ class WebFeedSource(
             // re-downloading page 1 would never deliver its fresh URL — the image
             // stayed broken and re-triggered this path every cooldown. Fetch the
             // page that actually holds it (`?before=<seq+1>`) instead.
-            val newestPageFloor = repository.newestPageFloorSeq(username)
-            if (seq != null && newestPageFloor != null && seq < newestPageFloor) {
+            if (seq != null && needsOlderPage(seq, repository.newestPageFloorSeq(username))) {
                 if (!claimOlderPageRefetch(username, seq)) return@launch
                 repository.markMediaStale(postId)
                 refetchOlderPage(username, seq)
@@ -466,12 +512,23 @@ class WebFeedSource(
             // forceMediaRefresh so the WHOLE channel's rotated URLs are re-ingested,
             // not just the one post markMediaStale flagged — its siblings' images are
             // expiring in lockstep and the per-channel cooldown blocks a second pass.
-            fetchOne(
+            val outcome = fetchOne(
                 username = username,
                 forceNetwork = true,
                 fetchedAtMs = System.currentTimeMillis(),
                 forceMediaRefresh = true,
             )
+            // The page-1 decision above used the PREVIOUS fetch's floor. If the channel
+            // published a full page since, the page just fetched no longer reaches
+            // [seq] — compare against the floor that fetch wrote and fetch the older
+            // page holding the post, under the same per-page cooldown.
+            if (outcome == FetchOutcome.Fresh &&
+                seq != null &&
+                needsOlderPage(seq, repository.newestPageFloorSeq(username)) &&
+                claimOlderPageRefetch(username, seq)
+            ) {
+                refetchOlderPage(username, seq)
+            }
         }
     }
 
@@ -720,6 +777,23 @@ class WebFeedSource(
 
     internal enum class FetchOutcome { Fresh, NoOp, Transient }
 
+    /** One DB snapshot's worth of [posts] + [savedOnlyKeys]; see [composeFeed]. */
+    internal data class FeedComposition(
+        val posts: PersistentList<TimelinePost>,
+        val savedOnlyKeys: PersistentSet<String>,
+    ) {
+        companion object {
+            val EMPTY = FeedComposition(kotlinx.collections.immutable.persistentListOf(), persistentSetOf())
+        }
+    }
+
+    /** Output of [planFirstEmitReconcile]. */
+    internal data class FirstEmitReconcile(
+        val subscribe: Set<String>,
+        val unsubscribe: Set<String>,
+        val adopt: Set<String>,
+    )
+
     /**
      * Convenience "subscribe and refresh" that's the common path from the
      * Add-channel screen. Idempotent: subscribing to an already-followed channel
@@ -803,6 +877,62 @@ class WebFeedSource(
         private const val VACUUM_INTERVAL_MS = 24L * 60 * 60 * 1000
 
         /**
+         * Union of the (hidden-channel-filtered) feed window and the bookmarked rows,
+         * plus the keys of rows present only as bookmarks — see [savedOnlyKeys]. The
+         * common case — every saved post already inside the visible feed — returns
+         * the feed untouched and an empty key set; otherwise the extra saved posts are
+         * appended and the list re-sorted in the feed's own order (date DESC, then seq
+         * DESC). Pure for testability.
+         */
+        internal fun composeFeed(
+            feed: PersistentList<TimelinePost>,
+            saved: PersistentList<TimelinePost>,
+            ignored: Set<Long>,
+        ): FeedComposition {
+            val visible = if (ignored.isEmpty()) feed else feed.filter { it.chatId !in ignored }.toPersistentList()
+            if (saved.isEmpty()) return FeedComposition(visible, persistentSetOf())
+            val inFeed = visible.mapTo(HashSet(visible.size)) { it.chatId to it.id }
+            // Hidden channels are dropped from the saved rows too: [posts] has other
+            // consumers than the two timeline routes, and the TDLib-mode Saved tab hides
+            // them the same way.
+            val extra = saved.filter { it.chatId !in ignored && (it.chatId to it.id) !in inFeed }
+            if (extra.isEmpty()) return FeedComposition(visible, persistentSetOf())
+            val merged = (visible + extra)
+                .sortedWith(compareByDescending<TimelinePost> { it.date }.thenByDescending { it.id })
+                .toPersistentList()
+            return FeedComposition(merged, extra.map { it.bookmarkKey() }.toPersistentSet())
+        }
+
+        /**
+         * First-emit reconcile between the DataStore subscription set ([dataStore]) and
+         * the channel table's subscribed rows ([table]). Names only in DataStore are
+         * always (re)subscribed in the table. Names only in the table are adopted into
+         * DataStore while [legacyAdopted] is false (the one-time upgrade pass from the
+         * one-way-reconcile builds), and unsubscribed from the table afterwards (an
+         * unsubscribe whose table write was lost). Pure for testability.
+         */
+        internal fun planFirstEmitReconcile(
+            dataStore: Set<String>,
+            table: Set<String>,
+            legacyAdopted: Boolean,
+        ): FirstEmitReconcile {
+            val tableOnly = table - dataStore
+            return FirstEmitReconcile(
+                subscribe = dataStore - table,
+                unsubscribe = if (legacyAdopted) tableOnly else emptySet(),
+                adopt = if (legacyAdopted) emptySet() else tableOnly,
+            )
+        }
+
+        /**
+         * Whether a post with [seq] lies below the channel's newest fetched page
+         * ([newestPageFloor] = its smallest seq) and so needs a `?before=` fetch.
+         * Unknown on either side means "assume page 1".
+         */
+        internal fun needsOlderPage(seq: Long?, newestPageFloor: Long?): Boolean =
+            seq != null && newestPageFloor != null && seq < newestPageFloor
+
+        /**
          * Adaptive-backoff aggregator. Three outcome buckets matter:
          *   - any [FetchOutcome.Fresh] → reset; the user wants prompt
          *     updates after silence breaks.
@@ -821,25 +951,6 @@ class WebFeedSource(
          * Pure function: extracted from [doRefresh] so the bucket logic
          * is testable without spinning up an HTTP / SQLite stack.
          */
-        /**
-         * Union of the feed window and the bookmarked rows. The common case — every
-         * saved post is already inside the feed window — returns [feed] untouched;
-         * otherwise the extra saved posts are appended and the list re-sorted in
-         * the feed's own order (date DESC, then seq DESC). Pure for testability.
-         */
-        internal fun mergeSaved(
-            feed: PersistentList<TimelinePost>,
-            saved: PersistentList<TimelinePost>,
-        ): PersistentList<TimelinePost> {
-            if (saved.isEmpty()) return feed
-            val inFeed = feed.mapTo(HashSet(feed.size)) { it.chatId to it.id }
-            val extra = saved.filter { (it.chatId to it.id) !in inFeed }
-            if (extra.isEmpty()) return feed
-            return (feed + extra)
-                .sortedWith(compareByDescending<TimelinePost> { it.date }.thenByDescending { it.id })
-                .toPersistentList()
-        }
-
         internal fun nextNoOpStreak(outcomes: List<FetchOutcome>, current: Int): Int = when {
             outcomes.any { it == FetchOutcome.Fresh } -> 0
             outcomes.any { it == FetchOutcome.Transient } -> current

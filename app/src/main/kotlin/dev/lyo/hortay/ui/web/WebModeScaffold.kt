@@ -572,6 +572,8 @@ fun WebModeScaffold(graph: AppGraph) {
                                                         bookmarks = graph.bookmarkStore,
                                                         contentPadding = homePadding,
                                                         showOnlyBookmarked = false,
+                                                        feedExcludedKeys = graph.webFeedSource.savedOnlyKeys
+                                                            .collectAsStateWithLifecycle().value,
                                                         onChannelOpen = onFeedChannelOpen,
                                                         onOpenComments = onGuestPostClick,
                                                         homeTapTrigger = homeTapTrigger,
