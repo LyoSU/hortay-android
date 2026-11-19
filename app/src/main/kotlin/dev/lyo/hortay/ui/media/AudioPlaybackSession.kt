@@ -1,10 +1,12 @@
 package dev.lyo.hortay.ui.media
 
+import android.net.Uri
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import dev.lyo.hortay.data.DownloadPriority
@@ -24,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
@@ -56,6 +59,18 @@ import kotlin.math.abs
  * drops `playWhenReady` on its own — another app took focus for good, headphones were
  * unplugged — the listener folds that into [Phase.Paused] so the UI never shows a pause
  * button for a silent track.
+ *
+ * Failure contract: a player error (cached file deleted by TDLib's storage optimiser or
+ * "Clear cache", undecodable file) leaves ExoPlayer IDLE with `playWhenReady` still set.
+ * The listener folds it into [Phase.Paused] at the last known position and, for file-gone
+ * I/O errors, invalidates the slot in [MediaCache] so TDLib re-downloads it. The next
+ * Play on an IDLE player reloads the track through the download path ([play]) and seeks
+ * back to the saved position — re-preparing the old path would just fail again.
+ *
+ * Background contract: the app runs no media service, notification or wake lock (the
+ * pooled players use `WAKE_MODE_NONE`), so [onAppBackgrounded] — wired to the process
+ * lifecycle in `HortayApp` — silences the session when the app leaves the foreground.
+ * It never auto-resumes on return.
  *
  * Mini-player contract: rows that render the session's controls register through
  * [attachRow] / [detachRow] while composed. [showMiniPlayer] is true while a track is
@@ -169,14 +184,22 @@ class AudioPlaybackSession(
         mountedKeys.value = rowCounts.keys.toSet()
     }
 
-    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun play(fileId: Int, durationSec: Int, track: TrackInfo?) {
+        load(fileId, durationMs = durationSec * 1000L, track = track, startPositionMs = 0L)
+    }
+
+    /**
+     * Download-then-play [fileId] from [startPositionMs]. Shared by a fresh [play] and by
+     * [resume] after a player error, which resumes at the position the error left behind.
+     */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun load(fileId: Int, durationMs: Long, track: TrackInfo?, startPositionMs: Long) {
         stopInternal()
         _state.value = Playback(
             fileId,
             Phase.Loading,
-            positionMs = 0L,
-            durationMs = durationSec * 1000L,
+            positionMs = startPositionMs,
+            durationMs = durationMs,
             track = track,
         )
         loadJob = scope.launch {
@@ -209,8 +232,11 @@ class AudioPlaybackSession(
                 /* handleAudioFocus = */ true,
             )
             active.setPlaybackSpeed(_speed.value)
-            active.setMediaItem(MediaItem.fromUri("file://$path"))
+            // Uri.fromFile percent-encodes the path; a raw "file://$path" string broke on file
+            // names containing '#' (parsed as a fragment) or '%' (parsed as an escape).
+            active.setMediaItem(MediaItem.fromUri(Uri.fromFile(File(path))))
             active.prepare()
+            if (startPositionMs > 0L) active.seekTo(startPositionMs)
             active.playWhenReady = true
             _state.update { it?.copy(phase = Phase.Playing) }
             startTicker()
@@ -222,7 +248,16 @@ class AudioPlaybackSession(
      * A playing track pauses in place (a later tap resumes it); a track still downloading is
      * cancelled so it can't start over the video once its file lands.
      */
-    fun yieldToVideo() {
+    fun yieldToVideo() = silence()
+
+    /**
+     * The app left the foreground (process lifecycle ON_STOP). Without a media service
+     * playback must not continue in the background: pause a playing track in place and
+     * cancel a pending download-then-play. The user resumes explicitly on return.
+     */
+    fun onAppBackgrounded() = silence()
+
+    private fun silence() {
         val current = _state.value ?: return
         when (current.phase) {
             Phase.Playing -> pause()
@@ -253,9 +288,36 @@ class AudioPlaybackSession(
     }
 
     private fun resume() {
-        player?.let { it.playWhenReady = true }
+        val current = _state.value ?: return
+        val active = player
+        // IDLE with a loaded track = a player error parked it (see [onPlayerFailed]).
+        // Flipping playWhenReady alone would leave it IDLE and silent; reload through the
+        // download path instead, which also waits out a re-download after invalidation.
+        if (active == null || active.playbackState == Player.STATE_IDLE) {
+            load(current.key, current.durationMs, current.track, current.positionMs)
+            return
+        }
+        active.playWhenReady = true
         _state.update { it?.copy(phase = Phase.Playing) }
         startTicker()
+    }
+
+    /**
+     * ExoPlayer failed and went IDLE (it keeps `playWhenReady`, so without this the UI
+     * showed "playing" at a frozen position forever). Park as Paused at the last position
+     * so Play retries through [resume]; a missing / unreadable cached file is invalidated
+     * so the retry waits for a fresh download instead of failing on the same phantom path.
+     */
+    private fun onPlayerFailed(error: PlaybackException) {
+        val current = _state.value ?: return
+        tickJob?.cancel()
+        val pos = player?.currentPosition?.coerceAtLeast(0L) ?: current.positionMs
+        _state.update { it?.copy(phase = Phase.Paused, positionMs = pos) }
+        // After the state flip, so the listener's onPlayerPaused sees Paused and no-ops.
+        player?.playWhenReady = false
+        if (error.errorCode in FILE_GONE_ERRORS) {
+            cache.invalidate(current.key, DownloadPriority.Foreground)
+        }
     }
 
     private fun ensurePlayer(): ExoPlayer {
@@ -270,6 +332,8 @@ class AudioPlaybackSession(
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 if (!playWhenReady) onPlayerPaused()
             }
+
+            override fun onPlayerError(error: PlaybackException) = onPlayerFailed(error)
         }
         created.addListener(listener)
         player = created
@@ -339,6 +403,14 @@ class AudioPlaybackSession(
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
+
+        /** Player errors meaning the cached file is gone or unreadable, not a decoder problem. */
+        val FILE_GONE_ERRORS = setOf(
+            PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+            PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+            PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+            PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+        )
     }
 }
 

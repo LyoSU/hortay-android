@@ -43,7 +43,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.drawable.ColorDrawable
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.view.WindowManager
 import android.widget.Toast
 import dev.lyo.hortay.R
@@ -237,9 +243,48 @@ fun FullScreenMediaViewer(
             val savedPhotoMsg = stringResource(R.string.media_saved_photo)
             val savedVideoMsg = stringResource(R.string.media_saved_video)
             val saveFailedMsg = stringResource(R.string.media_save_failed)
+            val saveDeniedReason = stringResource(R.string.media_share_error_insert_failed)
             val copiedMsg = stringResource(R.string.media_copied)
             val copyFailedMsg = stringResource(R.string.media_copy_failed)
             val shareFailedMsg = stringResource(R.string.media_share_failed)
+
+            fun runSave(item: AlbumItem, path: String) {
+                scope.launch {
+                    val res = withContext(Dispatchers.IO) {
+                        MediaShareActions.saveToGallery(actionContext, item, path)
+                    }
+                    val successMsg = if (item is AlbumItem.Photo) savedPhotoMsg else savedVideoMsg
+                    val toast = when (res) {
+                        is MediaShareActions.Result.Success -> successMsg
+                        is MediaShareActions.Result.Failure ->
+                            saveFailedMsg.format(
+                                actionContext.resources.getString(res.reasonResId, *res.args.toTypedArray()),
+                            )
+                    }
+                    Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            // API 26-28 save through the legacy public-directory path, which needs the
+            // runtime WRITE_EXTERNAL_STORAGE grant (manifest caps it at maxSdkVersion 28;
+            // API 29+ MediaStore inserts need no permission). The tapped item + path are
+            // parked while the system dialog is up; denial reuses the save-failed toast.
+            var pendingLegacySave by remember { mutableStateOf<Pair<AlbumItem, String>?>(null) }
+            val legacyWriteLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission(),
+            ) { granted ->
+                val pending = pendingLegacySave ?: return@rememberLauncherForActivityResult
+                pendingLegacySave = null
+                if (granted) {
+                    runSave(pending.first, pending.second)
+                } else {
+                    Toast.makeText(
+                        actionContext,
+                        saveFailedMsg.format(saveDeniedReason),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
 
             val activeFileId = activeItem?.viewerFileId(qualityChoices[pagerState.currentPage]?.fileId)
             val activeState by produceMediaState(cache, activeFileId)
@@ -284,19 +329,16 @@ fun FullScreenMediaViewer(
                         // Save → every Ready media kind. Toast on success / failure.
                         ChromeActionButton(
                             onClick = {
-                                scope.launch {
-                                    val res = withContext(Dispatchers.IO) {
-                                        MediaShareActions.saveToGallery(actionContext, activeItem, readyPath)
-                                    }
-                                    val successMsg = if (activeItem is AlbumItem.Photo) savedPhotoMsg else savedVideoMsg
-                                    val toast = when (res) {
-                                        is MediaShareActions.Result.Success -> successMsg
-                                        is MediaShareActions.Result.Failure ->
-                                            saveFailedMsg.format(
-                                                actionContext.resources.getString(res.reasonResId, *res.args.toTypedArray()),
-                                            )
-                                    }
-                                    Toast.makeText(actionContext, toast, Toast.LENGTH_SHORT).show()
+                                val needsLegacyGrant = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+                                    ContextCompat.checkSelfPermission(
+                                        actionContext,
+                                        Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                                    ) != PackageManager.PERMISSION_GRANTED
+                                if (needsLegacyGrant) {
+                                    pendingLegacySave = activeItem to readyPath
+                                    legacyWriteLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                } else {
+                                    runSave(activeItem, readyPath)
                                 }
                             },
                             glyph = "download",

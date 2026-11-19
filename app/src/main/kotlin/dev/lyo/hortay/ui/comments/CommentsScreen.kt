@@ -6,6 +6,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import dev.lyo.hortay.ui.components.rememberExpandedSheetState
 import dev.lyo.hortay.ui.text.LocalQuoteHighlight
 import dev.lyo.hortay.ui.text.QuoteHighlights
+import dev.lyo.hortay.ui.text.quoteRange
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -299,13 +300,21 @@ fun CommentsScreen(
     // Bumped by the LoadFailed retry button: re-keys the subscription so observeThread
     // hands back a fresh stream (the failed one evicted itself from the repo cache).
     var threadRetryNonce by remember { mutableIntStateOf(0) }
-    val state by remember(post.chatId, candidateIds, threadDisabled, repo, threadRetryNonce) {
+    val threadFlow = remember(post.chatId, candidateIds, threadDisabled, repo, threadRetryNonce) {
         if (threadDisabled || repo == null) {
             kotlinx.coroutines.flow.flowOf(CommentsRepository.ThreadState.Loading)
         } else {
             repo.observeThread(post.chatId, candidateIds)
         }
-    }.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
+    }
+    // key(threadRetryNonce): collectAsState keeps its last value across a flow swap, so a
+    // Retry tap left the failed state on screen until the new stream emitted — a repeated
+    // failure read as a dead button. A fresh collector per retry starts from Loading, so
+    // the tap shows the skeleton at once. Other key changes (album ids settling) keep the
+    // old value on purpose, so they don't flash Loading.
+    val state by key(threadRetryNonce) {
+        threadFlow.collectAsStateWithLifecycle(initialValue = CommentsRepository.ThreadState.Loading)
+    }
     // Connector-rail slices per comment row, derived once per thread emission from the
     // visual (indent-capped) depths — see [threadRails] and [CommentNode]. The list body
     // reads [threadState] (this same snapshot), never `state` directly, so the rails and
@@ -776,10 +785,13 @@ fun CommentsScreen(
                                     // Rows are the list's tail: index from the end.
                                     val listIndex = listState.layoutInfo.totalItemsCount - s.rows.size + target
                                     scope.launch { listState.animateScrollToItem(listIndex.coerceAtLeast(0)) }
-                                } else {
+                                } else if (quotesAnchor(reply, anchor, s.threadChatId)) {
                                     QuoteHighlights.show(anchor.chatId, anchor.id, reply.excerpt)
                                     scope.launch { listState.animateScrollToItem(0) }
                                 }
+                                // Otherwise the quoted comment isn't loaded (older page, deleted):
+                                // nothing on screen can match, so stay put rather than jumping
+                                // to the post and lighting a highlight that can't land.
                             },
                             onMediaClick = { items, idx -> viewer.open(items, idx) },
                             onReactionTap = { item ->
@@ -851,6 +863,24 @@ fun CommentsScreen(
             }
         }
     }
+}
+
+/**
+ * Whether a comment's quote card points at the post above the thread rather than at another
+ * comment. Direct hit: the reply names the channel post (or an album sibling). In the
+ * discussion group a reply to the post names its discussion-side mirror instead, whose id
+ * the UI never sees — so a reply into [threadChatId] counts only when the quoted words are
+ * actually in the post's text, which also rules out unloaded older comments.
+ */
+internal fun quotesAnchor(reply: ReplyPreview, anchor: TimelinePost, threadChatId: Long): Boolean {
+    if (reply.replyToChatId == anchor.chatId &&
+        (reply.replyToMessageId == anchor.id || reply.replyToMessageId in anchor.albumMessageIds)
+    ) {
+        return true
+    }
+    if (reply.replyToChatId != threadChatId) return false
+    val excerpt = reply.excerpt.trim()
+    return excerpt.isNotEmpty() && quoteRange(anchor.content.captionPlain, excerpt) != null
 }
 
 /**

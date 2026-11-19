@@ -187,7 +187,9 @@ private fun VideoNoteRenderer(
 
     LaunchedEffect(readyPath) {
         if (readyPath.isNullOrEmpty()) return@LaunchedEffect
-        exoPlayer.setMediaItem(MediaItem.fromUri("file://$readyPath"))
+        exoPlayer.setMediaItem(
+            MediaItem.fromUri(android.net.Uri.fromFile(java.io.File(readyPath))),
+        )
         exoPlayer.prepare()
         // Seek to where the previous (muted / unmuted) regime left off so
         // the user doesn't see a restart when they toggle audio mid-clip.

@@ -4,6 +4,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- "Save to gallery" on API 26-28 writes into the public Pictures/Movies directory,
+         which needs this runtime grant. API 29+ saves through MediaStore without it. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <!-- CSAE-compliance: GuestReportDelegator probes for installed Telegram clients
          via PackageManager.getPackageInfo() (requires a <queries> declaration on

@@ -178,9 +178,20 @@ fun LinkAwareText(
     val quoteOut = MaterialTheme.motionScheme.slowEffectsSpec<Float>()
     if (quote != null && quoteSpan != null) {
         LaunchedEffect(quote.token) {
-            quoteAlpha.animateTo(1f, quoteIn)
-            delay(QUOTE_HOLD_MS)
-            quoteAlpha.animateTo(0f, quoteOut)
+            // Release the process-wide target once the reader has seen it, or the card
+            // would replay the whole fade every time it re-enters composition (scroll back,
+            // tab swap). A cancellation counts only after the fade-in completed: a card
+            // composed for a frame mid-navigation must not consume the highlight before
+            // the landing card shows it. finished() ignores a newer target.
+            var seen = false
+            try {
+                quoteAlpha.animateTo(1f, quoteIn)
+                seen = true
+                delay(QUOTE_HOLD_MS)
+                quoteAlpha.animateTo(0f, quoteOut)
+            } finally {
+                if (seen) QuoteHighlights.finished(quote)
+            }
         }
     }
     val quoteColor = MaterialTheme.colorScheme.primary

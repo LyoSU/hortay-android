@@ -286,9 +286,10 @@ private fun PhoneForm(graph: AppGraph, errorMessage: String?) {
     LaunchedEffect(Unit) { graph.countries.load() }
 
     var selected by remember { mutableStateOf<Country?>(null) }
-    // Typed input survives configuration changes (rotation, theme flip, fold/unfold) —
-    // the Activity doesn't declare configChanges, so plain `remember` wiped the number.
-    // The picked country is saved by ISO and re-resolved against the catalogue.
+    // Typed input survives Activity recreation. MainActivity now declares configChanges for
+    // rotation / theme / fold, but a locale switch and process death still recreate it, and
+    // plain `remember` wiped the number there. The picked country is saved by ISO and
+    // re-resolved against the catalogue.
     var selectedIso by rememberSaveable { mutableStateOf<String?>(null) }
     var phoneNational by rememberSaveable { mutableStateOf("") }
     var sheetOpen by remember { mutableStateOf(false) }
@@ -526,13 +527,15 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
     // Server-mandated cooldown ticks down from stage.resendAvailableInSec to 0. While it
     // is non-zero the resend button is disabled with a "0:42" label, which is what the
     // official Telegram client does — and saves users from spamming themselves into a
-    // FLOOD_WAIT. Resets whenever a new WaitCode stage arrives (e.g. after a resend
-    // succeeds and TDLib hands back a new delivery channel) — keyed on the whole stage,
-    // not just the timeout, so a resend with the same timeout still restarts the cooldown.
-    var secondsLeft by remember(stage) {
+    // FLOOD_WAIT. Resets whenever a different WaitCode stage arrives (e.g. TDLib hands back
+    // a new delivery channel) AND after every successful resend: WaitCode is a data class,
+    // so a resend that yields an equal stage (same channel, same timeout) would not re-key
+    // on `stage` alone — [resendGeneration] covers that case.
+    var resendGeneration by remember { mutableIntStateOf(0) }
+    var secondsLeft by remember(stage, resendGeneration) {
         mutableIntStateOf(stage.resendAvailableInSec)
     }
-    LaunchedEffect(stage) {
+    LaunchedEffect(stage, resendGeneration) {
         while (secondsLeft > 0) {
             kotlinx.coroutines.delay(1000)
             secondsLeft -= 1
@@ -625,7 +628,13 @@ private fun CodeForm(graph: AppGraph, stage: AuthStage.WaitCode, errorMessage: S
                     onClick = {
                         resending = true
                         scope.launch {
-                            try { client.resendCode() } finally { resending = false }
+                            try {
+                                client.resendCode()
+                                // resendCode reports failures through authError, not by throwing.
+                                if (client.authError.value == null) resendGeneration++
+                            } finally {
+                                resending = false
+                            }
                         }
                     },
                 ) {

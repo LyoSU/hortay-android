@@ -12,9 +12,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -58,10 +57,17 @@ import dev.lyo.hortay.ui.theme.LocalGlassBackdrop
 import dev.lyo.hortay.ui.theme.rememberGlassStyle
 import dev.lyo.hortay.ui.timeline.formatDuration
 
-/** Height of the mini-player strip itself. */
+/**
+ * Minimum height of the mini-player strip. The strip grows past it when its two text lines
+ * need more room (font scale ≥ ~1.5), so it is a floor, not a fixed height.
+ */
 val AudioMiniPlayerHeight = 52.dp
 
-/** Vertical room a host reserves (snackbar lift, list clearance) while the mini-player shows. */
+/**
+ * Vertical room a host reserves (snackbar lift, list clearance) while the mini-player shows.
+ * Exact at default font scale; at very large font scales the strip outgrows
+ * [AudioMiniPlayerHeight] and this under-reserves by the overflow.
+ */
 val AudioMiniPlayerClearance = AudioMiniPlayerHeight + HortaySpacing.sm
 
 /** Same cap as the floating nav bar, so the two pills line up on tablets. */
@@ -158,7 +164,8 @@ private fun MiniPlayerStrip(outerModifier: Modifier) {
             .wrapContentWidth(Alignment.CenterHorizontally)
             .widthIn(max = MiniPlayerMaxWidth)
             .fillMaxWidth()
-            .height(AudioMiniPlayerHeight)
+            // heightIn, not height: a fixed 52 dp clipped the two text lines at font scale 2.0.
+            .heightIn(min = AudioMiniPlayerHeight)
             .shadow(elevation = 6.dp, shape = MiniPlayerShape, clip = false)
             .clip(MiniPlayerShape)
             .then(
@@ -193,7 +200,10 @@ private fun MiniPlayerStrip(outerModifier: Modifier) {
             },
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = HortaySpacing.xxs),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = AudioMiniPlayerHeight)
+                .padding(horizontal = HortaySpacing.xxs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             MiniPlayPauseButton(phase = phase, onClick = session::togglePlayPause)

@@ -3,6 +3,9 @@ package dev.lyo.hortay
 import android.app.Application
 import android.content.Context
 import android.os.StrictMode
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -30,6 +33,13 @@ class HortayApp : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         if (BuildConfig.DEBUG) enableStrictMode()
         graph = AppGraph(this)
+        // No media service / notification / wake lock backs inline audio, so it must not
+        // keep playing once the app leaves the foreground (incl. screen off). Pause only —
+        // returning to the app never auto-resumes.
+        val audio = graph.audioPlaybackSession
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStop(owner: LifecycleOwner) = audio.onAppBackgrounded()
+        })
     }
 
     // Drop idle pooled ExoPlayers under memory pressure — each pins MediaCodec decoders.

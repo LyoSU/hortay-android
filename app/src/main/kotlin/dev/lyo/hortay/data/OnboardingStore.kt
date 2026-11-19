@@ -1,6 +1,8 @@
 package dev.lyo.hortay.data
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -16,13 +18,40 @@ import kotlinx.coroutines.flow.map
  * same install has already learned the gestures, so nothing here is wiped on logout and no
  * `AppGraph.session.onEnd` hook is registered. All flags default to false and only ever
  * flip to true.
+ *
+ * Upgrade seeding: the feed-order question shipped after 0.12.0, and its flag defaulting to
+ * false would ask every upgrading user — including those who picked an order in Settings
+ * long ago. The first time [feedOrderChosen] is read on an install that has never been
+ * seeded, the store decides once whether this is an EXISTING install and, if so, records
+ * the question as answered. Signal: PackageManager `lastUpdateTime > firstInstallTime`,
+ * i.e. the APK was updated in place at least once (a fresh install has them equal). The
+ * settings DataStore can't be peeked for a persisted `feed_order` — opening a second
+ * DataStore on its file in-process is illegal and its keys are private. Edge cases: a fresh
+ * install of this version that receives an update before ever reaching the feed (signed out
+ * the whole time) skips the question — harmless, the order is still in Settings; a restore
+ * onto a new device (firstInstall == lastUpdate) is asked once.
  */
 class OnboardingStore(context: Context) {
 
-    private val dataStore = context.applicationContext.onboardingDataStore
+    private val appContext = context.applicationContext
+    private val dataStore = appContext.onboardingDataStore
 
-    /** True once the first-run "how do you want to read?" question was answered or dismissed. */
-    val feedOrderChosen: Flow<Boolean> = flag(KEY_FEED_ORDER_CHOSEN)
+    /**
+     * True once the first-run "how do you want to read?" question was answered or dismissed,
+     * or the install predates the question (see the class KDoc on upgrade seeding). The seed
+     * is resolved before the first emission, so an upgrading user never sees a `false`.
+     */
+    val feedOrderChosen: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[KEY_FEED_ORDER_CHOSEN] ?: run {
+            if (prefs[KEY_INSTALL_SEEDED] == true) return@run false
+            val existing = isUpgradedInstall()
+            dataStore.edit { edit ->
+                edit[KEY_INSTALL_SEEDED] = true
+                if (existing) edit[KEY_FEED_ORDER_CHOSEN] = true
+            }
+            existing
+        }
+    }
 
     /** True once the Channels swipe-to-hide hint was dismissed or the gesture was used. */
     val channelsSwipeHintSeen: Flow<Boolean> = flag(KEY_CHANNELS_SWIPE_HINT_SEEN)
@@ -36,6 +65,17 @@ class OnboardingStore(context: Context) {
 
     suspend fun setSplitButtonHintSeen(value: Boolean = true) = set(KEY_SPLIT_BUTTON_HINT_SEEN, value)
 
+    private fun isUpgradedInstall(): Boolean = runCatching {
+        val pm = appContext.packageManager
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.getPackageInfo(appContext.packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(appContext.packageName, 0)
+        }
+        info.lastUpdateTime > info.firstInstallTime
+    }.getOrDefault(false)
+
     private fun flag(key: androidx.datastore.preferences.core.Preferences.Key<Boolean>): Flow<Boolean> =
         dataStore.data.map { prefs -> prefs[key] ?: false }
 
@@ -47,6 +87,7 @@ class OnboardingStore(context: Context) {
         val KEY_FEED_ORDER_CHOSEN = booleanPreferencesKey("feed_order_chosen")
         val KEY_CHANNELS_SWIPE_HINT_SEEN = booleanPreferencesKey("channels_swipe_hint_seen")
         val KEY_SPLIT_BUTTON_HINT_SEEN = booleanPreferencesKey("split_button_hint_seen")
+        val KEY_INSTALL_SEEDED = booleanPreferencesKey("install_seeded")
     }
 }
 
