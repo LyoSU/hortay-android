@@ -61,8 +61,12 @@ jobs:
           fi
           version="${raw#v}"
           # Strict allowlist — blocks shell/awk injection from the tag or dispatch input.
-          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
-            echo "::error::Invalid version '$version' (expected X.Y.Z, optional -suffix)"
+          # Whole-string match: bash's [[ =~ ]] anchors ^/$ to the string, not to lines,
+          # whereas `printf | grep -E '^…$'` accepted a multi-line dispatch input as soon
+          # as ANY one line matched. Newlines (and CRs) are also rejected explicitly.
+          re='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+          if [[ "$version" == *$'\n'* || "$version" == *$'\r'* || ! "$version" =~ $re ]]; then
+            echo "::error::Invalid version (expected X.Y.Z, optional -suffix)"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -131,9 +135,13 @@ jobs:
         run: ./gradlew :app:testDebugUnitTest --stacktrace
 
       - name: Build signed AAB + APK
+        env:
+          # Through env, never an expression spliced into run: — validated above, but
+          # a spliced value is still evaluated as shell source.
+          VERSION: ${{ steps.ver.outputs.version }}
         run: >
           ./gradlew :app:bundleRelease :app:assembleRelease
-          -PhortayVersionName=${{ steps.ver.outputs.version }}
+          "-PhortayVersionName=$VERSION"
           --stacktrace
 
       - name: Collect artifacts

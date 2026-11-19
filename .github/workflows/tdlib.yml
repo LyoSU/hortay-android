@@ -51,9 +51,13 @@ jobs:
           ref="$IN_REF"
           [ -n "$ref" ] || ref=$(grep '^TDLIB_SHA=' scripts/tdlib-version.txt | cut -d= -f2)
           # Strict allowlists — these feed a shell script + docker build-args.
-          printf '%s' "$ref"        | grep -Eq '^[A-Za-z0-9._/-]+$'   || { echo "::error::bad tdlib_ref"; exit 1; }
-          printf '%s' "$IN_OPENSSL" | grep -Eq '^openssl-[0-9a-z.]+$' || { echo "::error::bad openssl_version"; exit 1; }
-          printf '%s' "$IN_NDK"     | grep -Eq '^[0-9.]+$'            || { echo "::error::bad ndk_version"; exit 1; }
+          # Whole-string bash matches: `printf | grep -E '^…$'` is line-based and let a
+          # multi-line input through if any one line matched — and the value is then
+          # written to GITHUB_OUTPUT, where an extra line forges another output.
+          allow() { [[ "$1" != *$'\n'* && "$1" != *$'\r'* && "$1" =~ $2 ]]; }
+          allow "$ref"        '^[A-Za-z0-9._/-]+$'   || { echo "::error::bad tdlib_ref"; exit 1; }
+          allow "$IN_OPENSSL" '^openssl-[0-9a-z.]+$' || { echo "::error::bad openssl_version"; exit 1; }
+          allow "$IN_NDK"     '^[0-9.]+$'            || { echo "::error::bad ndk_version"; exit 1; }
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
           echo "openssl=$IN_OPENSSL" >> "$GITHUB_OUTPUT"
           echo "ndk=$IN_NDK" >> "$GITHUB_OUTPUT"

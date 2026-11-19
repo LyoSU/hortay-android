@@ -39,13 +39,35 @@ runs:
         work=$(mktemp -d)
         unzip -q "$apk" 'lib/arm64-v8a/*.so' -d "$work" || { echo "::error::no lib/arm64-v8a/*.so in $apk"; exit 1; }
         bad=0
+        checked=0
+        shopt -s nullglob
         for so in "$work"/lib/arm64-v8a/*.so; do
+          name=$(basename "$so")
+          # Capture first, then parse: a failing readelf inside a process substitution
+          # left the loop with zero iterations and the library silently "passed".
+          if ! headers=$("$readelf" -lW "$so" 2>&1); then
+            echo "::error::readelf failed on $name"
+            printf '%s\n' "$headers" | tail -n 5
+            bad=1
+            continue
+          fi
+          aligns=$(printf '%s\n' "$headers" | awk '$1=="LOAD"{print $NF}')
+          if [ -z "$aligns" ]; then
+            echo "::error::$name has no LOAD segments in readelf output — cannot verify alignment"
+            bad=1
+            continue
+          fi
           while read -r align; do
-            if [ "$((align))" -lt $((0x4000)) ]; then
-              echo "::error::$(basename "$so") has a LOAD segment aligned to $align (< 0x4000)"
+            if ! [[ "$align" =~ ^0x[0-9a-fA-F]+$|^[0-9]+$ ]]; then
+              echo "::error::$name: unparseable LOAD alignment '$align'"
+              bad=1
+            elif [ "$((align))" -lt $((0x4000)) ]; then
+              echo "::error::$name has a LOAD segment aligned to $align (< 0x4000)"
               bad=1
             fi
-          done < <("$readelf" -lW "$so" | awk '$1=="LOAD"{print $NF}')
+          done <<< "$aligns"
+          checked=$((checked + 1))
         done
+        [ "$checked" -gt 0 ] || { echo "::error::no arm64-v8a .so was checked in $apk"; exit 1; }
         [ "$bad" -eq 0 ] || exit 1
-        echo "16 KB alignment OK: $(ls "$work"/lib/arm64-v8a | wc -l) native libs checked."
+        echo "16 KB alignment OK: $checked native libs checked."
