@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -129,7 +129,8 @@ private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
                     onClick()
                 },
             )
-            .heightIn(min = 48.dp)
+            // widthIn too: an emoji-only folder label is narrower than a touch target.
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .padding(horizontal = 12.dp)
             .padding(top = 12.dp)
             // The parent Row scrolls horizontally, so this Column is measured with an
