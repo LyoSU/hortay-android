@@ -2288,6 +2288,9 @@ class PostsRepository(
         }
 
         val ids = update.messageIds.toHashSet()
+        // One surviving member id per document / audio album whose anchor was deleted.
+        // A set, so a retried CAS lambda below adds the same ids again harmlessly.
+        val orphanedAlbumMembers = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
         if (archiveEnabled) {
             // Archive mode: tombstone deleted posts with isDeleted=true so a
             // DeletedBadge can surface in the feed instead of the post vanishing silently.
@@ -2324,8 +2327,15 @@ class PostsRepository(
                                 content = content.copy(items = newItems),
                                 albumMessageIds = survivedIds,
                             )
+                        } else if (post.id in survivedIds) {
+                            // Document / audio media group: the card renders its anchor's
+                            // content, so with the anchor alive only the member list shrinks.
+                            list[i] = post.copy(albumMessageIds = survivedIds)
                         } else {
+                            // The anchor itself was deleted: this card's content is gone,
+                            // but the other members are not — re-read them below.
                             toRemove += i
+                            orphanedAlbumMembers += survivedIds.first()
                         }
                     }
                     for (idx in toRemove.asReversed()) list.removeAt(idx)
@@ -2363,14 +2373,38 @@ class PostsRepository(
                                 content = content.copy(items = newItems),
                                 albumMessageIds = survivedIds,
                             )
+                        } else if (post.id in survivedIds) {
+                            // Document / audio media group: the card renders its anchor's
+                            // content, so with the anchor alive only the member list shrinks.
+                            list[i] = post.copy(albumMessageIds = survivedIds)
                         } else {
-                            // Album with non-PhotoAlbum content (shouldn't happen given how
-                            // mergeAlbumMembers builds groups, but guard anyway). Drop it.
+                            // The anchor itself was deleted: this card's content is gone,
+                            // but the other members are not — re-read them below.
                             toRemove += i
+                            orphanedAlbumMembers += survivedIds.first()
                         }
                     }
                     for (idx in toRemove.asReversed()) list.removeAt(idx)
                 }
+            }
+        }
+        if (orphanedAlbumMembers.isNotEmpty()) reingestAlbumSurvivors(update.chatId, orphanedAlbumMembers)
+    }
+
+    /**
+     * Rebuild the card of a document / audio album whose anchor was deleted while other
+     * members survive. Such a card carries only its anchor's content (see
+     * [PostFilterStrategy]), so the survivors can't be re-rendered from it; they are read
+     * back from TDLib's local database — one [TdApi.GetMessage] per album, siblings via the
+     * offline coalesce — and ingested as a fresh album. Without this the remaining files
+     * vanished from the feed until the next refresh of that channel.
+     */
+    private fun reingestAlbumSurvivors(chatId: Long, memberIds: Set<Long>) {
+        scope.launch {
+            for (id in memberIds) {
+                suspendRunCatching {
+                    ingest(chatId, listOf(td.send(TdApi.GetMessage(chatId, id))), localAlbumsOnly = true)
+                }.warnUnlessCancelled(TAG, "reingestAlbumSurvivors($chatId,$id)")
             }
         }
     }

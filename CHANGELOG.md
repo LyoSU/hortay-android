@@ -134,6 +134,7 @@
 - Reopening the app from Recents no longer reopens the link it was first launched from.
 - Channel suggestions open right away when the suggestions server is unreachable.
 - With both Hortay and Hortay beta installed, an unsupported Telegram link no longer bounces between the two apps.
+- Deleting some files from a document or audio album no longer removes the whole post from the feed.
 
 ### Performance
 - Idle video players are released when the app goes to the background.
