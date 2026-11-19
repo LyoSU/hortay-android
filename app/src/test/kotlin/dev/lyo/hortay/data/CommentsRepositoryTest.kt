@@ -49,6 +49,24 @@ class CommentsRepositoryTest {
     }
 
     @Test
+    fun `a LoadFailed stream is evicted and its sharing coroutine does not leak`() = runTest {
+        val td = FakeTdSender().apply {
+            onAny("GetMessageThread") { _ -> TdApi.Error(429, "Too Many Requests: retry after 5") }
+        }
+        val repoScope = TestScope(StandardTestDispatcher(testScheduler))
+        val repo = CommentsRepository(td, fakeMapper(td), repoScope, FakeStrings)
+
+        assertEquals(CommentsRepository.ThreadState.LoadFailed, repo.observeThread(123L, listOf(1L)).first())
+        advanceUntilIdle()
+        assertEquals(0, repoScope.coroutineContext[kotlinx.coroutines.Job]!!.children.count(),
+            "the failed stream's shareIn coroutine must be cancelled, not left in the scope")
+
+        // Evicted, so a re-open bootstraps afresh instead of replaying the failure.
+        assertEquals(CommentsRepository.ThreadState.LoadFailed, repo.observeThread(123L, listOf(1L)).first())
+        assertEquals(2, td.rpcCount("GetMessageThread"))
+    }
+
+    @Test
     fun `forgetThread drops a cached no-thread answer so the next open asks again`() = runTest {
         val td = FakeTdSender().apply {
             onAny("GetMessageThread") { _ -> TdApi.Error(400, "Message has no thread") }

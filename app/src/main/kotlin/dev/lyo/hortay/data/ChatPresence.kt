@@ -90,9 +90,19 @@ internal object ChatPresence {
      * A caller that ignores `false` and still runs its paired [closeChat] would
      * decrement a reference ANOTHER holder owns (e.g. the feed focus tracker on the same
      * channel) — closing the chat under it. Pair the close on the returned value.
+     *
+     * Once the transition lock is held, the refcount bump AND the `OpenChat` send run
+     * under [NonCancellable]. A cancellation that landed after the native request was
+     * submitted used to roll the refcount back and make the caller skip its close —
+     * while TDLib, which had already processed the `OpenChat`, kept the chat open and
+     * streaming for the rest of the session. Now the call always finishes, so the
+     * return value reflects what TDLib was actually told and a cancelled caller still
+     * gets `true` and runs its paired [closeChat] (callers check `opened` in a
+     * `finally`). Waiting for the lock itself stays cancellable — nothing has been sent
+     * at that point. The send is bounded by [TdClient.send]'s own timeout.
      */
     suspend fun openChat(td: TdSender, chatId: Long): Boolean = transitionLock(chatId).withLock {
-        openChatLocked(td, chatId)
+        withContext(NonCancellable) { openChatLocked(td, chatId) }
     }
 
     private suspend fun openChatLocked(td: TdSender, chatId: Long): Boolean {
@@ -116,7 +126,10 @@ internal object ChatPresence {
         // `refMutex.withLock` in an already-cancelled coroutine would immediately
         // re-throw before unwinding the count. On cancellation TDLib's actual
         // open-state is unknown, but the local count MUST unwind either way — a
-        // leaked +1 poisons every later open/close pair on this id.
+        // leaked +1 poisons every later open/close pair on this id. ([openChat] now
+        // runs this whole function under NonCancellable, so a caller's cancellation no
+        // longer reaches the send; the guard stays for a send that throws
+        // CancellationException on its own.)
         withContext(NonCancellable) {
             refMutex.withLock {
                 val current = refCounts[chatId] ?: 0
@@ -282,6 +295,21 @@ internal object ChatPresence {
      */
     suspend fun clear() {
         refMutex.withLock { refCounts.clear() }
+        // [transitionLocks] gains one Mutex per chat ever opened; drop the previous
+        // account's. Only an idle lock is removed — `tryLock` claims it so no transition
+        // can be inside it while it leaves the map — and a held one (a UI close still
+        // flushing under the logout) stays for the next clear. A caller that fetched the
+        // instance just before removal and locks it afterwards can overlap one fresh
+        // instance for the same id; at logout the ids belong to a dead account, so that
+        // window cannot reorder a live chat's Open/Close.
+        for ((chatId, lock) in transitionLocks) {
+            if (!lock.tryLock()) continue
+            try {
+                transitionLocks.remove(chatId, lock)
+            } finally {
+                lock.unlock()
+            }
+        }
     }
 
     suspend fun viewMessages(

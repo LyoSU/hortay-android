@@ -195,12 +195,15 @@ class AppGraph(context: Context) {
             res = res,
         )
 
-    /** Update-fed users / supergroups mirror — see [ChatRegistry]. */
+    /**
+     * Update-fed users / supergroups mirror — see [ChatRegistry]. Its logout wipe is NOT
+     * a construction-time [AccountSession.onEnd] hook: it runs in [runLogoutCleanup]
+     * right AFTER `postsRepository.clear()`, because an in-flight history load stores
+     * the chat it fetched (`rememberChat`) — wiping the registry first let that load
+     * re-insert account A's `Chat` after the wipe.
+     */
     private val chatRegistry: ChatRegistry =
-        ChatRegistry(tdClient).also { registry ->
-            registry.bind(appScope)
-            session.onEnd("chatRegistry") { registry.clear() }
-        }
+        ChatRegistry(tdClient).also { registry -> registry.bind(appScope) }
 
     // Shared between PostsRepository (channel feed) and CommentsRepository (discussion
     // threads) so an author resolved in one context is reused in the other.
@@ -777,6 +780,10 @@ class AppGraph(context: Context) {
         // refcount map so account A's leftover OpenChat counts can't
         // poison account B's open/close arithmetic.
         runCatching { postsRepository.clear() }.warnUnlessCancelled(TAG, "logout cleanup: postsRepository")
+        // After the posts repository (which bumps its session epoch and drops queued
+        // ingests), so a history load racing the logout can't re-populate the registry
+        // with account A's chats behind the wipe. See the [chatRegistry] KDoc.
+        runCatching { chatRegistry.clear() }.warnUnlessCancelled(TAG, "logout cleanup: chatRegistry")
         runCatching { dev.lyo.hortay.data.ChatPresence.clear() }.warnUnlessCancelled(TAG, "logout cleanup: chatPresence")
         runCatching { messageMapper.clear() }.warnUnlessCancelled(TAG, "logout cleanup: messageMapper")
         runCatching { commentsRepository.clear() }.warnUnlessCancelled(TAG, "logout cleanup: commentsRepository")

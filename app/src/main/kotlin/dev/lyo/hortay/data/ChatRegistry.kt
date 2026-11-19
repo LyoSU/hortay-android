@@ -35,15 +35,26 @@ import java.util.concurrent.ConcurrentHashMap
  * last-message of a renamed / re-photographed channel forever — `UpdateNewChat` never
  * fires again for a known chat, so nothing flushed the park.
  */
-class ChatRegistry(private val td: TdSender) {
-    private val users = ConcurrentHashMap<Long, TdApi.User>()
+class ChatRegistry(
+    private val td: TdSender,
+    maxUsers: Int = MAX_USERS,
+) {
+    /**
+     * Bounded, unlike the other maps: TDLib sends `UpdateUser` for every comment author,
+     * reaction sender and mention it ever resolves, so an unbounded mirror grew for the
+     * whole session. Eviction is safe because the only reader is [user], whose miss
+     * falls back to `GetUser` — an offline request served from TDLib's local store
+     * (always as fresh as the update stream), never a network RPC.
+     */
+    private val users = LruMap<Long, TdApi.User>(maxUsers)
     private val supergroups = ConcurrentHashMap<Long, TdApi.Supergroup>()
     private val chats = ConcurrentHashMap<Long, TdApi.Chat>()
     private val knownChatIds: MutableSet<Long> = ConcurrentHashMap.newKeySet()
 
     /**
-     * Collect user/supergroup updates. Call once at graph build; [clear] is registered
-     * as an [AccountSession] end hook.
+     * Collect user/supergroup updates. Call once at graph build; [clear] runs on logout
+     * from `AppGraph.runLogoutCleanup`, AFTER `PostsRepository.clear()` (an in-flight
+     * history load would otherwise re-insert the old account's chats behind the wipe).
      */
     fun bind(scope: CoroutineScope) {
         scope.launch { td.updates.collect(::onUpdate) }
@@ -104,4 +115,29 @@ class ChatRegistry(private val td: TdSender) {
         chats.clear()
         knownChatIds.clear()
     }
+
+    internal companion object {
+        /** A few screens of comment threads; a miss costs one offline `GetUser`. */
+        const val MAX_USERS = 2_048
+    }
+}
+
+/** Minimal thread-safe access-ordered LRU — just the three operations [ChatRegistry] needs. */
+private class LruMap<K : Any, V : Any>(private val capacity: Int) {
+    private val map = object : LinkedHashMap<K, V>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>?): Boolean = size > capacity
+    }
+
+    @Synchronized operator fun get(key: K): V? = map[key]
+
+    @Synchronized operator fun set(key: K, value: V) {
+        map[key] = value
+    }
+
+    @Synchronized fun putIfAbsent(key: K, value: V): V? = map[key] ?: run {
+        map[key] = value
+        null
+    }
+
+    @Synchronized fun clear() = map.clear()
 }

@@ -42,16 +42,21 @@ internal class InteractionInfoBuffer {
      * Close the window and take everything buffered. An update that lands after the
      * window closes opens a new one ([offer] returns `true` again), so nothing is lost:
      * entries are removed one by one, never wholesale.
+     *
+     * Each key is taken with `pending.remove(key)` and its RETURN value is what gets
+     * drained. Reading `entry.value` and then removing through the iterator lost a
+     * concurrent [offer] that merged into the same key between the read and the
+     * remove — the merged value was deleted without ever being applied. `remove(key)`
+     * is atomic, so a merge either lands before it (and is drained now) or after it
+     * (and re-creates the key for the next window).
      */
     fun drain(): Map<Pair<Long, Long>, TdApi.MessageInteractionInfo> {
         flushScheduled.set(false)
         if (pending.isEmpty()) return emptyMap()
         val drained = HashMap<Pair<Long, Long>, TdApi.MessageInteractionInfo>()
-        val it = pending.entries.iterator()
-        while (it.hasNext()) {
-            val e = it.next()
-            drained[e.key] = e.value
-            it.remove()
+        for (key in pending.keys) {
+            val value = pending.remove(key) ?: continue
+            drained[key] = value
         }
         return drained
     }

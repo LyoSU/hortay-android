@@ -657,6 +657,37 @@ class AlbumCoalesceTest {
         assertEquals(0, harness.td.rpcCount("GetChatHistory"), "no networked GetChatHistory during the cold-start storm")
         assertTrue(localCalls > 0, "cold-start coalesce must probe the offline per-message local index")
     }
+
+    @Test
+    fun `UpdateNewChat lead ingest stays offline even after the initial sync`() = runTest {
+        // The queue consumer can lag the LoadChats drain; deciding onlyLocal at dequeue
+        // let every album lead still queued when the flag flipped take a networked
+        // surround fetch. Every queued UpdateNewChat lead now coalesces locally only.
+        val harness = PostsRepositoryTestHarness(this)
+        val stride = 1L shl 20
+        harness.td.onAny("LoadChats") { TdApi.Error(404, "no more") }
+        harness.td.onAny("GetMessageLocally") { _ -> TdApi.Error(404, "not local") }
+        harness.td.onAny("GetChatHistory") { _ -> error("UpdateNewChat ingest must not issue a networked GetChatHistory") }
+        harness.repo.refresh()
+        harness.advanceUntilIdle()
+        assertTrue(harness.repo.initialSyncDone.value, "pre-condition: initial sync done")
+
+        repeat(3) { i ->
+            val chatId = -9300L - i
+            harness.td.emitUpdate(
+                TdApi.UpdateNewChat(
+                    harness.fakeChannel(
+                        id = chatId,
+                        lastMessage = harness.fakePhotoAlbumMessage(chatId, 5L * stride, date = baseDate, mediaAlbumId = 900L + i),
+                    ),
+                ),
+            )
+        }
+        harness.advanceUntilIdle()
+
+        assertEquals(0, harness.td.rpcCount("GetChatHistory"))
+        assertEquals(3, harness.repo.posts.value.size, "degraded leads still land; Layer-2 repairs them on focus")
+    }
 }
 
 /**

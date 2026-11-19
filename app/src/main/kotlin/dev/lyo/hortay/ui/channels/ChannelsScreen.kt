@@ -57,6 +57,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -158,6 +159,24 @@ fun ChannelsScreen(
     }
     // A filter that emptied out (last hidden channel shown again) falls back to All.
     val activeFilter = if (filter != ChannelsFilter.All && buckets[filter].isNullOrEmpty()) ChannelsFilter.All else filter
+    // Persist the fallback, but ONLY on an observed non-empty → empty transition of the
+    // selected bucket. Left in [filter], a bucket the user emptied (last hidden channel
+    // shown again) silently re-activated the moment a new matching post arrived. A bucket
+    // that is empty from the first frame is different: `filter` is saveable while posts,
+    // unread counts and the hidden set start empty (initialValue), so resetting there
+    // would wipe the user's choice before data lands — leave `filter` alone and let
+    // [activeFilter] show All meanwhile.
+    var seenNonEmptyFilter by remember { mutableStateOf<ChannelsFilter?>(null) }
+    val selectedBucketEmpty = buckets[filter].isNullOrEmpty()
+    LaunchedEffect(filter, selectedBucketEmpty) {
+        when {
+            !selectedBucketEmpty -> seenNonEmptyFilter = filter
+            filter != ChannelsFilter.All && seenNonEmptyFilter == filter -> {
+                seenNonEmptyFilter = null
+                filter = ChannelsFilter.All
+            }
+        }
+    }
     val shown = remember(buckets, activeFilter, query) {
         val base = buckets[activeFilter].orEmpty()
         val q = query.trim()

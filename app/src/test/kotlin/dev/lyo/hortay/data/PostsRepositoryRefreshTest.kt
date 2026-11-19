@@ -75,6 +75,20 @@ class PostsRepositoryRefreshTest {
     }
 
     @Test
+    fun `refresh treats a LoadChats send timeout as terminal`() = runTest {
+        // A timeout already burned TdClient's 60 s ceiling; retrying it ten times under
+        // refreshMutex held pull-to-refresh (and logout cleanup) for ~10 minutes.
+        val harness = PostsRepositoryTestHarness(this)
+        harness.td.onAny("LoadChats") { TdApi.Error(TdClient.SEND_TIMEOUT_CODE, "SEND_TIMEOUT LoadChats") }
+
+        harness.repo.refresh()
+        harness.advanceUntilIdle()
+
+        assertEquals(1, harness.td.rpcCount("LoadChats"), "no retry after a send timeout")
+        assertFalse(harness.repo.initialSyncDone.value)
+    }
+
+    @Test
     fun `refresh retries a transient LoadChats error then completes on 404`() = runTest {
         // A transient blip on the first LoadChats must not abort the drain: the
         // bounded loop pauses [DRAIN_RETRY_DELAY_MS] and retries, and a
@@ -414,5 +428,23 @@ class PostsRepositoryRefreshTest {
             "cold-start album ingest must never issue a networked GetChatHistory (FLOOD_WAIT inviolant)")
         assertEquals(2 * (TELEGRAM_MAX_ALBUM_SIZE - 1), harness.td.rpcCount("GetMessageLocally"),
             "the one album lastMessage probes exactly one id-stride window locally; solo posts probe nothing")
+    }
+
+    @Test
+    fun `subscribedChatIds covers channels without a post but never private chats or groups`() = runTest {
+        // "Hide all" in the Channels tab hides this scope; a private chat or group in the
+        // main list used to be written into the hidden-channels list.
+        val harness = PostsRepositoryTestHarness(this)
+        val channelWithoutPost = harness.fakeChannel(id = -7001L, mainListOrder = 10L)
+        val group = harness.fakeChannel(id = -7002L, mainListOrder = 9L).apply {
+            type = TdApi.ChatTypeSupergroup(2L, false)
+        }
+        val privateChat = harness.fakeChannel(id = 7003L, mainListOrder = 8L).apply {
+            type = TdApi.ChatTypePrivate(7003L)
+        }
+        listOf(channelWithoutPost, group, privateChat).forEach { harness.td.emitUpdate(TdApi.UpdateNewChat(it)) }
+        harness.advanceUntilIdle()
+
+        assertEquals(setOf(-7001L), harness.repo.subscribedChatIds())
     }
 }

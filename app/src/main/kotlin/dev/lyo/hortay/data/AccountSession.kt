@@ -15,10 +15,13 @@ import java.util.concurrent.atomic.AtomicReference
  * Two things hang off it:
  *
  *  - **[scope]** — a child of the app scope that is cancelled and replaced when the
- *    session ends. Work that belongs to the account (first-sign-in backfill, history
- *    prefetches, anything that would write account A's data after logout) launches
- *    here, so a logout cancels it structurally instead of each call site re-checking a
- *    session epoch after every suspend point.
+ *    session ends. It is the intended home for work that belongs to the account, so a
+ *    logout would cancel it structurally. **Today nothing launches in it**: the
+ *    first-sign-in backfill, history prefetches and the cold-start ingest queue still
+ *    run in the app scope / view-model scopes and protect themselves with
+ *    `PostsRepository`'s session epoch (re-checked after each suspend point) plus their
+ *    own [onEnd] wipes. Moving that work here is a follow-up; until then do not rely on
+ *    the cancel below to stop any existing job.
  *  - **[onEnd] hooks** — the per-account caches that must be wiped on logout, run in
  *    registration order. This replaces the hand-maintained list in `AppGraph` plus the
  *    `bindLogoutClear` collectors scattered across holders: every session-scoped state

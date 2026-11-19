@@ -190,13 +190,16 @@ class ChatFoldersRepository(
             _folderChatIds.value[folderId]?.let { return@withLock it }
             val startGeneration = generation.get()
             val list = TdApi.ChatListFolder(folderId)
-            drainChatList(list)
+            // A failed drain or GetChats is NOT cached: an empty set would read as "this
+            // folder has no channels" and hide its tab for the whole session, while an
+            // absent entry keeps the chip ("not yet resolved") and the next tap retries.
+            if (!drainChatList(list)) return@withLock emptySet()
             val ids: Set<Long> = runCatching { td.send(TdApi.GetChats(list, Int.MAX_VALUE)) }
                 .warnUnlessCancelled(TAG, "folderChatIds($folderId)")
                 .getOrNull()
                 ?.chatIds
                 ?.toHashSet()
-                ?: emptySet()
+                ?: return@withLock emptySet()
             // Generation re-checked INSIDE the CAS lambda: [clear] bumps it before resetting
             // the map, so a write that loses the race either sees the new generation and
             // skips, or lands first and is then wiped by the reset (a CAS retry re-reads).
@@ -208,16 +211,32 @@ class ChatFoldersRepository(
     }
 
     /**
-     * Drain `LoadChats(ChatListFolder)` until TDLib runs out of pages — same shape as
-     * `PostsRepository.drainChatList`. 404 → no more chats, terminate. Other errors get
-     * retried for a bounded number of iterations.
+     * Drain `LoadChats(ChatListFolder)` until TDLib runs out of pages (404). Returns
+     * `true` when the drain is good enough to snapshot with `GetChats`: the 404 was
+     * reached, OR [MAX_LOAD_CHATS_PAGES] pages all loaded without one. A page may load
+     * fewer chats than the hint (see `PostsRepository.drainChatList`), so a large folder
+     * can legitimately exhaust the cap — treating that as a failure resolved it to an
+     * empty folder on every tap; GetChats snapshots whatever has loaded instead.
+     *
+     * [CancellationException] is rethrown; any other error — including
+     * [TdClient.SEND_TIMEOUT_CODE] — stops the drain and returns `false`. The old shape
+     * swallowed every non-404 error, cancellation included, and retried it ten times: a hung TDLib held [folderChatIdsMutex] for ten
+     * send timeouts, and a cancelled caller kept issuing LoadChats.
      */
-    private suspend fun drainChatList(list: TdApi.ChatList) {
+    private suspend fun drainChatList(list: TdApi.ChatList): Boolean {
         repeat(MAX_LOAD_CHATS_PAGES) {
-            val res = runCatching { td.send(TdApi.LoadChats(list, CHAT_LIST_HINT)) }
-            val err = res.exceptionOrNull()
-            if (err is TdClient.TdException && err.code == 404) return
+            val err = runCatching { td.send(TdApi.LoadChats(list, CHAT_LIST_HINT)) }.exceptionOrNull()
+            when {
+                err == null -> Unit // a page loaded; more may remain
+                err is kotlinx.coroutines.CancellationException -> throw err
+                err is TdClient.TdException && err.code == 404 -> return true
+                else -> {
+                    android.util.Log.w(TAG, "drainChatList(${list.javaClass.simpleName}) failed", err)
+                    return false
+                }
+            }
         }
+        return true // page cap reached without an error: snapshot what loaded
     }
 
     /**

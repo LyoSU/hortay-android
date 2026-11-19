@@ -58,6 +58,25 @@ class InteractionInfoBufferTest {
     }
 
     @Test
+    fun `a merge racing a drain on the same key is never lost`() {
+        // Stress, not a proof: with the old read-then-iterator-remove drain a merge landing
+        // between the two was deleted undrained, so the final value (views = N) could vanish.
+        // The current drain cannot fail this; the old one fails it only when the race
+        // hits the final offer, so a green run here is a smoke check, not a guarantee.
+        val buffer = InteractionInfoBuffer()
+        val n = 50_000
+        var maxSeen = 0
+        val writer = Thread { for (v in 1..n) buffer.offer(1L, 10L, info(views = v)) }
+        writer.start()
+        while (writer.isAlive) {
+            buffer.drain()[1L to 10L]?.let { maxSeen = maxOf(maxSeen, it.viewCount) }
+        }
+        writer.join()
+        buffer.drain()[1L to 10L]?.let { maxSeen = maxOf(maxSeen, it.viewCount) }
+        assertEquals(n, maxSeen)
+    }
+
+    @Test
     fun `an update for a non-anchor album member lands on the merged card`() {
         val album = post(id = 100L, views = 50, albumMessageIds = listOf(100L, 101L, 102L))
         val other = post(id = 200L, views = 9)

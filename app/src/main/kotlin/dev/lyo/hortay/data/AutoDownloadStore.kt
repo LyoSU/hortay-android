@@ -155,8 +155,9 @@ fun AutoDownloadCategory.defaultPolicy(): AutoDownloadPolicy = when (this) {
  * mutation also fires `SetAutoDownloadSettings` for the relevant network so the
  * setting travels with the account.
  *
- * **First-run seeding.** When DataStore has no record yet, the store waits for
- * `AuthStage.Ready` and calls `GetAutoDownloadSettingsPresets` once. The
+ * **First-run seeding.** Whenever auth enters `AuthStage.Ready` and DataStore has no
+ * record (first run, or a new account after logout wiped it), the store calls
+ * `GetAutoDownloadSettingsPresets` once. The
  * `low`/`medium`/`high` triple seeds Roaming/Mobile/Wi-Fi respectively, matching
  * TDLib's own intended preset mapping. Failures fall through to the in-process
  * [AutoDownloadSettings.DEFAULT] values, which are tuned to the same shape.
@@ -189,13 +190,20 @@ class AutoDownloadStore(
         .stateIn(scope, SharingStarted.Eagerly, AutoDownloadSettings.DEFAULT)
 
     init {
-        // Seed first-run defaults from TDLib's `getAutoDownloadSettingsPresets` once
-        // auth reaches Ready. If DataStore already has a record we leave it alone —
+        // Seed first-run defaults from TDLib's `getAutoDownloadSettingsPresets` on
+        // EVERY transition into Ready, not just the first one per process: logout wipes
+        // the stored record ([clear]), so a second account signing in without a restart
+        // must be seeded too. If DataStore already has a record we leave it alone —
         // the user's prior choices win over TDLib presets, and on every subsequent
         // mutation we mirror to TDLib anyway.
         scope.launch {
-            authStage.filter { it is AuthStage.Ready }.first()
-            seedFromPresetsIfMissing()
+            authStage
+                .map { it is AuthStage.Ready }
+                .distinctUntilChanged()
+                .filter { ready -> ready }
+                // Guarded so one failed seed (DataStore I/O) can't end the collector and
+                // skip every later sign-in.
+                .collect { suspendRunCatching { seedFromPresetsIfMissing() } }
         }
     }
 

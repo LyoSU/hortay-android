@@ -594,6 +594,15 @@ class TdClient private constructor(
         suspendCancellableCoroutine { cont ->
             client.send(query) { result ->
                 if (result is TdApi.Error) {
+                    // Arm the gate HERE, on the TDLib callback thread, before resuming:
+                    // a 420/429 that lands after the waiting coroutine was cancelled (or
+                    // after the send timeout fired) is delivered only to a dead
+                    // continuation, so the catch in [send] never sees it and the next
+                    // request walks straight into the flood window. [registerFloodWait]
+                    // is thread-safe (CAS `update` on a StateFlow, no coroutine state);
+                    // the catch in [send] re-registering the same deadline is a no-op
+                    // through the `max`.
+                    if (isFloodWaitCode(result.code)) registerFloodWait(result.message.orEmpty())
                     cont.resumeWith(Result.failure(TdException(result.code, result.message)))
                 } else {
                     @Suppress("UNCHECKED_CAST")
@@ -619,6 +628,11 @@ class TdClient private constructor(
         }
     }
 
+    /**
+     * Push the flood deadline forward. Called from BOTH the TDLib result callback
+     * (JNI worker thread, no coroutine context) and [send]'s catch, so it must stay
+     * thread-safe and non-suspending: only the CAS `update` below touches shared state.
+     */
     private fun registerFloodWait(message: String) {
         // TDLib formats the error a couple of ways depending on origin: the legacy
         // MTProto layer hands back "FLOOD_WAIT_42"; the newer translated layer uses

@@ -4,6 +4,8 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.plus
 import org.drinkless.tdlib.TdApi
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
@@ -149,8 +152,8 @@ class CommentsRepository(
     private val invalidations = MutableSharedFlow<Pair<Long, Long>>(extraBufferCapacity = 64)
 
     // Bounded LRU. accessOrder=true bumps an entry to most-recently-used on every
-    // get/put; removeEldestEntry caps the size and lets the JVM GC the dropped
-    // SharedFlow once its WhileSubscribed upstream cancels. Synchronized at the map
+    // get/put; removeEldestEntry caps the size and cancels the dropped stream's
+    // sharing job (see [ThreadStream]) so it can be GC'd. Synchronized at the map
     // level because LinkedHashMap is not thread-safe — the hot path inside the
     // synchronized block is a single SharedFlow construction (no IO, no suspend), so
     // contention is irrelevant in practice.
@@ -162,16 +165,31 @@ class CommentsRepository(
      */
     private val pendingCommentEdits = dev.lyo.hortay.data.archive.PendingEditBuffer()
 
-    private val streams: MutableMap<Pair<Long, Long>, SharedFlow<ThreadState>> =
+    /**
+     * One cached thread stream plus the [job] its `shareIn` coroutine runs under. A
+     * `WhileSubscribed` share keeps its sharing coroutine alive in [scope] for as long as
+     * the scope lives — even after the entry left [streams] — so every evicted or
+     * LoadFailed thread used to leak one coroutine for the rest of the process. Each
+     * stream now gets its own child [job], cancelled whenever the entry is evicted
+     * (LoadFailed paths, LRU overflow, [forgetThread], [clear]); cancelling it also ends a
+     * still-running upstream, whose `withOpenChats` closes its chats under NonCancellable.
+     * Identity matters for removal: the failure path removes `(key, thisStream)` so it can
+     * never drop a NEWER stream created for the same key after a retry.
+     */
+    private class ThreadStream(val job: Job) {
+        lateinit var flow: SharedFlow<ThreadState>
+    }
+
+    private val streams: MutableMap<Pair<Long, Long>, ThreadStream> =
         Collections.synchronizedMap(
-            object : LinkedHashMap<Pair<Long, Long>, SharedFlow<ThreadState>>(
+            object : LinkedHashMap<Pair<Long, Long>, ThreadStream>(
                 /* initialCapacity */ 16,
                 /* loadFactor */ 0.75f,
                 /* accessOrder */ true,
             ) {
                 override fun removeEldestEntry(
-                    eldest: MutableMap.MutableEntry<Pair<Long, Long>, SharedFlow<ThreadState>>,
-                ): Boolean = size > MAX_CACHED_THREADS
+                    eldest: MutableMap.MutableEntry<Pair<Long, Long>, ThreadStream>,
+                ): Boolean = (size > MAX_CACHED_THREADS).also { evict -> if (evict) eldest.value.job.cancel() }
             },
         )
 
@@ -259,9 +277,11 @@ class CommentsRepository(
         val key = chatId to anchorKey
         return synchronized(streams) {
             streams.getOrPut(key) {
-                threadFlow(chatId, candidateMessageIds, limit, streamKey = key)
-                    .shareIn(scope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), replay = 1)
-            }
+                ThreadStream(SupervisorJob(scope.coroutineContext[Job])).also { stream ->
+                    stream.flow = threadFlow(chatId, candidateMessageIds, limit, streamKey = key, stream = stream)
+                        .shareIn(scope + stream.job, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), replay = 1)
+                }
+            }.flow
         }
     }
 
@@ -272,7 +292,7 @@ class CommentsRepository(
      */
     fun forgetThread(chatId: Long, candidateMessageIds: List<Long>) {
         val key = chatId to (candidateMessageIds.minOrNull() ?: return)
-        synchronized(streams) { streams.remove(key) }
+        synchronized(streams) { streams.remove(key) }?.job?.cancel()
         resolvedAnchors.remove(key, AnchorResolution.NoThread)
     }
 
@@ -281,6 +301,7 @@ class CommentsRepository(
         candidateMessageIds: List<Long>,
         limit: Int,
         streamKey: Pair<Long, Long>,
+        stream: ThreadStream,
     ): Flow<ThreadState> = flow {
         val anchor = ensureAnchor(chatId, candidateMessageIds) ?: run {
             // Only a cached NoThread is an authoritative "this post has no discussion". Any
@@ -290,8 +311,10 @@ class CommentsRepository(
             if (resolvedAnchors[streamKey] is AnchorResolution.NoThread) {
                 emit(ThreadState.Error(unavailableMsg))
             } else {
-                synchronized(streams) { streams.remove(streamKey) }
+                synchronized(streams) { streams.remove(streamKey, stream) }
                 emit(ThreadState.LoadFailed)
+                // After the emit, so subscribers already hold LoadFailed in the replay.
+                stream.job.cancel()
             }
             return@flow
         }
@@ -373,9 +396,12 @@ class CommentsRepository(
                         // lifetime — surface LoadFailed instead and evict the stream so a retry /
                         // re-open bootstraps afresh. With some pages loaded, show what we have.
                         if (live.isEmpty()) {
-                            synchronized(streams) { streams.remove(streamKey) }
+                            synchronized(streams) { streams.remove(streamKey, stream) }
                             pump.cancel()
                             emit(ThreadState.LoadFailed)
+                            // After the emit (subscribers already hold LoadFailed): stop this
+                            // stream's sharing coroutine instead of leaking it in [scope].
+                            stream.job.cancel()
                             return@coroutineScope
                         }
                         break
@@ -949,9 +975,10 @@ class CommentsRepository(
      * GetMessageProperties + GetMessageThread on subsequent opens) can't be
      * served to account B's UI.
      *
-     * Active subscribers will see their upstream upstream cancel naturally
-     * (their WhileSubscribed scope dies with the synthetic empty stream we
-     * leave in the LRU). Sign-in to a new account starts every thread fresh.
+     * Every cached stream's sharing job is cancelled, so account A's upstreams
+     * stop (closing their chats) instead of lingering for [STOP_TIMEOUT_MS] or,
+     * once evicted, for the life of the process. Sign-in to a new account starts
+     * every thread fresh.
      */
     fun clear() {
         resolvedAnchors.clear()
@@ -964,7 +991,10 @@ class CommentsRepository(
         prefetchedAnchors.clear()
         optimisticOverrides.clear()
         pendingCommentEdits.clear()
-        synchronized(streams) { streams.clear() }
+        synchronized(streams) {
+            streams.values.forEach { it.job.cancel() }
+            streams.clear()
+        }
     }
 
     private companion object {

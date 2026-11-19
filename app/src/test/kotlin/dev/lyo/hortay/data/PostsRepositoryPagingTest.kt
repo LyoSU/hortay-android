@@ -1,6 +1,7 @@
 package dev.lyo.hortay.data
 
 import dev.lyo.hortay.testutil.PostsRepositoryTestHarness
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.drinkless.tdlib.TdApi
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -98,9 +99,65 @@ class PostsRepositoryPagingTest {
 
         assertEquals(0, harness.repo.loadOlder(chat.id))
         val callsAfterFirst = harness.td.rpcCount("GetChatHistory")
+        assertEquals(3, callsAfterFirst,
+            "an anchor-only page is re-asked a bounded number of times before it means the end")
         assertEquals(0, harness.repo.loadOlder(chat.id))
         assertEquals(callsAfterFirst, harness.td.rpcCount("GetChatHistory"),
             "end-of-history is sticky — no further RPCs")
+    }
+
+    @Test
+    fun `loadOlder retries an anchor-only cold-cache page instead of ending paging`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chat = harness.fakeChannel(id = -9250L)
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+        harness.td.emitUpdate(
+            TdApi.UpdateChatLastMessage(chat.id, harness.fakeChannelMessage(chat.id, 50L), emptyArray()),
+        )
+        harness.advanceUntilIdle()
+
+        // Cold cache: the first pass serves only the locally-known anchor; the repeat
+        // carries the server slice.
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        harness.td.onAny("GetChatHistory") {
+            val ids = if (calls.getAndIncrement() == 0) listOf(50L) else listOf(50L, 49L, 48L)
+            TdApi.Messages(ids.size, ids.map { harness.fakeChannelMessage(chat.id, it) }.toTypedArray())
+        }
+
+        assertEquals(2, harness.repo.loadOlder(chat.id))
+        assertEquals(setOf(50L, 49L, 48L), harness.idsOf(chat.id))
+    }
+
+    @Test
+    fun `loadOlder does not publish a post deleted while its page was in flight`() = runTest {
+        val harness = PostsRepositoryTestHarness(this)
+        val chat = harness.fakeChannel(id = -9350L)
+        harness.td.emitUpdate(TdApi.UpdateNewChat(chat))
+        harness.advanceUntilIdle()
+        harness.td.emitUpdate(
+            TdApi.UpdateChatLastMessage(chat.id, harness.fakeChannelMessage(chat.id, 50L), emptyArray()),
+        )
+        harness.advanceUntilIdle()
+
+        val pageRequested = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val releasePage = kotlinx.coroutines.CompletableDeferred<Unit>()
+        harness.td.onAnySuspending("GetChatHistory") {
+            pageRequested.complete(Unit)
+            releasePage.await()
+            val ids = listOf(50L, 49L, 48L)
+            TdApi.Messages(ids.size, ids.map { harness.fakeChannelMessage(chat.id, it) }.toTypedArray())
+        }
+
+        val older = async { harness.repo.loadOlder(chat.id) }
+        pageRequested.await()
+        harness.td.emitUpdate(TdApi.UpdateDeleteMessages(chat.id, longArrayOf(49L), true, false))
+        harness.advanceUntilIdle()
+        releasePage.complete(Unit)
+        older.await()
+
+        assertEquals(setOf(50L, 48L), harness.idsOf(chat.id),
+            "a delete processed while the page was in flight must not be resurrected")
     }
 
     @Test

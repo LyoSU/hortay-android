@@ -80,6 +80,22 @@ class ChatRegistryTest {
     }
 
     @Test
+    fun `the user mirror is bounded and an evicted user re-reads TDLib's local store`() = runTest {
+        val td = FakeTdSender()
+        td.onAny("GetUser") { req -> user((req as TdApi.GetUser).userId, "Fetched") }
+        val registry = ChatRegistry(td, maxUsers = 2)
+        registry.onUpdate(TdApi.UpdateUser(user(1L, "One")))
+        registry.onUpdate(TdApi.UpdateUser(user(2L, "Two")))
+        registry.onUpdate(TdApi.UpdateUser(user(3L, "Three")))
+
+        assertEquals("Three", registry.user(3L)?.firstName)
+        assertEquals("Two", registry.user(2L)?.firstName)
+        assertEquals(0, td.rpcCount("GetUser"))
+        assertEquals("Fetched", registry.user(1L)?.firstName, "the eldest entry was evicted")
+        assertEquals(1, td.rpcCount("GetUser"))
+    }
+
+    @Test
     fun `UpdateNewChat alone does not register a chat`() = runTest {
         // PostsRepository owns chat writes (its UpdateChatLastMessage race gate needs the
         // write in its own coroutine); a collector here would reopen that race.

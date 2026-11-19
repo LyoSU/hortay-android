@@ -66,6 +66,42 @@ class ChatPresenceTest {
     }
 
     @Test
+    fun `an open cancelled mid-send still completes and its paired close reaches TDLib`() = runTest {
+        ChatPresence.clear()
+        val td = FakeTdSender()
+        val openGate = CompletableDeferred<Unit>()
+        td.onAnySuspending("OpenChat") {
+            openGate.await()
+            TdApi.Ok()
+        }
+        td.onAny("CloseChat") { TdApi.Ok() }
+
+        // Mirrors ChannelViewModel: `opened = openChat(..)` inside try, close in finally.
+        val job = launch {
+            var opened = false
+            try {
+                opened = ChatPresence.openChat(td, 5L)
+                kotlinx.coroutines.awaitCancellation()
+            } finally {
+                if (opened) kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    ChatPresence.closeChat(td, 5L)
+                }
+            }
+        }
+        runCurrent()
+        job.cancel()
+        runCurrent()
+        assertEquals(0, td.rpcCount("CloseChat"), "the open is still in flight")
+
+        openGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, td.rpcCount("OpenChat"))
+        assertEquals(1, td.rpcCount("CloseChat"), "TDLib opened the chat, so it must be closed")
+        assertFalse(ChatPresence.isOpen(5L))
+    }
+
+    @Test
     fun `a failed open rolls the refcount back`() = runTest {
         ChatPresence.clear()
         val td = FakeTdSender()
