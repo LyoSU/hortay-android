@@ -1,6 +1,16 @@
 package dev.lyo.hortay.ui.channels
 
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.FilterChip
@@ -9,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import dev.lyo.hortay.ui.timeline.READING_WIDTH_CAP
+import dev.lyo.hortay.ui.theme.CHROME_MAX_FONT_SCALE
 import dev.lyo.hortay.ui.theme.HortaySpacing
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.SwipeToDismissBox
@@ -54,8 +65,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,7 +75,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -80,8 +88,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.posts.PostsRepository
 import dev.lyo.hortay.data.TimelinePost
-import dev.lyo.hortay.ui.components.HortayTopBar
-import dev.lyo.hortay.ui.components.HortayTopBarSize
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
 import dev.lyo.hortay.ui.theme.tabularFigures
@@ -183,7 +189,16 @@ fun ChannelsScreen(
         if (q.isEmpty()) base else base.filter { it.title.contains(q, ignoreCase = true) }
     }
     val listState = rememberLazyListState()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    // One "away from the top" signal drives both the header tint and the FAB collapse.
+    val scrolledAway by remember { derivedStateOf { listState.canScrollBackward } }
+    // On a short window (landscape phone) the expanded FAB would sit over the search field
+    // and the first rows, so it stays icon-only there.
+    val windowInfo = LocalWindowInfo.current
+    val density = LocalDensity.current
+    val shortWindow = with(density) { windowInfo.containerSize.height.toDp() } < SHORT_WINDOW_HEIGHT
+    // At a large font scale the label makes the FAB as wide as a row and it covers the list.
+    val largeFont = density.fontScale > CHROME_MAX_FONT_SCALE
+    val fabExpanded = !scrolledAway && !shortWindow && !largeFont
     var addSheetOpen by remember { mutableStateOf(false) }
     var feedMenuOpen by remember { mutableStateOf(false) }
     var bulkConfirm by remember { mutableStateOf<FeedBulkAction?>(null) }
@@ -236,14 +251,11 @@ fun ChannelsScreen(
     }
 
     Scaffold(
-        modifier = Modifier
-            .fillMaxSize()
-            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.fillMaxSize(),
         topBar = {
-            HortayTopBar(
+            ChannelsHeader(
                 title = stringResource(R.string.channels_title),
-                size = HortayTopBarSize.Medium,
-                scrollBehavior = scrollBehavior,
+                scrolled = scrolledAway,
                 actions = {
                     if (channels.isNotEmpty()) {
                         Box {
@@ -272,13 +284,26 @@ fun ChannelsScreen(
             )
         },
         floatingActionButton = {
+            val fabLabel = stringResource(R.string.discover_add_channel)
+            // Collapses to its icon while the list is scrolled away from the top (and on a
+            // short window), so it stops covering the unread badges at the row ends; the
+            // `expanded` overload animates the morph with the theme's MotionScheme.
             ExtendedFloatingActionButton(
                 onClick = { addSheetOpen = true },
+                expanded = fabExpanded,
                 // This inner Scaffold doesn't own the FloatingNavBar inset (the
                 // HomeKey scaffold draws it), so lift the FAB clear of it manually.
                 modifier = Modifier.padding(bottom = contentPadding.calculateBottomPadding()),
-                icon = { Symbol(name = "add", contentDescription = null, size = 20.dp) },
-                text = { Text(stringResource(R.string.discover_add_channel)) },
+                // The label text leaves the tree when collapsed, so the icon carries the
+                // description then — exactly one of the two is announced at a time.
+                icon = {
+                    Symbol(
+                        name = "add",
+                        contentDescription = if (fabExpanded) null else fabLabel,
+                        size = 20.dp,
+                    )
+                },
+                text = { Text(fabLabel) },
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -472,6 +497,9 @@ private fun ChannelRow(
         channel.title,
     )
     val dim = if (isHidden) 0.5f else 1f
+    // At large font scale the title and excerpt may wrap to a second line instead of
+    // truncating after a word or two.
+    val textLines = if (LocalDensity.current.fontScale > LARGE_FONT_SCALE) 2 else 1
     SwipeToDismissBox(
         state = swipeState,
         modifier = modifier.semantics {
@@ -543,7 +571,7 @@ private fun ChannelRow(
                         text = channel.lastPostExcerpt,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = textLines,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -565,7 +593,8 @@ private fun ChannelRow(
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = formatRelative(channel.lastPostDate),
-                        style = MaterialTheme.typography.labelSmall.tabularFigures(),
+                        style = MaterialTheme.typography.labelSmall.tabularFigures().capFontScale(METADATA_MAX_FONT_SCALE),
+                        maxLines = 1,
                         color = if (unreadCount > 0 && !isHidden) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -583,7 +612,7 @@ private fun ChannelRow(
                     text = channel.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
+                    maxLines = textLines,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.alpha(dim),
                 )
@@ -622,6 +651,75 @@ private fun UnreadBadge(count: Int, muted: Boolean) {
 
 private const val MAX_BADGE = 999
 private val FAB_CLEARANCE = 88.dp
+private val SHORT_WINDOW_HEIGHT = 480.dp
+private const val LARGE_FONT_SCALE = 1.3f
+
+/**
+ * Ceiling on the effective font scale of the row's trailing time label. At 2.0 the
+ * uncapped label ("щойно", "1 хв") grew wide enough to squeeze the title down to a few
+ * letters; the label is glanceable metadata next to a fully scaled title, so it stops
+ * growing at 1.3× while the title and excerpt keep the user's full scale.
+ */
+private const val METADATA_MAX_FONT_SCALE = 1.3f
+
+/** Shrinks this style's sp size so its rendered size never exceeds [maxScale] × nominal. */
+@Composable
+private fun TextStyle.capFontScale(maxScale: Float): TextStyle {
+    val fontScale = LocalDensity.current.fontScale
+    if (fontScale <= maxScale || !fontSize.isSp) return this
+    return copy(fontSize = (fontSize.value * maxScale / fontScale).sp)
+}
+
+/**
+ * Single-row header: title and the feed-visibility action share one row, so the list starts
+ * right under it instead of below an action strip plus a two-row title. The row sits in the
+ * same centred, [READING_WIDTH_CAP]-wide column as the list, so on a wide (landscape) window
+ * the title lines up with the search field and rows instead of hugging the screen edge. The
+ * background (status-bar band included) tints as one surface once the list scrolls under it.
+ */
+@Composable
+private fun ChannelsHeader(
+    title: String,
+    scrolled: Boolean,
+    actions: @Composable RowScope.() -> Unit,
+) {
+    val background by animateColorAsState(
+        targetValue = if (scrolled) MaterialTheme.colorScheme.surfaceContainer
+        else MaterialTheme.colorScheme.background,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "channels-header-tint",
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(background)
+            .windowInsetsPadding(WindowInsets.statusBars),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Row(
+            modifier = Modifier
+                .widthIn(max = READING_WIDTH_CAP)
+                .fillMaxWidth()
+                .heightIn(min = 64.dp)
+                // Start matches the list's 16 dp content padding; the end is tighter
+                // because the 48 dp icon button carries its own inner padding.
+                .padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 8.dp)
+                    .semantics { heading() },
+            )
+            actions()
+        }
+    }
+}
 
 /**
  * Unread dot in the trailing column — the honest signal for "this channel has unread"

@@ -7,6 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.isSpecified
 
@@ -35,6 +36,27 @@ fun TextStyle.scaledForReading(scale: Float): TextStyle {
 }
 
 private fun TextUnit.scaledBy(scale: Float): TextUnit = if (isSpecified) this * scale else this
+
+/**
+ * [this] with [LineBreak.Paragraph] — the high-quality (whole-paragraph optimal) line breaker
+ * instead of Compose's default greedy [LineBreak.Simple]. For multi-line READING bodies only
+ * (post text, captions, comments, quotes, article paragraphs): it evens out the ragged right
+ * edge of long Ukrainian / Russian words. Never apply it to titles, labels, chips, counters or
+ * editable text — the optimal breaker re-balances earlier lines as later text changes, which
+ * makes a text field jump while typing, and buys nothing on a single line.
+ *
+ * Deliberately WITHOUT `Hyphens.Auto`. Hyphenation is paragraph-wide in Compose (no per-span
+ * off switch), so alphabetic inline code and `#hashtag` tokens would be split mid-token; and the
+ * hyphenation patterns come from the text paint's locale — the app UI language — not the
+ * post's language, so a Ukrainian post under an English UI gets no hyphenation while a Russian
+ * post under a Ukrainian UI gets Ukrainian patterns.
+ *
+ * Clamp-safe: the optimal breaker lays out the whole paragraph regardless of `maxLines`, so a
+ * collapsed body's lines are exactly the first lines of its expanded layout — expanding never
+ * reflows what was already visible. Callers [remember] the result keyed on the input style.
+ */
+fun TextStyle.withReadingLineBreak(): TextStyle =
+    if (lineBreak == LineBreak.Paragraph) this else copy(lineBreak = LineBreak.Paragraph)
 
 /**
  * Re-provides the theme's typography with `bodyLarge` — the post-body style every reading

@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.lyo.hortay.R
+import dev.lyo.hortay.ui.theme.withReadingLineBreak
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.ui.icons.Symbol
 import kotlinx.collections.immutable.ImmutableList
@@ -99,9 +100,15 @@ fun RichText(
     // empty lines hanging off the top or bottom.
     val src = remember(formatted) { formatted.trimmedBlankEdges() }
     val blocks = remember(src) { src.blockRanges() }
+    // Every body this renders is multi-line reading text (post text, captions, comments and
+    // their quotes), so paragraph line breaking is applied once here rather than at each call
+    // site or on the shared `bodyLarge` (which text fields and dialogs also resolve). Code
+    // segments derive from this style too but lay out with `softWrap = false`, so the line
+    // breaker never runs for them. See [withReadingLineBreak] for why there is no hyphenation.
+    val readingStyle = remember(style) { style.withReadingLineBreak() }
     // No top-level block → one [Text] with the caller's clamp + "Показати більше".
     if (blocks.isEmpty()) {
-        renderer(rememberRenderableText(src), style, maxLines)
+        renderer(rememberRenderableText(src), readingStyle, maxLines)
         return
     }
 
@@ -114,7 +121,7 @@ fun RichText(
                 // Segments are individually edge-trimmed, so spacing is a single consistent
                 // gap rather than whatever stray newlines the source happened to carry.
                 if (idx > 0) Spacer(Modifier.height(SEGMENT_GAP))
-                SegmentSlot(segment, style, interactive = true, renderer)
+                SegmentSlot(segment, readingStyle, interactive = true, renderer)
             }
         }
     } else {
@@ -122,7 +129,7 @@ fun RichText(
         // [ClampedPost] lays the segments out itself (rather than receiving a pre-built Column)
         // so it can see each segment's height + its own vertical insets and snap the cut to a
         // clean line boundary instead of slicing a glyph row.
-        ClampedPost(key = src, maxLines = maxLines, style = style, segments = segments, renderer = renderer)
+        ClampedPost(key = src, maxLines = maxLines, style = readingStyle, segments = segments, renderer = renderer)
     }
 }
 

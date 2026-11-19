@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.TdAvatar
+import dev.lyo.hortay.ui.theme.CappedFontScale
 import dev.lyo.hortay.ui.theme.HortayExpressive
 import dev.lyo.hortay.ui.theme.asComposeShape
 import dev.lyo.hortay.ui.theme.tabularFigures
@@ -89,6 +90,11 @@ import kotlinx.collections.immutable.toImmutableList
  * `scopedPendingNew` / `unreadRemaining` and supplies the two onClick bodies
  * verbatim; this composable only lays the two affordances out.
  *
+ * Large font scales: the cluster renders under [CappedFontScale]. Uncapped, at font scale
+ * 2.0 the segments grew tall and wide enough to fully cover the channel name of the post
+ * under them. The count stays legible at the chrome cap, and each segment's spoken label
+ * (below) carries the full phrase regardless.
+ *
  * a11y: each element carries its own merged `contentDescription`
  * (`mergeDescendants`), both phrased via [R.plurals.new_posts] — the shared
  * "things I haven't read" vocabulary the two former pills already used.
@@ -111,43 +117,45 @@ fun FeedFloatingControl(
     // Newest-on-top mounts the control under the header with an upward arrow; there it
     // stays centred. Everywhere else it is a compact split button in the trailing corner.
     val atTop = arrowGlyph == "arrow_upward"
-    Box(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                // No animateContentSize here: it clips to its bounds and sliced the
-                // segments' shadows flat at the bottom edge. Each segment animates its own
-                // width instead, with clipping off, so the shadows render whole.
-                .align(if (atTop) Alignment.TopCenter else Alignment.BottomEnd),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(SEGMENT_GAP),
-        ) {
-            AnimatedVisibility(
-                visible = showArrivals,
-                enter = expandHorizontally(widthSpec, clip = false) +
-                    scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
-                exit = shrinkHorizontally(widthSpec, clip = false) +
-                    scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
+    CappedFontScale {
+        Box(modifier = modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    // No animateContentSize here: it clips to its bounds and sliced the
+                    // segments' shadows flat at the bottom edge. Each segment animates its own
+                    // width instead, with clipping off, so the shadows render whole.
+                    .align(if (atTop) Alignment.TopCenter else Alignment.BottomEnd),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(SEGMENT_GAP),
             ) {
-                ArrivalsSegment(
-                    channels = pendingChannels,
-                    count = pendingCount,
-                    arrowGlyph = arrowGlyph,
-                    joinedToUnread = showUnread,
-                    onClick = onArrivalsClick,
-                )
-            }
-            AnimatedVisibility(
-                visible = showUnread,
-                enter = expandHorizontally(widthSpec, clip = false) +
-                    scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
-                exit = shrinkHorizontally(widthSpec, clip = false) +
-                    scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
-            ) {
-                UnreadSegment(
-                    count = unreadCount,
-                    joinedToArrivals = showArrivals,
-                    onClick = onUnreadClick,
-                )
+                AnimatedVisibility(
+                    visible = showArrivals,
+                    enter = expandHorizontally(widthSpec, clip = false) +
+                        scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
+                    exit = shrinkHorizontally(widthSpec, clip = false) +
+                        scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
+                ) {
+                    ArrivalsSegment(
+                        channels = pendingChannels,
+                        count = pendingCount,
+                        arrowGlyph = arrowGlyph,
+                        joinedToUnread = showUnread,
+                        onClick = onArrivalsClick,
+                    )
+                }
+                AnimatedVisibility(
+                    visible = showUnread,
+                    enter = expandHorizontally(widthSpec, clip = false) +
+                        scaleIn(spatialSpec, initialScale = 0.85f) + fadeIn(effectsSpec),
+                    exit = shrinkHorizontally(widthSpec, clip = false) +
+                        scaleOut(spatialSpec, targetScale = 0.85f) + fadeOut(effectsSpec),
+                ) {
+                    UnreadSegment(
+                        count = unreadCount,
+                        joinedToArrivals = showArrivals,
+                        onClick = onUnreadClick,
+                    )
+                }
             }
         }
     }

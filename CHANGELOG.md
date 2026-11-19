@@ -24,6 +24,7 @@
 - When you scroll away from a playing voice message or audio track, a mini-player above the navigation bar lets you pause, change speed or stop it.
 - The first time you open the app, it asks whether you want to read newest-first or like a chat.
 - The Channels tab shows a one-time tip about the sideways swipe, and a hidden channel has a visible button to show it again.
+- Reactions are drawn with Telegram's own emoji artwork, and Settings → Appearance can switch them back to your phone's emoji.
 
 ### Changed
 - A reply to another channel's post shows that channel's avatar and an arrow, so it no longer passes for a reply within the same channel.
@@ -42,6 +43,10 @@
 - Reaction chips are easier to tap without hitting a neighbouring one.
 - On tablets and wide windows, the bottom navigation bar, Channels and Settings keep a comfortable width instead of stretching across the screen.
 - Error messages say what happened in plain words first, Telegram's rate limit is described the same way everywhere, and sign-in uses Telegram's own "two-step verification" wording.
+- Tapping a photo grows it out of its place in the feed into the fullscreen viewer over a blurred backdrop of the photo, and closing shrinks it back.
+- Photos load over a placeholder in the picture's own colour instead of a grey block.
+- The Channels tab has a compact header, and its "Find channels" button shrinks to an icon once you scroll.
+- Post text breaks into lines more evenly.
 
 ### Fixed
 - Signing in no longer overwrites the auto-download settings you set in other Telegram apps, and signing out no longer carries them over to the next account.
@@ -137,11 +142,16 @@
 - Deleting some files from a document or audio album no longer removes the whole post from the feed.
 - Small controls in posts, media and the edit history are easier to tap, and screen readers announce them as buttons, tabs or switches.
 - Sign-in code cells and "Read full post"-style action rows no longer clip their text at the largest font sizes.
+- At large font sizes the bottom navigation labels are no longer cut off, the floating new-posts button no longer grows over the post, and Channels and Settings rows wrap instead of being cut off.
+- A deleted post kept by the archive shows its channel's photo instead of a blurred placeholder.
+- The "Pure black" switch appears only while the app is in a dark theme, instead of doing nothing in a light one.
+- Buttons in the fullscreen viewer stay readable over bright photos.
 
 ### Performance
 - Idle video players are released when the app goes to the background.
 - The app no longer redraws every frame while idle — animated stickers and the pull-to-refresh indicator animate only when they are on screen and active.
 - Guest mode does less work on launch and when opening "Add channel".
+- Photos and videos in the feed ask Telegram about each file once instead of twice.
 
 ### Architecture
 - The feed, folder tabs and translation cache now each handle Telegram's updates in one ordered stream instead of one listener per update type.

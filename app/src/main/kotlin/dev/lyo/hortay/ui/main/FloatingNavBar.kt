@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,10 +45,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.lyo.hortay.ui.icons.Symbol
+import dev.lyo.hortay.ui.theme.CappedFontScale
 import dev.lyo.hortay.ui.theme.LocalGlassBackdrop
 import dev.lyo.hortay.ui.theme.rememberGlassStyle
 
@@ -65,6 +68,11 @@ private val BarShape = RoundedCornerShape(percent = 50)
  * design stacked a per-icon pill under a full-cell ripple inside the bar, so every tap
  * flashed three nested rounded shapes. Presses now answer with a small scale-down of the
  * tab instead of a ripple; the selected tab adds a filled, accent-tinted icon and label.
+ *
+ * Large font scales: the bar renders under [CappedFontScale] (labels top out at the chrome
+ * cap), and a label that still does not fit its cell steps its size down instead of
+ * ellipsizing — at font scale 2.0 "Стрічка" / "Збережене" read "Стріч…" / "Збер…" with the
+ * labels touching. The tab's accessible name is unaffected by either.
  */
 @Composable
 fun FloatingNavBar(
@@ -83,49 +91,51 @@ fun FloatingNavBar(
         animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
         label = "nav-capsule",
     )
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 10.dp)
-            // Tablets / desktop windows: a centred pill capped at a phone-like width instead
-            // of a full-width bar. Phones sit below the cap, so their layout is unchanged.
-            .wrapContentWidth(Alignment.CenterHorizontally)
-            .widthIn(max = BAR_MAX_WIDTH)
-            .fillMaxWidth()
-            .shadow(elevation = 10.dp, shape = BarShape, clip = false)
-            .clip(BarShape)
-            .then(
-                if (backdrop != null) Modifier.hazeBlur(input = HazeInput.Sources(backdrop), style = glass)
-                else Modifier.background(fallback),
-            )
-            .border(width = 0.5.dp, color = hairline, shape = BarShape)
-            .padding(BAR_INSET),
-    ) {
-        val cellWidth = maxWidth / tabs.size
-        // The sliding capsule: drawn once, behind the row, positioned by the animated
-        // index so it glides (and slightly overshoots on the expressive spring) from tab
-        // to tab instead of fading out on one and in on another.
-        // matchParentSize: the capsule takes the row's height, never the bar's max
-        // constraint (fillMaxHeight on its own would stretch the whole bar).
-        Box(Modifier.matchParentSize()) {
-            Box(
-                modifier = Modifier
-                    .offset { IntOffset((cellWidth.toPx() * selectedIndex).roundToInt(), 0) }
-                    .width(cellWidth)
-                    .fillMaxHeight()
-                    .clip(BarShape)
-                    .background(capsule),
-            )
-        }
-        Row(modifier = Modifier.fillMaxWidth().selectableGroup()) {
-            tabs.forEach { tab ->
-                NavTabButton(
-                    tab = tab,
-                    selected = tab == selected,
-                    onClick = { onSelect(tab) },
-                    modifier = Modifier.weight(1f),
+    CappedFontScale {
+        BoxWithConstraints(
+            modifier = modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                // Tablets / desktop windows: a centred pill capped at a phone-like width instead
+                // of a full-width bar. Phones sit below the cap, so their layout is unchanged.
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .widthIn(max = BAR_MAX_WIDTH)
+                .fillMaxWidth()
+                .shadow(elevation = 10.dp, shape = BarShape, clip = false)
+                .clip(BarShape)
+                .then(
+                    if (backdrop != null) Modifier.hazeBlur(input = HazeInput.Sources(backdrop), style = glass)
+                    else Modifier.background(fallback),
                 )
+                .border(width = 0.5.dp, color = hairline, shape = BarShape)
+                .padding(BAR_INSET),
+        ) {
+            val cellWidth = maxWidth / tabs.size
+            // The sliding capsule: drawn once, behind the row, positioned by the animated
+            // index so it glides (and slightly overshoots on the expressive spring) from tab
+            // to tab instead of fading out on one and in on another.
+            // matchParentSize: the capsule takes the row's height, never the bar's max
+            // constraint (fillMaxHeight on its own would stretch the whole bar).
+            Box(Modifier.matchParentSize()) {
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset((cellWidth.toPx() * selectedIndex).roundToInt(), 0) }
+                        .width(cellWidth)
+                        .fillMaxHeight()
+                        .clip(BarShape)
+                        .background(capsule),
+                )
+            }
+            Row(modifier = Modifier.fillMaxWidth().selectableGroup()) {
+                tabs.forEach { tab ->
+                    NavTabButton(
+                        tab = tab,
+                        selected = tab == selected,
+                        onClick = { onSelect(tab) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
     }
@@ -196,13 +206,24 @@ private fun NavTabButton(
         Spacer(Modifier.height(2.dp))
         // The visible label doubles as the tab's accessible name — TalkBack merges it with
         // the `selectable` role into "<label>, tab, selected".
+        // Shrinks toward LABEL_MIN_FONT_SIZE before it would ellipsize; never grows past the
+        // style's own size, so a label that already fits renders exactly as before. The
+        // horizontal padding keeps neighbouring labels from touching. Ellipsis stays only as
+        // the last resort below the minimum.
+        val labelStyle = MaterialTheme.typography.labelSmall
         Text(
             text = stringResource(tab.labelRes),
-            style = MaterialTheme.typography.labelSmall,
+            style = labelStyle,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             color = tint,
             maxLines = 1,
+            softWrap = false,
             overflow = TextOverflow.Ellipsis,
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = LABEL_MIN_FONT_SIZE,
+                maxFontSize = labelStyle.fontSize,
+            ),
+            modifier = Modifier.padding(horizontal = LABEL_SIDE_PADDING),
         )
     }
 }
@@ -215,6 +236,12 @@ private val BAR_INSET = 5.dp
 
 /** Capsule tint over the glass — enough to read as a lens, light enough to keep the blur. */
 private const val CAPSULE_ALPHA = 0.14f
+
+/** Smallest a tab label steps down to before it would fall back to an ellipsis. */
+private val LABEL_MIN_FONT_SIZE = 9.sp
+
+/** Breathing room either side of a tab label so neighbouring labels never touch. */
+private val LABEL_SIDE_PADDING = 2.dp
 
 /** How far a tab shrinks under the finger. */
 private const val PRESSED_SCALE = 0.92f
