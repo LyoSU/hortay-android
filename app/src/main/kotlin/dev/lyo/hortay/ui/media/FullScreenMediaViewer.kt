@@ -163,6 +163,10 @@ fun FullScreenMediaViewer(
         snapshotFlow { sourceRect != null || transformFailed }.first { it }
         if (closing) return@LaunchedEffect
         if (sourceRect != null) {
+            // The dialog window presents its first frame a beat after it is laid out; hiding
+            // the tile before that left an empty hole in the post for a frame.
+            repeat(TILE_HANDOFF_FRAMES) { withFrameNanos { } }
+            if (closing) return@LaunchedEffect
             source?.setTileHidden(true)
             transformProgress.animateTo(1f, transformSpec)
         } else {
@@ -734,7 +738,7 @@ private class ViewerClipShape(private val rect: Rect, private val radius: Float)
  * Modifier.blur is a no-op, so the canvas takes the minithumb's average colour instead.
  * Items without a minithumb (guest-mode URLs, some small uploads) keep plain black.
  *
- * The dim layer keeps the brightest possible backdrop at ~35 % of the source, under the
+ * The dim layer keeps the brightest possible backdrop at ~18 % of the source, under the
  * top chrome scrim and the controls' own backplates. The whole canvas — black base
  * included — fades through one [backdropAlpha] layer, the drag-to-dismiss / container
  * transform alpha, so it never double-composites while fading.
@@ -1191,9 +1195,12 @@ private const val TOP_SCRIM_PLATEAU = 0.75f
 private const val CHROME_BACKDROP_ALPHA = 0.55f
 
 // Backdrop: blur applied to the minithumb stretched fullscreen, and the black veil over it.
-// 65 % black caps the backdrop at ~35 % of the source brightness, so even a white photo's
-// bars stay darker than mid-grey under the top scrim and the controls' backplates.
+// 82 % black caps the backdrop at ~18 % of the source brightness: at 65 % a white photo's
+// bars came out a muddy mid-grey on device.
 private val BACKDROP_BLUR_RADIUS = 48.dp
+
+// Frames the viewer's copy of the photo sits on the tile before the tile is hidden.
+private const val TILE_HANDOFF_FRAMES = 2
 private const val BACKDROP_DIM_ALPHA = 0.82f
 
 // Pager offset under which the start page counts as settled for the shrink-back close.
