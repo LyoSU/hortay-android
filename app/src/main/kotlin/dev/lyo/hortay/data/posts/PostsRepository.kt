@@ -513,8 +513,13 @@ class PostsRepository(
 
     private fun reuseGhost(t: TombstoneRecord): TimelinePost {
         val key = t.chatId to t.primaryMessageId
-        ghostCache[key]?.let { (rec, ghost) -> if (rec === t) return ghost }
-        return buildTombstoneGhost(t).also { ghostCache[key] = t to it }
+        // The channel photo is not the deleted post's media: resolve it from the live chat so
+        // the avatar loads like any other instead of staying on the archived minithumbnail.
+        // Part of the reuse check, because the chat may only become known after the ghost
+        // was first built.
+        val avatarFileId = registry.cachedChat(t.chatId)?.photo?.small?.id
+        ghostCache[key]?.let { (rec, ghost) -> if (rec === t && ghost.avatarFileId == avatarFileId) return ghost }
+        return buildTombstoneGhost(t, avatarFileId).also { ghostCache[key] = t to it }
     }
 
     /**
@@ -526,14 +531,14 @@ class PostsRepository(
      * Always go through [reuseGhost] from the feed combine — calling this directly on every
      * emission reintroduces the recomposition churn its memo exists to prevent.
      */
-    private fun buildTombstoneGhost(t: TombstoneRecord): TimelinePost = TimelinePost(
+    private fun buildTombstoneGhost(t: TombstoneRecord, avatarFileId: Int?): TimelinePost = TimelinePost(
         id = t.primaryMessageId,
         chatId = t.chatId,
         mediaAlbumId = 0L,
         senderName = t.channelTitle,
         senderHandle = t.channelHandle,
         avatarThumb = t.channelPhotoMinithumb,
-        avatarFileId = null,
+        avatarFileId = avatarFileId,
         content = PostContent.Text(FormattedText(t.text, emptyList())),
         views = 0,
         date = t.originalSeenAtMs,
