@@ -2,6 +2,7 @@ package dev.lyo.hortay.ui.main
 
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -121,9 +122,37 @@ internal fun openUriOutsideHortay(context: Context, delegate: UriHandler, url: S
         @Suppress("DEPRECATION")
         pm.queryIntentActivities(probe, 0)
     }
-    val foreign = handlers.firstOrNull { it.activityInfo.packageName != context.packageName }
+    // Every Hortay variant is excluded, not just this package: with the stable and the
+    // beta build installed side by side, each would otherwise hand an unsupported tg://
+    // link to the other, which declines it and hands it back — a launch loop.
+    // Among the rest, the most specific filter wins: a Telegram client declares host
+    // t.me (MATCH_CATEGORY_HOST) while browsers only match the bare https scheme, so a
+    // real client is preferred over a browser preview. The sort is stable, keeping the
+    // platform's own preference order within one category.
+    val foreign = handlers
+        .filterNot { isHortayActivity(it.activityInfo.packageName, it.activityInfo.name, context.packageName) }
+        .sortedByDescending { it.match and IntentFilter.MATCH_CATEGORY_MASK }
+        .firstOrNull()
         ?: return false
     probe.setClassName(foreign.activityInfo.packageName, foreign.activityInfo.name)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     return runCatching { context.startActivity(probe) }.isSuccess
 }
+
+/**
+ * Whether a link-handler activity belongs to ANY Hortay build variant. Two independent
+ * signals, so neither the suffix scheme nor R8 has to be assumed:
+ *  - package: equal to [ownPackage], or one is a dot-prefix of the other — covers the
+ *    stable `dev.lyo.hortay` ↔ `dev.lyo.hortay.beta` pair from either side without
+ *    hardcoding which suffix exists;
+ *  - activity class: every variant shares the one link-handling [dev.lyo.hortay.MainActivity]
+ *    (manifest-referenced, so R8 keeps its name) — covers sibling variants whose packages
+ *    are not prefixes of each other (e.g. `.beta` next to a `.debug`).
+ */
+internal fun isHortayActivity(packageName: String, activityName: String, ownPackage: String): Boolean =
+    packageName == ownPackage ||
+        packageName.startsWith("$ownPackage.") ||
+        ownPackage.startsWith("$packageName.") ||
+        activityName == HORTAY_LINK_ACTIVITY
+
+private val HORTAY_LINK_ACTIVITY: String = dev.lyo.hortay.MainActivity::class.java.name

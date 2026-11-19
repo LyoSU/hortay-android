@@ -16,6 +16,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -165,14 +166,17 @@ fun HortayTheme(
     }
     val scheme = if (darkTheme && pureBlack) baseScheme.withPureBlack() else baseScheme
 
-    // Keyed on the system flag too (not only [darkTheme]): MainActivity.onConfigurationChanged
-    // re-runs enableEdgeToEdge on a system night-mode flip, which resets the bar icons to the
-    // SYSTEM theme. With a pinned mode [darkTheme] doesn't change, so without this key the
-    // effect would not re-run and the icons would keep the system's contrast, not the app's.
-    val systemDark = isSystemInDarkTheme()
+    // Keyed on the whole Configuration too (not only [darkTheme]): MainActivity.onConfigurationChanged
+    // re-runs enableEdgeToEdge on EVERY in-process configuration change — night-mode flip,
+    // rotation, resize — and each run resets the bar icons to the SYSTEM theme. With a pinned
+    // mode [darkTheme] doesn't change, so keying on it (or on the system night flag alone)
+    // left rotated screens with the system's icon contrast over the app's bars. Compose hands
+    // out a fresh, field-wise different Configuration on each handled change, and the effect
+    // runs after that recomposition — i.e. after enableEdgeToEdge — so the app's choice wins.
+    val configuration = LocalConfiguration.current
     val view = LocalView.current
     if (!view.isInEditMode) {
-        DisposableEffect(darkTheme, systemDark) {
+        DisposableEffect(darkTheme, configuration) {
             val window = (view.context as Activity).window
             val controller = WindowCompat.getInsetsController(window, view)
             controller.isAppearanceLightStatusBars = !darkTheme

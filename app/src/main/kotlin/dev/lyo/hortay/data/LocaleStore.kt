@@ -98,7 +98,13 @@ object LocaleStore {
         val tag = read(base) ?: return base
         val locale = Locale.forLanguageTag(tag)
         Locale.setDefault(locale)
-        val config = Configuration(base.resources.configuration).apply {
+        // An EMPTY Configuration, not a copy of the current one: createConfigurationContext
+        // treats it as an override that is re-applied on every later configuration update,
+        // and only the fields set here are defined. A full copy pinned uiMode, orientation,
+        // screen size and density into the override — with MainActivity handling those
+        // changes in-process (manifest configChanges), an in-app language then froze the
+        // app on the dark-mode / rotation state it was launched in.
+        val config = Configuration().apply {
             setLocale(locale)
             setLayoutDirection(locale)
         }

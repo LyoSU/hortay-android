@@ -61,8 +61,12 @@ class MainActivity : ComponentActivity() {
         // race in practice because the Channel buffers the resulting event regardless
         // of subscriber arrival ordering. Warm launches arrive via [onNewIntent] below.
         // Only on a fresh launch: recreation (language switch, process-death restore,
-        // Recents) re-delivers the original intent and would replay the link.
-        if (savedInstanceState == null) {
+        // Recents) re-delivers the original intent and would replay the link. A task
+        // relaunched from Recents after its activity was finished arrives with a null
+        // savedInstanceState too, but carries FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY.
+        val launchedFromHistory =
+            ((intent?.flags ?: 0) and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (savedInstanceState == null && !launchedFromHistory) {
             intent?.data?.let { uri ->
                 graph.appScope.launch {
                     graph.linkResolver.resolve(uri)?.let { graph.deepLinkRouter.submit(it) }
@@ -149,9 +153,11 @@ class MainActivity : ComponentActivity() {
     }
 
     // uiMode is handled in-process (manifest configChanges), so the Activity is no longer
-    // recreated on a dark-mode flip. Compose recomposes the theme and Theme.kt re-seeds the
-    // status-bar icons; re-running enableEdgeToEdge refreshes the SystemBarStyle.auto
-    // navigation-bar icon contrast, which is otherwise only evaluated once in onCreate.
+    // recreated on a dark-mode flip. Re-running enableEdgeToEdge refreshes the
+    // SystemBarStyle.auto navigation-bar scrim (API < 29), which is otherwise only evaluated
+    // once in onCreate. Every run also resets the bar ICON appearance to the system theme;
+    // Theme.kt keys its bar-appearance effect on LocalConfiguration, so it re-applies the
+    // app's (possibly pinned) choice after each handled change, rotation included.
     // locale / layoutDirection are deliberately NOT handled: the language picker relies on
     // recreation so attachBaseContext re-wraps the resources.
     override fun onConfigurationChanged(newConfig: Configuration) {
