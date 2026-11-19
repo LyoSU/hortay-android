@@ -24,16 +24,7 @@ class SimScenarioTest {
     }
 
     private fun account(name: String, base: Long, channels: Int, postsEach: Int): SimAccount =
-        SimAccount(name).also { acc ->
-            repeat(channels) { i ->
-                val ch = acc.channel(base - i, archived = i % 4 == 3)
-                repeat(postsEach) {
-                    val id = ch.nextServerId++ shl 20
-                    ch.messages[id] = SimMessage(id, ch.id, 1_700_000_000 + it, 0L, "seed $id")
-                }
-                ch.order = ch.messages.lastKey()
-            }
-        }
+        seededAccount(name, base, channels, postsEach)
 
     @Test
     fun `cold start shows every channel without any history request`() = runTest {

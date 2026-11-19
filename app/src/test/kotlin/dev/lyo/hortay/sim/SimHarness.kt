@@ -5,9 +5,11 @@ import dev.lyo.hortay.data.ChatRegistry
 import dev.lyo.hortay.data.ConnectionStatus
 import dev.lyo.hortay.data.FakeStrings
 import dev.lyo.hortay.data.MessageMapper
+import dev.lyo.hortay.data.TdSender
 import dev.lyo.hortay.data.TimelinePost
 import dev.lyo.hortay.data.UserMessageBus
 import dev.lyo.hortay.data.posts.PostsRepository
+import dev.lyo.hortay.data.record.TdTap
 import dev.lyo.hortay.testutil.PostsRepositoryTestHarness
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,19 +19,12 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 
-/**
- * A [PostsRepository] wired to a [SimTelegram] instead of a canned fake: the same
- * collaborators `AppGraph` builds, on the test scheduler's virtual clock.
- */
-@OptIn(ExperimentalCoroutinesApi::class)
-class SimHarness(private val outer: TestScope, quirks: SimQuirks = SimQuirks()) {
-    private val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(outer.testScheduler))
-
-    val sim = SimTelegram(nowMs = { outer.testScheduler.currentTime }, quirks = quirks)
-    val registry = ChatRegistry(sim).also { it.bind(scope) }
+/** A [PostsRepository] with the collaborators `AppGraph` builds around it, on any [TdSender]. */
+class WiredRepository(td: TdSender, scope: CoroutineScope) {
+    val registry = ChatRegistry(td).also { it.bind(scope) }
     val repo = PostsRepository(
-        td = sim,
-        mapper = MessageMapper(sim, FakeStrings),
+        td = td,
+        mapper = MessageMapper(td, FakeStrings),
         registry = registry,
         scope = scope,
         userMessages = UserMessageBus(),
@@ -39,6 +34,21 @@ class SimHarness(private val outer: TestScope, quirks: SimQuirks = SimQuirks()) 
         res = FakeStrings,
         coldStartBackfill = PostsRepositoryTestHarness.InMemoryColdStartBackfillStore(),
     )
+}
+
+/**
+ * A [PostsRepository] wired to a [SimTelegram] instead of a canned fake, on the test
+ * scheduler's virtual clock. With a [tap], everything the repository and the model say to
+ * each other is also recorded.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class SimHarness(private val outer: TestScope, quirks: SimQuirks = SimQuirks(), tap: TdTap? = null) {
+    private val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(outer.testScheduler))
+
+    val sim = SimTelegram(nowMs = { outer.testScheduler.currentTime }, quirks = quirks)
+    private val wired = WiredRepository(if (tap == null) sim else RecordingSender(sim, tap, scope), scope)
+    val registry = wired.registry
+    val repo = wired.repo
 
     val posts: List<TimelinePost> get() = repo.posts.value
 
@@ -52,6 +62,19 @@ class SimHarness(private val outer: TestScope, quirks: SimQuirks = SimQuirks()) 
         ChatPresence.clear()
     }
 }
+
+/** An account following [channels] channels (ids `base`, `base - 1`, …), every fourth archived. */
+fun seededAccount(name: String, base: Long, channels: Int, postsEach: Int): SimAccount =
+    SimAccount(name).also { acc ->
+        repeat(channels) { i ->
+            val ch = acc.channel(base - i, archived = i % 4 == 3)
+            repeat(postsEach) {
+                val id = ch.nextServerId++ shl 20
+                ch.messages[id] = SimMessage(id, ch.id, 1_700_000_000 + it, 0L, "seed $id")
+            }
+            ch.order = ch.messages.lastKey()
+        }
+    }
 
 /**
  * Safety properties that must hold whenever the system is quiescent, whatever the order

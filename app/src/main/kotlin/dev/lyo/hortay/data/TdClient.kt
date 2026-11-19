@@ -5,6 +5,8 @@ import android.os.SystemClock
 import android.util.Log
 import dev.lyo.hortay.BuildConfig
 import dev.lyo.hortay.R
+import dev.lyo.hortay.data.record.TdSessionRecorder
+import dev.lyo.hortay.data.record.TdTap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +26,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 
 /**
@@ -49,6 +52,10 @@ class TdClient private constructor(
         SupervisorJob() + Dispatchers.Default +
             CoroutineExceptionHandler { _, e -> Log.e(TAG, "uncaught in TdClient scope", e) },
     )
+
+    // Debug-only traffic tap (see [TdSessionRecorder]); always null in beta and release.
+    private val tap: TdTap? = if (BuildConfig.DEBUG) TdSessionRecorder.startIfRequested(context, scope) else null
+    private val tapIds = AtomicLong()
 
     private val _authStage = MutableStateFlow<AuthStage>(AuthStage.Loading)
     val authStage: StateFlow<AuthStage> = _authStage.asStateFlow()
@@ -239,6 +246,7 @@ class TdClient private constructor(
     private fun spawnClient() {
         client = Client.create({ obj ->
             if (obj is TdApi.Update) {
+                tap?.onUpdate(obj)
                 handleUpdate(obj)
                 // trySend on an UNLIMITED Channel never fails — order is preserved by
                 // the channel, the consumer coroutine handles SharedFlow backpressure.
@@ -592,7 +600,10 @@ class TdClient private constructor(
 
     private suspend fun <T : TdApi.Object> sendRaw(query: TdApi.Function<T>): T =
         suspendCancellableCoroutine { cont ->
+            val tapId = tapIds.incrementAndGet()
+            tap?.onRequest(tapId, query)
             client.send(query) { result ->
+                tap?.onResponse(tapId, result)
                 if (result is TdApi.Error) {
                     // Arm the gate HERE, on the TDLib callback thread, before resuming:
                     // a 420/429 that lands after the waiting coroutine was cancelled (or
