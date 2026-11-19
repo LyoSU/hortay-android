@@ -1,7 +1,31 @@
 package dev.lyo.hortay.ui.media
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.util.lerp
+import dev.lyo.hortay.data.TdMedia
+import kotlinx.coroutines.flow.first
+import kotlin.math.max
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -84,10 +108,102 @@ fun FullScreenMediaViewer(
     items: ImmutableList<AlbumItem>,
     initialIndex: Int,
     onDismiss: () -> Unit,
+    source: ViewerTransitionSource? = null,
 ) {
     if (items.isEmpty()) return
+    val startPage = initialIndex.coerceIn(0, items.lastIndex)
+    val pagerState = rememberPagerState(initialPage = startPage) { items.size }
+
+    val density = LocalDensity.current
+    val dismissThresholdPx = remember(density) { with(density) { 140.dp.toPx() } }
+    val maxFadePx = remember(density) { with(density) { 320.dp.toPx() } }
+    val offsetY = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    // Reduced motion (system "Remove animations"): the drag-dismiss snap-back and the
+    // double-tap zoom settle skip their spring physics and jump to the end state, so
+    // motion-sensitive users don't get bouncy overshoot. The gestures themselves are
+    // unchanged — only the post-release animation is neutralised. The open/close container
+    // transform below is disabled outright, so the viewer appears and vanishes as before.
+    val reducedMotion = rememberReducedMotion()
+    val settleSpec: AnimationSpec<Float> =
+        if (reducedMotion) snap() else MaterialTheme.motionScheme.defaultSpatialSpec()
+    val transformSpec: AnimationSpec<Float> = MaterialTheme.motionScheme.defaultSpatialSpec()
+
+    // ---- Open/close container transform -------------------------------------------------
+    // The viewer is a separate Dialog window, so the tapped tile can't take part in a
+    // SharedTransitionLayout. Instead [source] maps the tile into this window through screen
+    // coordinates and [transformProgress] (0 = sitting on the tile, 1 = fullscreen) drives
+    // a scale + translation + rounded clip on the pager — see [containerTransform]. Only a
+    // photo with known geometry qualifies; videos, GIFs, sourceless opens (comments
+    // anchor, rich media without a tile, guest posts without dimensions) and reduced
+    // motion keep the original appear / vanish behaviour.
+    val sourceAspect = (items[startPage] as? AlbumItem.Photo)?.media?.aspectRatio ?: 0f
+    val transformEnabled = remember { source != null && !reducedMotion && sourceAspect > 0f }
+    // Lower bound 0: the closing spring ends the moment the photo lands on the tile
+    // instead of undershooting into a smaller-than-tile wobble before the dialog leaves.
+    val transformProgress = remember {
+        Animatable(if (transformEnabled) 0f else 1f).also { it.updateBounds(lowerBound = 0f) }
+    }
+    var rootCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var sourceRect by remember { mutableStateOf<Rect?>(null) }
+    var transformFailed by remember { mutableStateOf(false) }
+    var closing by remember { mutableStateOf(false) }
+    var closeStartAlpha by remember { mutableFloatStateOf(1f) }
+    var closeStartDragY by remember { mutableFloatStateOf(0f) }
+    var startPageZoomed by remember { mutableStateOf(false) }
+
+    // The tile gives its photo to the viewer for as long as the transform is in play, and
+    // gets it back the moment the viewer leaves by any path (see setTileHidden).
+    DisposableEffect(source) {
+        onDispose { source?.setTileHidden(false) }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!transformEnabled) return@LaunchedEffect
+        snapshotFlow { sourceRect != null || transformFailed }.first { it }
+        if (closing) return@LaunchedEffect
+        if (sourceRect != null) {
+            source?.setTileHidden(true)
+            transformProgress.animateTo(1f, transformSpec)
+        } else {
+            transformProgress.snapTo(1f)
+        }
+    }
+
+    // Every dismissal path (close button, system back / predictive-back commit through the
+    // Dialog's own back callback, drag past the threshold) funnels through here. The photo
+    // shrinks back onto its tile only when the user is still on the tapped page, unzoomed,
+    // and the tile is still attached; otherwise the viewer leaves exactly as it always has.
+    fun requestClose() {
+        if (closing) return
+        val src = source
+        val root = rootCoords
+        val onStartPage = pagerState.currentPage == startPage &&
+            abs(pagerState.currentPageOffsetFraction) < PAGE_SETTLED_FRACTION
+        val target = if (
+            transformEnabled && !transformFailed && src != null && root != null &&
+            onStartPage && !startPageZoomed
+        ) {
+            src.boundsIn(root)
+        } else {
+            null
+        }
+        if (target == null) {
+            onDismiss()
+            return
+        }
+        sourceRect = target
+        closeStartAlpha = (1f - (abs(offsetY.value) / maxFadePx)).coerceIn(0f, 1f)
+        closeStartDragY = offsetY.value
+        closing = true
+        scope.launch {
+            transformProgress.animateTo(0f, transformSpec)
+            onDismiss()
+        }
+    }
+
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { requestClose() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         // Strip the Dialog's default opaque windowBackground + system FLAG_DIM_BEHIND so
@@ -100,47 +216,53 @@ fun FullScreenMediaViewer(
             dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
             dialogWindow?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         }
-        val pagerState = rememberPagerState(initialPage = initialIndex.coerceIn(0, items.lastIndex)) { items.size }
-
-        val density = LocalDensity.current
-        val dismissThresholdPx = remember(density) { with(density) { 140.dp.toPx() } }
-        val maxFadePx = remember(density) { with(density) { 320.dp.toPx() } }
-        val offsetY = remember { Animatable(0f) }
-        val scope = rememberCoroutineScope()
-        // Reduced motion (system "Remove animations"): the drag-dismiss snap-back and the
-        // double-tap zoom settle skip their spring physics and jump to the end state, so
-        // motion-sensitive users don't get bouncy overshoot. The gestures themselves are
-        // unchanged — only the post-release animation is neutralised.
-        val reducedMotion = rememberReducedMotion()
-        val settleSpec: AnimationSpec<Float> =
-            if (reducedMotion) snap() else MaterialTheme.motionScheme.defaultSpatialSpec()
         val draggable = rememberDraggableState { delta ->
             scope.launch { offsetY.snapTo(offsetY.value + delta) }
         }
 
-        // Black scrim alpha tracks |offsetY| linearly to 0 — at full drag the viewer
+        // Backdrop alpha tracks |offsetY| linearly to 0 — at full drag the viewer
         // is transparent and the feed underneath is visible, matching the Telegram /
         // Instagram "pulling the photo away from the page" idiom. No alpha floor:
         // any non-zero floor would leave a translucent dark sheet glued over the
         // photo while it translates, breaking the "fading away" reading of the gesture.
-        val backgroundAlpha = (1f - (abs(offsetY.value) / maxFadePx)).coerceIn(0f, 1f)
+        // The container transform multiplies in its progress, so the backdrop rises with
+        // the photo growing out of its tile and sinks with it on the way back; a close
+        // freezes the drag share at release so the backdrop never brightens as the
+        // photo travels back up from its dragged position.
+        val visibleProgress = transformProgress.value.coerceIn(0f, 1f)
+        val dragAlpha = (1f - (abs(offsetY.value) / maxFadePx)).coerceIn(0f, 1f)
+        val backgroundAlpha = (if (closing) closeStartAlpha else dragAlpha) * visibleProgress
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = backgroundAlpha))
+                .onPlaced { coords ->
+                    if (rootCoords == null) {
+                        rootCoords = coords
+                        if (transformEnabled) {
+                            val rect = source?.boundsIn(coords)
+                            if (rect == null) transformFailed = true else sourceRect = rect
+                        }
+                    }
+                }
                 .draggable(
                     state = draggable,
                     orientation = Orientation.Vertical,
+                    enabled = !closing,
                     onDragStopped = {
                         if (abs(offsetY.value) > dismissThresholdPx) {
-                            onDismiss()
+                            requestClose()
                         } else {
                             offsetY.animateTo(0f, settleSpec)
                         }
                     },
                 ),
         ) {
+            ViewerBackdrop(
+                media = items.getOrNull(pagerState.currentPage)?.media,
+                backdropAlpha = backgroundAlpha,
+                reducedMotion = reducedMotion,
+            )
             // Pre-warm the active page's poster + the immediate neighbours' posters at
             // Prefetch priority so a sideways swipe never hits an unstyled blank screen.
             // We only prefetch posters here, not playback files — neighbour videos start
@@ -170,7 +292,30 @@ fun FullScreenMediaViewer(
                 state = pagerState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { translationY = offsetY.value },
+                    .graphicsLayer {
+                        val transforming = transformEnabled && !transformFailed &&
+                            (closing || transformProgress.value != 1f)
+                        if (!transforming) {
+                            translationY = offsetY.value
+                            return@graphicsLayer
+                        }
+                        val from = sourceRect
+                        if (from == null) {
+                            // Bounds not resolved yet (first layout pass): paint nothing
+                            // rather than flash the photo fullscreen for a frame.
+                            alpha = 0f
+                            return@graphicsLayer
+                        }
+                        val p = transformProgress.value
+                        val dragY = if (closing) closeStartDragY * p.coerceIn(0f, 1f) else offsetY.value
+                        containerTransform(
+                            from = from,
+                            cornerRadiusPx = source?.cornerRadiusPx ?: 0f,
+                            contentAspect = sourceAspect,
+                            progress = p,
+                            dragY = dragY,
+                        )
+                    },
             ) { page ->
                 val item = items[page]
                 MediaPage(
@@ -178,6 +323,7 @@ fun FullScreenMediaViewer(
                     isActive = page == pagerState.currentPage,
                     pickedQuality = qualityChoices[page],
                     onQualityPick = { quality -> qualityChoices[page] = quality },
+                    onZoomedChange = { zoomed -> if (page == startPage) startPageZoomed = zoomed },
                 )
             }
 
@@ -192,17 +338,26 @@ fun FullScreenMediaViewer(
             // [backgroundAlpha] that drives the page scrim, so as the user drags the
             // photo away the band fades out in lockstep with the canvas instead of
             // staying glued to the top edge as a dark sheet riding the gesture.
+            //
+            // Height = status-bar inset + TOP_SCRIM_HEIGHT, so the band reaches past the
+            // bottom of the full right-hand tool column (quality chip + save/share/copy).
+            // A fixed 120 dp band measured from the screen top was swallowed by the
+            // status bar on tall-inset devices and faded to zero before the second tool
+            // button, leaving share/copy on bare image. The plateau stop keeps the band
+            // dense through the column before it falls off.
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .height(120.dp)
                     .background(
                         Brush.verticalGradient(
                             0f to Color.Black.copy(alpha = TOP_SCRIM_ALPHA * backgroundAlpha),
+                            TOP_SCRIM_PLATEAU to Color.Black.copy(alpha = TOP_SCRIM_ALPHA * 0.6f * backgroundAlpha),
                             1f to Color.Transparent,
                         ),
-                    ),
+                    )
+                    .statusBarsPadding()
+                    .height(TOP_SCRIM_HEIGHT),
             )
 
             // Expressive close affordance: Cookie9-shaped backdrop instead of a perfect
@@ -215,12 +370,15 @@ fun FullScreenMediaViewer(
             // would cut the close glyph at the polygon ridges. The default circular
             // ripple stays clean inside the visible disc area.
             ChromeActionButton(
-                onClick = onDismiss,
+                onClick = { requestClose() },
                 glyph = "close",
                 contentDescription = stringResource(R.string.action_close),
                 shape = closeShape,
                 // 6 dp + the button's 2 dp touch-target slop keeps the visible disc 8 dp in.
+                // Chrome fades with the container transform (layer-only read, no
+                // recomposition) so controls don't hover over a photo still on its tile.
                 modifier = Modifier
+                    .graphicsLayer { alpha = transformProgress.value.coerceIn(0f, 1f) }
                     .statusBarsPadding()
                     .padding(6.dp),
             )
@@ -232,7 +390,7 @@ fun FullScreenMediaViewer(
             // band (scrim, BottomBar slider+mute, navigationBarsPadding) and
             // any chrome anchored to BottomEnd would land on the slider or
             // mute toggle. Top-right is uncontested in both photo and video
-            // pages. We keep the chrome chrome-coloured (Black 45 %, 44 dp
+            // pages. We keep the chrome chrome-coloured (CHROME_BACKDROP_ALPHA black, 44 dp
             // CircleShape) so the column reads as one "tools for this item"
             // affordance with the same vocabulary as the close button.
             val activeItem = items.getOrNull(pagerState.currentPage)
@@ -312,6 +470,7 @@ fun FullScreenMediaViewer(
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
+                        .graphicsLayer { alpha = transformProgress.value.coerceIn(0f, 1f) }
                         .statusBarsPadding()
                         // Padding and spacing are 2 / 4 dp tighter than the visible rhythm
                         // (8 dp inset, 10 dp gaps): each 44 dp button reserves a 48 dp touch
@@ -445,9 +604,10 @@ fun FullScreenMediaViewer(
                     style = MaterialTheme.typography.labelLarge.tabularFigures(),
                     modifier = Modifier
                         .align(Alignment.TopCenter)
+                        .graphicsLayer { alpha = transformProgress.value.coerceIn(0f, 1f) }
                         .statusBarsPadding()
                         .padding(top = 12.dp)
-                        .background(Color.Black.copy(alpha = 0.45f), counterShape)
+                        .background(Color.Black.copy(alpha = CHROME_BACKDROP_ALPHA), counterShape)
                         .padding(horizontal = 16.dp, vertical = 6.dp),
                 )
             }
@@ -492,11 +652,143 @@ private fun ChromeActionButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .background(Color.Black.copy(alpha = 0.45f), shape),
+            .background(Color.Black.copy(alpha = CHROME_BACKDROP_ALPHA), shape),
     ) {
         Symbol(name = glyph, contentDescription = contentDescription, tint = Color.White)
     }
 }
+
+/**
+ * Container transform for the pager layer at [progress] (0 = on the tapped tile, 1 =
+ * fullscreen; values past 1 are the spatial spring's overshoot). Content inside the layer
+ * is the page as laid out fullscreen — the photo `ContentScale.Fit` into the container —
+ * so the transform scales that fitted frame down to COVER the tile (the feed crops tiles)
+ * and clips it to the tile's rounded rect, then interpolates both toward identity. The
+ * clip is expressed in the layer's local (pre-transform) space, so it rides the scale and
+ * the drag translation with the photo.
+ */
+private fun GraphicsLayerScope.containerTransform(
+    from: Rect,
+    cornerRadiusPx: Float,
+    contentAspect: Float,
+    progress: Float,
+    dragY: Float,
+) {
+    val w = size.width
+    val h = size.height
+    if (w <= 0f || h <= 0f) {
+        alpha = 0f
+        return
+    }
+    val fitW: Float
+    val fitH: Float
+    if (w / h > contentAspect) {
+        fitH = h
+        fitW = h * contentAspect
+    } else {
+        fitW = w
+        fitH = w / contentAspect
+    }
+    val toLeft = (w - fitW) / 2f
+    val toTop = (h - fitH) / 2f
+    val visible = Rect(
+        left = lerp(from.left, toLeft, progress),
+        top = lerp(from.top, toTop, progress),
+        right = lerp(from.right, toLeft + fitW, progress),
+        bottom = lerp(from.bottom, toTop + fitH, progress),
+    )
+    val coverScale = max(from.width / fitW, from.height / fitH)
+    val s = lerp(coverScale, 1f, progress).coerceAtLeast(MIN_TRANSFORM_SCALE)
+    // Fitted photo is centred in the container; pin its centre to the visible rect's centre.
+    val tx = visible.center.x - (w / 2f) * s
+    val ty = visible.center.y - (h / 2f) * s
+    transformOrigin = TransformOrigin(0f, 0f)
+    scaleX = s
+    scaleY = s
+    translationX = tx
+    translationY = ty + dragY
+    val radius = lerp(cornerRadiusPx, 0f, progress).coerceAtLeast(0f)
+    shape = ViewerClipShape(
+        rect = Rect(
+            left = (visible.left - tx) / s,
+            top = (visible.top - ty) / s,
+            right = (visible.right - tx) / s,
+            bottom = (visible.bottom - ty) / s,
+        ),
+        radius = radius / s,
+    )
+    clip = true
+}
+
+/** Rounded clip at an arbitrary rect inside the layer — the container transform's window. */
+private class ViewerClipShape(private val rect: Rect, private val radius: Float) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
+        Outline.Rounded(RoundRect(rect, CornerRadius(radius)))
+}
+
+/**
+ * Viewer canvas behind the letterboxed media: instead of flat black, the active item's
+ * inline minithumbnail (a ~40 px JPEG TDLib ships with the message, already in memory —
+ * no network, no full-file decode) stretched edge to edge, heavily blurred and dimmed so
+ * the bars pick up the photo's colours. API 31+ blurs through RenderEffect; below that
+ * Modifier.blur is a no-op, so the canvas takes the minithumb's average colour instead.
+ * Items without a minithumb (guest-mode URLs, some small uploads) keep plain black.
+ *
+ * The dim layer keeps the brightest possible backdrop at ~35 % of the source, under the
+ * top chrome scrim and the controls' own backplates. The whole canvas — black base
+ * included — fades through one [backdropAlpha] layer, the drag-to-dismiss / container
+ * transform alpha, so it never double-composites while fading.
+ */
+@Composable
+private fun ViewerBackdrop(media: TdMedia?, backdropAlpha: Float, reducedMotion: Boolean) {
+    val bytes = media?.minithumbBytes
+    val backdrop by produceState<BackdropSource?>(initialValue = null, bytes) {
+        value = if (bytes == null) null else withContext(Dispatchers.Default) { decodeBackdrop(bytes) }
+    }
+    val fadeSpec: FiniteAnimationSpec<Float> =
+        if (reducedMotion) snap() else MaterialTheme.motionScheme.defaultEffectsSpec()
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer { alpha = backdropAlpha }
+            .background(Color.Black),
+    ) {
+        Crossfade(
+            targetState = backdrop,
+            animationSpec = fadeSpec,
+            modifier = Modifier.fillMaxSize(),
+            label = "viewer-backdrop",
+        ) { src ->
+            when {
+                src == null -> Unit
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> Image(
+                    bitmap = src.bitmap,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(BACKDROP_BLUR_RADIUS, BlurredEdgeTreatment.Rectangle),
+                )
+                else -> Box(modifier = Modifier.fillMaxSize().background(src.averageColor))
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = BACKDROP_DIM_ALPHA)),
+        )
+    }
+}
+
+private class BackdropSource(val bitmap: ImageBitmap, val averageColor: Color)
+
+private fun decodeBackdrop(bytes: ByteArray): BackdropSource? = runCatching {
+    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@runCatching null
+    val pixel = Bitmap.createScaledBitmap(bmp, 1, 1, true)
+    val average = Color(pixel.getPixel(0, 0))
+    if (pixel !== bmp) pixel.recycle()
+    BackdropSource(bmp.asImageBitmap(), average)
+}.getOrNull()
 
 @Composable
 private fun MediaPage(
@@ -504,9 +796,10 @@ private fun MediaPage(
     isActive: Boolean,
     pickedQuality: VideoQuality?,
     onQualityPick: (VideoQuality) -> Unit,
+    onZoomedChange: (Boolean) -> Unit,
 ) {
     when (item) {
-        is AlbumItem.Photo -> ZoomableImage(item)
+        is AlbumItem.Photo -> ZoomableImage(item, onZoomedChange)
         is AlbumItem.Video -> {
             val quality = pickedQuality ?: item.qualities.defaultPick
             // Fullscreen video plays WITH sound once its page is active; silence an inline
@@ -620,7 +913,7 @@ private fun AlbumItem.posterAspect(): Float {
 }
 
 @Composable
-private fun ZoomableImage(item: AlbumItem.Photo) {
+private fun ZoomableImage(item: AlbumItem.Photo, onZoomedChange: (Boolean) -> Unit) {
     // Animatable trio: pinch updates flow through `snapTo` for instant feel, and
     // the double-tap handler uses `animateTo` so the transition reads as a
     // deliberate Telegram-style zoom-in instead of a single-frame jump. Keying
@@ -629,6 +922,12 @@ private fun ZoomableImage(item: AlbumItem.Photo) {
     val scale = remember(item.fullscreen.fileId) { Animatable(1f) }
     val offsetX = remember(item.fullscreen.fileId) { Animatable(0f) }
     val offsetY = remember(item.fullscreen.fileId) { Animatable(0f) }
+    // Zoomed-or-not feeds the viewer's close decision: a zoomed photo can't shrink back
+    // onto its tile (the tile shows the whole frame), so close falls back to the plain exit.
+    val currentOnZoomedChange by rememberUpdatedState(onZoomedChange)
+    LaunchedEffect(scale) {
+        snapshotFlow { scale.value > 1f }.collect { currentOnZoomedChange(it) }
+    }
     val scope = rememberCoroutineScope()
     // Reduced motion: double-tap zoom jumps to its target instead of springing. Pinch
     // already uses snapTo, so only the double-tap animateTo path needs neutralising.
@@ -876,6 +1175,32 @@ private fun AlbumItem.webShareFallbackUrl(): String? = when (this) {
 // photos have no bottom chrome to protect, and VideoPlayerControls paints its own
 // deeper 0→55 % scrim for the seek bar.
 private const val TOP_SCRIM_ALPHA = 0.35f
+
+// Band height BELOW the status-bar inset: 6 dp column inset + quality chip (48 dp
+// touch target) + three 48 dp tool buttons + gaps ≈ 216 dp, plus a fall-off tail so
+// the last button still sits on the dense part of the gradient.
+private val TOP_SCRIM_HEIGHT = 260.dp
+
+// Fraction of the band that holds near-full density before fading to transparent.
+private const val TOP_SCRIM_PLATEAU = 0.75f
+
+// Backdrop disc / pill alpha for every viewer control (close, save, share, copy,
+// counter). Over a pure-white image 55 % black gives a #737373 plate — ~4.7:1 against
+// the white glyph, above WCAG's 3:1 for icons with margin for the scrim fading out
+// during the dismiss drag. The former 45 % (#8C8C8C, ~3.4:1) sat right at the floor.
+private const val CHROME_BACKDROP_ALPHA = 0.55f
+
+// Backdrop: blur applied to the minithumb stretched fullscreen, and the black veil over it.
+// 65 % black caps the backdrop at ~35 % of the source brightness, so even a white photo's
+// bars stay darker than mid-grey under the top scrim and the controls' backplates.
+private val BACKDROP_BLUR_RADIUS = 48.dp
+private const val BACKDROP_DIM_ALPHA = 0.82f
+
+// Pager offset under which the start page counts as settled for the shrink-back close.
+private const val PAGE_SETTLED_FRACTION = 0.01f
+
+// Floor for the container-transform scale (guards a divide-by-zero on a degenerate tile).
+private const val MIN_TRANSFORM_SCALE = 0.01f
 
 private const val MIN_SCALE = 1f
 private const val MAX_SCALE = 5f

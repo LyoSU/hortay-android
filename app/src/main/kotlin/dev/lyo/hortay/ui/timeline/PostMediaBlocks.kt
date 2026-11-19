@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -53,6 +54,8 @@ import dev.lyo.hortay.ui.media.SpoilerKind
 import dev.lyo.hortay.ui.media.SpoilerOverlay
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.TdVideoPlayer
+import dev.lyo.hortay.ui.media.rememberViewerSourceAnchor
+import dev.lyo.hortay.ui.media.viewerSource
 import dev.lyo.hortay.ui.theme.mediaFrame
 
 @Composable
@@ -102,7 +105,28 @@ internal fun SingleMedia(item: AlbumItem, onClick: () -> Unit, isActive: Boolean
  * (so an album of 5 clips doesn't spawn five ExoPlayers).
  */
 @Composable
-internal fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Boolean = true) {
+internal fun MediaWithSpoiler(
+    item: AlbumItem,
+    onClick: () -> Unit,
+    isActive: Boolean = true,
+    sourceShape: Shape = MaterialTheme.shapes.medium,
+) {
+    // Photo tiles register as the fullscreen viewer's grow-from origin: the anchor tracks
+    // this tile's layout and is marked right before the click fires, so the viewer resolves
+    // the on-screen bounds lazily at tap time. [sourceShape] is the clip the caller applies
+    // around this tile, so the viewer's corner radius lands on the tile's own corners.
+    val viewerAnchor = rememberViewerSourceAnchor(sourceShape)
+    val isPhoto = item is AlbumItem.Photo
+    val openOnClick: () -> Unit = remember(item, onClick, viewerAnchor) {
+        if (!isPhoto) {
+            onClick
+        } else {
+            {
+                viewerAnchor.mark(item.media)
+                onClick()
+            }
+        }
+    }
     var revealed by remember(item.media.fileId) {
         mutableStateOf(!item.hasSpoiler && !item.isSecret)
     }
@@ -205,7 +229,8 @@ internal fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Bo
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .clickable(enabled = revealed && !passive, role = Role.Button, onClick = onClick),
+            .then(if (isPhoto) Modifier.viewerSource(viewerAnchor) else Modifier)
+            .clickable(enabled = revealed && !passive, role = Role.Button, onClick = openOnClick),
     ) {
         // When the autoplayer mounts on top, suppress the poster's own progress spinner —
         // TdVideoPlayer renders its own MediaLoadingOverlay for the playback file, and a
@@ -395,6 +420,7 @@ internal fun AlbumRow(items: List<AlbumItem>, onItemClick: (Int) -> Unit) {
                             item = item,
                             onClick = { onItemClick(index) },
                             isActive = index == activeIndex,
+                            sourceShape = MaterialTheme.shapes.small,
                         )
                     }
                 }
