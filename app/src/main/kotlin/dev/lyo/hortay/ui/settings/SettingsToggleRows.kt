@@ -59,7 +59,7 @@ internal fun FeedOrderRows(
         )
     }
     Surface(
-        shape = MaterialTheme.shapes.large,
+        shape = SettingsGroupInnerShape,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -89,21 +89,13 @@ internal fun SnapScrollRow(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
-    val shapes = ListItemDefaults.segmentedShapes(
-        index = 0,
-        count = 1,
-        defaultShapes = ListItemDefaults.shapes(),
-    )
+    val shapes = settingsGroupedShapes()
     SegmentedListItem(
         onClick = { onToggle(!enabled) },
         shapes = shapes,
+        colors = settingsRowColors(),
         leadingContent = {
-            Symbol(
-                name = "play_circle",
-                tint = if (enabled) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 22.dp,
-            )
+            SettingsIconTile(symbol = "play_circle", active = enabled)
         },
         supportingContent = {
             Text(
@@ -135,21 +127,13 @@ internal fun ArchiveInAllFeedRow(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
-    val shapes = ListItemDefaults.segmentedShapes(
-        index = 0,
-        count = 1,
-        defaultShapes = ListItemDefaults.shapes(),
-    )
+    val shapes = settingsGroupedShapes()
     SegmentedListItem(
         onClick = { onToggle(!enabled) },
         shapes = shapes,
+        colors = settingsRowColors(),
         leadingContent = {
-            Symbol(
-                name = "dynamic_feed",
-                tint = if (enabled) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 22.dp,
-            )
+            SettingsIconTile(symbol = "dynamic_feed", active = enabled)
         },
         supportingContent = {
             Text(
@@ -177,21 +161,13 @@ internal fun GroupFeedRow(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
-    val shapes = ListItemDefaults.segmentedShapes(
-        index = 0,
-        count = 1,
-        defaultShapes = ListItemDefaults.shapes(),
-    )
+    val shapes = settingsGroupedShapes()
     SegmentedListItem(
         onClick = { onToggle(!enabled) },
         shapes = shapes,
+        colors = settingsRowColors(),
         leadingContent = {
-            Symbol(
-                name = "forward",
-                tint = if (enabled) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 22.dp,
-            )
+            SettingsIconTile(symbol = "forward", active = enabled)
         },
         supportingContent = {
             Text(
@@ -230,21 +206,13 @@ internal fun InlineAutoplayRow(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
-    val shapes = ListItemDefaults.segmentedShapes(
-        index = 0,
-        count = 1,
-        defaultShapes = ListItemDefaults.shapes(),
-    )
+    val shapes = settingsGroupedShapes()
     SegmentedListItem(
         onClick = { onToggle(!enabled) },
         shapes = shapes,
+        colors = settingsRowColors(),
         leadingContent = {
-            Symbol(
-                name = "smart_display",
-                tint = if (enabled) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 22.dp,
-            )
+            SettingsIconTile(symbol = "smart_display", active = enabled)
         },
         supportingContent = {
             Text(
@@ -285,21 +253,13 @@ internal fun HideOnlineStatusRow(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
-    val shapes = ListItemDefaults.segmentedShapes(
-        index = 0,
-        count = 1,
-        defaultShapes = ListItemDefaults.shapes(),
-    )
+    val shapes = settingsGroupedShapes()
     SegmentedListItem(
         onClick = { onToggle(!enabled) },
         shapes = shapes,
+        colors = settingsRowColors(),
         leadingContent = {
-            Symbol(
-                name = if (enabled) "visibility_off" else "visibility",
-                tint = if (enabled) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 22.dp,
-            )
+            SettingsIconTile(symbol = if (enabled) "visibility_off" else "visibility", active = enabled)
         },
         supportingContent = {
             Text(
@@ -338,21 +298,13 @@ internal fun DynamicColorRow(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
-    val shapes = ListItemDefaults.segmentedShapes(
-        index = 0,
-        count = 1,
-        defaultShapes = ListItemDefaults.shapes(),
-    )
+    val shapes = settingsGroupedShapes()
     SegmentedListItem(
         onClick = { onToggle(!enabled) },
         shapes = shapes,
+        colors = settingsRowColors(),
         leadingContent = {
-            Symbol(
-                name = "palette",
-                tint = if (enabled) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 22.dp,
-            )
+            SettingsIconTile(symbol = "palette", active = enabled)
         },
         supportingContent = {
             Text(
@@ -395,7 +347,7 @@ internal fun ThemeModeRows(
         )
     }
     Surface(
-        shape = MaterialTheme.shapes.large,
+        shape = SettingsGroupInnerShape,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -436,7 +388,7 @@ internal fun EmojiStyleRows(
         )
     }
     Surface(
-        shape = MaterialTheme.shapes.large,
+        shape = SettingsGroupInnerShape,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -467,21 +419,13 @@ internal fun PureBlackRow(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
-    val shapes = ListItemDefaults.segmentedShapes(
-        index = 0,
-        count = 1,
-        defaultShapes = ListItemDefaults.shapes(),
-    )
+    val shapes = settingsGroupedShapes()
     SegmentedListItem(
         onClick = { onToggle(!enabled) },
         shapes = shapes,
+        colors = settingsRowColors(),
         leadingContent = {
-            Symbol(
-                name = "smartphone",
-                tint = if (enabled) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                size = 22.dp,
-            )
+            SettingsIconTile(symbol = "smartphone", active = enabled)
         },
         supportingContent = {
             Text(
@@ -519,7 +463,7 @@ internal fun TextSizeRows(
     val bodyStyle = MaterialTheme.typography.bodyLarge
     val glyph = stringResource(R.string.settings_text_size_glyph)
     Surface(
-        shape = MaterialTheme.shapes.large,
+        shape = SettingsGroupInnerShape,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth(),
     ) {

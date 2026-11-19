@@ -286,6 +286,7 @@ private fun CategoryRow(
         defaultShapes = ListItemDefaults.shapes(),
     )
     SegmentedListItem(
+        colors = settingsRowColors(),
         onClick = onClick,
         shapes = shapes,
         // Naked Solar icon, matching the unified settings icon language (G1 / doctrine §5).
@@ -472,6 +473,7 @@ private fun ToggleRow(
         defaultShapes = ListItemDefaults.shapes(),
     )
     SegmentedListItem(
+        colors = settingsRowColors(),
         // Tapping anywhere on the row flips the toggle — TG-Android idiom. The
         // companion `Switch` is the visual cue but isn't the only hit target.
         onClick = { onCheckedChange(!checked) },

@@ -137,6 +137,7 @@ internal fun ProxyScreen(
             // Master toggle: enabled only when there is at least one proxy to switch on. When on,
             // the supporting line names the active server so the state is legible at a glance.
             SegmentedListItem(
+                colors = settingsRowColors(),
                 onClick = {},
                 shapes = ListItemDefaults.segmentedShapes(
                     index = 0,
@@ -262,6 +263,7 @@ private fun ProxyRow(
     onRemove: () -> Unit,
 ) {
     SegmentedListItem(
+        colors = settingsRowColors(),
         onClick = onActivate,
         shapes = ListItemDefaults.segmentedShapes(
             index = index,

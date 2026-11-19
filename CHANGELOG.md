@@ -47,6 +47,7 @@
 - Photos load over a placeholder in the picture's own colour instead of a grey block.
 - The Channels tab has a compact header, and its "Find channels" button shrinks to an icon once you scroll.
 - Post text breaks into lines more evenly.
+- Settings rows sit in grouped blocks, each with a round icon tile that lights up when its switch is on.
 
 ### Fixed
 - Signing in no longer overwrites the auto-download settings you set in other Telegram apps, and signing out no longer carries them over to the next account.

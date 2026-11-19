@@ -90,10 +90,12 @@ internal fun PrivacyScreen(
             if (privacyTogglesAvailable) {
                 val hideOnline by settings.hideOnlineStatus.collectAsStateWithLifecycle(false)
                 SectionLabel(stringResource(R.string.settings_section_privacy))
-                HideOnlineStatusRow(
-                    enabled = hideOnline,
-                    onToggle = { next -> if (next != hideOnline) scope.launch { settings.setHideOnlineStatus(next) } },
-                )
+                SettingsGroup {
+                    HideOnlineStatusRow(
+                        enabled = hideOnline,
+                        onToggle = { next -> if (next != hideOnline) scope.launch { settings.setHideOnlineStatus(next) } },
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
             }
             onOpenProxy?.let { open ->

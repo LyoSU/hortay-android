@@ -210,6 +210,7 @@ private fun HiddenChannelRow(
     val subtitle = display?.handle?.let { "@$it" }
         ?: stringResource(R.string.hidden_channels_id_placeholder, chatId)
     SegmentedListItem(
+        colors = settingsRowColors(),
         onClick = onUnhide,
         shapes = shapes,
         leadingContent = { Symbol(name = "visibility_off", size = 22.dp) },

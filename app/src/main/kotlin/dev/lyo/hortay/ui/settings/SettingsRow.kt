@@ -2,15 +2,25 @@
 
 package dev.lyo.hortay.ui.settings
 
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,17 +52,25 @@ internal fun SettingsRow(
     chevron: Boolean = false,
     index: Int = 0,
     count: Int = 1,
+    grouped: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
-    val shapes = ListItemDefaults.segmentedShapes(
-        index = index,
-        count = count,
-        defaultShapes = ListItemDefaults.shapes(),
-    )
+    val shapes = if (grouped) {
+        settingsGroupedShapes()
+    } else {
+        ListItemDefaults.segmentedShapes(
+            index = index,
+            count = count,
+            defaultShapes = ListItemDefaults.shapes(),
+        )
+    }
     SegmentedListItem(
         onClick = onClick ?: {},
         shapes = shapes,
-        leadingContent = { Symbol(name = symbol, tint = tint, size = 22.dp) },
+        colors = settingsRowColors(),
+        leadingContent = {
+            SettingsIconTile(symbol = symbol, danger = tint == MaterialTheme.colorScheme.error)
+        },
         supportingContent = subtitle?.let {
             {
                 Text(
@@ -80,6 +98,77 @@ internal fun SettingsRow(
             )
         },
     )
+}
+
+/**
+ * One Settings section as a single block: the rows sit [ListItemDefaults.SegmentedGap] apart and
+ * the block's outline rounds only the outer corners, so toggles, choice cards and drill-in rows
+ * of one section read as one grouped surface instead of a mix of cards and bare rows.
+ *
+ * The outline is a clip on the block, not per-row corner maths: sections are built from
+ * mode-conditional rows (guest vs TDLib, API level, dark theme), and an (index, count) pair
+ * would have to be recomputed for every combination. Rows inside pass `grouped = true` (or use
+ * [settingsGroupedShapes] / [SettingsGroupInnerShape]) so their own corners stay small.
+ */
+@Composable
+internal fun SettingsGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().clip(SettingsGroupShape),
+        verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+        content = content,
+    )
+}
+
+/** Outer outline of a [SettingsGroup]. */
+internal val SettingsGroupShape = RoundedCornerShape(24.dp)
+
+/** Corner of a non-list block (choice card) inside a [SettingsGroup] — matches the rows' seams. */
+internal val SettingsGroupInnerShape = RoundedCornerShape(4.dp)
+
+/** Row shapes inside a [SettingsGroup]: the segmented "middle" shape, whatever the position. */
+@Composable
+internal fun settingsGroupedShapes() = ListItemDefaults.segmentedShapes(
+    index = 1,
+    count = 3,
+    defaultShapes = ListItemDefaults.shapes(),
+)
+
+/** Every Settings row is a tile on the page, so a section is visibly a group of surfaces. */
+@Composable
+internal fun settingsRowColors() = ListItemDefaults.colors(
+    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+)
+
+/**
+ * Leading glyph of a Settings row in a round tonal tile. [active] lights the tile for a switch
+ * that is on, so the state reads at a glance down the icon column; [danger] is the sign-out row.
+ */
+@Composable
+internal fun SettingsIconTile(
+    symbol: String,
+    active: Boolean = false,
+    danger: Boolean = false,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val container = when {
+        danger -> scheme.errorContainer
+        active -> scheme.primaryContainer
+        else -> scheme.surfaceContainerHighest
+    }
+    val content = when {
+        danger -> scheme.onErrorContainer
+        active -> scheme.onPrimaryContainer
+        else -> scheme.onSurfaceVariant
+    }
+    Box(
+        modifier = Modifier.size(40.dp).background(container, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Symbol(name = symbol, tint = content, size = 22.dp)
+    }
 }
 
 /**

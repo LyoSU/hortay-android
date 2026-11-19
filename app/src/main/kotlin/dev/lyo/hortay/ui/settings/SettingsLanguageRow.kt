@@ -85,7 +85,7 @@ private val LANGUAGES: ImmutableList<LanguageEntry> = persistentListOf(
 )
 
 @Composable
-internal fun LanguageRow(index: Int, count: Int) {
+internal fun LanguageRow() {
     val context = LocalContext.current
     var showDialog by remember { mutableStateOf(false) }
     // Re-read on every dialog open so the row reflects an out-of-band change (e.g. the
@@ -107,8 +107,7 @@ internal fun LanguageRow(index: Int, count: Int) {
         title = stringResource(R.string.settings_language),
         subtitle = summary,
         chevron = true,
-        index = index,
-        count = count,
+        grouped = true,
         onClick = { showDialog = true },
     )
     if (showDialog) {

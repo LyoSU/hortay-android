@@ -365,53 +365,57 @@ private fun SettingsMain(
 
                 // ---- Appearance -------------------------------------------------------
                 SectionLabel(stringResource(R.string.settings_section_appearance))
-                ThemeModeRows(
-                    current = appearance.themeMode,
-                    onSelect = { mode -> if (mode != appearance.themeMode) scope.launch { settings.setThemeMode(mode) } },
-                )
-                // Shown only while the app is actually dark: under "System" on a light phone the
-                // switch changed nothing visible and read as a broken control.
-                if (appearance.themeMode.isDark(systemDark = isSystemInDarkTheme())) {
-                    PureBlackRow(
-                        enabled = appearance.pureBlack,
-                        onToggle = { next -> if (next != appearance.pureBlack) scope.launch { settings.setPureBlack(next) } },
+                SettingsGroup {
+                    ThemeModeRows(
+                        current = appearance.themeMode,
+                        onSelect = { mode -> if (mode != appearance.themeMode) scope.launch { settings.setThemeMode(mode) } },
                     )
+                    // Shown only while the app is actually dark: under "System" on a light phone the
+                    // switch changed nothing visible and read as a broken control.
+                    if (appearance.themeMode.isDark(systemDark = isSystemInDarkTheme())) {
+                        PureBlackRow(
+                            enabled = appearance.pureBlack,
+                            onToggle = { next -> if (next != appearance.pureBlack) scope.launch { settings.setPureBlack(next) } },
+                        )
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        val currentDynamicColor by settings.dynamicColor.collectAsStateWithLifecycle(false)
+                        DynamicColorRow(
+                            enabled = currentDynamicColor,
+                            onToggle = { next -> if (next != currentDynamicColor) scope.launch { settings.setDynamicColor(next) } },
+                        )
+                    }
+                    // TDLib mode only: guest mode has no session to resolve Telegram's reaction
+                    // artwork from and always draws the system emoji font.
+                    if (emojiStyleAvailable) {
+                        val emojiStyle by settings.emojiStyleState.collectAsStateWithLifecycle()
+                        EmojiStyleRows(
+                            current = emojiStyle,
+                            onSelect = { style -> if (style != emojiStyle) scope.launch { settings.setEmojiStyle(style) } },
+                        )
+                    }
+                    LanguageRow()
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    val currentDynamicColor by settings.dynamicColor.collectAsStateWithLifecycle(false)
-                    DynamicColorRow(
-                        enabled = currentDynamicColor,
-                        onToggle = { next -> if (next != currentDynamicColor) scope.launch { settings.setDynamicColor(next) } },
-                    )
-                }
-                // TDLib mode only: guest mode has no session to resolve Telegram's reaction
-                // artwork from and always draws the system emoji font.
-                if (emojiStyleAvailable) {
-                    val emojiStyle by settings.emojiStyleState.collectAsStateWithLifecycle()
-                    EmojiStyleRows(
-                        current = emojiStyle,
-                        onSelect = { style -> if (style != emojiStyle) scope.launch { settings.setEmojiStyle(style) } },
-                    )
-                }
-                LanguageRow(index = 0, count = 1)
 
                 // ---- Reading ----------------------------------------------------------
                 val currentSnapScroll by settings.snapScroll.collectAsStateWithLifecycle(false)
                 val currentInlineAutoplay by settings.inlineVideoAutoplay.collectAsStateWithLifecycle(true)
                 Spacer(Modifier.height(HortaySpacing.xs))
                 SectionLabel(stringResource(R.string.settings_section_reading))
-                TextSizeRows(
-                    current = appearance.textSize,
-                    onSelect = { size -> if (size != appearance.textSize) scope.launch { settings.setTextSize(size) } },
-                )
-                SnapScrollRow(
-                    enabled = currentSnapScroll,
-                    onToggle = { next -> if (next != currentSnapScroll) scope.launch { settings.setSnapScroll(next) } },
-                )
-                InlineAutoplayRow(
-                    enabled = currentInlineAutoplay,
-                    onToggle = { next -> if (next != currentInlineAutoplay) scope.launch { settings.setInlineVideoAutoplay(next) } },
-                )
+                SettingsGroup {
+                    TextSizeRows(
+                        current = appearance.textSize,
+                        onSelect = { size -> if (size != appearance.textSize) scope.launch { settings.setTextSize(size) } },
+                    )
+                    SnapScrollRow(
+                        enabled = currentSnapScroll,
+                        onToggle = { next -> if (next != currentSnapScroll) scope.launch { settings.setSnapScroll(next) } },
+                    )
+                    InlineAutoplayRow(
+                        enabled = currentInlineAutoplay,
+                        onToggle = { next -> if (next != currentInlineAutoplay) scope.launch { settings.setInlineVideoAutoplay(next) } },
+                    )
+                }
 
                 // ---- Feed -------------------------------------------------------------
                 val currentFeedOrder by settings.feedOrder.collectAsStateWithLifecycle(FeedOrder.OldestUnreadFirst)
@@ -419,48 +423,51 @@ private fun SettingsMain(
                 SectionLabel(stringResource(R.string.settings_section_feed))
                 val feedOrderToNewestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_newest)
                 val feedOrderToOldestSnackbar = stringResource(R.string.settings_feed_order_snackbar_to_oldest)
-                FeedOrderRows(
-                    current = currentFeedOrder,
-                    onSelect = { order ->
-                        if (order != currentFeedOrder) {
-                            scope.launch { settings.setFeedOrder(order) }
-                            userMessages?.post(
-                                text = when (order) {
-                                    FeedOrder.Newest -> feedOrderToNewestSnackbar
-                                    FeedOrder.OldestUnreadFirst -> feedOrderToOldestSnackbar
-                                },
-                                severity = UserMessageBus.Severity.Info,
-                            )
-                        }
-                    },
-                )
-                if (groupFeedState != null) {
-                    val currentGroupFeed by groupFeedState.collectAsStateWithLifecycle()
-                    GroupFeedRow(
-                        enabled = currentGroupFeed,
-                        onToggle = { next -> if (next != currentGroupFeed) scope.launch { settings.setGroupFeed(next) } },
-                    )
-                }
-                if (archiveInAllFeedState != null) {
-                    val currentArchiveInAll by archiveInAllFeedState.collectAsStateWithLifecycle()
-                    ArchiveInAllFeedRow(
-                        enabled = currentArchiveInAll,
-                        onToggle = { next -> if (next != currentArchiveInAll) scope.launch { settings.setArchiveInAllFeed(next) } },
-                    )
-                }
-                if (ignoredChannels != null) {
-                    val hidden by ignoredChannels.ignored.collectAsStateWithLifecycle(initialValue = persistentSetOf())
-                    SettingsRow(
-                        symbol = "visibility_off",
-                        title = stringResource(R.string.settings_hidden_channels_title),
-                        subtitle = if (hidden.isEmpty()) {
-                            stringResource(R.string.settings_hidden_channels_subtitle_empty)
-                        } else {
-                            pluralStringResource(R.plurals.settings_hidden_channels_count, hidden.size, hidden.size)
+                SettingsGroup {
+                    FeedOrderRows(
+                        current = currentFeedOrder,
+                        onSelect = { order ->
+                            if (order != currentFeedOrder) {
+                                scope.launch { settings.setFeedOrder(order) }
+                                userMessages?.post(
+                                    text = when (order) {
+                                        FeedOrder.Newest -> feedOrderToNewestSnackbar
+                                        FeedOrder.OldestUnreadFirst -> feedOrderToOldestSnackbar
+                                    },
+                                    severity = UserMessageBus.Severity.Info,
+                                )
+                            }
                         },
-                        chevron = true,
-                        onClick = onOpenHiddenChannels,
                     )
+                    if (groupFeedState != null) {
+                        val currentGroupFeed by groupFeedState.collectAsStateWithLifecycle()
+                        GroupFeedRow(
+                            enabled = currentGroupFeed,
+                            onToggle = { next -> if (next != currentGroupFeed) scope.launch { settings.setGroupFeed(next) } },
+                        )
+                    }
+                    if (archiveInAllFeedState != null) {
+                        val currentArchiveInAll by archiveInAllFeedState.collectAsStateWithLifecycle()
+                        ArchiveInAllFeedRow(
+                            enabled = currentArchiveInAll,
+                            onToggle = { next -> if (next != currentArchiveInAll) scope.launch { settings.setArchiveInAllFeed(next) } },
+                        )
+                    }
+                    if (ignoredChannels != null) {
+                        val hidden by ignoredChannels.ignored.collectAsStateWithLifecycle(initialValue = persistentSetOf())
+                        SettingsRow(
+                            symbol = "visibility_off",
+                            title = stringResource(R.string.settings_hidden_channels_title),
+                            subtitle = if (hidden.isEmpty()) {
+                                stringResource(R.string.settings_hidden_channels_subtitle_empty)
+                            } else {
+                                pluralStringResource(R.plurals.settings_hidden_channels_count, hidden.size, hidden.size)
+                            },
+                            chevron = true,
+                            grouped = true,
+                            onClick = onOpenHiddenChannels,
+                        )
+                    }
                 }
 
                 // ---- Categories (drill into sub-screens) ------------------------------
