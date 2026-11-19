@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -274,16 +276,7 @@ private fun ClampedPost(
             }
         }
         if (!expanded && overflow) {
-            Text(
-                text = stringResource(R.string.post_show_more),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .padding(top = 4.dp)
-                    .clickable {
-                        if (showFullPost != null) showFullPost() else expanded = true
-                    },
-            )
+            ShowMoreToggle(onClick = { if (showFullPost != null) showFullPost() else expanded = true })
         }
     }
 }
@@ -378,17 +371,29 @@ internal fun ClampedContent(
             if (affordance != null) {
                 affordance(onExpand)
             } else {
-                Text(
-                    text = stringResource(R.string.post_show_more),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .padding(top = 4.dp)
-                        .clickable(onClick = onExpand),
-                )
+                ShowMoreToggle(onClick = onExpand)
             }
         }
     }
+}
+
+/**
+ * The "Show more" text toggle under a clamped post body. Deliberately kept at its natural
+ * size: reserving a 48 dp target would add blank space under every collapsed post, the main
+ * reading surface. The tap relies on Compose's automatic touch-bounds expansion for pointer
+ * targets under the minimum touch size (same reasoning as `EditedChip`).
+ */
+@Composable
+internal fun ShowMoreToggle(onClick: () -> Unit) {
+    Text(
+        text = stringResource(R.string.post_show_more),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .padding(top = 4.dp)
+            .clip(MaterialTheme.shapes.extraSmall)
+            .clickable(role = Role.Button, onClick = onClick),
+    )
 }
 
 /** Lines an explicitly-collapsible quote previews at on an interactive surface (full post /

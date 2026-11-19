@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -128,11 +129,22 @@ internal fun InlineAudioPlayerRow(
             .fillMaxWidth()
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(14.dp),
+            // The play disc and the open-in-source disc each sit centred in a 48 dp touch
+            // target (minimumInteractiveComponentSize); the start / end padding gives back
+            // the slop those targets add, so both discs keep their 14 dp inset from the edge.
+            // Top / bottom are 12 dp so a row whose tallest child is the 48 dp play target
+            // keeps the former 72 dp height (44 dp disc + 2 × 14 dp).
+            .padding(
+                start = 12.dp,
+                end = if (onOpenInSource != null) 6.dp else 14.dp,
+                top = 12.dp,
+                bottom = 12.dp,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
+                .minimumInteractiveComponentSize()
                 .size(44.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primaryContainer)
@@ -170,7 +182,7 @@ internal fun InlineAudioPlayerRow(
                 )
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -225,9 +237,9 @@ internal fun InlineAudioPlayerRow(
         }
         if (onOpenInSource != null) {
             val openCd = stringResource(R.string.content_open_in_telegram)
-            Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .size(32.dp)
                     .clip(CircleShape)
                     .clickable(onClickLabel = openCd, role = Role.Button, onClick = onOpenInSource),
@@ -235,6 +247,7 @@ internal fun InlineAudioPlayerRow(
             ) {
                 Symbol(
                     name = "open_in_new",
+                    contentDescription = openCd,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     size = 18.dp,
                 )

@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
@@ -204,7 +205,7 @@ internal fun MediaWithSpoiler(item: AlbumItem, onClick: () -> Unit, isActive: Bo
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .clickable(enabled = revealed && !passive, onClick = onClick),
+            .clickable(enabled = revealed && !passive, role = Role.Button, onClick = onClick),
     ) {
         // When the autoplayer mounts on top, suppress the poster's own progress spinner —
         // TdVideoPlayer renders its own MediaLoadingOverlay for the playback file, and a
@@ -458,7 +459,7 @@ internal fun AnimationBlock(content: PostContent.Animation, onMediaClick: (List<
             .clip(MaterialTheme.shapes.medium)
             // D1 — inline animation (silent MP4 GIF) is opaque rectangular video content.
             .mediaFrame(MaterialTheme.shapes.medium)
-            .clickable(enabled = revealed && !passive) { onMediaClick(items, 0) },
+            .clickable(enabled = revealed && !passive, role = Role.Button) { onMediaClick(items, 0) },
     ) {
         // Same suppression as MediaWithSpoiler: when the GIF autoplayer is mounted, its own
         // MediaLoadingOverlay covers the loading state — the poster's spinner would just

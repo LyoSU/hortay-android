@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
@@ -102,6 +103,7 @@ fun SpoilerOverlay(
                 interactionSource = interactionSource,
                 indication = null,
                 enabled = !dismissing,
+                role = Role.Button,
                 onClick = { dismissing = true },
             ),
     ) {

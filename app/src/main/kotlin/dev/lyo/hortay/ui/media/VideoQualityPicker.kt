@@ -3,6 +3,8 @@ package dev.lyo.hortay.ui.media
 import dev.lyo.hortay.ui.components.formatByteSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,9 +25,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
@@ -59,10 +64,15 @@ fun QualityChip(
 ) {
     var open by remember { mutableStateOf(false) }
     val chipShape = HortayExpressive.Pill.asComposeShape()
+    val qualityLabel = stringResource(R.string.media_video_quality)
+    // The visible pill stays ~28 dp tall; minimumInteractiveComponentSize reserves a 48 dp
+    // touch target around it. Clip before clickable so the ripple follows the pill.
     Row(
         modifier = modifier
+            .minimumInteractiveComponentSize()
+            .clip(chipShape)
             .background(Color.Black.copy(alpha = 0.45f), chipShape)
-            .clickable { open = true }
+            .clickable(role = Role.Button, onClickLabel = qualityLabel) { open = true }
             .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -112,6 +122,8 @@ private fun VideoQualityPickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                // Groups the Role.RadioButton rows so TalkBack announces position and count.
+                .selectableGroup()
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
@@ -141,7 +153,7 @@ private fun QualityRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

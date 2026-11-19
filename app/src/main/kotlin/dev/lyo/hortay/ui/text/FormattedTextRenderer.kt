@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
@@ -249,6 +250,7 @@ fun rememberRenderableText(formatted: FormattedText): RenderableText {
                                     .clickable(
                                         interactionSource = interaction,
                                         indication = null,
+                                        role = Role.Button,
                                         onClick = { revealAtSrcPos(srcPos) },
                                     ),
                             )

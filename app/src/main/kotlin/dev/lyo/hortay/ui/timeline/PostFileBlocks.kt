@@ -20,7 +20,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringArrayResource
@@ -36,6 +35,7 @@ import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalInlineVideoAutoplay
 import dev.lyo.hortay.ui.media.LocalMediaPassive
 import dev.lyo.hortay.ui.media.TdMediaImage
+import dev.lyo.hortay.ui.theme.mediaFrame
 
 @Composable
 internal fun DocumentBlock(
@@ -136,9 +136,11 @@ private fun VideoNoteStaticBubble(
     val a11y = stringResource(R.string.content_description_video_note)
     Box(
         modifier = Modifier
-            .shadow(elevation = 2.dp, shape = CircleShape, clip = false)
             .size(VIDEO_NOTE_DIAMETER)
             .clip(CircleShape)
+            // Hairline frame, not a shadow — the bubble sits in the post body and doesn't
+            // float over content (ARCHITECTURE.md → "Container budget").
+            .mediaFrame(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(
                 onClickLabel = a11y,
@@ -211,7 +213,7 @@ internal fun NonPlayableFileRow(
             .fillMaxWidth()
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

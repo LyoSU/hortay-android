@@ -207,13 +207,14 @@ private fun ProfileHero(
             .padding(bottom = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Our own drag handle on the colour (the sheet's default handle is off).
+        // Our own drag handle on the colour (the sheet's default handle is off). Tinted with
+        // the cover's on-colour so it stays visible on a light gradient, not only a dark one.
         Box(
             modifier = Modifier
                 .padding(top = 12.dp)
                 .size(width = 32.dp, height = 4.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.6f)),
+                .background(onCover.copy(alpha = 0.6f)),
         )
         Spacer(Modifier.height(16.dp))
         Box(
@@ -364,7 +365,7 @@ private fun PersonalChannelRow(
             .padding(horizontal = 8.dp)
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.large)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
         colors = ListItemDefaults.colors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),

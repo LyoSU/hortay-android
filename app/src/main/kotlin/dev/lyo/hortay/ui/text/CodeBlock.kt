@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -107,7 +109,7 @@ internal fun CodeBlock(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(CODE_HEADER_HEIGHT)
-                        .padding(start = CODE_CONTENT_PAD, end = 2.dp),
+                        .padding(start = CODE_CONTENT_PAD),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (!language.isNullOrBlank()) CodeLanguagePill(language)
@@ -239,8 +241,14 @@ private fun CodeCopyButton(rawText: String) {
         }
     }
     val spec = if (reduced) snap() else MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    // 48 dp touch target around the 36 dp ripple disc. The target is taller than the 36 dp
+    // header row and overflows it symmetrically, so the header keeps its height (RichText's
+    // clamp snaps on CODE_HEADER_INSET); the 4 dp offset puts the glyph back where the former
+    // 36 dp box with a 2 dp end inset drew it.
     Box(
         modifier = Modifier
+            .offset(x = 4.dp)
+            .minimumInteractiveComponentSize()
             .size(36.dp)
             .clip(CircleShape)
             .clickable(role = Role.Button, onClickLabel = copyDesc) {

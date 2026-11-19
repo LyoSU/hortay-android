@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
@@ -168,7 +169,11 @@ internal fun rememberRichInline(inline: RichInline, baseStyle: TextStyle): Rende
                         Box(
                             Modifier
                                 .fillMaxSize()
-                                .clickable(interactionSource = interaction, indication = null) { spoiler.reveal(groupId) },
+                                .clickable(
+                                    interactionSource = interaction,
+                                    indication = null,
+                                    role = Role.Button,
+                                ) { spoiler.reveal(groupId) },
                         )
                     },
                 )

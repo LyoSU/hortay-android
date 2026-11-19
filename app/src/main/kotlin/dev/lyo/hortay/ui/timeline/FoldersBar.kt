@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -69,6 +70,8 @@ fun FoldersBar(
     Row(
         modifier = modifier
             .horizontalScroll(rememberScrollState())
+            // Groups the Role.Tab labels so TalkBack announces position and count.
+            .selectableGroup()
             .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {

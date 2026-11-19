@@ -77,24 +77,20 @@ object HortayExpressive {
     /** Default avatar / circular thumbnail. */
     val Avatar: RoundedPolygon = MaterialShapes.Circle
 
-    /** Reaction chip — selected state. The Cookie9 reads as "celebratory" without
-     *  being aggressively spiky; Cookie12 felt fussy at chip scale, Burst was too
-     *  loud for an inline component. */
-    val ReactionSelected: RoundedPolygon = MaterialShapes.Cookie9Sided
-    val ReactionRest: RoundedPolygon = MaterialShapes.Square
+    /** Fullscreen viewer close-button backdrop. Cookie9 reads as "deliberate close" without
+     *  being aggressively spiky; Cookie12 felt fussy at chip scale, Burst was too loud for
+     *  an inline component (findings from when this polygon was the reaction-chip
+     *  selected state). */
+    val ViewerCloseBackdrop: RoundedPolygon = MaterialShapes.Cookie9Sided
 
-    /** Bookmark toggle — selected state uses Heart for personality. */
-    val BookmarkSelected: RoundedPolygon = MaterialShapes.Heart
-    val BookmarkRest: RoundedPolygon = MaterialShapes.Square
+    /** Failed-media retry disc — the same Cookie9 as [ViewerCloseBackdrop], so media
+     *  chrome speaks one shape. Named separately so the two can diverge without a
+     *  silent cross-surface change. */
+    val MediaRetryDisc: RoundedPolygon = MaterialShapes.Cookie9Sided
 
-    /** Folder/filter chip in the channel filter row. Cookie7 has an asymmetry that
-     *  reads as "active" without competing with the reaction Cookie9 in the same view. */
-    val FolderSelected: RoundedPolygon = MaterialShapes.Cookie7Sided
-    val FolderRest: RoundedPolygon = MaterialShapes.Square
-
-    /** FAB resting + pressed states (compose new post / search). */
-    val FabRest: RoundedPolygon = MaterialShapes.Circle
-    val FabPressed: RoundedPolygon = MaterialShapes.Burst
+    /** Channel in-history search "no results" mask. Cookie7's asymmetry sets it apart
+     *  from the Flower [EmptyStateMask] used by the "nothing here yet" states. */
+    val EmptySearchMask: RoundedPolygon = MaterialShapes.Cookie7Sided
 
     /** "New posts" floating pill: micro-decoration around the count badge. */
     val Pill: RoundedPolygon = MaterialShapes.Pill
@@ -124,10 +120,6 @@ object HortayExpressive {
     )
 
     /** Pre-built morphs — `Morph` allocates float arrays per polygon, so cache. */
-    val ReactionMorph: Morph = Morph(ReactionRest, ReactionSelected)
-    val BookmarkMorph: Morph = Morph(BookmarkRest, BookmarkSelected)
-    val FolderMorph: Morph = Morph(FolderRest, FolderSelected)
-    val FabPressMorph: Morph = Morph(FabRest, FabPressed)
     val PlayPauseMorph: Morph = Morph(PlayPausePaused, PlayPausePlaying)
 }
 

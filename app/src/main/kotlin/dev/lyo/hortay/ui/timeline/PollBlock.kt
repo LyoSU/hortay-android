@@ -160,11 +160,11 @@ private fun PollHeaderMedia(thumb: TdMedia, onClick: () -> Unit) {
             // card; hairline frame on the same shape it clips to.
             .mediaFrame(bannerShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
     ) {
         TdMediaImage(
             media = thumb,
-            contentDescription = null,
+            contentDescription = stringResource(R.string.media_desc_photo),
             modifier = Modifier.fillMaxWidth(),
         )
     }

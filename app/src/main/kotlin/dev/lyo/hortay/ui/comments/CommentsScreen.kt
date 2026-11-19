@@ -1076,7 +1076,7 @@ private fun CommentBubble(
             modifier = if (userTap != null) {
                 Modifier
                     .clip(androidx.compose.foundation.shape.CircleShape)
-                    .clickable(onClick = userTap)
+                    .clickable(role = Role.Button, onClick = userTap)
             } else Modifier,
         )
         Spacer(Modifier.width(HortaySpacing.md))
@@ -1092,7 +1092,7 @@ private fun CommentBubble(
                         .weight(1f, fill = false)
                         .let { mod ->
                             if (userTap != null) {
-                                mod.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = userTap)
+                                mod.clip(MaterialTheme.shapes.extraSmall).clickable(role = Role.Button, onClick = userTap)
                             } else mod
                         },
                 )

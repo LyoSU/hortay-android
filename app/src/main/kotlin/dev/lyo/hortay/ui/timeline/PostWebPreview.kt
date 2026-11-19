@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -124,7 +125,7 @@ private fun WebPreviewQuoteFrame(
             .clip(MaterialTheme.shapes.extraSmall)
             .background(accent.copy(alpha = 0.10f))
             .drawBehind { drawRect(accent, size = Size(3.dp.toPx(), size.height)) }
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(start = 13.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
     ) {
         content()

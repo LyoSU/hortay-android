@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -293,7 +295,9 @@ fun VideoPlayerControls(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
-                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                        // Bottom inset is 4 dp under the visible 12 dp: the mute
+                        // button's 48 dp touch target adds that much slop below it.
+                        .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 8.dp),
                 )
             }
         }
@@ -366,7 +370,8 @@ private fun BottomBar(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        // 2 dp + the mute button's 4 dp touch-target slop = the visible 6 dp gap.
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         // M3 Slider: built-in drag + tap-to-seek + thumb position is the
         // canonical seek affordance. White-on-translucent palette overrides
@@ -421,9 +426,14 @@ private fun BottomBar(
             // size and visually subordinates this to the centre control —
             // mute is a setting, not a primary action.
             val muteShape = HortayExpressive.Pill.asComposeShape()
+            // minimumInteractiveComponentSize reserves the 48 dp touch target around the
+            // 40 dp disc; the 4 dp offset cancels the trailing slop so the disc stays flush
+            // with the slider's end edge.
             IconButton(
                 onClick = onToggleMute,
                 modifier = Modifier
+                    .offset(x = 4.dp)
+                    .minimumInteractiveComponentSize()
                     .size(40.dp)
                     .background(Color.Black.copy(alpha = 0.55f), muteShape),
             ) {

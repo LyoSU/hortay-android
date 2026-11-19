@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -27,7 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -53,6 +54,7 @@ import dev.lyo.hortay.ui.icons.Symbol
 import dev.lyo.hortay.ui.media.LocalExoPlayerPool
 import dev.lyo.hortay.ui.media.TdMediaImage
 import dev.lyo.hortay.ui.media.rememberMediaBinding
+import dev.lyo.hortay.ui.theme.mediaFrame
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -104,9 +106,11 @@ internal fun VideoNotePlayerBubble(
     val a11y = stringResource(R.string.content_description_video_note)
     Box(
         modifier = Modifier
-            .shadow(elevation = 2.dp, shape = CircleShape, clip = false)
             .size(VIDEO_NOTE_DIAMETER)
             .clip(CircleShape)
+            // Hairline frame, not a shadow — the bubble sits in the post body and doesn't
+            // float over content (ARCHITECTURE.md → "Container budget").
+            .mediaFrame(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             // Bubble-wide tap toggles pause / play. The mute chip below
             // nests its own clickable so a tap on the chip never reaches
@@ -333,14 +337,20 @@ private fun BoxScope.VideoNoteChrome(
     // Nested clickable here intercepts before the bubble-wide pause toggle
     // (Compose pointer hit-testing dispatches to the innermost interactive
     // node first).
+    // The visible disc stays 32 dp; minimumInteractiveComponentSize grows the hit target to
+    // 48 dp around it, and the outer padding shrinks by the same 8 dp so the disc keeps its
+    // 10 dp inset from the bubble edge.
+    val muteLabel = stringResource(R.string.video_control_mute)
     Box(
         modifier = Modifier
             .align(Alignment.TopEnd)
-            .padding(10.dp)
+            .padding(2.dp)
+            .minimumInteractiveComponentSize()
             .size(32.dp)
             .clip(CircleShape)
             .background(Color.Black.copy(alpha = 0.55f))
-            .clickable(role = Role.Switch, onClick = onToggleMute),
+            .toggleable(value = muted, role = Role.Switch, onValueChange = { onToggleMute() })
+            .semantics { contentDescription = muteLabel },
         contentAlignment = Alignment.Center,
     ) {
         Symbol(

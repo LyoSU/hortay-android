@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.ui.icons.Symbol
@@ -34,13 +36,24 @@ fun EditedChip(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
             .background(MaterialTheme.colorScheme.secondaryContainer)
-            .clickable(onClick = onClick)
+            // No minimumInteractiveComponentSize here: the chip sits inline in the one-line
+            // post header, and reserving 48 dp would grow every edited card's header by
+            // ~28 dp. The tap still lands through Compose's automatic touch-bounds expansion
+            // for pointer targets under the minimum touch size.
+            .clickable(
+                role = Role.Button,
+                onClickLabel = stringResource(R.string.revision_sheet_title),
+                onClick = onClick,
+            )
             .padding(horizontal = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
         Symbol(
             name = "edit",
+            // Named only when the pencil stands alone; with a count the plural text beside
+            // it already says "edited ×N", and naming both would announce it twice.
+            contentDescription = if (count > 1) null else stringResource(R.string.post_badge_edited),
             tint = MaterialTheme.colorScheme.onSecondaryContainer,
             size = 12.dp,
         )

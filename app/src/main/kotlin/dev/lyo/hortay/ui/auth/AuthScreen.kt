@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -414,7 +415,7 @@ private fun CountrySelectorRow(country: Country?, onClick: () -> Unit) {
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -819,8 +820,11 @@ private fun PasswordForm(graph: AppGraph, stage: AuthStage.WaitPassword, errorMe
         // Forgot-password / back-to-password toggle. Hidden when recovery is
         // Unavailable — the info card already explains the user has no path
         // forward in-app, a "back to password" link there would be misleading.
-        if (recoveryMode != RecoveryMode.Unavailable) {
-            Spacer(Modifier.height(8.dp))
+        // The link sits in a 48 dp touch target (minimumInteractiveComponentSize). That
+        // target's own slop replaces the former 8 dp spacer + 4 dp padding above the link, and
+        // the spacer below shrinks to match, so the text keeps its place.
+        val recoveryLinkShown = recoveryMode != RecoveryMode.Unavailable
+        if (recoveryLinkShown) {
             val toggleText = stringResource(
                 if (recoveryMode == RecoveryMode.Sent) R.string.auth_password_recovery_back
                 else R.string.auth_password_forgot,
@@ -830,7 +834,9 @@ private fun PasswordForm(graph: AppGraph, stage: AuthStage.WaitPassword, errorMe
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
-                    .clickable {
+                    .minimumInteractiveComponentSize()
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .clickable(role = Role.Button) {
                         if (recoveryMode == RecoveryMode.Sent) {
                             recoveryMode = RecoveryMode.Idle
                             recoveryCode = ""
@@ -840,11 +846,10 @@ private fun PasswordForm(graph: AppGraph, stage: AuthStage.WaitPassword, errorMe
                             recoveryMode = RecoveryMode.Sent
                             scope.launch { client.requestPasswordRecovery() }
                         }
-                    }
-                    .padding(vertical = 4.dp),
+                    },
             )
         }
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(if (recoveryLinkShown) 10.dp else 20.dp))
         when (recoveryMode) {
             RecoveryMode.Sent -> PrimaryActionButton(
                 text = stringResource(R.string.auth_continue),

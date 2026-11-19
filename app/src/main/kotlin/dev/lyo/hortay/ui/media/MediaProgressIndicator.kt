@@ -132,13 +132,14 @@ fun MediaFailedOverlay(
     // "retry" would wrongly suggest something failed.
     paused: Boolean = false,
 ) {
-    val diskShape = HortayExpressive.ReactionSelected.asComposeShape()
+    // Clip and backdrop share the cookie polygon so the ripple follows the visible disc.
+    val diskShape = HortayExpressive.MediaRetryDisc.asComposeShape()
     Box(
         modifier = modifier
             .size(size)
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = DISK_ALPHA), diskShape)
-            .let { if (onRetry != null) it.clickable(onClick = onRetry) else it },
+            .clip(diskShape)
+            .background(Color.Black.copy(alpha = DISK_ALPHA))
+            .let { if (onRetry != null) it.clickable(role = Role.Button, onClick = onRetry) else it },
         contentAlignment = Alignment.Center,
     ) {
         Symbol(

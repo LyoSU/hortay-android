@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -847,7 +848,7 @@ private fun TranslationChip(onDismiss: () -> Unit) {
     Row(
         modifier = Modifier
             .clip(InlineChipCorner)
-            .clickable(onClick = onDismiss),
+            .clickable(role = Role.Button, onClick = onDismiss),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Symbol(
@@ -1724,8 +1725,10 @@ internal fun ReactionPickerStrip(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // 2 dp tighter on every side than the visible rhythm (16 / 8 dp insets, 8 dp
+            // gaps): each 44 dp disc reserves a 48 dp touch target, whose slop makes it up.
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         reactions.forEach { kind ->
@@ -1735,6 +1738,7 @@ internal fun ReactionPickerStrip(
                 else MaterialTheme.colorScheme.surfaceContainerHigh
             Box(
                 modifier = Modifier
+                    .minimumInteractiveComponentSize()
                     .size(44.dp)
                     .clip(CircleShape)
                     .background(background)

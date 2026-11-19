@@ -1,16 +1,13 @@
 package dev.lyo.hortay.ui.timeline
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,13 +15,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import dev.lyo.hortay.R
 import dev.lyo.hortay.data.AlbumItem
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.MediaState
@@ -38,6 +33,7 @@ import dev.lyo.hortay.ui.text.LocalShowFullPost
 import dev.lyo.hortay.ui.text.RenderableText
 import dev.lyo.hortay.ui.text.RichText
 import dev.lyo.hortay.ui.theme.ProvideReadingTypography
+import dev.lyo.hortay.ui.text.ShowMoreToggle
 
 /**
  * Render the body of a post. [onMediaClick] fires with the resolved media list and the
@@ -330,15 +326,6 @@ internal fun ExpandableText(
         },
     )
     if (canExpand && !expanded) {
-        Text(
-            text = stringResource(R.string.post_show_more),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .padding(top = 4.dp)
-                .clickable {
-                    if (showFullPost != null) showFullPost() else expanded = true
-                },
-        )
+        ShowMoreToggle(onClick = { if (showFullPost != null) showFullPost() else expanded = true })
     }
 }

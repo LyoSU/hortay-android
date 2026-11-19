@@ -135,6 +135,8 @@
 - Channel suggestions open right away when the suggestions server is unreachable.
 - With both Hortay and Hortay beta installed, an unsupported Telegram link no longer bounces between the two apps.
 - Deleting some files from a document or audio album no longer removes the whole post from the feed.
+- Small controls in posts, media and the edit history are easier to tap, and screen readers announce them as buttons, tabs or switches.
+- Sign-in code cells and "Read full post"-style action rows no longer clip their text at the largest font sizes.
 
 ### Performance
 - Idle video players are released when the app goes to the background.

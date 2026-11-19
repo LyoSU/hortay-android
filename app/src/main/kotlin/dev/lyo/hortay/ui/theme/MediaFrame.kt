@@ -28,6 +28,8 @@ val MediaFrameWidth: Dp = 0.5.dp
  * **Do NOT apply to transparent stickers (TGS/WebM/round video) or the fullscreen viewer**
  * — gate by content type at the call site, not by renderer. A frame around a transparent
  * sticker would box its alpha cut-out; the immersive viewer is intentionally chrome-free.
+ * The opaque round video-message bubble is the exception: framed on its own `CircleShape`,
+ * the hairline follows the disc instead of boxing it.
  */
 @Composable
 fun Modifier.mediaFrame(shape: Shape, width: Dp = MediaFrameWidth): Modifier {

@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
@@ -35,7 +35,8 @@ internal fun TonalActionRow(text: String, onClick: () -> Unit, modifier: Modifie
     ) {
         Row(
             modifier = Modifier
-                .height(40.dp)
+                // Minimum, not fixed: the label must be free to grow at large font scales.
+                .heightIn(min = 40.dp)
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,

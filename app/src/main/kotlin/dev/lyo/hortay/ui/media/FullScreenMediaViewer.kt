@@ -21,6 +21,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,7 +113,7 @@ fun FullScreenMediaViewer(
         // unchanged — only the post-release animation is neutralised.
         val reducedMotion = rememberReducedMotion()
         val settleSpec: AnimationSpec<Float> =
-            if (reducedMotion) snap() else spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+            if (reducedMotion) snap() else MaterialTheme.motionScheme.defaultSpatialSpec()
         val draggable = rememberDraggableState { delta ->
             scope.launch { offsetY.snapTo(offsetY.value + delta) }
         }
@@ -206,10 +207,10 @@ fun FullScreenMediaViewer(
 
             // Expressive close affordance: Cookie9-shaped backdrop instead of a perfect
             // circle. Reads as "deliberate close" rather than a generic system 'X' —
-            // signature shape vocabulary that ties the viewer chrome to the rest of the
-            // app's reaction / nav-tab idiom. Bigger touch target padding compensates
+            // signature shape vocabulary shared with the failed-media retry disc, so media
+            // chrome speaks one shape. Bigger touch target padding compensates
             // for the polygon's narrower visual weight.
-            val closeShape = HortayExpressive.ReactionSelected.asComposeShape()
+            val closeShape = HortayExpressive.ViewerCloseBackdrop.asComposeShape()
             // Polygon backdrop only — clipping the IconButton to a Cookie polygon
             // would cut the close glyph at the polygon ridges. The default circular
             // ripple stays clean inside the visible disc area.
@@ -218,9 +219,10 @@ fun FullScreenMediaViewer(
                 glyph = "close",
                 contentDescription = stringResource(R.string.action_close),
                 shape = closeShape,
+                // 6 dp + the button's 2 dp touch-target slop keeps the visible disc 8 dp in.
                 modifier = Modifier
                     .statusBarsPadding()
-                    .padding(8.dp),
+                    .padding(6.dp),
             )
 
             // Top-right tool column for the active page: QualityChip (videos
@@ -311,8 +313,11 @@ fun FullScreenMediaViewer(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .statusBarsPadding()
-                        .padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                        // Padding and spacing are 2 / 4 dp tighter than the visible rhythm
+                        // (8 dp inset, 10 dp gaps): each 44 dp button reserves a 48 dp touch
+                        // target, and that slop makes up the difference.
+                        .padding(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                     horizontalAlignment = Alignment.End,
                 ) {
                     if (showQuality && activeQualities != null) {
@@ -481,6 +486,7 @@ private fun ChromeActionButton(
         onClick = onClick,
         interactionSource = interactionSource,
         modifier = modifier
+            .minimumInteractiveComponentSize()
             .size(44.dp)
             .graphicsLayer {
                 scaleX = scale

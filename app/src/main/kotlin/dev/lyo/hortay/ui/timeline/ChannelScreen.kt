@@ -1310,7 +1310,7 @@ private fun ChannelSearchEmpty() {
     ) {
         ExpressiveEmptyHero(
             symbol = "search_off",
-            shape = HortayExpressive.FolderSelected,
+            shape = HortayExpressive.EmptySearchMask,
         )
         Spacer(Modifier.height(16.dp))
         Text(
