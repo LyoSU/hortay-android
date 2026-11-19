@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import android.os.SystemClock
 import android.util.Log
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -148,6 +149,21 @@ class MediaCache(
     // slot is still Downloading at 1.0, we ask TDLib for the authoritative File and
     // route it through the reducer.
     private val postCompletionResync = ConcurrentHashMap<Int, Job>()
+
+    // In-flight GetFile lookups shared between [resync] and the mount-driven [ensure].
+    // [dev.lyo.hortay.ui.media.rememberMediaBinding] fires both in the same frame when
+    // the scroll gate opens, and on a cold (Idle) slot each issued its own GetFile for the
+    // same file — two identical local-DB round trips queued ahead of the DownloadFile that
+    // actually fetches the photo, multiplied by every card in the first viewport. A second
+    // caller arriving while a lookup is still in flight now awaits that one instead.
+    //
+    // The lookup runs on [scope], not on the caller's coroutine: a card disposed mid-
+    // lookup must not cancel the GetFile another caller is waiting on. Its result still
+    // reaches the reducer through [fileEvents] exactly once (dispatched before the
+    // deferred completes, so a joiner resumes with the event already queued — same
+    // ordering ensureSlow had with its own GetFile). Explicit retry / invalidate never
+    // join: their lookup must start after their Reset event, not before it.
+    private val inflightLookups = ConcurrentHashMap<Int, CompletableDeferred<TdApi.File>>()
 
     // Single-coroutine reducer for all File-state mutations. Every producer feeds it
     // through this channel, in strict single-writer discipline — any other write to
@@ -634,6 +650,10 @@ class MediaCache(
     fun allowsPlaybackPrefetch(): Boolean = prefetchPolicy()?.let { it.videos && it.animations } == true
 
     suspend fun ensure(fileId: Int, priority: DownloadPriority = DownloadPriority.VisibleMedia) {
+        ensureInternal(fileId, priority, joinInFlightLookup = true)
+    }
+
+    private suspend fun ensureInternal(fileId: Int, priority: DownloadPriority, joinInFlightLookup: Boolean) {
         // Aborting first means a re-mount that beats the debounce window keeps the
         // in-flight download. Done before the hot-path guards because the cancel job
         // also clears activePriority — racing it would mean we early-return on a stale
@@ -650,10 +670,10 @@ class MediaCache(
         val currentPriority = activePriority[fileId] ?: 0
         if (current is MediaState.Downloading && currentPriority >= priority.tdValue) return
 
-        withContext(ioDispatcher) { ensureSlow(fileId, priority) }
+        withContext(ioDispatcher) { ensureSlow(fileId, priority, joinInFlightLookup) }
     }
 
-    private suspend fun ensureSlow(fileId: Int, priority: DownloadPriority) {
+    private suspend fun ensureSlow(fileId: Int, priority: DownloadPriority, joinInFlightLookup: Boolean) {
         // Re-read state inside the io context — another caller may have raced ahead.
         val current = slot(fileId).value
         if (current is MediaState.Ready) return
@@ -671,11 +691,11 @@ class MediaCache(
             // reissues — that's the "hangs until I restart" symptom.
             val needsResync = current !is MediaState.Downloading || currentPriority == 0
             if (needsResync) {
-                val file = td.send(TdApi.GetFile(fileId))
-                // Hand the file to the reducer through the same channel the inbound
-                // UpdateFile stream uses — the Ready-stick / eviction / throttle logic
-                // lives in one place and runs on a single thread.
-                fileEvents.send(FileEvent.FromTdLib(file))
+                // [lookupFile] hands the file to the reducer through the same channel the
+                // inbound UpdateFile stream uses — the Ready-stick / eviction / throttle
+                // logic lives in one place and runs on a single thread — before it
+                // returns, and shares a lookup already in flight from [resync].
+                val file = lookupFile(fileId, joinInFlightLookup)
                 // Don't peek `slot.value` here: the reducer hasn't necessarily run yet.
                 // Inspect the file directly — if TDLib already has it on disk we skip
                 // the redundant DownloadFile.
@@ -752,7 +772,7 @@ class MediaCache(
         // in strictly the order ensure() emits.
         postCompletionResync.remove(fileId)?.cancel()
         fileEvents.send(FileEvent.Reset(fileId, MediaState.Idle))
-        ensure(fileId, priority)
+        ensureInternal(fileId, priority, joinInFlightLookup = false)
     }
 
     /**
@@ -787,8 +807,10 @@ class MediaCache(
             // ResetIfReady event and here just makes ensure() short-circuit
             // (the existing Downloading state is preserved). Only when
             // ResetIfReady actually flipped to Idle does ensure() restart the
-            // download.
-            ensure(fileId, priority)
+            // download. Fresh lookup, never a join: a GetFile started before the
+            // ResetIfReady could reply "completed" ahead of the reset and leave ensureSlow
+            // returning without a DownloadFile while the slot sits on Idle.
+            ensureInternal(fileId, priority, joinInFlightLookup = false)
         }
     }
 
@@ -822,19 +844,53 @@ class MediaCache(
      * No-op for slots that no Composable has yet observed (creating one for a
      * resync-only flow would defeat [evictTerminalSlots]'s memory cap). Idempotent
      * and concurrency-safe: identical events from concurrent resyncs collapse
-     * cleanly inside the reducer.
+     * cleanly inside the reducer. A resync that lands while the mount's [ensure] is
+     * already looking the file up shares that GetFile (see [inflightLookups]).
      */
     fun resync(fileId: Int) {
         if (states[fileId] == null) return
         scope.launch(ioDispatcher) {
             runCatching {
-                val file = td.send(TdApi.GetFile(fileId))
-                fileEvents.send(FileEvent.FromTdLib(file))
+                lookupFile(fileId, joinInFlight = true)
             }.onFailure { err ->
                 if (err is kotlinx.coroutines.CancellationException) throw err
                 Log.w(TAG, "resync($fileId) failed", err)
             }
         }
+    }
+
+    /**
+     * [TdApi.GetFile] for [fileId], with the reply dispatched to the reducer as a
+     * [FileEvent.FromTdLib] before this returns. With [joinInFlight] a lookup already
+     * running for the same file is awaited instead of issuing a second one; without
+     * it a new lookup always starts (and becomes the one later joiners share).
+     *
+     * Only the GetFile is shared — reducer, watchdog and priorities are untouched. The
+     * lookup runs on [scope] so cancelling one waiter never cancels the RPC another
+     * waiter depends on; failures are handed to every waiter through the deferred and
+     * never escape to [scope].
+     */
+    private suspend fun lookupFile(fileId: Int, joinInFlight: Boolean): TdApi.File {
+        val fresh = CompletableDeferred<TdApi.File>()
+        if (joinInFlight) {
+            inflightLookups.putIfAbsent(fileId, fresh)?.let { return it.await() }
+        } else {
+            inflightLookups[fileId] = fresh
+        }
+        scope.launch(ioDispatcher) {
+            try {
+                val file = td.send(TdApi.GetFile(fileId))
+                fileEvents.send(FileEvent.FromTdLib(file))
+                fresh.complete(file)
+            } catch (t: Throwable) {
+                fresh.completeExceptionally(t)
+                if (t is kotlinx.coroutines.CancellationException) throw t
+            } finally {
+                // Compare-and-remove: a non-joining lookup may already have replaced us.
+                inflightLookups.remove(fileId, fresh)
+            }
+        }
+        return fresh.await()
     }
 
     /**
@@ -1034,6 +1090,10 @@ class MediaCache(
         pendingCancels.clear()
         postCompletionResync.values.forEach { it.cancel() }
         postCompletionResync.clear()
+        // In-flight lookups still finish (their reply is dropped by the reducer for the
+        // now-missing slot); forgetting them keeps the next account's ensure from
+        // joining a GetFile issued against the previous account's file table.
+        inflightLookups.clear()
     }
 
     private companion object {
