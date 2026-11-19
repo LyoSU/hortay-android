@@ -1,10 +1,15 @@
 package dev.lyo.hortay.ui.media
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.LruCache
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -14,6 +19,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -27,7 +33,9 @@ import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.MediaState
 import dev.lyo.hortay.data.TdMedia
 import dev.lyo.hortay.ui.icons.Symbol
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -59,6 +67,13 @@ import java.io.File
  * pass `placeholderColor = null` and `showProgress = false` so this composable stays fully
  * transparent until the full-resolution image is ready, letting the parent's fallback show
  * through during loading or on failure.
+ *
+ * **Minithumb tint.** With a non-null [placeholderColor] and an inline minithumb, the box is
+ * filled with the minithumb's average colour instead of [placeholderColor] (see
+ * [MinithumbTints]); [placeholderColor] stays the fill when there is no minithumb or until
+ * the tint is computed. A null [placeholderColor] (stickers, custom emoji, avatars, the
+ * fullscreen viewer) never gets a tint. Pass `minithumbTint = false` for surfaces whose
+ * container must keep its own colour (round video bubbles).
  */
 @Composable
 fun TdMediaImage(
@@ -69,6 +84,7 @@ fun TdMediaImage(
     placeholderColor: Color? = MaterialTheme.colorScheme.surfaceContainerHigh,
     showProgress: Boolean = true,
     priority: DownloadPriority = DownloadPriority.VisibleMedia,
+    minithumbTint: Boolean = true,
 ) {
     val context = LocalContext.current
     val fileId = media.fileId
@@ -134,8 +150,18 @@ fun TdMediaImage(
     // under the blurred minithumb. See [rememberDeferredLoading].
     val showLoadingOverlay = rememberDeferredLoading(state = state, key = fileId)
 
+    // Box fill: the minithumb's average colour when there is one, so the grey surface never
+    // flashes between the blurred preview and the sharp photo — minithumb → photo reads as
+    // the same colour field sharpening. Read inside the draw lambda, so the tint landing a
+    // few ms after mount re-draws the box without recomposing this card.
+    val minithumb = media.minithumbBytes
     val baseModifier = if (placeholderColor != null) {
-        modifier.background(placeholderColor)
+        if (minithumbTint && minithumb != null) {
+            val tint = rememberMinithumbTint(minithumb)
+            modifier.drawBehind { drawRect(tint.value ?: placeholderColor) }
+        } else {
+            modifier.background(placeholderColor)
+        }
     } else {
         modifier
     }
@@ -156,7 +182,6 @@ fun TdMediaImage(
         // minithumb at full alpha through the photo fade and for [MEDIA_REVEAL_LINGER_MS]
         // after the first painted pixel, then drops it — so the opaque thumb covers the
         // whole fade and [placeholderColor] never bleeds through a half-decoded image.
-        val minithumb = media.minithumbBytes
         MediaReveal(
             revealed = photoPainted,
             key = fileId,
@@ -260,6 +285,95 @@ fun TdMediaImage(
 val LocalWebStaleMedia = staticCompositionLocalOf<((String) -> Unit)?> { null }
 
 private val MINITHUMB_BLUR_RADIUS = 20.dp
+
+/**
+ * The minithumb's average colour as a [State] read at draw time. A cache hit is served on
+ * the first frame; a miss is computed once on [Dispatchers.Default] and lands in the same
+ * state (null until then — callers fall back to their surface colour). Keyed on the byte
+ * content, so recompositions, re-mounts and a new [TdMedia] instance carrying the same
+ * minithumb all reuse one result.
+ */
+@Composable
+private fun rememberMinithumbTint(bytes: ByteArray): State<Color?> {
+    val key = remember(bytes) { MinithumbTints.Key(bytes) }
+    val tint = remember(key) { mutableStateOf(MinithumbTints.peek(key)) }
+    LaunchedEffect(key) {
+        if (tint.value == null) tint.value = MinithumbTints.compute(key)
+    }
+    return tint
+}
+
+/**
+ * Process-wide LRU of minithumb → average colour. A minithumb is a ~40×40 inline JPEG, so
+ * the decode + 1.6 k-pixel walk is sub-millisecond, but it still runs off the main thread
+ * and at most once per distinct minithumb while it stays in the cache. Undecodable bytes
+ * are remembered as [NO_TINT] so a broken minithumb isn't re-decoded on every mount.
+ */
+internal object MinithumbTints {
+
+    /** Content-keyed wrapper — [TdMedia] instances are rebuilt on every post update. */
+    class Key(val bytes: ByteArray) {
+        private val hash = bytes.contentHashCode()
+        override fun hashCode(): Int = hash
+        override fun equals(other: Any?): Boolean =
+            other is Key && other.hash == hash && other.bytes.contentEquals(bytes)
+    }
+
+    private const val CAPACITY = 512
+    private const val NO_TINT = 0
+    private const val MAX_SIDE = 64
+
+    private val cache = LruCache<Key, Int>(CAPACITY)
+
+    fun peek(key: Key): Color? = cache.get(key)?.toTint()
+
+    suspend fun compute(key: Key): Color? = withContext(Dispatchers.Default) {
+        cache.get(key)?.let { return@withContext it.toTint() }
+        val argb = averageArgb(key.bytes)
+        cache.put(key, argb)
+        argb.toTint()
+    }
+
+    private fun Int.toTint(): Color? = if (this == NO_TINT) null else Color(this)
+
+    private fun averageArgb(bytes: ByteArray): Int {
+        val decoded = runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
+            ?: return NO_TINT
+        val bitmap = if (decoded.width > MAX_SIDE || decoded.height > MAX_SIDE) {
+            Bitmap.createScaledBitmap(decoded, MAX_SIDE, MAX_SIDE, true).also { decoded.recycle() }
+        } else {
+            decoded
+        }
+        try {
+            val w = bitmap.width
+            val h = bitmap.height
+            if (w <= 0 || h <= 0) return NO_TINT
+            val pixels = IntArray(w * h)
+            bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+            var r = 0L
+            var g = 0L
+            var b = 0L
+            var weight = 0L
+            for (p in pixels) {
+                val a = (p ushr 24) and 0xFF
+                if (a == 0) continue
+                r += ((p shr 16) and 0xFF) * a.toLong()
+                g += ((p shr 8) and 0xFF) * a.toLong()
+                b += (p and 0xFF) * a.toLong()
+                weight += a
+            }
+            if (weight == 0L) return NO_TINT
+            // Opaque result; the alpha bit also keeps a pure-black average distinct
+            // from the [NO_TINT] sentinel.
+            return (0xFF shl 24) or
+                ((r / weight).toInt() shl 16) or
+                ((g / weight).toInt() shl 8) or
+                (b / weight).toInt()
+        } finally {
+            bitmap.recycle()
+        }
+    }
+}
 
 // Web-mode (remote URL) photos still use Coil's own crossfade — they have no minithumb
 // underlay and no MediaCache reveal signal, so Coil's fade is the only transition there.

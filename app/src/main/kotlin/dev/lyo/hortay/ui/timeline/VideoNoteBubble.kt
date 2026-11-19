@@ -130,6 +130,7 @@ internal fun VideoNotePlayerBubble(
                 media = it,
                 contentDescription = stringResource(R.string.media_desc_video_note),
                 showProgress = false,
+                minithumbTint = false,
                 modifier = Modifier.fillMaxSize(),
             )
         }
