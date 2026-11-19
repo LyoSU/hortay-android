@@ -167,9 +167,15 @@ fun PostCard(
     // Per-key cursor read: the holder's `get` registers a Compose snapshot
     // dependency on this post's chatId only, so an UpdateChatReadInbox for
     // a different chat does not invalidate this card.
-    val cursor = LocalReadCursors.current[post.chatId]
+    val cursorHolder = LocalReadCursors.current
     // A tombstone is terminal, not "yet to be read" — never paint the unread strip on it.
-    val isUnread = !expanded && !post.isDeleted && post.parentId == null && post.isUnreadAt(cursor)
+    // A merged-feed row that folds other posts ([annotation], see [clusterFeed]) stays
+    // unread while any of them is: a hidden forward copy, or a folded series member the
+    // reader has not opened yet. Same per-key reads, one per chat the row stands for.
+    val isUnread = !expanded && !post.isDeleted && post.parentId == null && (
+        if (annotation == null) post.isUnreadAt(cursorHolder[post.chatId])
+        else rowHasUnread(post, annotation) { cursorHolder[it] }
+        )
     // Twin animations on the strip transition: alpha fade (effects spec) for the
     // colour disappearing, and a spatial-spring shrink that compresses the strip
     // toward its vertical centre. Together they read as "the read marker just
@@ -524,13 +530,26 @@ fun PostCard(
 }
 
 /**
- * "Also forwarded by A, B +N" above a post that stands for several channels' copies of the
+ * "Also forwarded by A, B and N more" above a post that stands for several channels' copies of the
  * same original ([clusterFeed] hid the others). Up to three overlapping avatars.
  */
 @Composable
 private fun ForwardedByRow(forwarders: kotlinx.collections.immutable.ImmutableList<ChannelBadge>) {
-    val names = forwarders.take(2).joinToString(", ") { it.title } +
-        if (forwarders.size > 2) " +${forwarders.size - 2}" else ""
+    val names = when (forwarders.size) {
+        0 -> ""
+        1 -> forwarders[0].title
+        2 -> stringResource(R.string.feed_forwarders_two, forwarders[0].title, forwarders[1].title)
+        else -> {
+            val more = forwarders.size - 2
+            pluralStringResource(
+                R.plurals.feed_forwarders_more,
+                more,
+                forwarders[0].title,
+                forwarders[1].title,
+                more,
+            )
+        }
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Symbol(name = "forward", tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 14.dp)
         Spacer(Modifier.width(6.dp))

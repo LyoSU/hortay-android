@@ -366,6 +366,11 @@
     <string name="settings_group_feed_title">Raggruppa inoltri e serie</string>
     <string name="settings_group_feed_subtitle">Una scheda per un post inoltrato da più canali, e le raffiche di un canale si raccolgono sotto il primo</string>
     <string name="feed_also_forwarded_by">Inoltrato anche da %1$s</string>
+    <string name="feed_forwarders_two">%1$s e %2$s</string>
+    <plurals name="feed_forwarders_more">
+        <item quantity="one">%1$s, %2$s e %3$d altro</item>
+        <item quantity="other">%1$s, %2$s e altri %3$d</item>
+    </plurals>
     <string name="post_fact_check_title">Verifica dei fatti</string>
     <plurals name="feed_series_more">
         <item quantity="one">Altro %d post di questa serie</item>

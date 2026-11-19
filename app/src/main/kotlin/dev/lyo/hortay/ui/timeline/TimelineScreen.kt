@@ -49,7 +49,6 @@ import dev.lyo.hortay.data.isUnplayableVideo
 import dev.lyo.hortay.data.ChannelActionsRepository
 import dev.lyo.hortay.data.ChannelDirectory
 import dev.lyo.hortay.data.ChatFoldersRepository
-import dev.lyo.hortay.data.isUnreadAt
 import dev.lyo.hortay.data.CommentsRepository
 import dev.lyo.hortay.data.DownloadPriority
 import dev.lyo.hortay.data.TranslationsStore
@@ -114,6 +113,13 @@ fun TimelineScreen(
     bookmarks: BookmarkStore,
     contentPadding: PaddingValues,
     showOnlyBookmarked: Boolean,
+    /**
+     * Bookmark keys of rows the source carries only for the Saved route (guest mode:
+     * [dev.lyo.hortay.data.web.WebFeedSource.savedOnlyKeys]). Dropped from the feed and
+     * from the arrivals pill whenever [showOnlyBookmarked] is false.
+     */
+    feedExcludedKeys: kotlinx.collections.immutable.ImmutableSet<String> =
+        kotlinx.collections.immutable.persistentSetOf(),
     /**
      * Called when the user taps a post's channel header, a forward-source chip,
      * or an inline reply / quote card. The second parameter is the optional
@@ -441,10 +447,14 @@ fun TimelineScreen(
     //
     // Saved (showOnlyBookmarked) has no folder bar, so it is pinned to "All" — without
     // the bypass a bookmark from an archived channel could never be seen anywhere.
-    val scopePredicate = remember(scope_filter, archivedChatIds, folderChatIdsForScope, archiveInAllFeed, showOnlyBookmarked) {
+    val scopePredicate = remember(
+        scope_filter, archivedChatIds, folderChatIdsForScope, archiveInAllFeed, showOnlyBookmarked, feedExcludedKeys,
+    ) {
         { p: TimelinePost ->
             val isArchived = p.chatId in archivedChatIds
-            when (scope_filter) {
+            if (!showOnlyBookmarked && feedExcludedKeys.isNotEmpty() && p.bookmarkKey() in feedExcludedKeys) {
+                false
+            } else when (scope_filter) {
                 FilterScope.All -> showOnlyBookmarked || archiveInAllFeed || !isArchived
                 FilterScope.Archive -> isArchived
                 is FilterScope.Folder -> folderChatIdsForScope?.contains(p.chatId) == true
@@ -487,7 +497,9 @@ fun TimelineScreen(
     // only flips `reverseLayout`; see [dev.lyo.hortay.data.FeedOrder].
     // Series the user opened with "N more posts in this series" stay expanded for the
     // session; the set only ever grows, so an opened burst never folds back under them.
-    var expandedSeries by remember { mutableStateOf(emptySet<String>()) }
+    // Held by the VM so it survives this screen leaving composition (tab switch, detail
+    // push) — see [TimelineViewModel.expandedSeries].
+    val expandedSeries by vm.expandedSeries.collectAsStateWithLifecycle()
     val clustered = remember(filteredPosts, groupFeed, showOnlyBookmarked, expandedSeries) {
         if (groupFeed && !showOnlyBookmarked) {
             clusterFeed(filteredPosts, expandedSeries) { p ->
@@ -504,9 +516,16 @@ fun TimelineScreen(
             ClusteredFeed(filteredPosts, kotlinx.collections.immutable.persistentMapOf())
         }
     }
-    val feedAnnotations = remember(clustered.annotations) {
-        FeedAnnotations(clustered.annotations) { key -> expandedSeries = expandedSeries + key }
+    val feedAnnotations = remember(clustered.annotations, vm) {
+        FeedAnnotations(clustered.annotations) { key ->
+            // Record every member of the run, not just the kept row: the kept row moves
+            // when older history joins the burst, and the series must stay open anyway.
+            vm.expandSeries(clustered.annotations[key]?.seriesMemberKeys?.takeIf { it.isNotEmpty() } ?: listOf(key))
+        }
     }
+    // Read through State by the long-lived effects and click handlers below (dwell,
+    // arrivals tap, next-unread tap) so they always see the current clustering.
+    val clusteredState = rememberUpdatedState(clustered)
     val visiblePosts = clustered.posts
 
     // Cold-start "cursors usable for the boundary picker" signal. Source of
@@ -633,7 +652,7 @@ fun TimelineScreen(
     // `groupReplies` reshape that promoted Single → Thread on the fly was deleted —
     // see [FeedItem] for the full rationale.
     val feedItems: List<FeedItem> = remember(
-        visiblePosts, boundaryCursors, feedOrder, cursorEpoch, recencyCutoffMs,
+        visiblePosts, clustered.annotations, boundaryCursors, feedOrder, cursorEpoch, recencyCutoffMs,
     ) {
         val postItems = visiblePosts.map(FeedItem::Post)
         if (feedOrder == dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) {
@@ -642,6 +661,7 @@ fun TimelineScreen(
                 cursors = boundaryCursors,
                 epoch = cursorEpoch,
                 recencyCutoffMs = recencyCutoffMs,
+                annotations = clustered.annotations,
             )
         } else {
             postItems
@@ -682,7 +702,7 @@ fun TimelineScreen(
     // [continueReadingIndex] with the same [recencyCutoffMs] the latcher uses
     // so a folder switch can't auto-scroll the user onto a weeks-old dormant
     // unread that the cold-start picker would have rejected.
-    val homeScrollIndex by remember(feedItems, feedOrder, cursorsHaveLanded, recencyCutoffMs) {
+    val homeScrollIndex by remember(feedItems, clustered.annotations, feedOrder, cursorsHaveLanded, recencyCutoffMs) {
         derivedStateOf {
             when (feedOrder) {
                 dev.lyo.hortay.data.FeedOrder.Newest -> 0
@@ -706,10 +726,12 @@ fun TimelineScreen(
                         // subscribes to exactly the chat cursors this scan touches, and
                         // derivedStateOf dedupes the integer output, so the target
                         // advances the instant a dwell/tap/jump ack moves a cursor.
+                        // Row-level: a kept row stays a target while any post it folds
+                        // ([clusterFeed]) is unread — see [rowHasUnread].
+                        val annotations = clustered.annotations
                         val boundary = feedItems.indexOfLast { row ->
                             val post = (row as? FeedItem.Post)?.post ?: return@indexOfLast false
-                            post.isUnreadAt(cursorHolder[post.chatId]) &&
-                                (recencyCutoffMs <= 0L || post.date >= recencyCutoffMs)
+                            rowHasUnread(post, annotations[row.key], recencyCutoffMs) { cursorHolder[it] }
                         }
                         // Fall back to newest (index 0) when no unread boundary
                         // qualifies — same fallback main's continueReadingIndex path used.
@@ -764,6 +786,7 @@ fun TimelineScreen(
         feedOrder = feedOrder,
         refreshing = refreshing,
         minUnreadDate = recencyCutoffMs,
+        annotations = clustered.annotations,
     )
     val latchedUiState = rememberLatchedTimelineUiState(
         candidate = candidateUiState,
@@ -847,7 +870,10 @@ fun TimelineScreen(
     // back to the freshest candidate.
     val pinnedIndex: Int? = remember(pinnedKey, feedItems) {
         if (pinnedKey == null) null
-        else feedItems.indexOfFirst { it.key == pinnedKey }.takeIf { it >= 0 }
+        else {
+            val key = clustered.resolveKey(pinnedKey)
+            feedItems.indexOfFirst { it.key == key }.takeIf { it >= 0 }
+        }
     }
     val readySeed = pinnedIndex ?: candidateInitialIndex ?: 0
     val listState = remember(routeKey, candidateInitialIndex != null) {
@@ -855,8 +881,19 @@ fun TimelineScreen(
         val anchorIndex = anchor?.let { a ->
             feedItems.indexOfFirst { it.key == a.itemKey }.takeIf { idx -> idx >= 0 }
         }
+        // The anchored post may have been folded since it was captured — older history
+        // joined its burst or its forward cluster while the screen was away, and a
+        // still-older post became the kept row ([clusterFeed]). Resolve it to the row that
+        // swallowed it instead of losing the position and re-seeding at the boundary. The
+        // pixel offset belonged to the hidden row, so the kept row lands at offset 0.
+        val foldedAnchorIndex = if (anchorIndex != null || anchor == null) null else {
+            val keptKey = clustered.keptKeyOf[anchor.itemKey]
+            keptKey?.let { k -> feedItems.indexOfFirst { it.key == k }.takeIf { idx -> idx >= 0 } }
+        }
         if (anchorIndex != null) {
             androidx.compose.foundation.lazy.LazyListState(anchorIndex, anchor.offsetPx.coerceAtLeast(0))
+        } else if (foldedAnchorIndex != null) {
+            androidx.compose.foundation.lazy.LazyListState(foldedAnchorIndex, 0)
         } else {
             androidx.compose.foundation.lazy.LazyListState(readySeed, 0)
         }
@@ -1050,6 +1087,12 @@ fun TimelineScreen(
     // on a busy news day): a stale capture would have us ack the wrong posts as
     // forceRead=true and (worse) OpenChat the wrong chat.
     val feedItemsState = rememberUpdatedState(feedItems)
+    // The row list the LazyColumn is actually composed with — the latched Ready items,
+    // which trail [feedItems] by a frame (the latcher commits through a LaunchedEffect).
+    // Click handlers that must wait for an ingest to reach the column read this.
+    val renderedItemsState = rememberUpdatedState<List<FeedItem>>(
+        (latchedUiState as? TimelineUiState.Ready)?.items ?: emptyList(),
+    )
 
     // Resolve the queued "scroll to messageId" once the target row appears.
     // Extracted to [rememberPendingScrollToMessage] — shared with [ChannelScreen].
@@ -1173,6 +1216,9 @@ fun TimelineScreen(
     // mode-specific call is detached into [scope] so a viewport change a frame later
     // doesn't kill the in-flight ack. The returned set is the same one
     // [markPostReadState] below extends with explicit-tap acks.
+    // [ackCompanions]: reading a kept row also acks the hidden forward copies it stands
+    // for (same content). Folded SERIES members are deliberately not companions — they
+    // have never been on screen; they keep the row unread until the series is expanded.
     val ackedRead = rememberReadAckDwell(
         listState = listState,
         displayedItems = feedItems,
@@ -1180,6 +1226,7 @@ fun TimelineScreen(
         markAsRead = if (coveredByOverlay) null else markAsRead,
         scope = scope,
         dwellMs = READ_DWELL_MS,
+        ackCompanions = clustered.ackCompanions,
     )
 
     // Focus-chat tracking: keep the chat of the post the user is actually LOOKING AT
@@ -1348,8 +1395,14 @@ fun TimelineScreen(
         if (mark != null) {
             val ids = post.albumMessageIds.ifEmpty { listOf(post.id) }
             val unacked = ids.filter { (post.chatId to it) !in ackedRead }
-            if (unacked.isNotEmpty()) {
+            // Hidden forward copies of the same original go with the post (see
+            // [ClusteredFeed.ackCompanions]); never folded series members.
+            val companions = clusteredState.value.ackCompanions[FeedItem.Post(post).key]
+                .orEmpty()
+                .filter { (it.chatId to it.id) !in ackedRead }
+            if (unacked.isNotEmpty() || companions.isNotEmpty()) {
                 unacked.forEach { ackedRead.add(post.chatId to it) }
+                companions.forEach { ackedRead.add(it.chatId to it.id) }
                 // Synthesise a one-element batch carrying the resolved album ids
                 // so the mode-specific wrapper sees the same shape it gets from
                 // the dwell collector. TDLib mode flattens to viewMessages(chatId,
@@ -1359,7 +1412,7 @@ fun TimelineScreen(
                 val ackPosts = unacked.map { id ->
                     if (id == post.id) post else post.copy(id = id, albumMessageIds = emptyList())
                 }
-                scope.launch { mark(ackPosts) }
+                scope.launch { mark(ackPosts + companions) }
             }
         }
     })
@@ -1889,8 +1942,9 @@ fun TimelineScreen(
             // (see the control's KDoc for the iteration history). Both former
             // behaviours survive EXACTLY. See ARCHITECTURE.md → Load-bearing
             // "Arrivals commit only via NewPostsPill": no edge-based auto-accept; the
-            // arrivals tap is the only commit path and [awaitItemsCommitted] (in
-            // [onArrivalsTap]) is the proven sequencer.
+            // arrivals tap is the only commit path and [awaitRowsCommitted] (in
+            // [onArrivalsTap]) is the sequencer — key-based, so an arrival that folds
+            // into an existing row still commits promptly.
             //
             // Mode-dependent placement / direction:
             //   - Newest: TopCenter, ↑ glyph — fresh content lives above; there is
@@ -1907,12 +1961,19 @@ fun TimelineScreen(
             // Live remaining-unread count (OldestUnreadFirst only) — drives the
             // collapsed state. Same recency floor the jump target uses so the count
             // reflects exactly what the collapsed tap will navigate to.
-            val unreadRemaining by remember(visiblePosts, feedOrder, recencyCutoffMs) {
+            // Counts what the reader still has to see: a row and its forward copies as one,
+            // plus every unread series member folded under a kept row — so a feed whose
+            // unread posts are all folded doesn't claim "0 unread" ([rowUnreadCount]).
+            val unreadRemaining by remember(visiblePosts, clustered.annotations, feedOrder, recencyCutoffMs) {
                 derivedStateOf {
                     if (feedOrder != dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst) 0
-                    else visiblePosts.count {
-                        it.isUnreadAt(cursorHolder[it.chatId]) &&
-                            (recencyCutoffMs <= 0L || it.date >= recencyCutoffMs)
+                    else {
+                        val annotations = clustered.annotations
+                        visiblePosts.sumOf {
+                            // Skip the key build on every cursor tick when nothing is folded.
+                            val annotation = if (annotations.isEmpty()) null else annotations[it.feedKey()]
+                            rowUnreadCount(it, annotation, recencyCutoffMs) { c -> cursorHolder[c] }
+                        }
                     }
                 }
             }
@@ -1927,7 +1988,8 @@ fun TimelineScreen(
             // double-commit).
             val controlPendingCount = if (arrivalsActive) scopedPendingNew.size else 0
 
-            // Arrivals-commit body — VERBATIM from the former NewPostsPill onClick.
+            // Arrivals-commit body — the former NewPostsPill onClick, with the commit wait
+            // made key-based for feed grouping (see [awaitRowsCommitted]).
             val onArrivalsTap: () -> Unit = onArrivalsTap@{
                 // Ack only scope-visible pending; archive / other-folder pending stays
                 // unread for those tabs. Scroll target lands the user at the OLDEST of
@@ -1936,18 +1998,34 @@ fun TimelineScreen(
                 // (newest = index 0), so the oldest arrival is the HIGHEST-index acked
                 // row = indexOfLast. In Newest the home target IS index 0 = newest.
                 val ackedKeys = scopedPendingNew.map { it.chatId to it.id }
-                val preTotal = listState.layoutInfo.totalItemsCount
+                // Row keys of the accepted posts. With feed grouping on, an arrival can fold
+                // into an existing row (it joins a series burst, or it is another channel's
+                // copy of a forward already shown), so the row count does NOT necessarily
+                // grow — the old "wait for totalItemsCount to grow" stalled its full timeout
+                // and then scrolled to and highlighted an unrelated post. Instead wait until
+                // every accepted post that reached the clustering is present in the column,
+                // either as its own row or as the kept row that swallowed it.
+                val acceptedRowKeys = scopedPendingNew.mapTo(HashSet()) { it.feedKey() }
                 vm.acceptIds(ackedKeys)
                 scope.launch {
-                    listState.awaitItemsCommitted(preTotal)
+                    val items = listState.awaitRowsCommitted(renderedItemsState) { rendered ->
+                        val clustering = clusteredState.value
+                        val visibleKeys = clustering.posts.mapTo(HashSet()) { it.feedKey() }
+                        // Accepted posts the clustering has seen; one filtered out of the
+                        // feed altogether (service message, expired media) never shows up.
+                        val committed = acceptedRowKeys.filter { it in visibleKeys || it in clustering.keptKeyOf }
+                        if (committed.isEmpty()) return@awaitRowsCommitted false
+                        // The latched column list trails the source list by a frame.
+                        if (rendered.size != feedItemsState.value.size) return@awaitRowsCommitted false
+                        val renderedKeys = rendered.mapTo(HashSet()) { it.key }
+                        committed.all { clustering.resolveKey(it) in renderedKeys }
+                    }
+                    val clustering = clusteredState.value
+                    val targetKeys = acceptedRowKeys.mapTo(HashSet()) { clustering.resolveKey(it) }
                     val target = when (feedOrder) {
                         dev.lyo.hortay.data.FeedOrder.Newest -> homeScrollIndexState.intValue
                         dev.lyo.hortay.data.FeedOrder.OldestUnreadFirst -> {
-                            val ackedSet = ackedKeys.toHashSet()
-                            val items = feedItemsState.value
-                            val oldestNew = items.indexOfLast { fi ->
-                                fi.posts().any { (it.chatId to it.id) in ackedSet }
-                            }
+                            val oldestNew = items.indexOfLast { it.key in targetKeys }
                             if (oldestNew >= 0) oldestNew
                             // Fallback: arrivals cluster at index 0 (newest) under the
                             // descending data model.
@@ -1956,7 +2034,7 @@ fun TimelineScreen(
                     }
                     listState.smartScrollTo(target)
                     // Pulse on the landing post — matches the divider-anchored jump path.
-                    val destinationPost = feedItemsForEffectsState.value
+                    val destinationPost = items
                         .getOrNull(target)?.posts()?.firstOrNull()
                     if (destinationPost != null) {
                         highlightedPostKey = destinationPost.chatId to destinationPost.id
@@ -1964,7 +2042,8 @@ fun TimelineScreen(
                 }
             }
 
-            // "Next unread" body — VERBATIM from the former UnreadCounterPill onClick.
+            // "Next unread" body — the former UnreadCounterPill onClick, made row-level
+            // for feed grouping (a kept row stands for the posts [clusterFeed] folded).
             val onUnreadTap: () -> Unit = onUnreadTap@{
                 // Jump to the LIVE oldest-unread post, top-aligned so reading starts
                 // at its top, with a brief highlight. The target is the live
@@ -1983,7 +2062,15 @@ fun TimelineScreen(
                 // Why this is race-free: [PostsRepository.viewMessages] advances the
                 // local read cursor optimistically, so the ack moves the cursor on the
                 // same tap and the post-ack scan below sees the advance immediately.
+                //
+                // Folded rows: a kept row is unread while any post it stands for is
+                // ([rowHasUnread]). Leaving it acks the post and its hidden forward copies
+                // (same content) but NOT its folded series members — the reader has not
+                // seen them. If any of those is still unread, the step EXPANDS the series
+                // and lands on its oldest unread member instead; without that, the row
+                // would stay the target and every tap would re-land on it.
                 val items = feedItemsState.value
+                val clustering = clusteredState.value
                 val current = homeScrollIndexState.intValue
                 // "Parked on the target" = the boundary row is the post under the gaze
                 // (greatest visible area), the same dominant-visible rule the focus
@@ -1999,33 +2086,53 @@ fun TimelineScreen(
                         (ce - cs).coerceAtLeast(0)
                     }?.index == current
                 }
-                val leaving = items.getOrNull(current)?.posts()?.firstOrNull()
-                    ?.takeIf { it.isUnreadAt(cursorHolder[it.chatId]) }
-                    ?.takeIf { parkedOnTarget }
-                // When skipping, ack the post we're leaving and remember the chat + id
-                // we advanced it to, so the scan below can simulate that advance
-                // locally — the optimistic cursor put reaches [cursorHolder] a frame
-                // later via the off-main diff, so reading it back synchronously here
-                // would still see the pre-ack value.
-                var ackedChat: Long? = null
-                var ackedTo = 0L
+                val leavingRow = (items.getOrNull(current) as? FeedItem.Post)?.takeIf { parkedOnTarget }
+                val leavingAnnotation = leavingRow?.let { clustering.annotations[it.key] }
+                val leaving = leavingRow?.post
+                    ?.takeIf { rowHasUnread(it, leavingAnnotation) { c -> cursorHolder[c] } }
+                // When skipping, ack the post we're leaving and remember each chat + id
+                // we advanced, so the scan below can simulate that advance locally —
+                // the optimistic cursor put reaches [cursorHolder] a frame later via the
+                // off-main diff, so reading it back synchronously here would still see
+                // the pre-ack value.
+                val simulated = HashMap<Long, Long>()
+                fun advance(post: TimelinePost) {
+                    val to = post.albumMessageIds.maxOrNull() ?: post.id
+                    simulated[post.chatId] = maxOf(simulated[post.chatId] ?: 0L, to)
+                }
                 if (leaving != null) {
                     markPostReadState.value(leaving)
-                    ackedChat = leaving.chatId
-                    ackedTo = leaving.albumMessageIds.maxOrNull() ?: leaving.id
+                    advance(leaving)
+                    leavingRow?.let { clustering.ackCompanions[it.key] }?.forEach(::advance)
                 }
-                // Same boundary scan as [homeScrollIndex]; with leaving == null (not
-                // parked, or already read) it resolves to `current` verbatim.
-                val target = items.indexOfLast { row ->
-                    val p = (row as? FeedItem.Post)?.post ?: return@indexOfLast false
-                    val cursor =
-                        if (p.chatId == ackedChat) maxOf(cursorHolder[p.chatId] ?: 0L, ackedTo)
-                        else cursorHolder[p.chatId]
-                    p.isUnreadAt(cursor) &&
-                        (recencyCutoffMs <= 0L || p.date >= recencyCutoffMs)
-                }.let { if (it >= 0) it else 0 }
-                val landed = items.getOrNull(target)?.posts()?.firstOrNull()
+                val cursorOf: (Long) -> Long? = { chat ->
+                    val live = cursorHolder[chat]
+                    val sim = simulated[chat]
+                    if (sim == null) live else maxOf(live ?: 0L, sim)
+                }
+                val expandKeys = leavingAnnotation
+                    ?.takeIf { leaving != null }
+                    ?.takeIf { a -> a.seriesFolded.any { it.isUnreadAt(cursorOf(it.chatId)) } }
+                    ?.seriesMemberKeys
+                    ?.takeIf { it.isNotEmpty() }
+                if (expandKeys != null) vm.expandSeries(expandKeys)
                 scope.launch {
+                    // Same boundary scan as [homeScrollIndex]; with nothing acked (not
+                    // parked, or already read) it resolves to `current` verbatim.
+                    var rows = items
+                    var annotations = clustering.annotations
+                    if (expandKeys != null) {
+                        rows = listState.awaitRowsCommitted(renderedItemsState) { rendered ->
+                            val keys = rendered.mapTo(HashSet()) { it.key }
+                            expandKeys.all { it in keys }
+                        }
+                        annotations = clusteredState.value.annotations
+                    }
+                    val target = rows.indexOfLast { row ->
+                        val p = (row as? FeedItem.Post)?.post ?: return@indexOfLast false
+                        rowHasUnread(p, annotations[row.key], recencyCutoffMs, cursorOf)
+                    }.let { if (it >= 0) it else 0 }
+                    val landed = rows.getOrNull(target)?.posts()?.firstOrNull()
                     if (target > 0) {
                         listState.scrollToBoundary(rowIndex = target, animated = true)
                     } else {

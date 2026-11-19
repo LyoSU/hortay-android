@@ -13,6 +13,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import dev.lyo.hortay.data.StartupCoordinator
 import dev.lyo.hortay.data.TimelinePost
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableMap
+import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -158,6 +161,9 @@ fun rememberPendingScrollToMessage(
  * @param scope Caller's [CoroutineScope]; the suspending [markAsRead] is detached
  *   into it so a viewport change a frame later doesn't cancel an in-flight ack.
  * @param dwellMs Stability threshold; matches `READ_DWELL_MS` / `CHANNEL_READ_DWELL_MS`.
+ * @param ackCompanions Row key → hidden posts acked together with that row when it is
+ *   read (the merged feed's folded forward copies, [ClusteredFeed.ackCompanions]). Empty
+ *   for surfaces that don't fold rows.
  * @return The same dedup set the effect populates, so callers can extend it from
  *   explicit-tap acks ("open this post") that should suppress the next dwell pass
  *   for that post.
@@ -170,6 +176,7 @@ fun rememberReadAckDwell(
     markAsRead: (suspend (List<TimelinePost>) -> Unit)?,
     scope: CoroutineScope,
     dwellMs: Long = 500L,
+    ackCompanions: ImmutableMap<String, ImmutableList<TimelinePost>> = persistentMapOf(),
 ): MutableSet<Pair<Long, Long>> {
     // Dedup set, reset whenever [ackKey] changes (mode-specific wrapper / chat swap).
     // Once a (chatId, id) is in here the dwell never re-acks it — safe to suppress
@@ -179,6 +186,7 @@ fun rememberReadAckDwell(
     // silently swallow the re-ack. Growth is bounded by what one session actually reads.
     val ackedRead = remember(ackKey) { HashSet<Pair<Long, Long>>() }
     val itemsState = rememberUpdatedState(displayedItems)
+    val companionsState = rememberUpdatedState(ackCompanions)
     // Gate the ack on the screen actually being foreground+interactive. A post left
     // in the viewport when the user locks the phone or backgrounds the app would
     // otherwise get marked read by the dwell timer firing against a composition that
@@ -241,9 +249,10 @@ fun rememberReadAckDwell(
                     val snapshot = itemsState.value
                     if (snapshot.isEmpty()) return@collectLatest
                     val keySet = keys.toHashSet()
+                    val companions = companionsState.value
                     val visible = snapshot
                         .filter { it.key in keySet }
-                        .flatMap { it.posts() }
+                        .flatMap { row -> row.posts() + companions[row.key].orEmpty() }
                     val fresh = visible.filter { (it.chatId to it.id) !in ackedRead }
                     if (fresh.isEmpty()) return@collectLatest
                     fresh.forEach { ackedRead.add(it.chatId to it.id) }

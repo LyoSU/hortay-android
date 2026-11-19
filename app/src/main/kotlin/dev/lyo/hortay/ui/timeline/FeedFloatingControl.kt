@@ -19,9 +19,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -76,7 +78,7 @@ import kotlinx.collections.immutable.toImmutableList
  *
  *  - [pendingCount] > 0 → arrivals stadium: avatar stack + "N нових постів" +
  *    direction arrow. Tap = [onArrivalsClick] (the proven arrivals-commit path:
- *    `acceptIds → awaitItemsCommitted → smartScrollTo`).
+ *    `acceptIds → awaitRowsCommitted → smartScrollTo`).
  *  - [unreadCount] > 0 → circular "↓ N". Tap = [onUnreadClick] (scroll to the
  *    live read→unread boundary). A plain circle with a pressed-scale cue — the
  *    earlier Circle→Burst press morph deformed the silhouette and the owner
@@ -151,13 +153,21 @@ fun FeedFloatingControl(
     }
 }
 
-/** Split-button halves: full stadium on the outer edge, a tight radius where they meet. */
-private fun segmentShape(roundStart: Boolean, roundEnd: Boolean): Shape = RoundedCornerShape(
-    topStart = if (roundStart) SEGMENT_HEIGHT / 2 else INNER_CORNER,
-    bottomStart = if (roundStart) SEGMENT_HEIGHT / 2 else INNER_CORNER,
-    topEnd = if (roundEnd) SEGMENT_HEIGHT / 2 else INNER_CORNER,
-    bottomEnd = if (roundEnd) SEGMENT_HEIGHT / 2 else INNER_CORNER,
-)
+/**
+ * Split-button halves: full stadium on the outer edge, a tight radius where they meet.
+ * The outer corners are 50 % of the height, not `SEGMENT_HEIGHT / 2`, so a segment that
+ * grows past its minimum height at a large font scale stays a stadium.
+ */
+private fun segmentShape(roundStart: Boolean, roundEnd: Boolean): Shape {
+    val outer = CornerSize(50)
+    val inner = CornerSize(INNER_CORNER)
+    return RoundedCornerShape(
+        topStart = if (roundStart) outer else inner,
+        topEnd = if (roundEnd) outer else inner,
+        bottomEnd = if (roundEnd) outer else inner,
+        bottomStart = if (roundStart) outer else inner,
+    )
+}
 
 @Composable
 private fun ArrivalsSegment(
@@ -177,8 +187,10 @@ private fun ArrivalsSegment(
         // Polite live region: this segment only exists while `pendingCount > 0`, so its
         // very appearance IS the "new posts arrived" announcement — TalkBack users get
         // the same signal sighted users get from it sliding into view.
+        // heightIn, not height: the count is text and must not clip at font scale 2.0.
+        // Both halves share the same single-line labelLarge, so they grow in step.
         modifier = Modifier
-            .height(SEGMENT_HEIGHT)
+            .heightIn(min = SEGMENT_HEIGHT)
             .semantics(mergeDescendants = true) {
                 contentDescription = label
                 liveRegion = LiveRegionMode.Polite
@@ -227,7 +239,7 @@ private fun UnreadSegment(
         shadowElevation = 6.dp,
         interactionSource = interactionSource,
         modifier = Modifier
-            .height(SEGMENT_HEIGHT)
+            .heightIn(min = SEGMENT_HEIGHT)
             .scale(pressScale)
             .semantics(mergeDescendants = true) { contentDescription = label },
     ) {

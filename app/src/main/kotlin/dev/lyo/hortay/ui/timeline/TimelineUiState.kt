@@ -65,6 +65,7 @@ fun buildTimelineUiState(
     feedOrder: FeedOrder,
     refreshing: Boolean,
     minUnreadDate: Long = 0L,
+    annotations: Map<String, FeedAnnotation> = emptyMap(),
 ): TimelineUiState {
     if (items.isEmpty()) {
         return if (refreshing) TimelineUiState.Loading else TimelineUiState.Empty
@@ -83,11 +84,17 @@ fun buildTimelineUiState(
     // Both FeedOrder values use [indexOfLast] — same semantics as the original
     // [continueReadingIndex] on TimelinePost. Data is descending (newest = idx 0),
     // so the boundary = oldest unread = the LAST qualifying row.
+    // [annotations]: a row folding unread posts ([clusterFeed]) counts as unread — same
+    // rule as [withBoundary], so the landing and the divider agree.
     val qualifies: (FeedItem) -> Boolean = { row ->
         val post = (row as? FeedItem.Post)?.post
-        post != null &&
-            post.isUnreadIn(frozenCursors) &&
-            (minUnreadDate <= 0L || post.date >= minUnreadDate)
+        val annotation = if (post == null || annotations.isEmpty()) null else annotations[row.key]
+        when {
+            post == null -> false
+            annotation != null -> rowHasUnread(post, annotation, minUnreadDate) { frozenCursors[it] }
+            else -> post.isUnreadIn(frozenCursors) &&
+                (minUnreadDate <= 0L || post.date >= minUnreadDate)
+        }
     }
     val boundaryPost = items.indexOfLast(qualifies)
     // Cold-entry landing target: the [FeedItem.Boundary] divider row, NOT the

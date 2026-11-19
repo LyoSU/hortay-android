@@ -7,12 +7,14 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -126,7 +128,13 @@ private fun FolderChip(label: String, selected: Boolean, onClick: () -> Unit) {
             )
             .heightIn(min = 48.dp)
             .padding(horizontal = 12.dp)
-            .padding(top = 12.dp),
+            .padding(top = 12.dp)
+            // The parent Row scrolls horizontally, so this Column is measured with an
+            // UNBOUNDED max width — the indicator's `fillMaxWidth()` is then a no-op and
+            // the empty Box measures 0 wide (no visible underline). Pinning the Column to
+            // its max intrinsic width (= the label's width) gives the indicator a bounded
+            // width to fill.
+            .width(IntrinsicSize.Max),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // B4: emoji-only folder labels (Telegram folders carry their own emoji in

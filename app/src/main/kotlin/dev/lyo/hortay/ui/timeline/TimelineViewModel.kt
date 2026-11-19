@@ -9,6 +9,8 @@ import dev.lyo.hortay.data.BookmarkStore
 import dev.lyo.hortay.data.FeedSource
 import dev.lyo.hortay.data.TimelinePost
 import kotlinx.collections.immutable.PersistentList
+import kotlinx.collections.immutable.PersistentSet
+import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.flow.*
@@ -234,6 +236,25 @@ class TimelineViewModel(
         feedScrollAnchors[routeKey] = anchor
     }
 
+    /**
+     * Post keys of the bursts the user opened with "N more posts in this series"
+     * ([clusterFeed] keeps a run visible while ANY of its member keys is in here).
+     *
+     * VM-resident, not a screen `remember`: [TimelineScreen] leaves composition on every
+     * tab switch and Nav3 detail push. A screen-local set re-folded an opened series on
+     * return, and the leave anchor — often one of the series' now-hidden posts — no
+     * longer resolved, so the feed re-seeded at the unread boundary. Session-scoped like
+     * the scroll anchors: grows for the session, cleared by [resetSessionState] on logout.
+     */
+    private val _expandedSeries = MutableStateFlow<PersistentSet<String>>(persistentSetOf())
+    val expandedSeries: StateFlow<PersistentSet<String>> = _expandedSeries.asStateFlow()
+
+    /** Open a folded series for the rest of the session; pass every member key of the run. */
+    fun expandSeries(memberKeys: Collection<String>) {
+        if (memberKeys.isEmpty()) return
+        _expandedSeries.update { it.addAll(memberKeys) }
+    }
+
     init {
         // Bootstrap: first stable emission seeds [seenHighWater] for every chatId in
         // livePosts with that channel's max date, then flips [bootstrapped] true.
@@ -335,6 +356,7 @@ class TimelineViewModel(
         _coldStartCursorsSettled.value = false
         pinnedScrollSeedKeys.clear()
         feedScrollAnchors.clear()
+        _expandedSeries.value = persistentSetOf()
         launchBootstrap()
     }
 

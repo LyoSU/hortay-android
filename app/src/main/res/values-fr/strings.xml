@@ -368,6 +368,12 @@
     <string name="settings_group_feed_title">Regrouper partages et séries</string>
     <string name="settings_group_feed_subtitle">Une seule carte pour une publication partagée par plusieurs chaînes, et les rafales d’une chaîne se replient sous la première</string>
     <string name="feed_also_forwarded_by">Aussi partagé par %1$s</string>
+    <string name="feed_forwarders_two">%1$s et %2$s</string>
+    <plurals name="feed_forwarders_more">
+        <item quantity="one">%1$s, %2$s et %3$d autre</item>
+        <item quantity="many">%1$s, %2$s et %3$d autres</item>
+        <item quantity="other">%1$s, %2$s et %3$d autres</item>
+    </plurals>
     <string name="post_fact_check_title">Vérification des faits</string>
     <plurals name="feed_series_more">
         <item quantity="one">%d autre publication de cette série</item>

@@ -239,19 +239,30 @@ internal fun FeedItem.posts(): List<TimelinePost> = when (this) {
  * [TimelinePost.date], which [dev.lyo.hortay.data.MessageMapper] emits as
  * `message.date * 1000L`). When non-zero, posts older than the cutoff don't qualify
  * as the oldest unread for boundary placement. `0L` disables the floor.
+ *
+ * **Folded rows.** [annotations] (from [clusterFeed], keyed by row key) make a kept row
+ * count as unread while any post it stands for — a hidden forward copy or a folded series
+ * member — is unread ([rowHasUnread]), so the divider can't land below posts the reader
+ * has not seen just because they are folded. Empty = every row stands only for itself.
  */
 internal fun withBoundary(
     items: List<FeedItem.Post>,
     cursors: ReadCursors,
     epoch: Long,
     recencyCutoffMs: Long,
+    annotations: Map<String, FeedAnnotation> = emptyMap(),
 ): List<FeedItem> {
     if (items.isEmpty()) return items
     val boundaryPostIdx = items.indexOfLast { feedItem ->
         val post = feedItem.post
-        val isUnread = post.isUnreadIn(cursors)
-        val recentEnough = recencyCutoffMs == 0L || post.date >= recencyCutoffMs
-        isUnread && recentEnough
+        val annotation = if (annotations.isEmpty()) null else annotations[feedItem.key]
+        if (annotation == null) {
+            val isUnread = post.isUnreadIn(cursors)
+            val recentEnough = recencyCutoffMs == 0L || post.date >= recencyCutoffMs
+            isUnread && recentEnough
+        } else {
+            rowHasUnread(post, annotation, recencyCutoffMs) { cursors[it] }
+        }
     }
     if (boundaryPostIdx < 0) return items
     // Every post is unread → no read prefix to separate from. Skip.

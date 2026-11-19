@@ -346,6 +346,10 @@
     <string name="settings_group_feed_title">Kelompokkan teruskan dan seri</string>
     <string name="settings_group_feed_subtitle">Satu kartu untuk postingan yang diteruskan beberapa saluran, dan rentetan postingan saluran dilipat di bawah yang pertama</string>
     <string name="feed_also_forwarded_by">Juga diteruskan oleh %1$s</string>
+    <string name="feed_forwarders_two">%1$s dan %2$s</string>
+    <plurals name="feed_forwarders_more">
+        <item quantity="other">%1$s, %2$s, dan %3$d lainnya</item>
+    </plurals>
     <string name="post_fact_check_title">Cek fakta</string>
     <plurals name="feed_series_more">
         <item quantity="other">%d postingan lagi dalam seri ini</item>

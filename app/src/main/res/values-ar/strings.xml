@@ -396,6 +396,15 @@
     <string name="settings_group_feed_title">تجميع إعادات التوجيه والسلاسل</string>
     <string name="settings_group_feed_subtitle">بطاقة واحدة لمنشور أعادت توجيهه عدة قنوات، وتُطوى منشورات القناة المتتالية تحت أولها</string>
     <string name="feed_also_forwarded_by">أعاد توجيهه أيضًا %1$s</string>
+    <string name="feed_forwarders_two">%1$s و%2$s</string>
+    <plurals name="feed_forwarders_more">
+        <item quantity="zero">%1$s، %2$s و%3$d قناة أخرى</item>
+        <item quantity="one">%1$s، %2$s وقناة أخرى</item>
+        <item quantity="two">%1$s، %2$s وقناتان أخريان</item>
+        <item quantity="few">%1$s، %2$s و%3$d قنوات أخرى</item>
+        <item quantity="many">%1$s، %2$s و%3$d قناة أخرى</item>
+        <item quantity="other">%1$s، %2$s و%3$d قناة أخرى</item>
+    </plurals>
     <string name="post_fact_check_title">تدقيق الحقائق</string>
     <plurals name="feed_series_more">
         <item quantity="zero">لا منشورات أخرى في هذه السلسلة</item>

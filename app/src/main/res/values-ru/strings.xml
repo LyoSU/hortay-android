@@ -378,6 +378,13 @@
     <string name="settings_group_feed_title">Группировать репосты и серии</string>
     <string name="settings_group_feed_subtitle">Одна карточка для поста, который переслали несколько каналов, а серия постов канала сворачивается под первый</string>
     <string name="feed_also_forwarded_by">Также переслали %1$s</string>
+    <string name="feed_forwarders_two">%1$s и %2$s</string>
+    <plurals name="feed_forwarders_more">
+        <item quantity="one">%1$s, %2$s и ещё %3$d</item>
+        <item quantity="few">%1$s, %2$s и ещё %3$d</item>
+        <item quantity="many">%1$s, %2$s и ещё %3$d</item>
+        <item quantity="other">%1$s, %2$s и ещё %3$d</item>
+    </plurals>
     <string name="post_fact_check_title">Проверка фактов</string>
     <plurals name="feed_series_more">
         <item quantity="one">Ещё %d пост этой серии</item>

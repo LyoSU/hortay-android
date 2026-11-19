@@ -356,6 +356,11 @@
     <string name="settings_group_feed_title">گروه‌بندی بازارسال‌ها و سری‌ها</string>
     <string name="settings_group_feed_subtitle">یک کارت برای پستی که چند کانال بازارسال کرده‌اند، و پست‌های پشت‌سرهم یک کانال زیر اولی جمع می‌شوند</string>
     <string name="feed_also_forwarded_by">بازارسال‌شده توسط %1$s</string>
+    <string name="feed_forwarders_two">%1$s و %2$s</string>
+    <plurals name="feed_forwarders_more">
+        <item quantity="one">%1$s، %2$s و %3$d کانال دیگر</item>
+        <item quantity="other">%1$s، %2$s و %3$d کانال دیگر</item>
+    </plurals>
     <string name="post_fact_check_title">راستی‌آزمایی</string>
     <plurals name="feed_series_more">
         <item quantity="one">%d پست دیگر از این سری</item>

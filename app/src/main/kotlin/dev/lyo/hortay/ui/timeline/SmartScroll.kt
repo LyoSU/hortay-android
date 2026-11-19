@@ -93,25 +93,39 @@ internal fun alignedScrollOffset(viewport: Int, itemSize: Int, reverseLayout: Bo
 }
 
 /**
- * Suspend until LazyColumn's laid-out item count exceeds [previousTotal] (i.e.
- * a freshly-staged ingest has committed all the way through the latched
- * UiState → composition → measure pipeline), then return. Times out silently
- * after [timeoutMs] so a refresh storm can't deadlock the caller.
+ * Suspend until the LazyColumn has laid out a row list that satisfies [ready], then
+ * return that list (or the latest one after [timeoutMs], so a stalled ingest can't
+ * deadlock the caller).
  *
- * Necessary before `scrollToItem(N)` whenever the caller just mutated state
- * that grows the row list: Compose dispatches the latched UiState through a
- * `LaunchedEffect`, so [androidx.compose.foundation.lazy.LazyListLayoutInfo.totalItemsCount]
- * lags the source-of-truth `items` list by a frame. `scrollToItem` CLAMPS to
- * the current totalItemsCount — without this wait, target row N gets clamped
- * down to OLD lastIndex and lands the user one row above the new arrivals.
+ * Necessary before `scrollToItem(N)` whenever the caller just mutated state that changes
+ * the row list: Compose dispatches the latched UiState through a `LaunchedEffect`, so
+ * [androidx.compose.foundation.lazy.LazyListLayoutInfo.totalItemsCount] lags the
+ * source-of-truth list by a frame, and `scrollToItem` CLAMPS to the current count.
+ *
+ * Key-based, replacing the former "wait until totalItemsCount grows past the old
+ * count" (`awaitItemsCommitted`): in the clustered merged feed an accepted arrival can
+ * fold into an existing row (a series burst, a forward copy), so the count stays put or
+ * even shrinks — the count wait stalled its full timeout and then scrolled against a
+ * stale list. [rendered] is the list the LazyColumn is composed with (the latched UiState
+ * items, which lag the source list by a frame); requiring `totalItemsCount ==
+ * rendered.size` as well means the measure pass has caught up with that composition, so
+ * an index into the returned list is an index the LazyColumn can scroll to unclamped.
+ * [ready] is evaluated inside the snapshot read, so it may read other snapshot state.
  */
-internal suspend fun LazyListState.awaitItemsCommitted(
-    previousTotal: Int,
+internal suspend fun <T> LazyListState.awaitRowsCommitted(
+    rendered: androidx.compose.runtime.State<List<T>>,
     timeoutMs: Long = 800L,
-) {
+    ready: (List<T>) -> Boolean,
+): List<T> {
     withTimeoutOrNull(timeoutMs) {
-        snapshotFlow { layoutInfo.totalItemsCount }.first { it > previousTotal }
+        // [ready] runs INSIDE the snapshotFlow block so any snapshot state it reads (the
+        // caller's live clustering, say) re-triggers the check too, not just [rendered].
+        snapshotFlow {
+            val items = rendered.value
+            layoutInfo.totalItemsCount == items.size && ready(items)
+        }.first { it }
     }
+    return rendered.value
 }
 
 /**

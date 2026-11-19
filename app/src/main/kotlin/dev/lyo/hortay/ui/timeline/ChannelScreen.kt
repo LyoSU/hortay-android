@@ -387,12 +387,16 @@ fun ChannelScreen(
     // tap. [rememberPendingScrollToMessage] resolves the target and clears it.
     var pendingScrollToMessage by remember(chatId) { mutableStateOf<Pair<Long, Long>?>(null) }
     // Way back from in-channel jumps, newest jump last. Every jump — a reply tap or a pinned
-    // bar tap — goes through [jumpWithinChannel] and pushes where it started, so each step
+    // bar tap — goes through [jumpWithinChannel] and records where it started, so each step
     // back is one tap: a reply returns to the post it was tapped on, a pin to the spot the
-    // reader was at.
+    // reader was at. The start point is pushed only once the jump LANDS ([pendingJumpFrom]
+    // → the resolver's onLanded): a target that no longer resolves (deleted pin or reply
+    // target) must not leave a return entry behind, or Back would "return" to where the
+    // reader already is.
     val returnStack = remember(chatId) { mutableStateListOf<ReturnPoint>() }
+    var pendingJumpFrom by remember(chatId) { mutableStateOf<ReturnPoint?>(null) }
     val jumpWithinChannel: (messageId: Long, from: ReturnPoint?) -> Unit = { messageId, from ->
-        from?.let { returnStack += it }
+        pendingJumpFrom = from
         pendingScrollToMessage = chatId to messageId
     }
     // Which pin the bar shows, by message id (null = newest). Each tap jumps to it and
@@ -472,9 +476,12 @@ fun ChannelScreen(
             // scrollToItem(idx, 0) bottom-anchors in reverseLayout and clips the
             // header above the viewport. See [scrollToTopAligned] KDoc.
             listState.scrollToTopAligned(idx)
+            pendingJumpFrom?.let { returnStack += it }
+            pendingJumpFrom = null
             pendingScrollToMessage = null
         },
         onMissed = {
+            pendingJumpFrom = null
             pendingScrollToMessage = null
             onScrollMissed()
         },
@@ -1010,7 +1017,9 @@ fun ChannelScreen(
                         }
                         // Data is newest-first, so a higher index is older; reverseLayout puts
                         // older posts above. The arrow points where the jump will go.
-                        val towardOlder = jumpTargetIndex > listState.firstVisibleItemIndex
+                        val towardOlder by remember(listState, displayedList) {
+                            derivedStateOf { jumpTargetIndex > listState.firstVisibleItemIndex }
+                        }
                         ChannelJumpButton(
                             visible = returnStack.isNotEmpty() || farFromNewest,
                             backCount = returnStack.size,
@@ -1108,8 +1117,10 @@ private fun ChannelJumpButton(
             color = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
             shadowElevation = 6.dp,
+            // heightIn, not height: the step count is text and must not clip at large
+            // font scale — the circle grows into a pill instead.
             modifier = Modifier
-                .height(48.dp)
+                .heightIn(min = 48.dp)
                 .widthIn(min = 48.dp)
                 .semantics { contentDescription = label },
         ) {
