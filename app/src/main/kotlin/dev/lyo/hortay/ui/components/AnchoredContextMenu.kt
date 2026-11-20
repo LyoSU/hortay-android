@@ -133,9 +133,8 @@ interface ContextMenuScope {
  * Placement, in the dialog's safe-drawing area: header above the anchor, actions below it,
  * under the finger horizontally; with room on one side only, both stack on that side.
  * When neither works the menu opens at the finger like a platform context menu — header
- * above the press, actions below — overlapping the anchor. An anchor that fills most of
- * the screen gets no window at all and the screen dims evenly: a window that large would
- * dim nothing. Both parts always fit — the actions card
+ * above the press, actions below — and the whole screen dims evenly, anchor included: a
+ * lit window the menu itself covers reads as a highlight on something you cannot see. Both parts always fit — the actions card
  * gets whatever height the header leaves and scrolls past that.
  *
  * No backdrop blur on purpose: a cross-window blur would blur the anchor too, and keeping
@@ -189,7 +188,7 @@ fun AnchoredContextMenu(
         val hole = remember(root) { root?.let { anchor.visibleBoundsIn(it) } }
         val press = remember(root) { root?.let { anchor.pressIn(it) } }
         // Written by the menu's measure pass, read by the scrim's draw pass.
-        var anchorLit by remember { mutableStateOf(true) }
+        var anchorLit by remember { mutableStateOf(false) }
         val scrimColor = MaterialTheme.colorScheme.scrim
         Box(
             modifier = Modifier
@@ -272,9 +271,9 @@ private fun MenuLayout(
                 (holeTop - gap - actionsHeight - headerSpace) to (holeTop - gap - actionsHeight)
             else -> null
         }
-        // The anchor stays lit unless it fills most of the screen — a window that large
-        // would leave nothing dimmed.
-        onPlacement(hole != null && hole.height <= availHeight * LIT_ANCHOR_MAX_FRACTION)
+        // The anchor is lit only when the menu sits clear of it. Lighting a post the
+        // menu then covers made it stand out and hid it at the same time.
+        onPlacement(besideY != null)
         val clearance = FINGER_CLEARANCE.roundToPx()
         val actionsY = (besideY?.second ?: (pressY + clearance))
             .coerceAtMost(bottom - actionsHeight)
@@ -381,4 +380,3 @@ private val CARD_MAX_WIDTH = 320.dp
 private val CAPSULE_SHAPE = RoundedCornerShape(28.dp)
 private val CARD_SHAPE = RoundedCornerShape(20.dp)
 private const val ENTRANCE_FROM_SCALE = 0.9f
-private const val LIT_ANCHOR_MAX_FRACTION = 0.7f
