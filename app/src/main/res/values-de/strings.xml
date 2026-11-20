@@ -735,6 +735,7 @@
         <item quantity="other">bearbeitet ×%d</item>
     </plurals>
     <string name="revision_baseline_caveat">Original nicht erfasst — gezeigt wird der Inhalt nach der frühesten Bearbeitung, die Hortay beobachtet hat</string>
+    <string name="revision_reconciled_note">Erst nach dem Schließen der App bemerkt, dazwischen gab es eventuell weitere Bearbeitungen</string>
     <string name="revision_empty">Keine Versionen gespeichert</string>
     <string name="revision_go_to_current">Zur aktuellen Version</string>
     <string name="revision_media_audio_caption">Audio · %1$ds</string>
@@ -921,7 +922,7 @@
     <string name="archive_section_channels">Kanäle</string>
     <string name="archive_retention_label">Aufbewahren für</string>
     <string name="archive_max_records_label">Eintragslimit</string>
-    <string name="archive_max_records_subtitle">Über dem Limit fallen die ältesten Einträge zuerst weg</string>
+    <string name="archive_max_records_subtitle">Über dem Limit fallen zuerst nie geänderte Beiträge weg, dann die ältesten</string>
     <string name="archive_storage_label">Belegter Speicher</string>
     <string name="archive_clear_confirm">Alles im Archiv wird endgültig gelöscht. Kanäle merken davon nichts.</string>
     <string name="archive_disable_body">Neue Änderungen werden nicht mehr gespeichert. Was soll mit dem bisherigen Archiv passieren?</string>

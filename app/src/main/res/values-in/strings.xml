@@ -713,6 +713,7 @@
         <item quantity="other">diedit ×%d</item>
     </plurals>
     <string name="revision_baseline_caveat">Asli tidak direkam — ini menampilkan konten setelah pengeditan paling awal yang Hortay lihat</string>
+    <string name="revision_reconciled_note">Ditemukan setelah aplikasi ditutup, jadi mungkin ada pengeditan lain di antaranya</string>
     <string name="revision_empty">Belum ada revisi tersimpan</string>
     <string name="revision_go_to_current">Ke versi saat ini</string>
     <string name="revision_media_audio_caption">Audio · %1$d dtk</string>
@@ -895,7 +896,7 @@
     <string name="archive_section_channels">Kanal</string>
     <string name="archive_retention_label">Simpan selama</string>
     <string name="archive_max_records_label">Batas entri</string>
-    <string name="archive_max_records_subtitle">Jika melewati batas, entri terlama dihapus lebih dulu</string>
+    <string name="archive_max_records_subtitle">Jika melewati batas, postingan yang tidak pernah berubah dihapus lebih dulu, lalu yang terlama</string>
     <string name="archive_storage_label">Ruang terpakai</string>
     <string name="archive_clear_confirm">Semua isi arsip akan dihapus permanen. Kanal tidak akan tahu.</string>
     <string name="archive_disable_body">Perubahan baru tidak akan disimpan lagi. Bagaimana dengan yang sudah ada di arsip?</string>

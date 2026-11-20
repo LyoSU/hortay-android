@@ -729,6 +729,7 @@
         <item quantity="other">ویرایش‌شده ×%d</item>
     </plurals>
     <string name="revision_baseline_caveat">نسخه‌ی اصلی ثبت نشده — این محتوا پس از اولین ویرایشی است که Hortay دیده</string>
+    <string name="revision_reconciled_note">این تغییر بعد از بسته‌شدن برنامه پیدا شد، پس شاید در این فاصله ویرایش‌های دیگری هم بوده باشد</string>
     <string name="revision_empty">هیچ ویرایشی ذخیره نشده</string>
     <string name="revision_go_to_current">رفتن به نسخه‌ی فعلی</string>
     <string name="revision_media_audio_caption">صدا · %1$d ث</string>
@@ -915,7 +916,7 @@
     <string name="archive_section_channels">کانال‌ها</string>
     <string name="archive_retention_label">مدت نگه‌داری</string>
     <string name="archive_max_records_label">سقف موارد</string>
-    <string name="archive_max_records_subtitle">با رسیدن به سقف، قدیمی‌ترین موارد اول حذف می‌شوند</string>
+    <string name="archive_max_records_subtitle">با رسیدن به سقف، اول پست‌هایی که هیچ‌وقت تغییر نکرده‌اند حذف می‌شوند، بعد قدیمی‌ترین‌ها</string>
     <string name="archive_storage_label">فضای اشغال‌شده</string>
     <string name="archive_clear_confirm">همه‌چیز در آرشیو برای همیشه پاک می‌شود. کانال‌ها متوجه نمی‌شوند.</string>
     <string name="archive_disable_body">تغییرات جدید دیگر ذخیره نمی‌شوند. با آنچه الان در آرشیو است چه کنیم؟</string>

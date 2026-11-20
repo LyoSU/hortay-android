@@ -1,85 +1,56 @@
 package dev.lyo.hortay.data.archive
 
 import dev.lyo.hortay.data.archive.db.ArchiveDatabase
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
- * TTL and cap enforcement for the archive DB.
+ * Archive housekeeping, run from [dev.lyo.hortay.data.StorageOptimizer] when the app comes
+ * to the foreground and from the archive settings when retention or the cap change.
  *
- * Cap eviction uses `DELETE FROM PostSnapshot WHERE id <= (SELECT MAX(id) FROM PostSnapshot) - :cap`
- * (cheap; uses `idx_PostSnapshot_id`, no `COUNT()` scan). Run nightly from
- * [dev.lyo.hortay.data.StorageOptimizer] and immediately on retention/cap setting changes.
+ * In order:
+ *  1. [dedupeVersions] — folds phantom versions stored under an older canonical form and
+ *     upgrades their hashes (a no-op once every version carries the current hash version).
+ *  2. Retention — removes whole messages whose newest event (`last_event_at_ms`: a capture
+ *     or the deletion) is older than the retention period. v1 dropped single rows by their
+ *     capture time, which could strip an edited post of its original version.
+ *  3. Cap — keeps at most `maxRecords` messages; see [evictToCap] for who goes first.
+ *  4. [ArchivedMediaStore.sweepOrphans] — removes media files no version references any more
+ *     (past a one-hour grace), which is how steps 1–3 and purges free disk space.
  *
- * Media refcount: when a snapshot row carrying a [TdlibContentMeta.mediaRef] with a
- * non-null [ArchivedMediaRef.localArchiveSha] is evicted, the underlying file in
- * [ArchivedMediaStore] needs its refcount decremented — otherwise orphaned media
- * accumulates indefinitely under `filesDir/archive_media/`. The sweep grabs blobs
- * of soon-to-be-evicted rows, decodes them to recover the SHAs, then releases the
- * refs after the SQL DELETE.
+ * Steps 1–3 run under [writeLock] (the repository's capture lock), so a capture never
+ * interleaves with a removal. The orphan sweep runs outside it: its grace window covers a
+ * file copied for a version that is not inserted yet.
  */
 class ArchiveSweep(
     private val db: ArchiveDatabase,
     private val settings: StateFlow<ArchiveSettings>,
     private val mediaStore: ArchivedMediaStore? = null,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val writeLock: Mutex = Mutex(),
+    private val available: () -> Boolean = { true },
 ) {
-    suspend fun run() {
-        val s = settings.value
-        val retentionMs = if (s.retentionDays == Int.MAX_VALUE) Long.MAX_VALUE
-                          else s.retentionDays.toLong() * 86_400_000L
-        // Each select-blobs+delete pair runs inside one transaction so a
-        // concurrent capture (running under ArchiveRepository.writeMutex, but
-        // NOT this sweep's mutex) can't slip a write between the SELECT and the
-        // DELETE. That matters most for the cap branch: deleteByCap recomputes
-        // `MAX(id)` at delete time, so an interleaved insert would shift the
-        // cutoff and evict a row whose blob we never collected — its media file
-        // would then never have its refcount released and leak on disk. On the
-        // single-connection Android/JDBC drivers a write transaction serialises
-        // against every other writer, making the pair effectively atomic.
-        if (retentionMs != Long.MAX_VALUE) {
-            val cutoff = clock() - retentionMs
-            val shasToRelease = db.transactionWithResult {
-                val shas = collectMediaShas(
-                    db.postSnapshotQueries.selectBlobsOlderThan(cutoff).executeAsList(),
-                )
-                db.postSnapshotQueries.deleteOlderThan(cutoff)
-                shas
+    private val runLock = Mutex()
+
+    suspend fun run() = runLock.withLock {
+        withContext(Dispatchers.IO) {
+            if (!available()) return@withContext
+            val s = settings.value
+            writeLock.withLock {
+                db.dedupeVersions()
+                if (s.retentionDays != Int.MAX_VALUE) {
+                    db.dropMessagesOlderThan(clock() - s.retentionDays.toLong() * DAY_MS)
+                }
+                if (s.maxRecords != Int.MAX_VALUE) db.evictToCap(s.maxRecords)
             }
-            releaseAll(shasToRelease)
+            mediaStore?.sweepOrphans()
         }
-        if (s.maxRecords != Int.MAX_VALUE) {
-            val shasToRelease = db.transactionWithResult {
-                val shas = collectMediaShas(
-                    db.postSnapshotQueries.selectBlobsByCap(s.maxRecords.toLong()).executeAsList(),
-                )
-                db.postSnapshotQueries.deleteByCap(s.maxRecords.toLong())
-                shas
-            }
-            releaseAll(shasToRelease)
-        }
-        // Last, so markers whose versions the retention / cap passes just evicted go too.
-        // A DELETED marker none of whose messages has a VERSION row shows nothing (the
-        // browser skips it, the feed's tombstone join drops it); capture stopped writing
-        // them, this clears the ones stored before. Marker blobs are one byte with no media
-        // reference and no minithumb, so there is no media refcount to release.
-        db.postSnapshotQueries.deleteContentlessDeletions()
     }
 
-    private fun collectMediaShas(blobs: List<ByteArray>): List<String> {
-        val out = ArrayList<String>(blobs.size)
-        for (blob in blobs) {
-            val sha = runCatching { ContentBlobCodec.decode(blob).mediaRef?.localArchiveSha }
-                .getOrNull()
-            if (!sha.isNullOrEmpty()) out += sha
-        }
-        return out
-    }
-
-    private suspend fun releaseAll(shas: List<String>) {
-        val store = mediaStore ?: return
-        if (shas.isEmpty()) return
-        for (sha in shas) {
-            runCatching { store.releaseRef(sha) }
-        }
+    private companion object {
+        const val DAY_MS = 86_400_000L
     }
 }

@@ -1,0 +1,108 @@
+-- One row per distinct observed state of an ArchivedMessage.
+--
+-- History order is explicit: (sort_at_ms, id). sort_at_ms is Telegram's edit date when
+-- the state has one, else the publication time (an as-published version), else the
+-- device time it was observed (guest mode). Telegram's edit date and our observation
+-- time are kept apart in edit_date_ms / observed_at_ms.
+--
+-- origin says HOW the state was observed (VersionOrigin): PUBLISHED (first seen
+-- unedited), FIRST_SEEN_EDITED (first seen already edited), LIVE_EDIT (an edit update),
+-- RECONCILED (found on re-ingest, after edits the app missed), WEB (guest mode).
+--
+-- content_hash is ContentNormalizer.canonicalHash for TDLib content, computed with the
+-- canonical form numbered hash_version (ContentNormalizer.HASH_VERSION); a row with an
+-- older hash_version is re-hashed before a mismatch is called a new version
+-- (checkAgainstLatest), and upgraded in place.
+--
+-- media_sha is the ArchivedMediaFile this version shows (the source of truth; the copy
+-- inside content_blob is ignored on read). A file no version references is removed by
+-- the orphan sweep (ArchivedMediaStore.sweepOrphans).
+CREATE TABLE MessageVersion (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id      INTEGER NOT NULL,
+    sort_at_ms      INTEGER NOT NULL,
+    edit_date_ms    INTEGER,
+    observed_at_ms  INTEGER NOT NULL,
+    origin          TEXT NOT NULL,
+    content_kind    TEXT NOT NULL,
+    content_blob    BLOB NOT NULL,
+    content_hash    TEXT NOT NULL,
+    hash_version    INTEGER NOT NULL,
+    text_preview    TEXT NOT NULL DEFAULT '',
+    media_sha       TEXT,
+    media_minithumb BLOB
+);
+
+CREATE INDEX idx_MessageVersion_message
+    ON MessageVersion(message_id, sort_at_ms, id);
+
+CREATE INDEX idx_MessageVersion_media
+    ON MessageVersion(media_sha);
+
+insert:
+INSERT INTO MessageVersion(message_id, sort_at_ms, edit_date_ms, observed_at_ms, origin, content_kind,
+                           content_blob, content_hash, hash_version, text_preview, media_sha, media_minithumb)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- The latest version's light columns: the dedup / stale-edit decisions, and whether it
+-- already references an archived media copy (attachMediaSha).
+latestForMessage:
+SELECT id, content_hash, hash_version, edit_date_ms, sort_at_ms, content_kind, media_sha
+FROM MessageVersion
+WHERE message_id = ?
+ORDER BY sort_at_ms DESC, id DESC
+LIMIT 1;
+
+contentById:
+SELECT content_kind, content_blob FROM MessageVersion WHERE id = ?;
+
+-- Earliest history position of a message — the baseline idempotency rule
+-- (ArchiveRepository.captureTdlibBaseline).
+minSortForMessage:
+SELECT MIN(sort_at_ms) AS min_sort FROM MessageVersion WHERE message_id = ?;
+
+updateHash:
+UPDATE MessageVersion SET content_hash = ?, hash_version = ? WHERE id = ?;
+
+selectForMessageKey:
+SELECT v.*, m.album_key, m.is_comment, m.deleted_at_ms, m.source_kind, m.source_key, m.message_key
+FROM MessageVersion v
+INNER JOIN ArchivedMessage m ON m.id = v.message_id
+WHERE m.source_kind = ? AND m.source_key = ? AND m.message_key = ?
+ORDER BY v.sort_at_ms ASC, v.id ASC;
+
+selectForMessage:
+SELECT * FROM MessageVersion WHERE message_id = ? ORDER BY sort_at_ms ASC, id ASC;
+
+minithumbsByIds:
+SELECT id, media_minithumb FROM MessageVersion WHERE id IN ? AND media_minithumb IS NOT NULL;
+
+deleteByMessageIds:
+DELETE FROM MessageVersion WHERE message_id IN ?;
+
+deleteById:
+DELETE FROM MessageVersion WHERE id = ?;
+
+setMediaSha:
+UPDATE MessageVersion SET media_sha = ? WHERE id = ?;
+
+-- Gives a version written before its media was downloaded the archived copy a later
+-- duplicate capture made (attachMediaIfSame). Never replaces a reference it already holds.
+attachMediaSha:
+UPDATE MessageVersion SET media_sha = :sha WHERE id = :id AND media_sha IS NULL;
+
+-- Messages holding a TDLib version hashed by an older canonical form — the dedupe step's
+-- work list (ArchiveSweep), paged by message id.
+selectMessagesWithStaleHash:
+SELECT DISTINCT message_id
+FROM MessageVersion
+WHERE content_kind = 'tdlib' AND hash_version < :current AND message_id > :afterId
+ORDER BY message_id
+LIMIT :limit;
+
+storageBytes:
+SELECT COALESCE(SUM(LENGTH(content_blob) + LENGTH(COALESCE(media_minithumb, ''))), 0) AS bytes
+FROM MessageVersion;
+
+clearAll:
+DELETE FROM MessageVersion;

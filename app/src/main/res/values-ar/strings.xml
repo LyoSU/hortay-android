@@ -807,6 +807,7 @@
         <item quantity="other">معدَّل ×%d</item>
     </plurals>
     <string name="revision_baseline_caveat">لم تُلتقط النسخة الأصلية — يعرض هذا المحتوى بعد أقدم تعديل رصده Hortay</string>
+    <string name="revision_reconciled_note">اكتُشف هذا التغيير بعد إغلاق التطبيق، لذا ربما جرت تعديلات أخرى بينهما</string>
     <string name="revision_empty">لا توجد مراجعات مخزَّنة</string>
     <string name="revision_go_to_current">الانتقال إلى الحالية</string>
     <string name="revision_media_audio_caption">صوت · %1$d ث</string>
@@ -1009,7 +1010,7 @@
     <string name="archive_section_channels">القنوات</string>
     <string name="archive_retention_label">مدة الاحتفاظ</string>
     <string name="archive_max_records_label">حد الإدخالات</string>
-    <string name="archive_max_records_subtitle">عند تجاوز الحد تُحذف أقدم الإدخالات أولاً</string>
+    <string name="archive_max_records_subtitle">عند تجاوز الحد تُحذف أولاً المنشورات التي لم تتغير، ثم الأقدم</string>
     <string name="archive_storage_label">المساحة المستخدمة</string>
     <string name="archive_clear_confirm">سيُحذف كل ما في الأرشيف نهائياً. لن تلاحظ القنوات ذلك.</string>
     <string name="archive_disable_body">لن تُحفظ التغييرات الجديدة بعد الآن. ماذا نفعل بما في الأرشيف حالياً؟</string>

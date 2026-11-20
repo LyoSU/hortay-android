@@ -747,6 +747,7 @@
     <string name="revision_sheet_title_deleted">Видалений пост</string>
     <string name="revision_empty">Версій ще немає</string>
     <string name="revision_baseline_caveat">Оригінал не зафіксовано — показано вміст після найранішого редагування, яке побачив Hortay</string>
+    <string name="revision_reconciled_note">Цю зміну помічено вже після того, як застосунок був закритий, тож між версіями могли бути й інші правки</string>
     <string name="revision_go_to_current">До поточної</string>
     <string name="revision_open_in_telegram">Відкрити в Telegram</string>
     <string name="revision_media_audio_caption">Аудіо · %1$dс</string>
@@ -969,7 +970,7 @@
     <string name="archive_section_channels">Канали</string>
     <string name="archive_retention_label">Скільки зберігати</string>
     <string name="archive_max_records_label">Ліміт записів</string>
-    <string name="archive_max_records_subtitle">Коли ліміт вичерпано, найстаріші записи зникають першими</string>
+    <string name="archive_max_records_subtitle">Коли ліміт вичерпано, першими зникають дописи без змін, далі найстаріші</string>
     <string name="archive_storage_label">Займає місця</string>
     <string name="archive_clear_confirm">Усе з архіву буде видалено назавжди. Канали цього не помітять.</string>
     <string name="archive_disable_body">Нові зміни більше не зберігатимуться. Що зробити з тим, що вже є в архіві?</string>

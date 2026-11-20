@@ -28,10 +28,13 @@ import kotlinx.serialization.json.jsonPrimitive
  *  - **forwardJson / replyJson** kept as-is (stable across non-edit mutations).
  *  - **entities** reduced to one canonical form — see [canonicalEntities].
  *
- * Changing this projection changes the hash of unchanged content. Rows already stored
- * keep their old `content_hash`, so every comparison against a stored row re-derives
- * the row's hash from its blob with the current projection before calling a mismatch a
- * new version — see [checkAgainstLatest].
+ * Changing this projection changes the hash of unchanged content, so it is versioned:
+ * every stored hash carries the [HASH_VERSION] it was computed with (`hash_version`).
+ * **Bump [HASH_VERSION] with every change to [components] or [canonicalEntities].** A
+ * stored row with an older version is re-derived from its blob before a mismatch is
+ * called a new version, and upgraded in place ([checkAgainstLatest]); the archive sweep
+ * re-hashes the rest and folds the phantom duplicates older forms let through
+ * ([dedupeVersions]).
  *
  * Without this normalizer, [ArchiveRepository.isDuplicate] would have returned
  * `false` on every poll vote → new VERSION row → spam ("phantom edits"). Pairing
@@ -211,6 +214,16 @@ object ContentNormalizer {
     }
 
     private fun JsonPrimitive.contentOrNull(): String? = content
+
+    /**
+     * Number of the current canonical form. 1 = every form before versioning (rows
+     * migrated from schema 2 carry it; their exact form is unknown); 2 = the form of
+     * [canonicalEntities] as documented above.
+     */
+    const val HASH_VERSION = 2L
+
+    /** [HASH_VERSION] of rows hashed before hash versions were recorded. */
+    const val LEGACY_HASH_VERSION = 1L
 
     internal const val TEXT = "text"
     internal const val ENTITIES = "entities"

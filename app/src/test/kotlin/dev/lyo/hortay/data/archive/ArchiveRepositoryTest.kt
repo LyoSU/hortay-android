@@ -1,375 +1,403 @@
 package dev.lyo.hortay.data.archive
 
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import dev.lyo.hortay.data.archive.db.ArchiveDatabase
 import kotlinx.collections.immutable.persistentSetOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 class ArchiveRepositoryTest {
 
-    private fun newRepo(
+    private class Fixture(
         settings: ArchiveSettings = ArchiveSettings(enabled = true),
-        now: Long = 1_000L,
-    ): Pair<ArchiveRepository, ArchiveDatabase> {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        ArchiveDatabase.Schema.create(driver)
-        val db = ArchiveDatabase(driver)
-        val settingsFlow = MutableStateFlow(settings)
-        return ArchiveRepository(db, settingsFlow, clock = { now }) to db
+        available: Boolean = true,
+    ) {
+        var now = 1_000L
+        val archive = TestArchive()
+        val db = archive.db
+        val repo = ArchiveRepository(db, MutableStateFlow(settings), clock = { now }, available = { available })
     }
 
-    private fun meta(text: String) = TdlibContentMeta(
-        text = text, entitiesJson = "[]",
-        mediaSummaryJson = null, pollJson = null,
-        forwardJson = null, replyJson = null,
-    )
+    private val chat = ChatRef.tdlib(42)
 
     @Test
     fun captureEdit_dedupesIdenticalContentHash() = runTest {
-        val (repo, db) = newRepo()
-        val chat = ChatRef.tdlib(42)
-        repo.captureTdlibEdit(chat, "100", null, 2_000L, meta("hello"))
-        repo.captureTdlibEdit(chat, "100", null, 2_000L, meta("hello"))
+        val f = Fixture()
+        f.repo.captureTdlibEdit(chat, "100", null, 2_000L, testMeta("hello"))
+        f.repo.captureTdlibEdit(chat, "100", null, 2_000L, testMeta("hello"))
 
-        val rows = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
-        assertEquals(1, rows.size)
+        assertEquals(1, f.db.versionsOf(chat, "100").size)
     }
 
     @Test
     fun captureEdit_writesWhenContentDiffers() = runTest {
-        var t = 1_000L
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        ArchiveDatabase.Schema.create(driver)
-        val db = ArchiveDatabase(driver)
-        val settings = MutableStateFlow(ArchiveSettings(enabled = true))
-        val repo = ArchiveRepository(db, settings, clock = { t })
+        val f = Fixture()
+        f.repo.captureTdlibEdit(chat, "100", null, 1_500L, testMeta("hello"))
+        f.now = 5_000L
+        f.repo.captureTdlibEdit(chat, "100", null, 2_000L, testMeta("hello there"))
 
-        val chat = ChatRef.tdlib(42)
-        repo.captureTdlibEdit(chat, "100", null, 1_500L, meta("hello"))
-        t = 5_000L
-        repo.captureTdlibEdit(chat, "100", null, 2_000L, meta("hello there"))
-
-        val rows = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
-        assertEquals(2, rows.size)
+        assertEquals(listOf("hello", "hello there"), f.db.textsOf(chat, "100"))
+        assertEquals(1L, f.db.countMessages())
     }
 
     /**
-     * Two edit captures racing through their own launches can reach the repository in the
-     * wrong order. The stale one (older edit date) must not land on top of the newer
-     * version — otherwise the next content-less re-emit writes the newer text a second time
-     * and the history alternates B → C → B → C.
+     * Two edit captures reaching the repository in the wrong order: the stale one (older
+     * edit date) must not land on top of the newer version — otherwise the next
+     * content-less re-emit writes the newer text a second time and the history alternates.
      */
     @Test
     fun captureEdit_dropsCaptureOlderThanLatestVersion() = runTest {
-        var t = 1_000L
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        ArchiveDatabase.Schema.create(driver)
-        val db = ArchiveDatabase(driver)
-        val repo = ArchiveRepository(db, MutableStateFlow(ArchiveSettings(enabled = true)), clock = { t })
-        val chat = ChatRef.tdlib(42)
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("v1"), originalDateMs = 500L)
+        f.now = 5_000L
+        f.repo.captureTdlibEdit(chat, "100", null, editedAtMs = 3_000L, meta = testMeta("v3"))
+        f.now = 5_100L
+        f.repo.captureTdlibEdit(chat, "100", null, editedAtMs = 2_000L, meta = testMeta("v2"))
+        f.now = 6_000L
+        f.repo.captureTdlibEdit(chat, "100", null, editedAtMs = 3_000L, meta = testMeta("v3"))
 
-        repo.captureTdlibBaseline(chat, "100", null, meta("v1"), originalDateMs = 500L)
-        t = 5_000L
-        repo.captureTdlibEdit(chat, "100", null, editedAtMs = 3_000L, meta = meta("v3"))
-        t = 5_100L
-        repo.captureTdlibEdit(chat, "100", null, editedAtMs = 2_000L, meta = meta("v2"))
-        t = 6_000L
-        repo.captureTdlibEdit(chat, "100", null, editedAtMs = 3_000L, meta = meta("v3"))
-
-        val texts = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
-            .map { toContent(it).meta.text }
-        assertEquals(listOf("v1", "v3"), texts)
+        assertEquals(listOf("v1", "v3"), f.db.textsOf(chat, "100"))
     }
 
     @Test
     fun captureEdit_newerEditStillLandsAfterOlderOne() = runTest {
-        var t = 1_000L
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        ArchiveDatabase.Schema.create(driver)
-        val db = ArchiveDatabase(driver)
-        val repo = ArchiveRepository(db, MutableStateFlow(ArchiveSettings(enabled = true)), clock = { t })
-        val chat = ChatRef.tdlib(42)
+        val f = Fixture()
+        f.repo.captureTdlibEdit(chat, "100", null, editedAtMs = 2_000L, meta = testMeta("v2"))
+        f.now = 2_000L
+        f.repo.captureTdlibEdit(chat, "100", null, editedAtMs = 3_000L, meta = testMeta("v3"))
 
-        repo.captureTdlibEdit(chat, "100", null, editedAtMs = 2_000L, meta = meta("v2"))
-        t = 2_000L
-        repo.captureTdlibEdit(chat, "100", null, editedAtMs = 3_000L, meta = meta("v3"))
-
-        val texts = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
-            .map { toContent(it).meta.text }
-        assertEquals(listOf("v2", "v3"), texts)
+        assertEquals(listOf("v2", "v3"), f.db.textsOf(chat, "100"))
     }
 
     @Test
     fun masterToggleOff_skipsCapture() = runTest {
-        val (repo, db) = newRepo(settings = ArchiveSettings(enabled = false))
-        repo.captureTdlibEdit(ChatRef.tdlib(42), "100", null, 1_500L, meta("hello"))
-        repo.captureTdlibBaseline(ChatRef.tdlib(42), "100", null, meta("hello"), originalDateMs = 500L)
+        val f = Fixture(ArchiveSettings(enabled = false))
+        f.repo.captureTdlibEdit(chat, "100", null, 1_500L, testMeta("hello"))
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("hello"), originalDateMs = 500L)
 
-        assertEquals(0, db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList().size)
+        assertEquals(0L, f.db.countMessages())
     }
 
     @Test
     fun excludedChat_skipsCapture() = runTest {
-        val chat = ChatRef.tdlib(42)
-        val (repo, db) = newRepo(settings = ArchiveSettings(
-            enabled = true, excludedChats = persistentSetOf(chat)))
-        repo.captureTdlibEdit(chat, "100", null, 1_500L, meta("hello"))
-        repo.captureTdlibBaseline(chat, "100", null, meta("hello"), originalDateMs = 500L)
+        val f = Fixture(ArchiveSettings(enabled = true, excludedChats = persistentSetOf(chat)))
+        f.repo.captureTdlibEdit(chat, "100", null, 1_500L, testMeta("hello"))
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("hello"), originalDateMs = 500L)
 
-        assertEquals(0, db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList().size)
+        assertEquals(0L, f.db.countMessages())
+    }
+
+    /** archive.db failed to open: captures report DISABLED instead of writing to the stand-in. */
+    @Test
+    fun unavailableArchive_skipsEveryCapture() = runTest {
+        val f = Fixture(available = false)
+        val edit = f.repo.captureTdlibEdit(chat, "100", null, 1_500L, testMeta("hello"))
+        val baseline = f.repo.captureTdlibBaseline(chat, "101", null, testMeta("hello"), originalDateMs = 500L)
+        val delete = f.repo.captureTdlibDelete(chat, listOf("100"), albumKey = null, isComment = false)
+
+        assertEquals(ArchiveDecision.DISABLED, edit.decision)
+        assertEquals(ArchiveDecision.DISABLED, baseline.decision)
+        assertEquals(ArchiveDecision.DISABLED, delete.decision)
+        assertEquals(0L, f.db.countMessages())
     }
 
     @Test
-    fun captureDelete_writesDeletedRow() = runTest {
-        val (repo, db) = newRepo()
-        val chat = ChatRef.tdlib(42)
-        repo.captureTdlibBaseline(chat, "100", null, meta("hello"), originalDateMs = 500L)
-        repo.captureTdlibDelete(chat, listOf("100"), albumKey = null, isComment = false)
+    fun captureDelete_marksTheMessageDeleted() = runTest {
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("hello"), originalDateMs = 500L)
+        f.now = 7_000L
+        f.repo.captureTdlibDelete(chat, listOf("100"), albumKey = null, isComment = false)
 
-        val rows = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
-        assertEquals(2, rows.size)
-        assertEquals("DELETED", rows.last().kind)
+        // A state on the message, not a marker version.
+        assertEquals(1, f.db.versionsOf(chat, "100").size)
+        val message = f.db.messageOf(chat, "100")!!
+        assertEquals(7_000L, message.deleted_at_ms)
+        assertEquals(7_000L, message.last_event_at_ms)
     }
 
     @Test
-    fun captureDelete_groupsAlbumMembers() = runTest {
-        val (repo, db) = newRepo()
-        val chat = ChatRef.tdlib(42)
+    fun captureDelete_twiceKeepsTheFirstDeletionTime() = runTest {
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("hello"), originalDateMs = 500L)
+        f.now = 7_000L
+        f.repo.captureTdlibDelete(chat, listOf("100"), albumKey = null, isComment = false)
+        f.now = 8_000L
+        val again = f.repo.captureTdlibDelete(chat, listOf("100"), albumKey = null, isComment = false)
+
+        assertEquals(ArchiveDecision.DUP_HASH, again.decision)
+        assertEquals(7_000L, f.db.messageOf(chat, "100")!!.deleted_at_ms)
+    }
+
+    @Test
+    fun captureDelete_marksEveryAlbumMember() = runTest {
+        val f = Fixture()
         for (key in listOf("100", "101", "102")) {
-            repo.captureTdlibBaseline(chat, key, "5", meta("photo $key"), originalDateMs = 500L)
+            f.repo.captureTdlibBaseline(chat, key, "5", testMeta("photo $key"), originalDateMs = 500L)
         }
-        repo.captureTdlibDelete(chat, listOf("100", "101", "102"), albumKey = "5", isComment = false)
+        f.repo.captureTdlibDelete(chat, listOf("100", "101", "102"), albumKey = "5", isComment = false)
 
-        val rows = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
-        assertEquals(2, rows.size)
-        assertEquals("DELETED", rows.last().kind)
-        assertEquals("""["100","101","102"]""", rows.last().deleted_msg_keys)
+        for (key in listOf("100", "101", "102")) {
+            val m = f.db.messageOf(chat, key)!!
+            assertNotNull(m.deleted_at_ms, key)
+            assertEquals("5", m.album_key)
+        }
     }
 
     @Test
     fun captureDelete_ofANeverArchivedMessageWritesNothing() = runTest {
-        val (repo, db) = newRepo()
-        val chat = ChatRef.tdlib(42)
+        val f = Fixture()
 
-        val outcome = repo.captureTdlibDelete(chat, listOf("100"), albumKey = null, isComment = false)
-        val comment = repo.captureTdlibDelete(chat, listOf("200", "201"), albumKey = null, isComment = true)
+        val outcome = f.repo.captureTdlibDelete(chat, listOf("100"), albumKey = null, isComment = false)
+        val comment = f.repo.captureTdlibDelete(chat, listOf("200", "201"), albumKey = null, isComment = true)
 
         assertEquals(ArchiveDecision.NO_CONTENT, outcome.decision)
         assertEquals(DETAIL_NEVER_ARCHIVED, outcome.detail)
         assertEquals(DETAIL_NEVER_ARCHIVED, comment.detail)
-        assertEquals(0, db.postSnapshotQueries.selectAllForExport().executeAsList().size)
+        assertEquals(0L, f.db.countMessages())
     }
 
     @Test
-    fun captureDelete_keepsOnlyTheArchivedMembersOfAnAlbum() = runTest {
-        val (repo, db) = newRepo()
-        val chat = ChatRef.tdlib(42)
-        repo.captureTdlibBaseline(chat, "101", "5", meta("caption"), originalDateMs = 500L)
+    fun captureDeleteSmart_marksOnlyTheArchivedMembersOfAnAlbum() = runTest {
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "101", "5", testMeta("caption"), originalDateMs = 500L)
 
-        val outcomes = repo.captureTdlibDeleteSmart(chat, listOf("100", "101", "102"), isComment = false)
+        val outcomes = f.repo.captureTdlibDeleteSmart(chat, listOf("100", "101", "102"), isComment = false)
 
-        val deleted = db.postSnapshotQueries.selectAllForExport().executeAsList().filter { it.kind == "DELETED" }
-        assertEquals(1, deleted.size)
-        // Anchored at the archived member, naming only it.
-        assertEquals("101", deleted.single().message_key)
-        assertEquals("""["101"]""", deleted.single().deleted_msg_keys)
+        assertEquals(1L, f.db.countMessages())
+        assertNotNull(f.db.messageOf(chat, "101")!!.deleted_at_ms)
+        assertNull(f.db.messageOf(chat, "100"))
         assertEquals(1, outcomes.count { it.outcome.decision == ArchiveDecision.WRITTEN })
         assertEquals(2, outcomes.count { it.outcome.detail == DETAIL_NEVER_ARCHIVED })
     }
 
     @Test
     fun upsertChannel_updatesTitleAndHandle() = runTest {
-        val (repo, db) = newRepo()
-        val chat = ChatRef.tdlib(42)
-        repo.upsertChannel(chat, "Old Title", "old_handle", null, false)
-        repo.upsertChannel(chat, "New Title", "new_handle", null, true)
+        val f = Fixture()
+        f.repo.upsertChannel(chat, "Old Title", "old_handle", null, false)
+        f.repo.upsertChannel(chat, "New Title", "new_handle", null, true)
 
-        val row = db.archivedChannelQueries.selectOne("TDLIB", "42").executeAsOne()
+        val row = f.db.archivedChannelQueries.selectOne("TDLIB", "42").executeAsOne()
         assertEquals("New Title", row.title)
         assertEquals("new_handle", row.handle)
         assertEquals(1L, row.is_verified)
     }
 
     @Test
-    fun baseline_stampedAtOriginalDate_notClock() = runTest {
-        val (repo, db) = newRepo(now = 9_999L)
-        val chat = ChatRef.tdlib(42)
-        repo.captureTdlibBaseline(chat, "100", null, meta("v1"), originalDateMs = 500L)
+    fun baseline_sortedAtPublicationTime_observedAtClock() = runTest {
+        val f = Fixture()
+        f.now = 9_999L
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("v1"), originalDateMs = 500L)
 
-        val row = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsOne()
-        assertEquals(500L, row.seen_at_ms)
-        assertNull(row.edited_at_ms)
+        val v = f.db.versionsOf(chat, "100").single()
+        assertEquals(500L, v.sort_at_ms)
+        assertNull(v.edit_date_ms)
+        assertEquals(9_999L, v.observed_at_ms)
+        assertEquals(VersionOrigin.PUBLISHED.name, v.origin)
+        assertEquals(ContentNormalizer.HASH_VERSION, v.hash_version)
+        val m = f.db.messageOf(chat, "100")!!
+        assertEquals(500L, m.published_at_ms)
+        assertEquals(9_999L, m.first_captured_at_ms)
     }
 
     @Test
     fun baseline_idempotentEvenWhenContentDiffers() = runTest {
-        val (repo, db) = newRepo()
-        val chat = ChatRef.tdlib(42)
-        repo.captureTdlibBaseline(chat, "100", null, meta("v1"), originalDateMs = 500L)
-        // Second call with different content must NOT write — baseline is a fixed
-        // point on the timeline, not a hash-keyed dedup.
-        repo.captureTdlibBaseline(chat, "100", null, meta("v1-different"), originalDateMs = 500L)
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("v1"), originalDateMs = 500L)
+        // A baseline is a fixed point on the timeline, not a hash-keyed dedup.
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("v1-different"), originalDateMs = 500L)
 
-        val rows = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
-        assertEquals(1, rows.size)
-        assertEquals("v1", toContent(rows[0]).meta.text)
+        assertEquals(listOf("v1"), f.db.textsOf(chat, "100"))
     }
 
     /**
-     * Pre-edited posts (those seen for the first time with `Message.editDate > 0`)
-     * record their first-observed state via `priorEditedAtMs`, so a later
-     * deletion has a VERSION row to JOIN against in the tombstone-feed query
-     * (no orphan DELETED rows). Re-ingest of the same post is still idempotent.
+     * Posts first seen already edited record their first-observed state sorted at that
+     * edit date, origin FIRST_SEEN_EDITED, so a later deletion has a version to show.
+     * Re-ingest stays idempotent.
      */
     @Test
-    fun baseline_acceptsPriorEditedAt_andIsIdempotentOnReingest() = runTest {
-        val (repo, db) = newRepo()
-        val chat = ChatRef.tdlib(42)
-        repo.captureTdlibBaseline(
-            chat, "100", null, meta("v1-edited"),
-            originalDateMs = 500L, priorEditedAtMs = 700L,
-        )
-        repo.captureTdlibBaseline(
-            chat, "100", null, meta("v1-edited"),
-            originalDateMs = 500L, priorEditedAtMs = 700L,
-        )
+    fun baseline_firstSeenEdited_isIdempotentOnReingest() = runTest {
+        val f = Fixture()
+        repeat(2) {
+            f.repo.captureTdlibBaseline(
+                chat, "100", null, testMeta("v1-edited"),
+                originalDateMs = 500L, priorEditedAtMs = 700L,
+            )
+        }
 
-        val rows = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
-        assertEquals(1, rows.size)
-        assertEquals(500L, rows[0].seen_at_ms)
-        assertEquals(700L, rows[0].edited_at_ms)
+        val v = f.db.versionsOf(chat, "100").single()
+        assertEquals(700L, v.sort_at_ms)
+        assertEquals(700L, v.edit_date_ms)
+        assertEquals(VersionOrigin.FIRST_SEEN_EDITED.name, v.origin)
+        assertEquals(500L, f.db.messageOf(chat, "100")!!.published_at_ms)
     }
 
     /**
-     * Race fix: edit row lands FIRST (cold-start UME beats the launched baseline
-     * coroutine), then baseline arrives. Old unified captureTdlibVersion would
-     * have stamped the baseline with clock() instead of originalDateMs and the
-     * revision timeline would show the edit row preceding the baseline on
-     * ASC-by-seen_at sort.
-     *
-     * Expected: baseline.seen_at_ms = 500, edit.seen_at_ms = 1000;
-     * timeline ASC = [baseline, edit].
+     * Race: the edit lands FIRST (the edit update beats the ingest baseline through the
+     * recorder), then the baseline arrives. The baseline sorts at the publication time, so
+     * the timeline is still [baseline, edit].
      */
     @Test
     fun race_editFirstThenBaseline_timelineOrderedCorrectly() = runTest {
-        var t = 1_000L
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        ArchiveDatabase.Schema.create(driver)
-        val db = ArchiveDatabase(driver)
-        val repo = ArchiveRepository(db,
-            MutableStateFlow(ArchiveSettings(enabled = true)), clock = { t })
-        val chat = ChatRef.tdlib(42)
+        val f = Fixture()
+        f.repo.captureTdlibEdit(chat, "100", null, 800L, testMeta("v2-edited"))
+        f.now = 1_200L
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("v1-original"), originalDateMs = 500L)
 
-        // Edit lands first (UME won the race).
-        repo.captureTdlibEdit(chat, "100", null, 800L, meta("v2-edited"))
-        t = 1_200L
-        // Baseline arrives late from the captureBaselineSnapshot coroutine.
-        repo.captureTdlibBaseline(chat, "100", null, meta("v1-original"), originalDateMs = 500L)
+        val rows = f.db.versionsOf(chat, "100")
+        assertEquals(listOf("v1-original", "v2-edited"), rows.map { it.text() })
+        assertEquals(listOf(500L, 800L), rows.map { it.sort_at_ms })
+        assertEquals(listOf(1_200L, 1_000L), rows.map { it.observed_at_ms })
+        assertEquals(listOf(VersionOrigin.PUBLISHED.name, VersionOrigin.LIVE_EDIT.name), rows.map { it.origin })
+    }
 
-        val rows = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
-        assertEquals(2, rows.size)
-        // First by seen_at ASC is the baseline (500 ms < 1000 ms).
-        assertEquals(500L, rows[0].seen_at_ms)
-        assertNull(rows[0].edited_at_ms)
-        assertEquals("v1-original", toContent(rows[0]).meta.text)
-        // Second is the edit at clock-time.
-        assertEquals(1_000L, rows[1].seen_at_ms)
-        assertEquals(800L, rows[1].edited_at_ms)
-        assertEquals("v2-edited", toContent(rows[1]).meta.text)
+    /** A comment is captured only on edit: its first version is a LIVE_EDIT at its edit date. */
+    @Test
+    fun edit_withoutBaseline_isLiveEditAtEditDate() = runTest {
+        val f = Fixture()
+        f.repo.captureTdlibEdit(chat, "100", null, 800L, testMeta("edited"), isComment = true)
+
+        val v = f.db.versionsOf(chat, "100").single()
+        assertEquals(800L, v.sort_at_ms)
+        assertEquals(800L, v.edit_date_ms)
+        assertEquals(1_000L, v.observed_at_ms)
+        assertEquals(VersionOrigin.LIVE_EDIT.name, v.origin)
+        assertEquals(1L, v.is_comment)
+        assertNull(f.db.messageOf(chat, "100")!!.published_at_ms)
+    }
+
+    /** An edit date behind the latest version's position never sorts it before that version. */
+    @Test
+    fun edit_sortNeverGoesBackwards() = runTest {
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("v1"), originalDateMs = 5_000L)
+        f.repo.captureTdlibEdit(chat, "100", null, editedAtMs = 4_000L, meta = testMeta("v2"))
+
+        val rows = f.db.versionsOf(chat, "100")
+        assertEquals(listOf("v1", "v2"), rows.map { it.text() })
+        assertEquals(listOf(5_000L, 5_000L), rows.map { it.sort_at_ms })
     }
 
     @Test
-    fun edit_seenAtAlwaysClock_evenWhenNoBaselineExists() = runTest {
-        var t = 1_000L
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        ArchiveDatabase.Schema.create(driver)
-        val db = ArchiveDatabase(driver)
-        val repo = ArchiveRepository(db,
-            MutableStateFlow(ArchiveSettings(enabled = true)), clock = { t })
-        val chat = ChatRef.tdlib(42)
+    fun reconcile_appendsReconciledVersion_andSkipsDeletedMessages() = runTest {
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("v1"), originalDateMs = 500L)
+        val written = f.repo.captureTdlibReconcile(chat, "100", null, editedAtMs = 2_000L, meta = testMeta("v3"))
+        assertEquals(ArchiveDecision.WRITTEN, written.decision)
+        assertEquals(VersionOrigin.RECONCILED.name, f.db.versionsOf(chat, "100").last().origin)
 
-        // Comment-style: no baseline ever captured. Edit alone.
-        repo.captureTdlibEdit(chat, "100", null, 800L, meta("edited"), isComment = true)
+        f.repo.captureTdlibDelete(chat, listOf("100"), albumKey = null, isComment = false)
+        val afterDelete = f.repo.captureTdlibReconcile(chat, "100", null, editedAtMs = 3_000L, meta = testMeta("v4"))
+        assertEquals(ArchiveDecision.STALE, afterDelete.decision)
+        assertEquals(DETAIL_DELETED, afterDelete.detail)
 
-        val row = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsOne()
-        assertEquals(1_000L, row.seen_at_ms)
-        assertEquals(800L, row.edited_at_ms)
+        val unknown = f.repo.captureTdlibReconcile(chat, "999", null, editedAtMs = 3_000L, meta = testMeta("x"))
+        assertEquals(DETAIL_NOT_ARCHIVED, unknown.detail)
     }
 
     @Test
-    fun observeRevisions_emitsInsertedRowsAscByTime() = runTest {
-        var t = 1_000L
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        ArchiveDatabase.Schema.create(driver)
-        val db = ArchiveDatabase(driver)
-        val repo = ArchiveRepository(db,
-            MutableStateFlow(ArchiveSettings(enabled = true)), clock = { t })
-        val chat = ChatRef.tdlib(42)
+    fun observeRevisions_ascByTime_withDeletionLast() = runTest {
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("v1"), originalDateMs = 500L)
+        f.now = 5_000L
+        f.repo.captureTdlibEdit(chat, "100", null, 2_000L, testMeta("v2"))
+        f.now = 6_000L
+        f.repo.captureTdlibDelete(chat, listOf("100"), albumKey = null, isComment = false)
 
-        repo.captureTdlibBaseline(chat, "100", null, meta("v1"), originalDateMs = 500L)
-        t = 5_000L
-        repo.captureTdlibEdit(chat, "100", null, 2_000L, meta("v2"))
-
-        val revisions = repo.observeRevisions(chat, "100").first()
-        assertEquals(2, revisions.size)
-        assertEquals(SnapshotKind.VERSION, revisions[0].kind)
+        val revisions = f.repo.observeRevisions(chat, "100").first()
+        assertEquals(
+            listOf(SnapshotKind.VERSION, SnapshotKind.VERSION, SnapshotKind.DELETED),
+            revisions.map { it.kind },
+        )
         assertEquals("v1", (revisions[0].content as ArchivedContent.Tdlib).meta.text)
+        assertEquals(VersionOrigin.PUBLISHED, revisions[0].origin)
+        assertEquals(VersionOrigin.LIVE_EDIT, revisions[1].origin)
+        assertEquals(6_000L, revisions[2].seenAtMs)
     }
 
     /**
-     * Comment tombstones must NOT leak into the channel-feed tombstone stream —
-     * a deleted comment lives only inside its discussion thread, surfacing it
-     * as a ghost-card in the channel timeline would show a tombstone where the
-     * original post never existed.
+     * Comment deletions must NOT leak into the channel-feed tombstone stream: a deleted
+     * comment lives only inside its discussion thread.
      */
     @Test
     fun tombstones_excludeComments() = runTest {
-        val (repo, _) = newRepo()
-        val channelChat = ChatRef.tdlib(42)
-        // Channel post + its delete.
-        repo.captureTdlibBaseline(channelChat, "100", null, meta("post body"), originalDateMs = 500L)
-        repo.upsertChannel(channelChat, "Test Channel", "test_handle", null, false)
-        repo.captureTdlibDelete(channelChat, listOf("100"), albumKey = null, isComment = false)
-        // Comment in the discussion-group chat + its delete. Note discussion chat
-        // is a different id (TDLib convention: linked supergroup, not the channel).
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("post body"), originalDateMs = 500L)
+        f.repo.upsertChannel(chat, "Test Channel", "test_handle", null, false)
+        f.repo.captureTdlibDelete(chat, listOf("100"), albumKey = null, isComment = false)
         val discussion = ChatRef.tdlib(99)
-        repo.captureTdlibEdit(discussion, "200", null, 1_500L, meta("comment body"), isComment = true)
-        repo.captureTdlibDelete(discussion, listOf("200"), albumKey = null, isComment = true)
+        f.repo.captureTdlibEdit(discussion, "200", null, 1_500L, testMeta("comment body"), isComment = true)
+        f.repo.captureTdlibDelete(discussion, listOf("200"), albumKey = null, isComment = true)
 
-        val tombstones = repo.observeTdlibTombstones().first()
+        val tombstones = f.repo.observeTdlibTombstones().first()
         assertEquals(1, tombstones.size)
         assertEquals(42L, tombstones[0].chatId)
         assertEquals("post body", tombstones[0].text)
+        assertEquals(500L, tombstones[0].originalSeenAtMs)
     }
 
     @Test
-    fun loggedOutMidFlight_clearsAllSnapshots() = runTest {
-        val (repo, db) = newRepo()
-        val chat = ChatRef.tdlib(42)
-        repo.captureTdlibBaseline(chat, "100", null, meta("a"), originalDateMs = 100L)
-        repo.captureTdlibBaseline(chat, "101", null, meta("b"), originalDateMs = 200L)
+    fun tombstones_foldAnAlbumIntoOneRecord() = runTest {
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "102", "5", testMeta(""), originalDateMs = 500L)
+        f.repo.captureTdlibBaseline(chat, "101", "5", testMeta("caption"), originalDateMs = 500L)
+        f.repo.upsertChannel(chat, "Test Channel", null, null, false)
+        f.repo.captureTdlibDeleteSmart(chat, listOf("101", "102"), isComment = false)
 
-        repo.clear()
+        val tombstone = f.repo.observeTdlibTombstones().first().single()
+        assertEquals(101L, tombstone.primaryMessageId)
+        assertEquals(listOf(101L, 102L), tombstone.allMessageIds.sorted())
+        assertEquals("caption", tombstone.text)
+    }
 
-        val rows = db.postSnapshotQueries.selectAllForFilter(null, null, null, null).executeAsList()
-        assertEquals(0, rows.size)
+    @Test
+    fun revisionCounts_countVersionsBeyondTheFirst() = runTest {
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("v1"), originalDateMs = 500L)
+        f.repo.captureTdlibEdit(chat, "100", null, 2_000L, testMeta("v2"))
+        f.repo.captureTdlibEdit(chat, "100", null, 3_000L, testMeta("v3"))
+        f.repo.captureTdlibBaseline(chat, "101", null, testMeta("same"), originalDateMs = 500L)
+
+        val counts = f.repo.observeTdlibRevisionCounts().first()
+        assertEquals(2, counts[42L to 100L])
+        assertNull(counts[42L to 101L])
+    }
+
+    @Test
+    fun purge_removesWholeMessages() = runTest {
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("v1"), originalDateMs = 500L)
+        f.repo.captureTdlibEdit(chat, "100", null, 2_000L, testMeta("v2"))
+        f.repo.captureTdlibBaseline(chat, "101", null, testMeta("keep"), originalDateMs = 500L)
+
+        f.repo.purge(listOf(f.db.messageOf(chat, "100")!!.id))
+
+        assertNull(f.db.messageOf(chat, "100"))
+        assertEquals(1L, f.archive.count("MessageVersion"))
+        assertEquals(listOf("keep"), f.db.textsOf(chat, "101"))
+    }
+
+    @Test
+    fun clear_wipesEverything() = runTest {
+        val f = Fixture()
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("a"), originalDateMs = 100L)
+        f.repo.captureTdlibBaseline(chat, "101", null, testMeta("b"), originalDateMs = 200L)
+        f.repo.upsertChannel(chat, "T", null, null, false)
+
+        f.repo.clear()
+
+        assertEquals(0L, f.archive.count("ArchivedMessage"))
+        assertEquals(0L, f.archive.count("MessageVersion"))
+        assertEquals(0L, f.archive.count("ArchivedChannel"))
     }
 
     @Test
     fun concurrentCaptureFromTwoSources_writesBoth() = runTest {
-        val (repo, db) = newRepo()
-        val tdlibChat = ChatRef.tdlib(42)
+        val f = Fixture()
         val webChat = ChatRef.web("demo")
-
-        // Capture from TDLib path
-        repo.captureTdlibBaseline(tdlibChat, "100", null, meta("tdlib version"), originalDateMs = 500L)
-
-        // Capture from web path (different source kind)
+        f.repo.captureTdlibBaseline(chat, "100", null, testMeta("tdlib version"), originalDateMs = 500L)
         val webPost = dev.lyo.hortay.data.web.WebPost(
             id = "demo/100", seq = 100L, publishedAt = "2026-05-23T10:00:00Z",
             textHtml = "web version",
@@ -377,97 +405,48 @@ class ArchiveRepositoryTest {
             webPreview = null, forwardedFrom = null, views = null,
             reactions = kotlinx.collections.immutable.persistentListOf(),
         )
-        repo.captureWebVersion(webChat, "100", webPost)
+        f.repo.captureWebVersion(webChat, "100", webPost)
 
-        val tdlibRows = db.postSnapshotQueries.selectRevisions("TDLIB", "42", "100").executeAsList()
-        val webRows = db.postSnapshotQueries.selectRevisions("WEB", "demo", "100").executeAsList()
-        assertEquals(1, tdlibRows.size)
-        assertEquals(1, webRows.size)
+        assertEquals(1, f.db.versionsOf(chat, "100").size)
+        val web = f.db.versionsOf(webChat, "100").single()
+        assertEquals(VersionOrigin.WEB.name, web.origin)
+        assertEquals(CONTENT_KIND_WEB, web.content_kind)
     }
 
     /**
-     * A corrupt or version-drifted blob (e.g. a user installing an older build
-     * over a newer archive.db) must NOT crash the read flow. [ContentBlobCodec]
-     * promises a graceful "unsupported" surface; [ArchiveRepository.toDomain]
-     * realises it by falling back to an empty placeholder so the rest of the
-     * revisions still render.
+     * A corrupt or version-drifted blob (an older build over a newer archive.db) must NOT
+     * crash the read flow: it renders as an unreadable placeholder.
      */
     @Test
     fun observeRevisions_corruptBlob_yieldsPlaceholderInsteadOfCrashing() = runTest {
-        val (repo, db) = newRepo()
-        // Bad magic — decode() throws IllegalArgumentException.
-        db.postSnapshotQueries.insert(
-            source_kind = "TDLIB", source_key = "42", message_key = "100",
-            album_key = null, kind = "VERSION", seen_at_ms = 500L, edited_at_ms = null,
-            content_kind = "tdlib", content_blob = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8),
-            content_hash = "deadbeef", text_preview = "garbage",
-            media_minithumb = null, deleted_msg_keys = null, is_comment = 0, captured_at_ms = 500L,
-        )
-
-        val revisions = repo.observeRevisions(ChatRef.tdlib(42), "100").first()
-        assertEquals(1, revisions.size)
-        assertEquals("", (revisions[0].content as ArchivedContent.Tdlib).meta.text)
-        assertEquals(true, (revisions[0].content as ArchivedContent.Tdlib).isUnreadable)
-    }
-
-    /**
-     * Version drift: a valid TDLB magic but a future version number. Same
-     * graceful-degradation contract — no crash, empty placeholder.
-     */
-    @Test
-    fun observe_versionDriftBlob_doesNotCrashFilterFlow() = runTest {
-        val (repo, db) = newRepo()
+        val f = Fixture()
+        f.db.insertRawVersion(chat, "100", byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8), "deadbeef", sortAtMs = 500L)
         val future = java.io.ByteArrayOutputStream().also { out ->
             java.io.DataOutputStream(out).use { dos ->
                 dos.writeInt(0x54444C42) // "TDLB" magic
-                dos.writeInt(99)         // unsupported version
+                dos.writeInt(99) // unsupported version
                 dos.write(byteArrayOf(0, 1, 2))
             }
         }.toByteArray()
-        db.postSnapshotQueries.insert(
-            source_kind = "TDLIB", source_key = "42", message_key = "100",
-            album_key = null, kind = "VERSION", seen_at_ms = 500L, edited_at_ms = null,
-            content_kind = "tdlib", content_blob = future,
-            content_hash = "cafe", text_preview = "future",
-            media_minithumb = null, deleted_msg_keys = null, is_comment = 0, captured_at_ms = 500L,
-        )
+        f.db.insertRawVersion(chat, "100", future, "cafe", sortAtMs = 600L)
 
-        val all = repo.observe(ArchiveFilter()).first()
-        assertEquals(1, all.size)
-        assertEquals("", (all[0].content as ArchivedContent.Tdlib).meta.text)
-    }
-
-    @Test
-    fun observe_queryMatchesLikeMetacharactersLiterally() = runTest {
-        val (repo, _) = newRepo()
-        val chat = ChatRef.tdlib(42)
-        repo.captureTdlibEdit(chat, "1", null, 2_000L, meta("discount 50% today"))
-        repo.captureTdlibEdit(chat, "2", null, 2_000L, meta("discount 50 today"))
-        repo.captureTdlibEdit(chat, "3", null, 2_000L, meta("snake_case"))
-        repo.captureTdlibEdit(chat, "4", null, 2_000L, meta("snakeXcase"))
-
-        val percent = repo.observe(ArchiveFilter(query = "50%")).first()
-        assertEquals(listOf("1"), percent.map { it.messageKey })
-        val underscore = repo.observe(ArchiveFilter(query = "e_c")).first()
-        assertEquals(listOf("3"), underscore.map { it.messageKey })
+        val revisions = f.repo.observeRevisions(chat, "100").first()
+        assertEquals(2, revisions.size)
+        revisions.forEach { r ->
+            val c = r.content as ArchivedContent.Tdlib
+            assertEquals("", c.meta.text)
+            assertEquals(true, c.isUnreadable)
+        }
     }
 
     @Test
     fun capturesEditsFor_honoursEnabledCaptureEditsAndExclusions() {
-        val chat = ChatRef.tdlib(42)
-        assertEquals(false, newRepo(ArchiveSettings(enabled = false)).first.capturesEditsFor(chat))
+        assertEquals(false, Fixture(ArchiveSettings(enabled = false)).repo.capturesEditsFor(chat))
+        assertEquals(false, Fixture(ArchiveSettings(enabled = true, captureEdits = false)).repo.capturesEditsFor(chat))
         assertEquals(
             false,
-            newRepo(ArchiveSettings(enabled = true, captureEdits = false)).first.capturesEditsFor(chat),
+            Fixture(ArchiveSettings(enabled = true, excludedChats = persistentSetOf(chat))).repo.capturesEditsFor(chat),
         )
-        assertEquals(
-            false,
-            newRepo(ArchiveSettings(enabled = true, excludedChats = persistentSetOf(chat)))
-                .first.capturesEditsFor(chat),
-        )
-        assertEquals(true, newRepo(ArchiveSettings(enabled = true)).first.capturesEditsFor(chat))
+        assertEquals(true, Fixture(ArchiveSettings(enabled = true)).repo.capturesEditsFor(chat))
     }
-
-    private fun toContent(row: dev.lyo.hortay.data.archive.db.PostSnapshot): ArchivedContent.Tdlib =
-        ArchivedContent.Tdlib(ContentBlobCodec.decode(row.content_blob))
 }

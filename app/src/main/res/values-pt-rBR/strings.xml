@@ -757,6 +757,7 @@
         <item quantity="other">editada ×%d</item>
     </plurals>
     <string name="revision_baseline_caveat">O original não foi registrado — mostrando o conteúdo após a edição mais antiga observada pelo Hortay</string>
+    <string name="revision_reconciled_note">Encontrada depois que o app foi fechado, então pode ter havido outras edições no meio</string>
     <string name="revision_empty">Nenhuma versão armazenada</string>
     <string name="revision_go_to_current">Ir para a atual</string>
     <string name="revision_media_audio_caption">Áudio · %1$ds</string>
@@ -947,7 +948,7 @@
     <string name="archive_section_channels">Canais</string>
     <string name="archive_retention_label">Guardar por</string>
     <string name="archive_max_records_label">Limite de registros</string>
-    <string name="archive_max_records_subtitle">Passando do limite, os registros mais antigos saem primeiro</string>
+    <string name="archive_max_records_subtitle">Passando do limite, saem primeiro as publicações que nunca mudaram, depois as mais antigas</string>
     <string name="archive_storage_label">Espaço usado</string>
     <string name="archive_clear_confirm">Tudo no arquivo será apagado para sempre. Os canais não vão perceber.</string>
     <string name="archive_disable_body">Novas mudanças não serão mais salvas. O que fazer com o que já está no arquivo?</string>

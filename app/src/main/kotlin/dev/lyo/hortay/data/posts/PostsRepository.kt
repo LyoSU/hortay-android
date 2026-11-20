@@ -2047,25 +2047,25 @@ class PostsRepository(
         for (post in addedForEmit) _newArrivals.tryEmit(post)
 
         // Archive baseline + reconcile, enqueued into the ordered [ArchiveRecorder].
-        // Messages new to the feed get a "first-observed" VERSION row so every post that
-        // reaches the feed has at least one snapshot in the archive. Two shapes:
-        //   * `editDate == 0` — genuine as-published anchor (priorEditedAtMs = null).
+        // Messages new to the feed get a "first-observed" version so every post that
+        // reaches the feed has at least one in the archive. Two shapes:
+        //   * `editDate == 0` — genuine as-published anchor (origin PUBLISHED).
         //   * `editDate != 0` — post was already edited before we saw it; we
-        //     record THIS state with `priorEditedAtMs = msg.editDate` so the
-        //     row is truthfully tagged as "first observed in edited state".
+        //     record THIS state with `priorEditedAtMs = msg.editDate` (origin
+        //     FIRST_SEEN_EDITED).
         //
         // Pre-fix, the `editDate != 0` branch was skipped entirely. That left
         // any later `UpdateDeleteMessages` for those posts producing an
-        // **orphan DELETED row** — no VERSION to JOIN against, so the
+        // **orphan DELETED row** (schema v1) — no VERSION to JOIN against, so the
         // tombstone-feed rendered an empty card (no title, no text, no
         // media). The reader saw mysterious blank rows at the bottom of the
-        // feed. selectTombstonesJoined is now INNER JOIN so any remaining
-        // orphans are hidden, and this branch prevents new orphans by
-        // capturing the pre-edited state instead of dropping it.
+        // feed. Deletion is now a state on an archived message, so a message
+        // the archive never held cannot be marked deleted at all, and this
+        // branch keeps posts from reaching the feed without a version.
         //
         // Messages the feed already held are passed too: an edited one whose editDate
-        // is newer than the archive's latest version is reconciled into a new VERSION
-        // (an edit missed while the app was closed). The recorder drops unedited
+        // is newer than the archive's latest version is reconciled into a new version
+        // (origin RECONCILED; an edit missed while the app was closed). The recorder drops unedited
         // re-ingests and already-seen states before enqueueing, so this loop stays a
         // map lookup per message.
         // Same epoch guard before the archive fan-out — a logout landing between the

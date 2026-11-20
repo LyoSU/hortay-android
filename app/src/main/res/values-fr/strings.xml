@@ -753,6 +753,7 @@
         <item quantity="other">modifiée ×%d</item>
     </plurals>
     <string name="revision_baseline_caveat">L\'original n\'a pas été capturé — ceci affiche le contenu après la première modification qu\'Hortay a observée</string>
+    <string name="revision_reconciled_note">Repéré après la fermeture de l\'app, d\'autres modifications ont donc pu avoir lieu entre-temps</string>
     <string name="revision_empty">Aucune version enregistrée</string>
     <string name="revision_go_to_current">Aller à la version actuelle</string>
     <string name="revision_media_audio_caption">Audio · %1$ds</string>
@@ -943,7 +944,7 @@
     <string name="archive_section_channels">Chaînes</string>
     <string name="archive_retention_label">Conserver pendant</string>
     <string name="archive_max_records_label">Limite d\'entrées</string>
-    <string name="archive_max_records_subtitle">Au-delà de la limite, les entrées les plus anciennes partent en premier</string>
+    <string name="archive_max_records_subtitle">Au-delà de la limite, les publications jamais modifiées partent en premier, puis les plus anciennes</string>
     <string name="archive_storage_label">Espace utilisé</string>
     <string name="archive_clear_confirm">Tout le contenu de l\'archive sera supprimé définitivement. Les chaînes ne le remarqueront pas.</string>
     <string name="archive_disable_body">Les nouveaux changements ne seront plus enregistrés. Que faire de ce qui est déjà archivé ?</string>

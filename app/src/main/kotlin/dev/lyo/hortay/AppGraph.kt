@@ -236,11 +236,10 @@ class AppGraph(context: Context) {
 
     // Archive database and repository — declared before postsRepository so the capture
     // sink is available when PostsRepository is wired.
-    val archiveDriver: SqlDriver = AndroidSqliteDriver(
-        schema = ArchiveDatabase.Schema,
-        context = context,
-        name = "archive.db",
-    )
+    // archive.db opens (and migrates) on first use; a failure degrades to an empty in-memory
+    // archive for the run instead of crashing whichever flow touched it first.
+    val archiveDriver: dev.lyo.hortay.data.archive.GuardedSqlDriver =
+        dev.lyo.hortay.data.archive.openArchiveDriver(context)
     val archiveDb: ArchiveDatabase = ArchiveDatabase(archiveDriver)
 
     val archiveSettingsStore: ArchiveSettingsStore = ArchiveSettingsStore(context)
@@ -269,7 +268,13 @@ class AppGraph(context: Context) {
             },
         )
     val archiveRepository: ArchiveRepository =
-        ArchiveRepository(archiveDb, archiveSettingsState, archivedMediaStore, appScope, journal = archiveJournal)
+        ArchiveRepository(
+            db = archiveDb,
+            settings = archiveSettingsState,
+            mediaStore = archivedMediaStore,
+            journal = archiveJournal,
+            available = { archiveDriver.isAvailable },
+        )
 
     /**
      * The single ordered writer for TDLib-mode archive captures. Its consumer runs in the
@@ -290,7 +295,13 @@ class AppGraph(context: Context) {
                     ?.let { archivedMediaStore.copyIfAvailable(it) }
             },
         ).also { recorder -> session.onEnd("archiveRecorder") { recorder.reset() } }
-    val archiveSweep: ArchiveSweep = ArchiveSweep(archiveDb, archiveSettingsState, archivedMediaStore)
+    val archiveSweep: ArchiveSweep = ArchiveSweep(
+        db = archiveDb,
+        settings = archiveSettingsState,
+        mediaStore = archivedMediaStore,
+        writeLock = archiveRepository.writeMutex,
+        available = { archiveDriver.isAvailable },
+    )
 
     /** Sharp-media lookup for the edit-history sheet (archive copy, else the same TDLib photo). */
     val archivedMediaResolver: dev.lyo.hortay.data.archive.ArchivedMediaResolver =

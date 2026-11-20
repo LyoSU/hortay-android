@@ -11,7 +11,7 @@ import java.io.File
 import java.security.MessageDigest
 
 /**
- * Reference-counted permanent storage for archived media files.
+ * Permanent storage for archived media files.
  *
  * Why this exists: TDLib's file cache is LRU (controlled by the
  * `message_unload_delay` option). A snapshot row that pointed at TDLib's
@@ -26,8 +26,15 @@ import java.security.MessageDigest
  * Storage key: SHA-256 of the file's bytes. Two captures of the same image
  * (same channel, same post, different revisions) share one underlying file.
  *
- * Single-writer mutex serialises copy/ref-bump/delete so refcount can't drift
- * under concurrent capture+sweep.
+ * No reference counting. A file is referenced by the `MessageVersion.media_sha` of the
+ * versions showing it, and [sweepOrphans] removes one nothing references once its last
+ * claim is older than [ORPHAN_GRACE_MS]. v1 kept a manual `ref_count` that six call sites
+ * released by decoding blobs (purge, retention, cap, skipped captures …); every missed
+ * release leaked a file. Now a skipped capture, a purge or an eviction simply leaves the
+ * file unreferenced.
+ *
+ * Single mutex serialises copy / claim / sweep, so a sweep can never take a file between
+ * a capture's copy and its version write: the copy re-stamps `claimed_at_ms` first.
  */
 class ArchivedMediaStore(
     private val context: Context,
@@ -56,7 +63,8 @@ class ArchivedMediaStore(
      *    shows the inline preview only);
      *  - I/O failure during read.
      *
-     * Idempotent: a second call for the same bytes only bumps refcount.
+     * Idempotent: a second call for the same bytes only re-stamps the file's claim, which
+     * keeps [sweepOrphans] off it until the capture's version row is written.
      */
     suspend fun copyIfAvailable(file: TdApi.File?): String? = withContext(Dispatchers.IO) {
         if (file?.local == null) return@withContext null
@@ -67,9 +75,10 @@ class ArchivedMediaStore(
 
         val sha = sha256OfFile(src) ?: return@withContext null
         mutex.withLock {
+            val now = clock()
             val existing = db.archivedMediaFileQueries.selectBySha(sha).executeAsOneOrNull()
-            if (existing != null) {
-                db.archivedMediaFileQueries.incrementRefCount(sha)
+            if (existing != null && File(existing.path).exists()) {
+                db.archivedMediaFileQueries.claim(now, sha)
                 return@withLock sha
             }
             val dst = File(rootDir, "$sha.bin")
@@ -82,9 +91,10 @@ class ArchivedMediaStore(
                 path = dst.absolutePath,
                 size_bytes = dst.length(),
                 mime_type = null,
-                created_at_ms = clock(),
-                ref_count = 1L,
+                created_at_ms = now,
+                claimed_at_ms = now,
             )
+            db.archivedMediaFileQueries.claim(now, sha)
             sha
         }
     }
@@ -98,19 +108,23 @@ class ArchivedMediaStore(
     }
 
     /**
-     * Decrement refcount for [sha]; physically delete the file when refcount
-     * reaches 0. Called by [ArchiveSweep] after evicting a snapshot row that
-     * references this SHA.
+     * Removes every file no `MessageVersion` references whose last claim is older than
+     * [ORPHAN_GRACE_MS] — what a purge, a retention / cap eviction, the dedupe step or a
+     * skipped capture left behind. A file that can't be deleted keeps its row and is
+     * retried on the next sweep. Returns the number of files removed.
      */
-    suspend fun releaseRef(sha: String) = withContext(Dispatchers.IO) {
+    suspend fun sweepOrphans(): Int = withContext(Dispatchers.IO) {
         mutex.withLock {
-            db.archivedMediaFileQueries.decrementRefCount(sha)
-            val row = db.archivedMediaFileQueries.selectBySha(sha).executeAsOneOrNull()
-                ?: return@withLock
-            if (row.ref_count <= 0L) {
-                runCatching { File(row.path).delete() }
-                db.archivedMediaFileQueries.deleteBySha(sha)
+            val orphans = db.archivedMediaFileQueries.selectOrphans(clock() - ORPHAN_GRACE_MS).executeAsList()
+            var removed = 0
+            for (o in orphans) {
+                val file = File(o.path)
+                if (runCatching { !file.exists() || file.delete() }.getOrDefault(false)) {
+                    db.archivedMediaFileQueries.deleteBySha(o.sha)
+                    removed++
+                }
             }
+            removed
         }
     }
 
@@ -154,5 +168,13 @@ class ArchivedMediaStore(
          * and the revision falls back to the inline preview.
          */
         private const val MAX_ARCHIVED_FILE_BYTES = 64L * 1024 * 1024
+
+        /**
+         * How long a copied file is safe from [sweepOrphans] after its last claim. A capture
+         * copies the file before the recorder writes the version that references it (the
+         * single consumer, seconds at most); an hour leaves room for a queue backed up by a
+         * slow TDLib read without letting skipped copies linger for long.
+         */
+        const val ORPHAN_GRACE_MS = 60L * 60 * 1000
     }
 }

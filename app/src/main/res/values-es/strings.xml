@@ -754,6 +754,7 @@
         <item quantity="many">editada ×%d</item>
     </plurals>
     <string name="revision_baseline_caveat">El original no fue capturado — se muestra el contenido tras la primera edición que Hortay observó</string>
+    <string name="revision_reconciled_note">Se detectó después de que la app estuviera cerrada, así que pudo haber otras ediciones entre medias</string>
     <string name="revision_empty">No hay revisiones guardadas</string>
     <string name="revision_go_to_current">Ir a la versión actual</string>
     <string name="revision_media_audio_caption">Audio · %1$ds</string>
@@ -941,7 +942,7 @@
     <string name="archive_section_channels">Canales</string>
     <string name="archive_retention_label">Conservar durante</string>
     <string name="archive_max_records_label">Límite de entradas</string>
-    <string name="archive_max_records_subtitle">Al superar el límite, se eliminan primero las entradas más antiguas</string>
+    <string name="archive_max_records_subtitle">Al superar el límite, se eliminan primero las publicaciones que nunca cambiaron y luego las más antiguas</string>
     <string name="archive_storage_label">Espacio usado</string>
     <string name="archive_clear_confirm">Todo el archivo se eliminará para siempre. Los canales no se enterarán.</string>
     <string name="archive_disable_body">Los nuevos cambios ya no se guardarán. ¿Qué hacemos con lo que ya está en el archivo?</string>

@@ -7,6 +7,7 @@ import dev.lyo.hortay.data.archive.ChatRef
 import dev.lyo.hortay.data.archive.PostSnapshot
 import dev.lyo.hortay.data.archive.SnapshotKind
 import dev.lyo.hortay.data.archive.TdlibContentMeta
+import dev.lyo.hortay.data.archive.VersionOrigin
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -66,6 +67,18 @@ class RevisionHistoryTest {
             listOf(RevisionChange.Published, RevisionChange.Text, RevisionChange.Text),
             entries.map { it.change },
         )
+    }
+
+    @Test
+    fun `the first version is Published only when stored as published`() {
+        val published = buildRevisionEntries(listOf(version("a", 1_000).copy(origin = VersionOrigin.PUBLISHED)))
+        val firstSeen = buildRevisionEntries(
+            listOf(version("a", 1_000, editedAt = null).copy(origin = VersionOrigin.FIRST_SEEN_EDITED)),
+        )
+        val liveEdit = buildRevisionEntries(listOf(version("a", 1_000).copy(origin = VersionOrigin.LIVE_EDIT)))
+        assertEquals(RevisionChange.Published, published.single().change)
+        assertEquals(RevisionChange.FirstSeen, firstSeen.single().change)
+        assertEquals(RevisionChange.FirstSeen, liveEdit.single().change)
     }
 
     @Test

@@ -87,7 +87,7 @@ class ArchiveViewModel(
 
     /** Removes every stored row of [entry] (all album members, all versions). */
     fun remove(entry: ArchiveEntry) {
-        viewModelScope.launch { repo.purge(entry.snapshotIds) }
+        viewModelScope.launch { repo.purge(entry.messageIds) }
     }
 
     fun observeRevisions(entry: ArchiveEntry): Flow<ImmutableList<PostSnapshot>> =

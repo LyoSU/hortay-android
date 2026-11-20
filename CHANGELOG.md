@@ -40,6 +40,8 @@
 - The post archive lists one entry per post with its channel, time and a preview, grouped by day, with counts on the Deleted and Edited filters.
 - Post archive settings follow the look of the rest of Settings, show how many posts were deleted and edited, and count saved photos and videos in the space used.
 - Post archive settings can skip chosen channels.
+- Past its record limit, the post archive removes whole posts — ones that never changed first — instead of cutting the oldest versions out of an edited post's history.
+- A post's edit history notes when a change was found only after the app had been closed, since other edits may have happened in between.
 - A post's edit history shows its versions as a row of time chips with a one-line note on what changed, keeps the post's formatting and links, and marks the changed words in place.
 - Long-pressing a post or a comment opens a compact menu right next to it — reactions in a floating capsule, actions in a small card — instead of a sheet covering half the screen.
 - A reply to another channel's post shows that channel's avatar and an arrow, so it no longer passes for a reply within the same channel.
@@ -148,6 +150,10 @@
 - The post archive no longer records a new version of a post whose text, formatting and media did not change.
 - The post archive no longer fills up with empty "Deleted" entries for messages it never saved.
 - The post archive's introduction no longer says photos and videos are never kept.
+- A post archive that can't be opened no longer crashes the app or gets erased — it stays off until the next launch.
+- The "edited" mark on a post no longer counts repeated copies of the same version.
+- The post archive keeps the full photo or video of a post saved before its media finished downloading, instead of only a blurred preview.
+- Videos and GIFs in a post's edit history show a frame instead of an empty grey box.
 - A reaction emoji without Telegram artwork is drawn at the same size as the others, and artwork that failed to load is tried again.
 - Signing out during the first feed fill-in no longer leaves the next account with a sparse feed.
 - Rotating the phone no longer closes the fullscreen video, jumps back to the Feed tab or closes open sheets.

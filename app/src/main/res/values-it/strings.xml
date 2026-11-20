@@ -751,6 +751,7 @@
         <item quantity="many">modificato ×%d</item>
     </plurals>
     <string name="revision_baseline_caveat">L\'originale non è stato acquisito — viene mostrato il contenuto dopo la prima modifica osservata da Hortay</string>
+    <string name="revision_reconciled_note">Rilevata dopo la chiusura dell\'app, quindi nel frattempo potrebbero esserci state altre modifiche</string>
     <string name="revision_empty">Nessuna revisione salvata</string>
     <string name="revision_go_to_current">Vai alla versione attuale</string>
     <string name="revision_media_audio_caption">Audio · %1$ds</string>
@@ -938,7 +939,7 @@
     <string name="archive_section_channels">Canali</string>
     <string name="archive_retention_label">Conserva per</string>
     <string name="archive_max_records_label">Limite di voci</string>
-    <string name="archive_max_records_subtitle">Oltre il limite, le voci più vecchie vengono rimosse per prime</string>
+    <string name="archive_max_records_subtitle">Oltre il limite, vengono rimossi prima i post mai modificati, poi i più vecchi</string>
     <string name="archive_storage_label">Spazio occupato</string>
     <string name="archive_clear_confirm">Tutto l\'archivio verrà eliminato definitivamente. I canali non se ne accorgeranno.</string>
     <string name="archive_disable_body">Le nuove modifiche non verranno più salvate. Cosa fare con ciò che è già in archivio?</string>

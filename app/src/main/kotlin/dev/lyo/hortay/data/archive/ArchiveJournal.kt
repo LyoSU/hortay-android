@@ -50,6 +50,12 @@ internal const val DETAIL_DUP_REHASH = "dup_rehash"
 internal const val DETAIL_SAME_EDIT_DATE = "same_edit_date"
 
 /**
+ * Appended (comma-separated) to a skip's detail when the skipped capture gave the latest
+ * version its archived media copy — see [attachMediaIfSame].
+ */
+internal const val DETAIL_MEDIA_ATTACHED = "media_attached"
+
+/**
  * One structured line of the capture decision journal. Carries ids, hashes and codes
  * only — **never** post text, captions, titles or file paths: the journal is exported
  * with the archive and logged to logcat in debuggable / beta builds.

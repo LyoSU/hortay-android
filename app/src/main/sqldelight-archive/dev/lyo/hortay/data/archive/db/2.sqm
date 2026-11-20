@@ -1,0 +1,191 @@
+-- Schema 2 -> 3: from one wide PostSnapshot table to messages and their versions.
+--
+-- v1 stored VERSION rows, content-less DELETED marker rows (with a JSON list of the
+-- deleted album members) and guest-mode rows in one table, and used seen_at_ms both as a
+-- publication time (baseline) and as a device time (edit). v3: ArchivedMessage (one row
+-- per message, deletion is deleted_at_ms) + MessageVersion (one row per observed state,
+-- ordered by an explicit sort key, with its origin and its media sha as a column).
+--
+-- Runs inside the open helper's upgrade transaction together with the Kotlin step
+-- registered as AfterVersion(2) (ArchiveMigrations.afterV2: media_sha from the blobs,
+-- which SQL cannot decode). Either both land or neither does.
+--
+-- Mapping (all SQLite 3.18: no window functions, no JSON1, no upsert):
+--  * Every (source_kind, source_key, message_key) with a VERSION row becomes one
+--    ArchivedMessage. A key named only by a DELETED row creates nothing.
+--  * VERSION rows become MessageVersion rows in their v1 history order (seen_at_ms, id):
+--    inserted in that order, then sort_at_ms is lifted to a running maximum so the
+--    explicit order can never disagree with the old one.
+--  * origin: WEB for guest rows; for a message's first row PUBLISHED when it has no
+--    edited_at_ms, FIRST_SEEN_EDITED when it has; LIVE_EDIT for every later row.
+--  * The first row is "baseline-shaped" (seen_at_ms = publication time) when it is a TDLib
+--    channel post whose seen_at_ms is not after its edited_at_ms. Only then does it give
+--    published_at_ms, and its observed_at_ms comes from captured_at_ms (seen_at_ms when
+--    0); every other row was stamped seen_at_ms = device clock at capture, so that is its
+--    observed_at_ms.
+--  * sort_at_ms = edited_at_ms, else seen_at_ms (= publication time for a baseline,
+--    device time otherwise). Guest rows: seen_at_ms.
+--  * hash_version = 1 (an older canonical form) for every migrated row.
+--  * DELETED rows set deleted_at_ms (their seen_at_ms, the device clock at the deletion)
+--    on the anchor message and on every key in deleted_msg_keys; instr() matches the
+--    quoted key inside the JSON array, as v1's own sweep did.
+--  * last_event_at_ms: the newest capture time, or the deletion. A row with
+--    captured_at_ms = 0 counts as captured now, so retention never treats it as ancient.
+--
+-- PostSnapshotLegacy keeps the v1 rows untouched (not read by the app, not counted in
+-- the storage size, not exported) so a bad mapping can be repaired by a follow-up
+-- migration. It may be dropped (DROP TABLE IF EXISTS PostSnapshotLegacy) by the first
+-- migration of the release after the one that ships schema 3.
+
+ALTER TABLE PostSnapshot RENAME TO PostSnapshotLegacy;
+
+CREATE TABLE ArchivedMessage (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_kind          TEXT NOT NULL,
+    source_key           TEXT NOT NULL,
+    message_key          TEXT NOT NULL,
+    album_key            TEXT,
+    is_comment           INTEGER NOT NULL DEFAULT 0,
+    published_at_ms      INTEGER,
+    first_captured_at_ms INTEGER NOT NULL,
+    last_event_at_ms     INTEGER NOT NULL,
+    deleted_at_ms        INTEGER,
+    UNIQUE (source_kind, source_key, message_key)
+);
+
+CREATE INDEX idx_ArchivedMessage_album
+    ON ArchivedMessage(source_kind, source_key, album_key);
+
+CREATE INDEX idx_ArchivedMessage_event
+    ON ArchivedMessage(last_event_at_ms);
+
+CREATE INDEX idx_ArchivedMessage_deleted
+    ON ArchivedMessage(deleted_at_ms);
+
+CREATE TABLE MessageVersion (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id      INTEGER NOT NULL,
+    sort_at_ms      INTEGER NOT NULL,
+    edit_date_ms    INTEGER,
+    observed_at_ms  INTEGER NOT NULL,
+    origin          TEXT NOT NULL,
+    content_kind    TEXT NOT NULL,
+    content_blob    BLOB NOT NULL,
+    content_hash    TEXT NOT NULL,
+    hash_version    INTEGER NOT NULL,
+    text_preview    TEXT NOT NULL DEFAULT '',
+    media_sha       TEXT,
+    media_minithumb BLOB
+);
+
+CREATE INDEX idx_MessageVersion_message
+    ON MessageVersion(message_id, sort_at_ms, id);
+
+CREATE INDEX idx_MessageVersion_media
+    ON MessageVersion(media_sha);
+
+INSERT INTO ArchivedMessage(source_kind, source_key, message_key, album_key, is_comment, published_at_ms,
+                            first_captured_at_ms, last_event_at_ms, deleted_at_ms)
+SELECT p.source_kind, p.source_key, p.message_key,
+       (SELECT q.album_key FROM PostSnapshotLegacy q
+        WHERE q.source_kind = p.source_kind AND q.source_key = p.source_key AND q.message_key = p.message_key
+          AND q.kind = 'VERSION' AND q.album_key IS NOT NULL
+        ORDER BY q.id DESC LIMIT 1),
+       MAX(p.is_comment),
+       NULL,
+       MIN(CASE WHEN p.captured_at_ms > 0 THEN p.captured_at_ms ELSE p.seen_at_ms END),
+       MAX(CASE WHEN p.captured_at_ms > 0 THEN p.captured_at_ms
+                ELSE CAST(strftime('%s', 'now') AS INTEGER) * 1000 END),
+       NULL
+FROM PostSnapshotLegacy p
+WHERE p.kind = 'VERSION'
+GROUP BY p.source_kind, p.source_key, p.message_key;
+
+INSERT INTO MessageVersion(message_id, sort_at_ms, edit_date_ms, observed_at_ms, origin, content_kind,
+                           content_blob, content_hash, hash_version, text_preview, media_sha, media_minithumb)
+SELECT m.id,
+       CASE WHEN p.source_kind = 'WEB' THEN p.seen_at_ms
+            ELSE COALESCE(p.edited_at_ms, p.seen_at_ms) END,
+       CASE WHEN p.source_kind = 'WEB' THEN NULL ELSE p.edited_at_ms END,
+       CASE WHEN p.source_kind = 'TDLIB' AND p.is_comment = 0
+                 AND (p.edited_at_ms IS NULL OR p.seen_at_ms <= p.edited_at_ms)
+                 AND p.id = (SELECT q.id FROM PostSnapshotLegacy q
+                             WHERE q.source_kind = p.source_kind AND q.source_key = p.source_key
+                               AND q.message_key = p.message_key AND q.kind = 'VERSION'
+                             ORDER BY q.seen_at_ms, q.id LIMIT 1)
+            THEN (CASE WHEN p.captured_at_ms > 0 THEN p.captured_at_ms ELSE p.seen_at_ms END)
+            ELSE p.seen_at_ms END,
+       CASE WHEN p.source_kind = 'WEB' THEN 'WEB'
+            WHEN p.id = (SELECT q.id FROM PostSnapshotLegacy q
+                         WHERE q.source_kind = p.source_kind AND q.source_key = p.source_key
+                           AND q.message_key = p.message_key AND q.kind = 'VERSION'
+                         ORDER BY q.seen_at_ms, q.id LIMIT 1)
+            THEN (CASE WHEN p.edited_at_ms IS NULL THEN 'PUBLISHED' ELSE 'FIRST_SEEN_EDITED' END)
+            ELSE 'LIVE_EDIT' END,
+       p.content_kind, p.content_blob, p.content_hash, 1, p.text_preview, NULL, p.media_minithumb
+FROM PostSnapshotLegacy p
+INNER JOIN ArchivedMessage m
+    ON m.source_kind = p.source_kind AND m.source_key = p.source_key AND m.message_key = p.message_key
+WHERE p.kind = 'VERSION'
+ORDER BY p.seen_at_ms, p.id;
+
+-- Running maximum: a row never sorts before the rows that preceded it in v1's order.
+UPDATE MessageVersion
+SET sort_at_ms = (SELECT MAX(e.sort_at_ms) FROM MessageVersion e
+                  WHERE e.message_id = MessageVersion.message_id AND e.id < MessageVersion.id)
+WHERE sort_at_ms < (SELECT MAX(e.sort_at_ms) FROM MessageVersion e
+                    WHERE e.message_id = MessageVersion.message_id AND e.id < MessageVersion.id);
+
+UPDATE ArchivedMessage
+SET published_at_ms = (
+    SELECT CASE WHEN q.edited_at_ms IS NULL OR q.seen_at_ms <= q.edited_at_ms THEN q.seen_at_ms END
+    FROM PostSnapshotLegacy q
+    WHERE q.source_kind = ArchivedMessage.source_kind AND q.source_key = ArchivedMessage.source_key
+      AND q.message_key = ArchivedMessage.message_key AND q.kind = 'VERSION'
+    ORDER BY q.seen_at_ms, q.id LIMIT 1)
+WHERE source_kind = 'TDLIB' AND is_comment = 0;
+
+UPDATE ArchivedMessage
+SET deleted_at_ms = (
+    SELECT MIN(d.seen_at_ms) FROM PostSnapshotLegacy d
+    WHERE d.kind = 'DELETED' AND d.source_kind = ArchivedMessage.source_kind
+      AND d.source_key = ArchivedMessage.source_key
+      AND (d.message_key = ArchivedMessage.message_key
+           OR instr(COALESCE(d.deleted_msg_keys, ''), '"' || ArchivedMessage.message_key || '"') > 0));
+
+UPDATE ArchivedMessage
+SET album_key = (
+    SELECT d.album_key FROM PostSnapshotLegacy d
+    WHERE d.kind = 'DELETED' AND d.album_key IS NOT NULL AND d.source_kind = ArchivedMessage.source_kind
+      AND d.source_key = ArchivedMessage.source_key
+      AND (d.message_key = ArchivedMessage.message_key
+           OR instr(COALESCE(d.deleted_msg_keys, ''), '"' || ArchivedMessage.message_key || '"') > 0)
+    ORDER BY d.id LIMIT 1)
+WHERE album_key IS NULL AND deleted_at_ms IS NOT NULL;
+
+UPDATE ArchivedMessage
+SET last_event_at_ms = MAX(last_event_at_ms, deleted_at_ms)
+WHERE deleted_at_ms IS NOT NULL;
+
+-- Media files: reference counting is replaced by the orphan sweep (ArchivedMediaFile.sq).
+CREATE TABLE ArchivedMediaFile_v3 (
+    sha             TEXT PRIMARY KEY,
+    path            TEXT NOT NULL,
+    size_bytes      INTEGER NOT NULL,
+    mime_type       TEXT,
+    created_at_ms   INTEGER NOT NULL,
+    claimed_at_ms   INTEGER NOT NULL
+);
+
+INSERT INTO ArchivedMediaFile_v3(sha, path, size_bytes, mime_type, created_at_ms, claimed_at_ms)
+SELECT sha, path, size_bytes, mime_type, created_at_ms, created_at_ms FROM ArchivedMediaFile;
+
+DROP TABLE ArchivedMediaFile;
+
+ALTER TABLE ArchivedMediaFile_v3 RENAME TO ArchivedMediaFile;
+
+-- The legacy copy is never queried again; its indexes would only take space.
+DROP INDEX IF EXISTS idx_PostSnapshot_msg;
+DROP INDEX IF EXISTS idx_PostSnapshot_seen;
+DROP INDEX IF EXISTS idx_PostSnapshot_id;
+DROP INDEX IF EXISTS idx_PostSnapshot_captured;

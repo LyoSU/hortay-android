@@ -742,6 +742,7 @@
     <string name="revision_sheet_title_deleted">Deleted post</string>
     <string name="revision_empty">No revisions stored</string>
     <string name="revision_baseline_caveat">Original wasn\'t captured — this shows the content after the earliest edit Hortay observed</string>
+    <string name="revision_reconciled_note">Found after the app had been closed, so there may have been other edits in between</string>
     <string name="revision_go_to_current">Go to current</string>
     <string name="revision_open_in_telegram">Open in Telegram</string>
     <string name="revision_media_audio_caption">Audio · %1$ds</string>
@@ -958,7 +959,7 @@
     <string name="archive_section_channels">Channels</string>
     <string name="archive_retention_label">Keep for</string>
     <string name="archive_max_records_label">Entry limit</string>
-    <string name="archive_max_records_subtitle">Past the limit, the oldest entries go first</string>
+    <string name="archive_max_records_subtitle">Past the limit, posts that never changed go first, then the oldest ones</string>
     <string name="archive_storage_label">Space used</string>
     <string name="archive_clear_confirm">Everything in the archive will be deleted for good. Channels won\'t notice.</string>
     <string name="archive_disable_body">New changes won\'t be saved anymore. What about what\'s already in the archive?</string>

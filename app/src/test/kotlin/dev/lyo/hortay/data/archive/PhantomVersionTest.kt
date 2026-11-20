@@ -1,6 +1,5 @@
 package dev.lyo.hortay.data.archive
 
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import dev.lyo.hortay.data.archive.db.ArchiveDatabase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -102,12 +101,19 @@ class PhantomVersionTest {
         assertEquals(emptyList<String>(), edit.diff!!.components)
         assertEquals(ContentDiff.REASON_COUNT, edit.diff!!.entityReason)
 
+        // The re-hash was written back in the current form: the next comparison is a plain
+        // stored-hash match, with nothing decoded.
+        val stored2 = h.db.versionsOf(CHAT, KEY).single()
+        assertEquals(ContentNormalizer.canonicalHash(capture), stored2.content_hash)
+        assertEquals(ContentNormalizer.HASH_VERSION, stored2.hash_version)
         val reconcile = h.repo.captureTdlibReconcile(CHAT, KEY, null, editedAtMs = 3_000L, meta = capture)
         assertEquals(ArchiveDecision.DUP_HASH, reconcile.decision)
-        assertEquals(DETAIL_DUP_REHASH, reconcile.detail)
+        assertNull(reconcile.detail)
+        assertNull(reconcile.diff)
         assertEquals(1, h.versions())
     }
 
+    /** Old-format phantoms of one version are folded by the sweep's dedupe step, then not listed. */
     @Test
     fun oldFormatRowsOfOneVersionAreNotListedAsEdited() = runTest {
         val h = Harness()
@@ -115,6 +121,7 @@ class PhantomVersionTest {
         val b = meta("Same post", ents(e(5, 4, URL), e(0, 4, BOLD)))
         h.insertLegacy(a, editedAtMs = null, seenAtMs = 500L)
         h.insertLegacy(b, editedAtMs = 1_000L, seenAtMs = 900L)
+        assertEquals(1, h.db.dedupeVersions())
         assertTrue(h.repo.observeEntries().first().isEmpty())
 
         h.repo.captureTdlibEdit(CHAT, KEY, null, editedAtMs = 2_000L, meta = meta("Edited post"))
@@ -124,9 +131,9 @@ class PhantomVersionTest {
     @Test
     fun undecodableStoredRowFallsBackToTheStoredHash() = runTest {
         val h = Harness()
-        h.db.postSnapshotQueries.insert(
-            "TDLIB", CHAT.key, KEY, null, "VERSION", 500L, null, "tdlib",
-            byteArrayOf(1, 2, 3), "0123456789abcdef", "", null, null, 0L, 500L,
+        h.db.insertRawVersion(
+            CHAT, KEY, byteArrayOf(1, 2, 3), "0123456789abcdef", sortAtMs = 500L,
+            hashVersion = ContentNormalizer.LEGACY_HASH_VERSION,
         )
         val out = h.repo.captureTdlibEdit(CHAT, KEY, null, editedAtMs = 2_000L, meta = meta("x"))
         assertEquals(ArchiveDecision.WRITTEN, out.decision)
@@ -205,24 +212,21 @@ class PhantomVersionTest {
     // --- Helpers ---
 
     private class Harness {
-        val db: ArchiveDatabase = run {
-            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-            ArchiveDatabase.Schema.create(driver)
-            ArchiveDatabase(driver)
-        }
+        val db: ArchiveDatabase = newArchiveDb()
         private var t = 1_700_000_000_000L
         val repo = ArchiveRepository(db, MutableStateFlow(ArchiveSettings(enabled = true)), clock = { t++ })
 
-        /** A row as the previous normalizer would have hashed it. */
+        /** A version as the previous normalizer would have hashed it (`hash_version` 1). */
         fun insertLegacy(meta: TdlibContentMeta, editedAtMs: Long?, seenAtMs: Long = 500L) {
-            db.postSnapshotQueries.insert(
-                "TDLIB", CHAT.key, KEY, null, "VERSION", seenAtMs, editedAtMs, "tdlib",
-                ContentBlobCodec.encode(meta), legacyHash(meta), meta.textPreview, null, null, 0L, seenAtMs,
+            db.insertRawVersion(
+                CHAT, KEY, ContentBlobCodec.encode(meta), legacyHash(meta),
+                sortAtMs = editedAtMs ?: seenAtMs, hashVersion = ContentNormalizer.LEGACY_HASH_VERSION,
+                origin = if (editedAtMs == null) VersionOrigin.PUBLISHED else VersionOrigin.LIVE_EDIT,
+                editDateMs = editedAtMs, observedAtMs = seenAtMs, textPreview = meta.textPreview,
             )
         }
 
-        fun versions(): Int = db.postSnapshotQueries.selectRevisions("TDLIB", CHAT.key, KEY).executeAsList()
-            .count { it.kind == SnapshotKind.VERSION.name }
+        fun versions(): Int = db.versionsOf(CHAT, KEY).size
     }
 
     private fun hashOf(content: TdApi.MessageContent): String =

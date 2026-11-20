@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import dev.lyo.hortay.R
 import dev.lyo.hortay.data.FormattedText
 import dev.lyo.hortay.data.SCREEN_MOUNT_GRACE_MS
+import dev.lyo.hortay.data.archive.VersionOrigin
 import dev.lyo.hortay.data.archive.ArchivedMediaResolver
 import dev.lyo.hortay.data.archive.PostSnapshot
 import dev.lyo.hortay.data.archive.SnapshotKind
@@ -150,6 +151,7 @@ private fun RevisionSheetContent(
             (entry.change == RevisionChange.Text || entry.change == RevisionChange.TextAndMedia)
         ChangeSummary(
             change = entry.change,
+            reconciled = entry.snapshot.origin == VersionOrigin.RECONCILED,
             showToggle = diffable,
             showChanges = showChanges,
             onShowChangesChange = { showChanges = it },
@@ -183,10 +185,10 @@ private fun RevisionSheetContent(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChangeSummary(
     change: RevisionChange,
+    reconciled: Boolean,
     showToggle: Boolean,
     showChanges: Boolean,
     onShowChangesChange: (Boolean) -> Unit,
@@ -203,8 +205,31 @@ private fun ChangeSummary(
         RevisionChange.Unreadable -> stringResource(R.string.revision_unreadable)
         RevisionChange.NoVisibleChange -> null
     }
+    Column(modifier.fillMaxWidth()) {
+        ChangeSummaryRow(summary, showToggle, showChanges, onShowChangesChange)
+        // A version found on re-ingest: the app was closed while it changed, so edits made
+        // in between were never seen and this may not be the change right after the previous one.
+        if (reconciled) {
+            Text(
+                stringResource(R.string.revision_reconciled_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChangeSummaryRow(
+    summary: String?,
+    showToggle: Boolean,
+    showChanges: Boolean,
+    onShowChangesChange: (Boolean) -> Unit,
+) {
     FlowRow(
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         itemVerticalAlignment = Alignment.CenterVertically,
     ) {

@@ -768,6 +768,7 @@
         <item quantity="other">edytowano ×%d</item>
     </plurals>
     <string name="revision_baseline_caveat">Oryginał nie został zapisany — widoczna jest treść po najwcześniejszej edycji zauważonej przez Hortay</string>
+    <string name="revision_reconciled_note">Wykryto po zamknięciu aplikacji, więc w międzyczasie mogły być inne edycje</string>
     <string name="revision_empty">Brak zapisanych wersji</string>
     <string name="revision_go_to_current">Przejdź do aktualnej</string>
     <string name="revision_media_audio_caption">Audio · %1$d s</string>
@@ -962,7 +963,7 @@
     <string name="archive_section_channels">Kanały</string>
     <string name="archive_retention_label">Jak długo przechowywać</string>
     <string name="archive_max_records_label">Limit wpisów w archiwum</string>
-    <string name="archive_max_records_subtitle">Po przekroczeniu limitu najstarsze wpisy znikają jako pierwsze</string>
+    <string name="archive_max_records_subtitle">Po przekroczeniu limitu najpierw znikają posty bez zmian, potem najstarsze</string>
     <string name="archive_storage_label">Zajęte miejsce</string>
     <string name="archive_clear_confirm">Wszystko z archiwum zostanie trwale usunięte. Kanały tego nie zauważą.</string>
     <string name="archive_disable_body">Nowe zmiany nie będą już zapisywane. Co zrobić z tym, co jest już w archiwum?</string>

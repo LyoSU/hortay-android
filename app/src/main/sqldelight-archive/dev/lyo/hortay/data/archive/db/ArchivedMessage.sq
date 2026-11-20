@@ -1,0 +1,157 @@
+-- One row per archived message: (source_kind, source_key, message_key) is unique.
+-- Its distinct observed states are MessageVersion rows; deletion is a state of the
+-- message (deleted_at_ms), never a row of its own. A message row exists only while it
+-- has at least one version: captures create the two together, and purge / retention /
+-- cap remove a message with all of its versions (ArchiveStore.deleteMessages).
+--
+-- Created by 2.sqm from the v1 PostSnapshot table (see the mapping there).
+CREATE TABLE ArchivedMessage (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_kind          TEXT NOT NULL,
+    source_key           TEXT NOT NULL,
+    message_key          TEXT NOT NULL,
+    album_key            TEXT,
+    is_comment           INTEGER NOT NULL DEFAULT 0,
+    -- Telegram's publication time; null when unknown (comments, guest mode, and v1 rows
+    -- whose first row was not an ingest baseline).
+    published_at_ms      INTEGER,
+    -- Device clock when the archive first stored anything of this message.
+    first_captured_at_ms INTEGER NOT NULL,
+    -- Device clock of the newest capture or the deletion: retention and the record cap
+    -- key on it, and the archive list orders by it. Never a Telegram time.
+    last_event_at_ms     INTEGER NOT NULL,
+    -- Device clock when the deletion was observed; null = not deleted.
+    deleted_at_ms        INTEGER,
+    UNIQUE (source_kind, source_key, message_key)
+);
+
+CREATE INDEX idx_ArchivedMessage_album
+    ON ArchivedMessage(source_kind, source_key, album_key);
+
+CREATE INDEX idx_ArchivedMessage_event
+    ON ArchivedMessage(last_event_at_ms);
+
+CREATE INDEX idx_ArchivedMessage_deleted
+    ON ArchivedMessage(deleted_at_ms);
+
+insertIfAbsent:
+INSERT OR IGNORE INTO ArchivedMessage(source_kind, source_key, message_key, album_key, is_comment,
+                                      published_at_ms, first_captured_at_ms, last_event_at_ms, deleted_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL);
+
+-- Second half of the portable upsert (INSERT OR IGNORE + UPDATE, no ON CONFLICT — see
+-- ARCHITECTURE.md "Web-mode SQL portability"). A known album / comment flag / publication
+-- time is never erased by a capture that lacks it.
+touch:
+UPDATE ArchivedMessage
+SET album_key = COALESCE(:albumKey, album_key),
+    is_comment = MAX(is_comment, :isComment),
+    published_at_ms = COALESCE(published_at_ms, :publishedAtMs),
+    last_event_at_ms = MAX(last_event_at_ms, :eventAtMs)
+WHERE id = :id;
+
+selectByKey:
+SELECT *
+FROM ArchivedMessage
+WHERE source_kind = ? AND source_key = ? AND message_key = ?;
+
+-- Which of [keys] the archive holds (each held message has at least one version) —
+-- deletions are recorded only for those.
+selectHeldByKeys:
+SELECT id, message_key, album_key, deleted_at_ms
+FROM ArchivedMessage
+WHERE source_kind = :sourceKind AND source_key = :sourceKey AND message_key IN :keys;
+
+markDeleted:
+UPDATE ArchivedMessage
+SET deleted_at_ms = :deletedAtMs,
+    last_event_at_ms = MAX(last_event_at_ms, :deletedAtMs),
+    album_key = COALESCE(album_key, :albumKey)
+WHERE id IN :ids AND deleted_at_ms IS NULL;
+
+deleteByIds:
+DELETE FROM ArchivedMessage WHERE id IN ?;
+
+-- Retention: whole messages whose newest event is older than the cutoff.
+selectIdsOlderThan:
+SELECT id FROM ArchivedMessage WHERE last_event_at_ms < ?;
+
+countAll:
+SELECT COUNT(*) FROM ArchivedMessage;
+
+-- Cap eviction order: first the messages that carry no history (one TDLib version, not
+-- deleted — an unchanged post the browser never lists), oldest first; then everything
+-- else, oldest history first. Guest-mode messages always count as history: guest captures
+-- store only the version a change replaced.
+selectEvictionOrder:
+SELECT m.id
+FROM ArchivedMessage m
+ORDER BY CASE
+           WHEN m.deleted_at_ms IS NULL
+            AND m.source_kind <> 'WEB'
+            AND (SELECT COUNT(*) FROM MessageVersion v WHERE v.message_id = m.id) <= 1
+           THEN 0 ELSE 1
+         END,
+         m.last_event_at_ms,
+         m.id
+LIMIT :limit;
+
+-- Archive browser read: one row per message the browser may list — deleted, holding at
+-- least two versions (guest mode: one), or a member of an album with a deleted member
+-- (it supplies the album's preview and is purged with it). No blobs; grouping into one
+-- entry per message / album happens in ArchiveEntries.kt (buildArchiveEntries).
+selectEntryMessages:
+SELECT m.id, m.source_kind, m.source_key, m.message_key, m.album_key, m.is_comment, m.deleted_at_ms,
+       (SELECT COUNT(*) FROM MessageVersion v WHERE v.message_id = m.id) AS version_count,
+       -- COALESCE: a scalar subquery over no rows is NULL, which SQLDelight would type
+       -- as the (non-null) column type.
+       COALESCE((SELECT v.sort_at_ms FROM MessageVersion v WHERE v.message_id = m.id
+                 ORDER BY v.sort_at_ms DESC, v.id DESC LIMIT 1), 0) AS latest_sort_at_ms,
+       COALESCE((SELECT v.text_preview FROM MessageVersion v WHERE v.message_id = m.id AND v.text_preview <> ''
+                 ORDER BY v.sort_at_ms DESC, v.id DESC LIMIT 1), '') AS latest_text,
+       COALESCE((SELECT v.id FROM MessageVersion v WHERE v.message_id = m.id AND v.media_minithumb IS NOT NULL
+                 ORDER BY v.sort_at_ms DESC, v.id DESC LIMIT 1), 0) AS thumb_version_id
+FROM ArchivedMessage m
+WHERE m.deleted_at_ms IS NOT NULL
+   OR (SELECT COUNT(*) FROM MessageVersion v WHERE v.message_id = m.id)
+        > CASE WHEN m.source_kind = 'WEB' THEN 0 ELSE 1 END
+   OR (m.album_key IS NOT NULL AND EXISTS (
+        SELECT 1 FROM ArchivedMessage d
+        WHERE d.source_kind = m.source_kind AND d.source_key = m.source_key
+          AND d.album_key = m.album_key AND d.deleted_at_ms IS NOT NULL));
+
+-- Feed tombstones: every deleted TDLib channel post (comments stay in their thread), with
+-- its latest version and the channel row. INNER joins: a ghost card needs content and a
+-- sender row to be recognisable. Grouping album members into one card happens in Kotlin.
+selectTombstones:
+SELECT m.id, m.source_key, m.message_key, m.album_key, m.published_at_ms, m.deleted_at_ms,
+       v.content_kind, v.content_blob, v.sort_at_ms,
+       c.title, c.handle, c.photo_minithumb, c.is_verified
+FROM ArchivedMessage m
+INNER JOIN MessageVersion v
+    ON v.id = (SELECT v2.id FROM MessageVersion v2 WHERE v2.message_id = m.id
+               ORDER BY v2.sort_at_ms DESC, v2.id DESC LIMIT 1)
+INNER JOIN ArchivedChannel c
+    ON c.source_kind = m.source_kind AND c.source_key = m.source_key
+WHERE m.source_kind = 'TDLIB' AND m.is_comment = 0 AND m.deleted_at_ms IS NOT NULL
+ORDER BY m.deleted_at_ms DESC, m.id;
+
+-- Feed "edited N times" chip: versions beyond the first, per TDLib message.
+selectTdlibEditCounts:
+SELECT m.source_key, m.message_key, COUNT(v.id) - 1 AS cnt
+FROM ArchivedMessage m
+INNER JOIN MessageVersion v ON v.message_id = m.id
+WHERE m.source_kind = 'TDLIB'
+GROUP BY m.id
+HAVING COUNT(v.id) > 1;
+
+-- Export, paged by id.
+selectPageForExport:
+SELECT *
+FROM ArchivedMessage
+WHERE id > ?
+ORDER BY id
+LIMIT ?;
+
+clearAll:
+DELETE FROM ArchivedMessage;

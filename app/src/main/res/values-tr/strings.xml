@@ -730,6 +730,7 @@
         <item quantity="other">%d kez düzenlendi</item>
     </plurals>
     <string name="revision_baseline_caveat">Orijinal kaydedilmedi — bu, Hortay\'ın gözlemlediği en erken düzenlemeden sonraki içeriği gösteriyor</string>
+    <string name="revision_reconciled_note">Uygulama kapalıyken yapılmış ve sonradan fark edildi, arada başka düzenlemeler de olmuş olabilir</string>
     <string name="revision_empty">Kaydedilmiş revizyon yok</string>
     <string name="revision_go_to_current">Güncel sürüme git</string>
     <string name="revision_media_audio_caption">Ses · %1$d sn</string>
@@ -916,7 +917,7 @@
     <string name="archive_section_channels">Kanallar</string>
     <string name="archive_retention_label">Saklama süresi</string>
     <string name="archive_max_records_label">Kayıt sınırı</string>
-    <string name="archive_max_records_subtitle">Sınır aşılınca önce en eski kayıtlar silinir</string>
+    <string name="archive_max_records_subtitle">Sınır aşılınca önce hiç değişmemiş gönderiler, sonra en eskiler silinir</string>
     <string name="archive_storage_label">Kullanılan alan</string>
     <string name="archive_clear_confirm">Arşivdeki her şey kalıcı olarak silinecek. Kanallar bunu fark etmez.</string>
     <string name="archive_disable_body">Yeni değişiklikler artık kaydedilmeyecek. Arşivde zaten olanlar ne olsun?</string>

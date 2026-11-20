@@ -1,6 +1,5 @@
 package dev.lyo.hortay.data.archive
 
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import dev.lyo.hortay.data.archive.db.ArchiveDatabase
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -24,11 +23,8 @@ import kotlin.coroutines.EmptyCoroutineContext
 class ArchiveRecorderTest {
 
     private class Harness(scope: TestScope, settings: ArchiveSettings = ArchiveSettings(enabled = true)) {
-        val db: ArchiveDatabase = run {
-            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-            ArchiveDatabase.Schema.create(driver)
-            ArchiveDatabase(driver)
-        }
+        val archive = TestArchive()
+        val db: ArchiveDatabase = archive.db
         val settingsFlow = MutableStateFlow(settings)
         private var t = 1_700_000_000_000L
         val journal = InMemoryArchiveJournal()
@@ -58,14 +54,13 @@ class ArchiveRecorderTest {
             clock = { 0L },
         )
 
-        fun texts(messageId: Long): List<String> =
-            db.postSnapshotQueries.selectRevisions("TDLIB", CHAT.toString(), messageId.toString()).executeAsList()
-                .filter { it.kind == SnapshotKind.VERSION.name }
-                .map { ContentBlobCodec.decode(it.content_blob).text }
+        fun texts(messageId: Long): List<String> = db.textsOf(ChatRef.tdlib(CHAT), messageId.toString())
 
         fun editedAt(messageId: Long): List<Long?> =
-            db.postSnapshotQueries.selectRevisions("TDLIB", CHAT.toString(), messageId.toString()).executeAsList()
-                .map { it.edited_at_ms }
+            db.versionsOf(ChatRef.tdlib(CHAT), messageId.toString()).map { it.edit_date_ms }
+
+        fun messageKeys(): List<String> =
+            db.archivedMessageQueries.selectPageForExport(0L, Long.MAX_VALUE).executeAsList().map { it.message_key }
 
         fun decisions(): List<Pair<ArchiveEventKind, ArchiveDecision>> =
             journal.records().map { it.event to it.decision }
@@ -104,8 +99,7 @@ class ArchiveRecorderTest {
 
         h.gates.getValue(1L).complete(Unit)
         advanceUntilIdle()
-        val rows = h.db.postSnapshotQueries.selectAllForExport().executeAsList()
-        assertEquals(listOf("1", "2"), rows.sortedBy { it.id }.map { it.message_key })
+        assertEquals(listOf("1", "2"), h.messageKeys())
     }
 
     // --- Edit content source ---
@@ -272,7 +266,7 @@ class ArchiveRecorderTest {
     // --- Deletes ---
 
     @Test
-    fun splitAlbumDeletePulsesCollapseIntoOneDeletedRow() = runTest {
+    fun splitAlbumDeletePulsesCollapseIntoOneDeletion() = runTest {
         val h = Harness(this)
         for (id in 20L..22L) {
             h.recorder.recordIngest(msg(id, "photo $id", albumId = 77L), newToFeed = true, channel = null)
@@ -284,9 +278,10 @@ class ArchiveRecorderTest {
         advanceTimeBy(ArchiveRecorder.DELETE_DEBOUNCE_MS + 50)
         runCurrent()
 
-        val deleted = h.db.postSnapshotQueries.selectAllForExport().executeAsList()
-            .filter { it.kind == SnapshotKind.DELETED.name }
-        assertEquals(1, deleted.size)
+        val deletedAt = (20L..22L).map { h.db.messageOf(ChatRef.tdlib(CHAT), "$it")?.deleted_at_ms }
+        assertTrue(deletedAt.all { it != null }, deletedAt.toString())
+        assertEquals(1, deletedAt.toSet().size)
+        assertEquals(1, h.decisions().count { it.first == ArchiveEventKind.DELETE })
         assertEquals(ArchiveEventKind.DELETE to ArchiveDecision.WRITTEN, h.decisions().last())
         assertEquals("keys=3", h.journal.records().last().detail)
     }
@@ -299,7 +294,7 @@ class ArchiveRecorderTest {
         advanceTimeBy(ArchiveRecorder.DELETE_DEBOUNCE_MS + 50)
         runCurrent()
 
-        assertEquals(0, h.db.postSnapshotQueries.selectAllForExport().executeAsList().size)
+        assertEquals(0L, h.db.countMessages())
         val records = h.journal.records()
         assertEquals(3, records.size)
         for (r in records) {
@@ -347,7 +342,7 @@ class ArchiveRecorderTest {
         advanceUntilIdle()
         assertTrue(reset.isCompleted)
 
-        assertEquals(0, h.db.postSnapshotQueries.selectAllForExport().executeAsList().size)
+        assertEquals(0L, h.db.countMessages())
         assertEquals(listOf(30L), h.reads)
 
         // The next session's events still flow through a fresh consumer.

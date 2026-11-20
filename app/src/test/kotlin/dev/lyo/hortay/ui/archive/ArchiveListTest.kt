@@ -26,7 +26,7 @@ class ArchiveListTest {
     ) = ArchiveEntry(
         chat = ChatRef.tdlib(1), messageKey = key, channelTitle = title, channelPhotoMinithumb = null,
         isComment = comment, status = status, eventAtMs = at, versionCount = 2, textPreview = text,
-        mediaMinithumb = null, snapshotIds = persistentListOf(),
+        mediaMinithumb = null, messageIds = persistentListOf(),
     )
 
     @Test

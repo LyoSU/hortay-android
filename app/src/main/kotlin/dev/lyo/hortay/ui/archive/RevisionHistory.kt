@@ -8,6 +8,7 @@ import dev.lyo.hortay.data.archive.ArchivedMediaRef
 import dev.lyo.hortay.data.archive.ContentNormalizer
 import dev.lyo.hortay.data.archive.PostSnapshot
 import dev.lyo.hortay.data.archive.SnapshotKind
+import dev.lyo.hortay.data.archive.VersionOrigin
 import dev.lyo.hortay.data.archive.diff.TextDiff
 import dev.lyo.hortay.data.web.WebPostAdapter
 import dev.lyo.hortay.ui.timeline.withEmojiPresentation
@@ -49,7 +50,7 @@ data class RevisionEntry(
  *
  * Rule: a VERSION snapshot whose user-visible content — text, entities (offset / length /
  * type, in [ContentNormalizer.canonicalEntities] form) and media identity — equals the previous kept VERSION is folded into it; so is a
- * DELETED marker that follows another DELETED marker. Unreadable rows are always kept (the
+ * DELETED entry that follows another DELETED entry. Unreadable rows are always kept (the
  * reader is told the version can't be shown) and are never used as a diff base. Rows are
  * not touched — this is display only.
  */
@@ -85,7 +86,7 @@ fun buildRevisionEntries(snapshots: List<PostSnapshot>): ImmutableList<RevisionE
                 val prev = lastReadable
                 val change = when {
                     prev != null -> classify(visibleKey(prev.snapshot), key)
-                    out.isEmpty() && snap.editedAtMs == null -> RevisionChange.Published
+                    out.isEmpty() && snap.isAsPublished() -> RevisionChange.Published
                     else -> RevisionChange.FirstSeen
                 }
                 val entry = RevisionEntry(snap, formattedOf(snap), mediaRefOf(snap), change, prev)
@@ -112,6 +113,13 @@ private fun classify(prev: VisibleKey, cur: VisibleKey): RevisionChange {
 }
 
 private data class VisibleKey(val text: String, val entities: List<ContentNormalizer.CanonicalEntity>, val media: String?)
+
+/**
+ * The version is the post as published: captured unedited ([VersionOrigin.PUBLISHED]).
+ * Snapshots built without an origin (previews, tests) fall back to "carries no edit date".
+ */
+private fun PostSnapshot.isAsPublished(): Boolean =
+    origin == VersionOrigin.PUBLISHED || (origin == null && editedAtMs == null)
 
 private fun PostSnapshot.isUnreadable(): Boolean = (content as? ArchivedContent.Tdlib)?.isUnreadable == true
 

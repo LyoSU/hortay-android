@@ -771,6 +771,7 @@
         <item quantity="other">ред. ×%d</item>
     </plurals>
     <string name="revision_baseline_caveat">Оригинал не зафиксирован — показано содержимое после самого раннего редактирования, которое увидел Hortay</string>
+    <string name="revision_reconciled_note">Это изменение замечено уже после того, как приложение было закрыто, поэтому между версиями могли быть и другие правки</string>
     <string name="revision_empty">Версий ещё нет</string>
     <string name="revision_go_to_current">К текущей</string>
     <string name="revision_media_audio_caption">Аудио · %1$d с</string>
@@ -965,7 +966,7 @@
     <string name="archive_section_channels">Каналы</string>
     <string name="archive_retention_label">Сколько хранить</string>
     <string name="archive_max_records_label">Лимит записей</string>
-    <string name="archive_max_records_subtitle">Когда лимит исчерпан, первыми уходят самые старые записи</string>
+    <string name="archive_max_records_subtitle">Когда лимит исчерпан, первыми уходят посты без изменений, затем самые старые</string>
     <string name="archive_storage_label">Занимает места</string>
     <string name="archive_clear_confirm">Всё из архива будет удалено навсегда. Каналы этого не заметят.</string>
     <string name="archive_disable_body">Новые изменения больше не будут сохраняться. Что сделать с тем, что уже есть в архиве?</string>

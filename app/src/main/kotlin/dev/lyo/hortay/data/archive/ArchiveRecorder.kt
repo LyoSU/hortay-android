@@ -338,7 +338,13 @@ class ArchiveRecorder(
             is IngestPlan.Skip -> {
                 val baselineSide = plan.detail == DETAIL_BASELINE_PRESENT || (plan.detail == null && event.allowBaseline)
                 kind = if (baselineSide) ArchiveEventKind.BASELINE else ArchiveEventKind.RECONCILE
-                outcome = CaptureOutcome(plan.decision, null, plan.latestHash, plan.detail)
+                val skipped = CaptureOutcome(plan.decision, null, plan.latestHash, plan.detail)
+                val attachable = plan.detail == DETAIL_BASELINE_PRESENT || plan.detail == DETAIL_NO_NEWER_EDIT
+                outcome = if (attachable && plan.latestLacksMedia) {
+                    attachSkippedMedia(event, chat, key, originalDateMs, skipped) ?: return
+                } else {
+                    skipped
+                }
             }
             IngestPlan.Baseline -> {
                 kind = ArchiveEventKind.BASELINE
@@ -358,9 +364,12 @@ class ArchiveRecorder(
                 kind = ArchiveEventKind.RECONCILE
                 val base = TdlibContentMetaExtractor.extract(message.content)
                 val hash = ContentNormalizer.canonicalHash(base)
-                // Equal stored hash: done without reading the row. A mismatch goes to the
-                // repository, which re-derives the row's hash before calling it a version.
-                outcome = if (hash == plan.latestHash) {
+                // Equal stored hash: done without reading the version. A mismatch goes to the
+                // repository, which re-derives an older-form hash before calling it a version.
+                // ...unless the stored version still lacks the media file that is on disk now:
+                // the repository attaches the copy to it (attachMediaIfSame).
+                val attachable = plan.latestLacksMedia && mediaOnDisk(message.content)
+                outcome = if (hash == plan.latestHash && !attachable) {
                     CaptureOutcome(ArchiveDecision.DUP_HASH, hash, plan.latestHash)
                 } else {
                     val meta = withMedia(base, message.content)
@@ -373,7 +382,9 @@ class ArchiveRecorder(
             chat = chat, messageKey = key, event = kind, outcome = outcome, editDateMs = editedAtMs,
             source = ArchiveContentSource.INGEST,
             // Re-ingest no-ops repeat on every cold start for every archived post.
-            persist = outcome.decision != ArchiveDecision.DUP_HASH && outcome.detail != DETAIL_NO_NEWER_EDIT &&
+            // A media attach happens once per version and is worth keeping.
+            persist = hasMediaAttached(outcome.detail) ||
+                outcome.decision != ArchiveDecision.DUP_HASH && outcome.detail != DETAIL_NO_NEWER_EDIT &&
                 outcome.detail != DETAIL_BASELINE_PRESENT,
         )
         upsertChannel(event.chatId, event.channel, outcome)
@@ -454,6 +465,52 @@ class ArchiveRecorder(
         )
     }
 
+    /**
+     * A re-ingest skipped without hashing (`baseline_present`, or `no_newer_edit` — an edited
+     * post re-ingested at the edit date the archive already holds) whose latest version has no
+     * archived media copy: when the message's media file is on disk now, copy it and let the
+     * repository re-validate under its lock and attach the copy to the latest version when that
+     * is the same state ([attachMediaIfSame]). Nothing new is written. Without this, a version
+     * written before the photo was downloaded showed only the blurred preview forever.
+     *
+     *  - `baseline_present` goes through [ArchiveRepository.captureTdlibBaseline] (the stored
+     *    baseline still sits at-or-before this state, so it only re-checks and attaches).
+     *  - `no_newer_edit` goes through [ArchiveRepository.attachSkippedMedia]; the decision stays
+     *    STALE / `no_newer_edit`, with `media_attached` appended when the copy was attached.
+     *
+     * @return [skipped] when there is nothing to attach, or null when the session changed.
+     */
+    private suspend fun attachSkippedMedia(
+        event: Ingest,
+        chat: ChatRef,
+        key: String,
+        originalDateMs: Long,
+        skipped: CaptureOutcome,
+    ): CaptureOutcome? {
+        val message = event.message
+        if (!mediaOnDisk(message.content)) return skipped
+        val meta = withMedia(TdlibContentMetaExtractor.extract(message.content), message.content)
+        if (meta.mediaRef?.localArchiveSha.isNullOrEmpty()) return skipped
+        if (event.generation != generation.get()) return null
+        if (skipped.detail != DETAIL_BASELINE_PRESENT) {
+            val attached = repo.attachSkippedMedia(chat, key, meta)
+            return skipped.copy(detail = withMediaDetail(skipped.detail, attached))
+        }
+        return repo.captureTdlibBaseline(
+            chat = chat,
+            messageKey = key,
+            albumKey = albumKeyOf(message),
+            meta = meta,
+            originalDateMs = originalDateMs,
+            isComment = false,
+            priorEditedAtMs = null,
+        )
+    }
+
+    /** The content's media file is fully downloaded — a cheap check before hashing it. */
+    private fun mediaOnDisk(content: TdApi.MessageContent): Boolean =
+        MediaFileFromContent.extract(content)?.local?.isDownloadingCompleted == true
+
     private suspend fun withMedia(base: TdlibContentMeta, content: TdApi.MessageContent): TdlibContentMeta {
         val ref = base.mediaRef ?: return base
         val sha = suspendRunCatching { copyMedia(content) }
@@ -530,7 +587,7 @@ class ArchiveRecorder(
         /**
          * Quiet window per chat before a channel's buffered deletions are written. TDLib
          * splits an album delete into several `UpdateDeleteMessages` pulses on slow
-         * networks; one composite DELETED row per album needs them together.
+         * networks; recording the album's deletion as one decision (one tombstone) needs them together.
          * Sliding — every new batch for the chat re-arms it. 200 ms matches the
          * interaction-info coalesce window: large enough to absorb a typical slow-network
          * album delete fan-out (~tens of ms between siblings), small enough not to delay
